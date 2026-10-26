@@ -1,4 +1,17 @@
-import * as z from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  union,
+  url,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -7,8 +20,7 @@ import { discordSnowflakeSchema } from "./integrations-discord-read";
 
 export const MAX_DISCORD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-export const discordFilenameSchema = z
-  .string()
+export const discordFilenameSchema = string()
   .min(1)
   .max(255)
   .refine((filename) => {
@@ -20,77 +32,75 @@ export const discordFilenameSchema = z
     );
   }, "Filename must not contain path separators or control characters");
 
-const discordUploadInitBodySchema = z
-  .object({
-    filename: discordFilenameSchema,
-    length: z.number().int().positive().max(MAX_DISCORD_FILE_SIZE_BYTES),
-    contentType: z.string().min(1).max(255),
-    checksumSha256: z.string().regex(/^[a-f0-9]{64}$/u),
-    operationId: z.uuid(),
-    channelId: discordSnowflakeSchema.optional(),
-    userId: z.union([z.literal("me"), discordSnowflakeSchema]).optional(),
-    guildId: discordSnowflakeSchema.optional(),
-    comment: z.string().max(2000).optional(),
-  })
-  .refine((body) => {
-    return (body.channelId === undefined) !== (body.userId === undefined);
-  }, "Provide exactly one of channelId or userId");
+const discordUploadInitBodySchema = object({
+  filename: discordFilenameSchema,
+  length: number().int().positive().max(MAX_DISCORD_FILE_SIZE_BYTES),
+  contentType: string().min(1).max(255),
+  checksumSha256: string().regex(/^[a-f0-9]{64}$/u),
+  operationId: uuid(),
+  channelId: discordSnowflakeSchema.optional(),
+  userId: union([literal("me"), discordSnowflakeSchema]).optional(),
+  guildId: discordSnowflakeSchema.optional(),
+  comment: string().max(2000).optional(),
+}).refine((body) => {
+  return (body.channelId === undefined) !== (body.userId === undefined);
+}, "Provide exactly one of channelId or userId");
 
-const discordUploadInitResponseSchema = z.object({
-  assetId: z.uuid(),
-  operationId: z.uuid(),
+const discordUploadInitResponseSchema = object({
+  assetId: uuid(),
+  operationId: uuid(),
   url: artifactUrlSchema,
   // A repeated operation whose bytes already exist does not upload again.
-  uploadUrl: z.url().optional(),
-  uploadHeaders: z.record(z.string(), z.string()).optional(),
+  uploadUrl: url().optional(),
+  uploadHeaders: record(string(), string()).optional(),
 });
 
-const discordUploadOperationBodySchema = z.object({
-  assetId: z.uuid(),
-  operationId: z.uuid(),
+const discordUploadOperationBodySchema = object({
+  assetId: uuid(),
+  operationId: uuid(),
 });
 
-const discordUploadResponseSchema = z.object({
-  assetId: z.uuid(),
-  operationId: z.uuid(),
+const discordUploadResponseSchema = object({
+  assetId: uuid(),
+  operationId: uuid(),
   url: artifactUrlSchema,
-  delivery: z.discriminatedUnion("status", [
-    z.object({ status: z.literal("pending") }),
-    z.object({
-      status: z.literal("delivered"),
+  delivery: discriminatedUnion("status", [
+    object({ status: literal("pending") }),
+    object({
+      status: literal("delivered"),
       channelId: discordSnowflakeSchema,
       messageId: discordSnowflakeSchema,
       attachmentId: discordSnowflakeSchema,
-      permalink: z.url(),
+      permalink: url(),
     }),
-    z.object({
-      status: z.literal("failed"),
-      message: z.string(),
-      retryable: z.boolean(),
+    object({
+      status: literal("failed"),
+      message: string(),
+      retryable: boolean(),
     }),
   ]),
 });
 
-const discordDownloadFileQuerySchema = z.object({
+const discordDownloadFileQuerySchema = object({
   guildId: discordSnowflakeSchema.optional(),
   channelId: discordSnowflakeSchema,
   messageId: discordSnowflakeSchema,
   attachmentId: discordSnowflakeSchema,
 });
 
-export type DiscordUploadInitBody = z.infer<typeof discordUploadInitBodySchema>;
-export type DiscordUploadInitResponse = z.infer<
+export type DiscordUploadInitBody = zInfer<typeof discordUploadInitBodySchema>;
+export type DiscordUploadInitResponse = zInfer<
   typeof discordUploadInitResponseSchema
 >;
-export type DiscordUploadMaterializeBody = z.infer<
+export type DiscordUploadMaterializeBody = zInfer<
   typeof discordUploadOperationBodySchema
 >;
-export type DiscordUploadMaterializeResponse = z.infer<
+export type DiscordUploadMaterializeResponse = zInfer<
   typeof discordUploadResponseSchema
 >;
 export type DiscordUploadCompleteBody = DiscordUploadMaterializeBody;
 export type DiscordUploadCompleteResponse = DiscordUploadMaterializeResponse;
-export type DiscordDownloadFileQuery = z.infer<
+export type DiscordDownloadFileQuery = zInfer<
   typeof discordDownloadFileQuerySchema
 >;
 

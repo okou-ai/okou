@@ -1,7 +1,8 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import * as z from "zod";
+import { array, boolean, iso, object, string, type infer as zInfer } from "zod";
+
 import { safeJsonParse, settle } from "../utils";
 
 const log = logger("api:agentphone");
@@ -137,10 +138,11 @@ export async function sendAgentPhoneMessage(
   };
 }
 
-const conversationMediaCapabilitiesSchema = z.object({
-  capabilities: z
-    .object({ canSendMessages: z.boolean(), media: z.boolean() })
-    .nullish(),
+const conversationMediaCapabilitiesSchema = object({
+  capabilities: object({
+    canSendMessages: boolean(),
+    media: boolean(),
+  }).nullish(),
 });
 
 export async function canSendAgentPhoneConversationMedia(
@@ -175,28 +177,28 @@ export async function canSendAgentPhoneConversationMedia(
   return capabilities?.canSendMessages === true && capabilities.media;
 }
 
-const conversationMessagesSchema = z.object({
-  data: z.array(
-    z.object({
-      id: z.string().min(1),
-      body: z.string(),
-      fromNumber: z.string(),
-      toNumber: z.string(),
-      direction: z.string(),
-      status: z.string().nullish(),
-      mediaUrl: z.string().nullish(),
-      mediaUrls: z.array(z.string()).default([]),
-      receivedAt: z.iso.datetime({ offset: true }),
+const conversationMessagesSchema = object({
+  data: array(
+    object({
+      id: string().min(1),
+      body: string(),
+      fromNumber: string(),
+      toNumber: string(),
+      direction: string(),
+      status: string().nullish(),
+      mediaUrl: string().nullish(),
+      mediaUrls: array(string()).default([]),
+      receivedAt: iso.datetime({ offset: true }),
     }),
   ),
-  hasMore: z.boolean(),
+  hasMore: boolean(),
 });
 
 export async function getAgentPhoneMessagesAfter(
   conversationId: string,
   after: Date,
   signal: AbortSignal,
-): Promise<z.infer<typeof conversationMessagesSchema> | null> {
+): Promise<zInfer<typeof conversationMessagesSchema> | null> {
   const query = new URLSearchParams({
     after: after.toISOString(),
     limit: "200",

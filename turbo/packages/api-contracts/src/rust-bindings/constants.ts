@@ -63,6 +63,7 @@ import {
   STORAGE_MANIFEST_MAX_FILES,
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../contracts/storages";
+import { DATA_ROUTER_REQUEST_BODY_MAX_BYTES } from "../contracts/data-router";
 
 export type RustConstantValue =
   | {
@@ -132,6 +133,10 @@ export const rustConstantRootDoc = [
 ] as const;
 
 export const rustConstantModuleDocs = [
+  {
+    rustModulePath: ["data_router"],
+    rustDoc: ["Data Router contract constants shared with the Runner addon."],
+  },
   {
     rustModulePath: ["codex_oauth_token"],
     rustDoc: [
@@ -244,6 +249,12 @@ function rustU64(value: number): RustConstantValue {
 }
 
 export const rustConstantBindings = [
+  {
+    rustModulePath: ["data_router"],
+    rustConstName: "DATA_ROUTER_REQUEST_BODY_MAX_BYTES",
+    value: rustU64(DATA_ROUTER_REQUEST_BODY_MAX_BYTES),
+    rustDoc: ["Maximum raw request-body bytes accepted by Data Router."],
+  },
   {
     rustModulePath: ["runners"],
     rustConstName: "OFFICIAL_RUNNER_TOKEN_PREFIX",

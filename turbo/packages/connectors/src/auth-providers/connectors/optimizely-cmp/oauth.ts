@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string, type infer as zInfer } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -39,14 +39,14 @@ interface OptimizelyCmpRefreshResult {
   readonly scopes: readonly string[] | null;
 }
 
-const tokenResponseSchema = z.object({
-  access_token: z.string().optional(),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().optional(),
-  scope: z.string().optional(),
-  token_type: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
+const tokenResponseSchema = object({
+  access_token: string().optional(),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().optional(),
+  scope: string().optional(),
+  token_type: string().optional(),
+  error: string().optional(),
+  error_description: string().optional(),
 });
 
 type TokenRequest = Readonly<Record<string, string>>;
@@ -55,7 +55,7 @@ async function requestToken(
   body: TokenRequest,
   operation: "exchange" | "refresh",
   signal?: AbortSignal,
-): Promise<z.infer<typeof tokenResponseSchema>> {
+): Promise<zInfer<typeof tokenResponseSchema>> {
   const response = await fetch(OPTIMIZELY_CMP_TOKEN_URL, {
     ...(signal === undefined ? {} : { signal }),
     method: "POST",
@@ -207,14 +207,12 @@ async function fetchOptimizelyCmpUserInfo(
     await throwOAuthError("Optimizely CMP", "userinfo", response);
   }
 
-  const data = z
-    .object({
-      sub: z.string().optional(),
-      name: z.string().nullable().optional(),
-      preferred_username: z.string().nullable().optional(),
-      email: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    sub: string().optional(),
+    name: string().nullable().optional(),
+    preferred_username: string().nullable().optional(),
+    email: string().nullable().optional(),
+  }).parse(await response.json());
 
   if (!data.sub) {
     throw new Error("No user id in Optimizely CMP userinfo response");

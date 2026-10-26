@@ -1,6 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import * as z from "zod";
+import {
+  iso,
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -8,24 +16,24 @@ import { safeJsonParse } from "../utils";
 
 export const BILLING_PURCHASE_PREVIEW_TTL_MS = 15 * 60 * 1000;
 
-const billingPaymentMethodPreviewTokenSchema = z.object({
-  version: z.literal(1),
-  operation: z.enum([
+const billingPaymentMethodPreviewTokenSchema = object({
+  version: literal(1),
+  operation: zEnum([
     "concurrency",
     "usage_pack_allocation",
     "usage_pack_invitation",
     "usage_pack_subscription",
   ]),
-  operationId: z.string().min(1),
-  orgId: z.string().min(1),
-  customerId: z.string().min(1),
-  subscriptionId: z.string().min(1),
-  paymentMethodId: z.string().min(1),
-  returnUrl: z.string().url(),
-  expiresAt: z.iso.datetime(),
+  operationId: string().min(1),
+  orgId: string().min(1),
+  customerId: string().min(1),
+  subscriptionId: string().min(1),
+  paymentMethodId: string().min(1),
+  returnUrl: string().url(),
+  expiresAt: iso.datetime(),
 });
 
-export type BillingPaymentMethodPreviewToken = z.infer<
+export type BillingPaymentMethodPreviewToken = zInfer<
   typeof billingPaymentMethodPreviewTokenSchema
 >;
 
@@ -46,7 +54,7 @@ export function createBillingPreviewToken(payload: unknown): string {
 
 export function parseBillingPreviewToken<T>(
   token: string,
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
 ): T | null {
   const [encodedPayload, encodedSignature, extra] = token.split(".");
   if (!encodedPayload || !encodedSignature || extra !== undefined) {

@@ -1,8 +1,17 @@
-import * as z from "zod";
+import {
+  iso,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
-export const desktopShellAuthorizationStatusSchema = z.enum([
+export const desktopShellAuthorizationStatusSchema = zEnum([
   "pending",
   "approved",
   "denied",
@@ -10,33 +19,36 @@ export const desktopShellAuthorizationStatusSchema = z.enum([
   "expired",
 ]);
 
-export type DesktopShellAuthorizationStatus = z.infer<
+export type DesktopShellAuthorizationStatus = zInfer<
   typeof desktopShellAuthorizationStatusSchema
 >;
 
-export const desktopShellAuthorizationSchema = z.object({
-  id: z.uuid(),
-  chatThreadId: z.uuid(),
-  computerUseHostId: z.uuid(),
-  computerName: z.string(),
-  requestedByRunId: z.uuid(),
-  reason: z.string(),
+export const desktopShellAuthorizationSchema = object({
+  id: uuid(),
+  chatThreadId: uuid(),
+  computerUseHostId: uuid(),
+  computerName: string(),
+  requestedByRunId: uuid(),
+  reason: string(),
   status: desktopShellAuthorizationStatusSchema,
-  requestExpiresAt: z.iso.datetime(),
-  approvedAt: z.iso.datetime().nullable(),
-  grantExpiresAt: z.iso.datetime().nullable(),
-  approvalBlockedReason: z
-    .enum(["run_active", "run_unavailable", "chat_busy", "computer_changed"])
-    .nullable(),
-  authorizationUrl: z.url(),
+  requestExpiresAt: iso.datetime(),
+  approvedAt: iso.datetime().nullable(),
+  grantExpiresAt: iso.datetime().nullable(),
+  approvalBlockedReason: zEnum([
+    "run_active",
+    "run_unavailable",
+    "chat_busy",
+    "computer_changed",
+  ]).nullable(),
+  authorizationUrl: url(),
 });
 
-export type DesktopShellAuthorization = z.infer<
+export type DesktopShellAuthorization = zInfer<
   typeof desktopShellAuthorizationSchema
 >;
 
 const c = initContract();
-const params = z.object({ id: z.uuid() });
+const params = object({ id: uuid() });
 const responses = {
   200: desktopShellAuthorizationSchema,
   400: apiErrorSchema,
@@ -50,7 +62,7 @@ const action = {
   method: "POST" as const,
   headers: authHeadersSchema,
   pathParams: params,
-  body: z.object({}).strict(),
+  body: object({}).strict(),
   responses,
 };
 
@@ -59,7 +71,7 @@ export const desktopShellAuthorizationContract = c.router({
     method: "POST",
     path: "/api/computer-use/shell/authorizations",
     headers: authHeadersSchema,
-    body: z.object({ reason: z.string().trim().min(1).max(500) }).strict(),
+    body: object({ reason: string().trim().min(1).max(500) }).strict(),
     responses,
     summary: "Request one-hour Shell access for the current chat and computer",
   },

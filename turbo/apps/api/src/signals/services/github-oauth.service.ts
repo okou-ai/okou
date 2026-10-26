@@ -29,7 +29,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
-import * as z from "zod";
+import { array, number, object, string } from "zod";
 import { command } from "ccstate";
 
 import { db$, writeDb$ } from "../external/db";
@@ -46,14 +46,14 @@ const INSTALLATION_ID_RE = /^\d+$/;
 const MAX_GITHUB_CONNECT_AGE_SECONDS = 10 * 60;
 const GITHUB_OAUTH_AUTH_METHOD = "oauth";
 
-const appInstallationSchema = z.object({
-  id: z.number(),
-  app_id: z.number(),
-  app_slug: z.string().min(1),
-  account: z.object({
-    id: z.number(),
-    login: z.string(),
-    type: z.string(),
+const appInstallationSchema = object({
+  id: number(),
+  app_id: number(),
+  app_slug: string().min(1),
+  account: object({
+    id: number(),
+    login: string(),
+    type: string(),
   }),
 });
 
@@ -495,7 +495,7 @@ function parseGithubOauthRequestedScopesState(args: {
   if (typeof args.signature !== "string") {
     return { ok: false };
   }
-  const scopes = z.array(z.string()).safeParse(args.scopes);
+  const scopes = array(string()).safeParse(args.scopes);
   return scopes.success
     ? { ok: true, scopes: scopes.data, signature: args.signature }
     : { ok: false };

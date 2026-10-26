@@ -1,67 +1,77 @@
-import * as z from "zod";
+import {
+  array,
+  coerce,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  null as zNull,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { wechatBindingSchema } from "./integrations-wechat";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
-export const wechatAttachmentSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["image", "audio", "video", "file"]),
-  filename: z.string(),
-  size: z.number().int().nonnegative().nullable(),
+export const wechatAttachmentSchema = object({
+  id: string(),
+  kind: zEnum(["image", "audio", "video", "file"]),
+  filename: string(),
+  size: number().int().nonnegative().nullable(),
 });
-export const wechatStoredMessageSchema = z.object({
-  id: z.uuid(),
-  providerMessageId: z.string().nullable(),
-  direction: z.enum(["inbound", "outbound"]),
-  status: z.enum(["received", "sent", "unknown"]),
-  content: z.string(),
-  quotedText: z.string().nullable(),
-  attachments: z.array(wechatAttachmentSchema),
-  timestamp: z.iso.datetime(),
+export const wechatStoredMessageSchema = object({
+  id: uuid(),
+  providerMessageId: string().nullable(),
+  direction: zEnum(["inbound", "outbound"]),
+  status: zEnum(["received", "sent", "unknown"]),
+  content: string(),
+  quotedText: string().nullable(),
+  attachments: array(wechatAttachmentSchema),
+  timestamp: iso.datetime(),
 });
-export const wechatHistoryQuerySchema = z
-  .object({
-    channelId: z.uuid(),
-    before: z.uuid().optional(),
-    oldest: z.iso.datetime({ offset: true }).optional(),
-    latest: z.iso.datetime({ offset: true }).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-  })
-  .refine(
-    (query) => {
-      return (
-        !query.oldest ||
-        !query.latest ||
-        Date.parse(query.oldest) < Date.parse(query.latest)
-      );
-    },
-    {
-      message: "oldest must be earlier than latest",
-      path: ["oldest"],
-    },
-  );
-export const wechatSendBodySchema = z.object({
-  channelId: z.uuid(),
-  operationId: z.uuid(),
-  text: z
-    .string()
+export const wechatHistoryQuerySchema = object({
+  channelId: uuid(),
+  before: uuid().optional(),
+  oldest: iso.datetime({ offset: true }).optional(),
+  latest: iso.datetime({ offset: true }).optional(),
+  limit: coerce.number().int().min(1).max(100).default(50),
+}).refine(
+  (query) => {
+    return (
+      !query.oldest ||
+      !query.latest ||
+      Date.parse(query.oldest) < Date.parse(query.latest)
+    );
+  },
+  {
+    message: "oldest must be earlier than latest",
+    path: ["oldest"],
+  },
+);
+export const wechatSendBodySchema = object({
+  channelId: uuid(),
+  operationId: uuid(),
+  text: string()
     .min(1)
     .max(20_000)
     .refine((value) => {
       return value.trim().length > 0;
     }, "Message text must not be blank"),
 });
-export const wechatReceiptSchema = z.object({
-  id: z.uuid(),
-  channelId: z.uuid(),
-  providerMessageId: z.string().nullable(),
-  url: z.null(),
+export const wechatReceiptSchema = object({
+  id: uuid(),
+  channelId: uuid(),
+  providerMessageId: string().nullable(),
+  url: zNull(),
 });
 export const wechatSendErrorSchema = apiErrorSchema.extend({
   error: apiErrorSchema.shape.error.extend({
-    deliveredMessages: z.array(wechatReceiptSchema).optional(),
-    uncertainMessageId: z.uuid().optional(),
+    deliveredMessages: array(wechatReceiptSchema).optional(),
+    uncertainMessageId: uuid().optional(),
   }),
 });
 const errors = {
@@ -79,13 +89,13 @@ export const integrationsWechatMessagesContract = c.router({
     path: "/api/integrations/wechat/channels",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({
-        channels: z.array(
-          z.object({
-            id: z.uuid(),
+      200: object({
+        channels: array(
+          object({
+            id: uuid(),
             binding: wechatBindingSchema,
-            name: z.string(),
-            status: z.enum(["active", "reconnect_required"]),
+            name: string(),
+            status: zEnum(["active", "reconnect_required"]),
           }),
         ),
       }),
@@ -99,11 +109,11 @@ export const integrationsWechatMessagesContract = c.router({
     headers: authHeadersSchema,
     query: wechatHistoryQuerySchema,
     responses: {
-      200: z.object({
-        channelId: z.uuid(),
-        messages: z.array(wechatStoredMessageSchema),
-        nextBefore: z.uuid().nullable(),
-        historyScope: z.literal("okou_received_and_sent"),
+      200: object({
+        channelId: uuid(),
+        messages: array(wechatStoredMessageSchema),
+        nextBefore: uuid().nullable(),
+        historyScope: literal("okou_received_and_sent"),
       }),
       ...errors,
     },
@@ -115,9 +125,9 @@ export const integrationsWechatMessagesContract = c.router({
     headers: authHeadersSchema,
     body: wechatSendBodySchema,
     responses: {
-      200: z.object({
-        operationId: z.uuid(),
-        messages: z.array(wechatReceiptSchema),
+      200: object({
+        operationId: uuid(),
+        messages: array(wechatReceiptSchema),
       }),
       ...errors,
       409: wechatSendErrorSchema,
@@ -128,7 +138,7 @@ export const integrationsWechatMessagesContract = c.router({
     summary: "Send text to the caller's verified WeChat direct conversation",
   },
 });
-export type WechatHistoryQuery = z.infer<typeof wechatHistoryQuerySchema>;
-export type WechatStoredMessage = z.infer<typeof wechatStoredMessageSchema>;
-export type WechatSendBody = z.infer<typeof wechatSendBodySchema>;
-export type WechatReceipt = z.infer<typeof wechatReceiptSchema>;
+export type WechatHistoryQuery = zInfer<typeof wechatHistoryQuerySchema>;
+export type WechatStoredMessage = zInfer<typeof wechatStoredMessageSchema>;
+export type WechatSendBody = zInfer<typeof wechatSendBodySchema>;
+export type WechatReceipt = zInfer<typeof wechatReceiptSchema>;

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import * as z from "zod";
+import { object, string } from "zod";
 
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import { safeJsonParse } from "../utils";
@@ -63,9 +63,9 @@ export const claimTeamsOAuthState$ = command(
     ) {
       return null;
     }
-    const context = z
-      .object({ prompt: z.string().nullable() })
-      .parse(safeJsonParse(claimed.state.oauthContext ?? ""));
+    const context = object({ prompt: string().nullable() }).parse(
+      safeJsonParse(claimed.state.oauthContext ?? ""),
+    );
     return {
       userId: claimed.state.userId,
       orgId: claimed.state.orgId,

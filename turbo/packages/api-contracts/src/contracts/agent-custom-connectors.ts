@@ -1,30 +1,37 @@
-import * as z from "zod";
+import {
+  array,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const agentCustomConnectorGrantSchema = z.object({
-  customConnectorId: z.string().uuid(),
-  permissionNames: z.array(z.string().min(1).max(128)).max(500),
+export const agentCustomConnectorGrantSchema = object({
+  customConnectorId: string().uuid(),
+  permissionNames: array(string().min(1).max(128)).max(500),
 });
-export type AgentCustomConnectorGrant = z.infer<
+export type AgentCustomConnectorGrant = zInfer<
   typeof agentCustomConnectorGrantSchema
 >;
 
-export const agentCustomConnectorGrantsSchema = z.object({
-  grants: z.array(agentCustomConnectorGrantSchema),
+export const agentCustomConnectorGrantsSchema = object({
+  grants: array(agentCustomConnectorGrantSchema),
 });
-export type AgentCustomConnectorGrants = z.infer<
+export type AgentCustomConnectorGrants = zInfer<
   typeof agentCustomConnectorGrantsSchema
 >;
 
 export const agentCustomConnectorUpdateSchema = agentCustomConnectorGrantsSchema
   .extend({
-    operation: z.enum(["replace", "add", "remove"]).optional(),
+    operation: zEnum(["replace", "add", "remove"]).optional(),
   })
   .strict();
-export type AgentCustomConnectorUpdate = z.infer<
+export type AgentCustomConnectorUpdate = zInfer<
   typeof agentCustomConnectorUpdateSchema
 >;
 
@@ -41,7 +48,7 @@ export const agentCustomConnectorsContract = c.router({
     method: "GET",
     path: "/api/agents/:id/custom-connectors",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     responses: {
       200: agentCustomConnectorGrantsSchema,
       401: apiErrorSchema,
@@ -54,7 +61,7 @@ export const agentCustomConnectorsContract = c.router({
     method: "PUT",
     path: "/api/agents/:id/custom-connectors",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     body: agentCustomConnectorUpdateSchema,
     responses: {
       200: agentCustomConnectorGrantsSchema,

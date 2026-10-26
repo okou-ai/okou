@@ -1,4 +1,11 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { publicConnectorCatalogIconSchema } from "./connector-catalog";
@@ -7,31 +14,31 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const builtinConnectorBriefSchema = z.object({
+export const builtinConnectorBriefSchema = object({
   slug: connectorSlugSchema,
-  label: z.string(),
+  label: string(),
   icon: publicConnectorCatalogIconSchema,
-  hasPermissions: z.boolean(),
+  hasPermissions: boolean(),
 });
 
-export const customConnectorBriefSchema = z.object({
-  id: z.uuid(),
-  slug: z.string(),
-  displayName: z.string(),
-  permissionBundleRef: z.string().nullable(),
-  integrationManaged: z.boolean(),
+export const customConnectorBriefSchema = object({
+  id: uuid(),
+  slug: string(),
+  displayName: string(),
+  permissionBundleRef: string().nullable(),
+  integrationManaged: boolean(),
 });
 
-export type BuiltinConnectorBrief = z.infer<typeof builtinConnectorBriefSchema>;
-export type CustomConnectorBrief = z.infer<typeof customConnectorBriefSchema>;
+export type BuiltinConnectorBrief = zInfer<typeof builtinConnectorBriefSchema>;
+export type CustomConnectorBrief = zInfer<typeof customConnectorBriefSchema>;
 
 // Saved accounts provide directory visibility, not execution authorization.
-export const connectedConnectorsSchema = z.object({
-  builtinConnectors: z.array(builtinConnectorBriefSchema),
-  customConnectors: z.array(customConnectorBriefSchema),
+export const connectedConnectorsSchema = object({
+  builtinConnectors: array(builtinConnectorBriefSchema),
+  customConnectors: array(customConnectorBriefSchema),
 });
 
-export type ConnectedConnectors = z.infer<typeof connectedConnectorsSchema>;
+export type ConnectedConnectors = zInfer<typeof connectedConnectorsSchema>;
 
 export const connectedConnectorsContract = c.router({
   list: {

@@ -1,4 +1,5 @@
-import * as z from "zod";
+import { boolean, number, object, string, type output } from "zod";
+
 import { eq, notExists, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -10,23 +11,23 @@ import {
 } from "../../lib/db-structured-result";
 import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
 
-const capabilitiesSchema = z.object({
-  planKey: z.string(),
-  status: z.string(),
-  baseConcurrencyLimit: z.number(),
-  canBuyConcurrency: z.boolean(),
-  canBuyCredits: z.boolean(),
-  showUsagePack: z.boolean(),
-  autoRechargeAllowed: z.boolean(),
-  restrictedBuiltInModels: z.boolean().nullable(),
-  workflowWebhookAutomationAllowed: z.boolean(),
-  audioLifetimeLimit: z.number().nullable(),
-  audioDailyRateLimit: z.number(),
-  audioDailyDurationSeconds: z.number(),
+const capabilitiesSchema = object({
+  planKey: string(),
+  status: string(),
+  baseConcurrencyLimit: number(),
+  canBuyConcurrency: boolean(),
+  canBuyCredits: boolean(),
+  showUsagePack: boolean(),
+  autoRechargeAllowed: boolean(),
+  restrictedBuiltInModels: boolean().nullable(),
+  workflowWebhookAutomationAllowed: boolean(),
+  audioLifetimeLimit: number().nullable(),
+  audioDailyRateLimit: number(),
+  audioDailyDurationSeconds: number(),
 });
-export const pendingCreditPlanRowSchema = z.object({
+export const pendingCreditPlanRowSchema = object({
   caps: capabilitiesSchema.nullable(),
-  orgExists: z.boolean(),
+  orgExists: boolean(),
 });
 
 /** Match entitlement-first locking, probing/locking org_metadata only on a miss. */
@@ -80,7 +81,7 @@ export function pendingCreditPlanSql(orgId: string) {
 }
 
 export function pendingCreditPlanResult(
-  rows: readonly z.output<typeof pendingCreditPlanRowSchema>[],
+  rows: readonly output<typeof pendingCreditPlanRowSchema>[],
   orgId: string,
 ) {
   const row = rows[0];

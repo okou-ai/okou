@@ -1,5 +1,15 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  url as zUrl,
+  type infer as zInfer,
+} from "zod";
 
 import { env } from "../../lib/env";
 import {
@@ -62,13 +72,13 @@ export function linkWalletRedirectUri(): string {
   return new URL("/connectors/link/callback", env("APP_URL")).toString();
 }
 
-export const linkTokenSchema = z.object({
-  access_token: z.string().min(1),
-  refresh_token: z.string().min(1),
-  expires_in: z.number().int().min(1),
-  scope: z.string(),
+export const linkTokenSchema = object({
+  access_token: string().min(1),
+  refresh_token: string().min(1),
+  expires_in: number().int().min(1),
+  scope: string(),
   authorization_details: walletAuthorizationDetailsSchema.optional(),
-  token_type: z.literal("Bearer"),
+  token_type: literal("Bearer"),
 });
 
 export const LINK_WALLET_OAUTH_SCOPES = [
@@ -78,17 +88,17 @@ export const LINK_WALLET_OAUTH_SCOPES = [
 
 export const LINK_WALLET_SOURCE_ACTIONS = ["read_link_transactions"] as const;
 
-export const linkCredentialsSchema = z.object({
-  accessToken: z.string().min(1),
-  refreshToken: z.string().min(1),
-  expiresAt: z.number().int(),
-  scope: z.string(),
+export const linkCredentialsSchema = object({
+  accessToken: string().min(1),
+  refreshToken: string().min(1),
+  expiresAt: number().int(),
+  scope: string(),
   authorizationDetails: walletAuthorizationDetailsSchema.optional(),
-  readOnly: z.boolean(),
+  readOnly: boolean(),
 });
 
 function isLinkActionUrl(value: string): boolean {
-  const parsed = z.url().safeParse(value);
+  const parsed = zUrl().safeParse(value);
   if (!parsed.success) {
     return false;
   }
@@ -114,68 +124,63 @@ export function linkActionUrl(value: string): string {
   );
 }
 
-const linkPaymentSchema = z
-  .object({
-    outcome: z.string(),
-    amount: z.number().int().safe(),
-    currency: z.string(),
-    code: z.string().nullable().optional(),
-    decline_code: z.string().nullable().optional(),
-    created: z.number().nullable().optional(),
-    refund_details: z
-      .object({
-        amount: z.number().int().safe(),
-        currency: z.string(),
-        state: z.string(),
-        created: z.number(),
-      })
+const linkPaymentSchema = object({
+  outcome: string(),
+  amount: number().int().safe(),
+  currency: string(),
+  code: string().nullable().optional(),
+  decline_code: string().nullable().optional(),
+  created: number().nullable().optional(),
+  refund_details: object({
+    amount: number().int().safe(),
+    currency: string(),
+    state: string(),
+    created: number(),
+  })
+    .nullable()
+    .optional(),
+}).transform((value) => {
+  return {
+    outcome: value.outcome,
+    amount: value.amount,
+    currency: value.currency,
+    code: value.code,
+    declineCode: value.decline_code,
+    created: value.created,
+    refund: value.refund_details,
+  };
+});
+
+// Projection deliberately drops card details, tokens, billing addresses and unknown fields.
+export const linkSpendSchema = object({
+  id: string().regex(/^[A-Za-z0-9_-]{1,256}$/),
+  status: walletSpendStatusSchema.exclude(["creating"]),
+  amount: number().int(),
+  currency: string(),
+  merchant_name: string(),
+  merchant_url: string(),
+  approval_url: string().optional(),
+  payment_status_details: linkPaymentSchema.nullable().optional(),
+  payment_history: array(linkPaymentSchema).optional(),
+  status_details: object({
+    requires_action: object({
+      next_action: object({
+        type: string(),
+        resolution: zEnum([
+          "auto_resume",
+          "create_new_spend_request",
+          "create_new_spend_request_after_completion",
+        ]),
+        action_url: string().nullable().optional(),
+      }),
+    })
       .nullable()
       .optional(),
   })
-  .transform((value) => {
-    return {
-      outcome: value.outcome,
-      amount: value.amount,
-      currency: value.currency,
-      code: value.code,
-      declineCode: value.decline_code,
-      created: value.created,
-      refund: value.refund_details,
-    };
-  });
-
-// Projection deliberately drops card details, tokens, billing addresses and unknown fields.
-export const linkSpendSchema = z.object({
-  id: z.string().regex(/^[A-Za-z0-9_-]{1,256}$/),
-  status: walletSpendStatusSchema.exclude(["creating"]),
-  amount: z.number().int(),
-  currency: z.string(),
-  merchant_name: z.string(),
-  merchant_url: z.string(),
-  approval_url: z.string().optional(),
-  payment_status_details: linkPaymentSchema.nullable().optional(),
-  payment_history: z.array(linkPaymentSchema).optional(),
-  status_details: z
-    .object({
-      requires_action: z
-        .object({
-          next_action: z.object({
-            type: z.string(),
-            resolution: z.enum([
-              "auto_resume",
-              "create_new_spend_request",
-              "create_new_spend_request_after_completion",
-            ]),
-            action_url: z.string().nullable().optional(),
-          }),
-        })
-        .nullable()
-        .optional(),
-    })
     .nullable()
     .optional(),
 });
-export type LinkSpend = z.infer<typeof linkSpendSchema>;
+export type LinkSpend = zInfer<typeof linkSpendSchema>;
 
 interface LinkResponse {
   readonly response: Response;
@@ -501,10 +506,10 @@ export async function linkSpendRequest(
     intentId,
     operation === "spend_create" && body
       ? {
-          amount: z.number().parse(body.amount),
-          currency: z.literal("usd").parse(body.currency),
-          test: z.boolean().parse(body.test),
-          contextLength: z.string().parse(body.context).length,
+          amount: number().parse(body.amount),
+          currency: literal("usd").parse(body.currency),
+          test: boolean().parse(body.test),
+          contextLength: string().parse(body.context).length,
         }
       : undefined,
   );
@@ -516,9 +521,9 @@ export async function linkSpendRequest(
   );
   if (link.response.status === 409 && operation === "spend_create") {
     // Recover only the same provider intent; never silently create another.
-    const duplicate = z
-      .object({ error: z.object({ duplicate_spend_request: linkSpendSchema }) })
-      .safeParse(read.body);
+    const duplicate = object({
+      error: object({ duplicate_spend_request: linkSpendSchema }),
+    }).safeParse(read.body);
     if (duplicate.success) {
       return validateSpend(link, duplicate.data.error.duplicate_spend_request);
     }
@@ -537,48 +542,44 @@ export async function linkSpendRequest(
   return validateSpend(link, sdkResponseValue(link, read, result));
 }
 
-const linkCardSchema = z
-  .object({
-    brand: walletCardSchema.shape.brand,
-    number: walletCardSchema.shape.number,
-    cvc: walletCardSchema.shape.cvc,
-    exp_month: walletCardSchema.shape.expMonth,
-    exp_year: walletCardSchema.shape.expYear,
-    billing_address: z
-      .object({
-        name: z.string(),
-        line1: z.string(),
-        line2: z.string().optional(),
-        city: z.string().optional(),
-        state: z.string().optional(),
-        postal_code: z.string().optional(),
-        country: z.string().regex(/^[A-Z]{2}$/),
-      })
-      .optional(),
-    valid_until: walletCardSchema.shape.validUntil,
-  })
-  .transform((card) => {
-    const address = card.billing_address;
-    return {
-      brand: card.brand,
-      number: card.number,
-      cvc: card.cvc,
-      expMonth: card.exp_month,
-      expYear: card.exp_year,
-      billingAddress: address
-        ? {
-            name: address.name,
-            line1: address.line1,
-            line2: address.line2,
-            city: address.city,
-            state: address.state,
-            postalCode: address.postal_code,
-            country: address.country,
-          }
-        : undefined,
-      validUntil: card.valid_until,
-    };
-  });
+const linkCardSchema = object({
+  brand: walletCardSchema.shape.brand,
+  number: walletCardSchema.shape.number,
+  cvc: walletCardSchema.shape.cvc,
+  exp_month: walletCardSchema.shape.expMonth,
+  exp_year: walletCardSchema.shape.expYear,
+  billing_address: object({
+    name: string(),
+    line1: string(),
+    line2: string().optional(),
+    city: string().optional(),
+    state: string().optional(),
+    postal_code: string().optional(),
+    country: string().regex(/^[A-Z]{2}$/),
+  }).optional(),
+  valid_until: walletCardSchema.shape.validUntil,
+}).transform((card) => {
+  const address = card.billing_address;
+  return {
+    brand: card.brand,
+    number: card.number,
+    cvc: card.cvc,
+    expMonth: card.exp_month,
+    expYear: card.exp_year,
+    billingAddress: address
+      ? {
+          name: address.name,
+          line1: address.line1,
+          line2: address.line2,
+          city: address.city,
+          state: address.state,
+          postalCode: address.postal_code,
+          country: address.country,
+        }
+      : undefined,
+    validUntil: card.valid_until,
+  };
+});
 
 export async function retrieveLinkSpendCredentials(
   token: string,
@@ -602,7 +603,7 @@ export async function retrieveLinkSpendCredentials(
   if (spend.status !== "approved") {
     return { spend, card: undefined };
   }
-  const parsed = z.object({ card: linkCardSchema.optional() }).safeParse(value);
+  const parsed = object({ card: linkCardSchema.optional() }).safeParse(value);
   if (!parsed.success) {
     throw invalidResponse(link, "Link returned invalid payment credentials", {
       stage: "response_schema",
@@ -683,9 +684,9 @@ export async function requestLinkApproval(
     diagnostic,
     signal,
   );
-  const parsed = z
-    .object({ id: z.literal(id), approval_url: z.string() })
-    .safeParse(sdkResponseValue(link, read, result));
+  const parsed = object({ id: literal(id), approval_url: string() }).safeParse(
+    sdkResponseValue(link, read, result),
+  );
   if (!parsed.success) {
     throw invalidResponse(link, "Link returned an invalid approval response", {
       stage: "response_schema",
@@ -744,8 +745,7 @@ export async function readLinkWallet(
       : request.operation === "user_info_read"
         ? linkUserInfoSchema.safeParse(value)
         : request.operation === "payment_methods_read"
-          ? z
-              .array(linkPaymentMethodSchema)
+          ? array(linkPaymentMethodSchema)
               .transform((data) => {
                 return { data };
               })

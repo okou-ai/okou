@@ -1,4 +1,12 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { CANONICAL_WORKING_DIR } from "./runner-primitives";
@@ -16,8 +24,7 @@ export function expandMountPath(mountPath: string | undefined): string {
 
 export const AGENT_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,62}[a-zA-Z0-9]$/;
 
-export const agentNameSchema = z
-  .string()
+export const agentNameSchema = string()
   .min(3, "Agent name must be at least 3 characters")
   .max(64, "Agent name must be 64 characters or less")
   .regex(
@@ -25,58 +32,58 @@ export const agentNameSchema = z
     "Agent name must start and end with letter or number, and contain only letters, numbers, and hyphens",
   );
 
-export const agentVisibilitySchema = z.enum(["public", "private"]);
-export type AgentVisibility = z.infer<typeof agentVisibilitySchema>;
+export const agentVisibilitySchema = zEnum(["public", "private"]);
+export type AgentVisibility = zInfer<typeof agentVisibilitySchema>;
 
 /**
  * Agent response schema
  */
-export const agentResponseSchema = z.object({
-  agentId: z.string(),
-  isDefaultAgent: z.boolean(),
-  ownerId: z.string(),
-  description: z.string().nullable(),
-  displayName: z.string().nullable(),
-  sound: z.string().nullable(),
-  avatarUrl: z.string().nullable(),
+export const agentResponseSchema = object({
+  agentId: string(),
+  isDefaultAgent: boolean(),
+  ownerId: string(),
+  description: string().nullable(),
+  displayName: string().nullable(),
+  sound: string().nullable(),
+  avatarUrl: string().nullable(),
   visibility: agentVisibilitySchema,
 });
 
 /**
  * Create/update agent request schema
  */
-export const agentRequestSchema = z.object({
-  description: z.string().optional(),
-  displayName: z.string().optional(),
-  sound: z.string().optional(),
-  avatarUrl: z.string().optional(),
+export const agentRequestSchema = object({
+  description: string().optional(),
+  displayName: string().optional(),
+  sound: string().optional(),
+  avatarUrl: string().optional(),
   visibility: agentVisibilitySchema.optional(),
 });
 
 /**
  * Partial metadata update request schema (for PATCH)
  */
-export const agentMetadataRequestSchema = z.object({
-  displayName: z.string().optional(),
-  description: z.string().optional(),
-  sound: z.string().optional(),
-  avatarUrl: z.string().nullable().optional(),
+export const agentMetadataRequestSchema = object({
+  displayName: string().optional(),
+  description: string().optional(),
+  sound: string().optional(),
+  avatarUrl: string().nullable().optional(),
   visibility: agentVisibilitySchema.optional(),
 });
 
 /**
  * Agent instructions response schema
  */
-export const agentInstructionsResponseSchema = z.object({
-  content: z.string().nullable(),
-  filename: z.string().nullable(),
+export const agentInstructionsResponseSchema = object({
+  content: string().nullable(),
+  filename: string().nullable(),
 });
 
 /**
  * Agent instructions update request schema
  */
-export const agentInstructionsRequestSchema = z.object({
-  content: z.string().refine((content) => {
+export const agentInstructionsRequestSchema = object({
+  content: string().refine((content) => {
     return !content.includes("\0");
   }, "Instructions must not contain NUL characters"),
 });
@@ -105,7 +112,7 @@ export const agentsMainContract = c.router({
     path: "/api/agents",
     headers: authHeadersSchema,
     responses: {
-      200: z.array(agentResponseSchema),
+      200: array(agentResponseSchema),
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
@@ -121,7 +128,7 @@ export const agentsByIdContract = c.router({
     method: "GET",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     responses: {
       200: agentResponseSchema,
       400: apiErrorSchema,
@@ -135,7 +142,7 @@ export const agentsByIdContract = c.router({
     method: "PUT",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     body: agentRequestSchema,
     responses: {
       200: agentResponseSchema,
@@ -152,7 +159,7 @@ export const agentsByIdContract = c.router({
     method: "PATCH",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     body: agentMetadataRequestSchema,
     responses: {
       200: agentResponseSchema,
@@ -168,7 +175,7 @@ export const agentsByIdContract = c.router({
     method: "DELETE",
     path: "/api/agents/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     body: c.noBody(),
     responses: {
       204: c.noBody(),
@@ -190,7 +197,7 @@ export const agentInstructionsContract = c.router({
     method: "GET",
     path: "/api/agents/:id/instructions",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     responses: {
       200: agentInstructionsResponseSchema,
       400: apiErrorSchema,
@@ -204,7 +211,7 @@ export const agentInstructionsContract = c.router({
     method: "PUT",
     path: "/api/agents/:id/instructions",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     body: agentInstructionsRequestSchema,
     responses: {
       200: agentResponseSchema,
@@ -220,13 +227,13 @@ export const agentInstructionsContract = c.router({
 });
 
 // Export types
-export type AgentResponse = z.infer<typeof agentResponseSchema>;
-export type AgentRequest = z.infer<typeof agentRequestSchema>;
-export type AgentMetadataRequest = z.infer<typeof agentMetadataRequestSchema>;
-export type AgentInstructionsResponse = z.infer<
+export type AgentResponse = zInfer<typeof agentResponseSchema>;
+export type AgentRequest = zInfer<typeof agentRequestSchema>;
+export type AgentMetadataRequest = zInfer<typeof agentMetadataRequestSchema>;
+export type AgentInstructionsResponse = zInfer<
   typeof agentInstructionsResponseSchema
 >;
-export type AgentInstructionsRequest = z.infer<
+export type AgentInstructionsRequest = zInfer<
   typeof agentInstructionsRequestSchema
 >;
 

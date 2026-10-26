@@ -1,4 +1,12 @@
-import * as z from "zod";
+import {
+  literal,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -6,14 +14,14 @@ import { realtimeSubscriptionSchema } from "./realtime";
 
 const c = initContract();
 
-export const builtInGenerationTypeSchema = z.enum([
+export const builtInGenerationTypeSchema = zEnum([
   "image",
   "video",
   "presentation",
   "website",
 ]);
 
-export const builtInGenerationStatusSchema = z.enum([
+export const builtInGenerationStatusSchema = zEnum([
   "queued",
   "running",
   "completed",
@@ -23,43 +31,43 @@ export const builtInGenerationStatusSchema = z.enum([
 export const builtInGenerationRealtimeSubscriptionSchema =
   realtimeSubscriptionSchema;
 
-export const builtInGenerationAcceptedResponseSchema = z.object({
-  generationId: z.string().uuid(),
+export const builtInGenerationAcceptedResponseSchema = object({
+  generationId: string().uuid(),
   type: builtInGenerationTypeSchema,
-  status: z.literal("queued"),
+  status: literal("queued"),
   realtime: builtInGenerationRealtimeSubscriptionSchema,
   // Present only for jobs supporting explicit owner-driven advancement.
   // Legacy jobs continue through their existing worker/webhook and GET flow.
-  clientReconciliation: z.literal(true).optional(),
+  clientReconciliation: literal(true).optional(),
 });
 
-export const builtInGenerationErrorSchema = z.object({
-  message: z.string(),
-  code: z.string(),
+export const builtInGenerationErrorSchema = object({
+  message: string(),
+  code: string(),
 });
 
-export const builtInGenerationResponseSchema = z.object({
-  generationId: z.string().uuid(),
+export const builtInGenerationResponseSchema = object({
+  generationId: string().uuid(),
   type: builtInGenerationTypeSchema,
   status: builtInGenerationStatusSchema,
-  result: z.record(z.string(), z.unknown()).optional(),
+  result: record(string(), zUnknown()).optional(),
   error: builtInGenerationErrorSchema.optional(),
-  createdAt: z.string(),
-  startedAt: z.string().nullable(),
-  completedAt: z.string().nullable(),
+  createdAt: string(),
+  startedAt: string().nullable(),
+  completedAt: string().nullable(),
 });
 
-export type BuiltInGenerationType = z.infer<typeof builtInGenerationTypeSchema>;
-export type BuiltInGenerationStatus = z.infer<
+export type BuiltInGenerationType = zInfer<typeof builtInGenerationTypeSchema>;
+export type BuiltInGenerationStatus = zInfer<
   typeof builtInGenerationStatusSchema
 >;
-export type BuiltInGenerationRealtimeSubscription = z.infer<
+export type BuiltInGenerationRealtimeSubscription = zInfer<
   typeof builtInGenerationRealtimeSubscriptionSchema
 >;
-export type BuiltInGenerationAcceptedResponse = z.infer<
+export type BuiltInGenerationAcceptedResponse = zInfer<
   typeof builtInGenerationAcceptedResponseSchema
 >;
-export type BuiltInGenerationResponse = z.infer<
+export type BuiltInGenerationResponse = zInfer<
   typeof builtInGenerationResponseSchema
 >;
 
@@ -68,8 +76,8 @@ export const builtInGenerationContract = c.router({
     method: "POST",
     path: "/api/built-in-generations/:generationId/reconcile",
     headers: authHeadersSchema,
-    pathParams: z.object({ generationId: z.string().uuid() }),
-    body: z.object({}),
+    pathParams: object({ generationId: string().uuid() }),
+    body: object({}),
     responses: {
       200: builtInGenerationResponseSchema,
       401: apiErrorSchema,
@@ -83,8 +91,8 @@ export const builtInGenerationContract = c.router({
     method: "GET",
     path: "/api/built-in-generations/:generationId",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      generationId: z.string().uuid(),
+    pathParams: object({
+      generationId: string().uuid(),
     }),
     responses: {
       200: builtInGenerationResponseSchema,

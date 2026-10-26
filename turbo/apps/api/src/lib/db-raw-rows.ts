@@ -1,25 +1,21 @@
-import * as z from "zod";
-import type { output, ZodType } from "zod";
+import { date, int, string, type output, type ZodType } from "zod";
 
-export const pgInt8ToSafeIntegerSchema = z
-  .string()
+export const pgInt8ToSafeIntegerSchema = string()
   .regex(/^-?\d+$/)
   .transform(Number)
-  .pipe(z.int());
+  .pipe(int());
 
-export const pgInt8ToBigIntSchema = z
-  .string()
+export const pgInt8ToBigIntSchema = string()
   .regex(/^-?\d+$/)
   .transform((value) => {
     return BigInt(value);
   });
 
-export const pgTimestampWithoutTimezoneToDateSchema = z
-  .string()
+export const pgTimestampWithoutTimezoneToDateSchema = string()
   .transform((value) => {
     return new Date(`${value}+0000`);
   })
-  .pipe(z.date());
+  .pipe(date());
 
 /** Decode query results without passing a transaction out of its owner. */
 export function parseRawRows<TSchema extends ZodType>(

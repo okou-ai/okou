@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -78,15 +78,13 @@ export async function exchangeHubSpotCode(
     await throwOAuthError("HubSpot", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -135,16 +133,14 @@ export async function refreshHubSpotToken(
     await throwOAuthError("HubSpot", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -174,13 +170,11 @@ async function fetchHubSpotUserInfo(
     throw new Error(`HubSpot user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      user_id: z.number(),
-      user: z.string().optional(),
-      hub_domain: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    user_id: number(),
+    user: string().optional(),
+    hub_domain: string().optional(),
+  }).parse(await response.json());
 
   return {
     id: String(data.user_id),

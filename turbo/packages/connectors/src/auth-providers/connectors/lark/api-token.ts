@@ -1,18 +1,18 @@
-import * as z from "zod";
+import { number, object, string, type infer as zInfer } from "zod";
 
 import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 
 const LARK_TENANT_ACCESS_TOKEN_URL =
   "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal";
 
-const larkTenantAccessTokenResponseSchema = z.object({
-  code: z.number(),
-  msg: z.string().optional(),
-  tenant_access_token: z.string().optional(),
-  expire: z.number().optional(),
+const larkTenantAccessTokenResponseSchema = object({
+  code: number(),
+  msg: string().optional(),
+  tenant_access_token: string().optional(),
+  expire: number().optional(),
 });
 
-type LarkTenantAccessTokenResponse = z.infer<
+type LarkTenantAccessTokenResponse = zInfer<
   typeof larkTenantAccessTokenResponseSchema
 >;
 

@@ -5,7 +5,17 @@ import {
   type OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
-import { z } from "zod";
+import {
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { localStorageSignals } from "../external/local-storage.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { jsonParseOr } from "../utils.ts";
@@ -19,7 +29,7 @@ import { jsonParseOr } from "../utils.ts";
 
 export type SourcesFirstFlow = "owner" | "member";
 
-const sourcesFirstStepSchema = z.enum([
+const sourcesFirstStepSchema = zEnum([
   "sources",
   "industry",
   "team",
@@ -29,7 +39,7 @@ const sourcesFirstStepSchema = z.enum([
   "ready",
 ]);
 
-export type SourcesFirstStep = z.infer<typeof sourcesFirstStepSchema>;
+export type SourcesFirstStep = zInfer<typeof sourcesFirstStepSchema>;
 
 export const SOURCES_FIRST_STEP_ROUTES: Readonly<
   Record<SourcesFirstStep, RoutePath>
@@ -46,7 +56,7 @@ export const SOURCES_FIRST_STEP_ROUTES: Readonly<
 export type SubscriptionProvider = OnboardingSubscriptionProvider;
 
 /** The other places a mention works, offered beside Slack on the same step. */
-export type ChatChannelId = "telegram" | "imessage" | "teams";
+export type ChatChannelId = "telegram" | "imessage" | "teams" | "discord";
 
 /**
  * The invitation API result for an address. Request lifecycle belongs to
@@ -100,9 +110,9 @@ interface SourcesFirstDraftIdentity {
   readonly userId: string;
 }
 
-const persistedDraftIdentitySchema = z.object({
-  orgId: z.string().min(1),
-  userId: z.string().min(1),
+const persistedDraftIdentitySchema = object({
+  orgId: string().min(1),
+  userId: string().min(1),
 });
 
 const persistedStepSchema = persistedDraftIdentitySchema.extend({
@@ -110,17 +120,17 @@ const persistedStepSchema = persistedDraftIdentitySchema.extend({
 });
 
 const persistedDraftSchema = persistedDraftIdentitySchema.extend({
-  version: z.literal(2),
+  version: literal(2),
   industry: onboardingIndustrySchema.nullable(),
-  experienced: z.boolean().nullable(),
+  experienced: boolean().nullable(),
   provider: onboardingSubscriptionProviderSchema.nullable(),
-  startingPromptDraft: z.string().max(1000),
-  startingPromptKey: z.string(),
-  recommendationJobId: z.uuid().nullable(),
-  recommendationStartedAt: z.number().finite().nonnegative().nullable(),
+  startingPromptDraft: string().max(1000),
+  startingPromptKey: string(),
+  recommendationJobId: uuid().nullable(),
+  recommendationStartedAt: number().finite().nonnegative().nullable(),
 });
 
-type PersistedSourcesFirstDraft = z.infer<typeof persistedDraftSchema>;
+type PersistedSourcesFirstDraft = zInfer<typeof persistedDraftSchema>;
 
 function savedDraftForIdentity(
   raw: string | null,
@@ -253,11 +263,13 @@ interface SourcesFirstUi {
   readonly inviteEmail: string;
   /** The field was left since it last changed, so its address is final. */
   readonly inviteEmailLeft: boolean;
+  readonly importPromptShown: boolean;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
   inviteEmail: "",
   inviteEmailLeft: false,
+  importPromptShown: false,
 });
 
 export const sourcesFirstUi$ = computed((get) => {

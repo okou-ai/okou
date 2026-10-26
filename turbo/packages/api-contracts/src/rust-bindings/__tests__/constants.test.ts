@@ -73,6 +73,7 @@ import {
   STORAGE_MANIFEST_MAX_FILES,
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../../contracts/storages";
+import { DATA_ROUTER_REQUEST_BODY_MAX_BYTES } from "../../contracts/data-router";
 
 const codexOauthPlaceholders =
   MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"].placeholders!;
@@ -204,6 +205,12 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
+  {
+    rustModulePath: ["data_router"],
+    rustConstName: "DATA_ROUTER_REQUEST_BODY_MAX_BYTES",
+    value: rustU64(DATA_ROUTER_REQUEST_BODY_MAX_BYTES),
+    rustDoc: ["Maximum raw request-body bytes accepted by Data Router."],
+  },
   {
     rustModulePath: ["paid_tools"],
     rustConstName: "ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR",

@@ -1,32 +1,40 @@
-import * as z from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { userMessageDocumentSchema } from "./chat-threads";
 
-const relatedChatSchema = z.object({
-  threadId: z.string().uuid(),
-  title: z.string().nullable(),
-  status: z.enum(["running", "queued", "idle", "unavailable"]),
+const relatedChatSchema = object({
+  threadId: string().uuid(),
+  title: string().nullable(),
+  status: zEnum(["running", "queued", "idle", "unavailable"]),
 });
 const createdChatSchema = relatedChatSchema.extend({
-  id: z.string().uuid(),
-  sourceRunId: z.string().uuid(),
-  createdAt: z.string().datetime(),
+  id: string().uuid(),
+  sourceRunId: string().uuid(),
+  createdAt: string().datetime(),
 });
 const communicationSchema = relatedChatSchema.extend({
-  sentCount: z.number().int().nonnegative(),
-  receivedCount: z.number().int().nonnegative(),
-  lastMessageAt: z.string().datetime(),
+  sentCount: number().int().nonnegative(),
+  receivedCount: number().int().nonnegative(),
+  lastMessageAt: string().datetime(),
 });
-const messageSchema = z.object({
-  id: z.string().uuid(),
-  direction: z.enum(["sent", "received"]),
-  sourceChatThreadId: z.string().uuid(),
-  targetChatThreadId: z.string().uuid(),
-  sourceRunId: z.string().uuid(),
-  targetRunId: z.string().uuid().nullable(),
-  messageEventId: z.string().uuid(),
-  createdAt: z.string().datetime(),
+const messageSchema = object({
+  id: string().uuid(),
+  direction: zEnum(["sent", "received"]),
+  sourceChatThreadId: string().uuid(),
+  targetChatThreadId: string().uuid(),
+  sourceRunId: string().uuid(),
+  targetRunId: string().uuid().nullable(),
+  messageEventId: string().uuid(),
+  createdAt: string().datetime(),
   userMessage: userMessageDocumentSchema.nullable(),
 });
 const errors = {
@@ -42,10 +50,10 @@ export const chatRelationsContract = c.router({
     method: "GET",
     path: "/api/chat-threads/:id/relations/children",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     responses: {
-      200: z.object({
-        items: z.array(createdChatSchema),
+      200: object({
+        items: array(createdChatSchema),
       }),
       ...errors,
     },
@@ -54,10 +62,10 @@ export const chatRelationsContract = c.router({
     method: "GET",
     path: "/api/chat-threads/:id/relations/communications",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     responses: {
-      200: z.object({
-        items: z.array(communicationSchema),
+      200: object({
+        items: array(communicationSchema),
       }),
       ...errors,
     },
@@ -66,16 +74,16 @@ export const chatRelationsContract = c.router({
     method: "GET",
     path: "/api/chat-threads/:id/relations/communications/:peerId/messages",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid(), peerId: z.string().uuid() }),
+    pathParams: object({ id: string().uuid(), peerId: string().uuid() }),
     responses: {
-      200: z.object({
-        items: z.array(messageSchema),
+      200: object({
+        items: array(messageSchema),
       }),
       ...errors,
     },
   },
 });
-export type RelatedChat = z.infer<typeof relatedChatSchema>;
-export type CreatedChatRelation = z.infer<typeof createdChatSchema>;
-export type ChatCommunication = z.infer<typeof communicationSchema>;
-export type ChatRelationMessage = z.infer<typeof messageSchema>;
+export type RelatedChat = zInfer<typeof relatedChatSchema>;
+export type CreatedChatRelation = zInfer<typeof createdChatSchema>;
+export type ChatCommunication = zInfer<typeof communicationSchema>;
+export type ChatRelationMessage = zInfer<typeof messageSchema>;

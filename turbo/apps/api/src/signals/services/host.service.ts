@@ -14,7 +14,7 @@ import {
   type HostedSiteDeploymentsResponse,
   type HostedSitePrepareRequest,
 } from "@okouai/api-contracts/contracts/host";
-import * as z from "zod";
+import { boolean, literal, object, string } from "zod";
 import {
   CURRENT_LINK_LAYOUT,
   hostedSitePointerNamespace,
@@ -164,12 +164,12 @@ export const authorizeHostedSiteDelivery$ = command(
           'hasAccess', ${hostedDeployments.manifest} ? 'access'
         )`.mapWith(
           zodDriverValueDecoder(
-            z.object({
-              deploymentId: z.string().uuid(),
-              siteId: z.string().uuid(),
-              publicSlug: z.string(),
-              access: z.literal("owner-private-v1").nullable(),
-              hasAccess: z.boolean(),
+            object({
+              deploymentId: string().uuid(),
+              siteId: string().uuid(),
+              publicSlug: string(),
+              access: literal("owner-private-v1").nullable(),
+              hasAccess: boolean(),
             }),
           ),
         ),
@@ -556,7 +556,7 @@ function hostedSiteArtifactArgs(
   };
 }
 
-const publishedAssetRowSchema = z.object({ path: z.string() });
+const publishedAssetRowSchema = object({ path: string() });
 
 const createHostedSiteDeployment$ = command(
   async (

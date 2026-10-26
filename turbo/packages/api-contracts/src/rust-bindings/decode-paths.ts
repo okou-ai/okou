@@ -1,4 +1,4 @@
-import { type z } from "zod";
+import type { ZodType } from "zod";
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import {
   runnersCancellationContract,
@@ -10,7 +10,7 @@ import {
 } from "../contracts/runners";
 
 export interface RustDecodePathBinding {
-  readonly schema: z.ZodType;
+  readonly schema: ZodType;
   readonly rustModulePath: readonly string[];
   readonly rustConstName: string;
   readonly rustDoc: readonly string[];

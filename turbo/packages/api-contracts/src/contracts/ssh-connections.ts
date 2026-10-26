@@ -1,4 +1,14 @@
-import * as z from "zod";
+import {
+  array,
+  int,
+  literal,
+  object,
+  string,
+  union,
+  uuid,
+  never as zNever,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -21,64 +31,58 @@ const c = initContract();
 
 export const SSH_HOST_MAX_LENGTH = 253;
 
-const displayNameSchema = z
-  .string()
+const displayNameSchema = string()
   .trim()
   .min(1)
   .max(SSH_DISPLAY_NAME_MAX_LENGTH);
-const hostSchema = z.string().trim().min(1).max(SSH_HOST_MAX_LENGTH);
-const portSchema = z.int().min(1).max(65_535);
-const usernameSchema = z.string().trim().min(1).max(SSH_USERNAME_MAX_LENGTH);
-const accessTransportSchema = z
-  .object({ type: z.literal("cloudflare_access"), configId: z.uuid() })
-  .strict();
-const tailscaleTransportSchema = z
-  .object({ type: z.literal("tailscale"), configId: z.uuid() })
-  .strict();
-const credentialConnectionSchema = z.union([
-  z.object({ type: z.literal("direct") }).strict(),
+const hostSchema = string().trim().min(1).max(SSH_HOST_MAX_LENGTH);
+const portSchema = int().min(1).max(65_535);
+const usernameSchema = string().trim().min(1).max(SSH_USERNAME_MAX_LENGTH);
+const accessTransportSchema = object({
+  type: literal("cloudflare_access"),
+  configId: uuid(),
+}).strict();
+const tailscaleTransportSchema = object({
+  type: literal("tailscale"),
+  configId: uuid(),
+}).strict();
+const credentialConnectionSchema = union([
+  object({ type: literal("direct") }).strict(),
   accessTransportSchema,
   tailscaleTransportSchema,
-  z
-    .object({
-      type: z.literal("tailscale"),
-      create: createTailscaleRequestSchema,
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("cloudflare_access"),
-      create: createCloudflareAccessRequestSchema,
-    })
-    .strict(),
+  object({
+    type: literal("tailscale"),
+    create: createTailscaleRequestSchema,
+  }).strict(),
+  object({
+    type: literal("cloudflare_access"),
+    create: createCloudflareAccessRequestSchema,
+  }).strict(),
 ]);
-const tailscaleSshConnectionSchema = z.union([
-  z.object({ type: z.literal("tailscale_ssh"), configId: z.uuid() }).strict(),
-  z
-    .object({
-      type: z.literal("tailscale_ssh"),
-      create: createTailscaleRequestSchema,
-    })
-    .strict(),
+const tailscaleSshConnectionSchema = union([
+  object({ type: literal("tailscale_ssh"), configId: uuid() }).strict(),
+  object({
+    type: literal("tailscale_ssh"),
+    create: createTailscaleRequestSchema,
+  }).strict(),
 ]);
 // The public API keeps its existing `transport` key for this selection.
-const connectionSelectionSchema = z.union([
+const connectionSelectionSchema = union([
   credentialConnectionSchema,
   tailscaleSshConnectionSchema,
 ]);
 const createConnectionFields = {
-  id: z.uuid(),
+  id: uuid(),
   displayName: displayNameSchema,
   host: hostSchema,
 };
-const createCredentialConnectionSchema = z
-  .object({
-    ...createConnectionFields,
-    port: portSchema.default(22),
-    credential: sshCredentialSelectionSchema,
-    username: z.never().optional(),
-    transport: credentialConnectionSchema.optional(),
-  })
+const createCredentialConnectionSchema = object({
+  ...createConnectionFields,
+  port: portSchema.default(22),
+  credential: sshCredentialSelectionSchema,
+  username: zNever().optional(),
+  transport: credentialConnectionSchema.optional(),
+})
   .strict()
   .refine(
     (body) => {
@@ -86,29 +90,26 @@ const createCredentialConnectionSchema = z
     },
     { message: "Cloudflare Access hosts use port 443" },
   );
-export const createSshConnectionRequestSchema = z.union([
+export const createSshConnectionRequestSchema = union([
   createCredentialConnectionSchema,
-  z
-    .object({
-      ...createConnectionFields,
-      port: z.literal(22).default(22),
-      credential: z.never().optional(),
-      username: usernameSchema,
-      transport: tailscaleSshConnectionSchema,
-    })
-    .strict(),
+  object({
+    ...createConnectionFields,
+    port: literal(22).default(22),
+    credential: zNever().optional(),
+    username: usernameSchema,
+    transport: tailscaleSshConnectionSchema,
+  }).strict(),
 ]);
 
-export const updateSshConnectionRequestSchema = z
-  .object({
-    expectedGeneration: z.int().positive().max(2_147_483_647),
-    displayName: displayNameSchema.optional(),
-    host: hostSchema.optional(),
-    port: portSchema.optional(),
-    credential: sshCredentialSelectionSchema.optional(),
-    username: usernameSchema.optional(),
-    transport: connectionSelectionSchema.optional(),
-  })
+export const updateSshConnectionRequestSchema = object({
+  expectedGeneration: int().positive().max(2_147_483_647),
+  displayName: displayNameSchema.optional(),
+  host: hostSchema.optional(),
+  port: portSchema.optional(),
+  credential: sshCredentialSelectionSchema.optional(),
+  username: usernameSchema.optional(),
+  transport: connectionSelectionSchema.optional(),
+})
   .strict()
   .refine(
     (body) => {
@@ -124,87 +125,78 @@ export const updateSshConnectionRequestSchema = z
     { message: "At least one SSH connection field must be updated" },
   );
 
-export const resetSshConnectionHostKeyRequestSchema = z
-  .object({ expectedGeneration: z.int().positive() })
-  .strict();
+export const resetSshConnectionHostKeyRequestSchema = object({
+  expectedGeneration: int().positive(),
+}).strict();
 
-export const deleteSshConnectionRequestSchema = z
-  .object({
-    expectedGeneration: z.int().positive().max(2_147_483_647),
+export const deleteSshConnectionRequestSchema = object({
+  expectedGeneration: int().positive().max(2_147_483_647),
+}).strict();
+
+export const sshConnectionPathParamsSchema = object({
+  connectionId: uuid(),
+}).strict();
+
+export const sshConnectionMetadataSchema = object({
+  id: uuid(),
+  displayName: string(),
+  host: string(),
+  port: int(),
+  username: string(),
+  credentialId: uuid(),
+  credentialName: string(),
+  generation: int().positive(),
+  learnedHostKey: object({
+    algorithm: string(),
+    fingerprint: string(),
   })
-  .strict();
+    .strict()
+    .nullable(),
+  createdAt: string().datetime(),
+  updatedAt: string().datetime(),
+}).strict();
 
-export const sshConnectionPathParamsSchema = z
-  .object({ connectionId: z.uuid() })
-  .strict();
-
-export const sshConnectionMetadataSchema = z
-  .object({
-    id: z.uuid(),
-    displayName: z.string(),
-    host: z.string(),
-    port: z.int(),
-    username: z.string(),
-    credentialId: z.uuid(),
-    credentialName: z.string(),
-    generation: z.int().positive(),
-    learnedHostKey: z
-      .object({
-        algorithm: z.string(),
-        fingerprint: z.string(),
-      })
-      .strict()
-      .nullable(),
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-  })
-  .strict();
-
-export const sshConnectionResponseSchema = z.union([
+export const sshConnectionResponseSchema = union([
   sshConnectionMetadataSchema
     .omit({ credentialId: true, credentialName: true })
     .extend({
-      transport: z.union([
-        z
-          .object({ type: z.literal("tailscale_ssh"), configId: z.uuid() })
-          .strict(),
-        z
-          .object({
-            type: z.literal("tailscale_ssh"),
-            needsRebind: z.literal(true),
-          })
-          .strict(),
+      transport: union([
+        object({ type: literal("tailscale_ssh"), configId: uuid() }).strict(),
+        object({
+          type: literal("tailscale_ssh"),
+          needsRebind: literal(true),
+        }).strict(),
       ]),
     }),
   sshConnectionMetadataSchema,
   sshConnectionMetadataSchema.extend({ transport: accessTransportSchema }),
   sshConnectionMetadataSchema.extend({
-    transport: z
-      .object({ type: z.literal("tailscale"), configId: z.uuid() })
-      .strict(),
+    transport: object({
+      type: literal("tailscale"),
+      configId: uuid(),
+    }).strict(),
   }),
   sshConnectionMetadataSchema.extend({
-    transport: z
-      .object({ type: z.literal("tailscale"), needsRebind: z.literal(true) })
-      .strict(),
+    transport: object({
+      type: literal("tailscale"),
+      needsRebind: literal(true),
+    }).strict(),
   }),
   sshConnectionMetadataSchema.extend({
-    transport: z
-      .object({
-        type: z.literal("cloudflare_access"),
-        needsRebind: z.literal(true),
-      })
-      .strict(),
+    transport: object({
+      type: literal("cloudflare_access"),
+      needsRebind: literal(true),
+    }).strict(),
   }),
 ]);
 
-export const sshConnectionsListResponseSchema = z
-  .object({ connections: z.array(sshConnectionResponseSchema) })
-  .strict();
+export const sshConnectionsListResponseSchema = object({
+  connections: array(sshConnectionResponseSchema),
+}).strict();
 
-export const sshConnectionsSummaryResponseSchema = z
-  .object({ configuredCount: z.int().nonnegative() })
-  .strict();
+export const sshConnectionsSummaryResponseSchema = object({
+  configuredCount: int().nonnegative(),
+}).strict();
 
 export const sshConnectionsContract = c.router({
   observations: {
@@ -212,9 +204,9 @@ export const sshConnectionsContract = c.router({
     path: "/api/ssh/connections/observations",
     headers: authHeadersSchema,
     responses: {
-      200: z
-        .object({ observations: z.array(sshConnectionObservationSchema) })
-        .strict(),
+      200: object({
+        observations: array(sshConnectionObservationSchema),
+      }).strict(),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -318,15 +310,15 @@ export const sshConnectionsContract = c.router({
   },
 });
 
-export type CreateSshConnectionRequest = z.infer<
+export type CreateSshConnectionRequest = zInfer<
   typeof createSshConnectionRequestSchema
 >;
-export type UpdateSshConnectionRequest = z.infer<
+export type UpdateSshConnectionRequest = zInfer<
   typeof updateSshConnectionRequestSchema
 >;
 // A connection mode selects both network access and SSH authentication.
 export type SshConnectionMode = NonNullable<
   UpdateSshConnectionRequest["transport"]
 >["type"];
-export type SshConnectionResponse = z.infer<typeof sshConnectionResponseSchema>;
+export type SshConnectionResponse = zInfer<typeof sshConnectionResponseSchema>;
 export type SshConnectionsContract = typeof sshConnectionsContract;

@@ -1,42 +1,44 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+} from "zod";
 
-export const officialWorkflowBlueprintKeySchema = z
-  .string()
+export const officialWorkflowBlueprintKeySchema = string()
   .min(2)
   .max(64)
   .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/);
 
-export const officialWorkflowParameterKeySchema = z
-  .string()
+export const officialWorkflowParameterKeySchema = string()
   .min(2)
   .max(64)
   .regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 
-export const officialWorkflowParameterValueSchema = z.union([
-  z.string(),
-  z.number().int().safe(),
-  z.boolean(),
+export const officialWorkflowParameterValueSchema = union([
+  string(),
+  number().int().safe(),
+  boolean(),
 ]);
-export type OfficialWorkflowParameterValue = z.infer<
+export type OfficialWorkflowParameterValue = zInfer<
   typeof officialWorkflowParameterValueSchema
 >;
 
-export const officialWorkflowParameterBindingSchema = z
-  .object({
-    key: officialWorkflowParameterKeySchema,
-    value: officialWorkflowParameterValueSchema,
-  })
-  .strict();
-export type OfficialWorkflowParameterBinding = z.infer<
+export const officialWorkflowParameterBindingSchema = object({
+  key: officialWorkflowParameterKeySchema,
+  value: officialWorkflowParameterValueSchema,
+}).strict();
+export type OfficialWorkflowParameterBinding = zInfer<
   typeof officialWorkflowParameterBindingSchema
 >;
 
-export const officialWorkflowBlueprintBindingsSchema = z
-  .object({
-    blueprintKey: officialWorkflowBlueprintKeySchema,
-    bindings: z.array(officialWorkflowParameterBindingSchema),
-  })
-  .strict();
-export type OfficialWorkflowBlueprintBindings = z.infer<
+export const officialWorkflowBlueprintBindingsSchema = object({
+  blueprintKey: officialWorkflowBlueprintKeySchema,
+  bindings: array(officialWorkflowParameterBindingSchema),
+}).strict();
+export type OfficialWorkflowBlueprintBindings = zInfer<
   typeof officialWorkflowBlueprintBindingsSchema
 >;

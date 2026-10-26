@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { uuid } from "zod";
 import {
   connectorAccountDisplayNameSchema,
   type ConnectorAccountTarget,
@@ -16,7 +16,7 @@ import { connectorDiscoveryItems } from "./discovery";
 import { findConnectorBySelector } from "./connector-selector";
 
 export function parseConnectionId(value: string): string {
-  const parsed = z.uuid().safeParse(value);
+  const parsed = uuid().safeParse(value);
   if (!parsed.success)
     throw new InvalidArgumentError(
       "Use a valid connection UUID returned for this connector.",

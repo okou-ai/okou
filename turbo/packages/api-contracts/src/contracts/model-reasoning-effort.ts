@@ -1,4 +1,10 @@
-import * as z from "zod";
+import {
+  object,
+  record,
+  union,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { runModelIdSchema } from "./model-providers";
 
@@ -21,36 +27,29 @@ const CLAUDE_CODE_EFFORTS = [
   "ultracode",
 ] as const;
 
-export const reasoningEffortSchema = z.union([
-  z.enum(CODEX_REASONING_EFFORTS),
-  z.enum(CLAUDE_CODE_EFFORTS),
+export const reasoningEffortSchema = union([
+  zEnum(CODEX_REASONING_EFFORTS),
+  zEnum(CLAUDE_CODE_EFFORTS),
 ]);
 
-export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
+export type ReasoningEffort = zInfer<typeof reasoningEffortSchema>;
 
-const modelSettingSchema = z
-  .object({
-    effort: reasoningEffortSchema.optional(),
-  })
-  .strict();
+const modelSettingSchema = object({
+  effort: reasoningEffortSchema.optional(),
+}).strict();
 
 // Keys are catalog model IDs. Only the effort vocabulary is checked here; the
 // server accepts an effort when the model's catalog route lists it.
-export const modelSettingsSchema = z.record(
-  runModelIdSchema,
-  modelSettingSchema,
-);
+export const modelSettingsSchema = record(runModelIdSchema, modelSettingSchema);
 
-export type ModelSettings = z.infer<typeof modelSettingsSchema>;
+export type ModelSettings = zInfer<typeof modelSettingsSchema>;
 
-export const modelSettingsPatchSchema = z
-  .object({
-    model: runModelIdSchema,
-    effort: reasoningEffortSchema,
-  })
-  .strict();
+export const modelSettingsPatchSchema = object({
+  model: runModelIdSchema,
+  effort: reasoningEffortSchema,
+}).strict();
 
-export type ModelSettingsPatch = z.infer<typeof modelSettingsPatchSchema>;
+export type ModelSettingsPatch = zInfer<typeof modelSettingsPatchSchema>;
 
 /**
  * Protocol narrowing of a route's catalog efforts for one execution: Pi and

@@ -59,14 +59,20 @@ const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const consume$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(suggestionAccess$, signal);
-  return "status" in owner
-    ? owner
-    : await set(
+  if ("status" in owner) {
+    return owner;
+  }
+  const body = await get(bodyResultOf(suggestionsContract.consume));
+  signal.throwIfAborted();
+  return body.ok
+    ? await set(
         consumeSuggestion$,
         owner,
         get(pathParamsOf(suggestionsContract.consume)).id,
+        body.data.optionId,
         signal,
-      );
+      )
+    : body.response;
 });
 const readAuth = {
   accept: ["session", "agent"],

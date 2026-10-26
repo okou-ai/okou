@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, string, uuid } from "zod";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";
@@ -130,9 +130,9 @@ function parseHostedArtifactKindFromMetadata(
   return parseHostedArtifactKind(metadata.artifactKind);
 }
 
-const publicHostedArtifactMetadataSchema = z.object({
-  siteId: z.uuid(),
-  aliasUrl: z.string(),
+const publicHostedArtifactMetadataSchema = object({
+  siteId: uuid(),
+  aliasUrl: string(),
 });
 
 function publicHostedSiteIds(rows: readonly { readonly metadata: unknown }[]) {

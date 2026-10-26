@@ -8,7 +8,7 @@ import { recordWechatDeliveryPhase } from "./wechat-delivery-timing.service";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
-import * as z from "zod";
+import { object, string, uuid } from "zod";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { settle } from "../utils";
 import {
@@ -218,12 +218,12 @@ const sendWechatReplyChunks$ = command(
   },
 );
 
-const wechatReplyRequestSchema = z.object({
-  content: z.string().optional(),
-  chatEventId: z.uuid(),
-  chatThreadId: z.uuid(),
-  orgId: z.string(),
-  userId: z.string(),
+const wechatReplyRequestSchema = object({
+  content: string().optional(),
+  chatEventId: uuid(),
+  chatThreadId: uuid(),
+  orgId: string(),
+  userId: string(),
   target: wechatDeliveryTargetSchema,
 });
 
@@ -249,7 +249,7 @@ const snapshotWechatReply$ = command(
       .returning({ payload: agentRunCallbacks.payload });
     signal.throwIfAborted();
     return saved
-      ? z.object({ content: z.string() }).parse(saved.payload).content
+      ? object({ content: string() }).parse(saved.payload).content
       : null;
   },
 );

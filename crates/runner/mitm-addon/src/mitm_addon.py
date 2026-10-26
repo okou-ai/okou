@@ -111,6 +111,7 @@ from firewall_auth_cache import (
     invalidate_cached_firewall_headers,
 )
 from firewall_auth_config import auth_config_injects_ordinary_upstream_credentials
+from generated.data_router import DATA_ROUTER_REQUEST_BODY_MAX_BYTES
 from logging_utils import (
     NETWORK_LOG_MAX_SAFE_SIZE,
     add_firewall_metadata,
@@ -900,7 +901,10 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             bounded_classification is None
             or bounded_classification.kind != "firewall_allow"
             or _firewall_allow_auth_base(bounded_classification.firewall_allow)
-            or not _firewall_allow_uses_aws_sigv4(bounded_classification.firewall_allow)
+            or (
+                not _firewall_allow_uses_aws_sigv4(bounded_classification.firewall_allow)
+                and bounded_classification.firewall_allow.name != data_router.OWNER
+            )
         ):
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             return None
@@ -951,6 +955,15 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         return None
 
     _prebind_requestheaders_upstream_destination(flow, classification)
+    if (
+        classification.kind == "firewall_allow"
+        and classification.firewall_allow.name == data_router.OWNER
+    ):
+        _check_data_router_request_body(
+            flow, classification=classification, request_end_stream=request_end_stream
+        )
+        if flow.error is not None:
+            return None
     if isinstance(
         classification,
         request_classification.FirewallAllow | request_classification.FirewallPolicyAllow,
@@ -1194,6 +1207,46 @@ def _authorize_managed_upload(
         aws_sigv4_buffered_fallback=None,
         managed_policy=managed_openrouter.policy_for_sandbox(classification.sandbox_info),
     )
+
+
+def _check_data_router_request_body(
+    flow: http.HTTPFlow,
+    *,
+    classification: request_classification.FirewallAllow,
+    request_end_stream: bool | None,
+) -> None:
+    body_check = _buffered_auth_body_header_check(
+        flow,
+        request_end_stream=request_end_stream,
+        max_body_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
+        method_allows_missing_content_length=True,
+    )
+    if body_check.kind == "ok":
+        return
+
+    error = (
+        "data_router_request_body_too_large"
+        if body_check.kind == "too_large"
+        else "data_router_request_body_length_required"
+    )
+    _start_request_timing(flow)
+    prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
+    flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
+    flow_metadata.set_firewall_decision(flow.metadata, "ALLOW", error=error)
+    log_proxy_entry(
+        flow_metadata.proxy_log_path(flow.metadata),
+        "warn",
+        "Data Router request-body limit rejected",
+        type="firewall",
+        firewall_base=flow.metadata[metadata_keys.FIREWALL_BASE],
+        error=error,
+        framing_error=body_check.reason,
+        observed_size=body_check.observed_size,
+        request_body_limit_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
+    )
+    request_classification.pop_cached_classification(flow)
+    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+    flow.kill()
 
 
 def _admit_buffered_public_destination_request(
@@ -1856,15 +1909,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 terminal_usage.release_tracked_flow(flow)
             elif auth_result is FirewallAuthHandlingResult.CONTINUE_UPSTREAM:
                 if allow.name == data_router.OWNER:
-                    await data_router.register_request(flow)
-                    if not _revalidate_current_firewall_authorization_for_request(
-                        flow,
-                        allow,
-                        expected_run_id=expected_run_id,
-                        expected_request=expected_request,
-                    ):
-                        terminal_usage.release_tracked_flow(flow)
-                        return
+                    data_router.prepare_request(flow)
                 await _prepare_codex_catalog_request_with_upstream_revalidation(
                     flow,
                     allow,
@@ -2158,6 +2203,15 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
     firewall_action = flow_metadata.firewall_action(flow.metadata)
 
     connector_diagnostics.maybe_replace_response(flow, original_url=original_url)
+    if flow_metadata.firewall_name(flow.metadata) == data_router.OWNER:
+        return _finish_response_after_terminal_work(
+            flow,
+            data_router.register_response(flow),
+            run_id=run_id,
+            latency_ms=latency_ms,
+            original_url=original_url,
+            firewall_action=firewall_action,
+        )
     validation = codex_model_catalog_cache.finalize_response(flow)
     if validation is not None:
         return _finish_response_after_terminal_work(
@@ -2326,6 +2380,9 @@ def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:
     latency_ms = elapsed_ms(start_time)
     connector_diagnostics.handle_error(flow)
 
+    if flow_metadata.firewall_name(flow.metadata) == data_router.OWNER:
+        return _finish_data_router_error(flow, latency_ms=latency_ms)
+
     # Complete captured model evidence remains observable on errors. Keep the
     # pre-inspection network timing and connector interruption policy intact.
     response_streaming.start_buffered_response_inspection(flow, interrupted=True)
@@ -2333,6 +2390,13 @@ def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:
         return _finish_error_after_inspection(flow, latency_ms=latency_ms)
     _finish_error_handling(flow, latency_ms=latency_ms)
     return None
+
+
+async def _finish_data_router_error(flow: http.HTTPFlow, *, latency_ms: int) -> None:
+    try:
+        await data_router.register_response(flow)
+    finally:
+        _finish_error_handling(flow, latency_ms=latency_ms)
 
 
 async def _finish_error_after_inspection(flow: http.HTTPFlow, *, latency_ms: int) -> None:

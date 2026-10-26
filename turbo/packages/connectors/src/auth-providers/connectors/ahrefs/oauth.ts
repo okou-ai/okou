@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -80,17 +80,15 @@ export async function exchangeAhrefsCode(
     await throwOAuthError("Ahrefs", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      token_type: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    token_type: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -139,16 +137,14 @@ export async function refreshAhrefsToken(
     await throwOAuthError("Ahrefs", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -186,16 +182,13 @@ async function fetchAhrefsUserInfo(
     throw new Error(`Ahrefs user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      subscription: z
-        .object({
-          usage_type: z.string().optional(),
-        })
-        .optional(),
-      rows_limit: z.number().optional(),
-      rows_left: z.number().optional(),
-    })
+  const data = object({
+    subscription: object({
+      usage_type: string().optional(),
+    }).optional(),
+    rows_limit: number().optional(),
+    rows_left: number().optional(),
+  })
     .passthrough()
     .parse(await response.json());
 

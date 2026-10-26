@@ -1,5 +1,69 @@
 # Changelog
 
+## [8.791.3](https://github.com/okou-ai/okou/compare/core-v8.791.2...core-v8.791.3) (2026-10-26)
+
+
+### Refactoring
+
+* remove built-in document templates feature switch ([#43158](https://github.com/okou-ai/okou/issues/43158)) ([af5a4ce](https://github.com/okou-ai/okou/commit/af5a4ce2a1a33fb1d706ec262617eeda0316642a))
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.2
+
+## [8.791.2](https://github.com/okou-ai/okou/compare/core-v8.791.1...core-v8.791.2) (2026-10-26)
+
+
+### Refactoring
+
+* remove chat resource panel feature switch ([#43157](https://github.com/okou-ai/okou/issues/43157)) ([4b47789](https://github.com/okou-ai/okou/commit/4b477894060640e8ea0a5ef50a23a56f8f83fe2a))
+* remove custom templates feature switch ([#43162](https://github.com/okou-ai/okou/issues/43162)) ([6909a01](https://github.com/okou-ai/okou/commit/6909a011d4b2d60d5afc3fe6f5f0698d269aad28))
+* remove google docs and sheets conversion switch ([#43154](https://github.com/okou-ai/okou/issues/43154)) ([be0a3ca](https://github.com/okou-ai/okou/commit/be0a3ca522cd5edd2748912bcbecf4c07d76ff38))
+
+## [8.791.1](https://github.com/okou-ai/okou/compare/core-v8.791.0...core-v8.791.1) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.1
+
+## [8.791.0](https://github.com/okou-ai/okou/compare/core-v8.790.3...core-v8.791.0) (2026-10-26)
+
+
+### Features
+
+* **slack:** enable workspace identity by default ([#43130](https://github.com/okou-ai/okou/issues/43130)) ([8973aac](https://github.com/okou-ai/okou/commit/8973aacb5a62e2a072b9dcd7669135813960110d))
+
+
+### Refactoring
+
+* decouple suggestions from proactive agent ([#43143](https://github.com/okou-ai/okou/issues/43143)) ([dc2aa55](https://github.com/okou-ai/okou/commit/dc2aa5555eb6930828b7dd4ddf47d8e3b8379da2))
+
+## [8.790.3](https://github.com/okou-ai/okou/compare/core-v8.790.2...core-v8.790.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* download hosted sites in place and enable staff rollout ([#43111](https://github.com/okou-ai/okou/issues/43111)) ([ef21e30](https://github.com/okou-ai/okou/commit/ef21e303274787f2cfff446e747505b5849e9b18))
+
+
+### Refactoring
+
+* **data:** drop retired managed data storage ([#42942](https://github.com/okou-ai/okou/issues/42942)) ([c9b25eb](https://github.com/okou-ai/okou/commit/c9b25eb26d18dab6cb01c60453fa4729fdd50247))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+
 ## [8.790.2](https://github.com/okou-ai/okou/compare/core-v8.790.1...core-v8.790.2) (2026-10-26)
 
 

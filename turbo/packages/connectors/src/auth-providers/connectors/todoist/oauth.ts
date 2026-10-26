@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -69,13 +69,11 @@ export async function exchangeTodoistCode(
     await throwOAuthError("Todoist", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      token_type: z.string().optional(),
-      error: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    token_type: string().optional(),
+    error: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(`Todoist OAuth error: ${data.error}`);
@@ -114,13 +112,11 @@ async function fetchTodoistUserInfo(accessToken: string): Promise<{
     );
   }
 
-  const data = z
-    .object({
-      id: z.string().optional(),
-      full_name: z.string().nullable().optional(),
-      email: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: string().optional(),
+    full_name: string().nullable().optional(),
+    email: string().nullable().optional(),
+  }).parse(await response.json());
 
   return {
     id: requireConnectorGrantUserId(data.id, "Todoist"),

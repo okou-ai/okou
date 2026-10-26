@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -122,16 +122,14 @@ export async function refreshXToken(
     await throwOAuthError("X", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -183,16 +181,14 @@ export async function exchangeXCode(
     await throwOAuthError("X", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -227,17 +223,13 @@ async function fetchXUserInfo(accessToken: string): Promise<XUserInfo> {
     throw new Error(`X user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      data: z
-        .object({
-          id: z.string(),
-          username: z.string().nullable().optional(),
-          name: z.string().nullable().optional(),
-        })
-        .passthrough(),
-    })
-    .parse(await response.json());
+  const data = object({
+    data: object({
+      id: string(),
+      username: string().nullable().optional(),
+      name: string().nullable().optional(),
+    }).passthrough(),
+  }).parse(await response.json());
 
   return {
     id: data.data.id,

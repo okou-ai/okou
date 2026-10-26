@@ -1,13 +1,13 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
-import * as z from "zod";
+import { object, string } from "zod";
 import { server } from "../../../../mocks/server";
 
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
-const submissionSchema = z.object({
-  metadata: z.object({ generation_id: z.string().min(1) }),
+const submissionSchema = object({
+  metadata: object({ generation_id: string().min(1) }),
 });
 
 export interface ImageResponseSubmission {

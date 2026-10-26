@@ -55,7 +55,7 @@ import {
   type SQL,
   type WithSubquery,
 } from "drizzle-orm";
-import * as z from "zod";
+import { array, object, string, uuid } from "zod";
 
 import {
   pgIntegerDecoder,
@@ -111,18 +111,16 @@ import {
 
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
-const oauthScopesSchema = z.array(z.string());
+const oauthScopesSchema = array(string());
 // The cursor carries created_at at full microsecond precision. Accounts
 // created concurrently commonly share a millisecond, so a JavaScript Date
 // boundary would skip rows between the truncated and the real timestamp.
-const cursorSchema = z
-  .object({
-    createdAt: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z?$/u),
-    id: z.uuid(),
-  })
-  .strict();
+const cursorSchema = object({
+  createdAt: string().regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z?$/u,
+  ),
+  id: uuid(),
+}).strict();
 
 interface ConnectorAccountCursor {
   readonly createdAt: string;

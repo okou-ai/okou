@@ -1,4 +1,15 @@
-import * as z from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  object,
+  record,
+  string,
+  url,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import {
   connectorAuthMethodIdSchema,
@@ -44,12 +55,12 @@ export const builtinConnectorOauthStartContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/oauth/start",
     headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    body: z.object({
+    pathParams: object({ connectorSlug: connectorSlugSchema }),
+    body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: z.uuid().optional(),
-      authorizeAgent: z.literal(true).optional(),
-      callbackTarget: z.literal("app").optional(),
+      agentId: uuid().optional(),
+      authorizeAgent: literal(true).optional(),
+      callbackTarget: literal("app").optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -65,18 +76,18 @@ export const builtinConnectorOauthStartContract = c.router({
   },
 });
 
-export const builtinConnectorAutomaticResponseSchema = z.discriminatedUnion(
+export const builtinConnectorAutomaticResponseSchema = discriminatedUnion(
   "result",
   [
-    z.object({
-      result: z.literal("connected"),
-      connectionId: z.uuid(),
+    object({
+      result: literal("connected"),
+      connectionId: uuid(),
     }),
-    z.object({
-      result: z.literal("authorization"),
-      authorizationUrl: z.url(),
-      oauthAttemptId: z.uuid(),
-      connectionId: z.uuid().optional(),
+    object({
+      result: literal("authorization"),
+      authorizationUrl: url(),
+      oauthAttemptId: uuid(),
+      connectionId: uuid().optional(),
     }),
   ],
 );
@@ -86,11 +97,11 @@ export const builtinConnectorAutomaticContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/automatic/start",
     headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    body: z.object({
+    pathParams: object({ connectorSlug: connectorSlugSchema }),
+    body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: z.uuid().optional(),
-      authorizeAgent: z.literal(true).optional(),
+      agentId: uuid().optional(),
+      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -108,13 +119,13 @@ export const builtinConnectorAutomaticContract = c.router({
   callback: {
     method: "GET",
     path: "/api/connectors/automatic/callback",
-    query: z.object({
-      state: z.string().optional(),
-      code: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-      iss: z.string().optional(),
-      responseMode: z.literal("json").optional(),
+    query: object({
+      state: string().optional(),
+      code: string().optional(),
+      error: string().optional(),
+      error_description: string().optional(),
+      iss: string().optional(),
+      responseMode: literal("json").optional(),
     }),
     responses: {
       200: connectorOauthCallbackResultSchema,
@@ -129,11 +140,11 @@ export const builtinConnectorOpenIdStartContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/openid/start",
     headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    body: z.object({
+    pathParams: object({ connectorSlug: connectorSlugSchema }),
+    body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: z.uuid().optional(),
-      authorizeAgent: z.literal(true).optional(),
+      agentId: uuid().optional(),
+      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -154,13 +165,13 @@ export const builtinConnectorManualGrantContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/manual-grant",
     headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    body: z.object({
+    pathParams: object({ connectorSlug: connectorSlugSchema }),
+    body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: z.uuid().optional(),
-      authorizeAgent: z.literal(true).optional(),
+      agentId: uuid().optional(),
+      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
-      values: z.record(z.string(), z.string()),
+      values: record(string(), string()),
     }),
     responses: {
       200: connectorCompletedOperationResponseSchema,
@@ -180,11 +191,11 @@ export const builtinConnectorNoAuthGrantContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/no-auth",
     headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    body: z.object({
+    pathParams: object({ connectorSlug: connectorSlugSchema }),
+    body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: z.uuid().optional(),
-      authorizeAgent: z.literal(true).optional(),
+      agentId: uuid().optional(),
+      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -205,13 +216,13 @@ export const builtinConnectorOauthDeviceAuthSessionContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/oauth/device/sessions",
     headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    body: z.object({
+    pathParams: object({ connectorSlug: connectorSlugSchema }),
+    body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: z.uuid().optional(),
-      authorizeAgent: z.literal(true).optional(),
+      agentId: uuid().optional(),
+      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
-      options: z.record(z.string(), z.string()).optional(),
+      options: record(string(), string()).optional(),
     }),
     responses: {
       200: builtinConnectorOauthDeviceAuthSessionStartResponseSchema,
@@ -228,9 +239,9 @@ export const builtinConnectorOauthDeviceAuthSessionContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/oauth/device/sessions/:sessionId/poll",
     headers: authHeadersSchema,
-    pathParams: z.object({
+    pathParams: object({
       connectorSlug: connectorSlugSchema,
-      sessionId: z.uuid(),
+      sessionId: uuid(),
     }),
     body: builtinConnectorOauthDeviceAuthSessionPollRequestSchema,
     responses: {
@@ -250,11 +261,11 @@ export const builtinConnectorExternalCodeSessionContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/external-code/sessions",
     headers: authHeadersSchema,
-    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
-    body: z.object({
+    pathParams: object({ connectorSlug: connectorSlugSchema }),
+    body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: z.uuid().optional(),
-      authorizeAgent: z.literal(true).optional(),
+      agentId: uuid().optional(),
+      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -272,9 +283,9 @@ export const builtinConnectorExternalCodeSessionContract = c.router({
     method: "POST",
     path: "/api/connectors/:connectorSlug/external-code/sessions/:sessionId/complete",
     headers: authHeadersSchema,
-    pathParams: z.object({
+    pathParams: object({
       connectorSlug: connectorSlugSchema,
-      sessionId: z.uuid(),
+      sessionId: uuid(),
     }),
     body: builtinConnectorExternalCodeSessionCompleteRequestSchema,
     responses: {
@@ -290,21 +301,21 @@ export const builtinConnectorExternalCodeSessionContract = c.router({
   },
 });
 
-const builtinConnectorSearchItemSchema = z.object({
+const builtinConnectorSearchItemSchema = object({
   slug: connectorSlugSchema,
-  label: z.string(),
-  description: z.string(),
-  authMethods: z.array(connectorAuthMethodIdSchema),
+  label: string(),
+  description: string(),
+  authMethods: array(connectorAuthMethodIdSchema),
 });
 
-const builtinConnectorSearchResponseSchema = z.object({
-  connectors: z.array(builtinConnectorSearchItemSchema),
+const builtinConnectorSearchResponseSchema = object({
+  connectors: array(builtinConnectorSearchItemSchema),
 });
 
-export type BuiltinConnectorSearchItem = z.infer<
+export type BuiltinConnectorSearchItem = zInfer<
   typeof builtinConnectorSearchItemSchema
 >;
-export type BuiltinConnectorSearchResponse = z.infer<
+export type BuiltinConnectorSearchResponse = zInfer<
   typeof builtinConnectorSearchResponseSchema
 >;
 
@@ -317,7 +328,7 @@ export const builtinConnectorsSearchContract = c.router({
     method: "GET",
     path: "/api/connectors/search",
     headers: authHeadersSchema,
-    query: z.object({ keyword: z.string().optional() }),
+    query: object({ keyword: string().optional() }),
     responses: {
       200: builtinConnectorSearchResponseSchema,
       401: apiErrorSchema,

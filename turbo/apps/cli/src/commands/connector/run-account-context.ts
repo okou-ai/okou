@@ -8,7 +8,15 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import { z } from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  object,
+  uuid,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import {
   inspectConnectorAccounts,
@@ -25,33 +33,25 @@ import { connectorInspectionType } from "./inspection";
 
 export const RUN_CONNECTOR_ACCOUNT_CONTEXT_MAX_BYTES = 1024 * 1024;
 
-const runConnectorAccountTargetSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("builtin"),
-      connectorSlug: connectorSlugSchema,
-      connectionId: z.uuid().nullable(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("custom"),
-      customConnectorId: z.uuid(),
-      connectionId: z.uuid().nullable(),
-    })
-    .strict(),
+const runConnectorAccountTargetSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("builtin"),
+    connectorSlug: connectorSlugSchema,
+    connectionId: uuid().nullable(),
+  }).strict(),
+  object({
+    kind: literal("custom"),
+    customConnectorId: uuid(),
+    connectionId: uuid().nullable(),
+  }).strict(),
 ]);
 
-const runConnectorAccountContextSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    targets: z.array(runConnectorAccountTargetSchema),
-  })
-  .strict();
+const runConnectorAccountContextSchema = object({
+  schemaVersion: literal(1),
+  targets: array(runConnectorAccountTargetSchema),
+}).strict();
 
-type RunConnectorAccountTarget = z.infer<
-  typeof runConnectorAccountTargetSchema
->;
+type RunConnectorAccountTarget = zInfer<typeof runConnectorAccountTargetSchema>;
 
 type RunConnectorAccountContextUnavailableReason =
   | "legacy-or-missing"
@@ -189,8 +189,7 @@ async function readProjection(): Promise<ProjectionReadResult> {
   } catch {
     return { state: "unavailable", reason: "malformed" };
   }
-  const version = z
-    .object({ schemaVersion: z.unknown() })
+  const version = object({ schemaVersion: zUnknown() })
     .passthrough()
     .safeParse(raw);
   if (version.success && version.data.schemaVersion !== 1) {

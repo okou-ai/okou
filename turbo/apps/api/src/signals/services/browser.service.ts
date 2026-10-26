@@ -41,7 +41,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import * as z from "zod";
+import { array, boolean, object, string, ZodError } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   pgBooleanDecoder,
@@ -116,7 +116,7 @@ const TERMINAL_RUN_STATUSES = [
   "cancelled",
 ] as const;
 const L = logger("Browser");
-const browserTabSnapshotSchema = z.array(z.string().max(8192)).max(50);
+const browserTabSnapshotSchema = array(string().max(8192)).max(50);
 
 const BROWSER_SESSION_SELECTION = {
   id: browserSessions.id,
@@ -261,7 +261,7 @@ function providerFailure(error: unknown): BrowserServiceError {
   if (error instanceof BrowserUseProviderError) {
     return serviceError(error.status, error.code, error.message);
   }
-  if (error instanceof z.ZodError) {
+  if (error instanceof ZodError) {
     const validationIssueCount = error.issues.length;
     L.warn("Managed browser provider returned an invalid response", {
       validationIssueCount,
@@ -717,7 +717,7 @@ const commitBrowserStop$ = command(
       )
       .getSQL();
     const rows = parseRawRows(
-      z.object({ stopped: z.boolean() }),
+      object({ stopped: boolean() }),
       await db.execute(sql`WITH stopped_instance AS (${stoppedInstance}),
         suspended_session AS (${suspendedSession})
         SELECT ${exists(sql`(SELECT 1 FROM stopped_instance)`)} AS stopped`),

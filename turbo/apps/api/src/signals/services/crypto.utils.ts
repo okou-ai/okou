@@ -1,40 +1,47 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import * as z from "zod";
+import {
+  literal,
+  object,
+  record,
+  string,
+  union,
+  type infer as zInfer,
+} from "zod";
 
 import { env } from "../../lib/env";
 import { getSecretKmsClient } from "../../lib/secret-kms-client";
 
-const secretsMapSchema = z.record(z.string(), z.string());
+const secretsMapSchema = record(string(), string());
 const STORED_SECRET_ENVELOPE_PREFIX = "vm0secret:v1:";
 
-const directKmsCiphertextSchema = z.object({
-  keyId: z.string().min(1),
-  ciphertext: z.string().min(1),
+const directKmsCiphertextSchema = object({
+  keyId: string().min(1),
+  ciphertext: string().min(1),
 });
 
-const envelopeKmsCiphertextSchema = z.object({
-  keyId: z.string().min(1),
-  encryptedDataKey: z.string().min(1),
-  iv: z.string().min(1),
-  authTag: z.string().min(1),
-  ciphertext: z.string(),
+const envelopeKmsCiphertextSchema = object({
+  keyId: string().min(1),
+  encryptedDataKey: string().min(1),
+  iv: string().min(1),
+  authTag: string().min(1),
+  ciphertext: string(),
 });
 
-const kmsCiphertextSchema = z.union([
+const kmsCiphertextSchema = union([
   envelopeKmsCiphertextSchema,
   directKmsCiphertextSchema,
 ]);
 
-const storedSecretEnvelopeSchema = z.object({
-  v: z.literal(1),
-  kind: z.literal("stored-secret"),
+const storedSecretEnvelopeSchema = object({
+  v: literal(1),
+  kind: literal("stored-secret"),
   kms: kmsCiphertextSchema,
 });
 
-type KmsCiphertext = z.infer<typeof kmsCiphertextSchema>;
-type StoredSecretEnvelope = z.infer<typeof storedSecretEnvelopeSchema>;
+type KmsCiphertext = zInfer<typeof kmsCiphertextSchema>;
+type StoredSecretEnvelope = zInfer<typeof storedSecretEnvelopeSchema>;
 
 const KMS_ENCRYPTION_CONTEXT = {
   purpose: "vm0-stored-secret",
@@ -90,7 +97,7 @@ function encryptSecretValueWithDataKey(
 }
 
 function decryptSecretValueWithDataKey(
-  ciphertext: z.infer<typeof envelopeKmsCiphertextSchema>,
+  ciphertext: zInfer<typeof envelopeKmsCiphertextSchema>,
   key: Buffer,
 ): string {
   const decipher = createDecipheriv(

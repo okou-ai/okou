@@ -2,7 +2,7 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq, gt, lte, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { boolean, coerce, object } from "zod";
 
 export class OrgCreditExpirationRequired extends Error {
   constructor(readonly orgId: string) {
@@ -58,10 +58,10 @@ export interface OrgCreditExpirationOutcome {
   readonly cleared: number;
 }
 
-export const orgCreditExpirationOutcomeRow = z.object({
-  wallet: z.boolean(),
-  expected: z.coerce.number().int(),
-  cleared: z.coerce.number().int(),
+export const orgCreditExpirationOutcomeRow = object({
+  wallet: boolean(),
+  expected: coerce.number().int(),
+  cleared: coerce.number().int(),
 });
 
 export function orgCreditExpirationOutcome(

@@ -55,7 +55,16 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
-import * as z from "zod";
+import {
+  array,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -431,9 +440,9 @@ interface AutomaticMcpOAuthProviderRecorder {
   readonly tokenAuthorizationHeaders: readonly (string | null)[];
 }
 
-const automaticDcrRequestSchema = z.object({
-  redirect_uris: z.array(z.string()).min(1),
-  scope: z.string().optional(),
+const automaticDcrRequestSchema = object({
+  redirect_uris: array(string()).min(1),
+  scope: string().optional(),
 });
 
 async function automaticOAuthIdToken(
@@ -598,12 +607,11 @@ export function mockAutomaticMcpOAuthProvider(
         return new HttpResponse(null, { status: 403 });
       }
       if (options.authentication === "none") {
-        const body = z
-          .object({
-            jsonrpc: z.literal("2.0"),
-            id: z.union([z.string(), z.number()]).optional(),
-            method: z.string(),
-          })
+        const body = object({
+          jsonrpc: literal("2.0"),
+          id: union([string(), number()]).optional(),
+          method: string(),
+        })
           .passthrough()
           .parse(await request.json());
         if (body.method !== "initialize" || body.id === undefined) {
@@ -1704,9 +1712,9 @@ export function mockSlockOAuthProvider(
       });
     }),
     http.post(SLOCK_TOKEN_URL, async ({ request }) => {
-      const { deviceCode } = z
-        .object({ deviceCode: z.string() })
-        .parse(await request.json());
+      const { deviceCode } = object({ deviceCode: string() }).parse(
+        await request.json(),
+      );
       if (deviceCode === "userinfo-error") {
         return HttpResponse.json({
           accessToken: "slock-access-userinfo-error",
@@ -1790,16 +1798,16 @@ export function mockStripeCliDashboardAuth(): StripeCliDashboardAuthMock {
 const AWS_SIGNIN_TOKEN_URL = "https://us-east-1.signin.aws.amazon.com/v1/token";
 const AWS_STS_URL = "https://sts.us-east-1.amazonaws.com/";
 
-const awsTokenRequestSchema = z.object({
-  clientId: z.literal("arn:aws:signin:::devtools/cross-device"),
-  grantType: z.enum(["authorization_code", "refresh_token"]),
-  code: z.string().optional(),
-  codeVerifier: z.string().optional(),
-  redirectUri: z.string().optional(),
-  refreshToken: z.string().optional(),
+const awsTokenRequestSchema = object({
+  clientId: literal("arn:aws:signin:::devtools/cross-device"),
+  grantType: zEnum(["authorization_code", "refresh_token"]),
+  code: string().optional(),
+  codeVerifier: string().optional(),
+  redirectUri: string().optional(),
+  refreshToken: string().optional(),
 });
 
-type AwsTokenRequest = z.infer<typeof awsTokenRequestSchema>;
+type AwsTokenRequest = zInfer<typeof awsTokenRequestSchema>;
 
 interface AwsExternalCodeProviderRecorder {
   readonly tokenRequests: AwsTokenRequest[];

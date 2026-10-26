@@ -17,7 +17,15 @@ import {
   type ExecutionFirewalls,
   type NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
-import * as z from "zod";
+import {
+  array,
+  literal,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import type { PiModelConfigObservation } from "../../lib/pi-model-config-observation";
 
 type UnknownRecord = Record<string, unknown>;
@@ -59,35 +67,35 @@ export interface RunContextFeatureFlagEntry {
   readonly enabled: boolean;
 }
 
-const runContextAxiomAuthEntrySchema = z.object({
-  name: z.string(),
-  value: z.string(),
+const runContextAxiomAuthEntrySchema = object({
+  name: string(),
+  value: string(),
 });
 
-const runContextAxiomFirewallAuthSchema = z.object({
-  headerEntries: z.array(runContextAxiomAuthEntrySchema).optional(),
-  base: z.string().min(1).optional(),
-  queryEntries: z.array(runContextAxiomAuthEntrySchema).optional(),
+const runContextAxiomFirewallAuthSchema = object({
+  headerEntries: array(runContextAxiomAuthEntrySchema).optional(),
+  base: string().min(1).optional(),
+  queryEntries: array(runContextAxiomAuthEntrySchema).optional(),
   awsSigv4: firewallAwsSigv4AuthSchema.optional(),
 });
 
-const runContextAxiomInlineFirewallSchema = z.object({
-  kind: z.literal("inline"),
-  name: z.string().min(1),
-  customConnectorId: z.uuid().optional(),
-  sourceId: z.uuid().optional(),
-  apis: z.array(
-    z.object({
-      id: z.string().min(1).optional(),
-      base: z.string(),
+const runContextAxiomInlineFirewallSchema = object({
+  kind: literal("inline"),
+  name: string().min(1),
+  customConnectorId: uuid().optional(),
+  sourceId: uuid().optional(),
+  apis: array(
+    object({
+      id: string().min(1).optional(),
+      base: string(),
       hostPolicy: firewallBaseHostPolicySchema.optional(),
       auth: runContextAxiomFirewallAuthSchema,
-      permissions: z.array(firewallPermissionSchema).optional(),
+      permissions: array(firewallPermissionSchema).optional(),
     }),
   ),
 });
 
-type RunContextAxiomInlineFirewall = z.infer<
+type RunContextAxiomInlineFirewall = zInfer<
   typeof runContextAxiomInlineFirewallSchema
 >;
 type RunContextAxiomFirewall =
@@ -298,8 +306,7 @@ function sanitizedFirewallFromUnknown(
 }
 
 function authEntriesToRecord(
-  entries:
-    readonly z.infer<typeof runContextAxiomAuthEntrySchema>[] | undefined,
+  entries: readonly zInfer<typeof runContextAxiomAuthEntrySchema>[] | undefined,
 ): Record<string, string> | undefined {
   return entries === undefined
     ? undefined
@@ -493,7 +500,7 @@ export function featureFlagsRecordToEntries(
 
 function authRecordToEntries(
   values: Record<string, string> | undefined,
-): z.infer<typeof runContextAxiomAuthEntrySchema>[] | undefined {
+): zInfer<typeof runContextAxiomAuthEntrySchema>[] | undefined {
   return values === undefined
     ? undefined
     : Object.entries(values).map(([name, value]) => {
@@ -568,7 +575,7 @@ export function normalizeRunContextSnapshot(
             volumes: volumesFromUnknown(snapshot.volumes),
             artifact: artifactFromUnknown(snapshot.artifact),
           })
-        : z.array(runContextStorageMountSchema).parse(snapshot.storageMounts),
+        : array(runContextStorageMountSchema).parse(snapshot.storageMounts),
     featureFlags: featureFlagsFromEntries(snapshot.featureFlagEntries),
   };
 }

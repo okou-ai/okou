@@ -2,7 +2,7 @@ import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, asc, eq, or, sql, type SQLWrapper } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { enum as zEnum } from "zod";
 import {
   pgBooleanDecoder,
   pgTextDecoder,
@@ -14,7 +14,7 @@ import {
   type NetworkProvider,
 } from "./network-config-model";
 
-const protocolDecoder = zodEnumDriverValueDecoder(z.enum(["ssh", "vnc"]));
+const protocolDecoder = zodEnumDriverValueDecoder(zEnum(["ssh", "vnc"]));
 export function networkReferenceColumns(provider: NetworkProvider) {
   return provider === "tailscale"
     ? {

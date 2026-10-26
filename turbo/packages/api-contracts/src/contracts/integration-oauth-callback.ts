@@ -1,18 +1,18 @@
-import * as z from "zod";
+import { literal, object, string, union, url } from "zod";
 
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
-export const integrationOAuthCallbackQuerySchema = z.object({
-  responseMode: z.literal("json").optional(),
-  code: z.string().optional(),
-  error: z.string().optional(),
-  state: z.string().optional(),
+export const integrationOAuthCallbackQuerySchema = object({
+  responseMode: literal("json").optional(),
+  code: string().optional(),
+  error: string().optional(),
+  state: string().optional(),
 });
 
-const providerErrorSchema = z.object({ error: z.string() });
-const integrationOAuthCallbackResponseSchema = z.object({
-  redirectUrl: z.url(),
+const providerErrorSchema = object({ error: string() });
+const integrationOAuthCallbackResponseSchema = object({
+  redirectUrl: url(),
 });
 
 export const integrationOAuthCallbackResponses = {
@@ -21,5 +21,5 @@ export const integrationOAuthCallbackResponses = {
   400: providerErrorSchema,
   401: apiErrorSchema,
   403: apiErrorSchema,
-  503: z.union([providerErrorSchema, apiErrorSchema]),
+  503: union([providerErrorSchema, apiErrorSchema]),
 } as const;

@@ -1,12 +1,21 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
 /** Discord snowflakes must never pass through a JavaScript number. */
-export const discordSnowflakeSchema = z
-  .string()
+export const discordSnowflakeSchema = string()
   .regex(/^[1-9]\d{0,19}$/, "Expected a Discord snowflake ID")
   .refine(
     (value) => {
@@ -17,68 +26,66 @@ export const discordSnowflakeSchema = z
 
 export const discordNativeErrorSchema = apiErrorSchema.extend({
   error: apiErrorSchema.shape.error.extend({
-    retryAfterSeconds: z.number().nonnegative().optional(),
+    retryAfterSeconds: number().nonnegative().optional(),
   }),
 });
 
-export const discordChannelListQuerySchema = z.object({
+export const discordChannelListQuerySchema = object({
   guildId: discordSnowflakeSchema.optional(),
 });
 
-export const discordHistoryQuerySchema = z.object({
+export const discordHistoryQuerySchema = object({
   guildId: discordSnowflakeSchema.optional(),
   channelId: discordSnowflakeSchema,
   before: discordSnowflakeSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: coerce.number().int().min(1).max(100).default(50),
 });
 
 export const discordRepliesQuerySchema = discordHistoryQuerySchema.extend({
   messageId: discordSnowflakeSchema,
 });
 
-const discordListedChannelSchema = z.object({
+const discordListedChannelSchema = object({
   id: discordSnowflakeSchema,
-  name: z.string(),
-  type: z.number().int(),
+  name: string(),
+  type: number().int(),
   guildId: discordSnowflakeSchema,
   parentId: discordSnowflakeSchema.nullable(),
 });
 
-export const discordHistoryMessageSchema = z.object({
+export const discordHistoryMessageSchema = object({
   id: discordSnowflakeSchema,
   channelId: discordSnowflakeSchema,
-  content: z.string(),
-  author: z.object({
+  content: string(),
+  author: object({
     id: discordSnowflakeSchema,
-    username: z.string(),
-    bot: z.boolean().optional(),
+    username: string(),
+    bot: boolean().optional(),
   }),
-  timestamp: z.string(),
-  url: z.string().url(),
-  replyTo: z
-    .object({
-      messageId: discordSnowflakeSchema,
-      channelId: discordSnowflakeSchema.optional(),
-    })
-    .optional(),
-  attachments: z.array(
-    z.object({
+  timestamp: string(),
+  url: string().url(),
+  replyTo: object({
+    messageId: discordSnowflakeSchema,
+    channelId: discordSnowflakeSchema.optional(),
+  }).optional(),
+  attachments: array(
+    object({
       id: discordSnowflakeSchema,
-      filename: z.string(),
-      size: z.number().int().nonnegative(),
-      contentType: z.string().optional(),
+      filename: string(),
+      size: number().int().nonnegative(),
+      contentType: string().optional(),
     }),
   ),
 });
 
-const discordChannelListResponseSchema = z.object({
-  channels: z.array(discordListedChannelSchema),
+const discordChannelListResponseSchema = object({
+  channels: array(discordListedChannelSchema),
 });
 
-const discordHistoryResponseSchema = z.object({
+const discordHistoryResponseSchema = object({
   channelId: discordSnowflakeSchema,
-  contextMode: z.enum(["full", "mentions_only"]),
-  messages: z.array(discordHistoryMessageSchema),
+  contextMode: zEnum(["full", "mentions_only"]),
+  messages: array(discordHistoryMessageSchema),
   nextBefore: discordSnowflakeSchema.nullable(),
 });
 
@@ -142,18 +149,18 @@ export const integrationsDiscordReadContract = c.router({
   },
 });
 
-export type DiscordChannelListQuery = z.infer<
+export type DiscordChannelListQuery = zInfer<
   typeof discordChannelListQuerySchema
 >;
-export type DiscordChannelListResponse = z.infer<
+export type DiscordChannelListResponse = zInfer<
   typeof discordChannelListResponseSchema
 >;
-export type DiscordHistoryQuery = z.infer<typeof discordHistoryQuerySchema>;
-export type DiscordHistoryMessage = z.infer<typeof discordHistoryMessageSchema>;
-export type DiscordHistoryResponse = z.infer<
+export type DiscordHistoryQuery = zInfer<typeof discordHistoryQuerySchema>;
+export type DiscordHistoryMessage = zInfer<typeof discordHistoryMessageSchema>;
+export type DiscordHistoryResponse = zInfer<
   typeof discordHistoryResponseSchema
 >;
-export type DiscordRepliesQuery = z.infer<typeof discordRepliesQuerySchema>;
-export type DiscordRepliesResponse = z.infer<
+export type DiscordRepliesQuery = zInfer<typeof discordRepliesQuerySchema>;
+export type DiscordRepliesResponse = zInfer<
   typeof discordRepliesResponseSchema
 >;

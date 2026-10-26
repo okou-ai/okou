@@ -1,19 +1,26 @@
-import * as z from "zod";
+import {
+  array,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
-export const thinkingMessageSchema = z.object({
-  id: z.string().min(1),
-  text: z.string().min(1),
+export const thinkingMessageSchema = object({
+  id: string().min(1),
+  text: string().min(1),
 });
-export type ThinkingMessage = z.infer<typeof thinkingMessageSchema>;
+export type ThinkingMessage = zInfer<typeof thinkingMessageSchema>;
 
-export const activitySummaryResponseSchema = z.object({
-  runId: z.string().uuid(),
-  messages: z.array(thinkingMessageSchema).max(4),
-  status: z.enum(["available", "ineligible", "unavailable"]),
+export const activitySummaryResponseSchema = object({
+  runId: string().uuid(),
+  messages: array(thinkingMessageSchema).max(4),
+  status: zEnum(["available", "ineligible", "unavailable"]),
 });
-export type ActivitySummaryResponse = z.infer<
+export type ActivitySummaryResponse = zInfer<
   typeof activitySummaryResponseSchema
 >;
 
@@ -23,8 +30,8 @@ export const chatThreadActivitySummaryContract = c.router({
     method: "POST",
     path: "/api/chat-threads/:id/activity-summary",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
-    body: z.object({ runId: z.string().uuid() }).strict(),
+    pathParams: object({ id: string().uuid() }),
+    body: object({ runId: string().uuid() }).strict(),
     responses: {
       200: activitySummaryResponseSchema,
       400: apiErrorSchema,

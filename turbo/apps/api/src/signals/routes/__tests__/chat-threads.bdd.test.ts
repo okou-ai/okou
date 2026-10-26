@@ -2548,7 +2548,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   async function setupSlidesConversionSync(params: {
     readonly agentLabel: string;
     readonly conversionEnabled: boolean;
-    readonly workspaceConversionEnabled?: boolean;
     readonly source?: { readonly filename: string; readonly body: Buffer };
   }) {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
@@ -2557,12 +2556,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     if (params.conversionEnabled) {
       await createBillingMediaApi(context).updateFeatureSwitches(actor, {
         [FeatureSwitchKey.GoogleSlidesConversion]: true,
-      });
-    }
-    if (params.workspaceConversionEnabled !== undefined) {
-      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.GoogleDocsSheetsConversion]:
-          params.workspaceConversionEnabled,
       });
     }
     const objectStore = chatCallbacks.acceptChatObjectStorage();
@@ -2606,13 +2599,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   async function workspaceSource(
     filename: string,
     body: Buffer,
-    enabled = true,
     slidesEnabled = false,
   ) {
     const prepared = await setupSlidesConversionSync({
       agentLabel: "Workspace conversion agent",
       conversionEnabled: slidesEnabled,
-      workspaceConversionEnabled: enabled,
       source: { filename, body },
     });
     mockGoogleDriveFilesList(() => {
@@ -3116,17 +3107,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     120_000,
   );
 
-  it("workspace conversion is enforced server-side while original uploads remain available", async () => {
+  it("original uploads preserve document source bytes", async () => {
     const bytes = Buffer.from("Hello");
-    const fixture = await workspaceSource("report.txt", bytes, false);
+    const fixture = await workspaceSource("report.txt", bytes);
     const upload = mockGoogleDriveArtifactUpload({
       id: "raw-file",
       name: "report.txt",
       mimeType: "text/plain",
     });
-    const blocked = await fixture.upload("google");
-    expect(blocked.status).toBe(400);
-    expect(upload.bodies).toHaveLength(0);
     const original = await fixture.upload();
     expect(original.status).toBe(200);
     expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
@@ -3138,21 +3126,15 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     {
       mode: "original",
       slidesEnabled: true,
-      docsEnabled: false,
       expected: 200,
     },
-    { mode: "google", slidesEnabled: true, docsEnabled: false, expected: 200 },
-    { mode: "google", slidesEnabled: false, docsEnabled: true, expected: 400 },
+    { mode: "google", slidesEnabled: true, expected: 200 },
+    { mode: "google", slidesEnabled: false, expected: 400 },
   ] as const)(
     "slides uses explicit $mode with its own switch ($slidesEnabled)",
-    async ({ mode, slidesEnabled, docsEnabled, expected }) => {
+    async ({ mode, slidesEnabled, expected }) => {
       const bytes = Buffer.from("presentation source");
-      const fixture = await workspaceSource(
-        "deck.pptx",
-        bytes,
-        docsEnabled,
-        slidesEnabled,
-      );
+      const fixture = await workspaceSource("deck.pptx", bytes, slidesEnabled);
       const native = mode === "google" && slidesEnabled;
       const result = {
         id: "uploaded-deck",
@@ -3202,7 +3184,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await owned.run(() => {
       return createBillingMediaApi(context).updateFeatureSwitches(actor, {
         [FeatureSwitchKey.GoogleSlidesConversion]: format === "pptx",
-        [FeatureSwitchKey.GoogleDocsSheetsConversion]: format === "docx",
       });
     });
     const run = await owned.sendChatRun(actor, {
@@ -3510,7 +3491,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     "prepares editable presentation text only for Slides conversion (%s)",
     async (mode) => {
       const bytes = slidesImportFixture();
-      const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+      const fixture = await workspaceSource("deck.pptx", bytes, true);
       mockSlidesImportFonts();
       const native = {
         id: "prepared-deck",
@@ -3601,7 +3582,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         topicNumber: "06",
         splitTopicNumber,
       });
-      const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+      const fixture = await workspaceSource("deck.pptx", bytes, true);
       mockSlidesImportFonts();
       const native = {
         id: "kerned-deck",
@@ -3638,7 +3619,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       Buffer.from(slide.replace("<a:xfrm>", '<a:xfrm rot="5400000">')),
     );
     const bytes = archive.toBuffer();
-    const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+    const fixture = await workspaceSource("deck.pptx", bytes, true);
     mockSlidesImportFonts();
     const native = {
       id: "transformed-deck",
@@ -3679,7 +3660,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const fixture = await workspaceSource(
       "deck.pptx",
       archive.toBuffer(),
-      false,
       true,
     );
     mockSlidesImportFonts();
@@ -3735,7 +3715,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const fixture = await workspaceSource(
         "deck.pptx",
         archive.toBuffer(),
-        false,
         true,
       );
       mockSlidesImportFonts();
@@ -3801,7 +3780,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const fixture = await workspaceSource(
         "deck.pptx",
         slidesTextProvenanceFixture(),
-        false,
         true,
       );
       mockSlidesImportFonts();
@@ -3858,7 +3836,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const fixture = await workspaceSource(
       "deck.pptx",
       slidesImportFixture(),
-      false,
       true,
     );
     mockSlidesImportFonts(503);
@@ -3878,7 +3855,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const fixture = await workspaceSource(
       "deck.pptx",
       Buffer.from("presentation"),
-      false,
       true,
     );
     const native = {
@@ -3901,7 +3877,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const fixture = await workspaceSource(
       "deck.pptx",
       Buffer.from("presentation"),
-      false,
       true,
     );
     const native = {

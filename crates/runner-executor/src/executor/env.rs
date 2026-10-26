@@ -899,7 +899,7 @@ impl PreparedRunPayload {
         mut self,
         context: &ExecutionContext,
     ) -> RunnerResult<guest_contracts::env::RunPayload> {
-        self.payload.secret_values = serialize_secret_values(context);
+        self.payload.secret_values = serialize_secret_values(context)?;
         validate_run_payload_for_guest(&self.payload).map_err(RunnerError::Internal)?;
         Ok(self.payload)
     }
@@ -970,18 +970,30 @@ pub(super) fn build_run_payload_for_run(
     prepare_run_payload_for_run(context)?.into_run_payload(context)
 }
 
-fn serialize_secret_values(context: &ExecutionContext) -> String {
+fn serialize_secret_values(context: &ExecutionContext) -> RunnerResult<String> {
     use base64::Engine as _;
-    let mut encoded: Vec<String> =
-        vec![base64::engine::general_purpose::STANDARD.encode(&context.sandbox_token)];
-    if let Some(secret_values) = &context.secret_values {
-        encoded.extend(
-            secret_values
-                .iter()
-                .map(|s| base64::engine::general_purpose::STANDARD.encode(s)),
-        );
+    let values = std::iter::once(context.sandbox_token.as_str())
+        .chain(context.secret_values.iter().flatten().map(String::as_str));
+    let capacity = values
+        .clone()
+        .enumerate()
+        .try_fold(0usize, |total, (index, value)| {
+            total
+                .checked_add(usize::from(index != 0))?
+                .checked_add(base64::encoded_len(value.len(), true)?)
+        })
+        .ok_or_else(|| RunnerError::Internal("secret values payload size overflow".into()))?;
+    let mut encoded = String::new();
+    encoded
+        .try_reserve_exact(capacity)
+        .map_err(|_| RunnerError::Internal("secret values payload allocation failed".into()))?;
+    for (index, value) in values.enumerate() {
+        if index != 0 {
+            encoded.push(',');
+        }
+        base64::engine::general_purpose::STANDARD.encode_string(value, &mut encoded);
     }
-    encoded.join(",")
+    Ok(encoded)
 }
 
 fn serialize_artifacts_payload(context: &ExecutionContext) -> RunnerResult<String> {

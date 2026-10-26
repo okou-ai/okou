@@ -716,6 +716,20 @@ untruncated bodies refine pricing; inspection never enables persisted body field
 Other uncaptured requests retain only byte counters. Small declared
 bodies up to 64 KiB retain their existing buffered path and billing inspection.
 
+Data Router requests stay buffered and require a valid Content-Length of at most
+1 MiB, except when native framing proves the request ends at headers. Oversized
+or unsupported unknown-length uploads terminate at headers before body retention,
+credential resolution or upstream forwarding. The limit comes from the TS Data Router
+contract through generated Python/Rust bindings. It is a per-request raw-byte
+cap, without an aggregate reservation or decoded-JSON memory bound.
+
+Only Router assigns execution identity. After receiving an upstream response
+with `X-Okou-Data-Request-Id`, the addon awaits one bounded registration attempt
+before response-hook completion releases Run drain tracking, including for
+failed tool executions. A registration error does not establish that the tool
+did not execute. The addon does not retry registration or replay the upstream
+request.
+
 Body-dependent auth.base and AWS SigV4 retain their separate bounded admissions.
 Both credential and policy-only `publicDestination` requests stay buffered for
 request-phase destination revalidation. Large bodies outside the specialized

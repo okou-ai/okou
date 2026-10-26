@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 
@@ -37,13 +37,11 @@ export async function refreshWorkdayAccessToken(
       response.status,
     );
   }
-  const parsed = z
-    .object({
-      access_token: z.string().min(1),
-      refresh_token: z.string().min(1).optional(),
-      expires_in: z.number().positive().optional(),
-    })
-    .safeParse(await response.json());
+  const parsed = object({
+    access_token: string().min(1),
+    refresh_token: string().min(1).optional(),
+    expires_in: number().positive().optional(),
+  }).safeParse(await response.json());
   if (!parsed.success) {
     throw new ProviderResponseError("Invalid Workday token response");
   }

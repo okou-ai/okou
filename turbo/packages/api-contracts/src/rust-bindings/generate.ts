@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import * as z from "zod";
+import { toJSONSchema } from "zod";
 import {
   type RustConstantValue,
   type RustConstantModuleDoc,
@@ -370,7 +370,7 @@ export function normalizeTypeBindings(
     seenRustNames.add(rustName);
 
     normalized.push({
-      schema: validateJsonSchema(z.toJSONSchema(binding.schema), label),
+      schema: validateJsonSchema(toJSONSchema(binding.schema), label),
       direction: binding.direction,
       rustModulePath,
       rustTypeName,
@@ -494,7 +494,7 @@ export function normalizeDecodePathBindings(
 
     normalized.push({
       node: decodePathNodeForSchema(
-        validateJsonSchema(z.toJSONSchema(binding.schema), label),
+        validateJsonSchema(toJSONSchema(binding.schema), label),
         label,
       ),
       rustModulePath,

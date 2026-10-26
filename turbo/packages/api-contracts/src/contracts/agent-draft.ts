@@ -1,4 +1,5 @@
-import * as z from "zod";
+import { array, object, string, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import {
   persistedAttachmentSchema,
@@ -12,19 +13,17 @@ const c = initContract();
 
 export const agentDraftResponseSchema = composerDraftSchema;
 
-export const agentDraftRequestSchema = z
-  .object({
-    draftUserMessage: userMessageInputDocumentSchema.nullable(),
-    draftAttachments: z.array(persistedAttachmentSchema).nullable().optional(),
-  })
-  .superRefine(requireUserMessageForDraftAttachments);
+export const agentDraftRequestSchema = object({
+  draftUserMessage: userMessageInputDocumentSchema.nullable(),
+  draftAttachments: array(persistedAttachmentSchema).nullable().optional(),
+}).superRefine(requireUserMessageForDraftAttachments);
 
 export const agentDraftContract = c.router({
   get: {
     method: "GET",
     path: "/api/agents/:id/draft",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     responses: {
       200: agentDraftResponseSchema,
       400: apiErrorSchema,
@@ -38,7 +37,7 @@ export const agentDraftContract = c.router({
     method: "PATCH",
     path: "/api/agents/:id/draft",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
+    pathParams: object({ id: string().uuid() }),
     body: agentDraftRequestSchema,
     responses: {
       204: c.noBody(),
@@ -51,6 +50,6 @@ export const agentDraftContract = c.router({
   },
 });
 
-export type AgentDraftResponse = z.infer<typeof agentDraftResponseSchema>;
-export type AgentDraftRequest = z.infer<typeof agentDraftRequestSchema>;
+export type AgentDraftResponse = zInfer<typeof agentDraftResponseSchema>;
+export type AgentDraftRequest = zInfer<typeof agentDraftRequestSchema>;
 export type AgentDraftContract = typeof agentDraftContract;

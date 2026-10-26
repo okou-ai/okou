@@ -27,14 +27,12 @@ import {
   removePublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
-import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFixtureTracker } from "./helpers/route-test";
 
 const context = testContext();
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
   mockDiscordMemberships(context, [actor]);
   await removePublicDiscordBinding(context, actor.fixture);
-  await deleteFeatureSwitchesForUser(context, actor);
 });
 
 afterEach(async () => {

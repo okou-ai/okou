@@ -34,7 +34,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
-import * as z from "zod";
+import type { infer as zInfer } from "zod";
 import {
   nullableDriverValueDecoder,
   pgTextDecoder,
@@ -78,8 +78,9 @@ const CHAT_THREAD_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_CHAT_THREAD_SNAPSHOT_BATCH_SIZE = 500;
 const CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY = 10;
 const DEFAULT_CHAT_THREAD_EVENT_PRUNE_BATCH_SIZE = 500;
-/** Rows read per bounded page while scanning sequences or a scope's threads. */
-const SCAN_PAGE_SIZE = 500;
+const CANDIDATE_SCAN_PAGE_SIZE = 500;
+/** Larger pages reduce round trips when rebuilding a scope's full sidebar. */
+const PROJECTION_SCAN_PAGE_SIZE = 1000;
 const gzipAsync = promisify(gzip);
 
 function chatThreadSnapshotBatchSize(): number {
@@ -277,7 +278,7 @@ async function findSnapshotCandidates(
           asc(chatThreadEventSequences.userId),
           asc(chatThreadEventSequences.orgId),
         )
-        .limit(SCAN_PAGE_SIZE);
+        .limit(CANDIDATE_SCAN_PAGE_SIZE);
     const heads = await loadSnapshotHeads(db, page);
     for (const row of page) {
       if (candidates.length >= limit) {
@@ -294,7 +295,7 @@ async function findSnapshotCandidates(
       }
     }
     const last = page.at(-1);
-    if (!last || page.length < SCAN_PAGE_SIZE) {
+    if (!last || page.length < CANDIDATE_SCAN_PAGE_SIZE) {
       break;
     }
     after = last;
@@ -329,7 +330,7 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
       return agent.id;
     }),
   );
-  const threads: z.infer<typeof chatThreadSnapshotProjectionSchema>[] = [];
+  const threads: zInfer<typeof chatThreadSnapshotProjectionSchema>[] = [];
   let after: { readonly lastMessageAt: Date; readonly id: string } | null =
     null;
   for (;;) {
@@ -371,7 +372,7 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
         sql`${desc(chatThreads.lastMessageAt)} nulls last`,
         sql`${desc(chatThreads.id)} nulls last`,
       )
-      .limit(SCAN_PAGE_SIZE);
+      .limit(PROJECTION_SCAN_PAGE_SIZE);
     for (const thread of page) {
       if (thread.agentId === null || !agentIds.has(thread.agentId)) {
         continue;
@@ -399,7 +400,7 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
       );
     }
     const last = page.at(-1);
-    if (!last || page.length < SCAN_PAGE_SIZE) {
+    if (!last || page.length < PROJECTION_SCAN_PAGE_SIZE) {
       break;
     }
     after = { lastMessageAt: last.lastMessageAt, id: last.id };

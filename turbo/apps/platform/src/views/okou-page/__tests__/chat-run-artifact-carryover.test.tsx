@@ -1,15 +1,19 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
+  artifactSummary,
+  openResourceArtifact,
+} from "./chat-navigation-artifact-test-helpers.ts";
+import {
   assistantEvent,
   completedEvent,
-  findButton,
   findWorkHistoryToggle,
   promptEvent,
   queryWorkHistoryToggle,
@@ -44,9 +48,9 @@ function expectDocumentOrder(...elements: readonly Element[]): void {
   }
 }
 
-function viewAgentProfileLinks(): HTMLElement[] {
+function agentNameLines(): HTMLElement[] {
   return queryAllByRoleFast("link").filter((link) => {
-    return link.getAttribute("aria-label") === "View agent profile";
+    return link.dataset.chatAssistantNameLine !== undefined;
   });
 }
 
@@ -115,7 +119,6 @@ async function setupArtifactRun(
     path: RUN_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreviews,
-      [FeatureSwitchKey.ChatResourcePanel]: false,
     },
   });
   await readyChat();
@@ -180,7 +183,7 @@ test("Expose an artifact referenced only by history from the main result actions
   );
   expect(actions).toContainElement(artifactTrigger);
   expect(artifactTrigger).toHaveAccessibleName("1 artifact");
-  expect(viewAgentProfileLinks()).toHaveLength(1);
+  expect(agentNameLines()).toHaveLength(1);
   const dialog = await openRelatedArtifacts();
   expect(relatedArtifactRow(dialog, reportUrl)).toHaveTextContent("Report");
   expect(queryWorkHistoryToggle("collapsed")).toBeVisible();
@@ -262,6 +265,23 @@ test("Sidebar-first previews dismiss the related-artifacts dialog rather than st
 });
 
 async function openRelatedArtifactOverSidebar(filename: string, body?: string) {
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: [
+        artifactSummary(
+          "a0000000-0000-4000-a000-000000000282",
+          "file",
+          "Supporting report",
+        ),
+      ],
+      nextCursor: null,
+    });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "ARTIFACT_NOT_FOUND", message: "Artifact not found" },
+    });
+  });
   const url = artifactUrl("sidebar-preview", filename);
   if (body !== undefined) {
     context.mocks.http.get(url, () => {
@@ -282,9 +302,9 @@ async function openRelatedArtifactOverSidebar(filename: string, body?: string) {
       text: "Final sidebar artifact summary",
     }),
   ]);
-  click(await findButton("Open artifacts"));
+  await openResourceArtifact("Supporting report");
   await expect(
-    screen.findByTestId("thread-sidebar-artifacts"),
+    screen.findByTestId("thread-sidebar-artifact-unavailable"),
   ).resolves.toBeVisible();
 
   const dialog = await openRelatedArtifacts();

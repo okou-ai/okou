@@ -1,168 +1,178 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  discriminatedUnion,
+  intersection,
+  iso,
+  literal,
+  object,
+  string,
+  union,
+  url,
+  uuid,
+  enum as zEnum,
+  null as zNull,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { connectorSlugSchema } from "./connector-identity";
 
-const id = z.uuid().toLowerCase();
-export const jobStatusSchema = z.enum([
+const id = uuid().toLowerCase();
+export const jobStatusSchema = zEnum([
   "active",
   "waiting_decision",
   "waiting_authorization",
   "completed",
   "archived",
 ]);
-export const jobAuthorizationSchema = z.object({
+export const jobAuthorizationSchema = object({
   id,
   agentId: id,
-  action: z.string().trim().min(1).max(4000),
+  action: string().trim().min(1).max(4000),
   connector: connectorSlugSchema,
-  permission: z.string().min(1).max(128),
+  permission: string().min(1).max(128),
 });
-export const jobWorkSchema = z.object({
-  progress: z.string().max(16000),
-  explanation: z.string().max(4000),
+export const jobWorkSchema = object({
+  progress: string().max(16000),
+  explanation: string().max(4000),
   authorization: jobAuthorizationSchema.nullable(),
-  processedInputIds: z.array(id),
+  processedInputIds: array(id),
   currentResultId: id.nullable(),
 });
-const resultContent = z.object({
+const resultContent = object({
   id,
-  text: z.string().trim().min(1).max(65536),
-  references: z
-    .array(
-      z.object({
-        title: z.string().trim().min(1).max(200),
-        url: z.url().refine((value) => {
-          return value.startsWith("https://");
-        }, "Use an HTTPS URL"),
-      }),
-    )
-    .max(20),
+  text: string().trim().min(1).max(65536),
+  references: array(
+    object({
+      title: string().trim().min(1).max(200),
+      url: url().refine((value) => {
+        return value.startsWith("https://");
+      }, "Use an HTTPS URL"),
+    }),
+  ).max(20),
 });
 export const jobResultSchema = resultContent.extend({
-  publishedAt: z.iso.datetime(),
+  publishedAt: iso.datetime(),
 });
-export const jobInputCreateSchema = z.discriminatedUnion("kind", [
-  z.object({
+export const jobInputCreateSchema = discriminatedUnion("kind", [
+  object({
     id,
-    kind: z.literal("reply"),
-    text: z.string().trim().min(1).max(16000),
+    kind: literal("reply"),
+    text: string().trim().min(1).max(16000),
   }),
-  z.object({
+  object({
     id,
-    kind: z.literal("authorization"),
+    kind: literal("authorization"),
     requestId: id,
-    outcome: z.enum(["granted", "declined"]),
-    text: z.string().max(4000),
+    outcome: zEnum(["granted", "declined"]),
+    text: string().max(4000),
   }),
 ]);
-const userJobInputSchema = z.intersection(
+const userJobInputSchema = intersection(
   jobInputCreateSchema,
-  z.object({
-    authorUserId: z.string().min(1),
-    createdAt: z.iso.datetime(),
+  object({
+    authorUserId: string().min(1),
+    createdAt: iso.datetime(),
   }),
 );
-export const jobObservationCreateSchema = z.object({
+export const jobObservationCreateSchema = object({
   id,
-  text: z.string().trim().min(1).max(16000),
-  sourceReferences: z.array(z.string().trim().min(1).max(2000)).min(1).max(20),
-  sourceVersion: z.string().trim().min(1).max(2000),
+  text: string().trim().min(1).max(16000),
+  sourceReferences: array(string().trim().min(1).max(2000)).min(1).max(20),
+  sourceVersion: string().trim().min(1).max(2000),
 });
 export const jobObservationSchema = jobObservationCreateSchema.extend({
-  kind: z.literal("observation"),
-  authorUserId: z.null(),
+  kind: literal("observation"),
+  authorUserId: zNull(),
   agentId: id,
   runId: id,
-  createdAt: z.iso.datetime(),
+  createdAt: iso.datetime(),
 });
-export const jobInputSchema = z.union([
-  userJobInputSchema,
-  jobObservationSchema,
-]);
-export const jobCreateSchema = z.object({
+export const jobInputSchema = union([userJobInputSchema, jobObservationSchema]);
+export const jobCreateSchema = object({
   id,
-  title: z.string().trim().min(1).max(160),
-  objective: z.string().trim().min(1).max(16000),
-  sourceReferences: z.array(z.string().max(2000)).max(20).default([]),
+  title: string().trim().min(1).max(160),
+  objective: string().trim().min(1).max(16000),
+  sourceReferences: array(string().max(2000)).max(20).default([]),
 });
-export const jobSnapshotSchema = z.object({
+export const jobSnapshotSchema = object({
   status: jobStatusSchema,
   work: jobWorkSchema,
 });
-export const jobUpdateSchema = z
-  .object({
-    expected: jobSnapshotSchema,
-    status: jobStatusSchema.exclude(["archived"]),
-    work: jobWorkSchema,
-    result: resultContent.optional(),
-  })
-  .superRefine((value, context) => {
-    if (value.result && value.work.currentResultId !== value.result.id) {
-      context.addIssue({
-        code: "custom",
-        path: ["work", "currentResultId"],
-        message: "Publish and select the same Result atomically",
-      });
-    }
-    if (value.status.startsWith("waiting_") && !value.work.explanation.trim()) {
-      context.addIssue({
-        code: "custom",
-        path: ["work", "explanation"],
-        message: "Explain the input needed",
-      });
-    }
-    if (
-      value.status === "waiting_authorization" &&
-      value.work.authorization === null
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["work", "authorization"],
-        message: "Identify the exact permission and action",
-      });
-    }
-    if (value.status === "completed" && value.work.currentResultId === null) {
-      context.addIssue({
-        code: "custom",
-        path: ["work", "currentResultId"],
-        message: "Completion requires a Result",
-      });
-    }
-  });
+export const jobUpdateSchema = object({
+  expected: jobSnapshotSchema,
+  status: jobStatusSchema.exclude(["archived"]),
+  work: jobWorkSchema,
+  result: resultContent.optional(),
+}).superRefine((value, context) => {
+  if (value.result && value.work.currentResultId !== value.result.id) {
+    context.addIssue({
+      code: "custom",
+      path: ["work", "currentResultId"],
+      message: "Publish and select the same Result atomically",
+    });
+  }
+  if (value.status.startsWith("waiting_") && !value.work.explanation.trim()) {
+    context.addIssue({
+      code: "custom",
+      path: ["work", "explanation"],
+      message: "Explain the input needed",
+    });
+  }
+  if (
+    value.status === "waiting_authorization" &&
+    value.work.authorization === null
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["work", "authorization"],
+      message: "Identify the exact permission and action",
+    });
+  }
+  if (value.status === "completed" && value.work.currentResultId === null) {
+    context.addIssue({
+      code: "custom",
+      path: ["work", "currentResultId"],
+      message: "Completion requires a Result",
+    });
+  }
+});
 export const jobSummarySchema = jobCreateSchema.extend({
   status: jobStatusSchema,
   work: jobWorkSchema,
-  hasPendingInput: z.boolean(),
-  hasUnseenResult: z.boolean(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  hasPendingInput: boolean(),
+  hasUnseenResult: boolean(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
 });
 export const jobSchema = jobSummarySchema.extend({
-  authorizationRequests: z.array(jobAuthorizationSchema),
-  inputs: z.array(jobInputSchema),
-  results: z.array(jobResultSchema),
-  viewedResultIds: z.array(id),
+  authorizationRequests: array(jobAuthorizationSchema),
+  inputs: array(jobInputSchema),
+  results: array(jobResultSchema),
+  viewedResultIds: array(id),
 });
-export const jobListQuerySchema = z.object({
-  filter: z
-    .enum(["home", "history", "archived", "runnable", "all"])
-    .default("home"),
+export const jobListQuerySchema = object({
+  filter: zEnum(["home", "history", "archived", "runnable", "all"]).default(
+    "home",
+  ),
   after: id.optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: coerce.number().int().min(1).max(100).default(50),
 });
-export type JobStatus = z.infer<typeof jobStatusSchema>;
-export type JobWork = z.infer<typeof jobWorkSchema>;
-export type JobInput = z.infer<typeof jobInputSchema>;
-export type JobAuthorizationRequest = z.infer<typeof jobAuthorizationSchema>;
-export type JobResult = z.infer<typeof jobResultSchema>;
-export type JobCreate = z.infer<typeof jobCreateSchema>;
-export type JobUpdate = z.infer<typeof jobUpdateSchema>;
-export type JobInputCreate = z.infer<typeof jobInputCreateSchema>;
-export type JobObservationCreate = z.infer<typeof jobObservationCreateSchema>;
-export type Job = z.infer<typeof jobSchema>;
-export type JobSummary = z.infer<typeof jobSummarySchema>;
-export type JobListQuery = z.infer<typeof jobListQuerySchema>;
+export type JobStatus = zInfer<typeof jobStatusSchema>;
+export type JobWork = zInfer<typeof jobWorkSchema>;
+export type JobInput = zInfer<typeof jobInputSchema>;
+export type JobAuthorizationRequest = zInfer<typeof jobAuthorizationSchema>;
+export type JobResult = zInfer<typeof jobResultSchema>;
+export type JobCreate = zInfer<typeof jobCreateSchema>;
+export type JobUpdate = zInfer<typeof jobUpdateSchema>;
+export type JobInputCreate = zInfer<typeof jobInputCreateSchema>;
+export type JobObservationCreate = zInfer<typeof jobObservationCreateSchema>;
+export type Job = zInfer<typeof jobSchema>;
+export type JobSummary = zInfer<typeof jobSummarySchema>;
+export type JobListQuery = zInfer<typeof jobListQuerySchema>;
 
 const c = initContract();
 const errors = {
@@ -172,7 +182,7 @@ const errors = {
   404: apiErrorSchema,
   409: apiErrorSchema,
 };
-const pathParams = z.object({ id });
+const pathParams = object({ id });
 const resource = {
   headers: authHeadersSchema,
   pathParams,
@@ -183,8 +193,8 @@ export const jobsContract = c.router({
     method: "POST",
     path: "/api/jobs/identity",
     headers: authHeadersSchema,
-    body: z.object({ key: z.string().trim().min(1).max(2048) }),
-    responses: { 200: z.object({ id }), ...errors },
+    body: object({ key: string().trim().min(1).max(2048) }),
+    responses: { 200: object({ id }), ...errors },
     summary:
       "Derive an owner-scoped stable identity for one source and next action",
   },
@@ -194,8 +204,8 @@ export const jobsContract = c.router({
     headers: authHeadersSchema,
     query: jobListQuerySchema,
     responses: {
-      200: z.object({
-        jobs: z.array(jobSummarySchema),
+      200: object({
+        jobs: array(jobSummarySchema),
         nextAfter: id.nullable(),
       }),
       ...errors,
@@ -242,14 +252,14 @@ export const jobsContract = c.router({
     method: "POST",
     path: "/api/jobs/:id/viewed",
     ...resource,
-    body: z.object({ resultId: id }),
+    body: object({ resultId: id }),
     summary: "Acknowledge the Result actually displayed",
   },
   archive: {
     method: "POST",
     path: "/api/jobs/:id/archive",
     ...resource,
-    body: z.object({}),
+    body: object({}),
     summary: "Archive a Task and stop its advancement",
   },
 });

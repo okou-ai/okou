@@ -1,15 +1,16 @@
-import * as z from "zod";
+import { boolean, object, string, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const orgLogoResponseSchema = z.object({
-  logoUrl: z.string().nullable(),
-  hasImage: z.boolean(),
+export const orgLogoResponseSchema = object({
+  logoUrl: string().nullable(),
+  hasImage: boolean(),
 });
 
-export type OrgLogoResponse = z.infer<typeof orgLogoResponseSchema>;
+export type OrgLogoResponse = zInfer<typeof orgLogoResponseSchema>;
 
 export const orgLogoContract = c.router({
   get: {

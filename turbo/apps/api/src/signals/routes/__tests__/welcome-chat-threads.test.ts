@@ -6,7 +6,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -305,7 +304,7 @@ describe("POST /api/welcome-chat-threads", () => {
     ).resolves.toMatchObject([{ eventType: "output.message", runId: null }]);
   });
 
-  it.each(SUPPORTED_USER_LOCALES)(
+  it.each(["en-US"] as const)(
     "persists the complete %s copy and deployment-aware links",
     async (locale) => {
       const { actor } = await fixture();

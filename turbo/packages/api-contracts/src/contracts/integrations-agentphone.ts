@@ -1,93 +1,104 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  discriminatedUnion,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const agentPhoneConnectBodySchema = z.object({
-  phoneHandle: z.string().min(1),
-  agentphoneAgentId: z.string().min(1),
-  timestamp: z.number(),
-  signature: z.string().min(1),
-  channel: z.string().min(1).optional(),
+const agentPhoneConnectBodySchema = object({
+  phoneHandle: string().min(1),
+  agentphoneAgentId: string().min(1),
+  timestamp: number(),
+  signature: string().min(1),
+  channel: string().min(1).optional(),
 });
 
-const agentPhoneConnectResponseSchema = z.object({
-  phoneHandle: z.string(),
+const agentPhoneConnectResponseSchema = object({
+  phoneHandle: string(),
 });
 
-const agentPhoneWebhookHeadersSchema = z.object({
-  "x-webhook-signature": z.string().optional(),
-  "x-webhook-timestamp": z.string().optional(),
-  "x-webhook-event": z.string().optional(),
-  "x-webhook-id": z.string().optional(),
+const agentPhoneWebhookHeadersSchema = object({
+  "x-webhook-signature": string().optional(),
+  "x-webhook-timestamp": string().optional(),
+  "x-webhook-event": string().optional(),
+  "x-webhook-id": string().optional(),
 });
 
-const agentPhoneLinkStatusResponseSchema = z.discriminatedUnion("linked", [
-  z.object({
-    linked: z.literal(true),
-    phoneHandle: z.string(),
-    agentPhoneNumber: z.string().nullable(),
-    configured: z.boolean(),
+const agentPhoneLinkStatusResponseSchema = discriminatedUnion("linked", [
+  object({
+    linked: literal(true),
+    phoneHandle: string(),
+    agentPhoneNumber: string().nullable(),
+    configured: boolean(),
   }),
-  z.object({
-    linked: z.literal(false),
-    agentPhoneNumber: z.string().nullable(),
-    configured: z.boolean(),
+  object({
+    linked: literal(false),
+    agentPhoneNumber: string().nullable(),
+    configured: boolean(),
   }),
 ]);
 
-const agentPhoneStartLinkBodySchema = z.object({
-  phoneHandle: z.string().min(1),
+const agentPhoneStartLinkBodySchema = object({
+  phoneHandle: string().min(1),
 });
 
-const agentPhoneStartLinkResponseSchema = z.object({
-  phoneHandle: z.string(),
-  verificationSent: z.literal(true),
+const agentPhoneStartLinkResponseSchema = object({
+  phoneHandle: string(),
+  verificationSent: literal(true),
 });
 
-const agentPhoneLinkCodeResponseSchema = z.object({
-  code: z.string().regex(/^\d{8}$/u),
-  expiresAt: z.iso.datetime(),
+const agentPhoneLinkCodeResponseSchema = object({
+  code: string().regex(/^\d{8}$/u),
+  expiresAt: iso.datetime(),
 });
 
-export const agentPhoneGroupHistoryQuerySchema = z
-  .object({
-    groupId: z.string().min(5).max(255).startsWith("grp_"),
-    after: z.iso.datetime({ offset: true }).optional(),
-    before: z.iso.datetime({ offset: true }).optional(),
-    query: z.string().trim().min(1).max(500).optional(),
-    limit: z.coerce.number().int().min(1).max(200).default(100),
-    cursor: z.string().min(1).max(512).optional(),
-  })
-  .refine(
-    (value) => {
-      return (
-        value.after === undefined ||
-        value.before === undefined ||
-        Date.parse(value.after) < Date.parse(value.before)
-      );
-    },
-    { message: "after must be earlier than before", path: ["after"] },
-  );
+export const agentPhoneGroupHistoryQuerySchema = object({
+  groupId: string().min(5).max(255).startsWith("grp_"),
+  after: iso.datetime({ offset: true }).optional(),
+  before: iso.datetime({ offset: true }).optional(),
+  query: string().trim().min(1).max(500).optional(),
+  limit: coerce.number().int().min(1).max(200).default(100),
+  cursor: string().min(1).max(512).optional(),
+}).refine(
+  (value) => {
+    return (
+      value.after === undefined ||
+      value.before === undefined ||
+      Date.parse(value.after) < Date.parse(value.before)
+    );
+  },
+  { message: "after must be earlier than before", path: ["after"] },
+);
 
-const agentPhoneGroupHistoryResponseSchema = z.object({
-  groupId: z.string(),
-  messages: z.array(
-    z.object({
-      id: z.string(),
-      conversationId: z.string().nullable(),
-      fromNumber: z.string(),
-      toNumber: z.string(),
-      direction: z.enum(["inbound", "outbound"]),
-      channel: z.string(),
-      body: z.string().nullable(),
-      mediaUrl: z.string().nullable(),
-      receivedAt: z.iso.datetime(),
+const agentPhoneGroupHistoryResponseSchema = object({
+  groupId: string(),
+  messages: array(
+    object({
+      id: string(),
+      conversationId: string().nullable(),
+      fromNumber: string(),
+      toNumber: string(),
+      direction: zEnum(["inbound", "outbound"]),
+      channel: string(),
+      body: string().nullable(),
+      mediaUrl: string().nullable(),
+      receivedAt: iso.datetime(),
     }),
   ),
-  hasMore: z.boolean(),
-  nextCursor: z.string().nullable(),
+  hasMore: boolean(),
+  nextCursor: string().nullable(),
 });
 
 export const integrationsAgentPhoneContract = c.router({
@@ -110,11 +121,11 @@ export const integrationsAgentPhoneContract = c.router({
     headers: agentPhoneWebhookHeadersSchema,
     body: c.type<string>(),
     responses: {
-      200: z.string(),
-      400: z.string(),
-      401: z.string(),
-      404: z.string(),
-      500: z.string(),
+      200: string(),
+      400: string(),
+      401: string(),
+      404: string(),
+      500: string(),
     },
     summary: "Handle inbound phone message webhooks",
   },
@@ -185,24 +196,24 @@ export const integrationsAgentPhoneContract = c.router({
 
 export type IntegrationsAgentPhoneContract =
   typeof integrationsAgentPhoneContract;
-export type AgentPhoneConnectRequest = z.infer<
+export type AgentPhoneConnectRequest = zInfer<
   typeof agentPhoneConnectBodySchema
 >;
-export type AgentPhoneConnectResponse = z.infer<
+export type AgentPhoneConnectResponse = zInfer<
   typeof agentPhoneConnectResponseSchema
 >;
-export type AgentPhoneLinkStatusResponse = z.infer<
+export type AgentPhoneLinkStatusResponse = zInfer<
   typeof agentPhoneLinkStatusResponseSchema
 >;
-export type AgentPhoneStartLinkResponse = z.infer<
+export type AgentPhoneStartLinkResponse = zInfer<
   typeof agentPhoneStartLinkResponseSchema
 >;
-export type AgentPhoneLinkCodeResponse = z.infer<
+export type AgentPhoneLinkCodeResponse = zInfer<
   typeof agentPhoneLinkCodeResponseSchema
 >;
-export type AgentPhoneGroupHistoryQuery = z.infer<
+export type AgentPhoneGroupHistoryQuery = zInfer<
   typeof agentPhoneGroupHistoryQuerySchema
 >;
-export type AgentPhoneGroupHistoryResponse = z.infer<
+export type AgentPhoneGroupHistoryResponse = zInfer<
   typeof agentPhoneGroupHistoryResponseSchema
 >;

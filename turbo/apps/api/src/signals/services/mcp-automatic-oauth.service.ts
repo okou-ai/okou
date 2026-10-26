@@ -22,7 +22,15 @@ import {
   type OAuthTokens,
   type FetchLike,
 } from "@modelcontextprotocol/client";
-import * as z from "zod";
+import {
+  number,
+  object,
+  string,
+  enum as zEnum,
+  ZodError,
+  type infer as zInfer,
+} from "zod";
+
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import {
@@ -48,7 +56,7 @@ export interface McpAutomaticOAuthDcrRegistration {
   readonly expiresAt: Date | null;
 }
 
-const tokenEndpointAuthMethodSchema = z.enum([
+const tokenEndpointAuthMethodSchema = zEnum([
   "none",
   "client_secret_basic",
   "client_secret_post",
@@ -214,7 +222,7 @@ function automaticOAuthRemoteFailure(
       error,
     );
   }
-  if (error instanceof IssuerMismatchError || error instanceof z.ZodError) {
+  if (error instanceof IssuerMismatchError || error instanceof ZodError) {
     return new McpAutomaticOAuthError(
       {
         kind: "incompatible",
@@ -336,7 +344,7 @@ async function probeAutomaticOAuthChallenge(
 }
 
 function requiredHttpsUrl(value: string, field: string): string {
-  const parsed = z.string().url().safeParse(value);
+  const parsed = string().url().safeParse(value);
   if (!parsed.success) {
     throw new McpAutomaticOAuthError(
       { kind: "incompatible", reason: "invalid-discovery-metadata" },
@@ -587,13 +595,13 @@ function dcrSelection(
   };
 }
 
-const dcrClientInformationSchema = z.object({
-  client_id: z.string().min(1).max(255),
-  client_secret: z.string().min(1).optional(),
-  client_id_issued_at: z.number().finite().nonnegative().optional(),
-  client_secret_expires_at: z.number().finite().nonnegative().optional(),
+const dcrClientInformationSchema = object({
+  client_id: string().min(1).max(255),
+  client_secret: string().min(1).optional(),
+  client_id_issued_at: number().finite().nonnegative().optional(),
+  client_secret_expires_at: number().finite().nonnegative().optional(),
   token_endpoint_auth_method: tokenEndpointAuthMethodSchema.optional(),
-  scope: z.string().optional(),
+  scope: string().optional(),
 });
 
 const DCR_ISSUE_CLOCK_SKEW_MS = 5 * 60 * 1000;
@@ -671,7 +679,7 @@ function dcrRegistrationTimes(client: {
 }
 
 function dcrTokenAuthMethod(args: {
-  readonly client: z.infer<typeof dcrClientInformationSchema>;
+  readonly client: zInfer<typeof dcrClientInformationSchema>;
   readonly metadata: AuthorizationServerMetadata;
 }): AutomaticOAuthClientSelection["tokenEndpointAuthMethod"] {
   const supportedMethods = supportedTokenAuthMethods(args.metadata);

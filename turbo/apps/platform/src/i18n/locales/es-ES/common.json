@@ -413,7 +413,6 @@
       "manage": "Gestionar",
       "mobile": {
         "invite": "Invitar",
-        "openArtifacts": "Abrir artefactos en móvil",
         "openAutomations": "Abrir automatizaciones en móvil",
         "openMenu": "Abrir menú"
       },
@@ -696,7 +695,6 @@
       "previewSlide": "Vista previa de la diapositiva {{slideNumber}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
       "previousSlide": "Vista previa de la diapositiva anterior",
-      "renameImportedTemplate": "Cambiar nombre de la plantilla",
       "searchConnector": "Buscar plantillas",
       "searchConnectors": "Buscar plantillas",
       "selectStyle": "Selecciona el estilo {{style}}",
@@ -735,9 +733,7 @@
       "use": "Usar",
       "useThisTemplate": "Usa esta plantilla",
       "visibility": {
-        "changeLabel": "Cambiar la visibilidad de la plantilla",
-        "privateState": "Solo tú puedes verla y usarla",
-        "workspaceState": "Cualquier persona de este espacio de trabajo puede usarla"
+        "changeLabel": "Cambiar la visibilidad de la plantilla"
       },
       "website": "Sitio web",
       "websitePreview": "Vista previa de la plantilla de sitio web {{title}}",
@@ -1587,8 +1583,7 @@
         "whatsCooking": "¿Qué se está cocinando, {{userName}}?",
         "whatsOnYourMind": "¿Qué tienes en mente, {{userName}}?",
         "whatsTheMove": "¿Cuál es el plan, {{userName}}?"
-      },
-      "viewAgentProfile": "Ver perfil del agente"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Descartar",
@@ -1597,10 +1592,7 @@
       "position": "{{current}} de {{total}}",
       "previous": "Sugerencia anterior",
       "recoveryHint": "Revisa el chat antes de volver a enviar. Puedes restaurar la sugerencia en tu borrador.",
-      "restoreDraft": "Restaurar borrador",
-      "runInChat": "Ejecutar en este chat",
-      "runNewChat": "Ejecutar en un chat nuevo",
-      "starting": "Iniciando…"
+      "restoreDraft": "Restaurar borrador"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -2979,15 +2971,12 @@
         "website": "Sitio web",
         "workflow": "Flujo de trabajo"
       },
-      "importedLoadFailed": "No se pudieron cargar las plantillas subidas.",
-      "importedUnavailable": "Las plantillas subidas no están disponibles temporalmente.",
       "previewTemplate": "Plantilla de vista previa {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
       "previewWorkflow": "Vista previa de la plantilla de flujo de trabajo {{title}}",
       "removeTemplate": "Eliminar la plantilla {{title}}",
       "removeWebsite": "Eliminar la plantilla de sitio web {{title}}",
-      "removeWorkflow": "Eliminar la plantilla de flujo de trabajo {{title}}",
-      "retry": "Reintentar"
+      "removeWorkflow": "Eliminar la plantilla de flujo de trabajo {{title}}"
     },
     "thread": {
       "ariaLabel": "Hilo de chat",
@@ -3012,7 +3001,6 @@
       },
       "noEmojiFound": "No se ha encontrado ningún emoji",
       "notFound": "Hilo de chat no encontrado",
-      "openArtifacts": "Abrir artefactos",
       "openBrowser": "Abrir navegador",
       "openNamedAgent": "Abrir agente {{name}}",
       "openNamedChat": "Abrir chat {{title}}",
@@ -3742,7 +3730,6 @@
         "createCodeError": "No se pudo crear un código de conexión. Inténtalo de nuevo.",
         "creatingCode": "Creando código de conexión…",
         "description": "Acceso por mensajes de texto a {{assistantName}}",
-        "destination": "iMessage o SMS a",
         "openMessages": "Abrir Mensajes",
         "options": "Opciones de teléfono",
         "phoneLabel": "Teléfono",
@@ -4268,46 +4255,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching y formación",
           "name": "Coaching y formación",
           "summary": "Coaching, cursos y formación"
         },
         "consulting": {
+          "mobileName": "Consultoría independiente",
           "name": "Consultoría independiente",
           "summary": "Asesoría de negocio, RR. HH. y TI"
         },
         "design": {
+          "mobileName": "Diseño y creatividad",
           "name": "Diseño y creatividad",
           "summary": "Gráficos, webs y trabajo creativo"
         },
         "finance": {
+          "mobileName": "Contabilidad y teneduría",
           "name": "Contabilidad y teneduría",
           "summary": "Libros, informes y conciliación"
         },
         "investing": {
+          "mobileName": "Inversión y análisis de mercado",
           "name": "Inversión y análisis de mercado",
           "summary": "Inversiones, mercados y carteras"
         },
         "marketing": {
+          "mobileName": "Marketing y contenido",
           "name": "Marketing y contenido",
           "summary": "Redes sociales, contenido y marca"
         },
         "operations": {
+          "mobileName": "Negocio y operaciones",
           "name": "Negocio y operaciones",
           "summary": "Dueños de negocio, asistentes y operaciones"
         },
         "other": {
+          "mobileName": "Otra / aún explorando",
           "name": "Otra / aún explorando",
           "summary": "Otra área, o aún explorando"
         },
         "research": {
+          "mobileName": "Investigación y aprendizaje",
           "name": "Investigación y aprendizaje",
           "summary": "Investigación, estudio y aprendizaje"
         },
         "sales": {
+          "mobileName": "Ventas y desarrollo de clientes",
           "name": "Ventas y desarrollo de clientes",
           "summary": "Prospección, ventas y crecimiento de clientes"
         },
         "software": {
+          "mobileName": "Software y apps",
           "name": "Software y apps",
           "summary": "Apps, juegos y desarrollo"
         }
@@ -4315,6 +4313,30 @@
       "industry": {
         "copy": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube. Elige tu área para una primera tarea a tu medida.",
         "title": "¿A qué tipo de trabajo te dedicas?"
+      },
+      "mobile": {
+        "channelsCopy": "Habla con Okou donde ya trabajas.",
+        "channelsTitle": "Elige una app de chat",
+        "connect": "Conectar",
+        "copyImportPrompt": "Copiar prompt de importación",
+        "existingPlan": "Usar mi plan de {{provider}}",
+        "experienceTitle": "Elige cómo empezar",
+        "industryCopy": "Te sugeriremos una primera tarea a tu medida.",
+        "industryTitle": "Elige tu área de trabajo",
+        "instructions": "Instrucciones",
+        "newCopy": "Recibe ayuda con tu primera tarea.",
+        "newTitle": "Empezar con Okou",
+        "pasteIntoProvider": "Pégalo en {{provider}} y envíalo.",
+        "permissionsLabel": "Permisos y privacidad",
+        "planCopy": "Ejecuta tareas con tu suscripción.",
+        "promptTitle": "¿Qué quieres hacer?",
+        "readyTitle": "Empieza tu primera tarea",
+        "skillsCopy": "Usa {{provider}} en tu ordenador.",
+        "skillsTitle": "Importa tus habilidades",
+        "sourcesCopy": "Conecta una para tu primera tarea.",
+        "startTask": "Iniciar tarea",
+        "teamCopy": "Trabajad en el mismo espacio.",
+        "teamTitle": "Invita a un compañero"
       },
       "prompt": {
         "intro": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube."

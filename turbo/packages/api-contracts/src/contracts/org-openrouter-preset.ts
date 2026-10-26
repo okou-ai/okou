@@ -1,4 +1,11 @@
-import * as z from "zod";
+import {
+  object,
+  strictObject,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -8,11 +15,11 @@ export const ORG_OPENROUTER_PRESETS = [
   "@preset/okou-experimental",
 ] as const;
 
-export const orgOpenrouterPresetSchema = z.enum(ORG_OPENROUTER_PRESETS);
-export type OrgOpenrouterPreset = z.infer<typeof orgOpenrouterPresetSchema>;
+export const orgOpenrouterPresetSchema = zEnum(ORG_OPENROUTER_PRESETS);
+export type OrgOpenrouterPreset = zInfer<typeof orgOpenrouterPresetSchema>;
 
 // Existing operator-configured values remain readable, even outside the UI allowlist.
-const responseSchema = z.object({ openrouterPreset: z.string().nullable() });
+const responseSchema = object({ openrouterPreset: string().nullable() });
 const c = initContract();
 
 export const orgOpenrouterPresetContract = c.router({
@@ -32,7 +39,7 @@ export const orgOpenrouterPresetContract = c.router({
     method: "PUT",
     path: "/api/org/openrouter-preset",
     headers: authHeadersSchema,
-    body: z.strictObject({
+    body: strictObject({
       openrouterPreset: orgOpenrouterPresetSchema.nullable(),
     }),
     responses: {

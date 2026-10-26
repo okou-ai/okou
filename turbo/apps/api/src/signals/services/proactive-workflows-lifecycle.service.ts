@@ -10,7 +10,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import * as z from "zod";
+import { object, uuid } from "zod";
 import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -45,7 +45,7 @@ import { wakeProactiveJobs$ } from "./proactive-jobs-wake.service";
 import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 
 const log = logger("ProactiveWorkflows");
-const installedSchema = z.object({ id: z.uuid() });
+const installedSchema = object({ id: uuid() });
 
 function ownerMinute(owner: ProactiveWorkflowOwner): number {
   return officialScheduleOwnerHash(owner) % 60;

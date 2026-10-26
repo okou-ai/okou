@@ -1,4 +1,23 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  union,
+  url,
+  uuid,
+  enum as zEnum,
+  ZodIssueCode,
+  unknown as zUnknown,
+  type RefinementCtx,
+  type infer as zInfer,
+} from "zod";
+
 import { workflowSkillDocumentSchema } from "./workflow-attachments";
 
 import {
@@ -44,7 +63,7 @@ export {
 const c = initContract();
 
 export const MIN_EPOCH_MS_TIMESTAMP = 1_000_000_000_000;
-const apiStartTimeSchema = z.number().int().min(MIN_EPOCH_MS_TIMESTAMP);
+const apiStartTimeSchema = number().int().min(MIN_EPOCH_MS_TIMESTAMP);
 
 export const CANONICAL_CLAUDE_CONFIG_DIR = `${CANONICAL_GUEST_HOME_DIR}/.claude`;
 export const CANONICAL_CODEX_HOME_DIR = `${CANONICAL_GUEST_HOME_DIR}/.codex`;
@@ -120,9 +139,10 @@ export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
 export const PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION = 5;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 /** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
-export const releaseVersionSchema = z
-  .string()
-  .regex(/^\d+\.\d+\.\d+$/, "Release versions are MAJOR.MINOR.PATCH");
+export const releaseVersionSchema = string().regex(
+  /^\d+\.\d+\.\d+$/,
+  "Release versions are MAJOR.MINOR.PATCH",
+);
 export function elapsedSinceApiStartMs(
   apiStartTimeMs: number | undefined,
   nowMs: number,
@@ -138,7 +158,7 @@ export function elapsedSinceApiStartMs(
   return Math.max(0, nowMs - apiStartTimeMs);
 }
 
-export const runnerClaimPollReasonSchema = z.enum([
+export const runnerClaimPollReasonSchema = zEnum([
   "immediate",
   "deferred",
   "wakeup_retry",
@@ -146,23 +166,19 @@ export const runnerClaimPollReasonSchema = z.enum([
   "fast",
 ]);
 
-const runnerProcessIdentitySchema = z
-  .object({
-    runnerId: z.uuid(),
-    heartbeatGeneration: runnerHeartbeatGenerationSchema,
-  })
-  .strict();
+const runnerProcessIdentitySchema = object({
+  runnerId: uuid(),
+  heartbeatGeneration: runnerHeartbeatGenerationSchema,
+}).strict();
 
-export const runnerClaimCapabilitiesSchema = z
-  .object({
-    piModelConfigGenerations: z
-      .array(z.number().int().positive().max(255))
-      .min(1)
-      .max(RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX)
-      .refine((generations) => {
-        return new Set(generations).size === generations.length;
-      }, "Pi model-config generations must be unique"),
-  })
+export const runnerClaimCapabilitiesSchema = object({
+  piModelConfigGenerations: array(number().int().positive().max(255))
+    .min(1)
+    .max(RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX)
+    .refine((generations) => {
+      return new Set(generations).size === generations.length;
+    }, "Pi model-config generations must be unique"),
+})
   .strict()
   .readonly();
 
@@ -170,12 +186,11 @@ export const runnerClaimCapabilitiesSchema = z
  * Versions of the Okou CLI bundled into a Runner and installed into its rootfs.
  * Advertised on claim for attribution.
  */
-export const runnerInstalledVersionsSchema = z
-  .object({
-    cli: releaseVersionSchema,
-    piAgentRuntime: releaseVersionSchema,
-    piSdk: z.string().min(1).max(64),
-  })
+export const runnerInstalledVersionsSchema = object({
+  cli: releaseVersionSchema,
+  piAgentRuntime: releaseVersionSchema,
+  piSdk: string().min(1).max(64),
+})
   .strict()
   .readonly();
 
@@ -184,117 +199,101 @@ export const runnerInstalledVersionsSchema = z
  * runner is not an exclusive assignee; another runner with a better compatible
  * local resource remains eligible to claim.
  */
-export const runnerPreferenceSchema = z.union([
-  z
-    .object({
-      kind: z.literal("preference"),
-      runnerIdentity: runnerProcessIdentitySchema,
-      tier: z.enum([
-        "exactSandbox",
-        "finalizingPredecessor",
-        "peerFinalizingPredecessor",
-        "sourceHomeCache",
-      ]),
-      expiresAt: z.string().datetime({ offset: true }),
-      finalizingSourceRunId: z.uuid(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("preference"),
-      runnerIdentity: runnerProcessIdentitySchema,
-      tier: z.enum(["reusableSandbox", "homeCache"]),
-      expiresAt: z.string().datetime({ offset: true }),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("noPreference"),
-      reason: z.enum([
-        "noReuseKey",
-        "expired",
-        "noViableHolder",
-        "lookupError",
-      ]),
-    })
-    .strict(),
+export const runnerPreferenceSchema = union([
+  object({
+    kind: literal("preference"),
+    runnerIdentity: runnerProcessIdentitySchema,
+    tier: zEnum([
+      "exactSandbox",
+      "finalizingPredecessor",
+      "peerFinalizingPredecessor",
+      "sourceHomeCache",
+    ]),
+    expiresAt: string().datetime({ offset: true }),
+    finalizingSourceRunId: uuid(),
+  }).strict(),
+  object({
+    kind: literal("preference"),
+    runnerIdentity: runnerProcessIdentitySchema,
+    tier: zEnum(["reusableSandbox", "homeCache"]),
+    expiresAt: string().datetime({ offset: true }),
+  }).strict(),
+  object({
+    kind: literal("noPreference"),
+    reason: zEnum(["noReuseKey", "expired", "noViableHolder", "lookupError"]),
+  }).strict(),
 ]);
 
-export const runnerPreferenceClaimStateSchema = z.enum([
+export const runnerPreferenceClaimStateSchema = zEnum([
   "active",
   "expired",
   "cleared",
 ]);
 
-const runnerClaimDiscoverySourceSchema = z.enum(["ably", "poll"]);
-const runnerClaimTelemetrySchema = z
-  .object({
-    discoverySource: runnerClaimDiscoverySourceSchema.optional(),
-    jobDiscoveredToClaimRequestMs: z.number().int().nonnegative().optional(),
-    localAdmissionToClaimRequestMs: z.number().int().nonnegative().optional(),
-    directCandidateNotificationToEnqueueMs: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional(),
-    directCandidateInboxWaitMs: z.number().int().nonnegative().optional(),
-    providerDiscoveryToMainLoopMs: z.number().int().nonnegative().optional(),
-    mainLoopToLocalAdmissionMs: z.number().int().nonnegative().optional(),
-    pollDueToJobDiscoveredMs: z.number().int().nonnegative().optional(),
-    pollHttpRequestMs: z.number().int().nonnegative().optional(),
-    pollReason: runnerClaimPollReasonSchema.optional(),
-    runnerPreference: runnerPreferenceSchema.optional().catch(undefined),
-    runnerPreferenceClaimState: runnerPreferenceClaimStateSchema.optional(),
-  })
-  .catch({});
+const runnerClaimDiscoverySourceSchema = zEnum(["ably", "poll"]);
+const runnerClaimTelemetrySchema = object({
+  discoverySource: runnerClaimDiscoverySourceSchema.optional(),
+  jobDiscoveredToClaimRequestMs: number().int().nonnegative().optional(),
+  localAdmissionToClaimRequestMs: number().int().nonnegative().optional(),
+  directCandidateNotificationToEnqueueMs: number()
+    .int()
+    .nonnegative()
+    .optional(),
+  directCandidateInboxWaitMs: number().int().nonnegative().optional(),
+  providerDiscoveryToMainLoopMs: number().int().nonnegative().optional(),
+  mainLoopToLocalAdmissionMs: number().int().nonnegative().optional(),
+  pollDueToJobDiscoveredMs: number().int().nonnegative().optional(),
+  pollHttpRequestMs: number().int().nonnegative().optional(),
+  pollReason: runnerClaimPollReasonSchema.optional(),
+  runnerPreference: runnerPreferenceSchema.optional().catch(undefined),
+  runnerPreferenceClaimState: runnerPreferenceClaimStateSchema.optional(),
+}).catch({});
 
-const runnerPollTelemetrySchema = z
-  .object({
-    pollReason: runnerClaimPollReasonSchema.optional(),
-  })
-  .catch({});
+const runnerPollTelemetrySchema = object({
+  pollReason: runnerClaimPollReasonSchema.optional(),
+}).catch({});
 
-const runnerProfileListSchema = z.array(z.string());
+const runnerProfileListSchema = array(string());
 const runnerSupportedProfileListSchema = runnerProfileListSchema.min(1);
 export const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX = 128;
 
-const networkPolicyRefreshSchema = z.object({
-  nextRefreshAt: z.string().datetime({ offset: true }),
+const networkPolicyRefreshSchema = object({
+  nextRefreshAt: string().datetime({ offset: true }),
 });
 
-const networkPolicyRefreshesSchema = z.record(
-  z.string(),
+const networkPolicyRefreshesSchema = record(
+  string(),
   networkPolicyRefreshSchema,
 );
 
-export const connectorRuntimeBuiltinTargetSchema = z.object({
-  kind: z.literal("builtin"),
+export const connectorRuntimeBuiltinTargetSchema = object({
+  kind: literal("builtin"),
   connectorSlug: connectorSlugSchema,
 });
 
-export const connectorRuntimeCustomTargetSchema = z.object({
-  kind: z.literal("custom"),
-  customConnectorId: z.uuid(),
+export const connectorRuntimeCustomTargetSchema = object({
+  kind: literal("custom"),
+  customConnectorId: uuid(),
 });
 
-export const connectorRuntimeTargetSchema = z.discriminatedUnion("kind", [
+export const connectorRuntimeTargetSchema = discriminatedUnion("kind", [
   connectorRuntimeBuiltinTargetSchema,
   connectorRuntimeCustomTargetSchema,
 ]);
 
 export const connectorRuntimeCustomTargetRegistrationSchema =
   connectorRuntimeCustomTargetSchema.extend({
-    baseUrlVars: z.record(z.string(), z.string()),
-    sourceId: z.uuid().optional(),
+    baseUrlVars: record(string(), string()),
+    sourceId: uuid().optional(),
   });
 
 export const connectorRuntimeBuiltinTargetRegistrationSchema =
   connectorRuntimeBuiltinTargetSchema.extend({
-    baseUrlVars: z.record(z.string(), z.string()).optional(),
-    sourceId: z.uuid().optional(),
+    baseUrlVars: record(string(), string()).optional(),
+    sourceId: uuid().optional(),
   });
 
-export const connectorRuntimeTargetRegistrationSchema = z.discriminatedUnion(
+export const connectorRuntimeTargetRegistrationSchema = discriminatedUnion(
   "kind",
   [
     connectorRuntimeBuiltinTargetRegistrationSchema,
@@ -304,8 +303,8 @@ export const connectorRuntimeTargetRegistrationSchema = z.discriminatedUnion(
 
 export function connectorRuntimeTargetKey(
   target:
-    | z.infer<typeof connectorRuntimeTargetSchema>
-    | z.infer<typeof connectorRuntimeTargetRegistrationSchema>,
+    | zInfer<typeof connectorRuntimeTargetSchema>
+    | zInfer<typeof connectorRuntimeTargetRegistrationSchema>,
 ): string {
   return target.kind === "builtin"
     ? `builtin:${target.connectorSlug}`
@@ -313,8 +312,8 @@ export function connectorRuntimeTargetKey(
 }
 
 function uniqueConnectorRuntimeTargets(
-  targets: readonly z.infer<typeof connectorRuntimeTargetRegistrationSchema>[],
-  context: z.RefinementCtx,
+  targets: readonly zInfer<typeof connectorRuntimeTargetRegistrationSchema>[],
+  context: RefinementCtx,
 ): void {
   const seen = new Set<string>();
   for (const [index, target] of targets.entries()) {
@@ -331,92 +330,90 @@ function uniqueConnectorRuntimeTargets(
   }
 }
 
-export const connectorRuntimeTargetsSchema = z
-  .array(connectorRuntimeTargetRegistrationSchema)
-  .superRefine(uniqueConnectorRuntimeTargets);
+export const connectorRuntimeTargetsSchema = array(
+  connectorRuntimeTargetRegistrationSchema,
+).superRefine(uniqueConnectorRuntimeTargets);
 
-export const agentRunConnectorDiagnosticRegistrationPayloadSchema = z
-  .object({
-    version: z.literal(1),
-    targets: connectorRuntimeTargetsSchema,
-  })
-  .strict();
+export const agentRunConnectorDiagnosticRegistrationPayloadSchema = object({
+  version: literal(1),
+  targets: connectorRuntimeTargetsSchema,
+}).strict();
 
 const connectorRuntimeSyncTargetsSchema = connectorRuntimeTargetsSchema
   .min(1)
   .max(CONNECTOR_RUNTIME_SYNC_TARGETS_MAX);
 
-export const connectorRuntimeCustomUnresolvedReasonSchema = z.enum([
+export const connectorRuntimeCustomUnresolvedReasonSchema = zEnum([
   "permission-bundle-unavailable",
   "runtime-configuration-unavailable",
 ]);
 
-export const connectorRuntimeBuiltinAbsentReasonSchema = z.literal(
+export const connectorRuntimeBuiltinAbsentReasonSchema = literal(
   "connector-unavailable",
 );
 
-export const connectorRuntimeCustomAbsentReasonSchema = z.literal(
+export const connectorRuntimeCustomAbsentReasonSchema = literal(
   "connector-unavailable",
 );
 
-const connectorRuntimeResultBaseSchema = z.object({
-  nextSyncAt: z.string().datetime({ offset: true }).optional(),
+const connectorRuntimeResultBaseSchema = object({
+  nextSyncAt: string().datetime({ offset: true }).optional(),
 });
 
 export const connectorRuntimeBuiltinAvailableResultSchema =
   connectorRuntimeResultBaseSchema.extend({
     target: connectorRuntimeBuiltinTargetSchema,
-    state: z.literal("available"),
+    state: literal("available"),
     networkPolicy: networkPolicySchema,
   });
 
 export const connectorRuntimeBuiltinUnresolvedResultSchema =
   connectorRuntimeResultBaseSchema.extend({
     target: connectorRuntimeBuiltinTargetSchema,
-    state: z.literal("unresolved"),
-    reason: z.literal("connector-unavailable"),
+    state: literal("unresolved"),
+    reason: literal("connector-unavailable"),
   });
 
 export const connectorRuntimeBuiltinAbsentResultSchema =
   connectorRuntimeResultBaseSchema.extend({
     target: connectorRuntimeBuiltinTargetSchema,
-    state: z.literal("absent"),
+    state: literal("absent"),
     reason: connectorRuntimeBuiltinAbsentReasonSchema,
   });
 
 export const connectorRuntimeCustomAvailableResultSchema =
   connectorRuntimeResultBaseSchema.extend({
     target: connectorRuntimeCustomTargetSchema,
-    state: z.literal("available"),
+    state: literal("available"),
     firewall: executionFirewallInlineEntrySchema.extend({
-      customConnectorId: z.uuid(),
+      customConnectorId: uuid(),
       firewall: firewallSchema.extend({
-        apis: z.array(
+        apis: array(
           firewallApiSchema.extend({
-            id: z.string().min(1),
+            id: string().min(1),
           }),
         ),
       }),
     }),
     networkPolicy: networkPolicySchema,
-    baseUrlVars: z.record(z.string(), z.string()),
+    baseUrlVars: record(string(), string()),
   });
 
 export const connectorRuntimeCustomUnresolvedResultSchema =
   connectorRuntimeResultBaseSchema.extend({
     target: connectorRuntimeCustomTargetSchema,
-    state: z.literal("unresolved"),
+    state: literal("unresolved"),
     reason: connectorRuntimeCustomUnresolvedReasonSchema,
   });
 
 export const connectorRuntimeCustomAbsentResultSchema =
   connectorRuntimeResultBaseSchema.extend({
     target: connectorRuntimeCustomTargetSchema,
-    state: z.literal("absent"),
+    state: literal("absent"),
     reason: connectorRuntimeCustomAbsentReasonSchema,
   });
 
-export const connectorRuntimeSyncResultSchema = z.union([
+export const connectorRuntimeSyncResultSchema = union([
   connectorRuntimeBuiltinAvailableResultSchema,
   connectorRuntimeBuiltinUnresolvedResultSchema,
   connectorRuntimeBuiltinAbsentResultSchema,
@@ -424,24 +421,20 @@ export const connectorRuntimeSyncResultSchema = z.union([
   connectorRuntimeCustomUnresolvedResultSchema,
   connectorRuntimeCustomAbsentResultSchema,
 ]);
-const runnerBuiltinFirewallNameSchema = z
-  .string()
+const runnerBuiltinFirewallNameSchema = string()
   .min(1)
   .max(128)
   .regex(/^(?:[a-z0-9][a-z0-9-]*|model-provider:[a-z0-9][a-z0-9-]*)$/);
-const runnerBuiltinFirewallsResolveBodySchema = z
-  .object({
-    names: z
-      .array(runnerBuiltinFirewallNameSchema)
-      .min(1)
-      .max(RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX)
-      .optional(),
-  })
-  .strict();
-const runnerBuiltinFirewallsResolveResponseSchema = z.object({
-  catalogDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-  catalogVersion: z.string().min(1),
-  firewalls: z.record(runnerBuiltinFirewallNameSchema, firewallSchema),
+const runnerBuiltinFirewallsResolveBodySchema = object({
+  names: array(runnerBuiltinFirewallNameSchema)
+    .min(1)
+    .max(RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX)
+    .optional(),
+}).strict();
+const runnerBuiltinFirewallsResolveResponseSchema = object({
+  catalogDigest: string().regex(/^sha256:[a-f0-9]{64}$/),
+  catalogVersion: string().min(1),
+  firewalls: record(runnerBuiltinFirewallNameSchema, firewallSchema),
 });
 
 /**
@@ -450,12 +443,11 @@ const runnerBuiltinFirewallsResolveResponseSchema = z.object({
  */
 export const DEFAULT_PROFILE = "vm0/default";
 
-const runnersPollBodySchema = z.object({
-  runnerId: z.uuid().optional(),
+const runnersPollBodySchema = object({
+  runnerId: uuid().optional(),
   group: runnerGroupSchema,
   supportedProfiles: runnerSupportedProfileListSchema,
-  excludedRunIds: z
-    .array(z.uuid())
+  excludedRunIds: array(uuid())
     .max(RUNNER_POLL_EXCLUDED_RUN_IDS_MAX)
     .optional(),
   telemetry: runnerPollTelemetrySchema.optional(),
@@ -464,43 +456,42 @@ const runnersPollBodySchema = z.object({
 /**
  * Job schema for polling response
  */
-export const jobSchema = z.object({
-  runId: z.uuid(),
-  prompt: z.string(),
-  appendSystemPrompt: z.string().nullable(),
-  vars: z.record(z.string(), z.string()).nullable(),
-  experimentalProfile: z.string(),
-  cliAgentSessionId: z.string().nullable().optional(),
-  reuseKey: z.string().nullable().optional(),
+export const jobSchema = object({
+  runId: uuid(),
+  prompt: string(),
+  appendSystemPrompt: string().nullable(),
+  vars: record(string(), string()).nullable(),
+  experimentalProfile: string(),
+  cliAgentSessionId: string().nullable().optional(),
+  reuseKey: string().nullable().optional(),
   runnerPreference: runnerPreferenceSchema,
 });
 
-export const heldSandboxStateSchema = z.object({
-  reuseKey: z.string(),
-  lastCompletedAt: z.string().datetime({ offset: true }),
-  reusableSandbox: z.object({
-    profile: z.string(),
-    sourceRunId: z.uuid(),
+export const heldSandboxStateSchema = object({
+  reuseKey: string(),
+  lastCompletedAt: string().datetime({ offset: true }),
+  reusableSandbox: object({
+    profile: string(),
+    sourceRunId: uuid(),
   }),
 });
 
-export const activeReuseProducerSchema = z.object({
-  runId: z.uuid(),
-  reuseKey: z.string(),
-  profile: z.string(),
+export const activeReuseProducerSchema = object({
+  runId: uuid(),
+  reuseKey: string(),
+  profile: string(),
 });
 
-export const heldHomeStateSchema = z.object({
-  reuseKey: z.string(),
-  lastCompletedAt: z.string().datetime({ offset: true }),
-  homeCaches: z
-    .array(
-      z.object({
-        profile: z.string(),
-        homeAffinityVersion: z.literal(1),
-        sourceRunId: z.uuid(),
-      }),
-    )
+export const heldHomeStateSchema = object({
+  reuseKey: string(),
+  lastCompletedAt: string().datetime({ offset: true }),
+  homeCaches: array(
+    object({
+      profile: string(),
+      homeAffinityVersion: literal(1),
+      sourceRunId: uuid(),
+    }),
+  )
     .min(1)
     .max(8),
 });
@@ -519,7 +510,7 @@ export const runnersPollContract = c.router({
     headers: authHeadersSchema,
     body: runnersPollBodySchema,
     responses: {
-      200: z.object({
+      200: object({
         job: jobSchema.nullable(),
       }),
       400: apiErrorSchema,
@@ -530,11 +521,11 @@ export const runnersPollContract = c.router({
   },
 });
 
-const archiveSizeSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+const archiveSizeSchema = number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 
 // Optional internal artifact publication behavior for a missing artifact root. Absence
 // is equivalent to "fail".
-export const artifactMissingRootPolicySchema = z.enum([
+export const artifactMissingRootPolicySchema = zEnum([
   "fail",
   "preserveParentVersion",
 ]);
@@ -542,46 +533,41 @@ export const artifactMissingRootPolicySchema = z.enum([
 /**
  * Canonical resolved Storage mount emitted to runners.
  */
-export const storageMountEntrySchema = z
-  .object({
-    name: z.string(),
-    storageId: z.string(),
-    versionId: z.string(),
-    mountPath: z.string(),
-    archiveUrl: z.string().optional(),
-    archiveSize: archiveSizeSchema.optional(),
-    empty: z.boolean().optional(),
-    missingRootPolicy: artifactMissingRootPolicySchema.optional(),
-    writeback: z.boolean().optional(),
-  })
-  .superRefine((mount, ctx) => {
-    const writeback = mount.writeback ?? false;
-    if (
-      mount.archiveUrl === undefined &&
-      !(writeback && mount.empty === true)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["archiveUrl"],
-        message:
-          "archiveUrl is required unless an empty writeback mount is requested",
-      });
-    }
-    if (!writeback && mount.empty === true) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["empty"],
-        message: "empty is only valid for writeback mounts",
-      });
-    }
-    if (!writeback && mount.missingRootPolicy !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["missingRootPolicy"],
-        message: "missingRootPolicy is only valid for writeback mounts",
-      });
-    }
-  });
+export const storageMountEntrySchema = object({
+  name: string(),
+  storageId: string(),
+  versionId: string(),
+  mountPath: string(),
+  archiveUrl: string().optional(),
+  archiveSize: archiveSizeSchema.optional(),
+  empty: boolean().optional(),
+  missingRootPolicy: artifactMissingRootPolicySchema.optional(),
+  writeback: boolean().optional(),
+}).superRefine((mount, ctx) => {
+  const writeback = mount.writeback ?? false;
+  if (mount.archiveUrl === undefined && !(writeback && mount.empty === true)) {
+    ctx.addIssue({
+      code: ZodIssueCode.custom,
+      path: ["archiveUrl"],
+      message:
+        "archiveUrl is required unless an empty writeback mount is requested",
+    });
+  }
+  if (!writeback && mount.empty === true) {
+    ctx.addIssue({
+      code: ZodIssueCode.custom,
+      path: ["empty"],
+      message: "empty is only valid for writeback mounts",
+    });
+  }
+  if (!writeback && mount.missingRootPolicy !== undefined) {
+    ctx.addIssue({
+      code: ZodIssueCode.custom,
+      path: ["missingRootPolicy"],
+      message: "missingRootPolicy is only valid for writeback mounts",
+    });
+  }
+});
 
 /**
  * Canonical resolved Storage mount persisted by the API before claim-time
@@ -589,19 +575,19 @@ export const storageMountEntrySchema = z
  * omitted from the Runner wire representation.
  */
 export const storedStorageMountEntrySchema = storageMountEntrySchema.extend({
-  orgId: z.string(),
-  userId: z.string(),
+  orgId: string(),
+  userId: string(),
 });
 
 function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
   mounts: readonly T[],
-  ctx: z.RefinementCtx,
+  ctx: RefinementCtx,
 ): void {
   const mountPaths = new Set<string>();
   for (const [index, mount] of mounts.entries()) {
     if (mountPaths.has(mount.mountPath)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: ZodIssueCode.custom,
         path: [index, "mountPath"],
         message: `Duplicate Storage mount path "${mount.mountPath}"`,
       });
@@ -611,27 +597,25 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 }
 
 /** Canonical Runner wire representation. */
-export const storageManifestSchema = z.object({
+export const storageManifestSchema = object({
   // Reader preparation only: the Stage 1 API never emits this field.
-  workflowSkills: z.array(workflowSkillDocumentSchema).optional(),
-  storageMounts: z
-    .array(storageMountEntrySchema)
-    .superRefine(uniqueStorageMountPaths),
+  workflowSkills: array(workflowSkillDocumentSchema).optional(),
+  storageMounts: array(storageMountEntrySchema).superRefine(
+    uniqueStorageMountPaths,
+  ),
 });
 
 /** Retained native files are disposable; Chat remains the recovery source. */
-export const nativeContinuationSchema = z
-  .object({
-    sessionId: z
-      .string()
-      .min(1)
-      .max(255)
-      .regex(/^[A-Za-z0-9_-]+$/)
-      .nullable(),
-    generationRunId: z.uuid().nullable(),
-    /** Enabled only when native context could not resume, before CLI start. */
-    recoveryPrompt: z.string().min(1).max(4096).nullable(),
-  })
+export const nativeContinuationSchema = object({
+  sessionId: string()
+    .min(1)
+    .max(255)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .nullable(),
+  generationRunId: uuid().nullable(),
+  /** Enabled only when native context could not resume, before CLI start. */
+  recoveryPrompt: string().min(1).max(4096).nullable(),
+})
   .strict()
   .superRefine((native, context) => {
     if ((native.sessionId === null) !== (native.generationRunId === null)) {
@@ -642,87 +626,77 @@ export const nativeContinuationSchema = z
       });
     }
   });
-export type NativeContinuation = z.infer<typeof nativeContinuationSchema>;
+export type NativeContinuation = zInfer<typeof nativeContinuationSchema>;
 
-export const secretConnectorMetadataSchema = z.object({
-  sourceType: z.enum(["connector", "model-provider", "platform-secret"]),
-  sourceUserId: z.string().optional(),
+export const secretConnectorMetadataSchema = object({
+  sourceType: zEnum(["connector", "model-provider", "platform-secret"]),
+  sourceUserId: string().optional(),
   // Exact credential owner for sources that support multiple credentials.
   // Older runner payloads omit this and retain the singleton lookup path.
-  sourceId: z.uuid().optional(),
-  metadataKey: z.string().optional(),
+  sourceId: uuid().optional(),
+  metadataKey: string().optional(),
 });
 
 // Keyed by the same firewall auth secret env aliases as secretConnectorMap.
-export const secretConnectorMetadataMapSchema = z.record(
-  z.string(),
+export const secretConnectorMetadataMapSchema = record(
+  string(),
   secretConnectorMetadataSchema,
 );
 
 export const PI_SKILLS_ROOT = `${PI_AGENT_DIR}/skills`;
 
-const piResourceSnapshotAgentsFilesSchema = z
-  .array(
-    z
-      .object({
-        path: z.string().startsWith("/"),
-        content: z.string(),
-      })
-      .strict()
-      .readonly(),
-  )
-  .readonly();
-
-const piResourceSnapshotSkillsSchema = z
-  .array(
-    z
-      .object({
-        name: z.string().min(1),
-        description: z.string().min(1),
-        filePath: z.string().startsWith("/"),
-        baseDir: z.string().startsWith("/"),
-        scope: z.enum(["user", "project", "temporary"]),
-        disableModelInvocation: z.boolean(),
-      })
-      .strict()
-      .readonly(),
-  )
-  .readonly();
-
-export const piResourceSnapshotSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    agentsFiles: piResourceSnapshotAgentsFilesSchema,
-    skills: piResourceSnapshotSkillsSchema,
+const piResourceSnapshotAgentsFilesSchema = array(
+  object({
+    path: string().startsWith("/"),
+    content: string(),
   })
+    .strict()
+    .readonly(),
+).readonly();
+
+const piResourceSnapshotSkillsSchema = array(
+  object({
+    name: string().min(1),
+    description: string().min(1),
+    filePath: string().startsWith("/"),
+    baseDir: string().startsWith("/"),
+    scope: zEnum(["user", "project", "temporary"]),
+    disableModelInvocation: boolean(),
+  })
+    .strict()
+    .readonly(),
+).readonly();
+
+export const piResourceSnapshotSchema = object({
+  schemaVersion: literal(1),
+  agentsFiles: piResourceSnapshotAgentsFilesSchema,
+  skills: piResourceSnapshotSkillsSchema,
+})
   .strict()
   .readonly();
 
-const piApiKeyCredentialSecretNameSchema = z.enum(["OPENROUTER_API_KEY"]);
+const piApiKeyCredentialSecretNameSchema = zEnum(["OPENROUTER_API_KEY"]);
 
-const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("api-key"),
-      environment: z.enum(["OPENAI_API_KEY"]),
-      secretName: piApiKeyCredentialSecretNameSchema,
-    })
+const piModelCredentialBindingSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("api-key"),
+    environment: zEnum(["OPENAI_API_KEY"]),
+    secretName: piApiKeyCredentialSecretNameSchema,
+  })
     .strict()
     .readonly(),
-  z
-    .object({
-      kind: z.literal("access-token"),
-      environment: z.enum(["CHATGPT_ACCESS_TOKEN"]),
-      secretName: z.enum(["CHATGPT_ACCESS_TOKEN"]),
-    })
+  object({
+    kind: literal("access-token"),
+    environment: zEnum(["CHATGPT_ACCESS_TOKEN"]),
+    secretName: zEnum(["CHATGPT_ACCESS_TOKEN"]),
+  })
     .strict()
     .readonly(),
-  z
-    .object({
-      kind: z.literal("account-id"),
-      environment: z.enum(["CHATGPT_ACCOUNT_ID"]),
-      secretName: z.enum(["CHATGPT_ACCOUNT_ID"]),
-    })
+  object({
+    kind: literal("account-id"),
+    environment: zEnum(["CHATGPT_ACCOUNT_ID"]),
+    secretName: zEnum(["CHATGPT_ACCOUNT_ID"]),
+  })
     .strict()
     .readonly(),
 ]);
@@ -731,24 +705,29 @@ const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
  * Shared strict route invariants. Generations are separate wire contracts;
  * adding a reader must not move existing writers to a newer generation.
  */
-const piModelConfigVersionedSchema = z
-  .object({
-    schemaVersion: z.union([
-      z.literal(PI_MODEL_CONFIG_CURRENT_GENERATION),
-      z.literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
-    ]),
-    dialect: z.enum(["openai-responses", "openai-codex-responses"]),
-    transport: z.literal("sse"),
-    provider: z.enum(["openrouter", "openai-codex"]),
-    baseUrl: z.url(),
-    model: z.string().min(1).max(512),
-    catalogModel: z.string().min(1).max(512).optional(),
-    thinkingLevel: z
-      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-      .optional(),
-    serviceTier: z.enum(["priority", "fast"]).optional(),
-    credentialBindings: z.array(piModelCredentialBindingSchema).min(1).max(2),
-  })
+const piModelConfigVersionedSchema = object({
+  schemaVersion: union([
+    literal(PI_MODEL_CONFIG_CURRENT_GENERATION),
+    literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
+  ]),
+  dialect: zEnum(["openai-responses", "openai-codex-responses"]),
+  transport: literal("sse"),
+  provider: zEnum(["openrouter", "openai-codex"]),
+  baseUrl: url(),
+  model: string().min(1).max(512),
+  catalogModel: string().min(1).max(512).optional(),
+  thinkingLevel: zEnum([
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]).optional(),
+  serviceTier: zEnum(["priority", "fast"]).optional(),
+  credentialBindings: array(piModelCredentialBindingSchema).min(1).max(2),
+})
   .strict()
   .superRefine((config, refinement) => {
     const bindingKinds = config.credentialBindings.map((binding) => {
@@ -820,58 +799,60 @@ const piModelConfigVersionedSchema = z
 
 export const piModelConfigV2Schema = piModelConfigVersionedSchema
   .safeExtend({
-    schemaVersion: z.literal(PI_MODEL_CONFIG_CURRENT_GENERATION),
-    serviceTier: z.enum(["priority"]).optional(),
+    schemaVersion: literal(PI_MODEL_CONFIG_CURRENT_GENERATION),
+    serviceTier: zEnum(["priority"]).optional(),
   })
   .readonly();
 
 /** Additive reader capability only; route writers activate separately in #31803. */
-export const piModelConfigV3Schema = z
-  .discriminatedUnion("dialect", [
-    piModelConfigVersionedSchema.safeExtend({
-      schemaVersion: z.literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
-      dialect: z.literal("openai-responses"),
-      transport: z.enum(["sse"]),
-      provider: z.enum(["openrouter"]),
-      serviceTier: z.enum(["priority"]).optional(),
-    }),
-    piModelConfigVersionedSchema.safeExtend({
-      schemaVersion: z.literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
-      dialect: z.literal("openai-codex-responses"),
-      transport: z.enum(["sse"]),
-      provider: z.enum(["openai-codex"]),
-      serviceTier: z.enum(["fast"]).optional(),
-    }),
-  ])
-  .readonly();
+export const piModelConfigV3Schema = discriminatedUnion("dialect", [
+  piModelConfigVersionedSchema.safeExtend({
+    schemaVersion: literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
+    dialect: literal("openai-responses"),
+    transport: zEnum(["sse"]),
+    provider: zEnum(["openrouter"]),
+    serviceTier: zEnum(["priority"]).optional(),
+  }),
+  piModelConfigVersionedSchema.safeExtend({
+    schemaVersion: literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
+    dialect: literal("openai-codex-responses"),
+    transport: zEnum(["sse"]),
+    provider: zEnum(["openai-codex"]),
+    serviceTier: zEnum(["fast"]).optional(),
+  }),
+]).readonly();
 
 /**
  * OpenRouter Chat Completions route. It has one public API-key binding and no
  * request service tier; an OpenRouter Preset owns reasoning and routing policy.
  */
-export const piModelConfigV5Schema = z
-  .object({
-    schemaVersion: z.literal(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION),
-    dialect: z.literal("openai-completions"),
-    transport: z.literal("sse"),
-    provider: z.literal("openrouter"),
-    baseUrl: z.url(),
-    model: z.string().min(1).max(512),
-    catalogModel: z.string().min(1).max(512).optional(),
-    thinkingLevel: z
-      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-      .optional(),
-    credentialBindings: z
-      .array(piModelCredentialBindingSchema)
-      .length(1)
-      .refine((bindings) => {
-        return bindings[0]?.kind === "api-key";
-      }, "Chat Completions requires exactly one API-key binding"),
-  })
+export const piModelConfigV5Schema = object({
+  schemaVersion: literal(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION),
+  dialect: literal("openai-completions"),
+  transport: literal("sse"),
+  provider: literal("openrouter"),
+  baseUrl: url(),
+  model: string().min(1).max(512),
+  catalogModel: string().min(1).max(512).optional(),
+  thinkingLevel: zEnum([
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]).optional(),
+  credentialBindings: array(piModelCredentialBindingSchema)
+    .length(1)
+    .refine((bindings) => {
+      return bindings[0]?.kind === "api-key";
+    }, "Chat Completions requires exactly one API-key binding"),
+})
   .strict()
   .readonly();
 
-export const piModelConfigSchema = z.union([
+export const piModelConfigSchema = union([
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   piModelConfigV5Schema,
@@ -881,10 +862,9 @@ export const piModelConfigSchema = z.union([
  * Version marker for the sandbox Pi launch contract. Runtime resources are
  * discovered from Pi's canonical filesystem locations by the official loader.
  */
-export const piLaunchConfigSchema = z
-  .object({
-    schemaVersion: z.literal(2),
-  })
+export const piLaunchConfigSchema = object({
+  schemaVersion: literal(2),
+})
   .strict()
   .readonly();
 
@@ -895,12 +875,11 @@ export const piLaunchConfigSchema = z
  * environment. See `crates/guest-contracts/src/env.rs`
  * (`PI_LAUNCH_PAYLOAD_FILE_ENV`) for the writer side of this contract.
  */
-export const piLaunchPayloadSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    appendSystemPrompt: z.string().nullable(),
-    launchConfig: piLaunchConfigSchema,
-  })
+export const piLaunchPayloadSchema = object({
+  schemaVersion: literal(1),
+  appendSystemPrompt: string().nullable(),
+  launchConfig: piLaunchConfigSchema,
+})
   .strict()
   .readonly();
 
@@ -911,7 +890,7 @@ function requireCompletePiFields(
     readonly piLaunchConfig?: unknown;
     readonly piModelConfig?: unknown;
   },
-  refinement: z.RefinementCtx,
+  refinement: RefinementCtx,
 ): void {
   const expectsPi = context.cliAgentType === "pi";
   for (const field of [
@@ -941,51 +920,50 @@ function requireCompletePiFields(
  * Contains prepared context without runtime-generated fields
  * Secrets are encrypted with AES-256-GCM before storage
  */
-const storedExecutionContextObjectSchema = z.object({
+const storedExecutionContextObjectSchema = object({
   // API-only logical identity for Stage 2; absence marks an older queued context.
-  customWorkflowSelection: z
-    .object({
-      agentId: z.uuid(),
-    })
+  customWorkflowSelection: object({
+    agentId: uuid(),
+  })
     .strict()
     .optional(),
-  storageMounts: z
-    .array(storedStorageMountEntrySchema)
-    .superRefine(uniqueStorageMountPaths),
-  environment: z.record(z.string(), z.string()).nullable(),
-  platformEnvironment: z.record(z.string(), z.string()),
+  storageMounts: array(storedStorageMountEntrySchema).superRefine(
+    uniqueStorageMountPaths,
+  ),
+  environment: record(string(), string()).nullable(),
+  platformEnvironment: record(string(), string()),
   // API-only references used to reconstruct runner masking values from the
   // effective stored agent environment. Null means no persistent secret map, and array
   // order/repetition follows secret-map values.
   // This field must not be included in the runner-facing ExecutionContext.
-  secretValueEnvironmentKeys: z.array(z.string()).nullable(),
+  secretValueEnvironmentKeys: array(string()).nullable(),
   // Connector-owned runtime vars used by proxy/firewall template resolution.
   // User-provided run vars stay in agent_runs.vars and are merged at claim time.
-  vars: z.record(z.string(), z.string()).nullable().optional(),
+  vars: record(string(), string()).nullable().optional(),
   nativeContinuation: nativeContinuationSchema,
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
   // names used by `${{ secrets.NAME }}`; connector/model-provider keys are env
   // aliases, not backing storage secret names.
-  encryptedSecrets: z.string().nullable(),
+  encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
-  secretConnectorMap: z.record(z.string(), z.string()).nullable().optional(),
+  secretConnectorMap: record(string(), string()).nullable().optional(),
   // Same keys as secretConnectorMap; adds source details when the owner alone
   // is not enough to locate access storage (for example, personal model providers).
   secretConnectorMetadataMap: secretConnectorMetadataMapSchema
     .nullable()
     .optional(),
-  cliAgentType: z.string(),
+  cliAgentType: string(),
   // Preview evaluation escape hatch: bypass preview mock CLIs and use the real
   // agent runtime.
-  realAgentInPreview: z.boolean().optional(),
+  realAgentInPreview: boolean().optional(),
   // Capture HTTP header names, selected safe header values, request bodies, and response bodies
   // in network logs
-  captureNetworkBodies: z.boolean().optional(),
+  captureNetworkBodies: boolean().optional(),
   // Dispatch timestamp for E2E timing metrics, as Unix epoch milliseconds
   apiStartTime: apiStartTimeSchema.optional(),
   // User's timezone preference (IANA format, e.g., "Asia/Shanghai")
-  userTimezone: z.string().optional(),
+  userTimezone: string().optional(),
   // Firewall entries for proxy-side token replacement. Built-ins stay compact;
   // org custom connectors use inline firewall bodies.
   firewalls: executionFirewallsSchema.optional(),
@@ -998,18 +976,18 @@ const storedExecutionContextObjectSchema = z.object({
   // after claim independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
-  disallowedTools: z.array(z.string()).optional(),
+  disallowedTools: array(string()).optional(),
   // Tools to make available in Claude CLI (passed as --tools)
-  tools: z.array(z.string()).optional(),
+  tools: array(string()).optional(),
   // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: z.string().optional(),
+  settings: string().optional(),
   // Feature flags evaluated at job creation time (all switch states for user/org)
-  featureFlags: z.record(z.string(), z.boolean()).optional(),
-  billableFirewalls: z.array(z.string()).optional(),
+  featureFlags: record(string(), boolean()).optional(),
+  billableFirewalls: array(string()).optional(),
   // Provider the proxy reports model token usage under: a Built-in route's
   // `usage_pricing` provider (possibly an alias of the actual model), else the
   // catalog model id. Billing eligibility is decided from API-owned run context.
-  modelUsageProvider: z.string().optional(),
+  modelUsageProvider: string().optional(),
   // Total-input threshold (input + cache read + cache creation) at which
   // `modelUsageProvider` usage bills the `.long_context` categories, captured
   // by the API from the run's Built-in route
@@ -1018,8 +996,7 @@ const storedExecutionContextObjectSchema = z.object({
   // addon selects the base tier; it does not reconstruct a threshold. This
   // is not supported pre-catalog pricing compatibility; see
   // docs/deployment-compatibility.md for deployment order and rollback limits.
-  modelUsageLongContextMinTotalInputTokens: z
-    .number()
+  modelUsageLongContextMinTotalInputTokens: number()
     .int()
     .nonnegative()
     .optional(),
@@ -1028,7 +1005,7 @@ const storedExecutionContextObjectSchema = z.object({
     .nullable()
     .optional(),
   // Pi runs carry their session, launch config and model as one bundle.
-  piSessionId: z.uuid().optional(),
+  piSessionId: uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
 });
@@ -1044,7 +1021,7 @@ export const storedExecutionContextSchema =
 export const claimCompatibleStoredExecutionContextSchema =
   storedExecutionContextObjectSchema
     .extend({
-      piModelConfig: z.unknown().optional(),
+      piModelConfig: zUnknown().optional(),
     })
     .superRefine(requireCompletePiFields);
 
@@ -1055,48 +1032,48 @@ export const claimCompatibleStoredExecutionContextSchema =
  * tolerant consumer projection and intentionally does not mirror every field.
  * See `crates/runner-types/src/types.rs`.
  */
-const executionContextObjectSchema = z.object({
+const executionContextObjectSchema = object({
   // Claim-only current Agent body; absent for jobs without an Agent.
-  agentInstructions: z.string().optional(),
+  agentInstructions: string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
-  isFirstRun: z.boolean().optional(),
-  runId: z.uuid(),
-  reuseKey: z.string().nullable().optional(),
-  prompt: z.string(),
-  appendSystemPrompt: z.string().nullable(),
-  vars: z.record(z.string(), z.string()).nullable(),
-  sandboxToken: z.string(),
+  isFirstRun: boolean().optional(),
+  runId: uuid(),
+  reuseKey: string().nullable().optional(),
+  prompt: string(),
+  appendSystemPrompt: string().nullable(),
+  vars: record(string(), string()).nullable(),
+  sandboxToken: string(),
   storageManifest: storageManifestSchema.nullable(),
-  environment: z.record(z.string(), z.string()).nullable(),
-  platformEnvironment: z.record(z.string(), z.string()),
+  environment: record(string(), string()).nullable(),
+  platformEnvironment: record(string(), string()),
   nativeContinuation: nativeContinuationSchema,
   // Plain secret values used by the runner for redaction. These are values, not
   // names, and are base64-encoded only when exported through OKOU_SECRET_VALUES.
-  secretValues: z.array(z.string()).nullable(),
+  secretValues: array(string()).nullable(),
   // AES-256-GCM encrypted Record<string, string>, passed through to mitm-addon
   // for auth resolution. Keys are runtime secret names used by
   // `${{ secrets.NAME }}`; connector/model-provider keys are env aliases, not
   // backing storage secret names.
-  encryptedSecrets: z.string().nullable(),
+  encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
-  secretConnectorMap: z.record(z.string(), z.string()).nullable().optional(),
+  secretConnectorMap: record(string(), string()).nullable().optional(),
   // Same keys as secretConnectorMap; adds source details when the owner alone
   // is not enough to locate access storage (for example, personal model providers).
   secretConnectorMetadataMap: secretConnectorMetadataMapSchema
     .nullable()
     .optional(),
-  cliAgentType: z.string(),
+  cliAgentType: string(),
   // Preview evaluation escape hatch: bypass preview mock CLIs and use the real
   // agent runtime.
-  realAgentInPreview: z.boolean().optional(),
+  realAgentInPreview: boolean().optional(),
   // Capture HTTP header names, selected safe header values, request bodies, and response bodies
   // in network logs
-  captureNetworkBodies: z.boolean().optional(),
+  captureNetworkBodies: boolean().optional(),
   // Dispatch timestamp for E2E timing metrics, as Unix epoch milliseconds
   apiStartTime: apiStartTimeSchema.optional(),
   // User's timezone preference (IANA format, e.g., "Asia/Shanghai")
-  userTimezone: z.string().optional(),
+  userTimezone: string().optional(),
   // Firewall entries for proxy-side token replacement. Built-ins stay compact;
   // org custom connectors use inline firewall bodies.
   firewalls: executionFirewallsSchema.optional(),
@@ -1109,18 +1086,18 @@ const executionContextObjectSchema = z.object({
   // after claim independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
-  disallowedTools: z.array(z.string()).optional(),
+  disallowedTools: array(string()).optional(),
   // Tools to make available in Claude CLI (passed as --tools)
-  tools: z.array(z.string()).optional(),
+  tools: array(string()).optional(),
   // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: z.string().optional(),
+  settings: string().optional(),
   // Feature flags evaluated at job creation time (all switch states for user/org)
-  featureFlags: z.record(z.string(), z.boolean()).optional(),
-  billableFirewalls: z.array(z.string()).optional(),
+  featureFlags: record(string(), boolean()).optional(),
+  billableFirewalls: array(string()).optional(),
   // Provider the proxy reports model token usage under: a Built-in route's
   // `usage_pricing` provider (possibly an alias of the actual model), else the
   // catalog model id. Billing eligibility is decided from API-owned run context.
-  modelUsageProvider: z.string().optional(),
+  modelUsageProvider: string().optional(),
   // Total-input threshold (input + cache read + cache creation) at which
   // `modelUsageProvider` usage bills the `.long_context` categories, captured
   // by the API from the run's Built-in route
@@ -1129,8 +1106,7 @@ const executionContextObjectSchema = z.object({
   // addon selects the base tier; it does not reconstruct a threshold. This
   // is not supported pre-catalog pricing compatibility; see
   // docs/deployment-compatibility.md for deployment order and rollback limits.
-  modelUsageLongContextMinTotalInputTokens: z
-    .number()
+  modelUsageLongContextMinTotalInputTokens: number()
     .int()
     .nonnegative()
     .optional(),
@@ -1138,7 +1114,7 @@ const executionContextObjectSchema = z.object({
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
     .optional(),
-  piSessionId: z.uuid().optional(),
+  piSessionId: uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
 });
@@ -1184,10 +1160,10 @@ export const runnersJobClaimContract = c.router({
     method: "POST",
     path: "/api/runners/jobs/:id/claim",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.uuid(),
+    pathParams: object({
+      id: uuid(),
     }),
-    body: z.object({
+    body: object({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),
       capabilities: runnerClaimCapabilitiesSchema,
@@ -1206,29 +1182,29 @@ export const runnersJobClaimContract = c.router({
   },
 });
 
-export const runnerCancellationModeSchema = z.enum(["cooperative", "hard"]);
-export type RunnerCancellationMode = z.infer<
+export const runnerCancellationModeSchema = zEnum(["cooperative", "hard"]);
+export type RunnerCancellationMode = zInfer<
   typeof runnerCancellationModeSchema
 >;
 
-const runCancellationIdentitySchema = z.object({
-  protocolVersion: z.literal(1),
-  runId: z.uuid(),
+const runCancellationIdentitySchema = object({
+  protocolVersion: literal(1),
+  runId: uuid(),
 });
 
-export const runnerCancellationResponseSchema = z.discriminatedUnion("state", [
+export const runnerCancellationResponseSchema = discriminatedUnion("state", [
   runCancellationIdentitySchema
     .extend({
-      state: z.literal("present"),
+      state: literal("present"),
       mode: runnerCancellationModeSchema.nullable(),
     })
     .strict(),
-  runCancellationIdentitySchema.extend({ state: z.literal("gone") }).strict(),
+  runCancellationIdentitySchema.extend({ state: literal("gone") }).strict(),
   runCancellationIdentitySchema
-    .extend({ state: z.literal("unavailable") })
+    .extend({ state: literal("unavailable") })
     .strict(),
 ]);
-export type RunnerCancellationResponse = z.infer<
+export type RunnerCancellationResponse = zInfer<
   typeof runnerCancellationResponseSchema
 >;
 
@@ -1237,16 +1213,14 @@ export const runnersCancellationContract = c.router({
     method: "GET",
     path: "/api/runners/runs/:runId/cancellation",
     headers: authHeadersSchema,
-    pathParams: z.object({ runId: z.uuid() }),
-    query: z
-      .object({
-        runnerGroup: runnerGroupSchema,
-        runnerId: z.uuid(),
-        heartbeatGeneration: z.coerce
-          .number()
-          .pipe(runnerHeartbeatGenerationSchema),
-      })
-      .strict(),
+    pathParams: object({ runId: uuid() }),
+    query: object({
+      runnerGroup: runnerGroupSchema,
+      runnerId: uuid(),
+      heartbeatGeneration: coerce
+        .number()
+        .pipe(runnerHeartbeatGenerationSchema),
+    }).strict(),
     responses: {
       200: runnerCancellationResponseSchema,
       400: apiErrorSchema,
@@ -1261,17 +1235,15 @@ export const STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE =
   "INPUT_ALREADY_CONSUMED";
 export const STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE = "RUN_NOT_RUNNING";
 
-export const runnerNextSteerableInputResponseSchema = z.object({
-  input: z
-    .object({
-      eventId: z.uuid(),
-      prompt: z.string().min(1),
-    })
-    .nullable(),
+export const runnerNextSteerableInputResponseSchema = object({
+  input: object({
+    eventId: uuid(),
+    prompt: string().min(1),
+  }).nullable(),
 });
 
-export const runnerSteeredInputResponseSchema = z.object({
-  outcome: z.literal("steered"),
+export const runnerSteeredInputResponseSchema = object({
+  outcome: literal("steered"),
 });
 
 /**
@@ -1284,8 +1256,8 @@ export const runnersSteerContract = c.router({
     method: "GET",
     path: "/api/runners/runs/:runId/steerable-inputs/next",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
+    pathParams: object({
+      runId: uuid(),
     }),
     responses: {
       200: runnerNextSteerableInputResponseSchema,
@@ -1301,11 +1273,11 @@ export const runnersSteerContract = c.router({
     method: "POST",
     path: "/api/runners/runs/:runId/steerable-inputs/:eventId/steered",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
-      eventId: z.uuid(),
+    pathParams: object({
+      runId: uuid(),
+      eventId: uuid(),
     }),
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: runnerSteeredInputResponseSchema,
       400: apiErrorSchema,
@@ -1314,7 +1286,7 @@ export const runnersSteerContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema.extend({
         error: apiErrorSchema.shape.error.extend({
-          code: z.enum([
+          code: zEnum([
             STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
             STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
           ]),
@@ -1331,15 +1303,15 @@ export const runnersConnectorRuntimeSyncContract = c.router({
     method: "POST",
     path: "/api/runners/runs/:runId/connector-runtime/sync",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
+    pathParams: object({
+      runId: uuid(),
     }),
-    body: z.object({
+    body: object({
       targets: connectorRuntimeSyncTargetsSchema,
     }),
     responses: {
-      200: z.object({
-        results: z.array(connectorRuntimeSyncResultSchema),
+      200: object({
+        results: array(connectorRuntimeSyncResultSchema),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -1347,7 +1319,7 @@ export const runnersConnectorRuntimeSyncContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema.extend({
         error: apiErrorSchema.shape.error.extend({
-          code: z.literal(CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE),
+          code: literal(CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE),
         }),
       }),
       500: apiErrorSchema,
@@ -1375,38 +1347,36 @@ export const runnersBuiltinFirewallsResolveContract = c.router({
 /**
  * Runner heartbeat body — periodic state report from each runner
  */
-export const heartbeatBodySchema = z
-  .object({
-    runnerId: z.uuid(),
-    // Advisory locality, using the same configured identity as winning claims.
-    runnerHostname: runnerHostnameSchema.optional(),
-    group: runnerGroupSchema,
-    snapshotGeneration: runnerHeartbeatGenerationSchema,
-    snapshotSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-    totalVcpu: z.number().int().nonnegative(),
-    totalMemoryMb: z.number().int().nonnegative(),
-    maxConcurrent: z.number().int().nonnegative(),
-    allocatedVcpu: z.number().int().nonnegative(),
-    allocatedMemoryMb: z.number().int().nonnegative(),
-    runningCount: z.number().int().nonnegative(),
-    admittableProfiles: runnerProfileListSchema,
-    heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
-    heldHomeStates: z.array(heldHomeStateSchema).max(1024),
-    activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
-    mode: z.enum(["starting", "running", "draining", "stopping"]),
-  })
-  .superRefine((heartbeat, ctx) => {
-    const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {
-      return count + state.homeCaches.length;
-    }, 0);
-    if (homeCacheCount > 1024) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["heldHomeStates"],
-        message: "heartbeat may contain at most 1024 home caches",
-      });
-    }
-  });
+export const heartbeatBodySchema = object({
+  runnerId: uuid(),
+  // Advisory locality, using the same configured identity as winning claims.
+  runnerHostname: runnerHostnameSchema.optional(),
+  group: runnerGroupSchema,
+  snapshotGeneration: runnerHeartbeatGenerationSchema,
+  snapshotSequence: number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  totalVcpu: number().int().nonnegative(),
+  totalMemoryMb: number().int().nonnegative(),
+  maxConcurrent: number().int().nonnegative(),
+  allocatedVcpu: number().int().nonnegative(),
+  allocatedMemoryMb: number().int().nonnegative(),
+  runningCount: number().int().nonnegative(),
+  admittableProfiles: runnerProfileListSchema,
+  heldSandboxStates: array(heldSandboxStateSchema).max(1024),
+  heldHomeStates: array(heldHomeStateSchema).max(1024),
+  activeReuseProducers: array(activeReuseProducerSchema).max(1024),
+  mode: zEnum(["starting", "running", "draining", "stopping"]),
+}).superRefine((heartbeat, ctx) => {
+  const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {
+    return count + state.homeCaches.length;
+  }, 0);
+  if (homeCacheCount > 1024) {
+    ctx.addIssue({
+      code: ZodIssueCode.custom,
+      path: ["heldHomeStates"],
+      message: "heartbeat may contain at most 1024 home caches",
+    });
+  }
+});
 
 /**
  * Runners heartbeat contract - POST /api/runners/heartbeat
@@ -1419,7 +1389,7 @@ export const runnersHeartbeatContract = c.router({
     headers: authHeadersSchema,
     body: heartbeatBodySchema,
     responses: {
-      200: z.object({ ok: z.literal(true) }),
+      200: object({ ok: literal(true) }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       500: apiErrorSchema,
@@ -1436,68 +1406,68 @@ export type RunnersConnectorRuntimeSyncContract =
 export type RunnersHeartbeatContract = typeof runnersHeartbeatContract;
 export type RunnersBuiltinFirewallsResolveContract =
   typeof runnersBuiltinFirewallsResolveContract;
-export type Job = z.infer<typeof jobSchema>;
-export type RunnerPreference = z.infer<typeof runnerPreferenceSchema>;
-export type RunnerPreferenceClaimState = z.infer<
+export type Job = zInfer<typeof jobSchema>;
+export type RunnerPreference = zInfer<typeof runnerPreferenceSchema>;
+export type RunnerPreferenceClaimState = zInfer<
   typeof runnerPreferenceClaimStateSchema
 >;
-export type ActiveReuseProducer = z.infer<typeof activeReuseProducerSchema>;
-export type HeldSandboxState = z.infer<typeof heldSandboxStateSchema>;
-export type HeldHomeState = z.infer<typeof heldHomeStateSchema>;
-export type ExecutionContext = z.infer<typeof executionContextSchema>;
-export type StoredExecutionContext = z.infer<
+export type ActiveReuseProducer = zInfer<typeof activeReuseProducerSchema>;
+export type HeldSandboxState = zInfer<typeof heldSandboxStateSchema>;
+export type HeldHomeState = zInfer<typeof heldHomeStateSchema>;
+export type ExecutionContext = zInfer<typeof executionContextSchema>;
+export type StoredExecutionContext = zInfer<
   typeof storedExecutionContextSchema
 >;
-export type PiModelConfig = z.infer<typeof piModelConfigSchema>;
-export type PiModelConfigV2 = z.infer<typeof piModelConfigV2Schema>;
-export type PiModelConfigV3 = z.infer<typeof piModelConfigV3Schema>;
-export type PiModelConfigV5 = z.infer<typeof piModelConfigV5Schema>;
-export type PiModelCredentialBinding = z.infer<
+export type PiModelConfig = zInfer<typeof piModelConfigSchema>;
+export type PiModelConfigV2 = zInfer<typeof piModelConfigV2Schema>;
+export type PiModelConfigV3 = zInfer<typeof piModelConfigV3Schema>;
+export type PiModelConfigV5 = zInfer<typeof piModelConfigV5Schema>;
+export type PiModelCredentialBinding = zInfer<
   typeof piModelCredentialBindingSchema
 >;
-export type RunnerClaimCapabilities = z.infer<
+export type RunnerClaimCapabilities = zInfer<
   typeof runnerClaimCapabilitiesSchema
 >;
-export type RunnerInstalledVersions = z.infer<
+export type RunnerInstalledVersions = zInfer<
   typeof runnerInstalledVersionsSchema
 >;
-export type PiLaunchConfig = z.infer<typeof piLaunchConfigSchema>;
-export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
-export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
-export type ClaimCompatibleStoredExecutionContext = z.infer<
+export type PiLaunchConfig = zInfer<typeof piLaunchConfigSchema>;
+export type PiResourceSnapshot = zInfer<typeof piResourceSnapshotSchema>;
+export type PiLaunchPayload = zInfer<typeof piLaunchPayloadSchema>;
+export type ClaimCompatibleStoredExecutionContext = zInfer<
   typeof claimCompatibleStoredExecutionContextSchema
 >;
-export type NetworkPolicyRefresh = z.infer<typeof networkPolicyRefreshSchema>;
-export type ConnectorRuntimeTarget = z.infer<
+export type NetworkPolicyRefresh = zInfer<typeof networkPolicyRefreshSchema>;
+export type ConnectorRuntimeTarget = zInfer<
   typeof connectorRuntimeTargetSchema
 >;
-export type ConnectorRuntimeTargetRegistration = z.infer<
+export type ConnectorRuntimeTargetRegistration = zInfer<
   typeof connectorRuntimeTargetRegistrationSchema
 >;
-export type AgentRunConnectorDiagnosticRegistrationPayload = z.infer<
+export type AgentRunConnectorDiagnosticRegistrationPayload = zInfer<
   typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
 >;
-export type ConnectorRuntimeCustomUnresolvedReason = z.infer<
+export type ConnectorRuntimeCustomUnresolvedReason = zInfer<
   typeof connectorRuntimeCustomUnresolvedReasonSchema
 >;
-export type ConnectorRuntimeCustomAbsentReason = z.infer<
+export type ConnectorRuntimeCustomAbsentReason = zInfer<
   typeof connectorRuntimeCustomAbsentReasonSchema
 >;
-export type ConnectorRuntimeSyncResult = z.infer<
+export type ConnectorRuntimeSyncResult = zInfer<
   typeof connectorRuntimeSyncResultSchema
 >;
-export type RunnerBuiltinFirewallsResolveBody = z.infer<
+export type RunnerBuiltinFirewallsResolveBody = zInfer<
   typeof runnerBuiltinFirewallsResolveBodySchema
 >;
-export type RunnerBuiltinFirewallsResolveResponse = z.infer<
+export type RunnerBuiltinFirewallsResolveResponse = zInfer<
   typeof runnerBuiltinFirewallsResolveResponseSchema
 >;
-export type SecretConnectorMetadata = z.infer<
+export type SecretConnectorMetadata = zInfer<
   typeof secretConnectorMetadataSchema
 >;
-export type StorageMountEntry = z.infer<typeof storageMountEntrySchema>;
-export type StoredStorageMountEntry = z.infer<
+export type StorageMountEntry = zInfer<typeof storageMountEntrySchema>;
+export type StoredStorageMountEntry = zInfer<
   typeof storedStorageMountEntrySchema
 >;
-export type StorageManifest = z.infer<typeof storageManifestSchema>;
+export type StorageManifest = zInfer<typeof storageManifestSchema>;
 export type CanonicalStorageManifest = StorageManifest;

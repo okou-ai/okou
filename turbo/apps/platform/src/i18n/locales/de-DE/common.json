@@ -399,7 +399,6 @@
       "manage": "Verwalten",
       "mobile": {
         "invite": "Einladen",
-        "openArtifacts": "Artefakte auf dem Mobilgerät öffnen",
         "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen",
         "openMenu": "Menü öffnen"
       },
@@ -679,7 +678,6 @@
       "previewSlide": "Vorschaufolie {{slideNumber}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previousSlide": "Vorschau der vorherigen Folie",
-      "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
       "selectStyle": "Stil auswählen {{style}}",
@@ -718,9 +716,7 @@
       "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
       "visibility": {
-        "changeLabel": "Sichtbarkeit der Vorlage ändern",
-        "privateState": "Nur du kannst sie sehen und verwenden",
-        "workspaceState": "Alle in diesem Arbeitsbereich können sie verwenden"
+        "changeLabel": "Sichtbarkeit der Vorlage ändern"
       },
       "website": "Webseite",
       "websitePreview": "{{title}} Vorschau der Website-Vorlage",
@@ -1564,8 +1560,7 @@
         "whatsCooking": "Was steht an, {{userName}}?",
         "whatsOnYourMind": "Was beschäftigt Sie, {{userName}}?",
         "whatsTheMove": "Was ist der nächste Schritt, {{userName}}?"
-      },
-      "viewAgentProfile": "Agentenprofil anzeigen"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Verwerfen",
@@ -1574,10 +1569,7 @@
       "position": "{{current}} von {{total}}",
       "previous": "Vorheriger Vorschlag",
       "recoveryHint": "Prüfe den Chat, bevor du erneut sendest. Du kannst den Vorschlag im Entwurf wiederherstellen.",
-      "restoreDraft": "Entwurf wiederherstellen",
-      "runInChat": "In diesem Chat ausführen",
-      "runNewChat": "In einem neuen Chat ausführen",
-      "starting": "Wird gestartet…"
+      "restoreDraft": "Entwurf wiederherstellen"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -2933,15 +2925,12 @@
         "website": "Webseite",
         "workflow": "Workflow"
       },
-      "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
-      "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
       "previewTemplate": "Vorschauvorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previewWorkflow": "Vorschau der Workflow-Vorlage {{title}}",
       "removeTemplate": "Vorlage {{title}} entfernen",
       "removeWebsite": "Website-Vorlage {{title}} entfernen",
-      "removeWorkflow": "Workflow-Vorlage {{title}} entfernen",
-      "retry": "Erneut versuchen"
+      "removeWorkflow": "Workflow-Vorlage {{title}} entfernen"
     },
     "thread": {
       "ariaLabel": "Chat-Thread",
@@ -2966,7 +2955,6 @@
       },
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
-      "openArtifacts": "Artefakte öffnen",
       "openBrowser": "Browser öffnen",
       "openNamedAgent": "Agent {{name}} öffnen",
       "openNamedChat": "Chat {{title}} öffnen",
@@ -3688,7 +3676,6 @@
         "createCodeError": "Verbindungscode konnte nicht erstellt werden. Versuchen Sie es erneut.",
         "creatingCode": "Verbindungscode wird erstellt…",
         "description": "SMS-Zugriff auf {{assistantName}}",
-        "destination": "iMessage oder SMS an",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",
@@ -4214,46 +4201,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching & Training",
           "name": "Coaching & Training",
           "summary": "Coaching, Kurse & Training"
         },
         "consulting": {
+          "mobileName": "Selbstständige Beratung",
           "name": "Selbstständige Beratung",
           "summary": "Beratung zu Business, HR & IT"
         },
         "design": {
+          "mobileName": "Design & Kreation",
           "name": "Design & Kreation",
           "summary": "Grafik, Websites & kreative Arbeit"
         },
         "finance": {
+          "mobileName": "Buchhaltung & Rechnungswesen",
           "name": "Buchhaltung & Rechnungswesen",
           "summary": "Bücher, Berichte & Abstimmung"
         },
         "investing": {
+          "mobileName": "Investment & Marktrecherche",
           "name": "Investment & Marktrecherche",
           "summary": "Investments, Märkte & Portfolios"
         },
         "marketing": {
+          "mobileName": "Marketing & Content",
           "name": "Marketing & Content",
           "summary": "Social Media, Content & Marke"
         },
         "operations": {
+          "mobileName": "Business & Operations",
           "name": "Business & Operations",
           "summary": "Inhaberinnen, Assistenz & Operations"
         },
         "other": {
+          "mobileName": "Anderes / noch am Sondieren",
           "name": "Anderes / noch am Sondieren",
           "summary": "Ein anderer Bereich oder noch am Sondieren"
         },
         "research": {
+          "mobileName": "Recherche & Lernen",
           "name": "Recherche & Lernen",
           "summary": "Recherche, Studium & Lernen"
         },
         "sales": {
+          "mobileName": "Vertrieb & Kundenaufbau",
           "name": "Vertrieb & Kundenaufbau",
           "summary": "Akquise, Vertrieb & Kundenwachstum"
         },
         "software": {
+          "mobileName": "Software & Apps",
           "name": "Software & Apps",
           "summary": "Apps, Games & Entwicklung"
         }
@@ -4261,6 +4259,30 @@
       "industry": {
         "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
+      },
+      "mobile": {
+        "channelsCopy": "Schreibe Okou dort, wo du schon arbeitest.",
+        "channelsTitle": "Chat-App wählen",
+        "connect": "Verbinden",
+        "copyImportPrompt": "Import-Prompt kopieren",
+        "existingPlan": "Meinen {{provider}}-Tarif nutzen",
+        "experienceTitle": "Start auswählen",
+        "industryCopy": "Wir schlagen eine passende erste Aufgabe vor.",
+        "industryTitle": "Arbeitsbereich wählen",
+        "instructions": "Anleitung",
+        "newCopy": "Hilfe bei deiner ersten Aufgabe.",
+        "newTitle": "Mit Okou starten",
+        "pasteIntoProvider": "In {{provider}} einfügen und senden.",
+        "permissionsLabel": "Berechtigungen und Datenschutz",
+        "planCopy": "Aufgaben mit deinem Abo ausführen.",
+        "promptTitle": "Was möchtest du erledigen?",
+        "readyTitle": "Erste Aufgabe starten",
+        "skillsCopy": "Nutze {{provider}} auf deinem Computer.",
+        "skillsTitle": "Skills importieren",
+        "sourcesCopy": "Verbinde ein Tool für die erste Aufgabe.",
+        "startTask": "Aufgabe starten",
+        "teamCopy": "Arbeitet im selben Workspace.",
+        "teamTitle": "Teammitglied einladen"
       },
       "prompt": {
         "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."

@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import * as z from "zod";
+import { iso, literal, uuid, object as zObject } from "zod";
 import {
   hostedDeployments,
   privateHostedDeployments,
@@ -42,18 +42,18 @@ const readObject$ = command(
   },
 );
 
-const previewSchema = z.object({
-  version: z.literal(1),
-  publicBrand: z.literal("okou"),
-  deploymentId: z.uuid(),
-  expiresAt: z.iso.datetime(),
-  snapshotId: z.uuid().optional(),
+const previewSchema = zObject({
+  version: literal(1),
+  publicBrand: literal("okou"),
+  deploymentId: uuid(),
+  expiresAt: iso.datetime(),
+  snapshotId: uuid().optional(),
 });
-const manifestIdentitySchema = z.object({
-  deploymentId: z.uuid(),
-  siteId: z.uuid(),
-  publicBrand: z.literal("okou"),
-  access: z.literal("owner-private-v1"),
+const manifestIdentitySchema = zObject({
+  deploymentId: uuid(),
+  siteId: uuid(),
+  publicBrand: literal("okou"),
+  access: literal("owner-private-v1"),
 });
 
 const deploymentOrigin$ = command(
@@ -208,9 +208,9 @@ export const hostedSiteSessionOrigin$ = command(
     if (args.label === args.publicSlug) {
       return true;
     }
-    const deploymentId = z
-      .uuid()
-      .safeParse(args.label.startsWith("dpl-") ? args.label.slice(4) : null);
+    const deploymentId = uuid().safeParse(
+      args.label.startsWith("dpl-") ? args.label.slice(4) : null,
+    );
     if (deploymentId.success) {
       return set(deploymentOrigin$, args.siteId, deploymentId.data, signal);
     }

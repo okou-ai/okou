@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
-import * as z from "zod";
+import { boolean, object } from "zod";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -277,7 +277,7 @@ export const applyBrowserAuthorizationRequest$ = command(
         ),
       );
     const [result] = parseRawRows(
-      z.object({ applied: z.boolean() }),
+      object({ applied: boolean() }),
       await db.execute(
         chatThreadEventInsertSql(
           {

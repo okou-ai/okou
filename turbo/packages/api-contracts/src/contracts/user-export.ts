@@ -1,35 +1,43 @@
-import * as z from "zod";
+import {
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  undefined as zUndefined,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const exportJobStatusSchema = z.enum([
+const exportJobStatusSchema = zEnum([
   "pending",
   "running",
   "completed",
   "failed",
 ]);
 
-const userExportJobSchema = z.object({
-  id: z.string().uuid(),
+const userExportJobSchema = object({
+  id: string().uuid(),
   status: exportJobStatusSchema,
-  createdAt: z.string(),
-  completedAt: z.string().nullable(),
-  expiresAt: z.string().nullable(),
-  downloadUrl: z.string().url().nullable(),
-  error: z.string().nullable(),
+  createdAt: string(),
+  completedAt: string().nullable(),
+  expiresAt: string().nullable(),
+  downloadUrl: string().url().nullable(),
+  error: string().nullable(),
 });
 
-const userExportStatusResponseSchema = z.object({
+const userExportStatusResponseSchema = object({
   job: userExportJobSchema.nullable(),
-  canExport: z.boolean(),
-  nextExportAt: z.string().nullable(),
+  canExport: boolean(),
+  nextExportAt: string().nullable(),
 });
 
-const userExportStartResponseSchema = z.object({
-  jobId: z.string().uuid(),
-  status: z.enum(["pending", "running"]),
+const userExportStartResponseSchema = object({
+  jobId: string().uuid(),
+  status: zEnum(["pending", "running"]),
 });
 
 export const userExportContract = c.router({
@@ -49,7 +57,7 @@ export const userExportContract = c.router({
     method: "POST",
     path: "/api/user/export",
     headers: authHeadersSchema,
-    body: z.undefined(),
+    body: zUndefined(),
     responses: {
       202: userExportStartResponseSchema,
       401: apiErrorSchema,
@@ -62,10 +70,10 @@ export const userExportContract = c.router({
 });
 
 export type UserExportContract = typeof userExportContract;
-export type UserExportStatusResponse = z.infer<
+export type UserExportStatusResponse = zInfer<
   typeof userExportStatusResponseSchema
 >;
-export type UserExportJob = z.infer<typeof userExportJobSchema>;
-export type UserExportStartResponse = z.infer<
+export type UserExportJob = zInfer<typeof userExportJobSchema>;
+export type UserExportStartResponse = zInfer<
   typeof userExportStartResponseSchema
 >;

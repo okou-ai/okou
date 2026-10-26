@@ -1,6 +1,5 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -132,7 +131,6 @@ test("Draw a pressed panel only once its artifacts and related chats have answer
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await screen.findByText("Keep chatting while resources load");
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
@@ -167,7 +165,6 @@ test("Keep loading when the panel loses its room before the resources answer", a
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await screen.findByTestId("chat-thread-header-title");
   // The saved default asks for the panel while it has room.
@@ -211,7 +208,6 @@ test("Retry a resource loading error without showing an empty state", async () =
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await waitFor(() => {
     expect(resourceButton()).toBeInTheDocument();
@@ -348,7 +344,6 @@ test.each([0, 20])(
     await setupPage({
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
     });
     await screen.findByText("Conversation 20");
     expect(screen.queryByText("Conversation 0")).not.toBeInTheDocument();

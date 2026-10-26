@@ -1,5 +1,5 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import * as z from "zod";
+import { array, number, object, string, type infer as zInfer } from "zod";
 
 import { env } from "../../lib/env";
 import { settle, startUntrackedBestEffortCleanup } from "../utils";
@@ -12,17 +12,17 @@ import {
 
 const CLERK_API_BASE = "https://api.clerk.com/v1";
 
-const membershipRequestDataSchema = z.object({
-  id: z.string(),
-  public_user_data: z.object({ user_id: z.string().min(1) }),
-  created_at: z.number(),
+const membershipRequestDataSchema = object({
+  id: string(),
+  public_user_data: object({ user_id: string().min(1) }),
+  created_at: number(),
 });
 
-const clerkMembershipRequestsResponseSchema = z.object({
-  data: z.array(membershipRequestDataSchema),
+const clerkMembershipRequestsResponseSchema = object({
+  data: array(membershipRequestDataSchema),
 });
 
-type ClerkMembershipRequestData = z.infer<typeof membershipRequestDataSchema>;
+type ClerkMembershipRequestData = zInfer<typeof membershipRequestDataSchema>;
 
 function cancelUnusedResponseBody(response: Response): void {
   if (response.body) {

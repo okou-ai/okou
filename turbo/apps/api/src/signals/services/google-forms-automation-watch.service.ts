@@ -26,7 +26,16 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  string,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -61,40 +70,38 @@ export const PUBSUB_CONFIGURATION_ERROR =
 const GOOGLE_TIMESTAMP_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?Z$/;
 
-export const googleFormResponseSchema = z.object({
-  responseId: z.string(),
-  createTime: z.string(),
-  lastSubmittedTime: z.string(),
-  respondentEmail: z.string().nullable().optional(),
+export const googleFormResponseSchema = object({
+  responseId: string(),
+  createTime: string(),
+  lastSubmittedTime: string(),
+  respondentEmail: string().nullable().optional(),
 });
 
-export const googleFormResponsesSchema = z.object({
-  responses: z.array(googleFormResponseSchema).optional(),
-  nextPageToken: z.string().optional(),
+export const googleFormResponsesSchema = object({
+  responses: array(googleFormResponseSchema).optional(),
+  nextPageToken: string().optional(),
 });
 
-const googleFormsWatchSchema = z.object({
-  id: z.string(),
-  createTime: z.string().optional(),
-  expireTime: z.string(),
-  eventType: z.literal("RESPONSES"),
-  target: z
-    .object({
-      topic: z.object({ topicName: z.string() }),
-    })
-    .optional(),
+const googleFormsWatchSchema = object({
+  id: string(),
+  createTime: string().optional(),
+  expireTime: string(),
+  eventType: literal("RESPONSES"),
+  target: object({
+    topic: object({ topicName: string() }),
+  }).optional(),
 });
 
-const googleFormsWatchesSchema = z.object({
-  watches: z.array(googleFormsWatchSchema).optional(),
+const googleFormsWatchesSchema = object({
+  watches: array(googleFormsWatchSchema).optional(),
 });
 
-const emptyGoogleFormsResponseSchema = z.object({});
+const emptyGoogleFormsResponseSchema = object({});
 
-const googleFormsErrorSchema = z.object({
-  error: z.object({
-    message: z.string().optional(),
-    status: z.string().optional(),
+const googleFormsErrorSchema = object({
+  error: object({
+    message: string().optional(),
+    status: string().optional(),
   }),
 });
 
@@ -264,7 +271,7 @@ export const resolveGoogleFormsAccess$ = command(
 
 export async function googleFormsFetchJson<T>(
   args: {
-    readonly schema: z.ZodType<T>;
+    readonly schema: ZodType<T>;
     readonly accessToken: string;
     readonly url: string;
     readonly init: RequestInit;
@@ -421,7 +428,7 @@ async function createGoogleFormsWatch(
     readonly topicName: string;
   },
   signal: AbortSignal,
-): Promise<GoogleFormsFetchResult<z.infer<typeof googleFormsWatchSchema>>> {
+): Promise<GoogleFormsFetchResult<zInfer<typeof googleFormsWatchSchema>>> {
   return await googleFormsFetchJson(
     {
       schema: googleFormsWatchSchema,
@@ -447,7 +454,7 @@ async function listGoogleFormsWatches(
     readonly formId: string;
   },
   signal: AbortSignal,
-): Promise<GoogleFormsFetchResult<z.infer<typeof googleFormsWatchesSchema>>> {
+): Promise<GoogleFormsFetchResult<zInfer<typeof googleFormsWatchesSchema>>> {
   return await googleFormsFetchJson(
     {
       schema: googleFormsWatchesSchema,
@@ -466,7 +473,7 @@ async function createOrAdoptGoogleFormsWatch(
     readonly topicName: string;
   },
   signal: AbortSignal,
-): Promise<GoogleFormsFetchResult<z.infer<typeof googleFormsWatchSchema>>> {
+): Promise<GoogleFormsFetchResult<zInfer<typeof googleFormsWatchSchema>>> {
   const created = await createGoogleFormsWatch(args, signal);
   if (created.kind === "ok") {
     return created;
@@ -503,7 +510,7 @@ async function renewGoogleFormsWatch(
     readonly watchId: string;
   },
   signal: AbortSignal,
-): Promise<GoogleFormsFetchResult<z.infer<typeof googleFormsWatchSchema>>> {
+): Promise<GoogleFormsFetchResult<zInfer<typeof googleFormsWatchSchema>>> {
   return await googleFormsFetchJson(
     {
       schema: googleFormsWatchSchema,
@@ -526,7 +533,7 @@ export async function deleteGoogleFormsWatch(
   },
   signal: AbortSignal,
 ): Promise<
-  GoogleFormsFetchResult<z.infer<typeof emptyGoogleFormsResponseSchema>>
+  GoogleFormsFetchResult<zInfer<typeof emptyGoogleFormsResponseSchema>>
 > {
   return await googleFormsFetchJson(
     {
@@ -550,7 +557,7 @@ export function missingGoogleFormsWatch(error: GoogleFormsFetchError): boolean {
   );
 }
 
-function watchExpireTime(watch: z.infer<typeof googleFormsWatchSchema>): Date {
+function watchExpireTime(watch: zInfer<typeof googleFormsWatchSchema>): Date {
   const value = new Date(watch.expireTime);
   if (Number.isNaN(value.getTime())) {
     throw new Error(
@@ -732,7 +739,7 @@ interface GoogleFormsWatchPublication {
   readonly connectorId: string;
   readonly formId: string;
   readonly topicName: string;
-  readonly watch: z.infer<typeof googleFormsWatchSchema> | null;
+  readonly watch: zInfer<typeof googleFormsWatchSchema> | null;
   readonly cursor: string | null;
   readonly resetAutomationId?: string;
   readonly allowStagedOfficialTarget?: boolean;
@@ -1411,19 +1418,17 @@ const FORM_EDIT_LINK_GUIDANCE =
 const UNPUBLISHED_FORM_WARNING =
   "This Google Form is not accepting responses yet. Publish it before expecting response events.";
 
-const googleFormSchema = z.object({
-  formId: z.string(),
-  info: z.object({ title: z.string() }),
-  publishSettings: z
-    .object({
-      publishState: z
-        .object({
-          isPublished: z.boolean().optional(),
-          isAcceptingResponses: z.boolean().optional(),
-        })
-        .passthrough()
-        .optional(),
+const googleFormSchema = object({
+  formId: string(),
+  info: object({ title: string() }),
+  publishSettings: object({
+    publishState: object({
+      isPublished: boolean().optional(),
+      isAcceptingResponses: boolean().optional(),
     })
+      .passthrough()
+      .optional(),
+  })
     .passthrough()
     .optional(),
 });
@@ -1466,7 +1471,7 @@ async function fetchGoogleForm(
     readonly formId: string;
   },
   signal: AbortSignal,
-): Promise<GoogleFormsFetchResult<z.infer<typeof googleFormSchema>>> {
+): Promise<GoogleFormsFetchResult<zInfer<typeof googleFormSchema>>> {
   return await googleFormsFetchJson(
     {
       schema: googleFormSchema,
@@ -1479,7 +1484,7 @@ async function fetchGoogleForm(
 }
 
 function formIsNotAcceptingResponses(
-  form: z.infer<typeof googleFormSchema>,
+  form: zInfer<typeof googleFormSchema>,
 ): boolean {
   return (
     form.publishSettings?.publishState?.isPublished !== true ||

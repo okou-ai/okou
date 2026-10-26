@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { enum as zEnum } from "zod";
 
 /**
  * Artifact and hosted-site links live in one of two persisted R2/URL layouts.
@@ -31,7 +31,7 @@ const LINK_LAYOUT_SEGMENTS = {
 export type LinkLayoutSegment = (typeof LINK_LAYOUT_SEGMENTS)[LinkLayout];
 
 /** Stored layout marker as persisted in R2 policies and manifests. */
-export const linkLayoutSegmentSchema = z.enum([
+export const linkLayoutSegmentSchema = zEnum([
   LINK_LAYOUT_SEGMENTS.current,
   LINK_LAYOUT_SEGMENTS.legacy,
 ]);

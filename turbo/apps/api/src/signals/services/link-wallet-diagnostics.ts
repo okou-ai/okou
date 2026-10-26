@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import * as z from "zod";
+import { object, string, union, enum as zEnum, unknown as zUnknown } from "zod";
 
 import { logger } from "../../lib/log";
 import { monotonicNow } from "../../lib/time";
@@ -50,7 +50,7 @@ export function linkRequestDiagnostic(
 }
 
 // Unknown provider strings can contain credentials or personal data.
-const providerErrorCodeSchema = z.enum([
+const providerErrorCodeSchema = zEnum([
   "invalid_request",
   "invalid_request_error",
   "parameter_invalid",
@@ -71,16 +71,16 @@ const providerErrorCodeSchema = z.enum([
   "temporarily_unavailable",
   "server_error",
 ]);
-const providerErrorSchema = z.object({
-  error: z.union([z.string(), z.object({ code: z.string().optional() })]),
+const providerErrorSchema = object({
+  error: union([string(), object({ code: string().optional() })]),
 });
-const providerMessageSchema = z.object({
-  error: z.unknown().optional(),
-  message: z.unknown().optional(),
-  error_description: z.unknown().optional(),
-  detail: z.unknown().optional(),
+const providerMessageSchema = object({
+  error: zUnknown().optional(),
+  message: zUnknown().optional(),
+  error_description: zUnknown().optional(),
+  detail: zUnknown().optional(),
 });
-const providerRequestIdSchema = z.string().regex(/^req_[A-Za-z0-9]{1,80}$/);
+const providerRequestIdSchema = string().regex(/^req_[A-Za-z0-9]{1,80}$/);
 
 // Keep the existing authentication labels; unfamiliar errors additionally carry
 // a bounded explanation after the same redaction used for every provider stage.
@@ -126,9 +126,10 @@ function providerMessageDiagnostic(
 ) {
   const parsed = providerMessageSchema.safeParse(body);
   const error = parsed.success ? parsed.data.error : undefined;
-  const nested = z
-    .object({ message: z.unknown().optional(), detail: z.unknown().optional() })
-    .safeParse(error);
+  const nested = object({
+    message: zUnknown().optional(),
+    detail: zUnknown().optional(),
+  }).safeParse(error);
   const message = (value: unknown) => {
     return typeof value === "string" ? value : undefined;
   };
@@ -323,14 +324,12 @@ function responseMetadata(secrets: readonly string[], response?: Response) {
     response?.headers.get("request-id") ??
       response?.headers.get("x-request-id"),
   );
-  const contentType = z
-    .enum([
-      "application/json",
-      "application/problem+json",
-      "text/html",
-      "text/plain",
-    ])
-    .safeParse(response?.headers.get("content-type")?.split(";")[0]?.trim());
+  const contentType = zEnum([
+    "application/json",
+    "application/problem+json",
+    "text/html",
+    "text/plain",
+  ]).safeParse(response?.headers.get("content-type")?.split(";")[0]?.trim());
   return {
     providerStatus: response?.status ?? null,
     providerRequestId:
@@ -370,25 +369,21 @@ export function linkFailureDiagnostic(
     };
   },
 ) {
-  const error = z
-    .object({
-      error: z.object({
-        param: z.unknown().optional(),
-        type: z.unknown().optional(),
-      }),
-    })
-    .safeParse(details.body);
-  const providerType = z
-    .enum([
-      "invalid_request_error",
-      "authentication_error",
-      "permission_error",
-      "rate_limit_error",
-      "api_error",
-      "card_error",
-    ])
-    .safeParse(error.success ? error.data.error.type : undefined);
-  const transportCode = z.enum([
+  const error = object({
+    error: object({
+      param: zUnknown().optional(),
+      type: zUnknown().optional(),
+    }),
+  }).safeParse(details.body);
+  const providerType = zEnum([
+    "invalid_request_error",
+    "authentication_error",
+    "permission_error",
+    "rate_limit_error",
+    "api_error",
+    "card_error",
+  ]).safeParse(error.success ? error.data.error.type : undefined);
+  const transportCode = zEnum([
     "ECONNREFUSED",
     "ECONNRESET",
     "ENOTFOUND",
@@ -403,15 +398,16 @@ export function linkFailureDiagnostic(
     "ERR_TLS_CERT_ALTNAME_INVALID",
     "DEPTH_ZERO_SELF_SIGNED_CERT",
   ]);
-  const transportError = z
-    .object({
-      name: z
-        .enum(["Error", "TypeError", "AbortError", "TimeoutError"])
-        .optional(),
-      code: transportCode.optional(),
-      cause: z.object({ code: transportCode.optional() }).optional(),
-    })
-    .safeParse(details.transportError);
+  const transportError = object({
+    name: zEnum([
+      "Error",
+      "TypeError",
+      "AbortError",
+      "TimeoutError",
+    ]).optional(),
+    code: transportCode.optional(),
+    cause: object({ code: transportCode.optional() }).optional(),
+  }).safeParse(details.transportError);
   const diagnostic = {
     diagnosticId: request.diagnosticId,
     operation: request.operation,

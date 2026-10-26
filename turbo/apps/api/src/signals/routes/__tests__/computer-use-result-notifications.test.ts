@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, number, object, record, string } from "zod";
 import {
   computerUseCommandContract as commands,
   computerUseWriteCommandContract as writeCommands,
@@ -58,10 +58,10 @@ function authenticate() {
 }
 
 function signTokenRequests() {
-  const params = z.object({
-    capability: z.record(z.string(), z.array(z.string())),
-    clientId: z.string(),
-    ttl: z.number(),
+  const params = object({
+    capability: record(string(), array(string())),
+    clientId: string(),
+    ttl: number(),
   });
   context.mocks.ably.createTokenRequest.mockImplementation((input) => {
     const parsed = params.parse(input);

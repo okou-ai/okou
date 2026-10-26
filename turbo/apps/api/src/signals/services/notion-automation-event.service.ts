@@ -35,7 +35,15 @@ import {
 } from "drizzle-orm";
 import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import * as z from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
@@ -96,48 +104,39 @@ const NOTION_PAGE_CONTENT_UPDATED_MOVED_SKIP_REASON =
 const NOTION_ACCOUNT_CHANGED_SKIP_REASON =
   "Notion account selection changed before the event was processed";
 
-const notionAuthorSchema = z
-  .object({
-    id: z.string(),
-    type: z.enum(["person", "bot", "agent"]),
-  })
-  .passthrough();
+const notionAuthorSchema = object({
+  id: string(),
+  type: zEnum(["person", "bot", "agent"]),
+}).passthrough();
 
-const notionEntitySchema = z
-  .object({
-    id: z.string().uuid(),
-    type: z.string(),
-  })
-  .passthrough();
+const notionEntitySchema = object({
+  id: string().uuid(),
+  type: string(),
+}).passthrough();
 
-const notionParentDataSchema = z
-  .object({
-    id: z.string().optional(),
-    type: z.string().optional(),
-    data_source_id: z.string().optional(),
-  })
-  .passthrough();
+const notionParentDataSchema = object({
+  id: string().optional(),
+  type: string().optional(),
+  data_source_id: string().optional(),
+}).passthrough();
 
-const notionWebhookVerificationSchema = z
-  .object({
-    verification_token: z.string().min(1),
-  })
-  .passthrough();
+const notionWebhookVerificationSchema = object({
+  verification_token: string().min(1),
+}).passthrough();
 
-const notionWebhookEventTypeSchema = z.enum([
+const notionWebhookEventTypeSchema = zEnum([
   "page.created",
   "page.content_updated",
   "page.properties_updated",
 ]);
 
-const notionWebhookLogMetadataSchema = z
-  .object({
-    id: z.string().optional(),
-    type: z.string().optional(),
-    subscription_id: z.string().optional(),
-    api_version: z.string().optional(),
-    attempt_number: z.number().optional(),
-  })
+const notionWebhookLogMetadataSchema = object({
+  id: string().optional(),
+  type: string().optional(),
+  subscription_id: string().optional(),
+  api_version: string().optional(),
+  attempt_number: number().optional(),
+})
   .passthrough()
   .transform((value) => {
     return {
@@ -149,28 +148,25 @@ const notionWebhookLogMetadataSchema = z
     };
   });
 
-const notionWebhookEventSchema = z
-  .object({
-    id: z.string().uuid(),
-    timestamp: z.string().datetime(),
-    workspace_id: z.string().uuid(),
-    workspace_name: z.string().optional(),
-    subscription_id: z.string().uuid(),
-    integration_id: z.string().uuid(),
-    type: notionWebhookEventTypeSchema,
-    authors: z.array(notionAuthorSchema).default([]),
-    attempt_number: z.number().int().positive().optional(),
-    entity: notionEntitySchema,
-    data: z
-      .object({
-        parent: notionParentDataSchema.optional(),
-      })
-      .passthrough()
-      .default({}),
+const notionWebhookEventSchema = object({
+  id: string().uuid(),
+  timestamp: string().datetime(),
+  workspace_id: string().uuid(),
+  workspace_name: string().optional(),
+  subscription_id: string().uuid(),
+  integration_id: string().uuid(),
+  type: notionWebhookEventTypeSchema,
+  authors: array(notionAuthorSchema).default([]),
+  attempt_number: number().int().positive().optional(),
+  entity: notionEntitySchema,
+  data: object({
+    parent: notionParentDataSchema.optional(),
   })
-  .passthrough();
+    .passthrough()
+    .default({}),
+}).passthrough();
 
-type NotionWebhookEvent = z.infer<typeof notionWebhookEventSchema>;
+type NotionWebhookEvent = zInfer<typeof notionWebhookEventSchema>;
 
 type NotionPendingRow = typeof notionWorkflowPendingEvents.$inferSelect;
 
@@ -513,7 +509,7 @@ const repairNotionAutomationProjection$ = command(
       connectorSlug: "notion",
     });
     const [selection] = parseRawRows(
-      z.object({ connectorId: z.string().nullable() }),
+      object({ connectorId: string().nullable() }),
       await db.execute(selectionSql),
     );
     signal.throwIfAborted();

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import * as z from "zod";
+import { array, object, string, unknown as zUnknown } from "zod";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -19,50 +19,48 @@ interface FeishuMessageContent {
   readonly files: readonly FeishuPromptFile[];
 }
 
-const textSchema = z.object({ text: z.string() });
-const systemSchema = z
-  .object({ template: z.string() })
-  .catchall(z.array(z.string()));
-const resourceSchema = z.object({
-  file_key: z.string().optional(),
-  image_key: z.string().optional(),
-  file_name: z.string().optional(),
+const textSchema = object({ text: string() });
+const systemSchema = object({ template: string() }).catchall(array(string()));
+const resourceSchema = object({
+  file_key: string().optional(),
+  image_key: string().optional(),
+  file_name: string().optional(),
 });
-const postSchema = z.object({
-  title: z.string().optional(),
-  content: z.array(z.array(z.unknown())),
+const postSchema = object({
+  title: string().optional(),
+  content: array(array(zUnknown())),
 });
-const cardSchema = z.object({
-  title: z.string().optional(),
-  header: z.object({ title: z.unknown().optional() }).optional(),
-  body: z.object({ elements: z.array(z.unknown()) }).optional(),
-  elements: z.array(z.unknown()).optional(),
-  card_link: z.unknown().optional(),
+const cardSchema = object({
+  title: string().optional(),
+  header: object({ title: zUnknown().optional() }).optional(),
+  body: object({ elements: array(zUnknown()) }).optional(),
+  elements: array(zUnknown()).optional(),
+  card_link: zUnknown().optional(),
 });
-const urlsSchema = z.object({
-  url: z.string().optional(),
-  default_url: z.string().optional(),
-  pc_url: z.string().optional(),
-  ios_url: z.string().optional(),
-  android_url: z.string().optional(),
+const urlsSchema = object({
+  url: string().optional(),
+  default_url: string().optional(),
+  pc_url: string().optional(),
+  ios_url: string().optional(),
+  android_url: string().optional(),
 });
 const nodeSchema = resourceSchema.extend({
-  tag: z.string().optional(),
-  text: z.unknown().optional(),
-  content: z.string().optional(),
-  alt: z.unknown().optional(),
-  img_key: z.string().optional(),
-  user_id: z.string().optional(),
-  user_name: z.string().optional(),
-  language: z.string().optional(),
-  href: z.string().optional(),
-  url: z.string().optional(),
-  multi_url: z.unknown().optional(),
-  behaviors: z.array(z.unknown()).optional(),
-  elements: z.array(z.unknown()).optional(),
-  columns: z.array(z.unknown()).optional(),
-  fields: z.array(z.unknown()).optional(),
-  actions: z.array(z.unknown()).optional(),
+  tag: string().optional(),
+  text: zUnknown().optional(),
+  content: string().optional(),
+  alt: zUnknown().optional(),
+  img_key: string().optional(),
+  user_id: string().optional(),
+  user_name: string().optional(),
+  language: string().optional(),
+  href: string().optional(),
+  url: string().optional(),
+  multi_url: zUnknown().optional(),
+  behaviors: array(zUnknown()).optional(),
+  elements: array(zUnknown()).optional(),
+  columns: array(zUnknown()).optional(),
+  fields: array(zUnknown()).optional(),
+  actions: array(zUnknown()).optional(),
 });
 
 function urls(value: unknown): string[] {

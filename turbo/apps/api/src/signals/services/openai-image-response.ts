@@ -1,5 +1,14 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import * as z from "zod";
+import {
+  array,
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { settle, safeJsonParse } from "../utils";
 import { logger } from "../../lib/log";
@@ -28,65 +37,61 @@ export interface OpenAiImageMainModelUsage {
   readonly outputTokens: number;
 }
 
-const tokenCount = z.number().int().nonnegative();
-const mainModelUsageSchema = z
-  .object({
-    input_tokens: tokenCount,
-    input_tokens_details: z.object({ cached_tokens: tokenCount }),
-    output_tokens: tokenCount,
-    total_tokens: tokenCount,
-  })
-  .refine((usage) => {
-    return (
-      usage.input_tokens_details.cached_tokens <= usage.input_tokens &&
-      usage.total_tokens === usage.input_tokens + usage.output_tokens
-    );
-  });
+const tokenCount = number().int().nonnegative();
+const mainModelUsageSchema = object({
+  input_tokens: tokenCount,
+  input_tokens_details: object({ cached_tokens: tokenCount }),
+  output_tokens: tokenCount,
+  total_tokens: tokenCount,
+}).refine((usage) => {
+  return (
+    usage.input_tokens_details.cached_tokens <= usage.input_tokens &&
+    usage.total_tokens === usage.input_tokens + usage.output_tokens
+  );
+});
 
 // Runtime-verified Responses ledger (Flare, 2026-10-22). This aggregate belongs
 // to the single forced image tool call, not the enclosing mainline-model usage.
-const imageToolUsageSchema = z
-  .object({
-    input_tokens: tokenCount,
-    input_tokens_details: z.object({
-      text_tokens: tokenCount,
-      image_tokens: tokenCount,
-    }),
-    output_tokens: tokenCount.positive(),
-    output_tokens_details: z.object({
-      image_tokens: tokenCount.positive(),
-      text_tokens: z.literal(0),
-    }),
-    total_tokens: tokenCount,
-  })
-  .refine((usage) => {
-    return (
-      usage.input_tokens ===
-        usage.input_tokens_details.text_tokens +
-          usage.input_tokens_details.image_tokens &&
-      usage.output_tokens === usage.output_tokens_details.image_tokens &&
-      usage.total_tokens === usage.input_tokens + usage.output_tokens
-    );
-  });
-const toolUsageSchema = z.object({ image_gen: imageToolUsageSchema });
+const imageToolUsageSchema = object({
+  input_tokens: tokenCount,
+  input_tokens_details: object({
+    text_tokens: tokenCount,
+    image_tokens: tokenCount,
+  }),
+  output_tokens: tokenCount.positive(),
+  output_tokens_details: object({
+    image_tokens: tokenCount.positive(),
+    text_tokens: literal(0),
+  }),
+  total_tokens: tokenCount,
+}).refine((usage) => {
+  return (
+    usage.input_tokens ===
+      usage.input_tokens_details.text_tokens +
+        usage.input_tokens_details.image_tokens &&
+    usage.output_tokens === usage.output_tokens_details.image_tokens &&
+    usage.total_tokens === usage.input_tokens + usage.output_tokens
+  );
+});
+const toolUsageSchema = object({ image_gen: imageToolUsageSchema });
 
-const imageSchema = z.object({
-  type: z.literal("image_generation_call"),
-  id: z.string().min(1),
-  status: z.enum(["in_progress", "completed", "generating", "failed"]),
-  result: z.string().nullable(),
-  action: z.enum(["generate", "edit", "auto"]).nullish(),
-  background: z.enum(["transparent", "opaque", "auto"]).nullish(),
-  output_format: z.enum(["png", "webp", "jpeg"]).nullish(),
-  quality: z.enum(["low", "medium", "high", "xhigh", "max", "auto"]).nullish(),
-  revised_prompt: z.string().nullish(),
-  size: z.string().nullish(),
-  error: z.unknown().optional(),
+const imageSchema = object({
+  type: literal("image_generation_call"),
+  id: string().min(1),
+  status: zEnum(["in_progress", "completed", "generating", "failed"]),
+  result: string().nullable(),
+  action: zEnum(["generate", "edit", "auto"]).nullish(),
+  background: zEnum(["transparent", "opaque", "auto"]).nullish(),
+  output_format: zEnum(["png", "webp", "jpeg"]).nullish(),
+  quality: zEnum(["low", "medium", "high", "xhigh", "max", "auto"]).nullish(),
+  revised_prompt: string().nullish(),
+  size: string().nullish(),
+  error: zUnknown().optional(),
 });
 
-const responseSchema = z.object({
-  id: z.string().min(1),
-  status: z.enum([
+const responseSchema = object({
+  id: string().min(1),
+  status: zEnum([
     "queued",
     "in_progress",
     "completed",
@@ -94,19 +99,19 @@ const responseSchema = z.object({
     "cancelled",
     "incomplete",
   ]),
-  metadata: z.object({ generation_id: z.string().min(1).optional() }).nullish(),
-  output: z.array(z.unknown()),
-  usage: z.unknown().optional(),
-  tool_usage: z.unknown().optional(),
-  error: z.unknown().optional(),
+  metadata: object({ generation_id: string().min(1).optional() }).nullish(),
+  output: array(zUnknown()),
+  usage: zUnknown().optional(),
+  tool_usage: zUnknown().optional(),
+  error: zUnknown().optional(),
 });
 
 export interface OpenAiImageResponse {
   readonly id: string;
-  readonly status: z.infer<typeof responseSchema>["status"];
+  readonly status: zInfer<typeof responseSchema>["status"];
   readonly metadata: { readonly generation_id?: string };
-  readonly image: z.infer<typeof imageSchema> | undefined;
-  readonly imageUsage: z.infer<typeof imageToolUsageSchema> | undefined;
+  readonly image: zInfer<typeof imageSchema> | undefined;
+  readonly imageUsage: zInfer<typeof imageToolUsageSchema> | undefined;
   /** Mainline model usage only; never includes or substitutes image-tool billing. */
   readonly mainModelUsage: OpenAiImageMainModelUsage | undefined;
   /** Sanitized public failure; provider error messages are never retained. */
@@ -137,14 +142,12 @@ function badResponse(): OpenAiImageResponseError {
   };
 }
 
-const providerFailureSchema = z.object({
-  type: z.string().nullish(),
-  code: z.string().nullish(),
-  moderation_details: z
-    .object({
-      moderation_stage: z.enum(["input", "output", "unknown"]).optional(),
-    })
-    .nullish(),
+const providerFailureSchema = object({
+  type: string().nullish(),
+  code: string().nullish(),
+  moderation_details: object({
+    moderation_stage: zEnum(["input", "output", "unknown"]).optional(),
+  }).nullish(),
 });
 
 function classifyFailure(
@@ -213,34 +216,30 @@ async function readFailure(
   const text = await response.text();
   signal.throwIfAborted();
   const body: unknown = safeJsonParse(text);
-  const parsed = z.object({ error: z.unknown() }).safeParse(body);
-  const diagnostic = z
-    .object({
-      error: z.object({
-        code: z.enum([
-          "model_not_found",
-          "unsupported_parameter",
-          "invalid_value",
-          "missing_required_parameter",
-          "rate_limit_exceeded",
-          "insufficient_quota",
-          "unrecognized",
-        ]),
-        param: z
-          .enum([
-            "model",
-            "background",
-            "store",
-            "tools",
-            "tools[0].model",
-            "tools[0].action",
-            "max_tool_calls",
-            "tool_choice",
-          ])
-          .nullish(),
-      }),
-    })
-    .safeParse(body);
+  const parsed = object({ error: zUnknown() }).safeParse(body);
+  const diagnostic = object({
+    error: object({
+      code: zEnum([
+        "model_not_found",
+        "unsupported_parameter",
+        "invalid_value",
+        "missing_required_parameter",
+        "rate_limit_exceeded",
+        "insufficient_quota",
+        "unrecognized",
+      ]),
+      param: zEnum([
+        "model",
+        "background",
+        "store",
+        "tools",
+        "tools[0].model",
+        "tools[0].action",
+        "max_tool_calls",
+        "tool_choice",
+      ]).nullish(),
+    }),
+  }).safeParse(body);
   logger("OpenAiImageResponses").warn(
     "OpenAI image response request rejected",
     {
@@ -335,7 +334,7 @@ export async function submitOpenAiImageResponse(
   // JSON/transport/shape errors after POST remain uncertain: never resubmit.
   const body: unknown = await response.json();
   signal.throwIfAborted();
-  const parsed = z.object({ id: z.string().min(1) }).safeParse(body);
+  const parsed = object({ id: string().min(1) }).safeParse(body);
   if (!parsed.success) {
     throw new Error(
       "OpenAI image submission returned no response ID; outcome is uncertain",
@@ -419,7 +418,7 @@ function readOpenAiImageResponse(
   }
   const result = parsed.data;
   const images = result.output.filter((item) => {
-    const type = z.object({ type: z.string() }).safeParse(item);
+    const type = object({ type: string() }).safeParse(item);
     return type.success && type.data.type === "image_generation_call";
   });
   if (images.length > 1) {

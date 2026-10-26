@@ -59,7 +59,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Slack workspace identity",
     description:
       "Connect your Slack identity independently of bot installation and use it in shared channels.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
@@ -74,6 +74,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Website visibility",
     description: "Control who can visit a published website.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.
@@ -83,12 +84,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Customize a published website address from its Share menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.HostedSiteTitleEditing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Website title editing",
-    description: "Rename a hosted website without changing its address.",
-    enabled: true,
   },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
@@ -107,14 +102,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     // Preserve the maintainer's access outside the staff organization.
     enabledUserHashes: ["032a75d8", "35679123"],
-  },
-  [FeatureSwitchKey.ChatResourcePanel]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat resources",
-    description:
-      "Show a responsive panel of outputs and links from the current chat.",
-    enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ThreadEmailManager]: {
     maintainer: "yuma@okou.ai",
@@ -152,34 +139,20 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AgentSuggestion]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Suggestions",
+    description: "Discover and curate useful next-step suggestions.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ProactiveAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "Proactive",
     description:
-      "Review activity, learn, plan next steps, advance entrusted Tasks and curate Suggestions.",
+      "Review activity, learn, plan next steps and advance entrusted Tasks.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.BuiltinDocumentTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Built-in document templates",
-    description:
-      "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
-    enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.CustomTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Custom templates",
-    description:
-      "Templates compiled from uploaded files, available in their own catalog and the composer slash menu.",
-    enabled: true,
-    // Retain the staff and maintainer rollout for a global-default rollback.
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    // Kept beside the org so the maintainer keeps the feature while signed
-    // into a customer workspace, where the org hash does not apply.
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
@@ -439,21 +412,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.DiscordIntegration]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the verified Discord guild and bot DM integration.",
-    enabled: true,
-  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.VncAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -479,12 +441,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.GoogleDocsSheetsConversion]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Create editable Google Docs and Sheets from document and spreadsheet previews, preserving CSV and TSV fields as text.",
-    enabled: true,
   },
 };
 

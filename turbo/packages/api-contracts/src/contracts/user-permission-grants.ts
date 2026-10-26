@@ -1,35 +1,45 @@
-import * as z from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  never as zNever,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const agentIdSchema = z.string().uuid();
-const permissionSchema = z.string().min(1).max(128);
+const agentIdSchema = string().uuid();
+const permissionSchema = string().min(1).max(128);
 
-export const userPermissionGrantActionSchema = z.enum(["allow", "deny"]);
-export const userPermissionGrantApplyModeSchema = z.enum(["patch", "replace"]);
-export const userPermissionGrantExpiresInSchema = z.enum([
+export const userPermissionGrantActionSchema = zEnum(["allow", "deny"]);
+export const userPermissionGrantApplyModeSchema = zEnum(["patch", "replace"]);
+export const userPermissionGrantExpiresInSchema = zEnum([
   "1h",
   "24h",
   "7d",
   "always",
 ]);
 
-const agentPermissionGrantScopeSchema = z.object({
+const agentPermissionGrantScopeSchema = object({
   agentId: agentIdSchema,
 });
 
 export const userPermissionGrantScopeSchema = agentPermissionGrantScopeSchema;
 
-const userPermissionGrantResponseBaseSchema = z.object({
+const userPermissionGrantResponseBaseSchema = object({
   connectorSlug: connectorSlugSchema,
   permission: permissionSchema,
   action: userPermissionGrantActionSchema,
-  expiresAt: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  expiresAt: string().nullable(),
+  createdAt: string(),
+  updatedAt: string(),
 });
 
 export const userPermissionGrantResponseSchema =
@@ -39,36 +49,36 @@ export const userPermissionGrantResponseSchema =
 
 const listUserPermissionGrantsQuerySchema = userPermissionGrantScopeSchema;
 
-const applyUserPermissionGrantBaseSchema = z.object({
+const applyUserPermissionGrantBaseSchema = object({
   permission: permissionSchema,
 });
 
-export const applyUserPermissionGrantSchema = z.discriminatedUnion("action", [
+export const applyUserPermissionGrantSchema = discriminatedUnion("action", [
   applyUserPermissionGrantBaseSchema.extend({
-    action: z.literal("allow"),
+    action: literal("allow"),
     expiresIn: userPermissionGrantExpiresInSchema.optional(),
   }),
   applyUserPermissionGrantBaseSchema.extend({
-    action: z.literal("deny"),
-    expiresIn: z.never().optional(),
+    action: literal("deny"),
+    expiresIn: zNever().optional(),
   }),
 ]);
 
-export const applyUserPermissionGrantsRequestSchema = z
-  .object({
-    agentId: agentIdSchema,
-    connectorSlug: connectorSlugSchema,
-    mode: userPermissionGrantApplyModeSchema,
-    grants: z.array(applyUserPermissionGrantSchema),
-  })
-  .strict();
+export const applyUserPermissionGrantsRequestSchema = object({
+  agentId: agentIdSchema,
+  connectorSlug: connectorSlugSchema,
+  mode: userPermissionGrantApplyModeSchema,
+  grants: array(applyUserPermissionGrantSchema),
+}).strict();
 
-export const userPermissionGrantBatchItemSchema = z
-  .object({ connectorSlug: connectorSlugSchema, permission: permissionSchema })
-  .strict();
+export const userPermissionGrantBatchItemSchema = object({
+  connectorSlug: connectorSlugSchema,
+  permission: permissionSchema,
+}).strict();
 
-export const userPermissionGrantBatchItemsSchema = z
-  .array(userPermissionGrantBatchItemSchema)
+export const userPermissionGrantBatchItemsSchema = array(
+  userPermissionGrantBatchItemSchema,
+)
   .min(1)
   .max(20)
   .superRefine((items, ctx) => {
@@ -86,32 +96,25 @@ export const userPermissionGrantBatchItemsSchema = z
     }
   });
 
-export const applyUserPermissionGrantsBatchRequestSchema = z
-  .object({
-    agentId: agentIdSchema,
-    groups: z
-      .array(
-        z
-          .object({
-            connectorSlug: connectorSlugSchema,
-            grants: z
-              .array(
-                z
-                  .object({
-                    permission: permissionSchema,
-                    action: z.literal("allow"),
-                    expiresIn: userPermissionGrantExpiresInSchema.optional(),
-                  })
-                  .strict(),
-              )
-              .min(1)
-              .max(20),
-          })
-          .strict(),
+export const applyUserPermissionGrantsBatchRequestSchema = object({
+  agentId: agentIdSchema,
+  groups: array(
+    object({
+      connectorSlug: connectorSlugSchema,
+      grants: array(
+        object({
+          permission: permissionSchema,
+          action: literal("allow"),
+          expiresIn: userPermissionGrantExpiresInSchema.optional(),
+        }).strict(),
       )
-      .min(1)
-      .max(20),
-  })
+        .min(1)
+        .max(20),
+    }).strict(),
+  )
+    .min(1)
+    .max(20),
+})
   .strict()
   .superRefine((body, ctx) => {
     const items = body.groups.flatMap((group) => {
@@ -141,7 +144,7 @@ export const userPermissionGrantsContract = c.router({
     headers: authHeadersSchema,
     body: applyUserPermissionGrantsBatchRequestSchema,
     responses: {
-      200: z.array(userPermissionGrantResponseSchema),
+      200: array(userPermissionGrantResponseSchema),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -157,7 +160,7 @@ export const userPermissionGrantsContract = c.router({
     headers: authHeadersSchema,
     query: listUserPermissionGrantsQuerySchema,
     responses: {
-      200: z.array(userPermissionGrantResponseSchema),
+      200: array(userPermissionGrantResponseSchema),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -171,7 +174,7 @@ export const userPermissionGrantsContract = c.router({
     headers: authHeadersSchema,
     body: applyUserPermissionGrantsRequestSchema,
     responses: {
-      200: z.array(userPermissionGrantResponseSchema),
+      200: array(userPermissionGrantResponseSchema),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -183,31 +186,31 @@ export const userPermissionGrantsContract = c.router({
   },
 });
 
-export type UserPermissionGrantAction = z.infer<
+export type UserPermissionGrantAction = zInfer<
   typeof userPermissionGrantActionSchema
 >;
-export type UserPermissionGrantApplyMode = z.infer<
+export type UserPermissionGrantApplyMode = zInfer<
   typeof userPermissionGrantApplyModeSchema
 >;
-export type UserPermissionGrantExpiresIn = z.infer<
+export type UserPermissionGrantExpiresIn = zInfer<
   typeof userPermissionGrantExpiresInSchema
 >;
-export type UserPermissionGrantResponse = z.infer<
+export type UserPermissionGrantResponse = zInfer<
   typeof userPermissionGrantResponseSchema
 >;
-export type ListUserPermissionGrantsQuery = z.infer<
+export type ListUserPermissionGrantsQuery = zInfer<
   typeof listUserPermissionGrantsQuerySchema
 >;
-export type ApplyUserPermissionGrant = z.infer<
+export type ApplyUserPermissionGrant = zInfer<
   typeof applyUserPermissionGrantSchema
 >;
-export type ApplyUserPermissionGrantsRequest = z.infer<
+export type ApplyUserPermissionGrantsRequest = zInfer<
   typeof applyUserPermissionGrantsRequestSchema
 >;
-export type UserPermissionGrantBatchItem = z.infer<
+export type UserPermissionGrantBatchItem = zInfer<
   typeof userPermissionGrantBatchItemSchema
 >;
-export type ApplyUserPermissionGrantsBatchRequest = z.infer<
+export type ApplyUserPermissionGrantsBatchRequest = zInfer<
   typeof applyUserPermissionGrantsBatchRequestSchema
 >;
 export type UserPermissionGrantsContract = typeof userPermissionGrantsContract;

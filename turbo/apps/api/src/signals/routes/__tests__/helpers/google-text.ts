@@ -1,6 +1,15 @@
 import { HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
-import * as z from "zod";
+import {
+  array,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+} from "zod";
 
 import { stubTestVercelRuntimeToken } from "../../../../__tests__/env-stub";
 import { mockGoogleLlm } from "./google-voice";
@@ -8,22 +17,22 @@ import { mockGoogleLlm } from "./google-voice";
 export const VERTEX_TEXT_URL =
   /^https:\/\/aiplatform\.us\.rep\.googleapis\.com\/v1\/projects\/[^/]+\/locations\/us\/publishers\/google\/models\/(gemini-3\.1-flash-lite|gemini-3\.8-flash):generateContent$/u;
 
-export const vertexTextRequestSchema = z.object({
-  systemInstruction: z.object({
-    parts: z.array(z.object({ text: z.string() })),
+export const vertexTextRequestSchema = object({
+  systemInstruction: object({
+    parts: array(object({ text: string() })),
   }),
-  contents: z.array(
-    z.object({
-      role: z.enum(["user", "model"]),
-      parts: z.array(z.object({ text: z.string() })),
+  contents: array(
+    object({
+      role: zEnum(["user", "model"]),
+      parts: array(object({ text: string() })),
     }),
   ),
-  generationConfig: z.object({
-    maxOutputTokens: z.number().int().positive(),
-    temperature: z.number().optional(),
-    thinkingConfig: z.object({ thinkingLevel: z.enum(["MINIMAL", "LOW"]) }),
-    responseMimeType: z.literal("application/json").optional(),
-    responseJsonSchema: z.record(z.string(), z.unknown()).optional(),
+  generationConfig: object({
+    maxOutputTokens: number().int().positive(),
+    temperature: number().optional(),
+    thinkingConfig: object({ thinkingLevel: zEnum(["MINIMAL", "LOW"]) }),
+    responseMimeType: literal("application/json").optional(),
+    responseJsonSchema: record(string(), zUnknown()).optional(),
   }),
 });
 

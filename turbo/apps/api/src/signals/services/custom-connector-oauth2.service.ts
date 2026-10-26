@@ -18,7 +18,19 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  never as zNever,
+  type infer as zInfer,
+} from "zod";
+
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   mcpOAuthScopeListSchema,
@@ -139,85 +151,80 @@ import {
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
 
-const oauthHttpsUrlSchema = z
-  .string()
+const oauthHttpsUrlSchema = string()
   .url()
   .refine((value) => {
     return new URL(value).protocol === "https:";
   });
 
-const customConnectorCustomOAuthProviderContextSchema = z
-  .object({
-    provider: z.literal("feishu"),
-    completionTarget: z.enum(["custom", "feishu"]),
-    installationId: z.string().uuid().optional(),
-    expectedOpenId: z.string().min(1).optional(),
-  })
-  .strict();
+const customConnectorCustomOAuthProviderContextSchema = object({
+  provider: literal("feishu"),
+  completionTarget: zEnum(["custom", "feishu"]),
+  installationId: string().uuid().optional(),
+  expectedOpenId: string().min(1).optional(),
+}).strict();
 
-const customConnectorCustomOAuthStateContextSchema = z
-  .object({
-    version: z.literal(2),
-    authMode: z.literal("oauth"),
-    connectorId: z.string().uuid(),
-    storageVersion: z.number().int().positive(),
-    providerContext: customConnectorCustomOAuthProviderContextSchema.optional(),
-  })
-  .strict();
+const customConnectorCustomOAuthStateContextSchema = object({
+  version: literal(2),
+  authMode: literal("oauth"),
+  connectorId: string().uuid(),
+  storageVersion: number().int().positive(),
+  providerContext: customConnectorCustomOAuthProviderContextSchema.optional(),
+}).strict();
 
-export type CustomConnectorCustomOAuthStateContext = z.infer<
+export type CustomConnectorCustomOAuthStateContext = zInfer<
   typeof customConnectorCustomOAuthStateContextSchema
 >;
 
-const customConnectorAutomaticOAuthStateContextCoreSchema = z.object({
-  connectorId: z.string().uuid(),
-  storageVersion: z.number().int().positive(),
+const customConnectorAutomaticOAuthStateContextCoreSchema = object({
+  connectorId: string().uuid(),
+  storageVersion: number().int().positive(),
   issuer: oauthHttpsUrlSchema,
   resource: oauthHttpsUrlSchema,
   resourceMetadataUrl: oauthHttpsUrlSchema.nullable(),
   authorizationEndpoint: oauthHttpsUrlSchema,
   tokenEndpoint: oauthHttpsUrlSchema,
-  authorizationResponseIssParameterSupported: z.boolean(),
-  clientId: z.string().min(1),
-  tokenEndpointAuthMethod: z.enum([
+  authorizationResponseIssParameterSupported: boolean(),
+  clientId: string().min(1),
+  tokenEndpointAuthMethod: zEnum([
     "none",
     "client_secret_basic",
     "client_secret_post",
   ]),
-  providerContext: z.never().optional(),
+  providerContext: zNever().optional(),
 });
 
 const customConnectorAutomaticOAuthStateContextBaseSchema =
   customConnectorAutomaticOAuthStateContextCoreSchema.extend({
-    version: z.literal(2),
-    authMode: z.literal("automatic"),
+    version: literal(2),
+    authMode: literal("automatic"),
   });
 
-const customConnectorAutomaticOAuthStateContextSchema = z.union([
+const customConnectorAutomaticOAuthStateContextSchema = union([
   customConnectorAutomaticOAuthStateContextBaseSchema
     .extend({
-      registrationMethod: z.literal("cimd"),
-      dcrRegistrationId: z.never().optional(),
+      registrationMethod: literal("cimd"),
+      dcrRegistrationId: zNever().optional(),
     })
     .strict(),
   customConnectorAutomaticOAuthStateContextBaseSchema
     .extend({
-      registrationMethod: z.literal("dcr"),
-      dcrRegistrationId: z.string().uuid(),
+      registrationMethod: literal("dcr"),
+      dcrRegistrationId: string().uuid(),
     })
     .strict(),
 ]);
 
-const customConnectorOAuthStateContextSchema = z.union([
+const customConnectorOAuthStateContextSchema = union([
   customConnectorCustomOAuthStateContextSchema,
   customConnectorAutomaticOAuthStateContextSchema,
 ]);
 
-type CustomConnectorOAuthStateContext = z.infer<
+type CustomConnectorOAuthStateContext = zInfer<
   typeof customConnectorOAuthStateContextSchema
 >;
 
-type CustomConnectorAutomaticOAuthStateContext = z.infer<
+type CustomConnectorAutomaticOAuthStateContext = zInfer<
   typeof customConnectorAutomaticOAuthStateContextSchema
 >;
 
@@ -233,18 +240,18 @@ export function isCustomConnectorAutomaticOAuthStateContext(
   return context.authMode === "automatic";
 }
 
-const oauthTokenResponseSchema = z.object({
-  access_token: z.string().min(1),
-  refresh_token: z.string().min(1).nullable().optional(),
-  id_token: z.string().min(1).nullable().optional(),
-  token_type: z.string().min(1).optional(),
-  expires_in: z.union([z.number(), z.string()]).optional(),
-  scope: z.string().trim().min(1).optional(),
+const oauthTokenResponseSchema = object({
+  access_token: string().min(1),
+  refresh_token: string().min(1).nullable().optional(),
+  id_token: string().min(1).nullable().optional(),
+  token_type: string().min(1).optional(),
+  expires_in: union([number(), string()]).optional(),
+  scope: string().trim().min(1).optional(),
 });
 
-const oauthTokenErrorResponseSchema = z.object({
-  error: z.string().min(1).optional(),
-  error_subtype: z.string().min(1).optional(),
+const oauthTokenErrorResponseSchema = object({
+  error: string().min(1).optional(),
+  error_subtype: string().min(1).optional(),
 });
 
 export interface CustomConnectorOAuthTokenResult {
@@ -1342,8 +1349,7 @@ function automaticOAuthReauthorizationScopes(
   challengedScopes: readonly string[],
 ): readonly string[] | null {
   const storedScopes = connection.oauthScopes
-    ? z
-        .array(mcpOAuthScopeTokenSchema)
+    ? array(mcpOAuthScopeTokenSchema)
         .max(100)
         .parse(safeJsonParse(connection.oauthScopes))
     : [];

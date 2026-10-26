@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-import * as z from "zod";
+import { object, uuid } from "zod";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { wechatConnections, wechatMessages } from "@okouai/db/schema/wechat";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -45,7 +45,7 @@ const sendNotice$ = command(
         SELECT ${id}::uuid,id,generation,'outbound','unknown',${text}
         FROM ${wechatConnections} WHERE ${live}
         ON CONFLICT (id) DO NOTHING RETURNING id`;
-    const rowSchema = z.object({ id: z.uuid() });
+    const rowSchema = object({ id: uuid() });
     const [claimed] = await (async () => {
       return parseRawRows(rowSchema, await db.execute(noticeClaimQuery));
     })();

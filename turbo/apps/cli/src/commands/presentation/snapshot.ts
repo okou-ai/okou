@@ -1,21 +1,21 @@
 import { randomUUID } from "crypto";
 
-import { z } from "zod";
+import { array, number, object, string, tuple, enum as zEnum } from "zod";
 
 import { browser, run } from "./shared";
 
-const snapshotSchema = z.array(
-  z.object({
-    id: z.number().int().nonnegative(),
-    order: z.number().int().nonnegative(),
-    fontFamily: z.string().optional(),
-    fontFamilies: z.array(z.string()).optional(),
-    generated: z.array(
-      z.object({
-        kind: z.enum(["before", "after", "marker"]),
-        text: z.string(),
-        order: z.number().int().nonnegative(),
-        bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+const snapshotSchema = array(
+  object({
+    id: number().int().nonnegative(),
+    order: number().int().nonnegative(),
+    fontFamily: string().optional(),
+    fontFamilies: array(string()).optional(),
+    generated: array(
+      object({
+        kind: zEnum(["before", "after", "marker"]),
+        text: string(),
+        order: number().int().nonnegative(),
+        bounds: tuple([number(), number(), number(), number()]),
       }),
     ),
   }),

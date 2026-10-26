@@ -1,33 +1,42 @@
-import * as z from "zod";
+import {
+  discriminatedUnion,
+  intersection,
+  literal,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { artifactOgMetadataSchema } from "./artifact-og-metadata";
 
-export const artifactOgTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("host"), id: z.uuid() }),
-  z.object({
-    kind: z.literal("reference"),
-    id: z
-      .string()
-      .regex(/^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u),
+export const artifactOgTargetSchema = discriminatedUnion("kind", [
+  object({ kind: literal("host"), id: uuid() }),
+  object({
+    kind: literal("reference"),
+    id: string().regex(/^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u),
   }),
-  z.object({
-    kind: z.literal("thread"),
-    id: z.uuid(),
-    targetId: z.uuid(),
-    token: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
-    publicBrand: z.enum(["vm0", "okou"]),
+  object({
+    kind: literal("thread"),
+    id: uuid(),
+    targetId: uuid(),
+    token: string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
+    publicBrand: zEnum(["vm0", "okou"]),
   }),
 ]);
-export type ArtifactOgTarget = z.infer<typeof artifactOgTargetSchema>;
+export type ArtifactOgTarget = zInfer<typeof artifactOgTargetSchema>;
 const c = initContract();
 export const artifactOgContract = c.router({
   slackImage: {
     method: "GET",
     path: "/api/artifact-og/slack.png",
-    query: z.object({
-      url: z.url().max(2048),
-      signature: z.string().regex(/^[a-f0-9]{64}$/u),
+    query: object({
+      url: url().max(2048),
+      signature: string().regex(/^[a-f0-9]{64}$/u),
     }),
     responses: {
       302: c.noBody(),
@@ -51,11 +60,11 @@ export const artifactOgContract = c.router({
   image: {
     method: "GET",
     path: "/api/artifact-og/image",
-    query: z.intersection(
+    query: intersection(
       artifactOgTargetSchema,
-      z.object({
-        version: z.string().max(200),
-        variant: z.literal("slack").optional(),
+      object({
+        version: string().max(200),
+        variant: literal("slack").optional(),
       }),
     ),
     responses: {

@@ -3,7 +3,7 @@ import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq, and } from "drizzle-orm";
-import * as z from "zod";
+import { array, number, object, string } from "zod";
 import {
   githubOauthContract,
   type GithubAppSetupCallbackQuery,
@@ -492,15 +492,13 @@ async function githubInstallationAdmin(
       ),
       [200],
     );
-    const memberships = z
-      .array(
-        z.object({
-          state: z.string(),
-          role: z.string(),
-          organization: z.object({ id: z.number() }),
-        }),
-      )
-      .parse(await response.json());
+    const memberships = array(
+      object({
+        state: string(),
+        role: string(),
+        organization: object({ id: number() }),
+      }),
+    ).parse(await response.json());
     signal.throwIfAborted();
     const membership = memberships.find((entry) => {
       return String(entry.organization.id) === args.installation.targetId;
@@ -1154,9 +1152,9 @@ const claimGithubInstallationCallback$ = command(
     const continuation =
       claimed.state.oauthContext === null
         ? null
-        : z
-            .object({ installationId: z.string().regex(/^\d+$/) })
-            .parse(safeJsonParse(claimed.state.oauthContext));
+        : object({ installationId: string().regex(/^\d+$/) }).parse(
+            safeJsonParse(claimed.state.oauthContext),
+          );
     if (
       continuation &&
       args.query.installation_id &&

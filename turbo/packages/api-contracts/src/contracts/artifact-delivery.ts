@@ -1,48 +1,57 @@
-import * as z from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { linkLayoutSegmentSchema, type LinkLayoutSegment } from "./link-layout";
 
 // `publicBrand` is the persisted link-layout marker. Deployed delivery Workers
 // compare it with the layout segment of the key they read, so its name and
 // values are part of the stored R2 format.
-export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
+export const artifactDeliveryRecordSchema = discriminatedUnion("kind", [
   // A separate discriminator makes older Workers reject this delivery instead
   // of ignoring the shared conversation's additional authorization boundary.
-  z.object({
-    version: z.literal(1),
-    kind: z.literal("thread-resource"),
+  object({
+    version: literal(1),
+    kind: literal("thread-resource"),
     publicBrand: linkLayoutSegmentSchema,
-    threadId: z.uuid(),
-    publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
-    targetKind: z.enum(["file", "html"]),
+    threadId: uuid(),
+    publicToken: string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
+    targetKind: zEnum(["file", "html"]),
     // New registrations bind the alias to one resource before publication.
-    targetId: z.uuid().optional(),
+    targetId: uuid().optional(),
   }),
-  z.object({
-    version: z.literal(1),
-    kind: z.literal("publication"),
+  object({
+    version: literal(1),
+    kind: literal("publication"),
     publicBrand: linkLayoutSegmentSchema,
-    shareId: z.uuid(),
-    publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
-    targetKind: z.enum(["file", "html"]),
+    shareId: uuid(),
+    publicToken: string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
+    targetKind: zEnum(["file", "html"]),
   }),
-  z.object({
-    version: z.literal(1),
-    kind: z.literal("legacy-file"),
+  object({
+    version: literal(1),
+    kind: literal("legacy-file"),
     publicBrand: linkLayoutSegmentSchema,
-    audience: z.literal("public"),
-    key: z.string().startsWith("artifacts/"),
-    filename: z.string().min(1),
-    contentType: z.string().min(1),
+    audience: literal("public"),
+    key: string().startsWith("artifacts/"),
+    filename: string().min(1),
+    contentType: string().min(1),
   }),
-  z.object({
-    version: z.literal(1),
-    kind: z.literal("legacy-site"),
+  object({
+    version: literal(1),
+    kind: literal("legacy-site"),
     publicBrand: linkLayoutSegmentSchema,
-    audience: z.literal("public"),
-    pointerKey: z.string().startsWith("sites/"),
+    audience: literal("public"),
+    pointerKey: string().startsWith("sites/"),
   }),
 ]);
-export type ArtifactDeliveryRecord = z.infer<
+export type ArtifactDeliveryRecord = zInfer<
   typeof artifactDeliveryRecordSchema
 >;
 

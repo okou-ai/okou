@@ -1,12 +1,23 @@
-import * as z from "zod";
+import {
+  array,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { workflowImportSourceSchema } from "./workflow-import-source";
 import {
   RESERVED_SKILL_FILE,
   workflowNameSchema,
   workflowSummarySchema,
 } from "./workflows";
+
+import { workflowImportSourceSchema } from "./workflow-import-source";
 
 export { SKILL_IMPORT_SESSION_TTL_SECONDS } from "./skill-import-session";
 
@@ -43,36 +54,36 @@ export const SKILL_IMPORT_LIMITS = {
   maxRequestBytes: 2 * 1024 * 1024,
 } as const;
 
-export const skillImportLimitsSchema = z.object({
-  maxSkillsPerSession: z.number().int().positive(),
-  maxInstructionBytes: z.number().int().positive(),
-  maxFilesPerSkill: z.number().int().positive(),
-  maxFileBytes: z.number().int().positive(),
-  maxTotalFileBytes: z.number().int().positive(),
-  maxRequestBytes: z.number().int().positive(),
+export const skillImportLimitsSchema = object({
+  maxSkillsPerSession: number().int().positive(),
+  maxInstructionBytes: number().int().positive(),
+  maxFilesPerSkill: number().int().positive(),
+  maxFileBytes: number().int().positive(),
+  maxTotalFileBytes: number().int().positive(),
+  maxRequestBytes: number().int().positive(),
 });
-export type SkillImportLimits = z.infer<typeof skillImportLimitsSchema>;
+export type SkillImportLimits = zInfer<typeof skillImportLimitsSchema>;
 
 /**
  * The tool the prompt is written for. The session records it so every skill
  * the session imports is tagged with where it came from.
  */
-export const skillImportSessionRequestSchema = z.object({
+export const skillImportSessionRequestSchema = object({
   provider: workflowImportSourceSchema,
 });
-export type SkillImportSessionRequest = z.infer<
+export type SkillImportSessionRequest = zInfer<
   typeof skillImportSessionRequestSchema
 >;
 
-export const skillImportSessionResponseSchema = z.object({
-  sessionId: z.uuid(),
+export const skillImportSessionResponseSchema = object({
+  sessionId: uuid(),
   /** Absolute URL of the upload route the prompt posts each skill to. */
-  uploadUrl: z.url(),
-  token: z.string().min(1),
-  expiresAt: z.string().datetime(),
+  uploadUrl: url(),
+  token: string().min(1),
+  expiresAt: string().datetime(),
   limits: skillImportLimitsSchema,
 });
-export type SkillImportSessionResponse = z.infer<
+export type SkillImportSessionResponse = zInfer<
   typeof skillImportSessionResponseSchema
 >;
 
@@ -81,15 +92,14 @@ export type SkillImportSessionResponse = z.infer<
  * The server normalizes it to `workflowNameSchema`; a value that cannot be
  * normalized into a slug is rejected as invalid.
  */
-export const skillImportNameSchema = z.string().min(1).max(128);
+export const skillImportNameSchema = string().min(1).max(128);
 
 /**
  * One supplementary file. `SKILL.md` is reserved: it is synthesized server-side
  * from (name, description, instruction) and is never uploaded.
  */
-export const skillImportFileSchema = z.object({
-  path: z
-    .string()
+export const skillImportFileSchema = object({
+  path: string()
     .min(1)
     .max(256)
     .refine(
@@ -110,35 +120,33 @@ export const skillImportFileSchema = z.object({
       },
       { message: `${RESERVED_SKILL_FILE} is reserved and is generated` },
     ),
-  content: z.string(),
+  content: string(),
 });
 
 /**
  * One skill per request. Sizes are validated by the route rather than by this
  * schema so an oversize payload answers `413` instead of `400`.
  */
-export const skillImportRequestSchema = z
-  .object({
-    name: skillImportNameSchema,
-    displayName: z.string().max(256).optional(),
-    description: z.string().max(1024).optional(),
-    instruction: z.string().min(1),
-    files: z.array(skillImportFileSchema).optional(),
-  })
-  .strict();
-export type SkillImportRequest = z.infer<typeof skillImportRequestSchema>;
+export const skillImportRequestSchema = object({
+  name: skillImportNameSchema,
+  displayName: string().max(256).optional(),
+  description: string().max(1024).optional(),
+  instruction: string().min(1),
+  files: array(skillImportFileSchema).optional(),
+}).strict();
+export type SkillImportRequest = zInfer<typeof skillImportRequestSchema>;
 
-export const skillImportCreatedResponseSchema = z.object({
-  outcome: z.literal("created"),
-  workflowId: z.string().uuid(),
+export const skillImportCreatedResponseSchema = object({
+  outcome: literal("created"),
+  workflowId: string().uuid(),
   /** Normalized slug the skill was stored under. */
   name: workflowNameSchema,
 });
 
-export const skillImportSkippedResponseSchema = z.object({
-  outcome: z.literal("skipped"),
-  reason: z.literal("name_exists"),
-  workflowId: z.string().uuid(),
+export const skillImportSkippedResponseSchema = object({
+  outcome: literal("skipped"),
+  reason: literal("name_exists"),
+  workflowId: string().uuid(),
   name: workflowNameSchema,
 });
 
@@ -172,9 +180,9 @@ export const skillImportSessionsContract = c.router({
     method: "GET",
     path: "/api/skill-import/sessions/:sessionId/skills",
     headers: authHeadersSchema,
-    pathParams: z.object({ sessionId: z.uuid() }),
+    pathParams: object({ sessionId: uuid() }),
     responses: {
-      200: z.array(workflowSummarySchema),
+      200: array(workflowSummarySchema),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

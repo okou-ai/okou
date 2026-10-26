@@ -11793,68 +11793,56 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it.each([false, true])(
-        "advertises VNC instructions and Run capabilities only while its feature is enabled (%s)",
-        async (enabled) => {
-          const api = createRunsApi(context);
-          const connectors = createConnectorBddApi(context);
-          const webhooks = createWebhookCallbackApi(context);
-          const { actor, agentId, runnerGroup } = await entitledRunActor();
+      it("advertises VNC instructions and Run capabilities", async () => {
+        const api = createRunsApi(context);
+        const connectors = createConnectorBddApi(context);
+        const webhooks = createWebhookCallbackApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-          await connectors.updateFeatureSwitches(actor, {
-            [FeatureSwitchKey.VncAccess]: enabled,
-            [FeatureSwitchKey.RemoteConnectionDiagnostics]: true,
-          });
-          const run = await api.createThreadRun(actor, {
-            agentId,
-            prompt: "inspect my remote VNC desktop",
-          });
-          expect(run.status).toBe("pending");
-          await api.heartbeatRunner(runnerGroup);
-          const claim = await api.claimRunnerJob(run.runId);
-          const prompt = claim.appendSystemPrompt ?? "";
-          const token = claim.platformEnvironment.OKOU_TOKEN;
-          if (!token) {
-            throw new Error("Expected a minted Run token");
-          }
-          const capabilities = verifyOkouToken(token)?.capabilities;
-          expect(capabilities).toBeDefined();
-          expect(prompt).toContain(
-            "okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json",
-          );
-          expect(prompt).toContain("passive history");
-          expect(prompt).toContain(
-            "unavailable evidence does not establish a cause",
-          );
-          if (enabled) {
-            expect(capabilities).toContain("vnc:read");
-            expect(capabilities).toContain("vnc:write");
-            expect(prompt).toContain("okou vnc host list --json");
-            expect(prompt).toContain("okou vnc session start");
-            expect(prompt).toContain("explicit shared/exclusive mode");
-            expect(prompt).toContain("okou vnc screenshot");
-            expect(prompt).toContain("geometry for coordinate input");
-            expect(prompt).toContain(
-              "never replay uncertain input automatically",
-            );
-            expect(prompt).toContain("okou vnc session close");
-            expect(prompt).toContain("okou vnc --help");
-            expect(prompt).toContain(
-              "okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json",
-            );
-          } else {
-            expect(capabilities).not.toContain("vnc:read");
-            expect(capabilities).not.toContain("vnc:write");
-            expect(prompt).not.toContain("okou vnc");
-          }
-          await api.requestCancelRun(actor, run.runId, [200]);
-          await webhooks.requestAgentComplete(
-            { runId: run.runId, exitCode: 1 },
-            { authorization: `Bearer ${claim.sandboxToken}` },
-            [200],
-          );
-        },
-      );
+        await connectors.updateFeatureSwitches(actor, {
+          [FeatureSwitchKey.RemoteConnectionDiagnostics]: true,
+        });
+        const run = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "inspect my remote VNC desktop",
+        });
+        expect(run.status).toBe("pending");
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(run.runId);
+        const prompt = claim.appendSystemPrompt ?? "";
+        const token = claim.platformEnvironment.OKOU_TOKEN;
+        if (!token) {
+          throw new Error("Expected a minted Run token");
+        }
+        const capabilities = verifyOkouToken(token)?.capabilities;
+        expect(capabilities).toBeDefined();
+        expect(prompt).toContain(
+          "okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json",
+        );
+        expect(prompt).toContain("passive history");
+        expect(prompt).toContain(
+          "unavailable evidence does not establish a cause",
+        );
+        expect(capabilities).toContain("vnc:read");
+        expect(capabilities).toContain("vnc:write");
+        expect(prompt).toContain("okou vnc host list --json");
+        expect(prompt).toContain("okou vnc session start");
+        expect(prompt).toContain("explicit shared/exclusive mode");
+        expect(prompt).toContain("okou vnc screenshot");
+        expect(prompt).toContain("geometry for coordinate input");
+        expect(prompt).toContain("never replay uncertain input automatically");
+        expect(prompt).toContain("okou vnc session close");
+        expect(prompt).toContain("okou vnc --help");
+        expect(prompt).toContain(
+          "okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json",
+        );
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await webhooks.requestAgentComplete(
+          { runId: run.runId, exitCode: 1 },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+      });
 
       it.each([false, true])(
         "selects one presentation format and gates PPTX conversion guidance and capability (%s)",

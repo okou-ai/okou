@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { fromJSONSchema } from "zod";
 import { computerUseSessionHostsContract } from "../../contracts/computer-use";
 import { desktopResponseTransforms } from "../desktop";
 import { selectClientResponseTransforms } from "../select";
 import { previousCommandClaimJsonSchema } from "./fixtures/desktop-command-claim-0.52.2";
 
 // Exact 200 schema from runtime-api-schema-prod/current.json, published 2026-10-15.
-const previous = z.fromJSONSchema(previousCommandClaimJsonSchema);
+const previous = fromJSONSchema(previousCommandClaimJsonSchema);
 const claim = {
   status: "command",
   command: {

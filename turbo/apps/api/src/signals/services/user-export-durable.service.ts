@@ -14,7 +14,17 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { createSHA256 } from "hash-wasm";
-import * as z from "zod";
+import {
+  boolean,
+  number,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { exportJobs } from "@okouai/db/schema/export-job";
@@ -71,53 +81,51 @@ const ATTEMPT_TIMEOUT_MS = 30_000;
 const MAX_FAILURES = 6;
 const MAX_JOB_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-const stateSchema = z.object({
-  phase: z
-    .enum([
-      "collect",
-      "scan",
-      "inventory",
-      "manifest",
-      "init-upload",
-      "assemble",
-      "authorize",
-      "publish",
-      "notify",
-    ])
-    .default("collect"),
-  manifestPageCount: z.number().int().nonnegative().default(0),
-  manifestHashState: z.string().optional(),
-  manifestSha256: z.string().optional(),
-  collectedAt: z.string().optional(),
-  source: z.record(z.string(), z.unknown()).default({}),
-  entryCount: z.number().int().nonnegative().default(0),
-  cursor: z.number().int().nonnegative().default(0),
-  localSize: z.number().int().nonnegative().default(0),
-  centralSize: z.number().int().nonnegative().default(0),
-  totalSize: z.number().int().nonnegative().default(0),
-  partNumber: z.number().int().positive().default(1),
-  zipOffset: z.number().int().nonnegative().default(0),
-  pendingKey: z.string().optional(),
-  pendingSize: z.number().int().nonnegative().default(0),
-  uploadId: z.string().default(""),
-  resultKey: z.string().default(""),
+const stateSchema = object({
+  phase: zEnum([
+    "collect",
+    "scan",
+    "inventory",
+    "manifest",
+    "init-upload",
+    "assemble",
+    "authorize",
+    "publish",
+    "notify",
+  ]).default("collect"),
+  manifestPageCount: number().int().nonnegative().default(0),
+  manifestHashState: string().optional(),
+  manifestSha256: string().optional(),
+  collectedAt: string().optional(),
+  source: record(string(), zUnknown()).default({}),
+  entryCount: number().int().nonnegative().default(0),
+  cursor: number().int().nonnegative().default(0),
+  localSize: number().int().nonnegative().default(0),
+  centralSize: number().int().nonnegative().default(0),
+  totalSize: number().int().nonnegative().default(0),
+  partNumber: number().int().positive().default(1),
+  zipOffset: number().int().nonnegative().default(0),
+  pendingKey: string().optional(),
+  pendingSize: number().int().nonnegative().default(0),
+  uploadId: string().default(""),
+  resultKey: string().default(""),
 });
-type ExportState = z.infer<typeof stateSchema>;
+type ExportState = zInfer<typeof stateSchema>;
 interface Runtime {
   readonly bucket: string;
   readonly job: ClaimedBackgroundJob;
   readonly state: ExportState;
 }
 
-const publicationOutcomeSchema = z.object({
-  authorized: z.boolean(),
-  leased: z.boolean(),
-  published: z.boolean(),
-  handed_off: z.boolean(),
+const publicationOutcomeSchema = object({
+  authorized: boolean(),
+  leased: boolean(),
+  published: boolean(),
+  handed_off: boolean(),
 });
 
 function publicationResult(
-  outcome: z.infer<typeof publicationOutcomeSchema> | undefined,
+  outcome: zInfer<typeof publicationOutcomeSchema> | undefined,
 ): boolean {
   if (!outcome) {
     throw new Error("Export publication returned no outcome");
@@ -308,10 +316,10 @@ const commitCollectedEntries$ = command(
     // sees a live head or an export reference. Missing heads gate every write.
     signal.throwIfAborted();
     const [outcome] = parseRawRows(
-      z.object({
-        leased: z.boolean(),
-        pinned: z.boolean(),
-        invalid_identity: z.boolean(),
+      object({
+        leased: boolean(),
+        pinned: boolean(),
+        invalid_identity: boolean(),
       }),
       await db.execute(sql`
         with export_collection_lease as materialized (${lease}),
@@ -568,7 +576,7 @@ const commitPlacedEntries$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      z.object({ id: z.string().uuid() }),
+      object({ id: string().uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -724,7 +732,7 @@ const scanStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      z.object({ id: z.string().uuid() }),
+      object({ id: string().uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -845,7 +853,7 @@ const inventoryStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      z.object({ id: z.string().uuid() }),
+      object({ id: string().uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -943,7 +951,7 @@ const manifestStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      z.object({ id: z.string().uuid() }),
+      object({ id: string().uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
@@ -1044,7 +1052,7 @@ const assembleStep$ = command(
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
     const committed = parseRawRows(
-      z.object({ id: z.string().uuid() }),
+      object({ id: string().uuid() }),
       await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),

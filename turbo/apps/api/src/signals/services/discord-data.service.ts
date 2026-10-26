@@ -1,9 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import { and, count, eq, gte, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
@@ -18,18 +15,9 @@ import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
-import {
-  discordIntegrationEnabledForOwner,
-  discordIntegrationEnabledForOwner$,
-  getDiscordAppConfig,
-} from "./discord-config";
+import { getDiscordAppConfig } from "./discord-config";
 
 import { discordMessageContentCapability } from "./discord-application-capability.service";
-
-import {
-  featureSwitchContextFromRows,
-  userFeatureSwitchRowCondition,
-} from "./feature-switch-scope";
 
 export interface DiscordVerifiedBinding {
   readonly connectionId: string;
@@ -128,21 +116,6 @@ function createVerifiedBindings(
       .where(where);
     const result: DiscordVerifiedBinding[] = [];
     for (const row of rows) {
-      const switches = await db
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(userFeatureSwitchRowCondition(row.orgId, row.userId));
-      if (
-        !isFeatureEnabled(
-          FeatureSwitchKey.DiscordIntegration,
-          featureSwitchContextFromRows(row.orgId, row.userId, switches),
-        )
-      ) {
-        continue;
-      }
       const membership = await settle(
         get(clerk$).organizations.getOrganizationMembershipList({
           organizationId: row.orgId,
@@ -336,15 +309,6 @@ export const selectDiscordDmBinding$ = command(
     if (!binding) {
       return false;
     }
-    const enabled = await set(
-      discordIntegrationEnabledForOwner$,
-      binding.orgId,
-      binding.userId,
-      signal,
-    );
-    if (!enabled) {
-      return false;
-    }
     const [selected] = await set(commitDiscordDmSelection$, binding, signal);
     if (selected) {
       // Committed preferences publish before observing post-commit cancellation.
@@ -525,7 +489,6 @@ export function discordOrgStatus(
   const capability$ = discordMessageContentCapability();
   const role$ = discordMemberRole(identity$);
   const agent$ = discordEffectiveAgent(identity$);
-  const enabled$ = discordIntegrationEnabledForOwner(identity$);
   const connection$ = discordStatusConnection(identity$);
   const discordUserId$ = computed(async (get) => {
     const connection = await get(connection$);
@@ -535,10 +498,9 @@ export function discordOrgStatus(
   const dmBinding$ = discordDmBinding(discordUserId$);
   return computed(async (get): Promise<DiscordOrgStatus> => {
     const args = get(identity$);
-    const enabled = await get(enabled$);
     const config = getDiscordAppConfig();
     const status: DiscordOrgStatus = {
-      isAvailable: enabled && config !== null,
+      isAvailable: config !== null,
       isConnected: false,
       isAdmin: args.orgRole === "admin",
       guildId: null,
@@ -551,9 +513,6 @@ export function discordOrgStatus(
       dmSelectionConnectionId: null,
       dmBindings: [],
     };
-    if (!enabled) {
-      return status;
-    }
     const role = await get(role$);
     if (!role) {
       return {

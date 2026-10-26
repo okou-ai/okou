@@ -1,4 +1,15 @@
-import * as z from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -6,34 +17,34 @@ import { modelProviderResponseSchema } from "./model-providers";
 
 const c = initContract();
 
-export const codexDeviceAuthScopeSchema = z.literal("personal");
-export const codexDeviceAuthModeSchema = z.enum(["add", "reconnect"]);
+export const codexDeviceAuthScopeSchema = literal("personal");
+export const codexDeviceAuthModeSchema = zEnum(["add", "reconnect"]);
 
-const codexDeviceAuthStartResponseSchema = z.object({
-  sessionToken: z.string(),
-  type: z.literal("codex"),
-  status: z.literal("pending"),
+const codexDeviceAuthStartResponseSchema = object({
+  sessionToken: string(),
+  type: literal("codex"),
+  status: literal("pending"),
   scope: codexDeviceAuthScopeSchema,
-  browserUrl: z.url(),
-  verificationCode: z.string().min(1),
-  expiresIn: z.number().int().positive(),
-  interval: z.number().int().positive(),
+  browserUrl: url(),
+  verificationCode: string().min(1),
+  expiresIn: number().int().positive(),
+  interval: number().int().positive(),
 });
 
-const codexDeviceAuthCompleteResponseSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("pending"),
-    errorMessage: z.string().nullable(),
+const codexDeviceAuthCompleteResponseSchema = discriminatedUnion("status", [
+  object({
+    status: literal("pending"),
+    errorMessage: string().nullable(),
   }),
-  z.object({
-    status: z.literal("complete"),
+  object({
+    status: literal("complete"),
     provider: modelProviderResponseSchema,
-    created: z.boolean(),
+    created: boolean(),
   }),
 ]);
 
-const codexDeviceAuthCancelResponseSchema = z.object({
-  status: z.literal("cancelled"),
+const codexDeviceAuthCancelResponseSchema = object({
+  status: literal("cancelled"),
 });
 
 /**
@@ -46,10 +57,10 @@ export const codexDeviceAuthContract = c.router({
     method: "POST",
     path: "/api/model-providers/codex/device-auth/sessions",
     headers: authHeadersSchema,
-    body: z.object({
+    body: object({
       scope: codexDeviceAuthScopeSchema,
       mode: codexDeviceAuthModeSchema.optional(),
-      modelProviderId: z.uuid().optional(),
+      modelProviderId: uuid().optional(),
     }),
     responses: {
       200: codexDeviceAuthStartResponseSchema,
@@ -64,7 +75,7 @@ export const codexDeviceAuthContract = c.router({
     method: "POST",
     path: "/api/model-providers/codex/device-auth/sessions/complete",
     headers: authHeadersSchema,
-    body: z.object({ sessionToken: z.string().min(1) }),
+    body: object({ sessionToken: string().min(1) }),
     responses: {
       200: codexDeviceAuthCompleteResponseSchema,
       400: apiErrorSchema,
@@ -79,7 +90,7 @@ export const codexDeviceAuthContract = c.router({
     method: "POST",
     path: "/api/model-providers/codex/device-auth/sessions/cancel",
     headers: authHeadersSchema,
-    body: z.object({ sessionToken: z.string().min(1) }),
+    body: object({ sessionToken: string().min(1) }),
     responses: {
       200: codexDeviceAuthCancelResponseSchema,
       400: apiErrorSchema,
@@ -91,6 +102,6 @@ export const codexDeviceAuthContract = c.router({
   },
 });
 
-export type CodexDeviceAuthScope = z.infer<typeof codexDeviceAuthScopeSchema>;
-export type CodexDeviceAuthMode = z.infer<typeof codexDeviceAuthModeSchema>;
+export type CodexDeviceAuthScope = zInfer<typeof codexDeviceAuthScopeSchema>;
+export type CodexDeviceAuthMode = zInfer<typeof codexDeviceAuthModeSchema>;
 export type CodexDeviceAuthContract = typeof codexDeviceAuthContract;

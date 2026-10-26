@@ -30,7 +30,7 @@ import {
   isNotNull,
   sql,
 } from "drizzle-orm";
-import * as z from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -184,7 +184,7 @@ const connectionCredentials$ = computed(async (get) => {
 });
 
 function walletStatus(
-  credentials: z.infer<typeof linkCredentialsSchema> | undefined,
+  credentials: zInfer<typeof linkCredentialsSchema> | undefined,
 ) {
   const authorization = walletAuthorization(credentials);
   return {
@@ -219,7 +219,7 @@ function walletScopeChange(
   ].sort();
   const stored = [
     ...new Set([
-      ...z.array(z.string()).parse(JSON.parse(storedScopes)),
+      ...array(string()).parse(JSON.parse(storedScopes)),
       ...grantedScopes,
       ...grantedSourceActions,
     ]),
@@ -571,7 +571,7 @@ const publishWalletOAuth$ = command(
     // Disconnect deletes attempts before revoking connections, so an in-flight
     // callback cannot resurrect a grant after the user has disconnected it.
     const result = parseRawRows(
-      z.object({ id: z.uuid() }),
+      object({ id: uuid() }),
       await db.execute(sql`
       WITH authorized AS (
         UPDATE ${linkWalletOAuthAttempts}
@@ -621,7 +621,7 @@ const refreshWalletConnection$ = command(
   ): Promise<{
     connection: Connection;
     token: string;
-    credentials: z.infer<typeof linkCredentialsSchema>;
+    credentials: zInfer<typeof linkCredentialsSchema>;
   }> => {
     const { owner, connection } = input;
     const db = set(writeDb$);
@@ -747,7 +747,7 @@ const walletAccess$ = command(
   ): Promise<{
     connection: Connection;
     token: string;
-    credentials: z.infer<typeof linkCredentialsSchema>;
+    credentials: zInfer<typeof linkCredentialsSchema>;
   }> => {
     const connection = await get(connection$);
     signal.throwIfAborted();

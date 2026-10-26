@@ -12,7 +12,8 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import * as z from "zod";
+import { enum as zEnum, type infer as zInfer } from "zod";
+
 import {
   pgBooleanDecoder,
   pgTextDecoder,
@@ -48,7 +49,7 @@ export type NetworkMutationArgs = {
   | { readonly operation: "adopt"; readonly impactSnapshot: string }
   | { readonly operation: "delete"; readonly impactSnapshot?: string }
 );
-const outcomeSchema = z.enum([
+const outcomeSchema = zEnum([
   "ready",
   "notFound",
   "forbidden",
@@ -57,7 +58,7 @@ const outcomeSchema = z.enum([
   "inUse",
   "exhausted",
 ]);
-export type NetworkMutationOutcome = z.infer<typeof outcomeSchema>;
+export type NetworkMutationOutcome = zInfer<typeof outcomeSchema>;
 const outcomeDecoder = zodEnumDriverValueDecoder(outcomeSchema);
 
 export function networkMutationReads(args: NetworkMutationArgs) {

@@ -8,7 +8,7 @@ import {
 import { getPresentationTemplateStorageName } from "@okouai/core/storage-names";
 import type { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { createHash } from "node:crypto";
-import * as z from "zod";
+import { uuid } from "zod";
 
 export type PresentationTemplateRow = typeof presentationTemplates.$inferSelect;
 
@@ -52,7 +52,7 @@ export function parsePresentationTemplatePreviewAssetId(
   const storageVersionId = identity.slice(separator + 1);
   if (
     separator === -1 ||
-    !z.uuid().safeParse(templateId).success ||
+    !uuid().safeParse(templateId).success ||
     !/^[\w-]{43}$/.test(storageVersionId)
   ) {
     return null;

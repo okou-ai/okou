@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 import { parseProviderTokenResponse } from "../../token-response";
@@ -42,12 +42,12 @@ export async function refreshReckonAccessToken(
 
   const data = await parseProviderTokenResponse(
     response,
-    z.object({
-      access_token: z.string().min(1).optional(),
-      refresh_token: z.string().min(1).optional(),
-      expires_in: z.number().positive().optional(),
-      error: z.string().min(1).optional(),
-      error_description: z.string().min(1).optional(),
+    object({
+      access_token: string().min(1).optional(),
+      refresh_token: string().min(1).optional(),
+      expires_in: number().positive().optional(),
+      error: string().min(1).optional(),
+      error_description: string().min(1).optional(),
     }),
     "Invalid Reckon token response",
   );

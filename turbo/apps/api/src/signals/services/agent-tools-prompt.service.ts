@@ -19,8 +19,7 @@ const wechatToolsGuidance = Object.freeze([
 ]);
 
 const dataSearchToolsGuidance = Object.freeze([
-  "- External data capabilities: use `okou data --help` for the unified research namespace and `okou data tools --family data-search` to discover reviewed search and enrichment operations. All managed data consumption is displayed as Data Search, with operation-specific prices. Discover quote and saved-job tools with `okou data tools`; inspect their schemas before execution; enrichment is explicit and must not silently follow discovery. Never send private context to a public data source. Use only legitimate professional contacts; no private-email or phone enrichment. Data Router owns provider credentials and pricing; use the credits returned by its quote and result.",
-  "- Saved Data Search jobs: use `okou data tools --family data-search` to find tools for inspecting existing results and billing without starting another paid request. An uncertain create is not a failed create: inspect saved jobs when available and do not resubmit automatically. Reusing a client request ID does not guarantee replay recovery. Data Search jobs execute one bounded request with no automatic pagination or vendor waterfall. Use the discovered status tool with the returned job ID.",
+  "- External data capabilities: use `okou data --help` for the unified research namespace and `okou data tools --family data-search` to discover reviewed search and enrichment operations. All managed data consumption is displayed as Data Search, with operation-specific prices. Inspect each tool's schema and instructions before execution; enrichment is explicit and must not silently follow discovery. Never send private context to a public data source. Use only legitimate professional contacts; no private-email or phone enrichment. Data Router owns provider credentials and pricing; use the pricing and credits reported by the tool.",
 ]);
 
 const instructionsAndMemoryGuidance = Object.freeze([
@@ -60,10 +59,8 @@ function buildIntegrationToolsPrompt(): readonly string[] {
 export interface AgentToolsPromptInputs {
   readonly disabledPaidTools: readonly string[];
   readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
   readonly remoteConnectionDiagnosticsEnabled: boolean;
   readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
   readonly browserNativeInputEnabled: boolean;
@@ -84,13 +81,8 @@ export function buildAgentToolsPromptInputs(args: {
       context,
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
-    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, context),
     remoteConnectionDiagnosticsEnabled: isFeatureEnabled(
       FeatureSwitchKey.RemoteConnectionDiagnostics,
-      context,
-    ),
-    discordEnabled: isFeatureEnabled(
-      FeatureSwitchKey.DiscordIntegration,
       context,
     ),
     larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
@@ -195,14 +187,10 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
         ]
       : []),
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
-    ...(args.vncEnabled
+    "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
+    ...(args.remoteConnectionDiagnosticsEnabled
       ? [
-          "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
-          ...(args.remoteConnectionDiagnosticsEnabled
-            ? [
-                "- Remote VNC failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay uncertain input or checks.",
-              ]
-            : []),
+          "- Remote VNC failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay uncertain input or checks.",
         ]
       : []),
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",
@@ -232,7 +220,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Okou Browser is currently off for this chat thread. When the task needs a user-viewable cloud browser, run `okou connector permission-request browser --permission browser:write`, give the authorization link to the user, and stop this run. Existing run tokens cannot be upgraded; continue in a new run after the user enables it.",
         ]
       : []),
-    "- Data Router tools are self-describing: run `okou data tools` to discover enabled tools, `okou data describe <tool>` for current input schemas and instructions, then `okou data call <tool> --input '{...}'`. Pass JSON arguments exactly as described. Results are JSON; preserve their content. Tool names, parameters, quotes and job operations are owned by Router and may change independently of the CLI.",
+    "- Data Router tools are self-describing: run `okou data tools` to discover enabled tools, `okou data describe <tool>` for current input schemas and instructions, then `okou data call <tool> --input '{...}'`. Each call sends a request and returns the response as JSON; preserve its content. Tool names, parameters and response schemas belong to Router and may change independently of the CLI. Request costs are totaled once when the Run ends using Router's reported credits. An incomplete response does not establish whether a paid request executed; do not repeat it automatically.",
     ...buildManagedResearchToolPrompt("web-search", args.disabledPaidTools),
     ...buildManagedResearchToolPrompt("social", args.disabledPaidTools),
     ...buildManagedResearchToolPrompt("seo", args.disabledPaidTools),
@@ -254,13 +242,9 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Slack channel discovery and history: use `okou slack channel list --help` to find channels shared by the connected user and bot, then `okou slack message history --help` to read shared channel or bot DM history.",
     "- Feishu messages: when the task explicitly asks to send or post to Feishu, use `okou feishu message send --help` for chats, DMs, and replies.",
     ...(args.wechatEnabled ? wechatToolsGuidance : []),
-    ...(args.discordEnabled
-      ? [
-          "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for guild channels and threads shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent.",
-          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. These commands require your own verified Discord binding. Connect from the authenticated App's Works settings to choose a server, or use a server's connection link to connect without choosing it again; use `okou discord connect --help` for setup guidance, never collect OAuth codes or provider tokens.",
-          "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help` with the destination channel or native thread ID; publication succeeds before delivery; retry with the printed `--operation-id` only when the JSON output reports the delivery as pending or retryable. Use `okou discord download-file --help` with the channel, message, and attachment IDs to read an attachment in a guild channel or thread the connected user and Okou can both access.",
-        ]
-      : []),
+    "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for guild channels and threads shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent.",
+    "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. These commands require your own verified Discord binding. Connect from the authenticated App's Works settings to choose a server, or use a server's connection link to connect without choosing it again; use `okou discord connect --help` for setup guidance, never collect OAuth codes or provider tokens.",
+    "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help` with the destination channel or native thread ID; publication succeeds before delivery; retry with the printed `--operation-id` only when the JSON output reports the delivery as pending or retryable. Use `okou discord download-file --help` with the channel, message, and attachment IDs to read an attachment in a guild channel or thread the connected user and Okou can both access.",
     ...(args.larkEnabled
       ? [
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",

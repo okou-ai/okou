@@ -1,23 +1,31 @@
-import * as z from "zod";
+import {
+  boolean,
+  literal,
+  object,
+  record,
+  string,
+  type infer as zInfer,
+} from "zod";
+
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const featureSwitchesResponseSchema = z.object({
-  switches: z.record(z.string(), z.boolean()),
-  effectiveSwitches: z.record(z.string(), z.boolean()),
+export const featureSwitchesResponseSchema = object({
+  switches: record(string(), boolean()),
+  effectiveSwitches: record(string(), boolean()),
 });
 
-export type FeatureSwitchesResponse = z.infer<
+export type FeatureSwitchesResponse = zInfer<
   typeof featureSwitchesResponseSchema
 >;
 
-export const updateFeatureSwitchesRequestSchema = z.object({
-  switches: z.record(z.string(), z.boolean()),
+export const updateFeatureSwitchesRequestSchema = object({
+  switches: record(string(), boolean()),
 });
 
-export type UpdateFeatureSwitchesRequest = z.infer<
+export type UpdateFeatureSwitchesRequest = zInfer<
   typeof updateFeatureSwitchesRequestSchema
 >;
 
@@ -63,7 +71,7 @@ export const featureSwitchesContract = c.router({
     headers: authHeadersSchema,
     body: c.noBody(),
     responses: {
-      200: z.object({ deleted: z.literal(true) }),
+      200: object({ deleted: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       500: apiErrorSchema,

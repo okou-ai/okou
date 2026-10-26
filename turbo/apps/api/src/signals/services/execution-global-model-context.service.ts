@@ -5,7 +5,7 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { modelRoutes } from "@okouai/db/schema/model-route";
-import * as z from "zod";
+import { array, unknown as zUnknown } from "zod";
 import { db$ } from "../external/db";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
@@ -57,21 +57,21 @@ export function createGlobalModelContext() {
     const keyRows = builder
       .select({
         payload: contextJsonProjection(keys)
-          .mapWith(zodDriverValueDecoder(z.unknown()))
+          .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
       })
       .from(builtInModelKeys);
     const prices = builder
       .select({
         payload: contextJsonProjection(pricing)
-          .mapWith(zodDriverValueDecoder(z.unknown()))
+          .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
       })
       .from(usagePricing);
     const modelRows = builder
       .select({
         payload: contextJsonProjection(models)
-          .mapWith(zodDriverValueDecoder(z.unknown()))
+          .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
       })
       .from(runModelCatalog)
@@ -79,7 +79,7 @@ export function createGlobalModelContext() {
     const routeRows = builder
       .select({
         payload: contextJsonProjection(routes)
-          .mapWith(zodDriverValueDecoder(z.unknown()))
+          .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
       })
       .from(modelRoutes)
@@ -92,16 +92,16 @@ export function createGlobalModelContext() {
     const [row] = await get(db$)
       .select({
         keys: contextJsonRows(keyRows).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
         pricing: contextJsonRows(prices).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
         models: contextJsonRows(modelRows).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
         routes: contextJsonRows(routeRows).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
       })
       .from(sql`(values (1)) as context_seed(value)`);
@@ -111,22 +111,22 @@ export function createGlobalModelContext() {
     return row;
   });
   const managedModelKeys$ = computed(async (get) => {
-    return z
-      .array(contextProjectionSchema(keys))
-      .parse((await get(globalRaw$)).keys);
+    return array(contextProjectionSchema(keys)).parse(
+      (await get(globalRaw$)).keys,
+    );
   });
   const modelPricing$ = computed(async (get) => {
     return usagePricingByKey(
-      z
-        .array(contextProjectionSchema(pricing))
-        .parse((await get(globalRaw$)).pricing),
+      array(contextProjectionSchema(pricing)).parse(
+        (await get(globalRaw$)).pricing,
+      ),
     );
   });
   const catalog$ = computed(async (get) => {
     const row = await get(globalRaw$);
     return validateModelCatalog(
-      z.array(contextProjectionSchema(models)).parse(row.models),
-      z.array(contextProjectionSchema(routes)).parse(row.routes),
+      array(contextProjectionSchema(models)).parse(row.models),
+      array(contextProjectionSchema(routes)).parse(row.routes),
     );
   });
   return { managedModelKeys$, modelPricing$, catalog$ };

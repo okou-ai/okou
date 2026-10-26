@@ -1,4 +1,5 @@
-import * as z from "zod";
+import { object, uuid, enum as zEnum, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -11,17 +12,17 @@ import {
 
 const c = initContract();
 
-export const resetPersonalModelProviderSubscriptionUsageRequestSchema =
-  z.object({
-    idempotencyKey: z.uuid(),
-  });
+export const resetPersonalModelProviderSubscriptionUsageRequestSchema = object({
+  idempotencyKey: uuid(),
+});
 
-export const resetPersonalModelProviderSubscriptionUsageResponseSchema =
-  z.object({
-    outcome: z.enum(["reset", "nothingToReset", "noCredit", "alreadyRedeemed"]),
-  });
+export const resetPersonalModelProviderSubscriptionUsageResponseSchema = object(
+  {
+    outcome: zEnum(["reset", "nothingToReset", "noCredit", "alreadyRedeemed"]),
+  },
+);
 
-export type ResetPersonalModelProviderSubscriptionUsageResponse = z.infer<
+export type ResetPersonalModelProviderSubscriptionUsageResponse = zInfer<
   typeof resetPersonalModelProviderSubscriptionUsageResponseSchema
 >;
 
@@ -80,7 +81,7 @@ export const personalModelProvidersByTypeContract = c.router({
     method: "DELETE",
     path: "/api/me/model-providers/:type",
     headers: authHeadersSchema,
-    pathParams: z.object({
+    pathParams: object({
       type: modelProviderTypeSchema,
     }),
     responses: {
@@ -96,7 +97,7 @@ export const personalModelProvidersByTypeContract = c.router({
     method: "POST",
     path: "/api/me/model-providers/:type/subscription-reset",
     headers: authHeadersSchema,
-    pathParams: z.object({
+    pathParams: object({
       type: modelProviderTypeSchema,
     }),
     body: resetPersonalModelProviderSubscriptionUsageRequestSchema,
@@ -121,7 +122,7 @@ export const personalSubscriptionsContract = c.router({
     method: "GET",
     path: "/api/me/subscriptions/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       200: modelProviderResponseSchema,
       401: apiErrorSchema,
@@ -139,7 +140,7 @@ export const personalModelProviderAccountsByIdContract = c.router({
     method: "POST",
     path: "/api/me/model-provider-accounts/:id/runs/:runId/subscription-reset",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid(), runId: z.uuid() }),
+    pathParams: object({ id: uuid(), runId: uuid() }),
     body: resetPersonalModelProviderSubscriptionUsageRequestSchema,
     responses: {
       200: resetPersonalModelProviderSubscriptionUsageResponseSchema,
@@ -155,8 +156,8 @@ export const personalModelProviderAccountsByIdContract = c.router({
     method: "GET",
     path: "/api/me/model-provider-accounts/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid() }),
-    query: z.object({ runId: z.uuid() }),
+    pathParams: object({ id: uuid() }),
+    query: object({ runId: uuid() }),
     responses: {
       200: modelProviderResponseSchema,
       400: apiErrorSchema,
@@ -170,8 +171,8 @@ export const personalModelProviderAccountsByIdContract = c.router({
     method: "POST",
     path: "/api/me/model-provider-accounts/:id/activate",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid() }),
-    body: z.object({}),
+    pathParams: object({ id: uuid() }),
+    body: object({}),
     responses: {
       200: modelProviderResponseSchema,
       401: apiErrorSchema,
@@ -186,7 +187,7 @@ export const personalModelProviderAccountsByIdContract = c.router({
     method: "DELETE",
     path: "/api/me/model-provider-accounts/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
       204: c.noBody(),
       401: apiErrorSchema,
@@ -200,7 +201,7 @@ export const personalModelProviderAccountsByIdContract = c.router({
     method: "POST",
     path: "/api/me/model-provider-accounts/:id/subscription-reset",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid() }),
+    pathParams: object({ id: uuid() }),
     body: resetPersonalModelProviderSubscriptionUsageRequestSchema,
     responses: {
       200: resetPersonalModelProviderSubscriptionUsageResponseSchema,

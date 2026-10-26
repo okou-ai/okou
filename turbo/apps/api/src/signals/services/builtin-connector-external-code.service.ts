@@ -26,7 +26,7 @@ import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connecto
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
-import * as z from "zod";
+import { object, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -67,7 +67,7 @@ const SUPERSEDED_SESSION_ERROR_MESSAGE =
   "External-code authorization session was superseded";
 const PROVIDER_STATE_MAX_BYTES = 16 * 1024;
 const COMPLETING_SESSION_STALE_AFTER_MS = 30 * 60 * 1000;
-const createdExternalCodeSessionSchema = z.object({ id: z.uuid() });
+const createdExternalCodeSessionSchema = object({ id: uuid() });
 
 const externalCodeSessionSelection = Object.freeze({
   id: builtinConnectorExternalCodeSessions.id,

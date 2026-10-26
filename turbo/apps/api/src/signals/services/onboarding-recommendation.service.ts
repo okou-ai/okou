@@ -21,7 +21,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, lt } from "drizzle-orm";
-import * as z from "zod";
+import { literal, object } from "zod";
 
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -127,20 +127,18 @@ const INDUSTRY_POSITIONING = {
   >
 >;
 
-const jobInputSchema = z
-  .object({
-    industry: onboardingIndustrySchema,
-    locale: onboardingRecommendationLocaleSchema,
-  })
-  .strict();
+const jobInputSchema = object({
+  industry: onboardingIndustrySchema,
+  locale: onboardingRecommendationLocaleSchema,
+}).strict();
 
-const generationAttemptCheckpointSchema = z
-  .object({ phase: z.literal("generation-started") })
-  .strict();
+const generationAttemptCheckpointSchema = object({
+  phase: literal("generation-started"),
+}).strict();
 
-const jobCheckpointSchema = z
-  .object({ recommendation: onboardingRecommendationSchema })
-  .strict();
+const jobCheckpointSchema = object({
+  recommendation: onboardingRecommendationSchema,
+}).strict();
 
 class OnboardingGenerationAttemptedError extends Error {
   constructor(message: string) {

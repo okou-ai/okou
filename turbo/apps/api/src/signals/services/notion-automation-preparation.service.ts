@@ -14,7 +14,19 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command } from "ccstate";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  record,
+  string,
+  union,
+  unknown as zUnknown,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { nowDate } from "../../lib/time";
 import { settle, safeJsonParse, safeUrlParse, tapError } from "../utils";
 import {
@@ -33,79 +45,63 @@ const NOTION_VERSION = "2026-03-11";
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
-const notionPageParentSchema = z.union([
-  z.object({ type: z.literal("page_id"), page_id: z.string().uuid() }),
-  z.object({
-    type: z.literal("data_source_id"),
-    data_source_id: z.string().uuid(),
-    database_id: z.string().uuid().optional(),
+const notionPageParentSchema = union([
+  object({ type: literal("page_id"), page_id: string().uuid() }),
+  object({
+    type: literal("data_source_id"),
+    data_source_id: string().uuid(),
+    database_id: string().uuid().optional(),
   }),
-  z.object({ type: z.literal("database_id"), database_id: z.string().uuid() }),
-  z.object({ type: z.literal("block_id"), block_id: z.string().uuid() }),
-  z.object({ type: z.literal("workspace") }).passthrough(),
+  object({ type: literal("database_id"), database_id: string().uuid() }),
+  object({ type: literal("block_id"), block_id: string().uuid() }),
+  object({ type: literal("workspace") }).passthrough(),
 ]);
 
-const notionPageResponseSchema = z
-  .object({
-    object: z.literal("page"),
-    id: z.string().uuid(),
-    created_time: z.string().datetime().optional(),
-    last_edited_time: z.string().datetime().optional(),
-    archived: z.boolean().optional(),
-    in_trash: z.boolean().optional(),
-    url: z.string().url().optional(),
-    parent: notionPageParentSchema,
-    properties: z.record(z.string(), z.unknown()).optional(),
-  })
-  .passthrough();
+const notionPageResponseSchema = object({
+  object: literal("page"),
+  id: string().uuid(),
+  created_time: string().datetime().optional(),
+  last_edited_time: string().datetime().optional(),
+  archived: boolean().optional(),
+  in_trash: boolean().optional(),
+  url: string().url().optional(),
+  parent: notionPageParentSchema,
+  properties: record(string(), zUnknown()).optional(),
+}).passthrough();
 
-const notionDataSourceResponseSchema = z
-  .object({
-    object: z.literal("data_source"),
-    id: z.string().uuid(),
-    name: z.string().nullable().optional(),
-    url: z.string().url().optional(),
-    parent: z
-      .object({
-        type: z.literal("database_id"),
-        database_id: z.string().uuid(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
+const notionDataSourceResponseSchema = object({
+  object: literal("data_source"),
+  id: string().uuid(),
+  name: string().nullable().optional(),
+  url: string().url().optional(),
+  parent: object({
+    type: literal("database_id"),
+    database_id: string().uuid(),
+  }).passthrough(),
+}).passthrough();
 
-const notionDatabaseResponseSchema = z
-  .object({
-    object: z.literal("database"),
-    id: z.string().uuid(),
-    url: z.string().url().optional(),
-    title: z
-      .array(
-        z
-          .object({
-            plain_text: z.string().optional(),
-          })
-          .passthrough(),
-      )
-      .default([]),
-    data_sources: z
-      .array(
-        z
-          .object({
-            id: z.string().uuid(),
-            name: z.string().nullable().optional(),
-          })
-          .passthrough(),
-      )
-      .default([]),
-  })
-  .passthrough();
+const notionDatabaseResponseSchema = object({
+  object: literal("database"),
+  id: string().uuid(),
+  url: string().url().optional(),
+  title: array(
+    object({
+      plain_text: string().optional(),
+    }).passthrough(),
+  ).default([]),
+  data_sources: array(
+    object({
+      id: string().uuid(),
+      name: string().nullable().optional(),
+    }).passthrough(),
+  ).default([]),
+}).passthrough();
 
-export type NotionPageResponse = z.infer<typeof notionPageResponseSchema>;
+export type NotionPageResponse = zInfer<typeof notionPageResponseSchema>;
 
-type NotionDataSourceResponse = z.infer<typeof notionDataSourceResponseSchema>;
+type NotionDataSourceResponse = zInfer<typeof notionDataSourceResponseSchema>;
 
-type NotionDatabaseResponse = z.infer<typeof notionDatabaseResponseSchema>;
+type NotionDatabaseResponse = zInfer<typeof notionDatabaseResponseSchema>;
 
 interface NotionAccess {
   readonly connectorId: string;
@@ -360,7 +356,7 @@ export const resolveNotionCredentialAccess$ = command(
 );
 
 async function notionFetchJson<T>(
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   accessToken: string,
   url: string,
   signal: AbortSignal,

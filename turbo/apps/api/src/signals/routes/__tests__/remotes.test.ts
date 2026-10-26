@@ -4,7 +4,6 @@ import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-r
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -16,7 +15,6 @@ import { userPreferencesRoutes } from "../user-preferences";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -120,7 +118,9 @@ describe("GET /api/remotes/overview", () => {
   });
 
   it("returns defaults for an uninitialized member without requiring memory or preference initialization", async () => {
-    const result = await overview(owner());
+    const actor = owner();
+    vnc.authenticate(actor);
+    const result = await overview(actor);
     expect(result.headers.get("cache-control")).toBe("no-store");
     expect(result.body).toStrictEqual({
       computerUseHosts: [],
@@ -196,9 +196,6 @@ describe("GET /api/remotes/overview", () => {
     const agent = await bdd.createAgent(actor, { visibility: "private" });
     const thread = await chat.createThread(actor, { agentId: agent.agentId });
     const sshId = await createSshHost(actor, "SSH server");
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     vnc.authenticate(actor);
     const vncHost = await accept(
       vnc.connections().create({ headers, body: vncConnectionBody() }),
@@ -234,9 +231,6 @@ describe("GET /api/remotes/overview", () => {
 
     const peer = owner({ orgId: actor.orgId });
     vnc.authenticate(peer);
-    await updateFeatureSwitchesForUser(context, peer, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     const peerResult = await overview(peer);
     expect(peerResult.body.sshHosts).toStrictEqual([]);
     expect(peerResult.body.vncHosts).toStrictEqual([]);
@@ -245,17 +239,7 @@ describe("GET /api/remotes/overview", () => {
     expect(otherOrgResult.body.sshHosts).toStrictEqual([]);
     expect(otherOrgResult.body.vncHosts).toStrictEqual([]);
 
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.VncAccess]: false,
-    });
     vnc.authenticate(actor);
-    const disabled = await overview(actor);
-    expect(disabled.body.vncHosts).toStrictEqual([]);
-    expect(disabled.body.sshHosts).toStrictEqual(result.body.sshHosts);
-
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
         data: [],

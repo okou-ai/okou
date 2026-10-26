@@ -1,4 +1,11 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -86,48 +93,48 @@ export const FEISHU_OAUTH_SCOPES = [
   "task:section:write",
 ] as const;
 
-const feishuInstallationStatusSchema = z.object({
-  id: z.string().uuid(),
+const feishuInstallationStatusSchema = object({
+  id: string().uuid(),
   platform: feishuPlatformSchema.optional(),
-  isConnected: z.boolean(),
-  connectedUserName: z.string().nullable().optional(),
-  appId: z.string(),
-  botName: z.string().nullable().optional(),
-  botAvatarUrl: z.string().nullable().optional(),
-  callbackUrl: z.string(),
-  oauthRedirectUrl: z.string().optional(),
-  oauthScopes: z.array(z.string()).optional(),
-  connectUrl: z.string().nullable().optional(),
-  callbackVerified: z.boolean(),
-  setupCompleted: z.boolean().optional(),
-  messageReceived: z.boolean(),
-  tenantKey: z.string().nullable(),
-  tenantName: z.string().nullable(),
-  defaultAgentId: z.string().uuid().nullable(),
-  defaultAgentName: z.string().nullable(),
+  isConnected: boolean(),
+  connectedUserName: string().nullable().optional(),
+  appId: string(),
+  botName: string().nullable().optional(),
+  botAvatarUrl: string().nullable().optional(),
+  callbackUrl: string(),
+  oauthRedirectUrl: string().optional(),
+  oauthScopes: array(string()).optional(),
+  connectUrl: string().nullable().optional(),
+  callbackVerified: boolean(),
+  setupCompleted: boolean().optional(),
+  messageReceived: boolean(),
+  tenantKey: string().nullable(),
+  tenantName: string().nullable(),
+  defaultAgentId: string().uuid().nullable(),
+  defaultAgentName: string().nullable(),
 });
 
-const feishuConnectStatusSchema = z.object({
+const feishuConnectStatusSchema = object({
   platform: feishuPlatformSchema.optional(),
-  isInstalled: z.boolean(),
-  isConnected: z.boolean(),
-  connectedUserName: z.string().nullable().optional(),
-  isAdmin: z.boolean(),
-  appId: z.string().nullable(),
-  botName: z.string().nullable().optional(),
-  botAvatarUrl: z.string().nullable().optional(),
-  callbackUrl: z.string().nullable(),
-  oauthRedirectUrl: z.string().nullable().optional(),
-  oauthScopes: z.array(z.string()).optional(),
-  connectUrl: z.string().nullable().optional(),
-  callbackVerified: z.boolean(),
-  messageReceived: z.boolean(),
-  tenantKey: z.string().nullable(),
-  tenantName: z.string().nullable(),
-  defaultAgentId: z.string().uuid().nullable(),
-  defaultAgentName: z.string().nullable(),
-  installationId: z.string().uuid().nullable().optional(),
-  installations: z.array(feishuInstallationStatusSchema).optional(),
+  isInstalled: boolean(),
+  isConnected: boolean(),
+  connectedUserName: string().nullable().optional(),
+  isAdmin: boolean(),
+  appId: string().nullable(),
+  botName: string().nullable().optional(),
+  botAvatarUrl: string().nullable().optional(),
+  callbackUrl: string().nullable(),
+  oauthRedirectUrl: string().nullable().optional(),
+  oauthScopes: array(string()).optional(),
+  connectUrl: string().nullable().optional(),
+  callbackVerified: boolean(),
+  messageReceived: boolean(),
+  tenantKey: string().nullable(),
+  tenantName: string().nullable(),
+  defaultAgentId: string().uuid().nullable(),
+  defaultAgentName: string().nullable(),
+  installationId: string().uuid().nullable().optional(),
+  installations: array(feishuInstallationStatusSchema).optional(),
 });
 
 export const feishuConnectContract = c.router({
@@ -146,11 +153,11 @@ export const feishuConnectContract = c.router({
     method: "GET",
     path: "/api/integrations/feishu/app-id",
     headers: authHeadersSchema,
-    query: z.object({
-      appId: z.string().trim().min(1),
+    query: object({
+      appId: string().trim().min(1),
     }),
     responses: {
-      200: z.object({ available: z.literal(true) }),
+      200: object({ available: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       409: apiErrorSchema,
@@ -161,13 +168,13 @@ export const feishuConnectContract = c.router({
     method: "POST",
     path: "/api/integrations/feishu",
     headers: authHeadersSchema,
-    body: z.object({
-      appId: z.string().trim().min(1),
-      appSecret: z.string().trim().min(1),
-      verificationToken: z.string().trim().min(1),
-      encryptKey: z.string().trim().optional().default(""),
-      installationId: z.string().uuid().optional(),
-      createNew: z.boolean().optional(),
+    body: object({
+      appId: string().trim().min(1),
+      appSecret: string().trim().min(1),
+      verificationToken: string().trim().min(1),
+      encryptKey: string().trim().optional().default(""),
+      installationId: string().uuid().optional(),
+      createNew: boolean().optional(),
     }),
     responses: {
       200: feishuConnectStatusSchema,
@@ -182,9 +189,9 @@ export const feishuConnectContract = c.router({
     method: "PATCH",
     path: "/api/integrations/feishu/installations/:installationId",
     headers: authHeadersSchema,
-    pathParams: z.object({ installationId: z.string().uuid() }),
-    body: z.object({
-      setupCompleted: z.boolean().optional(),
+    pathParams: object({ installationId: string().uuid() }),
+    body: object({
+      setupCompleted: boolean().optional(),
     }),
     responses: {
       200: feishuInstallationStatusSchema,
@@ -200,10 +207,10 @@ export const feishuConnectContract = c.router({
     method: "DELETE",
     path: "/api/integrations/feishu/installations/:installationId",
     headers: authHeadersSchema,
-    pathParams: z.object({ installationId: z.string().uuid() }),
+    pathParams: object({ installationId: string().uuid() }),
     body: c.noBody(),
     responses: {
-      200: z.object({ success: z.literal(true) }),
+      200: object({ success: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -214,10 +221,10 @@ export const feishuConnectContract = c.router({
     method: "DELETE",
     path: "/api/integrations/feishu/installations/:installationId/connect",
     headers: authHeadersSchema,
-    pathParams: z.object({ installationId: z.string().uuid() }),
+    pathParams: object({ installationId: string().uuid() }),
     body: c.noBody(),
     responses: {
-      200: z.object({ success: z.literal(true) }),
+      200: object({ success: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -230,7 +237,7 @@ export const feishuConnectContract = c.router({
     headers: authHeadersSchema,
     body: c.noBody(),
     responses: {
-      200: z.object({ success: z.literal(true) }),
+      200: object({ success: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -243,7 +250,7 @@ export const feishuConnectContract = c.router({
     headers: authHeadersSchema,
     body: c.noBody(),
     responses: {
-      200: z.object({ success: z.literal(true) }),
+      200: object({ success: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -252,8 +259,8 @@ export const feishuConnectContract = c.router({
   },
 });
 
-export type FeishuConnectStatus = z.infer<typeof feishuConnectStatusSchema>;
-export type FeishuInstallationStatus = z.infer<
+export type FeishuConnectStatus = zInfer<typeof feishuConnectStatusSchema>;
+export type FeishuInstallationStatus = zInfer<
   typeof feishuInstallationStatusSchema
 >;
 export type FeishuConnectContract = typeof feishuConnectContract;

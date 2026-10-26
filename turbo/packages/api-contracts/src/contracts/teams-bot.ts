@@ -1,87 +1,98 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const teamsActorSchema = z.object({
-  id: z.string(),
-  name: z.string().nullable(),
-  aadObjectId: z.string().nullable(),
-  userPrincipalName: z.string().nullable(),
+const teamsActorSchema = object({
+  id: string(),
+  name: string().nullable(),
+  aadObjectId: string().nullable(),
+  userPrincipalName: string().nullable(),
 });
 
-const teamsInboundAttachmentSchema = z.object({
-  id: z.string().nullable(),
-  contentType: z.string().nullable(),
-  contentUrl: z.string().nullable(),
-  name: z.string().nullable(),
-  content: z.record(z.string(), z.unknown()).nullable(),
+const teamsInboundAttachmentSchema = object({
+  id: string().nullable(),
+  contentType: string().nullable(),
+  contentUrl: string().nullable(),
+  name: string().nullable(),
+  content: record(string(), zUnknown()).nullable(),
 });
 
-const teamsActivityBaseSchema = z.object({
-  activityId: z.string().nullable(),
-  tenantId: z.string(),
-  tenantName: z.string().nullable(),
-  teamsAppId: z.string().nullable(),
-  serviceUrl: z.string(),
-  conversationId: z.string(),
-  conversationType: z.string().nullable(),
-  teamId: z.string().nullable(),
-  teamAadGroupId: z.string().nullable(),
-  teamName: z.string().nullable(),
-  channelId: z.string().nullable(),
-  timestamp: z.string().nullable(),
-  idempotencyKey: z.string(),
+const teamsActivityBaseSchema = object({
+  activityId: string().nullable(),
+  tenantId: string(),
+  tenantName: string().nullable(),
+  teamsAppId: string().nullable(),
+  serviceUrl: string(),
+  conversationId: string(),
+  conversationType: string().nullable(),
+  teamId: string().nullable(),
+  teamAadGroupId: string().nullable(),
+  teamName: string().nullable(),
+  channelId: string().nullable(),
+  timestamp: string().nullable(),
+  idempotencyKey: string(),
 });
 
 export const teamsInboundMessageActivitySchema = teamsActivityBaseSchema.extend(
   {
-    kind: z.literal("message"),
-    threadId: z.string(),
+    kind: literal("message"),
+    threadId: string(),
     sender: teamsActorSchema,
     recipient: teamsActorSchema.nullable(),
-    rawText: z.string(),
-    text: z.string(),
-    value: z.record(z.string(), z.unknown()).nullable(),
-    mentionsRecipient: z.boolean(),
-    attachments: z.array(teamsInboundAttachmentSchema),
+    rawText: string(),
+    text: string(),
+    value: record(string(), zUnknown()).nullable(),
+    mentionsRecipient: boolean(),
+    attachments: array(teamsInboundAttachmentSchema),
   },
 );
 
 export const teamsConversationUpdateActivitySchema =
   teamsActivityBaseSchema.extend({
-    kind: z.literal("conversation_update"),
-    action: z.enum(["members_added", "members_removed", "unknown"]),
+    kind: literal("conversation_update"),
+    action: zEnum(["members_added", "members_removed", "unknown"]),
     sender: teamsActorSchema,
     recipient: teamsActorSchema,
-    membersAdded: z.array(teamsActorSchema),
-    membersRemoved: z.array(teamsActorSchema),
+    membersAdded: array(teamsActorSchema),
+    membersRemoved: array(teamsActorSchema),
   });
 
 export const teamsBotRemovedActivitySchema = teamsActivityBaseSchema.extend({
-  kind: z.literal("bot_removed"),
-  reason: z.enum(["members_removed", "installation_remove"]),
+  kind: literal("bot_removed"),
+  reason: zEnum(["members_removed", "installation_remove"]),
   recipient: teamsActorSchema.nullable(),
-  membersRemoved: z.array(teamsActorSchema),
+  membersRemoved: array(teamsActorSchema),
 });
 
 export const teamsInstallationUpdateActivitySchema =
   teamsActivityBaseSchema.extend({
-    kind: z.literal("installation_update"),
-    action: z.enum(["add", "unknown"]),
+    kind: literal("installation_update"),
+    action: zEnum(["add", "unknown"]),
     sender: teamsActorSchema,
     recipient: teamsActorSchema.nullable(),
   });
 
-export const teamsUnsupportedActivitySchema = z.object({
-  kind: z.literal("unsupported"),
-  activityType: z.string(),
-  idempotencyKey: z.string().nullable(),
+export const teamsUnsupportedActivitySchema = object({
+  kind: literal("unsupported"),
+  activityType: string(),
+  idempotencyKey: string().nullable(),
 });
 
-export const teamsInboundActivitySchema = z.discriminatedUnion("kind", [
+export const teamsInboundActivitySchema = discriminatedUnion("kind", [
   teamsInboundMessageActivitySchema,
   teamsConversationUpdateActivitySchema,
   teamsBotRemovedActivitySchema,
@@ -89,33 +100,33 @@ export const teamsInboundActivitySchema = z.discriminatedUnion("kind", [
   teamsUnsupportedActivitySchema,
 ]);
 
-const teamsBotDispatchResponseSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("ignored") }),
-  z.object({
-    kind: z.literal("notice"),
-    replyText: z.string(),
-    connectUrl: z.string().optional(),
-    card: z.record(z.string(), z.unknown()).optional(),
+const teamsBotDispatchResponseSchema = discriminatedUnion("kind", [
+  object({ kind: literal("ignored") }),
+  object({
+    kind: literal("notice"),
+    replyText: string(),
+    connectUrl: string().optional(),
+    card: record(string(), zUnknown()).optional(),
   }),
-  z.object({
-    kind: z.literal("accepted"),
-    runId: z.string(),
+  object({
+    kind: literal("accepted"),
+    runId: string(),
   }),
-  z.object({
-    kind: z.literal("queued"),
-    runId: z.string(),
+  object({
+    kind: literal("queued"),
+    runId: string(),
   }),
-  z.object({
-    kind: z.literal("failed"),
-    replyText: z.string(),
-    runId: z.string().optional(),
+  object({
+    kind: literal("failed"),
+    replyText: string(),
+    runId: string().optional(),
   }),
 ]);
 
-export const teamsBotIngressResponseSchema = z.object({
-  ok: z.literal(true),
+export const teamsBotIngressResponseSchema = object({
+  ok: literal(true),
   activity: teamsInboundActivitySchema,
-  connectUrl: z.string().nullable().optional(),
+  connectUrl: string().nullable().optional(),
   dispatch: teamsBotDispatchResponseSchema.optional(),
 });
 
@@ -123,7 +134,7 @@ export const teamsBotContract = c.router({
   post: {
     method: "POST",
     path: "/api/webhooks/teams/bot",
-    body: z.unknown(),
+    body: zUnknown(),
     responses: {
       200: teamsBotIngressResponseSchema,
       400: apiErrorSchema,
@@ -135,15 +146,15 @@ export const teamsBotContract = c.router({
   },
 });
 
-export type TeamsActor = z.infer<typeof teamsActorSchema>;
-export type TeamsInboundAttachment = z.infer<
+export type TeamsActor = zInfer<typeof teamsActorSchema>;
+export type TeamsInboundAttachment = zInfer<
   typeof teamsInboundAttachmentSchema
 >;
-export type TeamsInboundActivity = z.infer<typeof teamsInboundActivitySchema>;
-export type TeamsBotIngressResponse = z.infer<
+export type TeamsInboundActivity = zInfer<typeof teamsInboundActivitySchema>;
+export type TeamsBotIngressResponse = zInfer<
   typeof teamsBotIngressResponseSchema
 >;
-export type TeamsBotDispatchResponse = z.infer<
+export type TeamsBotDispatchResponse = zInfer<
   typeof teamsBotDispatchResponseSchema
 >;
 export type TeamsBotContract = typeof teamsBotContract;

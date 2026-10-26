@@ -16,7 +16,7 @@ import {
   getTableColumns,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { int, object, string, uuid } from "zod";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import {
@@ -700,12 +700,12 @@ function* preparePendingScopePlan(
       )
       .where(inArray(usagePackPendingSnapshotGuards.orgId, orderedOrgIds))
       .getSQL(),
-    z.object({
-      guardOrgId: z.string(),
-      guardCount: z.int(),
-      snapshotId: z.uuid().nullable(),
-      snapshotOrgId: z.string().nullable(),
-      snapshotStatus: z.string().nullable(),
+    object({
+      guardOrgId: string(),
+      guardCount: int(),
+      snapshotId: uuid().nullable(),
+      snapshotOrgId: string().nullable(),
+      snapshotStatus: string().nullable(),
     }),
   );
   const scope = scopeRows.map((row) => {
@@ -714,13 +714,11 @@ function* preparePendingScopePlan(
       snapshot:
         row.snapshotId === null
           ? null
-          : z
-              .object({ id: z.uuid(), orgId: z.string(), status: z.string() })
-              .parse({
-                id: row.snapshotId,
-                orgId: row.snapshotOrgId,
-                status: row.snapshotStatus,
-              }),
+          : object({ id: uuid(), orgId: string(), status: string() }).parse({
+              id: row.snapshotId,
+              orgId: row.snapshotOrgId,
+              status: row.snapshotStatus,
+            }),
     };
   });
   const guards = orderedOrgIds.map((orgId) => {

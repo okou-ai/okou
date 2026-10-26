@@ -10,7 +10,6 @@ import {
   vncCredentialsContract,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { VNC_RSA_AES_SECURITY_TYPES } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -194,7 +193,6 @@ async function page(path = "/connectors?scope=remote-control&type=vnc") {
     context,
     path,
     auth,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
 }
 
@@ -466,13 +464,6 @@ test("VNC settings refresh observations when their SSH carrier changes", async (
       "Authentication or server identity verification failed.",
     ),
   ).not.toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      screen.queryByText(
-        "Authentication or server identity verification failed.",
-      ),
-    ).not.toBeInTheDocument();
-  });
   expect(screen.getByText("Configured")).toBeInTheDocument();
 });
 
@@ -804,9 +795,6 @@ test("VNC host settings update the chat remote access default", async () => {
     context,
     path: "/connectors?scope=remote-control&type=vnc",
     auth,
-    featureSwitches: {
-      [FeatureSwitchKey.VncAccess]: true,
-    },
   });
   const toggle = await screen.findByRole("switch", {
     name: "Enabled by default for chats",
@@ -3287,7 +3275,6 @@ test.each([
         ...auth,
         session: { id: "vnc-conflict-original", token: "original-token" },
       },
-      featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
     });
     click(getAction("radio", "Credentials"));
     await screen.findByText(credential.name);
@@ -3666,27 +3653,6 @@ test("A known invalid credential response retains an editable draft without leak
   expect(document.body.textContent).not.toContain(
     "private invalid credential details",
   );
-});
-
-test("A disabled VNC scope hides VNC without accessing saved configuration", async () => {
-  const requests: string[] = [];
-  context.mocks.http.get("*/api/vnc/*", ({ request }) => {
-    requests.push(`${request.method} ${new URL(request.url).pathname}`);
-    return HttpResponse.json(
-      { error: { code: "FORBIDDEN", message: "VNC disabled" } },
-      { status: 403 },
-    );
-  });
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control&type=vnc",
-    auth,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: false },
-  });
-  await screen.findByRole("radio", { name: "Connections" });
-  expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(requests).toStrictEqual([]);
 });
 
 test("Changing owner while token acquisition is pending cancels the save and clears the secret", async () => {

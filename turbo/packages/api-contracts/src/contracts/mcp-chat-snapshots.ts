@@ -1,4 +1,10 @@
-import * as z from "zod";
+import {
+  array,
+  discriminatedUnion,
+  object,
+  union,
+  undefined as zUndefined,
+} from "zod";
 import { chatEventRowSchema } from "./chat-event-rows";
 import { chatThreadEventsContract, chatThreadsContract } from "./chat-threads";
 import {
@@ -20,7 +26,7 @@ const mcpRowReferences = {
   runId: mcpRunIdSchema.nullable(),
   revokesEventId: mcpEventIdSchema.nullable(),
 };
-const mcpChatEventRowSchema = z.discriminatedUnion("eventType", [
+const mcpChatEventRowSchema = discriminatedUnion("eventType", [
   firstRow.omit({ id: true, chatThreadId: true }).extend(mcpRowReferences),
   ...remainingRows.map((row) => {
     return row.omit({ id: true, chatThreadId: true }).extend(mcpRowReferences);
@@ -31,23 +37,23 @@ const [threadPointer, emptyThreads] =
   chatThreadsContract.snapshot.responses[200].options;
 /** Native snapshot metadata and one inline page with canonical entity references. */
 export const mcpGetChatThreadInputSchema = chatThreadsContract.events.query;
-export const mcpGetChatThreadOutputSchema = z.object({
-  snapshot: z.union([
+export const mcpGetChatThreadOutputSchema = object({
+  snapshot: union([
     threadPointer.extend({ latestEventId: mcpEventIdSchema.nullable() }),
     emptyThreads,
   ]),
   ...chatThreadsContract.events.responses[200].shape,
-  events: z.array(mcpThreadEventSchema),
+  events: array(mcpThreadEventSchema),
 });
 
-const path = z.object({ threadId: mcpThreadIdSchema });
+const path = object({ threadId: mcpThreadIdSchema });
 const [start, continuation] = chatThreadEventsContract.rows.query.options;
 /** Omit the cursor initially; subsequent calls use the Web paired cursor. */
-export const mcpGetChatMessagesInputSchema = z.union([
+export const mcpGetChatMessagesInputSchema = union([
   path.extend({
     limit: start.shape.limit,
-    sinceSeqId: z.undefined().optional(),
-    sinceEventId: z.undefined().optional(),
+    sinceSeqId: zUndefined().optional(),
+    sinceEventId: zUndefined().optional(),
   }),
   start.extend(path.shape),
   continuation.extend({ ...path.shape, sinceEventId: mcpEventIdSchema }),
@@ -56,16 +62,14 @@ const [emptySnapshot, continuedSnapshot] =
   chatThreadEventsContract.snapshot.responses[200].options;
 const [emptyCursor, continuedCursor] =
   chatThreadEventsContract.rows.responses[200].shape.cursor.options;
-export const mcpGetChatMessagesOutputSchema = z.object({
-  snapshot: z
-    .union([
-      emptySnapshot,
-      continuedSnapshot.extend({ lastEventId: mcpEventIdSchema }),
-    ])
-    .nullable(),
+export const mcpGetChatMessagesOutputSchema = object({
+  snapshot: union([
+    emptySnapshot,
+    continuedSnapshot.extend({ lastEventId: mcpEventIdSchema }),
+  ]).nullable(),
   ...chatThreadEventsContract.rows.responses[200].shape,
-  rows: z.array(mcpChatEventRowSchema),
-  cursor: z.union([
+  rows: array(mcpChatEventRowSchema),
+  cursor: union([
     emptyCursor,
     continuedCursor.extend({ lastEventId: mcpEventIdSchema }),
   ]),

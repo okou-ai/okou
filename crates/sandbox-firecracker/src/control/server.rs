@@ -30,6 +30,9 @@ use crate::runtime_dirs::set_private_runtime_socket_mode;
 
 const CONTROL_SERVER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 const CONTROL_HANDLER_SHUTDOWN_GRACE: Duration = Duration::from_millis(250);
+const CONTROL_ACCEPT_RETRY_INITIAL: Duration = Duration::from_millis(100);
+const CONTROL_ACCEPT_RETRY_MAX: Duration = Duration::from_secs(1);
+const CONTROL_ACCEPT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
 // Bound tasks and sockets independently of the declared request sizes.
 const MAX_CONTROL_CONNECTIONS: usize = 32;
 // Allow an existing maximum-size frame without retaining that much per client.
@@ -289,6 +292,9 @@ fn spawn_bound_server(
 
         let mut handlers = JoinSet::new();
         let request_bytes = Arc::new(Semaphore::new(CONTROL_REQUEST_BYTE_BUDGET));
+        let mut accept_retry_at = None;
+        let mut accept_retry_delay = CONTROL_ACCEPT_RETRY_INITIAL;
+        let mut accept_warning_at = Instant::now();
 
         loop {
             tokio::select! {
@@ -302,11 +308,36 @@ fn spawn_bound_server(
                     log_handler_join(joined);
                 }
 
-                accepted = listener.accept() => {
+                accepted = async {
+                    // Keep the absolute deadline across handler completions while
+                    // allowing the outer select to observe shutdown and reap tasks.
+                    if let Some(deadline) = accept_retry_at {
+                        tokio::time::sleep_until(deadline).await;
+                    }
+                    listener.accept().await
+                } => {
                     let (stream, _) = match accepted {
-                        Ok(conn) => conn,
+                        Ok(conn) => {
+                            accept_retry_at = None;
+                            accept_retry_delay = CONTROL_ACCEPT_RETRY_INITIAL;
+                            conn
+                        }
                         Err(e) => {
-                            warn!(error = %e, "control socket accept error");
+                            if matches!(e.raw_os_error(), Some(libc::EBADF | libc::EINVAL | libc::ENOTSOCK)) {
+                                warn!(error = %e, "control socket listener failed");
+                                break;
+                            }
+
+                            // Resource errors retain Tokio's readable readiness.
+                            // Bound both retries and warnings, including when
+                            // successful accepts interrupt a run of failures.
+                            let now = Instant::now();
+                            accept_retry_at = Some(now + accept_retry_delay);
+                            if now >= accept_warning_at {
+                                warn!(error = %e, retry_ms = accept_retry_delay.as_millis() as u64, "control socket accept error");
+                                accept_warning_at = now + CONTROL_ACCEPT_WARNING_INTERVAL;
+                            }
+                            accept_retry_delay = (accept_retry_delay * 2).min(CONTROL_ACCEPT_RETRY_MAX);
                             continue;
                         }
                     };

@@ -11,7 +11,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
-import * as z from "zod";
+import { array, object, string, enum as zEnum } from "zod";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
 import {
   formatFeishuMessageContent,
@@ -103,29 +103,29 @@ const FEISHU_THINKING_EMOJI = "Typing";
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
 const SWEEP_LIMIT = 20;
 
-const feishuPromptFileSchema = z.object({
-  fileId: z.string(),
-  messageId: z.string(),
-  fileKey: z.string(),
-  type: z.enum(["file", "image"]),
-  filename: z.string(),
+const feishuPromptFileSchema = object({
+  fileId: string(),
+  messageId: string(),
+  fileKey: string(),
+  type: zEnum(["file", "image"]),
+  filename: string(),
 });
 
-const feishuInboundMessageSchema = z.object({
-  installationId: z.string(),
-  eventId: z.string(),
-  tenantKey: z.string(),
-  appId: z.string(),
-  messageId: z.string(),
-  chatId: z.string(),
-  chatType: z.enum(["group", "p2p", "topic_group"]),
-  rootId: z.string().nullable(),
-  parentId: z.string().nullable(),
-  threadId: z.string().nullable(),
-  openId: z.string(),
-  text: z.string(),
-  promptText: z.string(),
-  files: z.array(feishuPromptFileSchema),
+const feishuInboundMessageSchema = object({
+  installationId: string(),
+  eventId: string(),
+  tenantKey: string(),
+  appId: string(),
+  messageId: string(),
+  chatId: string(),
+  chatType: zEnum(["group", "p2p", "topic_group"]),
+  rootId: string().nullable(),
+  parentId: string().nullable(),
+  threadId: string().nullable(),
+  openId: string(),
+  text: string(),
+  promptText: string(),
+  files: array(feishuPromptFileSchema),
 });
 
 interface CanonicalFeishuInboundMessage extends FeishuInboundMessage {

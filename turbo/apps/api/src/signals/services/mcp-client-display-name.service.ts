@@ -1,5 +1,5 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import * as z from "zod";
+import { object, string } from "zod";
 
 import { monotonicNow } from "../../lib/time";
 import {
@@ -12,9 +12,9 @@ import {
   mcpOAuthSafeFetch,
 } from "./mcp-oauth-safe-fetch.service";
 
-const clientMetadataSchema = z.object({
-  client_id: z.string(),
-  client_name: z.string(),
+const clientMetadataSchema = object({
+  client_id: string(),
+  client_name: string(),
 });
 
 function metadataDocumentUrl(clientId: string): URL | undefined {

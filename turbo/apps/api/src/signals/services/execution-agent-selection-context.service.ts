@@ -7,7 +7,7 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { workflows } from "@okouai/db/schema/workflow";
-import * as z from "zod";
+import { array, object, string, unknown as zUnknown } from "zod";
 import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -49,7 +49,7 @@ function agentSelectionQueries(scope: AgentConnectorSelectionScope, at: Date) {
   const builtin = builder
     .select({
       payload: contextJsonProjection(builtinColumns)
-        .mapWith(zodDriverValueDecoder(z.unknown()))
+        .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
     .from(userBuiltinConnectors)
@@ -66,7 +66,7 @@ function agentSelectionQueries(scope: AgentConnectorSelectionScope, at: Date) {
       'connector', ${contextJsonProjection(connectorColumns)},
       'oauthConfig', case when ${orgCustomConnectorOauthConfigs.connectorId} is null then null else ${contextJsonProjection(oauthColumns)} end,
       'permissionNames', ${userCustomConnectors.permissionNames})`
-        .mapWith(zodDriverValueDecoder(z.unknown()))
+        .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
     .from(userCustomConnectors)
@@ -95,7 +95,7 @@ function agentSelectionQueries(scope: AgentConnectorSelectionScope, at: Date) {
   const permissions = builder
     .select({
       payload: contextJsonProjection(permissionColumns)
-        .mapWith(zodDriverValueDecoder(z.unknown()))
+        .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
     .from(userPermissionGrants)
@@ -114,7 +114,7 @@ function agentSelectionQueries(scope: AgentConnectorSelectionScope, at: Date) {
   const definitions = builder
     .select({
       payload: contextJsonProjection(workflowColumns)
-        .mapWith(zodDriverValueDecoder(z.unknown()))
+        .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
     .from(workflows)
@@ -143,16 +143,16 @@ export function createAgentSelectionContext(
     const [row] = await get(db$)
       .select({
         builtin: contextJsonRows(builtin).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
         custom: contextJsonRows(custom).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
         permissions: contextJsonRows(permissions).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
         workflows: contextJsonRows(definitions).mapWith(
-          zodDriverValueDecoder(z.unknown()),
+          zodDriverValueDecoder(zUnknown()),
         ),
       })
       .from(sql`(values (1)) as context_seed(value)`);
@@ -163,30 +163,28 @@ export function createAgentSelectionContext(
   });
   const connectorSelection$ = computed(async (get) => {
     const row = await get(raw$);
-    const builtin = z
-      .array(contextProjectionSchema(builtinColumns))
-      .parse(row.builtin);
-    const custom = z
-      .array(
-        z.object({
-          connector: contextProjectionSchema(connectorColumns),
-          oauthConfig: contextProjectionSchema(oauthColumns).nullable(),
-          permissionNames: z.array(z.string()),
-        }),
-      )
-      .parse(row.custom);
+    const builtin = array(contextProjectionSchema(builtinColumns)).parse(
+      row.builtin,
+    );
+    const custom = array(
+      object({
+        connector: contextProjectionSchema(connectorColumns),
+        oauthConfig: contextProjectionSchema(oauthColumns).nullable(),
+        permissionNames: array(string()),
+      }),
+    ).parse(row.custom);
     return agentConnectorSelectionFromRows(builtin, custom);
   });
   const permissionGrants$ = computed(async (get) => {
-    return z
-      .array(contextProjectionSchema(permissionColumns))
-      .parse((await get(raw$)).permissions);
+    return array(contextProjectionSchema(permissionColumns)).parse(
+      (await get(raw$)).permissions,
+    );
   });
   const workflows$ = computed(async (get) => {
     return workflowsForRunFromRows(
-      z
-        .array(contextProjectionSchema(workflowColumns))
-        .parse((await get(raw$)).workflows),
+      array(contextProjectionSchema(workflowColumns)).parse(
+        (await get(raw$)).workflows,
+      ),
       scope.userId,
     );
   });

@@ -31,7 +31,8 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import * as z from "zod";
+import { iso, literal, object, string, uuid, type infer as zInfer } from "zod";
+
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import { env } from "../../lib/env";
@@ -97,17 +98,17 @@ const RECONCILING_MIGRATION_STATUSES = [
 ] as const;
 const L = logger("UsagePackSubscriptionMigration");
 
-const revisionPreviewTokenPayloadSchema = z.object({
-  version: z.literal(1),
-  orgId: z.string().min(1),
-  migrationId: z.uuid(),
-  requestHash: z.string().length(64),
-  baseConfigurationHash: z.string().length(64),
-  desiredConfigurationHash: z.string().length(64),
-  expiresAt: z.iso.datetime(),
+const revisionPreviewTokenPayloadSchema = object({
+  version: literal(1),
+  orgId: string().min(1),
+  migrationId: uuid(),
+  requestHash: string().length(64),
+  baseConfigurationHash: string().length(64),
+  desiredConfigurationHash: string().length(64),
+  expiresAt: iso.datetime(),
 });
 
-type RevisionPreviewTokenPayload = z.infer<
+type RevisionPreviewTokenPayload = zInfer<
   typeof revisionPreviewTokenPayloadSchema
 >;
 

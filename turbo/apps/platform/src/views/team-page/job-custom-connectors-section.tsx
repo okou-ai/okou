@@ -8,7 +8,6 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
@@ -24,7 +23,6 @@ import { reloadUserConnectedConnectors$ } from "../../signals/okou-page/connecto
 import {
   agentCustomConnectorGrants$,
   agentAddedCustomConnectors$,
-  prepareJobCustomConnectorAccess$,
   toggleAgentCustomConnector$,
 } from "../../signals/okou-page/job-detail/custom-connectors.ts";
 import {
@@ -58,24 +56,19 @@ function JobCustomConnectorRow({
   grantsLoading,
   isLast,
 }: JobCustomConnectorRowProps) {
-  const { t } = useTranslation("agents");
   const signal = useGet(pageSignal$);
   const [toggleLoadable, toggle] = useLoadableSet(toggleAgentCustomConnector$);
-  const [prepareLoadable, prepare] = useLoadableSet(
-    prepareJobCustomConnectorAccess$,
-  );
   const [permissionsLoadable, openPermissions] = useLoadableSet(
     prepareCustomConnectorPermissions$,
   );
   const saving =
     toggleLoadable.state === "loading" ||
-    prepareLoadable.state === "loading" ||
     permissionsLoadable.state === "loading";
-  const prepareError =
+  const accessError =
     permissionsLoadable.state === "hasError"
       ? permissionsLoadable.error
-      : prepareLoadable.state === "hasError"
-        ? prepareLoadable.error
+      : toggleLoadable.state === "hasError"
+        ? toggleLoadable.error
         : null;
   const hasPermissionBundle =
     connector.kind === "http" && Boolean(connector.permissionBundleRef);
@@ -135,21 +128,7 @@ function JobCustomConnectorRow({
           if (saving) {
             return;
           }
-          detach(
-            (async () => {
-              if (checked) {
-                await prepare(connector, signal);
-                signal.throwIfAborted();
-              }
-              await toggle(connector.id, checked, signal);
-              toast.success(
-                t(($) => {
-                  return $.authorization.customConnectors.saved;
-                }),
-              );
-            })(),
-            Reason.DomCallback,
-          );
+          detach(toggle(connector, checked, signal), Reason.DomCallback);
         }}
         onManage={() => {
           if (!saving) {
@@ -157,9 +136,9 @@ function JobCustomConnectorRow({
           }
         }}
       />
-      {prepareError !== null && !isAbortError(prepareError) && (
+      {accessError !== null && !isAbortError(accessError) && (
         <p role="alert" className="px-5 pb-3 text-sm text-destructive">
-          {String(prepareError)}
+          {String(accessError)}
         </p>
       )}
     </>

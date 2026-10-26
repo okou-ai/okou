@@ -8,7 +8,6 @@ import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -52,10 +51,6 @@ import {
   setupConnectedDiscordActor,
   type ConnectedDiscordActor,
 } from "./helpers/discord-fixture";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
@@ -64,7 +59,6 @@ const runsApi = createRunsApi(context);
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
   mockDiscordMemberships(context, [actor]);
   await removePublicDiscordBinding(context, actor.fixture);
-  await deleteFeatureSwitchesForUser(context, actor);
 });
 
 afterEach(async () => {
@@ -511,10 +505,6 @@ describe("canonical Discord ingress", () => {
         }),
         [200, 404],
       );
-      await deleteFeatureSwitchesForUser(context, identity);
-    });
-    await updateFeatureSwitchesForUser(context, identity, {
-      [FeatureSwitchKey.DiscordIntegration]: true,
     });
     // OAuth does not require onboarding or completion of Clerk's bootstrap job.
     const actor = await createPublicDiscordBinding(context, {
@@ -640,39 +630,28 @@ describe("canonical Discord ingress", () => {
     },
   );
 
-  it.each(["unmentioned", "disabled"] as const)(
-    "ignores %s messages without canonical chat or provider thread side effects",
-    async (scenario) => {
-      const actor = await connected();
-      const provider = mockDiscordProvider(actor);
-      if (scenario === "disabled") {
-        await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.DiscordIntegration]: false,
-        });
-      }
-      const message = discordMessageForTest(actor, {
-        channelId: provider.guildChannelId,
-        content:
-          scenario === "unmentioned"
-            ? "ordinary guild conversation"
-            : `<@${actor.botUserId}> this message cannot be admitted`,
-      });
-      const ignored = {
-        ...message,
-        mentions: scenario === "unmentioned" ? [] : message.mentions,
-      };
-      expect((await postDiscordMessage(context, ignored)).body.outcome).toBe(
-        "ignored",
-      );
-      await flushWaitUntilForTest();
-      await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
-      expect([...provider.channels.keys()]).toStrictEqual([
-        provider.guildChannelId,
-        provider.dmChannelId,
-      ]);
-      expect(provider.sentMessages).toHaveLength(0);
-    },
-  );
+  it("ignores unmentioned messages without canonical chat or provider thread side effects", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: "ordinary guild conversation",
+    });
+    const ignored = {
+      ...message,
+      mentions: [],
+    };
+    expect((await postDiscordMessage(context, ignored)).body.outcome).toBe(
+      "ignored",
+    );
+    await flushWaitUntilForTest();
+    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
+    expect([...provider.channels.keys()]).toStrictEqual([
+      provider.guildChannelId,
+      provider.dmChannelId,
+    ]);
+    expect(provider.sentMessages).toHaveLength(0);
+  });
 
   it("uses a connected account in another server after the bot leaves its original server", async () => {
     const actor = await connected();
@@ -2455,31 +2434,10 @@ describe("canonical Discord ingress", () => {
     await expect(discordChatThreads(context, second)).resolves.toHaveLength(0);
   });
 
-  it("sends no DM notice while the feature is off for the sender's workspace", async () => {
-    const actor = await connected();
-    const provider = mockDiscordProvider(actor);
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.DiscordIntegration]: false,
-    });
-    const message = discordMessageForTest(actor, {
-      channelId: provider.dmChannelId,
-      guild: false,
-      content: "is this available?",
-    });
-    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
-      "ignored",
-    );
-    await flushWaitUntilForTest();
-    expect(provider.sentMessages).toHaveLength(0);
-  });
-
   it("imports refreshed attachment metadata while keeping context and signed URLs private", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     mockDiscordApplication(1 << 19);
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.DiscordIntegration]: true,
-    });
     const objects = new Map<
       string,
       {

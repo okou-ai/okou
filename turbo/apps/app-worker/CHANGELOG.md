@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.10.60](https://github.com/okou-ai/okou/compare/app-worker-v1.10.59...app-worker-v1.10.60) (2026-10-26)
+
+
+### Refactoring
+
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.2
+    * @okouai/core bumped to 8.791.3
+
+## [1.10.59](https://github.com/okou-ai/okou/compare/app-worker-v1.10.58...app-worker-v1.10.59) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.2
+
+## [1.10.58](https://github.com/okou-ai/okou/compare/app-worker-v1.10.57...app-worker-v1.10.58) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.1
+    * @okouai/core bumped to 8.791.1
+
+## [1.10.57](https://github.com/okou-ai/okou/compare/app-worker-v1.10.56...app-worker-v1.10.57) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.0
+
+## [1.10.56](https://github.com/okou-ai/okou/compare/app-worker-v1.10.55...app-worker-v1.10.56) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+
 ## [1.10.55](https://github.com/okou-ai/okou/compare/app-worker-v1.10.54...app-worker-v1.10.55) (2026-10-26)
 
 

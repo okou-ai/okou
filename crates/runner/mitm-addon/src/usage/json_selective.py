@@ -44,7 +44,10 @@ class JsonDocumentPolicy(Protocol):
 
     A value start may select a string using a raw-byte capture limit. Object
     frames retain exact decoded member identities and reject duplicates in this
-    mode. Unselected strings still use the scanner's bounded discard path.
+    mode. Every object key is subject to the extractor's ``max_key_bytes`` raw-byte
+    capture limit, even outside selected observation paths. Exceeding it rejects
+    the document with ``"key limit exceeded"``. Unselected strings still use the
+    scanner's bounded discard path.
     Policy exceptions reject the document; callers must discard the parser.
     """
 
@@ -300,9 +303,11 @@ class JsonSelectiveExtractor:
 
     Oversized selected scalars fail extraction by default. Selected strings with
     ``overflow_policy="discard"`` instead drop that observation and continue
-    validation. Oversized object keys are treated as unknown keys, so selected
-    descendants below that key cannot match. Objects that are array elements do
-    not match normal object-path observations.
+    validation. Without ``document_policy``, oversized object keys are treated as
+    unknown keys, so selected descendants below that key cannot match and
+    extraction continues. With ``document_policy``, an oversized object key fails
+    extraction with ``"key limit exceeded"`` and rejects the whole document.
+    Objects that are array elements do not match normal object-path observations.
     """
 
     def __init__(
@@ -324,8 +329,11 @@ class JsonSelectiveExtractor:
         """Create an extractor for selected JSON observations.
 
         ``max_depth`` bounds nested objects and arrays and fails with
-        ``"max depth exceeded"``. ``max_key_bytes`` bounds object key capture;
-        keys above the limit become unknown keys rather than parser errors.
+        ``"max depth exceeded"``. ``max_key_bytes`` bounds raw object-key bytes
+        inside the quotes, before JSON unescaping. Without ``document_policy``,
+        keys above the capture limit become unknown keys and extraction continues.
+        With a policy, the limit applies to every object key and exceeding it
+        fails the whole document with ``"key limit exceeded"``.
         ``max_number_bytes`` bounds number tokens and fails with
         ``"number limit exceeded"``. ``max_wildcard_keys`` bounds distinct
         wildcard keys and fails with ``"max wildcard keys exceeded"``.

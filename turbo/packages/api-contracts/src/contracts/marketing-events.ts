@@ -1,16 +1,25 @@
-import * as z from "zod";
+import {
+  literal,
+  object,
+  strictObject,
+  string,
+  uuidv4,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 
 const c = initContract();
 
-export const marketingEventRequestSchema = z.strictObject({
-  tag: z.enum(["onboarding-start", "checkout-start"]),
-  eventId: z.uuidv4(),
+export const marketingEventRequestSchema = strictObject({
+  tag: zEnum(["onboarding-start", "checkout-start"]),
+  eventId: uuidv4(),
 });
 
-export type MarketingEventRequest = z.infer<typeof marketingEventRequestSchema>;
+export type MarketingEventRequest = zInfer<typeof marketingEventRequestSchema>;
 
-const errorSchema = z.object({ code: z.string(), error: z.string() });
+const errorSchema = object({ code: string(), error: string() });
 
 /** Marketing owns identity verification, first-touch attribution and event storage. */
 export const marketingEventsContract = c.router({
@@ -20,7 +29,7 @@ export const marketingEventsContract = c.router({
     headers: authHeadersSchema,
     body: marketingEventRequestSchema,
     responses: {
-      200: z.object({ code: z.literal("EVENT_RECORDED") }),
+      200: object({ code: literal("EVENT_RECORDED") }),
       204: c.noBody(),
       400: errorSchema,
       401: errorSchema,

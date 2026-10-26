@@ -2,7 +2,7 @@ import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 import { and, eq, sql } from "drizzle-orm";
-import * as z from "zod";
+import { object, string, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 
 import { writeDb$ } from "../external/db";
@@ -57,13 +57,13 @@ function requiredRouteRow<TRow>(rows: readonly TRow[], message: string): TRow {
   return row;
 }
 
-const createdRouteSchema = z.object({
-  id: z.uuid(),
-  connectionId: z.uuid(),
-  conversationId: z.string(),
-  threadId: z.string(),
-  userId: z.string(),
-  chatThreadId: z.uuid(),
+const createdRouteSchema = object({
+  id: uuid(),
+  connectionId: uuid(),
+  conversationId: string(),
+  threadId: string(),
+  userId: string(),
+  chatThreadId: uuid(),
 });
 
 /**

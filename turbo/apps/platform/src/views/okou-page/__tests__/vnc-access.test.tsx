@@ -1,6 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -37,25 +36,10 @@ test("VNC is available in the Remote control connection list", async () => {
   await setupPage({
     context,
     path: "/connectors?scope=remote-control",
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   await expect(
     screen.findByRole("heading", { name: "VNC" }),
   ).resolves.toBeInTheDocument();
-});
-
-test("Feature-off VNC makes no requests in Remote control", async () => {
-  mockCatalog();
-  context.mocks.api(vncConnectionsContract.summary, () => {
-    throw new Error("Feature-off VNC must not dispatch owner requests");
-  });
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control",
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: false },
-  });
-  await screen.findByRole("heading", { name: "SSH" });
-  expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
 });
 
 test("Chat VNC setup appears and filters", async () => {
@@ -66,7 +50,6 @@ test("Chat VNC setup appears and filters", async () => {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));
@@ -102,7 +85,6 @@ test("Chat VNC discovery can retry a failed summary", async () => {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));

@@ -18,7 +18,7 @@ import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation"
 import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import * as z from "zod";
+import { object, string } from "zod";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import {
@@ -48,9 +48,9 @@ import {
 import { refundUsagePackMemberCredits$ } from "./usage-pack-credit-refund.service";
 import { fetchUserProfileMap$ } from "./user-profile-directory.service";
 
-const clerkOrgIdentitySchema = z.object({
-  name: z.string().nullable().optional(),
-  createdBy: z.string().nullable().optional(),
+const clerkOrgIdentitySchema = object({
+  name: string().nullable().optional(),
+  createdBy: string().nullable().optional(),
 });
 
 interface OrgIdentity {

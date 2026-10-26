@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -85,16 +85,14 @@ export async function exchangeZoomCode(
     await throwOAuthError("Zoom", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -147,16 +145,14 @@ export async function refreshZoomToken(
     await throwOAuthError("Zoom", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -190,15 +186,13 @@ async function fetchZoomUserInfo(accessToken: string): Promise<ZoomUserInfo> {
     throw new Error(`Zoom user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      id: z.string().optional(),
-      email: z.string().nullable().optional(),
-      first_name: z.string().nullable().optional(),
-      last_name: z.string().nullable().optional(),
-      display_name: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: string().optional(),
+    email: string().nullable().optional(),
+    first_name: string().nullable().optional(),
+    last_name: string().nullable().optional(),
+    display_name: string().nullable().optional(),
+  }).parse(await response.json());
 
   if (!data.id) {
     throw new Error("No user id in Zoom user info response");

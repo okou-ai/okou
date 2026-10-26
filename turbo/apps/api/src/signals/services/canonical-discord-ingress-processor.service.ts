@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { boolean, object } from "zod";
 import { discordIngressFailureSql } from "./discord-chat-ingress.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
@@ -1140,9 +1140,9 @@ function terminalIngressFailureResult(
   };
 }
 
-const ingressFailureCommitSchema = z.object({
-  claimed: z.boolean(),
-  inserted: z.boolean(),
+const ingressFailureCommitSchema = object({
+  claimed: boolean(),
+  inserted: boolean(),
 });
 
 // Context preparation writes nothing. Only the same processing claim can

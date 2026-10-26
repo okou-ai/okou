@@ -1641,6 +1641,7 @@ exit 42
             "flow_metadata_keys.py",
             "generated/__init__.py",
             "generated/builtin_firewall_cache.py",
+            "generated/data_router.py",
             "generated/public_destination_policy.py",
             "matching.py",
             "mitmproxy_compat.py",

@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -80,24 +80,21 @@ export async function exchangeStravaCode(
     await throwOAuthError("Strava", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      athlete: z
-        .object({
-          id: z.number().optional(),
-          firstname: z.string().nullable().optional(),
-          lastname: z.string().nullable().optional(),
-        })
-        .nullable()
-        .optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    athlete: object({
+      id: number().optional(),
+      firstname: string().nullable().optional(),
+      lastname: string().nullable().optional(),
     })
-    .parse(await response.json());
+      .nullable()
+      .optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -158,16 +155,14 @@ export async function refreshStravaToken(
     await throwOAuthError("Strava", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -203,13 +198,11 @@ async function fetchStravaAthleteInfo(
     throw new Error(`Strava athlete info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      id: z.number().optional(),
-      firstname: z.string().nullable().optional(),
-      lastname: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: number().optional(),
+    firstname: string().nullable().optional(),
+    lastname: string().nullable().optional(),
+  }).parse(await response.json());
 
   const id = data.id?.toString() ?? athleteId;
   const name =

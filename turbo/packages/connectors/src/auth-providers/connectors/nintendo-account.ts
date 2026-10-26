@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
-import * as z from "zod";
+import { array, literal, number, object, string, union } from "zod";
 
 import type { ConnectorExternalCodeGrantConfig } from "@okouai/connectors/connector-config";
 import type { ConnectorAuthProviderGrantUserInfo } from "../grant-result";
@@ -49,43 +49,35 @@ export interface NintendoAccountProfile {
   readonly locale: string;
 }
 
-const nintendoAccountProviderStateSchema = z.object({
-  version: z.literal(1),
-  state: z.string().min(1).max(128),
-  codeVerifier: z.string().min(43).max(128),
+const nintendoAccountProviderStateSchema = object({
+  version: literal(1),
+  state: string().min(1).max(128),
+  codeVerifier: string().min(43).max(128),
 });
 
-const nintendoAccountSessionTokenSchema = z
-  .object({
-    session_token: z.string().min(1),
-  })
-  .passthrough();
+const nintendoAccountSessionTokenSchema = object({
+  session_token: string().min(1),
+}).passthrough();
 
-const nintendoAccountTokenSchema = z
-  .object({
-    access_token: z.string().min(1),
-    expires_in: z.number().optional(),
-    id_token: z.string().min(1),
-    scope: z.union([z.string(), z.array(z.string())]).optional(),
-    token_type: z.string().optional(),
-  })
-  .passthrough();
+const nintendoAccountTokenSchema = object({
+  access_token: string().min(1),
+  expires_in: number().optional(),
+  id_token: string().min(1),
+  scope: union([string(), array(string())]).optional(),
+  token_type: string().optional(),
+}).passthrough();
 
-const nintendoAccountIdTokenClaimsSchema = z
-  .object({
-    sub: z.string().min(1).optional(),
-    email: z.string().min(1).optional(),
-    name: z.string().min(1).optional(),
-    preferred_username: z.string().min(1).optional(),
-  })
-  .passthrough();
+const nintendoAccountIdTokenClaimsSchema = object({
+  sub: string().min(1).optional(),
+  email: string().min(1).optional(),
+  name: string().min(1).optional(),
+  preferred_username: string().min(1).optional(),
+}).passthrough();
 
-const nintendoAccountProfileSchema = z
-  .object({
-    country: z.string().min(1),
-    language: z.string().min(1),
-  })
-  .passthrough();
+const nintendoAccountProfileSchema = object({
+  country: string().min(1),
+  language: string().min(1),
+}).passthrough();
 
 function base64UrlRandom(byteLength: number): string {
   return randomBytes(byteLength).toString("base64url");

@@ -1,4 +1,12 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
+
 import {
   discordAttachmentSchema,
   discordMessageReferenceSchema,
@@ -6,25 +14,25 @@ import {
   discordUserSchema,
 } from "../signals/external/discord-client";
 
-export const discordMessageCreateSchema = z.object({
+export const discordMessageCreateSchema = object({
   id: discordSnowflakeSchema,
   channel_id: discordSnowflakeSchema,
   guild_id: discordSnowflakeSchema.optional(),
   author: discordUserSchema,
-  content: z.string().max(4000),
-  mentions: z.array(discordUserSchema).max(100),
-  attachments: z.array(discordAttachmentSchema).max(10),
+  content: string().max(4000),
+  mentions: array(discordUserSchema).max(100),
+  attachments: array(discordAttachmentSchema).max(10),
   message_reference: discordMessageReferenceSchema.optional(),
   webhook_id: discordSnowflakeSchema.optional(),
-  type: z.number().int(),
-  edited_timestamp: z.string().nullable().optional(),
+  type: number().int(),
+  edited_timestamp: string().nullable().optional(),
 });
 
-export type DiscordMessageCreate = z.infer<typeof discordMessageCreateSchema>;
+export type DiscordMessageCreate = zInfer<typeof discordMessageCreateSchema>;
 
-export const discordGuildDeleteSchema = z.object({
+export const discordGuildDeleteSchema = object({
   id: discordSnowflakeSchema,
-  unavailable: z.boolean().optional(),
+  unavailable: boolean().optional(),
 });
 
 export function isDiscordUserMessage(message: DiscordMessageCreate): boolean {

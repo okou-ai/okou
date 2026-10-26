@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, uuid } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -11,8 +11,8 @@ export const runnersRunStartupContract = c.router({
     method: "PUT",
     path: "/api/runners/runs/:runId/startup",
     headers: authHeadersSchema,
-    pathParams: z.object({ runId: z.uuid() }),
-    body: z.object({ sandboxStartupPath: sandboxStartupPathSchema }).strict(),
+    pathParams: object({ runId: uuid() }),
+    body: object({ sandboxStartupPath: sandboxStartupPathSchema }).strict(),
     responses: {
       204: c.noBody(),
       400: apiErrorSchema,

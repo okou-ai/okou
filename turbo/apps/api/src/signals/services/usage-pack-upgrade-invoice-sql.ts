@@ -20,7 +20,7 @@ import {
   type PgTable,
   type PgColumn,
 } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { boolean, literal, string, uuid } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 
@@ -227,12 +227,12 @@ export function upgradeInvoicePublicationPlan(
       ...(positive ? positivePublicationCtes(f) : []),
     ],
     fields: {
-      inserted: sql`inserted`.mapWith(zodDriverValueDecoder(z.boolean())),
+      inserted: sql`inserted`.mapWith(zodDriverValueDecoder(boolean())),
       stripeInvoiceId: sql`stripe_invoice_id`.mapWith(
-        zodDriverValueDecoder(z.string()),
+        zodDriverValueDecoder(string()),
       ),
       receiptSubscriptionId: sql`usage_pack_subscription_id`.mapWith(
-        zodDriverValueDecoder(z.uuid()),
+        zodDriverValueDecoder(uuid()),
       ),
       receiptPeriodStart: sql`period_start::text`.mapWith(
         zodDriverValueDecoder(
@@ -243,7 +243,7 @@ export function upgradeInvoicePublicationPlan(
         zodDriverValueDecoder(pgTimestampWithoutTimezoneToDateSchema),
       ),
       atomicGuard: publicationGuard(f, positive).mapWith(
-        zodDriverValueDecoder(z.literal(0)),
+        zodDriverValueDecoder(literal(0)),
       ),
     },
   };

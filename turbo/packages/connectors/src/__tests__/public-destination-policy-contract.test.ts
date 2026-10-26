@@ -1,40 +1,38 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, boolean, object, string, type infer as zInfer } from "zod";
 
 import {
   resolveFirewallBaseUrlVars,
   type FirewallConfig,
 } from "../firewall-types";
 
-const addressPolicyCaseSchema = z.object({
-  name: z.string(),
-  address: z.string(),
-  expectedPublic: z.boolean(),
+const addressPolicyCaseSchema = object({
+  name: string(),
+  address: string(),
+  expectedPublic: boolean(),
 });
 
-const contractSchema = z
-  .object({
-    addressPolicyCases: z.array(addressPolicyCaseSchema).min(1),
-  })
-  .superRefine((contract, ctx) => {
-    const seenNames = new Set<string>();
-    for (const [index, testCase] of contract.addressPolicyCases.entries()) {
-      if (seenNames.has(testCase.name)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["addressPolicyCases", index, "name"],
-          message: `duplicate case name "${testCase.name}"`,
-        });
-      }
-      seenNames.add(testCase.name);
+const contractSchema = object({
+  addressPolicyCases: array(addressPolicyCaseSchema).min(1),
+}).superRefine((contract, ctx) => {
+  const seenNames = new Set<string>();
+  for (const [index, testCase] of contract.addressPolicyCases.entries()) {
+    if (seenNames.has(testCase.name)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["addressPolicyCases", index, "name"],
+        message: `duplicate case name "${testCase.name}"`,
+      });
     }
-  });
+    seenNames.add(testCase.name);
+  }
+});
 
-type AddressPolicyCase = z.infer<typeof addressPolicyCaseSchema>;
+type AddressPolicyCase = zInfer<typeof addressPolicyCaseSchema>;
 
-function loadContract(): z.infer<typeof contractSchema> {
+function loadContract(): zInfer<typeof contractSchema> {
   const rawContract: unknown = JSON.parse(
     fs.readFileSync(
       path.resolve(

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Command } from "commander";
-import { z } from "zod";
+import { preprocess, uuid } from "zod";
 import {
   createSshConnectionRequestSchema,
   updateSshConnectionRequestSchema,
@@ -46,7 +46,7 @@ export function requireSandboxCapability(
 }
 
 function resourceId(value: string): string {
-  const parsed = z.uuid().safeParse(value);
+  const parsed = uuid().safeParse(value);
   if (!parsed.success)
     throw new Error(
       "Invalid SSH resource ID. Use an exact ID from the management list.",
@@ -58,7 +58,7 @@ function output(value: unknown, options: OutputOptions): void {
   console.log(JSON.stringify(value, null, options.json ? undefined : 2));
 }
 
-const hostCreateInputSchema = z.preprocess((value) => {
+const hostCreateInputSchema = preprocess((value) => {
   if (
     value !== null &&
     typeof value === "object" &&
@@ -70,7 +70,7 @@ const hostCreateInputSchema = z.preprocess((value) => {
   return value;
 }, createSshConnectionRequestSchema);
 const credentialCreateInputSchema = sshCredentialsContract.create.body.extend({
-  id: z.uuid().default(randomUUID),
+  id: uuid().default(randomUUID),
 });
 
 export function addSshHostManagementCommands(host: Command): Command {

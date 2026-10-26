@@ -18,7 +18,7 @@ import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-conn
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { expect } from "vitest";
-import * as z from "zod";
+import { number, object, string, union } from "zod";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -116,9 +116,7 @@ async function connectFeishu(
     http.post(
       `${apiOrigin}/open-apis/im/v1/messages/:messageId/reply`,
       async ({ request }) => {
-        const body = z
-          .object({ content: z.string() })
-          .parse(await request.json());
+        const body = object({ content: string() }).parse(await request.json());
         replies.push(body.content);
         return HttpResponse.json({
           code: 0,
@@ -298,9 +296,9 @@ async function connectFeishu(
     body: JSON.stringify(connectBody),
   });
   expect(connecting.status).toBe(200);
-  const authorization = z
-    .object({ openUrl: z.string() })
-    .parse(await connecting.json());
+  const authorization = object({ openUrl: string() }).parse(
+    await connecting.json(),
+  );
   const state = new URL(authorization.openUrl).searchParams.get("state");
   if (!state) {
     throw new Error("Expected the public Feishu OAuth state");
@@ -607,12 +605,10 @@ export async function createPublicAnnotationIngress(
       http.post(
         `https://api.telegram.org/bot${botToken}/sendMessage`,
         async ({ request }) => {
-          const body = z
-            .object({
-              chat_id: z.union([z.string(), z.number()]),
-              text: z.string(),
-            })
-            .parse(await request.json());
+          const body = object({
+            chat_id: union([string(), number()]),
+            text: string(),
+          }).parse(await request.json());
           return HttpResponse.json({
             ok: true,
             result: {

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { ZodError } from "zod";
 
 type ConnectionStage =
   | "idle"
@@ -43,7 +43,7 @@ function exceptionType(error: unknown): string | null {
     if (error.name === "AbortError") return "AbortError";
     return "DOMException";
   }
-  if (error instanceof z.ZodError) return "ValidationError";
+  if (error instanceof ZodError) return "ValidationError";
   if (error instanceof SyntaxError) return "SyntaxError";
   if (error instanceof TypeError) return "TypeError";
   if (error instanceof Error) return "Error";

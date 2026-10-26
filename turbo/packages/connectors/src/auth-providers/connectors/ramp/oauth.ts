@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "../../../connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -9,11 +9,11 @@ import { parseProviderTokenResponse } from "../../token-response";
 const API_BASE = "https://api.ramp.com/developer/v1";
 const TOKEN_URL = `${API_BASE}/token`;
 
-const tokenSchema = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().int().positive(),
-  token_type: z.string().regex(/^bearer$/iu),
-  scope: z.string().optional(),
+const tokenSchema = object({
+  access_token: string().min(1),
+  expires_in: number().int().positive(),
+  token_type: string().regex(/^bearer$/iu),
+  scope: string().optional(),
 });
 
 function clientHeaders(clientId: string, clientSecret: string) {
@@ -66,7 +66,7 @@ export async function exchangeRampCode(
   }
   const token = await parseProviderTokenResponse(
     response,
-    tokenSchema.extend({ refresh_token: z.string().min(1) }),
+    tokenSchema.extend({ refresh_token: string().min(1) }),
     "Invalid Ramp token exchange response",
   );
   const businessResponse = await fetch(`${API_BASE}/business`, {
@@ -83,9 +83,9 @@ export async function exchangeRampCode(
   }
   const business = await parseProviderTokenResponse(
     businessResponse,
-    z.object({
-      id: z.string().min(1),
-      business_name_legal: z.string().nullable().optional(),
+    object({
+      id: string().min(1),
+      business_name_legal: string().nullable().optional(),
     }),
     "Invalid Ramp business response",
   );
@@ -127,7 +127,7 @@ export async function refreshRampToken(
   }
   const token = await parseProviderTokenResponse(
     response,
-    tokenSchema.extend({ refresh_token: z.string().min(1).optional() }),
+    tokenSchema.extend({ refresh_token: string().min(1).optional() }),
     "Invalid Ramp token refresh response",
   );
   return {

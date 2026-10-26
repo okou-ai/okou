@@ -1,23 +1,20 @@
-import * as z from "zod";
+import { array, literal, object, tuple, url, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 
 const c = initContract();
 
-export const okouMcpOAuthClientMetadataSchema = z.object({
-  client_id: z.url(),
-  client_name: z.literal("Okou"),
-  client_uri: z.url(),
-  redirect_uris: z.array(z.url()).min(1),
-  grant_types: z.tuple([
-    z.literal("authorization_code"),
-    z.literal("refresh_token"),
-  ]),
-  response_types: z.tuple([z.literal("code")]),
-  application_type: z.literal("web"),
-  token_endpoint_auth_method: z.literal("none"),
+export const okouMcpOAuthClientMetadataSchema = object({
+  client_id: url(),
+  client_name: literal("Okou"),
+  client_uri: url(),
+  redirect_uris: array(url()).min(1),
+  grant_types: tuple([literal("authorization_code"), literal("refresh_token")]),
+  response_types: tuple([literal("code")]),
+  application_type: literal("web"),
+  token_endpoint_auth_method: literal("none"),
 });
-export type OkouMcpOAuthClientMetadata = z.infer<
+export type OkouMcpOAuthClientMetadata = zInfer<
   typeof okouMcpOAuthClientMetadataSchema
 >;
 

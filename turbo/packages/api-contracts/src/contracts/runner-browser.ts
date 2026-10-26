@@ -1,82 +1,131 @@
-import { z } from "zod";
+import {
+  discriminatedUnion,
+  int,
+  iso,
+  literal,
+  number,
+  strictObject,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
 
 const c = initContract();
-const nativeWindowId = z.int().nonnegative();
-const instanceIdentity = { instanceId: z.uuid() };
+const nativeWindowId = int().nonnegative();
+const runnerIdentitySchema = strictObject({
+  runnerId: uuid(),
+  heartbeatGeneration: runnerHeartbeatGenerationSchema,
+});
+const instanceIdentity = { instanceId: uuid() };
 const windowIdentity = { ...instanceIdentity, primaryWindowId: nativeWindowId };
-const browserWindowSchema = z.strictObject({
-  chatThreadId: z.uuid(),
-  state: z.enum(["active", "closing"]),
-  expiresAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+const browserWindowSchema = strictObject({
+  chatThreadId: uuid(),
+  state: zEnum(["active", "closing"]),
+  expiresAt: number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   primaryWindowId: nativeWindowId,
 });
 
-const actionSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    kind: z.literal("inspect"),
-    instanceId: z.uuid().optional(),
+const actionSchema = discriminatedUnion("kind", [
+  strictObject({
+    kind: literal("inspect"),
+    instanceId: uuid().optional(),
   }),
-  z.strictObject({
-    kind: z.literal("authorize"),
+  strictObject({
+    kind: literal("authorize"),
     ...windowIdentity,
-    providerSessionId: z.uuid(),
+    providerSessionId: uuid(),
   }),
-  z.strictObject({ kind: z.literal("allocate") }),
-  z.strictObject({
-    kind: z.literal("publish"),
+  strictObject({ kind: literal("allocate") }),
+  strictObject({
+    kind: literal("publish"),
     ...instanceIdentity,
-    providerSessionId: z.uuid(),
-    timeoutAt: z.iso.datetime(),
+    providerSessionId: uuid(),
+    timeoutAt: iso.datetime(),
   }),
-  z.strictObject({ kind: z.literal("admit"), ...windowIdentity }),
-  z.strictObject({ kind: z.literal("renew"), ...windowIdentity }),
-  z.strictObject({
-    kind: z.literal("retire"),
+  strictObject({ kind: literal("admit"), ...windowIdentity }),
+  strictObject({ kind: literal("renew"), ...windowIdentity }),
+  strictObject({
+    kind: literal("retire"),
     ...windowIdentity,
-    reason: z.enum(["expired", "closed"]),
+    reason: zEnum(["expired", "closed"]),
   }),
-  z.strictObject({ kind: z.literal("completeWindowClose"), ...windowIdentity }),
-  z.strictObject({ kind: z.literal("beginStop"), ...instanceIdentity }),
-  z.strictObject({ kind: z.literal("completeStop"), ...instanceIdentity }),
+  strictObject({ kind: literal("completeWindowClose"), ...windowIdentity }),
+  strictObject({ kind: literal("beginStop"), ...instanceIdentity }),
+  strictObject({ kind: literal("completeStop"), ...instanceIdentity }),
 ]);
 
-const requestSchema = z.strictObject({
-  runnerIdentity: z.strictObject({
-    runnerId: z.uuid(),
-    heartbeatGeneration: runnerHeartbeatGenerationSchema,
-  }),
+const requestSchema = strictObject({
+  runnerIdentity: runnerIdentitySchema,
   action: actionSchema,
 });
 
-const instanceSchema = z.strictObject({
-  id: z.uuid(),
-  ownerProfileId: z.uuid(),
-  providerProfileId: z.uuid(),
-  providerSessionId: z.uuid().nullable(),
-  status: z.enum(["creating", "active", "stopping", "stopped"]),
-  creationExpiresAt: z.iso.datetime(),
-  timeoutAt: z.iso.datetime(),
+const instanceSchema = strictObject({
+  id: uuid(),
+  ownerProfileId: uuid(),
+  providerProfileId: uuid(),
+  providerSessionId: uuid().nullable(),
+  status: zEnum(["creating", "active", "stopping", "stopped"]),
+  creationExpiresAt: iso.datetime(),
+  timeoutAt: iso.datetime(),
   // The host sees only the current Run's chat, including its cleanup identities.
   window: browserWindowSchema.nullable(),
 });
 
 export const runnerBrowserContract = c.router({
+  connection: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/browser/connection",
+    pathParams: strictObject({ runId: uuid() }),
+    headers: authHeadersSchema,
+    body: strictObject({
+      runnerIdentity: runnerIdentitySchema,
+      ...windowIdentity,
+      providerSessionId: uuid(),
+    }),
+    responses: {
+      200: discriminatedUnion("outcome", [
+        strictObject({
+          outcome: literal("accepted"),
+          connection: strictObject({
+            ...windowIdentity,
+            providerSessionId: uuid(),
+            chatThreadId: uuid(),
+            cdpUrl: url({
+              protocol: /^(https|wss)$/u,
+              hostname: /(^|\.)browser-use\.com$/u,
+            }),
+            expiresAt: int().nonnegative(),
+          }),
+        }),
+        strictObject({ outcome: literal("unavailable") }),
+      ]),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      500: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Resolve an exact live Browser connection for the official Runner",
+  },
   control: {
     method: "POST",
     path: "/api/runners/runs/:runId/browser/control",
-    pathParams: z.strictObject({ runId: z.uuid() }),
+    pathParams: strictObject({ runId: uuid() }),
     headers: authHeadersSchema,
     body: requestSchema,
     responses: {
-      200: z.discriminatedUnion("outcome", [
-        z.strictObject({
-          outcome: z.literal("accepted"),
+      200: discriminatedUnion("outcome", [
+        strictObject({
+          outcome: literal("accepted"),
           instance: instanceSchema,
         }),
-        z.strictObject({ outcome: z.literal("unavailable") }),
+        strictObject({ outcome: literal("unavailable") }),
       ]),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -89,8 +138,11 @@ export const runnerBrowserContract = c.router({
   },
 });
 
-export type RunnerBrowserRequest = z.infer<typeof requestSchema>;
-export type RunnerBrowserAction = z.infer<typeof actionSchema>;
-export type RunnerBrowserResponse = z.infer<
+export type RunnerBrowserRequest = zInfer<typeof requestSchema>;
+export type RunnerBrowserAction = zInfer<typeof actionSchema>;
+export type RunnerBrowserResponse = zInfer<
   (typeof runnerBrowserContract.control.responses)[200]
+>;
+export type RunnerBrowserConnectionResponse = zInfer<
+  (typeof runnerBrowserContract.connection.responses)[200]
 >;

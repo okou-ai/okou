@@ -1,4 +1,5 @@
-import * as z from "zod";
+import { array, number, object, string, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -8,25 +9,23 @@ import {
 
 const c = initContract();
 
-const memberUsageSchema = z.object({
-  userId: z.string(),
-  email: z.string(),
-  inputTokens: z.number(),
-  outputTokens: z.number(),
-  cacheReadInputTokens: z.number(),
-  cacheCreationInputTokens: z.number(),
-  creditsCharged: z.number(),
-  breakdown: z.array(usageRecordKindBreakdownSchema),
+const memberUsageSchema = object({
+  userId: string(),
+  email: string(),
+  inputTokens: number(),
+  outputTokens: number(),
+  cacheReadInputTokens: number(),
+  cacheCreationInputTokens: number(),
+  creditsCharged: number(),
+  breakdown: array(usageRecordKindBreakdownSchema),
 });
 
-const usageMembersResponseSchema = z.object({
-  period: z
-    .object({
-      start: z.string(),
-      end: z.string(),
-    })
-    .nullable(),
-  members: z.array(memberUsageSchema),
+const usageMembersResponseSchema = object({
+  period: object({
+    start: string(),
+    end: string(),
+  }).nullable(),
+  members: array(memberUsageSchema),
 });
 
 /**
@@ -37,9 +36,9 @@ export const usageMembersContract = c.router({
     method: "GET",
     path: "/api/usage/members",
     headers: authHeadersSchema,
-    query: z.object({
+    query: object({
       range: usageRecordRangeSchema.default("billingPeriod"),
-      tz: z.string().default("UTC"),
+      tz: string().default("UTC"),
     }),
     responses: {
       200: usageMembersResponseSchema,
@@ -55,5 +54,5 @@ export const usageMembersContract = c.router({
 export type UsageMembersContract = typeof usageMembersContract;
 
 // Inferred types from Zod schemas
-export type MemberUsage = z.infer<typeof memberUsageSchema>;
-export type UsageMembersResponse = z.infer<typeof usageMembersResponseSchema>;
+export type MemberUsage = zInfer<typeof memberUsageSchema>;
+export type UsageMembersResponse = zInfer<typeof usageMembersResponseSchema>;

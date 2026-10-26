@@ -15,7 +15,7 @@ import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-import * as z from "zod";
+import { object, uuid } from "zod";
 import {
   wechatConnections,
   wechatChatThreadRoutes,
@@ -179,7 +179,7 @@ const ensureThread$ = command(
     const route = db.$with("wechat_route").as(routeInsert);
     const threadInsert = sql`${integrationChatThreadInsertFromRouteSql(thread, route)} RETURNING ${chatThreads.agentId}`;
     const [inserted] = parseRawRows(
-      z.object({ chatThreadId: z.uuid() }),
+      object({ chatThreadId: uuid() }),
       await db.execute(
         integrationThreadCreatedEventSql(connection.orgId, thread, {
           cte: sql`wechat_route AS (${routeInsert.getSQL()}), wechat_thread AS (${threadInsert})`,
@@ -413,7 +413,7 @@ export const receiveWechatMessage$ = command(
       ON CONFLICT DO NOTHING RETURNING id`;
     // Queue compare-and-delete uses JS Dates; preserve millisecond precision.
     const inserted = parseRawRows(
-      z.object({ id: z.uuid() }),
+      object({ id: uuid() }),
       await db.execute(sql`WITH context_insert AS (${contextInsert}), ${canonicalChatEventAppendCtes([prepared.row], "id", sql`EXISTS(SELECT 1 FROM ${wechatConnections} WHERE ${activeBinding(connection)}) AND EXISTS(SELECT 1 FROM context_insert)`)}
  ${modelReplacementCtes(model.threadModelReplacement)}, archived AS (
  INSERT INTO wechat_messages(id,connection_id,generation,provider_message_id,direction,status,content,quoted_text,attachments,media_ciphertext,created_at)

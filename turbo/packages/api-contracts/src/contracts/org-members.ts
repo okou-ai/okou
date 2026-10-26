@@ -1,145 +1,156 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { usagePackUsdSchema } from "./billing";
 
 /**
  * Org role enum
  */
-export const orgRoleSchema = z.enum(["admin", "member"]);
-export type OrgRole = z.infer<typeof orgRoleSchema>;
+export const orgRoleSchema = zEnum(["admin", "member"]);
+export type OrgRole = zInfer<typeof orgRoleSchema>;
 
 /**
  * Org member schema
  */
-export const orgMemberSchema = z.object({
-  userId: z.string(),
-  email: z.string(),
-  firstName: z.string().nullable(),
-  lastName: z.string().nullable(),
-  imageUrl: z.string(),
+export const orgMemberSchema = object({
+  userId: string(),
+  email: string(),
+  firstName: string().nullable(),
+  lastName: string().nullable(),
+  imageUrl: string(),
   role: orgRoleSchema,
-  joinedAt: z.string(),
+  joinedAt: string(),
 });
-export type OrgMember = z.infer<typeof orgMemberSchema>;
+export type OrgMember = zInfer<typeof orgMemberSchema>;
 
 /**
  * Pending invitation schema
  */
-export const orgPendingInvitationSchema = z.object({
-  id: z.string(),
-  email: z.string(),
+export const orgPendingInvitationSchema = object({
+  id: string(),
+  email: string(),
   role: orgRoleSchema,
-  createdAt: z.string(),
+  createdAt: string(),
   usagePackUsd: usagePackUsdSchema.optional(),
 });
-export type OrgPendingInvitation = z.infer<typeof orgPendingInvitationSchema>;
+export type OrgPendingInvitation = zInfer<typeof orgPendingInvitationSchema>;
 
 /**
  * Membership request schema
  */
-export const orgMembershipRequestSchema = z.object({
-  id: z.string(),
-  userId: z.string(),
-  email: z.string(),
-  firstName: z.string().nullable(),
-  lastName: z.string().nullable(),
-  imageUrl: z.string(),
-  createdAt: z.string(),
+export const orgMembershipRequestSchema = object({
+  id: string(),
+  userId: string(),
+  email: string(),
+  firstName: string().nullable(),
+  lastName: string().nullable(),
+  imageUrl: string(),
+  createdAt: string(),
 });
-export type OrgMembershipRequest = z.infer<typeof orgMembershipRequestSchema>;
+export type OrgMembershipRequest = zInfer<typeof orgMembershipRequestSchema>;
 
 /**
  * Revoke invitation request schema
  */
-export const revokeInvitationRequestSchema = z.object({
-  invitationId: z.string(),
+export const revokeInvitationRequestSchema = object({
+  invitationId: string(),
 });
-export type RevokeInvitationRequest = z.infer<
+export type RevokeInvitationRequest = zInfer<
   typeof revokeInvitationRequestSchema
 >;
 
 /**
  * Membership request action schema
  */
-export const membershipRequestActionSchema = z.object({
-  requestId: z.string(),
+export const membershipRequestActionSchema = object({
+  requestId: string(),
 });
-export type MembershipRequestAction = z.infer<
+export type MembershipRequestAction = zInfer<
   typeof membershipRequestActionSchema
 >;
 
 /**
  * Org members response schema (status + members list)
  */
-export const orgMembersResponseSchema = z.object({
-  name: z.string(),
+export const orgMembersResponseSchema = object({
+  name: string(),
   role: orgRoleSchema,
-  members: z.array(orgMemberSchema),
-  pendingInvitations: z.array(orgPendingInvitationSchema).optional(),
-  membershipRequests: z.array(orgMembershipRequestSchema).optional(),
-  createdAt: z.string(),
+  members: array(orgMemberSchema),
+  pendingInvitations: array(orgPendingInvitationSchema).optional(),
+  membershipRequests: array(orgMembershipRequestSchema).optional(),
+  createdAt: string(),
 });
-export type OrgMembersResponse = z.infer<typeof orgMembersResponseSchema>;
+export type OrgMembersResponse = zInfer<typeof orgMembersResponseSchema>;
 
 /**
  * Invite member request schema
  */
-export const inviteOrgMemberRequestSchema = z.object({
-  email: z.string().email(),
+export const inviteOrgMemberRequestSchema = object({
+  email: string().email(),
   role: orgRoleSchema.optional().default("member"),
 });
-export type InviteOrgMemberRequest = z.infer<
+export type InviteOrgMemberRequest = zInfer<
   typeof inviteOrgMemberRequestSchema
 >;
 
 export const previewOrgInvitationPurchaseRequestSchema =
   inviteOrgMemberRequestSchema.extend({
     usagePackUsd: usagePackUsdSchema,
-    supportsInAppPreview: z.boolean().optional(),
-    returnUrl: z.string().url().max(5000).optional(),
+    supportsInAppPreview: boolean().optional(),
+    returnUrl: string().url().max(5000).optional(),
   });
 
-export const orgInvitationPurchasePreviewResponseSchema = z.object({
-  purchaseId: z.uuid(),
+export const orgInvitationPurchasePreviewResponseSchema = object({
+  purchaseId: uuid(),
   usagePackUsd: usagePackUsdSchema,
-  immediateAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  purchasedCredits: z.number().int().nonnegative(),
-  bonusCredits: z.number().int().nonnegative(),
-  totalCredits: z.number().int().positive(),
-  currentPeriodEnd: z.iso.datetime(),
-  expiresAt: z.iso.datetime(),
-  paymentMethodPreviewToken: z.string().min(1).optional(),
-  checkoutUrl: z.string().url().optional(),
+  immediateAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  purchasedCredits: number().int().nonnegative(),
+  bonusCredits: number().int().nonnegative(),
+  totalCredits: number().int().positive(),
+  currentPeriodEnd: iso.datetime(),
+  expiresAt: iso.datetime(),
+  paymentMethodPreviewToken: string().min(1).optional(),
+  checkoutUrl: string().url().optional(),
 });
-export type OrgInvitationPurchasePreviewResponse = z.infer<
+export type OrgInvitationPurchasePreviewResponse = zInfer<
   typeof orgInvitationPurchasePreviewResponseSchema
 >;
 
 /**
  * Remove member request schema
  */
-export const removeOrgMemberRequestSchema = z.object({
-  email: z.string().email(),
+export const removeOrgMemberRequestSchema = object({
+  email: string().email(),
 });
-export type RemoveOrgMemberRequest = z.infer<
+export type RemoveOrgMemberRequest = zInfer<
   typeof removeOrgMemberRequestSchema
 >;
 
 /**
  * Update member role request schema
  */
-export const updateOrgMemberRoleRequestSchema = z.object({
-  email: z.string().email(),
+export const updateOrgMemberRoleRequestSchema = object({
+  email: string().email(),
   role: orgRoleSchema,
 });
-export type UpdateOrgMemberRoleRequest = z.infer<
+export type UpdateOrgMemberRoleRequest = zInfer<
   typeof updateOrgMemberRoleRequestSchema
 >;
 
 /**
  * Simple message response schema
  */
-export const orgMessageResponseSchema = z.object({
-  message: z.string(),
+export const orgMessageResponseSchema = object({
+  message: string(),
 });
-export type OrgMessageResponse = z.infer<typeof orgMessageResponseSchema>;
+export type OrgMessageResponse = zInfer<typeof orgMessageResponseSchema>;

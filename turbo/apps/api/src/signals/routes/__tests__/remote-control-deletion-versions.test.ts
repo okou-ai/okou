@@ -4,7 +4,6 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   CLIENT_TYPE_APP,
   CLIENT_TYPE_HEADER,
@@ -16,7 +15,6 @@ import webClientCompatibility from "../../../lib/web-client-compatibility.json";
 import { joinAll } from "../../utils";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncConnectionsRoutes } from "../vnc-connections";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -88,15 +86,12 @@ function authenticate(actor: Owner) {
     },
   );
 }
-async function owner(overrides: Partial<Owner> = {}) {
+function owner(overrides: Partial<Owner> = {}) {
   const actor = {
     orgId: `org_delete_${randomUUID()}`,
     userId: `user_delete_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.VncAccess]: true,
-  });
   authenticate(actor);
   return actor;
 }
@@ -333,7 +328,7 @@ async function fixture(target: Target): Promise<Fixture> {
 describe.each(targets)("%s reviewed-version deletion", (target) => {
   it("preserves a newer version, deletes its reviewed version, and reports a missing resource", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const resource = await fixture(target);
     expect((await resource.update()).status).toBe(200);
     const stale = await resource.remove();
@@ -358,7 +353,7 @@ describe.each(targets)("%s reviewed-version deletion", (target) => {
 
   it("allows only one competing deletion to report success", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const resource = await fixture(target);
     const results = await joinAll([resource.remove(), resource.remove()]);
     expect(
@@ -373,7 +368,7 @@ describe.each(targets)("%s reviewed-version deletion", (target) => {
 
   it("never deletes an unreviewed version when update and deletion overlap", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const resource = await fixture(target);
     const [updated, deleted] = await joinAll([
       resource.update(),
@@ -414,11 +409,9 @@ describe.each(targets)("%s reviewed-version deletion", (target) => {
     "conceals another owner's resource in the %s",
     async (scope) => {
       useSecretKmsProbe();
-      const original = await owner();
+      const original = owner();
       const resource = await fixture(target);
-      await owner(
-        scope === "same organization" ? { orgId: original.orgId } : {},
-      );
+      owner(scope === "same organization" ? { orgId: original.orgId } : {});
       const denied = await resource.remove();
       expect(denied.status).toBe(404);
       expect(denied.body).toMatchObject({
@@ -436,7 +429,7 @@ describe("SSH deletion request validation", () => {
     "requires the reviewed generation with %s App headers",
     async (client) => {
       useSecretKmsProbe();
-      await owner();
+      owner();
       const created = await accept(
         sshHosts().create({ headers, body: sshHostBody() }),
         [201],
@@ -468,7 +461,7 @@ describe("SSH deletion request validation", () => {
 
   it("force-upgrades an unsupported App before deletion and accepts the supported App's reviewed generation", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       sshHosts().create({ headers, body: sshHostBody() }),
       [201],
@@ -511,7 +504,7 @@ describe("SSH deletion request validation", () => {
 
   it("keeps a versioned SSH host while a VNC host references it", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const host = await accept(
       sshHosts().create({ headers, body: sshHostBody() }),
       [201],

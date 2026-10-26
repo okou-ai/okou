@@ -12,7 +12,19 @@ import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as nativeDrizzle } from "drizzle-orm/node-postgres";
 import { Client, Pool } from "pg";
 import { Parser } from "tar";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  guid,
+  literal,
+  number,
+  object,
+  string,
+  tuple,
+  instanceof as zInstanceof,
+  url as zUrl,
+} from "zod";
 import { API_DATABASE_SEED_FILES } from "./database-seeds";
 import type { ApiDb } from "../lib/db-types";
 import { singleton } from "../lib/singleton";
@@ -71,9 +83,9 @@ async function initializeBaseline(engine: BaselineDatabase): Promise<void> {
     let cursor: string | null = null;
     while (true) {
       const result = await engine.query(statement, [cursor]);
-      const [{ next_cursor: nextCursor }] = z
-        .tuple([z.object({ next_cursor: z.guid().nullable() })])
-        .parse(result.rows);
+      const [{ next_cursor: nextCursor }] = tuple([
+        object({ next_cursor: guid().nullable() }),
+      ]).parse(result.rows);
       if (nextCursor === null) {
         break;
       }
@@ -203,20 +215,19 @@ interface SnapshotFiles {
   readonly files: readonly SnapshotFile[];
 }
 
-const snapshotPathSchema = z
-  .string()
+const snapshotPathSchema = string()
   .startsWith("/pglite/data/")
   .refine((path) => {
     return !path.split("/").includes("..");
   }, "Invalid snapshot path");
 
-const snapshotSchema = z.object({
-  directories: z.array(snapshotPathSchema),
-  files: z.array(
-    z.object({
+const snapshotSchema = object({
+  directories: array(snapshotPathSchema),
+  files: array(
+    object({
       path: snapshotPathSchema,
-      data: z.instanceof(Uint8Array),
-      modifiedAt: z.number().int(),
+      data: zInstanceof(Uint8Array),
+      modifiedAt: number().int(),
     }),
   ),
 });
@@ -347,16 +358,14 @@ export interface IsolatedTestDatabase {
   readonly close: () => Promise<void>;
 }
 
-const namespaceSchema = z.string().regex(/^oa_[a-f0-9]{32}$/);
-const descriptorSchema = z.discriminatedUnion("backend", [
-  z.object({ backend: z.literal("pglite"), path: z.string() }).strict(),
-  z
-    .object({
-      backend: z.literal("postgres"),
-      connectionString: z.url(),
-      namespace: namespaceSchema,
-    })
-    .strict(),
+const namespaceSchema = string().regex(/^oa_[a-f0-9]{32}$/);
+const descriptorSchema = discriminatedUnion("backend", [
+  object({ backend: literal("pglite"), path: string() }).strict(),
+  object({
+    backend: literal("postgres"),
+    connectionString: zUrl(),
+    namespace: namespaceSchema,
+  }).strict(),
 ]);
 
 function databaseUrl(connectionString: string, name: string): string {
@@ -423,7 +432,7 @@ async function createDatabase(
     });
   });
   if (!created.ok) {
-    const code = z.object({ code: z.string() }).safeParse(created.error);
+    const code = object({ code: string() }).safeParse(created.error);
     if (code.success && code.data.code === "42501") {
       return false;
     }
@@ -455,7 +464,7 @@ export async function createApiDatabaseSnapshot(
     const result = await client.query(
       "SELECT rolcreatedb OR rolsuper AS capable FROM pg_roles WHERE rolname = current_user",
     );
-    return z.tuple([z.object({ capable: z.boolean() })]).parse(result.rows)[0]
+    return tuple([object({ capable: boolean() })]).parse(result.rows)[0]
       .capable;
   });
   const native =
@@ -468,7 +477,7 @@ export async function createApiDatabaseSnapshot(
           "SELECT datname FROM pg_database WHERE starts_with(datname, $1)",
           [`${namespace}_case_`],
         );
-        return z.array(z.object({ datname: z.string() })).parse(result.rows);
+        return array(object({ datname: string() })).parse(result.rows);
       });
       for (const { datname } of cases) {
         await dropDatabase(connectionString, datname);
@@ -563,7 +572,7 @@ export async function createIsolatedDatabase(
   };
   const ready = await settleIncludingAbort(async () => {
     const result = await pool.query("SHOW TimeZone");
-    z.object({ TimeZone: z.literal("UTC") }).parse(result.rows[0]);
+    object({ TimeZone: literal("UTC") }).parse(result.rows[0]);
     return { database: nativeDrizzle(pool), close };
   });
   if (!ready.ok) {

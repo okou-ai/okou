@@ -1,7 +1,7 @@
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
-import * as z from "zod";
+import { boolean, object, string } from "zod";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
@@ -18,10 +18,10 @@ export function customConnectorOAuthBindingDeletionPlan(connectionId: string) {
   };
 }
 
-export const customConnectorOAuthStartResultSchema = z.object({
-  contractValid: z.boolean(),
-  accountPresent: z.boolean(),
-  oauthStateId: z.string().uuid().nullable(),
+export const customConnectorOAuthStartResultSchema = object({
+  contractValid: boolean(),
+  accountPresent: boolean(),
+  oauthStateId: string().uuid().nullable(),
 });
 
 interface CustomOAuthStart {

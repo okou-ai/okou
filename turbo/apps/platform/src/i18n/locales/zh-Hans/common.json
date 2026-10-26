@@ -399,7 +399,6 @@
       "manage": "管理",
       "mobile": {
         "invite": "邀请",
-        "openArtifacts": "打开成果面板",
         "openAutomations": "打开自动化面板",
         "openMenu": "打开菜单"
       },
@@ -678,7 +677,6 @@
       "previewSlide": "预览第 {{slideNumber}} 页",
       "previewWebsite": "预览网站模板 {{title}}",
       "previousSlide": "预览上一页",
-      "renameImportedTemplate": "重命名模板",
       "searchConnector": "搜索模板",
       "searchConnectors": "搜索模板",
       "selectStyle": "选择风格 {{style}}",
@@ -717,9 +715,7 @@
       "use": "使用",
       "useThisTemplate": "使用这个模板",
       "visibility": {
-        "changeLabel": "修改模板可见范围",
-        "privateState": "只有你能看到和使用",
-        "workspaceState": "这个工作区里的所有人都能使用"
+        "changeLabel": "修改模板可见范围"
       },
       "website": "网站",
       "websitePreview": "{{title}} 网站模板预览",
@@ -1562,8 +1558,7 @@
         "whatsCooking": "在忙什么呢，{{userName}}？",
         "whatsOnYourMind": "在想些什么，{{userName}}？",
         "whatsTheMove": "下一步怎么走，{{userName}}？"
-      },
-      "viewAgentProfile": "查看智能体资料"
+      }
     },
     "agentSuggestions": {
       "dismiss": "忽略",
@@ -1572,10 +1567,7 @@
       "position": "{{current}} / {{total}}",
       "previous": "上一条建议",
       "recoveryHint": "重新发送前请先检查聊天。你可以将建议恢复到草稿。",
-      "restoreDraft": "恢复到草稿",
-      "runInChat": "在原聊天运行",
-      "runNewChat": "在新聊天运行",
-      "starting": "正在启动…"
+      "restoreDraft": "恢复到草稿"
     },
     "attachments": {
       "attach": "添加附件",
@@ -2922,15 +2914,12 @@
         "website": "网站",
         "workflow": "工作流"
       },
-      "importedLoadFailed": "无法加载已上传的模板。",
-      "importedUnavailable": "已上传的模板暂时不可用。",
       "previewTemplate": "预览模板 {{title}}",
       "previewWebsite": "预览网站模板 {{title}}",
       "previewWorkflow": "预览工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
       "removeWebsite": "移除网站模板 {{title}}",
-      "removeWorkflow": "移除工作流模板 {{title}}",
-      "retry": "重试"
+      "removeWorkflow": "移除工作流模板 {{title}}"
     },
     "thread": {
       "ariaLabel": "聊天会话",
@@ -2955,7 +2944,6 @@
       },
       "noEmojiFound": "没有找到表情",
       "notFound": "找不到该聊天会话",
-      "openArtifacts": "打开成果",
       "openBrowser": "打开浏览器",
       "openNamedAgent": "打开智能体 {{name}}",
       "openNamedChat": "打开聊天 {{title}}",
@@ -3673,7 +3661,6 @@
         "createCodeError": "无法创建连接码，请重试。",
         "creatingCode": "正在创建连接码…",
         "description": "通过短信使用 {{assistantName}}",
-        "destination": "iMessage 或短信发送至",
         "openMessages": "打开 Messages",
         "options": "手机选项",
         "phoneLabel": "电话",
@@ -4199,46 +4186,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "教练与培训",
           "name": "教练与培训",
           "summary": "教练、课程与培训"
         },
         "consulting": {
+          "mobileName": "独立咨询",
           "name": "独立咨询",
           "summary": "商业、人力与 IT 咨询"
         },
         "design": {
+          "mobileName": "设计与创意",
           "name": "设计与创意",
           "summary": "平面、网站与创意工作"
         },
         "finance": {
+          "mobileName": "会计与记账",
           "name": "会计与记账",
           "summary": "账目、报表与对账"
         },
         "investing": {
+          "mobileName": "投资与市场研究",
           "name": "投资与市场研究",
           "summary": "投资、市场与投资组合"
         },
         "marketing": {
+          "mobileName": "市场与内容",
           "name": "市场与内容",
           "summary": "社交媒体、内容与品牌"
         },
         "operations": {
+          "mobileName": "商业与运营",
           "name": "商业与运营",
           "summary": "企业主、助理与运营人员"
         },
         "other": {
+          "mobileName": "其他／还在摸索",
           "name": "其他／还在摸索",
           "summary": "别的领域，或还在摸索"
         },
         "research": {
+          "mobileName": "研究与学习",
           "name": "研究与学习",
           "summary": "调研、学习与进修"
         },
         "sales": {
+          "mobileName": "销售与客户开发",
           "name": "销售与客户开发",
           "summary": "线索开发、销售与客户增长"
         },
         "software": {
+          "mobileName": "软件与应用",
           "name": "软件与应用",
           "summary": "应用、游戏与开发"
         }
@@ -4246,6 +4244,30 @@
       "industry": {
         "copy": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。选择你的领域，获取适合你的第一项任务。",
         "title": "你主要做哪类工作？"
+      },
+      "mobile": {
+        "channelsCopy": "在常用聊天工具中联系 Okou。",
+        "channelsTitle": "选择聊天工具",
+        "connect": "连接",
+        "copyImportPrompt": "复制导入提示词",
+        "existingPlan": "使用我的 {{provider}} 订阅",
+        "experienceTitle": "选择开始方式",
+        "industryCopy": "我们会推荐适合你的首个任务。",
+        "industryTitle": "选择你的工作领域",
+        "instructions": "操作说明",
+        "newCopy": "帮你开始第一个任务。",
+        "newTitle": "从 Okou 开始",
+        "pasteIntoProvider": "粘贴到 {{provider}} 并发送。",
+        "permissionsLabel": "权限与隐私",
+        "planCopy": "用现有订阅运行任务。",
+        "promptTitle": "你想完成什么？",
+        "readyTitle": "开始你的第一个任务",
+        "skillsCopy": "在电脑上使用 {{provider}}。",
+        "skillsTitle": "导入你的技能",
+        "sourcesCopy": "为首个任务连接一个工具。",
+        "startTask": "开始任务",
+        "teamCopy": "在同一个工作区协作。",
+        "teamTitle": "邀请同事"
       },
       "prompt": {
         "intro": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。"

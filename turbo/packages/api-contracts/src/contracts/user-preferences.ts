@@ -1,4 +1,14 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -7,11 +17,11 @@ const c = initContract();
 /**
  * User preferences schemas (shared across contracts)
  */
-export const sendModeSchema = z.enum(["enter", "cmd-enter"]);
-export type SendMode = z.infer<typeof sendModeSchema>;
+export const sendModeSchema = zEnum(["enter", "cmd-enter"]);
+export type SendMode = zInfer<typeof sendModeSchema>;
 
-export const themePreferenceSchema = z.enum(["light", "dark", "system"]);
-export type ThemePreference = z.infer<typeof themePreferenceSchema>;
+export const themePreferenceSchema = zEnum(["light", "dark", "system"]);
+export type ThemePreference = zInfer<typeof themePreferenceSchema>;
 
 export const COLOR_THEMES = [
   // The product's own palette. It is the absence of a preset rather than
@@ -27,8 +37,8 @@ export const COLOR_THEMES = [
   "daydream",
   "deep-lagoon",
 ] as const;
-export const colorThemeSchema = z.enum(COLOR_THEMES);
-export type ColorTheme = z.infer<typeof colorThemeSchema>;
+export const colorThemeSchema = zEnum(COLOR_THEMES);
+export type ColorTheme = zInfer<typeof colorThemeSchema>;
 
 export const SUPPORTED_USER_LOCALES = [
   "en-US",
@@ -47,30 +57,30 @@ export const SUPPORTED_USER_LOCALES = [
   "zh-Hans",
   "zh-Hant",
 ] as const;
-export const userLocaleSchema = z.enum(SUPPORTED_USER_LOCALES);
-export type UserLocale = z.infer<typeof userLocaleSchema>;
+export const userLocaleSchema = zEnum(SUPPORTED_USER_LOCALES);
+export type UserLocale = zInfer<typeof userLocaleSchema>;
 export const DEFAULT_USER_LOCALE = "en-US" satisfies UserLocale;
 
-export const userPreferencesResponseSchema = z.object({
-  timezone: z.string().nullable(),
+export const userPreferencesResponseSchema = object({
+  timezone: string().nullable(),
   locale: userLocaleSchema.nullable(),
-  supportedLocales: z.array(userLocaleSchema),
+  supportedLocales: array(userLocaleSchema),
   // Pinned agents are exposed as membership only. The API returns a stable
   // canonical order and ignores client-provided order on writes.
-  pinnedAgentIds: z.array(z.string()),
+  pinnedAgentIds: array(string()),
   sendMode: sendModeSchema,
-  cloudBrowserEnabledByDefault: z.boolean(),
-  chatResourcesEnabledByDefault: z.boolean(),
+  cloudBrowserEnabledByDefault: boolean(),
+  chatResourcesEnabledByDefault: boolean(),
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
-  captureNetworkBodiesRemaining: z.number().int().min(0),
+  captureNetworkBodiesRemaining: number().int().min(0),
   // False until this member's memory storage has a HEAD. The Web App then
   // calls the idempotent initialize route before starting runs; run creation
   // fails for a member without memory.
-  memoryInitialized: z.boolean(),
+  memoryInitialized: boolean(),
 });
 
-export type UserPreferencesResponse = z.infer<
+export type UserPreferencesResponse = zInfer<
   typeof userPreferencesResponseSchema
 >;
 
@@ -82,39 +92,37 @@ export type InitializedUserPreferencesResponse = Omit<
   "timezone" | "locale"
 > & { readonly timezone: string; readonly locale: UserLocale };
 
-export const updateUserPreferencesRequestSchema = z
-  .object({
-    timezone: z.string().min(1).optional(),
-    locale: userLocaleSchema.optional(),
-    // Membership update only; request order is not used for display ordering.
-    pinnedAgentIds: z.array(z.string()).optional(),
-    sendMode: sendModeSchema.optional(),
-    cloudBrowserEnabledByDefault: z.boolean().optional(),
-    chatResourcesEnabledByDefault: z.boolean().optional(),
-    theme: themePreferenceSchema.optional(),
-    colorTheme: colorThemeSchema.optional(),
-    captureNetworkBodiesRemaining: z.number().int().min(0).optional(),
-  })
-  .refine(
-    (data) => {
-      return (
-        data.timezone !== undefined ||
-        data.locale !== undefined ||
-        data.pinnedAgentIds !== undefined ||
-        data.sendMode !== undefined ||
-        data.cloudBrowserEnabledByDefault !== undefined ||
-        data.chatResourcesEnabledByDefault !== undefined ||
-        data.theme !== undefined ||
-        data.colorTheme !== undefined ||
-        data.captureNetworkBodiesRemaining !== undefined
-      );
-    },
-    {
-      message: "At least one preference must be provided",
-    },
-  );
+export const updateUserPreferencesRequestSchema = object({
+  timezone: string().min(1).optional(),
+  locale: userLocaleSchema.optional(),
+  // Membership update only; request order is not used for display ordering.
+  pinnedAgentIds: array(string()).optional(),
+  sendMode: sendModeSchema.optional(),
+  cloudBrowserEnabledByDefault: boolean().optional(),
+  chatResourcesEnabledByDefault: boolean().optional(),
+  theme: themePreferenceSchema.optional(),
+  colorTheme: colorThemeSchema.optional(),
+  captureNetworkBodiesRemaining: number().int().min(0).optional(),
+}).refine(
+  (data) => {
+    return (
+      data.timezone !== undefined ||
+      data.locale !== undefined ||
+      data.pinnedAgentIds !== undefined ||
+      data.sendMode !== undefined ||
+      data.cloudBrowserEnabledByDefault !== undefined ||
+      data.chatResourcesEnabledByDefault !== undefined ||
+      data.theme !== undefined ||
+      data.colorTheme !== undefined ||
+      data.captureNetworkBodiesRemaining !== undefined
+    );
+  },
+  {
+    message: "At least one preference must be provided",
+  },
+);
 
-export type UpdateUserPreferencesRequest = z.infer<
+export type UpdateUserPreferencesRequest = zInfer<
   typeof updateUserPreferencesRequestSchema
 >;
 
@@ -129,8 +137,8 @@ export const userPreferencesContract = c.router({
     method: "POST",
     path: "/api/user-preferences/initialize",
     headers: authHeadersSchema,
-    body: z.object({
-      timezone: z.string().min(1).optional(),
+    body: object({
+      timezone: string().min(1).optional(),
       locale: userLocaleSchema,
     }),
     responses: {
@@ -147,10 +155,10 @@ export const userPreferencesContract = c.router({
     headers: authHeadersSchema,
     responses: {
       200: userPreferencesResponseSchema,
-      409: z.object({
-        error: z.object({
-          code: z.literal(USER_PREFERENCES_UNINITIALIZED),
-          message: z.string(),
+      409: object({
+        error: object({
+          code: literal(USER_PREFERENCES_UNINITIALIZED),
+          message: string(),
         }),
       }),
       401: apiErrorSchema,

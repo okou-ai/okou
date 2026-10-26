@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -12,42 +12,37 @@ export const VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS = 1_000;
 export const VOICE_IO_TRANSCRIBE_MAX_SEGMENT_SECONDS = 75;
 const VOICE_IO_TRANSCRIBE_MAX_RECORDING_SECONDS = 60 * 60;
 
-export const voiceIoTranscribeSegmentOptionsSchema = z.object({
-  previousTranscript: z.string().max(VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS),
-  overlapDurationSeconds: z.number().min(0).max(2).default(0),
-  totalDurationSeconds: z
-    .number()
+export const voiceIoTranscribeSegmentOptionsSchema = object({
+  previousTranscript: string().max(VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS),
+  overlapDurationSeconds: number().min(0).max(2).default(0),
+  totalDurationSeconds: number()
     .nonnegative()
     .max(VOICE_IO_TRANSCRIBE_MAX_RECORDING_SECONDS),
 });
 
-export type VoiceIoTranscribeSegmentOptions = z.infer<
+export type VoiceIoTranscribeSegmentOptions = zInfer<
   typeof voiceIoTranscribeSegmentOptionsSchema
 >;
 
-export const voiceIoEditorContextSchema = z
-  .object({
-    before: z.string().max(VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS),
-    selected: z.string().max(VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS),
-    after: z.string().max(VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS),
-  })
-  .strict();
+export const voiceIoEditorContextSchema = object({
+  before: string().max(VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS),
+  selected: string().max(VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS),
+  after: string().max(VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS),
+}).strict();
 
-export type VoiceIoEditorContext = z.infer<typeof voiceIoEditorContextSchema>;
+export type VoiceIoEditorContext = zInfer<typeof voiceIoEditorContextSchema>;
 
 export interface VoiceIoTranscribeContext {
   readonly editorContext?: VoiceIoEditorContext;
   readonly previousTranscript?: string;
 }
 
-export const voiceIoTranscribeSegmentResponseSchema = z
-  .object({
-    transcript: z.string().max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
-    language: z.string().trim().min(1).max(64),
-  })
-  .strict();
+export const voiceIoTranscribeSegmentResponseSchema = object({
+  transcript: string().max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
+  language: string().trim().min(1).max(64),
+}).strict();
 
-export type VoiceIoTranscribeSegmentResponse = z.infer<
+export type VoiceIoTranscribeSegmentResponse = zInfer<
   typeof voiceIoTranscribeSegmentResponseSchema
 >;
 

@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
@@ -6,33 +6,33 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const connectorAgentAccessSchema = z.object({
-  visibleAgentIds: z.array(z.uuid()),
-  builtin: z.array(
-    z.object({
+export const connectorAgentAccessSchema = object({
+  visibleAgentIds: array(uuid()),
+  builtin: array(
+    object({
       connectorSlug: connectorSlugSchema,
-      agentId: z.uuid(),
+      agentId: uuid(),
     }),
   ),
-  custom: z.array(
-    z.object({
-      connectorId: z.uuid(),
-      agentId: z.uuid(),
-      permissionNames: z.array(z.string()),
+  custom: array(
+    object({
+      connectorId: uuid(),
+      agentId: uuid(),
+      permissionNames: array(string()),
     }),
   ),
 });
 
-export type ConnectorAgentAccess = z.infer<typeof connectorAgentAccessSchema>;
+export type ConnectorAgentAccess = zInfer<typeof connectorAgentAccessSchema>;
 
 export const connectorAgentAccessContract = c.router({
   get: {
     method: "GET",
     path: "/api/connectors/agent-access",
     headers: authHeadersSchema,
-    query: z.object({
+    query: object({
       builtinSlug: connectorSlugSchema.optional(),
-      customConnectorId: z.uuid().optional(),
+      customConnectorId: uuid().optional(),
     }),
     responses: {
       200: connectorAgentAccessSchema,

@@ -12,7 +12,7 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import * as z from "zod";
+import type { infer as zInfer } from "zod";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
@@ -85,7 +85,7 @@ interface CalendarEventContext {
   readonly start: GoogleCalendarEvent["start"] | null;
   readonly end: GoogleCalendarEvent["end"] | null;
   readonly organizer: GoogleCalendarEvent["organizer"] | null;
-  readonly attendees: readonly z.infer<typeof calendarEventAttendeeSchema>[];
+  readonly attendees: readonly zInfer<typeof calendarEventAttendeeSchema>[];
   readonly created: string | null;
   readonly updated: string | null;
   readonly recurringEventId: string | null;

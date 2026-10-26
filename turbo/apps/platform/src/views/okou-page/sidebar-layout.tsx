@@ -15,9 +15,7 @@ import {
   useLastResolved,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Menu, Package, Share2, UserPlus } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { Menu, Share2, UserPlus } from "lucide-react";
 import type { RouteKey } from "../../signals/route-paths.ts";
 import { Button, Sheet, SheetTrigger, cn, useMediaQuery } from "@okouai/ui";
 import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
@@ -53,7 +51,6 @@ import {
   InstallBanner,
   IosInstallModal,
 } from "../pwa-install/install-banner.tsx";
-import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 import { ChatShortcutHelpDialog } from "./chat-shortcut-help-dialog.tsx";
 import { ConcurrencyConfirmDialog } from "./components/org-manage/org-billing-tab.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
@@ -129,58 +126,20 @@ function InviteButtonLeaf() {
   );
 }
 
-function MobileArtifactsButtonInner({ thread }: { thread: ChatPanelSignals }) {
-  const resourcesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  const sidebarTarget = useGet(thread.sidebar.target$);
-  const reloadArtifacts = useSet(thread.reloadArtifacts$);
-  const openThreadArtifacts = useOpenThreadArtifacts(thread);
-  const { t } = useTranslation();
-  const open = sidebarTarget?.type === "artifacts";
-
-  if (resourcesEnabled) {
-    return <ChatResourcesButton thread={thread} />;
-  }
-
-  return (
-    <Button
-      showTooltip
-      type="button"
-      onClick={() => {
-        reloadArtifacts();
-        openThreadArtifacts();
-      }}
-      variant="quiet"
-      size="icon-sm"
-      className={cn(
-        "shrink-0",
-        open &&
-          "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-      )}
-      aria-label={t(($) => {
-        return $.appShell.sidebar.mobile.openArtifacts;
-      })}
-      aria-pressed={open}
-    >
-      <Package size={16} />
-    </Button>
-  );
-}
-
 function useCurrentThread() {
   const leftThread = useGet(currentLeftThread$);
   const rightThread = useGet(currentRightThread$);
   return leftThread ?? rightThread;
 }
 
-function MobileArtifactsButtonLeaf() {
+function MobileResourcesButtonLeaf() {
   const thread = useCurrentThread();
 
   if (!thread) {
     return null;
   }
 
-  return <MobileArtifactsButtonInner thread={thread} />;
+  return <ChatResourcesButton thread={thread} />;
 }
 
 function MobileAutomationButtonLeaf() {
@@ -319,7 +278,7 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
         <SettledChatThreadActions thread={thread}>
           <MobileShareButtonLeaf />
           <MobileAutomationButtonLeaf />
-          <MobileArtifactsButtonLeaf />
+          <MobileResourcesButtonLeaf />
         </SettledChatThreadActions>
       )}
       {showInviteFallback && <InviteButtonLeaf />}

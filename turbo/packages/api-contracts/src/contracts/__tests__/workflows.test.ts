@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { string } from "zod";
 
 import {
   workflowSummarySchema,
@@ -408,8 +408,8 @@ describe("workflow display-profile rollout compatibility", () => {
 
   it("allows an old app's optional nullable fields to be omitted by a new API", () => {
     const oldSummary = workflowSummarySchema.extend({
-      ownerUserDisplayName: z.string().nullable().optional(),
-      ownerUserImageUrl: z.string().nullable().optional(),
+      ownerUserDisplayName: string().nullable().optional(),
+      ownerUserImageUrl: string().nullable().optional(),
     });
     expect(oldSummary.parse(workflow).ownerUserId).toBe("user-owner");
   });

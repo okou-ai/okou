@@ -19,7 +19,7 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
-import * as z from "zod";
+import { boolean, literal, string, object as zObject } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
@@ -423,7 +423,7 @@ export function createChatEventsFixture(context: TestContext) {
       route.selectedModel,
     );
     return {
-      secret: z.string().parse(oauth.oauthTokenResponses[0]?.access_token),
+      secret: string().parse(oauth.oauthTokenResponses[0]?.access_token),
       accountId,
     };
   }
@@ -898,9 +898,10 @@ export function createChatEventsFixture(context: TestContext) {
       body: rawBody,
     });
     expect(response.status).toBe(200);
-    const body = z
-      .object({ success: z.literal(true), duplicate: z.boolean() })
-      .parse(await response.json());
+    const body = zObject({
+      success: literal(true),
+      duplicate: boolean(),
+    }).parse(await response.json());
     // The webhook enqueues and returns; the pick runs in the background.
     await flushWaitUntilForTest();
     return body;

@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { billingCreditCheckoutContract } from "@okouai/api-contracts/contracts/billing";
 import { expect } from "vitest";
-import * as z from "zod";
+import {
+  array,
+  number,
+  object,
+  record,
+  string,
+  type infer as zInfer,
+} from "zod";
+
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../../lib/env";
@@ -13,12 +21,12 @@ import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createRouteMocks } from "./route-test";
 
-const checkoutSchema = z.object({
-  customer: z.string(),
-  invoice_creation: z.object({
-    invoice_data: z.object({ metadata: z.record(z.string(), z.string()) }),
+const checkoutSchema = object({
+  customer: string(),
+  invoice_creation: object({
+    invoice_data: object({ metadata: record(string(), string()) }),
   }),
-  line_items: z.array(z.object({ quantity: z.number() })),
+  line_items: array(object({ quantity: number() })),
 });
 
 export async function purchaseToolCredits(
@@ -39,7 +47,7 @@ export async function purchaseToolCredits(
     actor.orgId,
     "org:admin",
   );
-  let observed: z.infer<typeof checkoutSchema> | undefined;
+  let observed: zInfer<typeof checkoutSchema> | undefined;
   const url = `https://checkout.stripe.test/${randomUUID()}`;
   const session = { id: `cs_${randomUUID()}`, url };
   const acceptCheckout = (input: unknown) => {

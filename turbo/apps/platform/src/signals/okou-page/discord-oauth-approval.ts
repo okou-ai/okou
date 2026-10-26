@@ -1,12 +1,10 @@
 import { command, computed, state } from "ccstate";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { onDomEventFn, setLoop, settle } from "../utils.ts";
 import { refreshDiscordOrg$ } from "./discord.ts";
@@ -16,7 +14,7 @@ import {
   type DiscordOauthResult,
 } from "./discord-oauth-message.ts";
 
-type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
+type DiscordApprovalProof = zInfer<typeof discordOauthContract.approve.body>;
 
 // Private, ephemeral consent-browser memory. Nothing is exposed to the opener,
 // browser storage, logging, analytics, or a callback query parameter.
@@ -214,7 +212,7 @@ export const approveDiscordAuthorization$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const proof = get(approvalProof$);
-    if (!proof || !get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
+    if (!proof) {
       return;
     }
     // The authenticated endpoint verifies the initiating account and workspace.

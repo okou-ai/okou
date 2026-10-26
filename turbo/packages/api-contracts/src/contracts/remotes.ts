@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { array, boolean, object, string, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { remoteHostDefaultSchema } from "./chat-remote-access";
@@ -15,20 +15,20 @@ export const computerUseHostBriefSchema = computerUseHostSchema
     lastSeenAt: true,
     status: true,
   })
-  .extend({ hostName: z.string() });
+  .extend({ hostName: string() });
 
-export const remotesOverviewSchema = z.object({
+export const remotesOverviewSchema = object({
   // Computer Use is a resource list only; selection belongs to a thread.
-  computerUseHosts: z.array(computerUseHostBriefSchema),
+  computerUseHosts: array(computerUseHostBriefSchema),
   // Entitlement availability, not a reservation or a provider health check.
-  cloudBrowserAvailable: z.boolean(),
-  cloudBrowserEnabledByDefault: z.boolean(),
+  cloudBrowserAvailable: boolean(),
+  cloudBrowserEnabledByDefault: boolean(),
   // Each host has an independent default; these are not thread overrides.
-  sshHosts: z.array(remoteHostDefaultSchema),
-  vncHosts: z.array(remoteHostDefaultSchema),
+  sshHosts: array(remoteHostDefaultSchema),
+  vncHosts: array(remoteHostDefaultSchema),
 });
 
-export type RemotesOverview = z.infer<typeof remotesOverviewSchema>;
+export type RemotesOverview = zInfer<typeof remotesOverviewSchema>;
 
 export const remotesContract = c.router({
   overview: {

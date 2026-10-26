@@ -1,23 +1,31 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const nullableStringSchema = z.string().nullable();
+const nullableStringSchema = string().nullable();
 
-const teamsEnvironmentSchema = z.object({
-  requiredSecrets: z.array(z.string()),
-  requiredVars: z.array(z.string()),
-  missingSecrets: z.array(z.string()),
-  missingVars: z.array(z.string()),
+const teamsEnvironmentSchema = object({
+  requiredSecrets: array(string()),
+  requiredVars: array(string()),
+  missingSecrets: array(string()),
+  missingVars: array(string()),
 });
 
-const teamsConnectStatusSchema = z.object({
-  isInstalled: z.boolean(),
-  isConnected: z.boolean(),
-  isAdmin: z.boolean(),
+const teamsConnectStatusSchema = object({
+  isInstalled: boolean(),
+  isConnected: boolean(),
+  isAdmin: boolean(),
   installUrl: nullableStringSchema.optional(),
   connectUrl: nullableStringSchema.optional(),
   tenantId: nullableStringSchema.optional(),
@@ -26,56 +34,54 @@ const teamsConnectStatusSchema = z.object({
   teamName: nullableStringSchema.optional(),
   botName: nullableStringSchema.optional(),
   defaultAgentName: nullableStringSchema.optional(),
-  permissionMismatch: z.boolean().optional(),
+  permissionMismatch: boolean().optional(),
   reinstallUrl: nullableStringSchema.optional(),
   environment: teamsEnvironmentSchema.optional(),
-  linkedAccounts: z.array(
-    z.object({
-      tenantId: z.string(),
+  linkedAccounts: array(
+    object({
+      tenantId: string(),
       teamsUserId: nullableStringSchema,
       teamsAadObjectId: nullableStringSchema,
       displayName: nullableStringSchema,
       userPrincipalName: nullableStringSchema,
     }),
   ),
-  pendingInstallation: z.boolean(),
+  pendingInstallation: boolean(),
 });
 
-const teamsConnectBodySchema = z
-  .object({
-    tenantId: z.string().min(1),
-    tenantName: z.string().min(1).optional(),
-    teamsUserId: z.string().min(1).optional(),
-    teamsAadObjectId: z.string().min(1).optional(),
-    teamsUserDisplayName: z.string().min(1).optional(),
-    teamsUserPrincipalName: z.string().min(1).optional(),
-    teamId: z.string().min(1).optional(),
-    teamName: z.string().min(1).optional(),
-    serviceUrl: z.string().min(1).optional(),
-    conversationId: z.string().min(1).optional(),
-    conversationType: z.string().min(1).optional(),
-    activityId: z.string().min(1).optional(),
-    channelId: z.string().min(1).optional(),
-    threadId: z.string().min(1).optional(),
-  })
-  .refine(
-    (body) => {
-      return Boolean(body.teamsUserId || body.teamsAadObjectId);
-    },
-    {
-      message: "teamsUserId or teamsAadObjectId is required",
-      path: ["teamsUserId"],
-    },
-  );
+const teamsConnectBodySchema = object({
+  tenantId: string().min(1),
+  tenantName: string().min(1).optional(),
+  teamsUserId: string().min(1).optional(),
+  teamsAadObjectId: string().min(1).optional(),
+  teamsUserDisplayName: string().min(1).optional(),
+  teamsUserPrincipalName: string().min(1).optional(),
+  teamId: string().min(1).optional(),
+  teamName: string().min(1).optional(),
+  serviceUrl: string().min(1).optional(),
+  conversationId: string().min(1).optional(),
+  conversationType: string().min(1).optional(),
+  activityId: string().min(1).optional(),
+  channelId: string().min(1).optional(),
+  threadId: string().min(1).optional(),
+}).refine(
+  (body) => {
+    return Boolean(body.teamsUserId || body.teamsAadObjectId);
+  },
+  {
+    message: "teamsUserId or teamsAadObjectId is required",
+    path: ["teamsUserId"],
+  },
+);
 
-const teamsConnectResponseSchema = z.object({
-  success: z.literal(true),
-  connectionId: z.string(),
-  role: z.enum(["admin", "member"]),
+const teamsConnectResponseSchema = object({
+  success: literal(true),
+  connectionId: string(),
+  role: zEnum(["admin", "member"]),
 });
 
-const teamsDisconnectResponseSchema = z.object({
-  success: z.literal(true),
+const teamsDisconnectResponseSchema = object({
+  success: literal(true),
 });
 
 export const teamsConnectContract = c.router({
@@ -107,8 +113,8 @@ export const teamsConnectContract = c.router({
     method: "DELETE",
     path: "/api/integrations/teams/connect",
     headers: authHeadersSchema,
-    query: z.object({
-      action: z.string().optional(),
+    query: object({
+      action: string().optional(),
     }),
     responses: {
       200: teamsDisconnectResponseSchema,
@@ -120,10 +126,10 @@ export const teamsConnectContract = c.router({
   },
 });
 
-export type TeamsConnectStatus = z.infer<typeof teamsConnectStatusSchema>;
-export type TeamsConnectBody = z.infer<typeof teamsConnectBodySchema>;
-export type TeamsConnectResponse = z.infer<typeof teamsConnectResponseSchema>;
-export type TeamsDisconnectResponse = z.infer<
+export type TeamsConnectStatus = zInfer<typeof teamsConnectStatusSchema>;
+export type TeamsConnectBody = zInfer<typeof teamsConnectBodySchema>;
+export type TeamsConnectResponse = zInfer<typeof teamsConnectResponseSchema>;
+export type TeamsDisconnectResponse = zInfer<
   typeof teamsDisconnectResponseSchema
 >;
 export type TeamsConnectContract = typeof teamsConnectContract;

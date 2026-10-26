@@ -23,7 +23,7 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, exists, sql } from "drizzle-orm";
-import * as z from "zod";
+import { string } from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
@@ -121,7 +121,7 @@ function validStringParameterValue(
     return isValidTimeZone(value);
   }
   if (parameter.format === "date-time") {
-    return z.string().datetime({ offset: true }).safeParse(value).success;
+    return string().datetime({ offset: true }).safeParse(value).success;
   }
   if (parameter.format === "url") {
     return URL.canParse(value);

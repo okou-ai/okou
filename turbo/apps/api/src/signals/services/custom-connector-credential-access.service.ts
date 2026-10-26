@@ -19,7 +19,7 @@ import {
   type SQLWrapper,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { enum as zEnum, type output } from "zod";
 
 import {
   pgTextDecoder,
@@ -34,8 +34,8 @@ import {
 
 const OAUTH_ACCESS_TOKEN_SECRET_NAME = "access_token";
 const OAUTH_REFRESH_TOKEN_SECRET_NAME = "refresh_token";
-const customConnectorRuntimeStorageKindSchema = z.enum(["secret", "variable"]);
-type CustomConnectorRuntimeStorageKind = z.output<
+const customConnectorRuntimeStorageKindSchema = zEnum(["secret", "variable"]);
+type CustomConnectorRuntimeStorageKind = output<
   typeof customConnectorRuntimeStorageKindSchema
 >;
 const customConnectorRuntimeStorageKindDecoder = zodEnumDriverValueDecoder(

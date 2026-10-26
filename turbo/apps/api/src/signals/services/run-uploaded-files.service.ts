@@ -12,7 +12,7 @@ import {
   type RunUploadedFileSource,
 } from "@okouai/db/schema/run-uploaded-file";
 
-import * as z from "zod";
+import { object, string, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
@@ -116,9 +116,9 @@ interface RecordRunUploadedFileArgs {
   readonly resetPreviewForDeploymentId?: string;
 }
 
-const recordedUploadedFileSchema = z.object({
-  id: z.uuid(),
-  previewImageUrl: z.string().nullable(),
+const recordedUploadedFileSchema = object({
+  id: uuid(),
+  previewImageUrl: string().nullable(),
 });
 
 const recordRunUploadedFile$ = command(

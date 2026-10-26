@@ -20,7 +20,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { array, boolean, int, number, object, string, uuid } from "zod";
 
 import {
   parseRawRows,
@@ -55,33 +55,32 @@ interface UsageEventCompactionStats {
   readonly durationMs: number;
 }
 
-const integerTextSchema = z.string().regex(/^-?\d+$/);
-const safeCountSchema = z
-  .string()
+const integerTextSchema = string().regex(/^-?\d+$/);
+const safeCountSchema = string()
   .regex(/^\d+$/)
   .transform(Number)
-  .pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));
+  .pipe(number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));
 
-const cutoffRowSchema = z.object({
+const cutoffRowSchema = object({
   cutoff: pgTimestampWithoutTimezoneToDateSchema,
 });
 
-const holdProbeRowSchema = z.object({
-  probedRawRows: z.int(),
-  billingErrorHeldRows: z.int(),
+const holdProbeRowSchema = object({
+  probedRawRows: int(),
+  billingErrorHeldRows: int(),
 });
 
-const compactionRowSchema = z.object({
-  seededRawRows: z.int(),
-  selectedGrains: z.int(),
-  rawRowsDeleted: z.int(),
-  hourlyRowsDeleted: z.int(),
-  hourlyRowsInserted: z.int(),
+const compactionRowSchema = object({
+  seededRawRows: int(),
+  selectedGrains: int(),
+  rawRowsDeleted: int(),
+  hourlyRowsDeleted: int(),
+  hourlyRowsInserted: int(),
   maxGrainSourceRows: safeCountSchema,
   quantity: integerTextSchema,
   creditsCharged: integerTextSchema,
-  reconciled: z.boolean(),
-  observedRunIds: z.array(z.uuid()).max(USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT),
+  reconciled: boolean(),
+  observedRunIds: array(uuid()).max(USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT),
 });
 
 // The explicit null order matches a reverse scan of the deployed

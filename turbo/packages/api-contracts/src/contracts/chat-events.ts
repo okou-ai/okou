@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { enum as zEnum, type infer as zInfer } from "zod";
 
 /** Row-level event catalog for chat event schema V8. */
 export const CHAT_EVENT_TYPES = [
@@ -31,13 +31,13 @@ export const CHAT_EVENT_CONTEXT_TYPES = [
   "agent_run",
 ] as const;
 
-export const chatEventContextTypeSchema = z.enum(CHAT_EVENT_CONTEXT_TYPES);
+export const chatEventContextTypeSchema = zEnum(CHAT_EVENT_CONTEXT_TYPES);
 
-export type ChatEventContextType = z.infer<typeof chatEventContextTypeSchema>;
+export type ChatEventContextType = zInfer<typeof chatEventContextTypeSchema>;
 
-export const chatEventTypeSchema = z.enum(CHAT_EVENT_TYPES);
+export const chatEventTypeSchema = zEnum(CHAT_EVENT_TYPES);
 
-export type ChatEventType = z.infer<typeof chatEventTypeSchema>;
+export type ChatEventType = zInfer<typeof chatEventTypeSchema>;
 export type ChatEventCompatibilityRole = "user" | "assistant";
 export type ChatEventRunLifecycle = "completed" | "failed" | "cancelled";
 export type ChatRunFoldState = ChatEventRunLifecycle;

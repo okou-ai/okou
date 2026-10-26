@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { boolean, object } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { proactivePreferenceSchema } from "./proactive";
@@ -24,7 +24,7 @@ export const proactiveJobsContract = c.router({
     method: "PUT",
     path: "/api/preferences/proactive-jobs",
     headers: authHeadersSchema,
-    body: z.object({ enabled: z.boolean() }),
+    body: object({ enabled: boolean() }),
     responses: { 200: proactivePreferenceSchema, ...errors },
     summary:
       "Enable planning and execution within your explicitly delegated scope",

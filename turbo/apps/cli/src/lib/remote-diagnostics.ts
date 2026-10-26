@@ -1,5 +1,14 @@
 import { Command } from "commander";
-import { z } from "zod";
+import {
+  literal,
+  strictObject,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { decodeSandboxTokenPayload } from "./api/sandbox-token";
 import { withErrorHandler } from "./command/with-error-handler";
 import { diagnosticTextSchema } from "./diagnostic-text";
@@ -12,20 +21,20 @@ import {
 } from "./runner-rpc";
 
 type Protocol = "ssh" | "vnc";
-const querySchema = z.strictObject({
-  status: z.enum([
+const querySchema = strictObject({
+  status: zEnum([
     "found",
     "no_failure",
     "not_retained",
     "authority_unavailable",
     "unavailable",
   ]),
-  message: diagnosticTextSchema.pipe(z.string()),
+  message: diagnosticTextSchema.pipe(string()),
 });
-type Query = z.infer<typeof querySchema>;
+type Query = zInfer<typeof querySchema>;
 type Unavailable = { status: "unavailable"; reason: string; message: string };
-const envelope = z.union([
-  z.strictObject({ type: z.literal("result"), data: querySchema }),
+const envelope = union([
+  strictObject({ type: literal("result"), data: querySchema }),
   rpcErrorSchema,
 ]);
 
@@ -147,7 +156,7 @@ Passive history only, within this Run. Current read permission and host/chat vis
             sessionId: options.sessionId,
           })) {
             if (value !== undefined) {
-              if (!z.uuid().safeParse(value).success)
+              if (!uuid().safeParse(value).success)
                 throw new Error(
                   "Use exact UUID selectors from this Run's host/session list or diagnostic explanation.",
                 );

@@ -1,5 +1,5 @@
 import { accept } from "@okouai/connectors/accept";
-import * as z from "zod";
+import { boolean, number, object, string, type infer as zInfer } from "zod";
 
 import type { SubscriptionUsageMetadata } from "./model-provider-subscription-usage.types";
 
@@ -9,30 +9,26 @@ const CLAUDE_CODE_USER_AGENT = "claude-code/2.1.161";
 const FIVE_HOUR_SECONDS = 5 * 60 * 60;
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
 
-const usageWindowSchema = z
-  .object({
-    limit_window_seconds: z.number().nullable().optional(),
-    resets_at: z.string().nullable().optional(),
-    resetsAt: z.string().nullable().optional(),
-    reset_at: z.string().nullable().optional(),
-    resetAt: z.string().nullable().optional(),
-    used_percentage: z.number().nullable().optional(),
-    used_percent: z.number().nullable().optional(),
-    usedPercentage: z.number().nullable().optional(),
-    usedPercent: z.number().nullable().optional(),
-    utilization: z.number().nullable().optional(),
-    window_seconds: z.number().nullable().optional(),
-  })
-  .passthrough();
+const usageWindowSchema = object({
+  limit_window_seconds: number().nullable().optional(),
+  resets_at: string().nullable().optional(),
+  resetsAt: string().nullable().optional(),
+  reset_at: string().nullable().optional(),
+  resetAt: string().nullable().optional(),
+  used_percentage: number().nullable().optional(),
+  used_percent: number().nullable().optional(),
+  usedPercentage: number().nullable().optional(),
+  usedPercent: number().nullable().optional(),
+  utilization: number().nullable().optional(),
+  window_seconds: number().nullable().optional(),
+}).passthrough();
 
-const usageRateLimitsSchema = z
-  .object({
-    five_hour: usageWindowSchema.nullable().optional(),
-    seven_day: usageWindowSchema.nullable().optional(),
-    seven_day_opus: usageWindowSchema.nullable().optional(),
-    seven_day_sonnet: usageWindowSchema.nullable().optional(),
-  })
-  .passthrough();
+const usageRateLimitsSchema = object({
+  five_hour: usageWindowSchema.nullable().optional(),
+  seven_day: usageWindowSchema.nullable().optional(),
+  seven_day_opus: usageWindowSchema.nullable().optional(),
+  seven_day_sonnet: usageWindowSchema.nullable().optional(),
+}).passthrough();
 
 const usageResponseSchema = usageRateLimitsSchema
   .extend({
@@ -40,37 +36,33 @@ const usageResponseSchema = usageRateLimitsSchema
   })
   .passthrough();
 
-const profileResponseSchema = z
-  .object({
-    account: z
-      .object({
-        uuid: z.string().nullable().optional(),
-        email: z.string().nullable().optional(),
-        display_name: z.string().nullable().optional(),
-        full_name: z.string().nullable().optional(),
-        has_claude_max: z.boolean().nullable().optional(),
-        has_claude_pro: z.boolean().nullable().optional(),
-      })
-      .passthrough()
-      .nullable()
-      .optional(),
-    organization: z
-      .object({
-        uuid: z.string().nullable().optional(),
-        name: z.string().nullable().optional(),
-        organization_name: z.string().nullable().optional(),
-        organization_type: z.string().nullable().optional(),
-        rate_limit_tier: z.string().nullable().optional(),
-      })
-      .passthrough()
-      .nullable()
-      .optional(),
+const profileResponseSchema = object({
+  account: object({
+    uuid: string().nullable().optional(),
+    email: string().nullable().optional(),
+    display_name: string().nullable().optional(),
+    full_name: string().nullable().optional(),
+    has_claude_max: boolean().nullable().optional(),
+    has_claude_pro: boolean().nullable().optional(),
   })
-  .passthrough();
+    .passthrough()
+    .nullable()
+    .optional(),
+  organization: object({
+    uuid: string().nullable().optional(),
+    name: string().nullable().optional(),
+    organization_name: string().nullable().optional(),
+    organization_type: string().nullable().optional(),
+    rate_limit_tier: string().nullable().optional(),
+  })
+    .passthrough()
+    .nullable()
+    .optional(),
+}).passthrough();
 
-type ProfileResponse = z.infer<typeof profileResponseSchema>;
-type UsageResponse = z.infer<typeof usageResponseSchema>;
-type UsageWindow = z.infer<typeof usageWindowSchema>;
+type ProfileResponse = zInfer<typeof profileResponseSchema>;
+type UsageResponse = zInfer<typeof usageResponseSchema>;
+type UsageWindow = zInfer<typeof usageWindowSchema>;
 
 interface ClaudeCodeSubscriptionMetadata {
   readonly externalAccountId?: string | null;

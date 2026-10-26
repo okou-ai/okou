@@ -1,7 +1,15 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { getVercelOidcTokenSync } from "@vercel/oidc";
 import { delay } from "signal-timers";
-import * as z from "zod";
+import {
+  array,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -32,24 +40,19 @@ const MAX_TOKEN_ATTEMPTS = 3;
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
-const configurationSchema = z.object({
-  project: z.string().regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u),
-  provider: z
-    .string()
-    .regex(
-      /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[a-z0-9-]+\/providers\/[a-z0-9-]+$/u,
-    ),
-  serviceAccount: z
-    .string()
-    .regex(
-      /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/u,
-    ),
+const configurationSchema = object({
+  project: string().regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u),
+  provider: string().regex(
+    /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[a-z0-9-]+\/providers\/[a-z0-9-]+$/u,
+  ),
+  serviceAccount: string().regex(
+    /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/u,
+  ),
 });
-const certificateChainSchema = z
-  .array(z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/u))
+const certificateChainSchema = array(string().regex(/^[A-Za-z0-9+/]+={0,2}$/u))
   .min(1)
   .max(5);
-type Configuration = z.infer<typeof configurationSchema> &
+type Configuration = zInfer<typeof configurationSchema> &
   (
     | { readonly identity: "oidc" }
     | {
@@ -113,15 +116,15 @@ const credentials = singleton(() => {
   return new Map<string, Credential>();
 });
 
-const stsResponseSchema = z.object({
-  access_token: z.string().trim().min(1),
-  token_type: z.literal("Bearer"),
-  issued_token_type: z.literal(ACCESS_TOKEN_TYPE),
-  expires_in: z.number().finite().positive().max(3600),
+const stsResponseSchema = object({
+  access_token: string().trim().min(1),
+  token_type: literal("Bearer"),
+  issued_token_type: literal(ACCESS_TOKEN_TYPE),
+  expires_in: number().finite().positive().max(3600),
 });
-const impersonationResponseSchema = z.object({
-  accessToken: z.string().trim().min(1),
-  expireTime: z.iso.datetime({ offset: true }),
+const impersonationResponseSchema = object({
+  accessToken: string().trim().min(1),
+  expireTime: iso.datetime({ offset: true }),
 });
 
 function retryAfterMs(value: string | null): number | undefined {

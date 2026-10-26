@@ -8,7 +8,6 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Copy, Package } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
   cn,
@@ -30,7 +29,6 @@ import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
 import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
@@ -52,14 +50,13 @@ export function ChatResourcesButton({
   readonly thread: ChatPanelSignals;
   readonly largeTarget?: boolean;
 }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const mainThreadId = useGet(currentChatThreadId$);
   const secondaryThreadId = useGet(searchParams$).get(SIDEBAR_PARAM);
   // The old pane can remain mounted while the next thread's metadata loads.
   const current =
     mainThreadId !== null &&
     (thread.threadId === mainThreadId || thread.threadId === secondaryThreadId);
-  return enabled && current ? (
+  return current ? (
     <ChatResourcesButtonInner
       key={thread.threadId}
       thread={thread}

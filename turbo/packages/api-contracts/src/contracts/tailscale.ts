@@ -1,22 +1,32 @@
-import * as z from "zod";
+import {
+  array,
+  int,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { vncNetworkHostReferenceSchema } from "./vnc-transport";
 
-export const tailscaleChangedPayloadSchema = z
-  .object({ orgId: z.string().min(1) })
-  .strict();
+export const tailscaleChangedPayloadSchema = object({
+  orgId: string().min(1),
+}).strict();
 export const TAILSCALE_CREDENTIAL_MAX_LENGTH = 4_096;
-const credentialValue = z
-  .string()
+const credentialValue = string()
   .min(1)
   .max(TAILSCALE_CREDENTIAL_MAX_LENGTH)
   .regex(/^[\x21-\x7e]+$/u);
-export const tailscaleCredentialsSchema = z
-  .object({ clientId: credentialValue, clientSecret: credentialValue })
-  .strict();
-export const tailscaleTagsSchema = z
-  .array(z.string().regex(/^tag:[a-z][a-z0-9-]{0,62}$/u))
+export const tailscaleCredentialsSchema = object({
+  clientId: credentialValue,
+  clientSecret: credentialValue,
+}).strict();
+export const tailscaleTagsSchema = array(
+  string().regex(/^tag:[a-z][a-z0-9-]{0,62}$/u),
+)
   .min(1)
   .max(16)
   .refine(
@@ -27,42 +37,35 @@ export const tailscaleTagsSchema = z
       message: "Tags must be unique",
     },
   );
-const revision = z.int().positive().max(2_147_483_647);
-const name = z.string().trim().min(1).max(128);
-export const createTailscaleRequestSchema = z
-  .object({
-    name,
-    credentials: tailscaleCredentialsSchema,
-    tags: tailscaleTagsSchema,
-  })
-  .strict();
+const revision = int().positive().max(2_147_483_647);
+const name = string().trim().min(1).max(128);
+export const createTailscaleRequestSchema = object({
+  name,
+  credentials: tailscaleCredentialsSchema,
+  tags: tailscaleTagsSchema,
+}).strict();
 const createBody = createTailscaleRequestSchema.extend({
-  id: z.uuid(),
-  scope: z.enum(["personal", "organization"]).optional(),
+  id: uuid(),
+  scope: zEnum(["personal", "organization"]).optional(),
 });
-export const tailscaleConfigSchema = z
-  .object({
-    id: z.uuid(),
-    name: z.string(),
-    scope: z.enum(["personal", "organization"]),
-    tags: tailscaleTagsSchema,
-    revision,
-    generation: revision,
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-    sshHosts: z.array(
-      z.object({ id: z.uuid(), displayName: z.string() }).strict(),
-    ),
-    vncHosts: z.array(vncNetworkHostReferenceSchema),
-  })
-  .strict();
-const updateBody = z
-  .object({
-    expectedRevision: revision,
-    name: name.optional(),
-    credentials: tailscaleCredentialsSchema.optional(),
-    tags: tailscaleTagsSchema.optional(),
-  })
+export const tailscaleConfigSchema = object({
+  id: uuid(),
+  name: string(),
+  scope: zEnum(["personal", "organization"]),
+  tags: tailscaleTagsSchema,
+  revision,
+  generation: revision,
+  createdAt: string().datetime(),
+  updatedAt: string().datetime(),
+  sshHosts: array(object({ id: uuid(), displayName: string() }).strict()),
+  vncHosts: array(vncNetworkHostReferenceSchema),
+}).strict();
+const updateBody = object({
+  expectedRevision: revision,
+  name: name.optional(),
+  credentials: tailscaleCredentialsSchema.optional(),
+  tags: tailscaleTagsSchema.optional(),
+})
   .strict()
   .refine(
     (body) => {
@@ -74,34 +77,29 @@ const updateBody = z
     },
     { message: "At least one Tailscale field must be updated" },
   );
-const impactSnapshot = z.string().regex(/^[a-f0-9]{64}$/u);
-const deleteBody = z
-  .object({
-    expectedRevision: revision,
-    impactSnapshot: impactSnapshot.optional(),
-  })
-  .strict();
-const conversionBody = z
-  .object({ expectedRevision: revision, impactSnapshot })
-  .strict();
-const impactPreviewSchema = z
-  .object({
-    expectedRevision: revision,
-    ownHostCount: z.int().nonnegative(),
-    otherHostCount: z.int().nonnegative(),
-    affectedOwners: z.array(
-      z
-        .object({
-          userId: z.string().min(1),
-          displayName: z.string().nullable(),
-        })
-        .strict(),
-    ),
-    impactSnapshot,
-  })
-  .strict();
+const impactSnapshot = string().regex(/^[a-f0-9]{64}$/u);
+const deleteBody = object({
+  expectedRevision: revision,
+  impactSnapshot: impactSnapshot.optional(),
+}).strict();
+const conversionBody = object({
+  expectedRevision: revision,
+  impactSnapshot,
+}).strict();
+const impactPreviewSchema = object({
+  expectedRevision: revision,
+  ownHostCount: int().nonnegative(),
+  otherHostCount: int().nonnegative(),
+  affectedOwners: array(
+    object({
+      userId: string().min(1),
+      displayName: string().nullable(),
+    }).strict(),
+  ),
+  impactSnapshot,
+}).strict();
 const c = initContract();
-const pathParams = z.object({ configId: z.uuid() }).strict();
+const pathParams = object({ configId: uuid() }).strict();
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
@@ -116,7 +114,7 @@ export const tailscaleContract = c.router({
     path: "/api/tailscale/configs",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ configs: z.array(tailscaleConfigSchema) }).strict(),
+      200: object({ configs: array(tailscaleConfigSchema) }).strict(),
       ...errors,
     },
   },
@@ -148,7 +146,7 @@ export const tailscaleContract = c.router({
     path: "/api/tailscale/configs/:configId/convert-to-organization",
     headers: authHeadersSchema,
     pathParams,
-    body: z.object({ expectedRevision: revision }).strict(),
+    body: object({ expectedRevision: revision }).strict(),
     responses: { 200: tailscaleConfigSchema, ...errors },
   },
   impactPreview: {
@@ -156,7 +154,7 @@ export const tailscaleContract = c.router({
     path: "/api/tailscale/configs/:configId/impact-preview",
     headers: authHeadersSchema,
     pathParams,
-    query: z.object({ operation: z.enum(["convert", "delete"]) }).strict(),
+    query: object({ operation: zEnum(["convert", "delete"]) }).strict(),
     responses: { 200: impactPreviewSchema, ...errors },
   },
   convertToPersonal: {
@@ -168,12 +166,12 @@ export const tailscaleContract = c.router({
     responses: { 200: tailscaleConfigSchema, ...errors },
   },
 });
-export type TailscaleConfig = z.infer<typeof tailscaleConfigSchema>;
-export type TailscaleImpactPreview = z.infer<typeof impactPreviewSchema>;
-export type CreateTailscaleRequest = z.infer<
+export type TailscaleConfig = zInfer<typeof tailscaleConfigSchema>;
+export type TailscaleImpactPreview = zInfer<typeof impactPreviewSchema>;
+export type CreateTailscaleRequest = zInfer<
   typeof createTailscaleRequestSchema
 >;
-export type CreateTailscaleConfigRequest = z.infer<typeof createBody>;
-export type UpdateTailscaleRequest = z.infer<typeof updateBody>;
-export type DeleteTailscaleRequest = z.infer<typeof deleteBody>;
-export type ConvertTailscaleRequest = z.infer<typeof conversionBody>;
+export type CreateTailscaleConfigRequest = zInfer<typeof createBody>;
+export type UpdateTailscaleRequest = zInfer<typeof updateBody>;
+export type DeleteTailscaleRequest = zInfer<typeof deleteBody>;
+export type ConvertTailscaleRequest = zInfer<typeof conversionBody>;

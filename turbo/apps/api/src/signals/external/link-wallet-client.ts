@@ -1,5 +1,5 @@
 import { Link, LinkResponseError, LinkTransportError } from "@stripe/link-sdk";
-import * as z from "zod";
+import { array, number, object, string, union } from "zod";
 
 import { settleIncludingAbort } from "../utils";
 
@@ -52,11 +52,11 @@ export type LinkWalletSdkRequest =
       readonly id: string;
     };
 
-const validationIssuesSchema = z.object({
-  issues: z.array(
-    z.object({
-      path: z.array(z.union([z.string(), z.number()])),
-      code: z.string(),
+const validationIssuesSchema = object({
+  issues: array(
+    object({
+      path: array(union([string(), number()])),
+      code: string(),
     }),
   ),
 });

@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -76,22 +76,18 @@ export async function exchangeAsanaCode(
     await throwOAuthError("Asana", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      token_type: z.string().optional(),
-      error: z.string().optional(),
-      data: z
-        .object({
-          gid: z.string(),
-          name: z.string().nullable().optional(),
-          email: z.string().nullable().optional(),
-        })
-        .optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    token_type: string().optional(),
+    error: string().optional(),
+    data: object({
+      gid: string(),
+      name: string().nullable().optional(),
+      email: string().nullable().optional(),
+    }).optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(`Asana OAuth error: ${data.error}`);
@@ -138,15 +134,13 @@ async function fetchAsanaUserInfo(accessToken: string): Promise<{
     );
   }
 
-  const body = z
-    .object({
-      data: z.object({
-        gid: z.string(),
-        name: z.string().nullable().optional(),
-        email: z.string().nullable().optional(),
-      }),
-    })
-    .parse(await response.json());
+  const body = object({
+    data: object({
+      gid: string(),
+      name: string().nullable().optional(),
+      email: string().nullable().optional(),
+    }),
+  }).parse(await response.json());
 
   return {
     id: body.data.gid,
@@ -183,15 +177,13 @@ export async function refreshAsanaToken(
     await throwOAuthError("Asana", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(`Asana refresh error: ${data.error}`);

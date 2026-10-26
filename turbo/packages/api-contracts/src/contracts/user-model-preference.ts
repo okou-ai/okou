@@ -1,4 +1,5 @@
-import * as z from "zod";
+import { object, string, type infer as zInfer } from "zod";
+
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { imageModelIdSchema } from "./image-models";
@@ -11,19 +12,19 @@ import {
 
 const c = initContract();
 
-export const userModelPreferenceResponseSchema = z.object({
+export const userModelPreferenceResponseSchema = object({
   selectedModel: runModelIdSchema.nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   modelSettings: modelSettingsSchema.default({}),
   selectedImageModel: imageModelIdSchema.nullable(),
-  updatedAt: z.string().nullable(),
+  updatedAt: string().nullable(),
 });
 
-export type UserModelPreferenceResponse = z.infer<
+export type UserModelPreferenceResponse = zInfer<
   typeof userModelPreferenceResponseSchema
 >;
 
-export const updateUserModelPreferenceRequestSchema = z.object({
+export const updateUserModelPreferenceRequestSchema = object({
   selectedModel: runModelIdSchema.nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   /** Patch only the named model; omitted preserves every stored model setting. */
@@ -36,7 +37,7 @@ export const updateUserModelPreferenceRequestSchema = z.object({
   selectedImageModel: imageModelIdSchema.nullable().optional(),
 });
 
-export type UpdateUserModelPreferenceRequest = z.infer<
+export type UpdateUserModelPreferenceRequest = zInfer<
   typeof updateUserModelPreferenceRequestSchema
 >;
 

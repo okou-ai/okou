@@ -12,7 +12,8 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";
 import { Buffer } from "node:buffer";
-import * as z from "zod";
+import { object, string, record as zRecord, type infer as zInfer } from "zod";
+
 import { optionalEnv } from "../../lib/env";
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -33,59 +34,51 @@ import {
   reconcileGoogleMeetSubscriptionInventory$,
 } from "./google-meet-automation-watch.service";
 
-const pubSubPushSchema = z.object({
-  message: z
-    .object({
-      data: z.string().optional(),
-      messageId: z.string().optional(),
-      message_id: z.string().optional(),
-      attributes: z.record(z.string(), z.string()).optional(),
-    })
-    .passthrough(),
-  subscription: z.string().optional(),
+const pubSubPushSchema = object({
+  message: object({
+    data: string().optional(),
+    messageId: string().optional(),
+    message_id: string().optional(),
+    attributes: zRecord(string(), string()).optional(),
+  }).passthrough(),
+  subscription: string().optional(),
 });
 
-const cloudEventNamedResourceSchema = z
-  .object({
-    name: z.string().optional(),
-  })
-  .passthrough();
+const cloudEventNamedResourceSchema = object({
+  name: string().optional(),
+}).passthrough();
 
-const workspaceCloudEventDataSchema = z
-  .object({
-    subscription: cloudEventNamedResourceSchema
-      .extend({
-        expire_time: z.string().optional(),
-        state: z.string().optional(),
-      })
-      .optional(),
-    transcript: cloudEventNamedResourceSchema.optional(),
-    conferenceRecord: cloudEventNamedResourceSchema
-      .extend({
-        transcript: cloudEventNamedResourceSchema.optional(),
-      })
-      .optional(),
-  })
-  .passthrough();
+const workspaceCloudEventDataSchema = object({
+  subscription: cloudEventNamedResourceSchema
+    .extend({
+      expire_time: string().optional(),
+      state: string().optional(),
+    })
+    .optional(),
+  transcript: cloudEventNamedResourceSchema.optional(),
+  conferenceRecord: cloudEventNamedResourceSchema
+    .extend({
+      transcript: cloudEventNamedResourceSchema.optional(),
+    })
+    .optional(),
+}).passthrough();
 
-const workspaceCloudEventSchema = z
-  .object({
-    id: z.string(),
-    source: z.string(),
-    subject: z.string().optional(),
-    type: z.string(),
-    time: z.string().optional(),
-    specversion: z.string().optional(),
-    spec_version: z.string().optional(),
-    datacontenttype: z.string().optional(),
-    data: workspaceCloudEventDataSchema.optional(),
-  })
-  .passthrough();
+const workspaceCloudEventSchema = object({
+  id: string(),
+  source: string(),
+  subject: string().optional(),
+  type: string(),
+  time: string().optional(),
+  specversion: string().optional(),
+  spec_version: string().optional(),
+  datacontenttype: string().optional(),
+  data: workspaceCloudEventDataSchema.optional(),
+}).passthrough();
 
 interface DecodedWorkspacePubSubPush {
   readonly messageId: string;
   readonly subscription: string | null;
-  readonly cloudEvent: z.infer<typeof workspaceCloudEventSchema>;
+  readonly cloudEvent: zInfer<typeof workspaceCloudEventSchema>;
 }
 
 interface GoogleMeetTranscriptEventContext {
@@ -191,7 +184,7 @@ function decodeBase64Json(input: string | undefined): unknown {
 }
 
 function cloudEventFromPubSubPush(
-  rawPush: z.infer<typeof pubSubPushSchema>,
+  rawPush: zInfer<typeof pubSubPushSchema>,
 ):
   | DecodedWorkspacePubSubPush
   | { readonly kind: "bad_request"; readonly message: string } {
@@ -303,7 +296,7 @@ function transcriptNameFromCloudEventData(data: unknown): string | null {
 }
 
 function subscriptionNameFromCloudEvent(
-  cloudEvent: z.infer<typeof workspaceCloudEventSchema>,
+  cloudEvent: zInfer<typeof workspaceCloudEventSchema>,
 ): string | null {
   const sourceSubscription = subscriptionNameFromSource(cloudEvent.source);
   if (sourceSubscription) {

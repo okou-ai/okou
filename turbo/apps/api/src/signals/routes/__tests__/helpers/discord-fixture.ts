@@ -7,10 +7,19 @@ import {
   type DiscordGatewayEnvelope,
 } from "@okouai/api-contracts/contracts/discord-gateway";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  url,
+  type infer as zInfer,
+} from "zod";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -34,7 +43,6 @@ import {
   createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./discord";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
 export const DISCORD_TEST_APPLICATION_ID = "900000000000000001";
@@ -100,11 +108,6 @@ export async function setupConnectedDiscordActor(
     });
   }
   mockDiscordMemberships(context, [{ userId, orgId, orgRole: "org:admin" }]);
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId, orgId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.DiscordIntegration]: true },
-  );
   const fixture = await createPublicDiscordBinding(context, {
     flow: options.reuseOrganization ? "connect" : "install",
     userId,
@@ -129,34 +132,30 @@ export async function setupConnectedDiscordActor(
   };
 }
 
-const sendBodySchema = z.object({
-  content: z.string(),
-  nonce: z.union([z.string(), z.number()]).optional(),
-  enforce_nonce: z.boolean().optional(),
-  components: z
-    .array(
-      z.object({
-        type: z.literal(1),
-        components: z.array(
-          z.object({
-            type: z.literal(2),
-            style: z.literal(5),
-            label: z.string(),
-            url: z.url(),
-          }),
-        ),
-      }),
-    )
-    .optional(),
-  message_reference: z
-    .object({
-      message_id: z.string(),
-      fail_if_not_exists: z.boolean().optional(),
-    })
-    .optional(),
-  allowed_mentions: z.object({
-    parse: z.array(z.string()),
-    replied_user: z.boolean(),
+const sendBodySchema = object({
+  content: string(),
+  nonce: union([string(), number()]).optional(),
+  enforce_nonce: boolean().optional(),
+  components: array(
+    object({
+      type: literal(1),
+      components: array(
+        object({
+          type: literal(2),
+          style: literal(5),
+          label: string(),
+          url: url(),
+        }),
+      ),
+    }),
+  ).optional(),
+  message_reference: object({
+    message_id: string(),
+    fail_if_not_exists: boolean().optional(),
+  }).optional(),
+  allowed_mentions: object({
+    parse: array(string()),
+    replied_user: boolean(),
   }),
 });
 
@@ -212,7 +211,7 @@ export function mockDiscordProvider(
   const guildIds = new Set([actor.guildId]);
   const sentMessages: (DiscordMessage &
     Pick<
-      z.infer<typeof sendBodySchema>,
+      zInfer<typeof sendBodySchema>,
       "components" | "message_reference" | "allowed_mentions"
     >)[] = [];
   /** Channels whose typing indicator Discord accepted, in request order. */

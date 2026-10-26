@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { coerce, object, preprocess, string } from "zod";
 
 export { initContract } from "./trpc-contract";
 
@@ -18,9 +18,9 @@ export function isValidDateTimestamp(value: number): boolean {
   );
 }
 
-export const timestampQueryNumberSchema = z.preprocess(
+export const timestampQueryNumberSchema = preprocess(
   rejectBlankQueryNumber,
-  z.coerce
+  coerce
     .number()
     .refine(Number.isSafeInteger, {
       message: "Value must be a safe integer",
@@ -36,6 +36,6 @@ export const timestampQueryNumberSchema = z.preprocess(
  * by returning 401 responses.
  *
  */
-export const authHeadersSchema = z.object({
-  authorization: z.string().optional(),
+export const authHeadersSchema = object({
+  authorization: string().optional(),
 });

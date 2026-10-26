@@ -12,7 +12,14 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { Client } from "pg";
 import { create } from "tar";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  record,
+  string,
+  object as zObject,
+  unknown as zUnknown,
+} from "zod";
 import {
   computeContentHashFromHashes,
   hashFileContent,
@@ -112,23 +119,21 @@ const run = async (id: string, ...args: string[]) => {
       },
     },
   );
-  return z
-    .record(z.string(), z.unknown())
-    .parse(JSON.parse(stdout.trim().split("\n").at(-1) ?? ""));
+  return record(string(), zUnknown()).parse(
+    JSON.parse(stdout.trim().split("\n").at(-1) ?? ""),
+  );
 };
 const expectFailure = async (id: string, classification: string) => {
   await assert.rejects(run(id, "--migrate"), (error: unknown) => {
-    const failed = z
-      .object({ code: z.literal(2), stdout: z.string() })
-      .safeParse(error);
+    const failed = zObject({ code: literal(2), stdout: string() }).safeParse(
+      error,
+    );
     if (!failed.success) return false;
-    const summary = z
-      .object({
-        attention: z.array(
-          z.object({ templateId: z.string(), classification: z.string() }),
-        ),
-      })
-      .parse(JSON.parse(failed.data.stdout.trim().split("\n").at(-1) ?? ""));
+    const summary = zObject({
+      attention: array(
+        zObject({ templateId: string(), classification: string() }),
+      ),
+    }).parse(JSON.parse(failed.data.stdout.trim().split("\n").at(-1) ?? ""));
     return summary.attention.some((item) => {
       return item.templateId === id && item.classification === classification;
     });
@@ -245,9 +250,9 @@ try {
           }),
         );
     }
-    const original = z
-      .record(z.string(), z.unknown())
-      .parse(before.presentation_templates?.[0]);
+    const original = record(string(), zUnknown()).parse(
+      before.presentation_templates?.[0],
+    );
     const {
       aspect_ratio: aspectRatio,
       page_keys: pageKeys,
@@ -263,20 +268,18 @@ try {
     ]);
     for (const [key, bytes] of sourceObjects)
       assert.deepEqual(objects.get(key), bytes);
-    const target = z
-      .object({
-        id: z.string(),
-        head_version_id: z.string(),
-        s3_prefix: z.string(),
-      })
-      .parse(
-        (
-          await db.query(
-            "SELECT * FROM storages WHERE org_id = $1 AND name = $2",
-            [fixture.orgId, `user-template@${fixture.id}`],
-          )
-        ).rows[0],
-      );
+    const target = zObject({
+      id: string(),
+      head_version_id: string(),
+      s3_prefix: string(),
+    }).parse(
+      (
+        await db.query(
+          "SELECT * FROM storages WHERE org_id = $1 AND name = $2",
+          [fixture.orgId, `user-template@${fixture.id}`],
+        )
+      ).rows[0],
+    );
     assert.notEqual(target.id, fixture.storageId);
     assert.equal(
       target.head_version_id,

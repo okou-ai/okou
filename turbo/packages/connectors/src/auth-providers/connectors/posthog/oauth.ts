@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string, enum as zEnum } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -7,27 +7,25 @@ import { effectiveOAuthScopes, reportedOAuthScopes } from "../../oauth/scope";
 const POSTHOG_TOKEN_URL = "https://oauth.posthog.com/oauth/token/";
 const POSTHOG_AUTHORIZATION_URL = "https://oauth.posthog.com/oauth/authorize/";
 
-const regionSchema = z
-  .object({
-    region: z.enum(["us", "eu"]),
-    baseUrl: z.enum(["https://us.posthog.com", "https://eu.posthog.com"]),
-  })
-  .refine(
-    ({ region, baseUrl }) => {
-      return baseUrl === `https://${region}.posthog.com`;
-    },
-    {
-      message: "PostHog region and API URL do not match",
-    },
-  );
+const regionSchema = object({
+  region: zEnum(["us", "eu"]),
+  baseUrl: zEnum(["https://us.posthog.com", "https://eu.posthog.com"]),
+}).refine(
+  ({ region, baseUrl }) => {
+    return baseUrl === `https://${region}.posthog.com`;
+  },
+  {
+    message: "PostHog region and API URL do not match",
+  },
+);
 
-const tokenSchema = z.object({
-  access_token: z.string().min(1),
-  refresh_token: z.string().min(1).nullable().optional(),
-  expires_in: z.number().positive().optional(),
-  scope: z.string().optional(),
-  posthog_region: z.string(),
-  posthog_base_url: z.string(),
+const tokenSchema = object({
+  access_token: string().min(1),
+  refresh_token: string().min(1).nullable().optional(),
+  expires_in: number().positive().optional(),
+  scope: string().optional(),
+  posthog_region: string(),
+  posthog_base_url: string(),
 });
 
 function base64Url(bytes: Uint8Array): string {
@@ -159,14 +157,12 @@ async function fetchPosthogUserInfo(baseUrl: string, accessToken: string) {
   if (!response.ok) {
     throw new Error(`PostHog user info fetch failed: ${response.status}`);
   }
-  const data = z
-    .object({
-      id: z.number(),
-      first_name: z.string().optional(),
-      last_name: z.string().optional(),
-      email: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: number(),
+    first_name: string().optional(),
+    last_name: string().optional(),
+    email: string().optional(),
+  }).parse(await response.json());
   const name = [data.first_name, data.last_name].filter(Boolean).join(" ");
   return {
     id: String(data.id),

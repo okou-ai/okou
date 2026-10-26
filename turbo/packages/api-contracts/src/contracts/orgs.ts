@@ -1,16 +1,12 @@
-import * as z from "zod";
+import { object, string, enum as zEnum, type infer as zInfer } from "zod";
+
 import { orgRoleSchema } from "./org-members";
 
 /**
  * Org tier values
  */
-export const orgTierSchema = z.enum([
-  "limited-free-1",
-  "pro",
-  "team",
-  "custom",
-]);
-export type OrgTier = z.infer<typeof orgTierSchema>;
+export const orgTierSchema = zEnum(["limited-free-1", "pro", "team", "custom"]);
+export type OrgTier = zInfer<typeof orgTierSchema>;
 
 const ORG_TIER_SET: ReadonlySet<string> = new Set(orgTierSchema.options);
 
@@ -21,15 +17,15 @@ export function isOrgTier(value: string | null | undefined): value is OrgTier {
 /**
  * Org response schema
  */
-export const orgResponseSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  tier: z.string().optional(),
+export const orgResponseSchema = object({
+  id: string(),
+  name: string(),
+  tier: string().optional(),
   role: orgRoleSchema.optional(),
-  createdBy: z.string().optional(),
+  createdBy: string().optional(),
 });
 
-export type OrgResponse = z.infer<typeof orgResponseSchema>;
+export type OrgResponse = zInfer<typeof orgResponseSchema>;
 
 /**
  * Update org request schema
@@ -38,8 +34,8 @@ export type OrgResponse = z.infer<typeof orgResponseSchema>;
  * optional field would let a body carrying only removed keys (`slug`,
  * `force`) parse into an empty no-op update.
  */
-export const updateOrgRequestSchema = z.object({
-  name: z.string().min(1).max(128),
+export const updateOrgRequestSchema = object({
+  name: string().min(1).max(128),
 });
 
-export type UpdateOrgRequest = z.infer<typeof updateOrgRequestSchema>;
+export type UpdateOrgRequest = zInfer<typeof updateOrgRequestSchema>;

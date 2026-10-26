@@ -1,7 +1,15 @@
 import { command, computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { escapeText } from "entities/escape";
-import * as z from "zod";
+import {
+  array,
+  literal,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
@@ -27,14 +35,14 @@ import {
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { slackPreviewImageUrl } from "./slack-preview-image.service";
 
-export const slackLinkSharedEventSchema = z.object({
-  type: z.literal("link_shared"),
-  channel: z.string().min(1),
-  message_ts: z.string().min(1),
-  links: z.array(z.object({ url: z.string().min(1) })),
+export const slackLinkSharedEventSchema = object({
+  type: literal("link_shared"),
+  channel: string().min(1),
+  message_ts: string().min(1),
+  links: array(object({ url: string().min(1) })),
 });
 
-export type SlackLinkSharedEvent = z.infer<typeof slackLinkSharedEventSchema>;
+export type SlackLinkSharedEvent = zInfer<typeof slackLinkSharedEventSchema>;
 
 function escapeSlackLinkText(value: string): string {
   // Slack decodes only amp/lt/gt; retain non-breaking spaces as Unicode.
@@ -76,7 +84,7 @@ function slackUnfurlInstallation(workspaceId: string) {
 function hostedDeploymentId(alias: string) {
   return computed(async (get) => {
     const id = alias.startsWith("dpl-")
-      ? z.uuid().safeParse(alias.slice(4))
+      ? uuid().safeParse(alias.slice(4))
       : null;
     if (id && !id.success) {
       return null;
@@ -317,9 +325,7 @@ export const unfurlSlackArtifactLinks$ = command(
     if (!installation?.orgId || !installation.botScopes) {
       return;
     }
-    const scopes = z
-      .array(z.string())
-      .parse(JSON.parse(installation.botScopes));
+    const scopes = array(string()).parse(JSON.parse(installation.botScopes));
     if (!scopes.includes("links:read") || !scopes.includes("links:write")) {
       return;
     }

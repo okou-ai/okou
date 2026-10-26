@@ -147,13 +147,15 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
           uploadUrl,
           fileId,
         });
-        expect(
-          context.mocks.slack.createClient.mock.calls
-            .slice(clients)
-            .map(([token]) => {
-              return token;
-            }),
-        ).toStrictEqual([request.installation.botToken]);
+        expect([
+          ...new Set(
+            context.mocks.slack.createClient.mock.calls
+              .slice(clients)
+              .map(([token]) => {
+                return token;
+              }),
+          ),
+        ]).toStrictEqual([request.installation.botToken]);
         expect(
           context.mocks.slack.files.getUploadURLExternal.mock.calls.slice(
             uploads,

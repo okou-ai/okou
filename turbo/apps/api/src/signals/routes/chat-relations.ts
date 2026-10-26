@@ -1,11 +1,9 @@
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { resourceUnavailable, notFound } from "../../lib/error";
+import { notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
@@ -17,20 +15,10 @@ import {
   chatRelationMessages$,
   createdChatRelations$,
 } from "../services/chat-relations.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 const authorize$ = command(
   async ({ get, set }, threadId: string, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.ChatResourcePanel, features)) {
-      return resourceUnavailable("Chat relationships are not available");
-    }
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)

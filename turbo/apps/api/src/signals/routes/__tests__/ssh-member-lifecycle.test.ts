@@ -10,7 +10,6 @@ import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { Webhook } from "svix";
 import { expect, test } from "vitest";
@@ -26,7 +25,6 @@ import { tailscaleRoutes } from "../tailscale";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   deleteOrgMembership$,
   seedOrgMembership$,
@@ -90,9 +88,6 @@ async function owner(
     { ...value, role: actor.orgRole === "org:admin" ? "admin" : "member" },
     context.signal,
   );
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.VncAccess]: true,
-  });
   mocks.clerk.session(value.userId, value.orgId, value.orgRole);
   mocks.s3.listObjects([]);
   return value;

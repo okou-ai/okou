@@ -1,4 +1,13 @@
-import * as z from "zod";
+import {
+  discriminatedUnion,
+  int,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -19,102 +28,82 @@ import {
 
 export { SSH_PASSWORD_MAX_LENGTH } from "./ssh-credentials";
 const c = initContract();
-const generationSchema = z.int().positive().max(2_147_483_647);
+const generationSchema = int().positive().max(2_147_483_647);
 
 /** Identifier-only invalidation; null connectionId invalidates the whole Run. */
-export const runnerSshInvalidateSchema = z
-  .object({
-    runId: z.uuid(),
-    connectionId: z.uuid().nullable(),
-  })
-  .strict();
+export const runnerSshInvalidateSchema = object({
+  runId: uuid(),
+  connectionId: uuid().nullable(),
+}).strict();
 
-export type RunnerSshInvalidate = z.infer<typeof runnerSshInvalidateSchema>;
+export type RunnerSshInvalidate = zInfer<typeof runnerSshInvalidateSchema>;
 
-export const sshHostKeySchema = z
-  .object({
-    // RSA key identity is ssh-rsa; the Runner must use SHA-2 signatures.
-    algorithm: z.enum([
-      "ssh-ed25519",
-      "ecdsa-sha2-nistp256",
-      "ecdsa-sha2-nistp384",
-      "ecdsa-sha2-nistp521",
-      "ssh-rsa",
-    ]),
-    fingerprint: z
-      .string()
-      .regex(/^SHA256:[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]$/u),
-  })
-  .strict();
+export const sshHostKeySchema = object({
+  // RSA key identity is ssh-rsa; the Runner must use SHA-2 signatures.
+  algorithm: zEnum([
+    "ssh-ed25519",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "ssh-rsa",
+  ]),
+  fingerprint: string().regex(/^SHA256:[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]$/u),
+}).strict();
 
-const resolveRequestSchema = z
-  .object({
-    connectionId: z.uuid(),
-    runnerIdentity: z
-      .object({
-        runnerId: z.uuid(),
-        heartbeatGeneration: runnerHeartbeatGenerationSchema,
-      })
-      .strict(),
-  })
-  .strict();
+const resolveRequestSchema = object({
+  connectionId: uuid(),
+  runnerIdentity: object({
+    runnerId: uuid(),
+    heartbeatGeneration: runnerHeartbeatGenerationSchema,
+  }).strict(),
+}).strict();
 
-const unavailableSchema = z
-  .object({ outcome: z.literal("unavailable") })
-  .strict();
+const unavailableSchema = object({ outcome: literal("unavailable") }).strict();
 const resolvedFields = {
-  host: z.string().min(1).max(SSH_HOST_MAX_LENGTH),
-  port: z.int().min(1).max(65_535),
-  username: z.string().min(1).max(SSH_USERNAME_MAX_LENGTH),
+  host: string().min(1).max(SSH_HOST_MAX_LENGTH),
+  port: int().min(1).max(65_535),
+  username: string().min(1).max(SSH_USERNAME_MAX_LENGTH),
   generation: generationSchema,
   learnedHostKey: sshHostKeySchema.nullable(),
 };
-export const runnerSshAccessResolvedSchema = z
-  .object({
-    outcome: z.literal("resolved_access"),
-    ...resolvedFields,
-    authentication: sshAuthenticationSchema,
-    access: cloudflareAccessCredentialsSchema.extend({
-      configId: z.uuid(),
-      generation: generationSchema,
-    }),
-  })
-  .strict();
-export const runnerSshTailscaleResolvedSchema = z
-  .object({
-    outcome: z.literal("resolved_tailscale"),
-    ...resolvedFields,
-    authentication: sshAuthenticationSchema,
-    tailscale: tailscaleCredentialsSchema.extend({
-      configId: z.uuid(),
-      generation: generationSchema,
-      tags: tailscaleTagsSchema,
-    }),
-  })
-  .strict();
-const resolveResponseSchema = z.discriminatedUnion("outcome", [
+export const runnerSshAccessResolvedSchema = object({
+  outcome: literal("resolved_access"),
+  ...resolvedFields,
+  authentication: sshAuthenticationSchema,
+  access: cloudflareAccessCredentialsSchema.extend({
+    configId: uuid(),
+    generation: generationSchema,
+  }),
+}).strict();
+export const runnerSshTailscaleResolvedSchema = object({
+  outcome: literal("resolved_tailscale"),
+  ...resolvedFields,
+  authentication: sshAuthenticationSchema,
+  tailscale: tailscaleCredentialsSchema.extend({
+    configId: uuid(),
+    generation: generationSchema,
+    tags: tailscaleTagsSchema,
+  }),
+}).strict();
+const resolveResponseSchema = discriminatedUnion("outcome", [
   unavailableSchema,
-  z
-    .object({
-      outcome: z.literal("resolved"),
-      ...resolvedFields,
-      privateKey: z.string().min(1).max(SSH_PRIVATE_KEY_MAX_LENGTH),
-      passphrase: z.string().min(1).max(SSH_PASSPHRASE_MAX_LENGTH).nullable(),
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_password"),
-      ...resolvedFields,
-      password: z.string().min(1).max(SSH_PASSWORD_MAX_LENGTH),
-    })
-    .strict(),
+  object({
+    outcome: literal("resolved"),
+    ...resolvedFields,
+    privateKey: string().min(1).max(SSH_PRIVATE_KEY_MAX_LENGTH),
+    passphrase: string().min(1).max(SSH_PASSPHRASE_MAX_LENGTH).nullable(),
+  }).strict(),
+  object({
+    outcome: literal("resolved_password"),
+    ...resolvedFields,
+    password: string().min(1).max(SSH_PASSWORD_MAX_LENGTH),
+  }).strict(),
   runnerSshAccessResolvedSchema,
   runnerSshTailscaleResolvedSchema,
   runnerSshTailscaleResolvedSchema
     .omit({ authentication: true })
     .extend({
-      outcome: z.literal("resolved_tailscale_ssh"),
+      outcome: literal("resolved_tailscale_ssh"),
     })
     .refine(
       (body) => {
@@ -133,36 +122,35 @@ const pinRequestSchema = resolveRequestSchema
   })
   .strict();
 
-const pinResponseSchema = z.discriminatedUnion("outcome", [
+const pinResponseSchema = discriminatedUnion("outcome", [
   unavailableSchema,
-  z
-    .object({ outcome: z.literal("pinned"), generation: generationSchema })
-    .strict(),
-  z
-    .object({ outcome: z.literal("matched"), generation: generationSchema })
-    .strict(),
-  z.object({ outcome: z.literal("host_key_mismatch") }).strict(),
-  z.object({ outcome: z.literal("configuration_changed") }).strict(),
+  object({ outcome: literal("pinned"), generation: generationSchema }).strict(),
+  object({
+    outcome: literal("matched"),
+    generation: generationSchema,
+  }).strict(),
+  object({ outcome: literal("host_key_mismatch") }).strict(),
+  object({ outcome: literal("configuration_changed") }).strict(),
 ]);
 
 export const runnerSshContract = c.router({
   observe: {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/observations",
-    pathParams: z.object({ runId: z.uuid() }).strict(),
+    pathParams: object({ runId: uuid() }).strict(),
     headers: authHeadersSchema,
     body: resolveRequestSchema
       .extend({
         expectedGeneration: generationSchema,
-        expectedCreatedAt: z.string().datetime(),
-        observedAt: z.string().datetime(),
+        expectedCreatedAt: string().datetime(),
+        observedAt: string().datetime(),
         failureReason: sshConnectionFailureReasonSchema.nullable(),
       })
       .strict(),
     responses: {
-      200: z
-        .object({ outcome: z.enum(["recorded", "ignored", "unavailable"]) })
-        .strict(),
+      200: object({
+        outcome: zEnum(["recorded", "ignored", "unavailable"]),
+      }).strict(),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -173,7 +161,7 @@ export const runnerSshContract = c.router({
   resolve: {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/resolve",
-    pathParams: z.object({ runId: z.uuid() }).strict(),
+    pathParams: object({ runId: uuid() }).strict(),
     headers: authHeadersSchema,
     body: resolveRequestSchema,
     responses: {
@@ -189,7 +177,7 @@ export const runnerSshContract = c.router({
   pin: {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/pin",
-    pathParams: z.object({ runId: z.uuid() }).strict(),
+    pathParams: object({ runId: uuid() }).strict(),
     headers: authHeadersSchema,
     body: pinRequestSchema,
     responses: {
@@ -203,10 +191,10 @@ export const runnerSshContract = c.router({
   },
 });
 
-export type RunnerSshResolveRequest = z.infer<typeof resolveRequestSchema>;
-export type RunnerSshResolveResponse = z.infer<typeof resolveResponseSchema>;
-export type RunnerSshPinRequest = z.infer<typeof pinRequestSchema>;
-export type RunnerSshPinResponse = z.infer<typeof pinResponseSchema>;
-export type RunnerSshObservationRequest = z.infer<
+export type RunnerSshResolveRequest = zInfer<typeof resolveRequestSchema>;
+export type RunnerSshResolveResponse = zInfer<typeof resolveResponseSchema>;
+export type RunnerSshPinRequest = zInfer<typeof pinRequestSchema>;
+export type RunnerSshPinResponse = zInfer<typeof pinResponseSchema>;
+export type RunnerSshObservationRequest = zInfer<
   typeof runnerSshContract.observe.body
 >;

@@ -1,16 +1,26 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const presentationTemplateVisibilitySchema = z.enum(["private", "public"]);
-const presentationTemplatePreviewAssetIdSchema = z.string().min(1).max(128);
-const presentationTemplatePreviewAssetSchema = z.object({
+const presentationTemplateVisibilitySchema = zEnum(["private", "public"]);
+const presentationTemplatePreviewAssetIdSchema = string().min(1).max(128);
+const presentationTemplatePreviewAssetSchema = object({
   previewAssetId: presentationTemplatePreviewAssetIdSchema,
-  url: z.string().url(),
-  expiresAt: z.iso.datetime(),
+  url: string().url(),
+  expiresAt: iso.datetime(),
 });
 
 export const MAX_PRESENTATION_TEMPLATE_SOURCE_BYTES = 100 * 1024 * 1024;
@@ -36,52 +46,49 @@ export const REQUIRED_PRESENTATION_TEMPLATE_PACKAGE_FILES = [
   "design-system.md",
 ] as const;
 
-const presentationTemplateSummarySchema = z.object({
-  id: z.uuid(),
-  title: z.string(),
-  sourceFilename: z.string(),
-  coverUrl: z.string().url().nullable(),
-  pageCount: z.number().int().nonnegative(),
+const presentationTemplateSummarySchema = object({
+  id: uuid(),
+  title: string(),
+  sourceFilename: string(),
+  coverUrl: string().url().nullable(),
+  pageCount: number().int().nonnegative(),
   visibility: presentationTemplateVisibilitySchema,
-  canManage: z.boolean(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  canManage: boolean(),
+  createdAt: string(),
+  updatedAt: string(),
 });
 
 const presentationTemplateCatalogEntrySchema =
   presentationTemplateSummarySchema.extend({
-    previewAssets: z.array(presentationTemplatePreviewAssetSchema),
+    previewAssets: array(presentationTemplatePreviewAssetSchema),
   });
 
 const presentationTemplateDetailSchema =
   presentationTemplateSummarySchema.extend({
-    pageUrls: z.array(z.string().url()),
-    previewAssets: z.array(presentationTemplatePreviewAssetSchema),
+    pageUrls: array(string().url()),
+    previewAssets: array(presentationTemplatePreviewAssetSchema),
   });
 
-const resolvePresentationTemplatePreviewUrlsBodySchema = z.object({
-  previewAssetIds: z
-    .array(presentationTemplatePreviewAssetIdSchema)
+const resolvePresentationTemplatePreviewUrlsBodySchema = object({
+  previewAssetIds: array(presentationTemplatePreviewAssetIdSchema)
     .min(1)
     .max(MAX_PRESENTATION_TEMPLATE_PAGES),
 });
 
-const resolvePresentationTemplatePreviewUrlsResponseSchema = z.object({
-  assets: z.array(presentationTemplatePreviewAssetSchema),
+const resolvePresentationTemplatePreviewUrlsResponseSchema = object({
+  assets: array(presentationTemplatePreviewAssetSchema),
 });
 
-const presentationTemplateIdParamsSchema = z.object({
-  templateId: z.uuid(),
+const presentationTemplateIdParamsSchema = object({
+  templateId: uuid(),
 });
 
-const updatePresentationTemplateBodySchema = z
-  .object({
-    title: z.string().trim().min(1).max(255).optional(),
-    visibility: presentationTemplateVisibilitySchema.optional(),
-  })
-  .refine((body) => {
-    return body.title !== undefined || body.visibility !== undefined;
-  }, "A title or visibility change is required");
+const updatePresentationTemplateBodySchema = object({
+  title: string().trim().min(1).max(255).optional(),
+  visibility: presentationTemplateVisibilitySchema.optional(),
+}).refine((body) => {
+  return body.title !== undefined || body.visibility !== undefined;
+}, "A title or visibility change is required");
 
 /**
  * Everything a finished analysis hands back, in one call.
@@ -91,11 +98,11 @@ const updatePresentationTemplateBodySchema = z
  * whole set arrives together: a single invocation cannot pair one deck's source
  * with another deck's pages.
  */
-const publishPresentationTemplateBodySchema = z.object({
-  title: z.string().trim().min(1).max(255),
-  sourceFileId: z.uuid(),
-  pageFileIds: z.array(z.uuid()).min(1).max(MAX_PRESENTATION_TEMPLATE_PAGES),
-  packageFileId: z.uuid(),
+const publishPresentationTemplateBodySchema = object({
+  title: string().trim().min(1).max(255),
+  sourceFileId: uuid(),
+  pageFileIds: array(uuid()).min(1).max(MAX_PRESENTATION_TEMPLATE_PAGES),
+  packageFileId: uuid(),
 });
 
 export const presentationTemplatesContract = c.router({
@@ -119,7 +126,7 @@ export const presentationTemplatesContract = c.router({
     path: "/api/presentation-templates",
     headers: authHeadersSchema,
     responses: {
-      200: z.array(presentationTemplateCatalogEntrySchema),
+      200: array(presentationTemplateCatalogEntrySchema),
       401: apiErrorSchema,
       403: apiErrorSchema,
       500: apiErrorSchema,
@@ -189,27 +196,27 @@ export const presentationTemplatesContract = c.router({
 
 export type PresentationTemplatesContract =
   typeof presentationTemplatesContract;
-export type PresentationTemplateSummary = z.infer<
+export type PresentationTemplateSummary = zInfer<
   typeof presentationTemplateSummarySchema
 >;
-export type PresentationTemplateCatalogEntry = z.infer<
+export type PresentationTemplateCatalogEntry = zInfer<
   typeof presentationTemplateCatalogEntrySchema
 >;
-export type PresentationTemplateDetail = z.infer<
+export type PresentationTemplateDetail = zInfer<
   typeof presentationTemplateDetailSchema
 >;
-export type PresentationTemplatePreviewAsset = z.infer<
+export type PresentationTemplatePreviewAsset = zInfer<
   typeof presentationTemplatePreviewAssetSchema
 >;
-export type PresentationTemplatePreviewAssetId = z.infer<
+export type PresentationTemplatePreviewAssetId = zInfer<
   typeof presentationTemplatePreviewAssetIdSchema
 >;
-export type PresentationTemplateVisibility = z.infer<
+export type PresentationTemplateVisibility = zInfer<
   typeof presentationTemplateVisibilitySchema
 >;
-export type UpdatePresentationTemplateBody = z.infer<
+export type UpdatePresentationTemplateBody = zInfer<
   typeof updatePresentationTemplateBodySchema
 >;
-export type PublishPresentationTemplateBody = z.infer<
+export type PublishPresentationTemplateBody = zInfer<
   typeof publishPresentationTemplateBodySchema
 >;

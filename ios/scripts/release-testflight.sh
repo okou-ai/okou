@@ -52,7 +52,7 @@ printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -D > "$work/profile.mobi
 security cms -D -i "$work/profile.mobileprovision" > "$work/profile.plist"
 profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print UUID' "$work/profile.plist")
 # Verify distribution scope before installing the profile or contacting Apple.
-python3 - "$work/profile.plist" <<'PY'
+python3 - "$work/profile.plist" "$work/signing-entitlements.plist" <<'PY'
 import datetime, plistlib, sys, uuid
 with open(sys.argv[1], 'rb') as f:
     profile = plistlib.load(f)
@@ -63,6 +63,16 @@ if profile['Entitlements'].get('aps-environment') != 'production': raise ValueEr
 if profile['Entitlements'].get('get-task-allow'): raise ValueError('Development profile is not a distribution profile')
 if profile.get('ProvisionedDevices') or profile.get('ProvisionsAllDevices'): raise ValueError('An App Store Connect distribution profile is required')
 if profile['ExpirationDate'] <= datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None): raise ValueError('Expired provisioning profile')
+with open('ios/Okou/Resources/Okou.entitlements', 'rb') as f:
+    source = f.read().replace(b'$(APS_ENVIRONMENT)', b'production')
+if b'$(' in source: raise ValueError('Unresolved signing entitlement build setting')
+entitlements = plistlib.loads(source)
+if entitlements.get('aps-environment') != 'production': raise ValueError('Application must request production APNs')
+for key in ('application-identifier', 'com.apple.developer.team-identifier'):
+    entitlements[key] = profile['Entitlements'][key]
+entitlements['get-task-allow'] = False
+with open(sys.argv[2], 'wb') as f:
+    plistlib.dump(entitlements, f)
 PY
 profiles="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 mkdir -p "$profiles"
@@ -83,6 +93,13 @@ security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.ke
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
 identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*) \([A-F0-9]*\) "Apple Distribution:.*"/\1/p')
 [[ "$identity" =~ ^[A-F0-9]{40}$ ]] || { echo 'Expected one valid Apple Distribution identity' >&2; exit 1; }
+
+# An unsigned archive has no signature from which export can recover app capabilities.
+# Sign only the prepared copy so export retains the source-declared APNs entitlement.
+app="$work/Okou.xcarchive/Products/Applications/Okou.app"
+cp "$work/profile.mobileprovision" "$app/embedded.mobileprovision"
+codesign --force --sign "$identity" --keychain "$keychain" --generate-entitlement-der \
+  --entitlements "$work/signing-entitlements.plist" "$app"
 
 python3 - "$work/ExportOptions.plist" "$profile_uuid" "$identity" <<'PY'
 import plistlib, sys

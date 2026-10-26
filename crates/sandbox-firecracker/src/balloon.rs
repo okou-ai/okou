@@ -103,6 +103,8 @@ async fn wait_for_crash_or_stop(state_rx: &mut watch::Receiver<SandboxState>) {
 
 #[cfg(test)]
 mod tests {
+    use std::task::Poll;
+
     use super::*;
 
     use crate::api::test_support::{MockFirecrackerApi, MockResponse};
@@ -174,32 +176,75 @@ mod tests {
         assert!(error.to_string().contains("within 5 seconds"));
     }
 
+    async fn assert_deflation_stops_on_terminal_state(terminal: SandboxState) {
+        let mut api = MockFirecrackerApi::with_handler(|_| async {
+            std::future::pending::<MockResponse>().await
+        });
+        let client = ApiClient::new(api.socket_path()).unwrap();
+        let (state_tx, state_rx) = watch::channel(SandboxState::Running);
+        let deflation = wait_for_unpark_deflation(&client, state_rx, "terminal-stats");
+        tokio::pin!(deflation);
+        let request = tokio::select! {
+            biased;
+            result = &mut deflation => panic!("deflation completed before statistics request: {result:?}"),
+            request = api.next_request() => request,
+        };
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.path, "/balloon/statistics");
+
+        tokio::time::pause();
+        assert!(futures_util::poll!(deflation.as_mut()).is_pending());
+        state_tx.send(terminal).unwrap();
+        let result = futures_util::poll!(deflation.as_mut());
+        tokio::time::resume();
+        assert!(
+            matches!(&result, Poll::Ready(Err(SandboxError::IdleTransition {
+                transition: SandboxIdleTransition::Unpark,
+                message,
+            })) if message == "sandbox stopped during balloon deflation"),
+            "deflation should stop on {terminal:?} while its state sender remains alive: {result:?}"
+        );
+        drop(state_tx);
+    }
+
     #[tokio::test]
-    async fn deflation_stops_on_crash_stop_or_closed_state_stream() {
-        for terminal in [
-            Some(SandboxState::Crashed),
-            Some(SandboxState::Stopped),
-            None,
-        ] {
-            let mut api = MockFirecrackerApi::with_handler(|_| async {
-                std::future::pending::<MockResponse>().await
-            });
-            let client = ApiClient::new(api.socket_path()).unwrap();
-            let (state_tx, state_rx) = watch::channel(SandboxState::Running);
-            let task = tokio::spawn(async move {
-                wait_for_unpark_deflation(&client, state_rx, "stopped-stats").await
-            });
-            api.next_request().await;
-            if let Some(state) = terminal {
-                state_tx.send(state).unwrap();
-            }
-            drop(state_tx);
-            let error = tokio::time::timeout(Duration::from_secs(1), task)
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap_err();
-            assert!(error.to_string().contains("sandbox stopped"));
-        }
+    async fn deflation_stops_on_crash_with_live_state_sender() {
+        assert_deflation_stops_on_terminal_state(SandboxState::Crashed).await;
+    }
+
+    #[tokio::test]
+    async fn deflation_stops_on_stop_with_live_state_sender() {
+        assert_deflation_stops_on_terminal_state(SandboxState::Stopped).await;
+    }
+
+    #[tokio::test]
+    async fn deflation_stops_on_closed_state_stream() {
+        let mut api = MockFirecrackerApi::with_handler(|_| async {
+            std::future::pending::<MockResponse>().await
+        });
+        let client = ApiClient::new(api.socket_path()).unwrap();
+        let (state_tx, state_rx) = watch::channel(SandboxState::Running);
+        let deflation = wait_for_unpark_deflation(&client, state_rx, "closed-state-stream");
+        tokio::pin!(deflation);
+        let request = tokio::select! {
+            biased;
+            result = &mut deflation => panic!("deflation completed before statistics request: {result:?}"),
+            request = api.next_request() => request,
+        };
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.path, "/balloon/statistics");
+
+        tokio::time::pause();
+        assert!(futures_util::poll!(deflation.as_mut()).is_pending());
+        drop(state_tx);
+        let result = futures_util::poll!(deflation.as_mut());
+        tokio::time::resume();
+        assert!(
+            matches!(&result, Poll::Ready(Err(SandboxError::IdleTransition {
+                transition: SandboxIdleTransition::Unpark,
+                message,
+            })) if message == "sandbox stopped during balloon deflation"),
+            "deflation should stop when its state stream closes: {result:?}"
+        );
     }
 }

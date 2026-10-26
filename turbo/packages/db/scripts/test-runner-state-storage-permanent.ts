@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
-import { z } from "zod";
+import { array, object, string } from "zod";
 import { runnerState } from "../src/runtime/runner-state";
 import { runnerState as physicalRunnerState } from "../src/schema/runner-state";
 
@@ -254,8 +254,7 @@ export async function validatePermanentRunnerStateStorage(databaseUrl: string) {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    const columns = z
-      .array(z.object({ column_name: z.string() }))
+    const columns = array(object({ column_name: string() }))
       .parse(
         (
           await client.query(

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, gt, isNotNull, lte } from "drizzle-orm";
-import * as z from "zod";
+import { object, string } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
@@ -21,10 +21,7 @@ import {
 import { discordSnowflakeSchema } from "../external/discord-client";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
-import {
-  discordIntegrationEnabledForOwner$,
-  getDiscordAppConfig,
-} from "../services/discord-config";
+import { getDiscordAppConfig } from "../services/discord-config";
 import { DiscordPermission } from "../services/discord-permissions";
 import {
   verifyDiscordOauthGrant,
@@ -112,7 +109,7 @@ function callbackApproval(
 
 const ownerAuthorized$ = command(
   async (
-    { get, set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -140,15 +137,7 @@ const ownerAuthorized$ = command(
     const membership = result.value.data.find((member) => {
       return member.publicUserData?.userId === args.userId;
     });
-    if (!membership) {
-      return false;
-    }
-    return await set(
-      discordIntegrationEnabledForOwner$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
+    return membership !== undefined;
   },
 );
 
@@ -464,9 +453,9 @@ const approveDiscordOauth$ = command(
   },
 );
 
-const evidenceSchema = z.object({
+const evidenceSchema = object({
   guildId: discordSnowflakeSchema,
-  guildName: z.string(),
+  guildName: string(),
   discordUserId: discordSnowflakeSchema,
   botUserId: discordSnowflakeSchema,
 });

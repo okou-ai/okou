@@ -1,4 +1,14 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
@@ -214,14 +224,14 @@ export interface ArtifactCatalogGetRouteTypes extends AnyRouteTypeSlots {
   readonly response: ArtifactCatalogGetRouteResponse;
 }
 
-const artifactKindSchema = z.enum(ARTIFACT_CATALOG_KINDS);
+const artifactKindSchema = zEnum(ARTIFACT_CATALOG_KINDS);
 
 /**
  * Static preview descriptor rendered by the catalog grid. Absent when the
  * artifact has no pre-rendered image yet.
  */
-const artifactThumbnailSchema = z.object({
-  url: z.string(),
+const artifactThumbnailSchema = object({
+  url: string(),
 });
 
 /**
@@ -229,109 +239,109 @@ const artifactThumbnailSchema = z.object({
  * attributes are loaded from the detail endpoint after a card is opened, so the
  * list query never joins a kind table and never exposes `entityId`.
  */
-const artifactSummarySchema = z.object({
-  id: z.string().uuid(),
+const artifactSummarySchema = object({
+  id: string().uuid(),
   kind: artifactKindSchema,
-  title: z.string(),
+  title: string(),
   thumbnail: artifactThumbnailSchema.nullable(),
-  sourceUrl: z.string().optional(),
-  aliasUrl: z.string().optional(),
-  videoSourceUrl: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  sourceUrl: string().optional(),
+  aliasUrl: string().optional(),
+  videoSourceUrl: string().optional(),
+  createdAt: string(),
+  updatedAt: string(),
 });
 
 /**
  * Keyset pagination over `(created_at DESC, id DESC)`. Updates never reorder
  * the list, so a cursor stays stable for the whole scroll session.
  */
-const artifactIdPathParamsSchema = z.object({
-  artifactId: z.string().uuid(),
+const artifactIdPathParamsSchema = object({
+  artifactId: string().uuid(),
 });
 
-const artifactCatalogListQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(200).optional(),
-  cursor: z.string().optional(),
+const artifactCatalogListQuerySchema = object({
+  limit: coerce.number().int().positive().max(200).optional(),
+  cursor: string().optional(),
   kind: artifactKindSchema.optional(),
-  chatThreadId: z.string().uuid().optional(),
-  keyword: z.string().trim().min(1).max(256).optional(),
+  chatThreadId: string().uuid().optional(),
+  keyword: string().trim().min(1).max(256).optional(),
 });
 
-const artifactCatalogGetQuerySchema = z.object({
-  chatThreadId: z.string().uuid().optional(),
+const artifactCatalogGetQuerySchema = object({
+  chatThreadId: string().uuid().optional(),
 });
 
-const artifactCatalogListResponseSchema = z.object({
-  artifacts: z.array(artifactSummarySchema),
-  nextCursor: z.string().nullable(),
+const artifactCatalogListResponseSchema = object({
+  artifacts: array(artifactSummarySchema),
+  nextCursor: string().nullable(),
 });
 
 /**
  * The stored file backing a `file`, `image`, `video`, or `avatar` artifact.
  */
-const artifactFileSchema = z.object({
-  id: z.string().uuid(),
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number(),
-  url: z.string(),
-  previewImageUrl: z.string().nullable(),
+const artifactFileSchema = object({
+  id: string().uuid(),
+  filename: string(),
+  contentType: string(),
+  size: number(),
+  url: string(),
+  previewImageUrl: string().nullable(),
 });
 
 /**
  * The hosted deployment backing a `hosted-site` or `presentation` artifact.
  * Version state stays owned by the hosted deployment records.
  */
-const artifactHostedSiteSchema = z.object({
-  id: z.string().uuid(),
-  slug: z.string(),
-  publicSlug: z.string(),
-  url: z.string(),
-  deploymentVersion: z.number().nullable(),
-  entrypoint: z.string(),
-  spaFallback: z.boolean(),
+const artifactHostedSiteSchema = object({
+  id: string().uuid(),
+  slug: string(),
+  publicSlug: string(),
+  url: string(),
+  deploymentVersion: number().nullable(),
+  entrypoint: string(),
+  spaFallback: boolean(),
 });
 
 // Drive metadata is loaded lazily for detail requests with thread context only.
 const artifactDetailBaseSchema = artifactSummarySchema.extend({
-  googleDriveConnectionId: z.string().uuid().optional(),
+  googleDriveConnectionId: string().uuid().optional(),
   googleDriveSync: chatThreadArtifactGoogleDriveSyncSchema.optional(),
 });
 
-const artifactDetailSchema = z.discriminatedUnion("kind", [
+const artifactDetailSchema = discriminatedUnion("kind", [
   artifactDetailBaseSchema.extend({
-    kind: z.literal("file"),
+    kind: literal("file"),
     file: artifactFileSchema,
   }),
   artifactDetailBaseSchema.extend({
-    kind: z.literal("image"),
+    kind: literal("image"),
     file: artifactFileSchema,
-    model: z.string().nullable(),
-    provider: z.string().nullable(),
+    model: string().nullable(),
+    provider: string().nullable(),
   }),
   artifactDetailBaseSchema.extend({
-    kind: z.literal("video"),
+    kind: literal("video"),
     file: artifactFileSchema,
-    model: z.string().nullable(),
-    durationSeconds: z.number().nullable(),
+    model: string().nullable(),
+    durationSeconds: number().nullable(),
   }),
   artifactDetailBaseSchema.extend({
-    kind: z.literal("avatar"),
+    kind: literal("avatar"),
     file: artifactFileSchema,
-    model: z.string().nullable(),
-    durationSeconds: z.number().nullable(),
+    model: string().nullable(),
+    durationSeconds: number().nullable(),
   }),
   artifactDetailBaseSchema.extend({
-    kind: z.literal("hosted-site"),
+    kind: literal("hosted-site"),
     site: artifactHostedSiteSchema,
   }),
   artifactDetailBaseSchema.extend({
-    kind: z.literal("presentation"),
+    kind: literal("presentation"),
     site: artifactHostedSiteSchema,
   }),
   artifactDetailBaseSchema.extend({
-    kind: z.literal("shared-thread"),
-    sharedThread: z.object({ id: z.string().uuid() }),
+    kind: literal("shared-thread"),
+    sharedThread: object({ id: string().uuid() }),
   }),
 ]);
 

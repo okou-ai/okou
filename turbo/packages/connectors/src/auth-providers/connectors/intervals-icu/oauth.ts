@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -65,19 +65,15 @@ export async function exchangeIntervalsIcuCode(
     await throwOAuthError("Intervals.icu", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      athlete: z
-        .object({
-          id: z.string(),
-          name: z.string().nullable().optional(),
-        })
-        .optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    athlete: object({
+      id: string(),
+      name: string().nullable().optional(),
+    }).optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);

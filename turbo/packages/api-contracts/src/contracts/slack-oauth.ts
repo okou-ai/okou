@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, string, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 
@@ -11,14 +11,14 @@ export {
 
 const c = initContract();
 
-const jsonErrorSchema = z.object({ error: z.string() });
+const jsonErrorSchema = object({ error: string() });
 
-export const slackOauthInstallQuerySchema = z.object({
-  connectorState: z.string().optional(),
+export const slackOauthInstallQuerySchema = object({
+  connectorState: string().optional(),
 });
 
-export const slackOauthConnectQuerySchema = z.object({
-  connectorState: z.string().optional(),
+export const slackOauthConnectQuerySchema = object({
+  connectorState: string().optional(),
 });
 
 export const slackOauthContract = c.router({
@@ -47,9 +47,9 @@ export const slackOauthContract = c.router({
 });
 
 export type SlackOauthContract = typeof slackOauthContract;
-export type SlackOauthInstallQuery = z.infer<
+export type SlackOauthInstallQuery = zInfer<
   typeof slackOauthInstallQuerySchema
 >;
-export type SlackOauthConnectQuery = z.infer<
+export type SlackOauthConnectQuery = zInfer<
   typeof slackOauthConnectQuerySchema
 >;

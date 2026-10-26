@@ -1,5 +1,13 @@
 import { command } from "ccstate";
-import * as z from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import { linkLayoutSegmentSchema } from "@okouai/api-contracts/contracts/link-layout";
 import {
   artifactShareTargetSchema,
@@ -13,15 +21,14 @@ import {
 } from "../external/s3";
 import { settle } from "../utils";
 
-const sharedThreadReferenceSchema = z.object({
-  version: z.literal(3),
-  threadId: z.uuid(),
+const sharedThreadReferenceSchema = object({
+  version: literal(3),
+  threadId: uuid(),
   // Persisted link-layout segment of the shared conversation.
   publicBrand: linkLayoutSegmentSchema,
-  publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
+  publicToken: string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
   target: artifactShareTargetSchema,
-  previewPath: z
-    .string()
+  previewPath: string()
     .refine((value) => {
       return (
         value.startsWith("/") &&
@@ -36,14 +43,14 @@ const sharedThreadReferenceSchema = z.object({
     .optional(),
 });
 
-export type SharedThreadArtifactReference = z.infer<
+export type SharedThreadArtifactReference = zInfer<
   typeof sharedThreadReferenceSchema
 >;
 
-const referenceRecordSchema = z.discriminatedUnion("version", [
+const referenceRecordSchema = discriminatedUnion("version", [
   // Previously copied organization links keep following their share policy.
-  z.object({ version: z.literal(1), shareId: z.uuid() }),
-  z.object({ version: z.literal(2), target: artifactShareTargetSchema }),
+  object({ version: literal(1), shareId: uuid() }),
+  object({ version: literal(2), target: artifactShareTargetSchema }),
   sharedThreadReferenceSchema,
 ]);
 

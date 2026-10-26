@@ -26,7 +26,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { int, string, uuid, object as zObject } from "zod";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import {
@@ -1646,17 +1646,17 @@ async function loadSnapshotCandidates(
     );
     // Materialized CTEs and a remaining-row LIMIT require a SQL envelope;
     // decode its complete projection rather than asserting execute<Row>.
-    const rowSchema = z.object({
-      chatThreadId: z.uuid(),
+    const rowSchema = zObject({
+      chatThreadId: uuid(),
       indexedSeqId: pgInt8ToSafeIntegerSchema,
       lastMessageAt: pgTimestampWithoutTimezoneToDateSchema,
-      headId: z.uuid().nullable(),
+      headId: uuid().nullable(),
       headLastSeqId: pgInt8ToSafeIntegerSchema.nullable(),
-      headLastEventId: z.uuid().nullable(),
+      headLastEventId: uuid().nullable(),
       headTerminalSeqId: pgInt8ToSafeIntegerSchema.nullable(),
-      headTerminalEventId: z.uuid().nullable(),
-      headObjectKey: z.string().nullable(),
-      headArchiveSchemaVersion: z.int().nullable(),
+      headTerminalEventId: uuid().nullable(),
+      headObjectKey: string().nullable(),
+      headArchiveSchemaVersion: int().nullable(),
     });
     return parseRawRows(rowSchema, await db.execute(query));
   }

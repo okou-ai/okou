@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { literal, number, object } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { orgResponseSchema, updateOrgRequestSchema } from "./orgs";
@@ -27,8 +27,8 @@ export const orgContract = c.router({
     path: "/api/org/created-count",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({
-        createdOrganizationsCount: z.number().int().nonnegative(),
+      200: object({
+        createdOrganizationsCount: number().int().nonnegative(),
       }),
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -63,7 +63,7 @@ export const orgLeaveContract = c.router({
     method: "POST",
     path: "/api/org/leave",
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: orgMessageResponseSchema,
       400: apiErrorSchema,
@@ -85,7 +85,7 @@ export const orgDeleteContract = c.router({
     method: "POST",
     path: "/api/org/delete",
     headers: authHeadersSchema,
-    body: z.object({ confirm: z.literal("confirm") }),
+    body: object({ confirm: literal("confirm") }),
     responses: {
       200: orgMessageResponseSchema,
       400: apiErrorSchema,

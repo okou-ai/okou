@@ -1,7 +1,14 @@
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import * as z from "zod";
+import {
+  literal,
+  number,
+  object,
+  string,
+  url,
+  type infer as zInfer,
+} from "zod";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -13,17 +20,17 @@ import {
 
 const FEISHU_OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60;
 
-const feishuOAuthStateSchema = z.object({
-  installationId: z.string().uuid(),
-  orgId: z.string().min(1),
-  userId: z.string().min(1),
-  callbackTarget: z.literal("app").optional(),
-  oauthRedirectTarget: z.literal("app").optional(),
-  redirectUri: z.url(),
-  timestamp: z.number().int(),
+const feishuOAuthStateSchema = object({
+  installationId: string().uuid(),
+  orgId: string().min(1),
+  userId: string().min(1),
+  callbackTarget: literal("app").optional(),
+  oauthRedirectTarget: literal("app").optional(),
+  redirectUri: url(),
+  timestamp: number().int(),
 });
 
-export type FeishuOAuthState = z.infer<typeof feishuOAuthStateSchema>;
+export type FeishuOAuthState = zInfer<typeof feishuOAuthStateSchema>;
 
 function sign(encodedPayload: string): string {
   return createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))

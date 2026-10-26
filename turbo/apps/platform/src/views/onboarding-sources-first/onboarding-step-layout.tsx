@@ -1,9 +1,9 @@
 import { PersonalSubscriptionDialogs } from "../okou-page/subscription-linking.tsx";
 import type { ReactNode } from "react";
-import { Button } from "@okouai/ui";
+import { Button, IconButton } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
@@ -15,6 +15,7 @@ import {
 } from "../../signals/onboarding/onboarding-actions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 
 /** One track that fills with the flow, rather than a segment per step. */
 function OnboardingStepProgress({
@@ -83,31 +84,39 @@ function OnboardingTrustPoints({
 function OnboardingStepExplanation({
   title,
   description,
+  mobileTitle,
+  mobileDescription,
   trustPoints,
   footnote,
   supplement,
 }: {
   readonly title: string;
   readonly description: string;
+  readonly mobileTitle?: string;
+  readonly mobileDescription?: string;
   readonly trustPoints?: readonly string[];
   readonly footnote?: ReactNode;
   readonly supplement?: ReactNode;
 }) {
+  const mobile = useMobileOnboarding();
+  const body = mobile ? (mobileDescription ?? description) : description;
   return (
     <>
-      <h1 className="mt-12 text-[30px] max-sm:mt-2 max-sm:text-[28px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
-        {title}
+      <h1 className="mt-12 text-[30px] max-sm:mt-2 max-sm:text-2xl font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
+        {mobile ? (mobileTitle ?? title) : title}
       </h1>
-      <p className="mt-5 text-base leading-[1.7] text-muted-foreground max-sm:mt-3">
-        {description}
-      </p>
-      <OnboardingTrustPoints points={trustPoints} />
-      {footnote ? (
+      {body ? (
+        <p className="mt-5 text-base leading-[1.7] text-muted-foreground max-sm:mt-2 max-sm:text-sm max-sm:leading-6">
+          {body}
+        </p>
+      ) : null}
+      {mobile ? null : <OnboardingTrustPoints points={trustPoints} />}
+      {!mobile && footnote ? (
         <p className="mt-4 text-base leading-[1.7] text-muted-foreground">
           {footnote}
         </p>
       ) : null}
-      {supplement}
+      {mobile ? null : supplement}
     </>
   );
 }
@@ -139,19 +148,15 @@ function OnboardingStepTopBar({
   return (
     <div className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 bg-background px-2 sm:hidden">
       {onBack ? (
-        <Button
+        <IconButton
           type="button"
-          size="icon-lg"
-          variant="ghost"
-          className="text-foreground"
-          iconSize="lg"
           aria-label={t(($) => {
             return $.onboarding.sourcesFirst.common.back;
           })}
           onClick={onBack}
         >
-          <ChevronLeft aria-hidden="true" />
-        </Button>
+          <ChevronLeft size={20} aria-hidden="true" />
+        </IconButton>
       ) : (
         <span className="size-10 shrink-0" />
       )}
@@ -183,6 +188,7 @@ function OnboardingStepTopBar({
  * indicator while the step scrolls.
  */
 function OnboardingStepActions({
+  primaryAction,
   primaryLabel,
   onPrimary,
   primaryDisabled,
@@ -193,6 +199,7 @@ function OnboardingStepActions({
   secondaryBusy,
   onBack,
 }: {
+  readonly primaryAction?: ReactNode;
   readonly primaryLabel: string;
   readonly onPrimary: () => void;
   readonly primaryDisabled: boolean;
@@ -236,19 +243,18 @@ function OnboardingStepActions({
             {secondaryLabel}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          size="lg"
-          onClick={onPrimary}
-          disabled={primaryDisabled || primaryBusy}
-          aria-busy={primaryBusy}
-          className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:h-12 max-sm:w-full max-sm:text-base"
-        >
-          {primaryBusy ? (
-            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-          ) : null}
-          {primaryLabel}
-        </Button>
+        {primaryAction ?? (
+          <Button
+            type="button"
+            size="lg"
+            onClick={onPrimary}
+            disabled={primaryDisabled}
+            pending={primaryBusy}
+            className="w-[132px] max-sm:w-full"
+          >
+            {primaryLabel}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -259,28 +265,16 @@ function OnboardingStepActions({
  * the step centred on the canvas -- the question and its one action beside the
  * cards that answer it.
  */
-export function OnboardingStepLayout({
-  currentStep,
-  totalSteps,
-  title,
-  description,
-  primaryLabel,
-  onPrimary,
-  primaryDisabled = false,
-  primaryBusy = false,
-  secondaryLabel,
-  onSecondary,
-  onBack,
-  trustPoints,
-  footnote,
-  supplement,
-  contentAlign = "center",
-  children,
-}: {
+interface OnboardingStepLayoutProps {
   readonly currentStep: number;
   readonly totalSteps: number;
   readonly title: string;
   readonly description: string;
+  readonly mobileTitle?: string;
+  readonly mobileDescription?: string;
+  /** Secondary information follows the task on small screens. */
+  readonly mobileFooter?: ReactNode;
+  readonly primaryAction?: ReactNode;
   readonly primaryLabel: string;
   readonly onPrimary: () => void;
   readonly primaryDisabled?: boolean;
@@ -295,8 +289,32 @@ export function OnboardingStepLayout({
   readonly supplement?: ReactNode;
   readonly contentAlign?: "center" | "start";
   readonly children: ReactNode;
-}) {
+}
+
+export function OnboardingStepLayout({
+  currentStep,
+  totalSteps,
+  title,
+  description,
+  mobileTitle,
+  mobileDescription,
+  mobileFooter,
+  primaryAction,
+  primaryLabel,
+  onPrimary,
+  primaryDisabled = false,
+  primaryBusy = false,
+  secondaryLabel,
+  onSecondary,
+  onBack,
+  trustPoints,
+  footnote,
+  supplement,
+  contentAlign = "center",
+  children,
+}: OnboardingStepLayoutProps) {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const canSkipPreview = useGet(canSkipPreviewOnboarding$);
   const pageSignal = useGet(pageSignal$);
   const [skipLoadable, skipPreview] = useLoadableSet(skipPreviewOnboarding$);
@@ -324,7 +342,7 @@ export function OnboardingStepLayout({
         <OnboardingAccount />
       </div>
       <main
-        key={`${String(currentStep)}-${title}`}
+        key={currentStep}
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(0,calc(50%_-_1.75rem))_minmax(0,calc(50%_+_1.75rem))] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden"
       >
         <OnboardingStepTopBar
@@ -349,6 +367,8 @@ export function OnboardingStepLayout({
             <OnboardingStepExplanation
               title={title}
               description={description}
+              mobileTitle={mobileTitle}
+              mobileDescription={mobileDescription}
               trustPoints={trustPoints}
               footnote={footnote}
               supplement={supplement}
@@ -359,16 +379,20 @@ export function OnboardingStepLayout({
             phone drops the sheet: the step runs full-bleed and scrolls as one
             page, so the answers are never squeezed under the question. */}
         <div className="m-2 mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background max-sm:m-0 max-sm:flex-[1_0_auto] max-sm:overflow-visible max-sm:rounded-none max-sm:border-0 lg:ml-0 lg:mt-2">
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 max-sm:flex-[1_0_auto] max-sm:overflow-visible max-sm:px-5 max-sm:pt-6 lg:p-8">
+          <div className="min-h-0 flex-1 overflow-y-auto p-6 max-sm:flex-[1_0_auto] max-sm:overflow-visible max-sm:px-5 max-sm:pt-5 lg:p-8">
             {/* Centred while it fits, scrolled from the top when it does
                 not. */}
             <div
               className={`flex min-h-full flex-col max-sm:justify-start ${contentAlign === "start" ? "justify-start" : "justify-center"}`}
             >
               {children}
+              {mobile && mobileFooter ? (
+                <div className="mt-5">{mobileFooter}</div>
+              ) : null}
             </div>
           </div>
           <OnboardingStepActions
+            primaryAction={primaryAction}
             primaryLabel={primaryLabel}
             onPrimary={onPrimary}
             primaryDisabled={primaryDisabled || skipping}

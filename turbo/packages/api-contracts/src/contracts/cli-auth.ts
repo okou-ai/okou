@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { literal, number, object, string } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 
 const c = initContract();
@@ -7,9 +7,9 @@ const c = initContract();
  * OAuth-style error response schema for device flow
  * Uses standard OAuth 2.0 error format
  */
-const oauthErrorSchema = z.object({
-  error: z.string(),
-  error_description: z.string(),
+const oauthErrorSchema = object({
+  error: string(),
+  error_description: string(),
 });
 
 /**
@@ -23,14 +23,14 @@ export const cliAuthDeviceContract = c.router({
   create: {
     method: "POST",
     path: "/api/cli/auth/device",
-    body: z.object({}).optional(),
+    body: object({}).optional(),
     responses: {
-      200: z.object({
-        device_code: z.string(),
-        user_code: z.string(),
-        verification_path: z.string(),
-        expires_in: z.number(),
-        interval: z.number(),
+      200: object({
+        device_code: string(),
+        user_code: string(),
+        verification_path: string(),
+        expires_in: number(),
+        interval: number(),
       }),
       500: oauthErrorSchema,
     },
@@ -49,15 +49,15 @@ export const cliAuthTokenContract = c.router({
   exchange: {
     method: "POST",
     path: "/api/cli/auth/token",
-    body: z.object({
-      device_code: z.string().min(1, "device_code is required"),
+    body: object({
+      device_code: string().min(1, "device_code is required"),
     }),
     responses: {
       // Success - token issued
-      200: z.object({
-        access_token: z.string(),
-        token_type: z.literal("Bearer"),
-        expires_in: z.number(),
+      200: object({
+        access_token: string(),
+        token_type: literal("Bearer"),
+        expires_in: number(),
       }),
       // Authorization pending
       202: oauthErrorSchema,
@@ -72,13 +72,13 @@ export const cliAuthTokenContract = c.router({
 /**
  * Error response schema for structured API errors
  */
-const apiErrorResponseSchema = z.object({
-  error: z.object({ message: z.string(), code: z.string() }),
+const apiErrorResponseSchema = object({
+  error: object({ message: string(), code: string() }),
 });
 
-const cliAuthApproveErrorSchema = z.object({
-  success: z.literal(false),
-  error: z.string(),
+const cliAuthApproveErrorSchema = object({
+  success: literal(false),
+  error: string(),
 });
 
 /**
@@ -93,12 +93,12 @@ export const cliAuthApproveContract = c.router({
     method: "POST",
     path: "/api/cli/auth/approve",
     headers: authHeadersSchema,
-    body: z.object({
-      device_code: z.string().min(1, "device_code is required"),
-      timezone: z.string().min(1).optional(),
+    body: object({
+      device_code: string().min(1, "device_code is required"),
+      timezone: string().min(1).optional(),
     }),
     responses: {
-      200: z.object({ success: z.literal(true) }),
+      200: object({ success: literal(true) }),
       400: cliAuthApproveErrorSchema,
       401: apiErrorResponseSchema,
       403: apiErrorResponseSchema,

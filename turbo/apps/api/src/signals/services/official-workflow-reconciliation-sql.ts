@@ -9,7 +9,7 @@ import {
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, eq, sql } from "drizzle-orm";
-import * as z from "zod";
+import { boolean, object, string, unknown as zUnknown, type output } from "zod";
 
 import {
   acceptedCatalogFromRow,
@@ -18,17 +18,17 @@ import {
   type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
 
-export const acceptedCatalogRowSchema = z.object({
-  releaseId: z.string(),
-  payload: z.unknown(),
+export const acceptedCatalogRowSchema = object({
+  releaseId: string(),
+  payload: zUnknown(),
 });
-export const acceptedRevisionRowSchema = z.object({
-  definitionName: z.string(),
-  revision: z.string(),
-  payload: z.unknown(),
-  storageName: z.string(),
-  storageId: z.string(),
-  storageVersion: z.string(),
+export const acceptedRevisionRowSchema = object({
+  definitionName: string(),
+  revision: string(),
+  payload: zUnknown(),
+  storageName: string(),
+  storageId: string(),
+  storageVersion: string(),
 });
 
 function acceptedCatalogAuthorityCondition() {
@@ -99,11 +99,11 @@ export function acceptedRevisionReadStatement(
     WHERE ${identityCondition} LIMIT 1`;
 }
 
-export const webhookTierRowSchema = z.object({
-  entitlementExists: z.boolean(),
-  orgExists: z.boolean(),
-  restrictedBuiltInModels: z.boolean().nullable(),
-  allowed: z.boolean().nullable(),
+export const webhookTierRowSchema = object({
+  entitlementExists: boolean(),
+  orgExists: boolean(),
+  restrictedBuiltInModels: boolean().nullable(),
+  allowed: boolean().nullable(),
 });
 
 /**
@@ -124,7 +124,7 @@ export function webhookTierLockStatement(orgId: string) {
 }
 
 export function webhookTierFromRows(
-  rows: readonly z.output<typeof webhookTierRowSchema>[],
+  rows: readonly output<typeof webhookTierRowSchema>[],
   orgId: string,
 ) {
   const [row] = rows;
@@ -142,7 +142,7 @@ export function webhookTierFromRows(
       `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
     );
   }
-  return z.boolean().parse(row.allowed);
+  return boolean().parse(row.allowed);
 }
 
 export interface AcceptedBlueprintIdentity {
@@ -153,7 +153,7 @@ export interface AcceptedBlueprintIdentity {
 }
 
 export function acceptedBlueprintDefinitionFromRows(
-  rows: readonly z.output<typeof acceptedCatalogRowSchema>[],
+  rows: readonly output<typeof acceptedCatalogRowSchema>[],
   args: AcceptedBlueprintIdentity,
 ) {
   const [row] = rows;
@@ -161,7 +161,7 @@ export function acceptedBlueprintDefinitionFromRows(
 }
 
 export function acceptedRevisionBlueprintRowsMatch(
-  rows: readonly z.output<typeof acceptedRevisionRowSchema>[],
+  rows: readonly output<typeof acceptedRevisionRowSchema>[],
   args: AcceptedBlueprintIdentity,
 ) {
   const [row] = rows;

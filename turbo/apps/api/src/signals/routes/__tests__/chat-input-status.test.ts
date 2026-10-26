@@ -10,7 +10,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-input-status";
 import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-tools";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import { array, boolean, object, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -69,18 +69,16 @@ async function read(token: string, threadId: string, eventId: string) {
 }
 
 async function tools(token: string) {
-  return z
-    .object({
-      result: z.object({
-        tools: z.array(
-          z.object({
-            name: z.string(),
-            annotations: z.object({ readOnlyHint: z.boolean() }).optional(),
-          }),
-        ),
-      }),
-    })
-    .parse(await mcp.rpc(token, "tools/list")).result.tools;
+  return object({
+    result: object({
+      tools: array(
+        object({
+          name: string(),
+          annotations: object({ readOnlyHint: boolean() }).optional(),
+        }),
+      ),
+    }),
+  }).parse(await mcp.rpc(token, "tools/list")).result.tools;
 }
 
 describe("retained chat input observation", () => {

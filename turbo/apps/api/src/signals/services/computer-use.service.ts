@@ -5,7 +5,7 @@ import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { desktopVersionIsSupported } from "../../lib/desktop-version";
 
 import { command, computed, type Computed } from "ccstate";
-import * as z from "zod";
+import { object, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { desktopShellAuthorizations } from "@okouai/db/schema/desktop-shell-authorization";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -1273,7 +1273,7 @@ export const createComputerUseCommand$ = command(
     }
     const [row] = params.kind.startsWith("shell.")
       ? parseRawRows(
-          z.object({ id: z.uuid() }),
+          object({ id: uuid() }),
           await db.execute(sql`
           INSERT INTO ${computerUseCommands} (org_id, user_id, run_id, host_id, kind, payload, timeout_ms, shell_authorization_id, created_at, updated_at)
           SELECT ${params.orgId}, ${params.userId}, ${params.runId ?? null}, ${target.targetHostId}::uuid, ${params.kind}, ${JSON.stringify(payload)}::jsonb, ${params.timeoutMs}, ${desktopShellAuthorizations.id}, ${now.toISOString()}::timestamp, ${now.toISOString()}::timestamp

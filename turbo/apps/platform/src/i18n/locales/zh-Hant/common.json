@@ -399,7 +399,6 @@
       "manage": "管理",
       "mobile": {
         "invite": "邀請",
-        "openArtifacts": "開啟成果面板",
         "openAutomations": "開啟自動化面板",
         "openMenu": "開啟選單"
       },
@@ -678,7 +677,6 @@
       "previewSlide": "預覽第 {{slideNumber}} 頁",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previousSlide": "預覽上一頁",
-      "renameImportedTemplate": "重新命名模板",
       "searchConnector": "搜尋模板",
       "searchConnectors": "搜尋模板",
       "selectStyle": "選擇風格 {{style}}",
@@ -717,9 +715,7 @@
       "use": "使用",
       "useThisTemplate": "使用這個模板",
       "visibility": {
-        "changeLabel": "修改模板可見範圍",
-        "privateState": "只有你能看到和使用",
-        "workspaceState": "這個工作區裡的所有人都能使用"
+        "changeLabel": "修改模板可見範圍"
       },
       "website": "網站",
       "websitePreview": "{{title}} 網站模板預覽",
@@ -1562,8 +1558,7 @@
         "whatsCooking": "在忙什麼呢，{{userName}}？",
         "whatsOnYourMind": "在想些什麼，{{userName}}？",
         "whatsTheMove": "下一步怎麼走，{{userName}}？"
-      },
-      "viewAgentProfile": "檢視智能體資料"
+      }
     },
     "agentSuggestions": {
       "dismiss": "忽略",
@@ -1572,10 +1567,7 @@
       "position": "{{current}} / {{total}}",
       "previous": "上一則建議",
       "recoveryHint": "重新傳送前請先檢查聊天。你可以將建議還原到草稿。",
-      "restoreDraft": "還原至草稿",
-      "runInChat": "在原聊天執行",
-      "runNewChat": "在新聊天執行",
-      "starting": "正在啟動…"
+      "restoreDraft": "還原至草稿"
     },
     "attachments": {
       "attach": "新增附件",
@@ -2922,15 +2914,12 @@
         "website": "網站",
         "workflow": "工作流"
       },
-      "importedLoadFailed": "無法載入已上傳的模板。",
-      "importedUnavailable": "已上傳的模板暫時不可用。",
       "previewTemplate": "預覽模板 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previewWorkflow": "預覽工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
       "removeWebsite": "移除網站模板 {{title}}",
-      "removeWorkflow": "移除工作流模板 {{title}}",
-      "retry": "重試"
+      "removeWorkflow": "移除工作流模板 {{title}}"
     },
     "thread": {
       "ariaLabel": "聊天會話",
@@ -2955,7 +2944,6 @@
       },
       "noEmojiFound": "沒有找到表情",
       "notFound": "找不到該聊天會話",
-      "openArtifacts": "開啟成果",
       "openBrowser": "開啟瀏覽器",
       "openNamedAgent": "開啟智能體 {{name}}",
       "openNamedChat": "開啟聊天 {{title}}",
@@ -3673,7 +3661,6 @@
         "createCodeError": "無法建立連線碼，請重試。",
         "creatingCode": "正在建立連線碼…",
         "description": "透過簡訊使用 {{assistantName}}",
-        "destination": "iMessage 或簡訊傳送至",
         "openMessages": "開啟 Messages",
         "options": "手機選項",
         "phoneLabel": "電話",
@@ -4199,46 +4186,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "教練與培訓",
           "name": "教練與培訓",
           "summary": "教練、課程與培訓"
         },
         "consulting": {
+          "mobileName": "獨立諮詢",
           "name": "獨立諮詢",
           "summary": "商業、人力與 IT 諮詢"
         },
         "design": {
+          "mobileName": "設計與創意",
           "name": "設計與創意",
           "summary": "平面、網站與創意工作"
         },
         "finance": {
+          "mobileName": "會計與記賬",
           "name": "會計與記賬",
           "summary": "賬目、報表與對賬"
         },
         "investing": {
+          "mobileName": "投資與市場研究",
           "name": "投資與市場研究",
           "summary": "投資、市場與投資組合"
         },
         "marketing": {
+          "mobileName": "市場與內容",
           "name": "市場與內容",
           "summary": "社交媒體、內容與品牌"
         },
         "operations": {
+          "mobileName": "商業與運營",
           "name": "商業與運營",
           "summary": "企業主、助理與運營人員"
         },
         "other": {
+          "mobileName": "其他／還在摸索",
           "name": "其他／還在摸索",
           "summary": "別的領域，或還在摸索"
         },
         "research": {
+          "mobileName": "研究與學習",
           "name": "研究與學習",
           "summary": "調研、學習與進修"
         },
         "sales": {
+          "mobileName": "銷售與客戶開發",
           "name": "銷售與客戶開發",
           "summary": "線索開發、銷售與客戶增長"
         },
         "software": {
+          "mobileName": "軟體與應用",
           "name": "軟體與應用",
           "summary": "應用、遊戲與開發"
         }
@@ -4246,6 +4244,30 @@
       "industry": {
         "copy": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。選擇你的領域，取得適合你的第一項任務。",
         "title": "你主要做哪類工作？"
+      },
+      "mobile": {
+        "channelsCopy": "在常用聊天工具中聯絡 Okou。",
+        "channelsTitle": "選擇聊天工具",
+        "connect": "連接",
+        "copyImportPrompt": "複製匯入提示詞",
+        "existingPlan": "使用我的 {{provider}} 訂閱",
+        "experienceTitle": "選擇開始方式",
+        "industryCopy": "我們會推薦適合你的第一個任務。",
+        "industryTitle": "選擇你的工作領域",
+        "instructions": "操作說明",
+        "newCopy": "協助你開始第一個任務。",
+        "newTitle": "從 Okou 開始",
+        "pasteIntoProvider": "貼到 {{provider}} 並傳送。",
+        "permissionsLabel": "權限與隱私",
+        "planCopy": "用現有訂閱執行任務。",
+        "promptTitle": "你想完成什麼？",
+        "readyTitle": "開始你的第一個任務",
+        "skillsCopy": "在電腦上使用 {{provider}}。",
+        "skillsTitle": "匯入你的技能",
+        "sourcesCopy": "為第一個任務連接一個工具。",
+        "startTask": "開始任務",
+        "teamCopy": "在同一個工作區協作。",
+        "teamTitle": "邀請同事"
       },
       "prompt": {
         "intro": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。"

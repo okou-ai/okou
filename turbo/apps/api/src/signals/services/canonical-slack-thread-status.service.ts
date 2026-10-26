@@ -18,7 +18,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { object, string } from "zod";
 
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { db$, writeDb$ } from "../external/db";
@@ -31,11 +31,11 @@ const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
 const ACTIVE_INGRESS_STATUSES = ["pending", "processing"] as const;
 const slackQueueEventRevoker = alias(chatEvents, "slack_queue_event_revoker");
 
-const slackStatusIngressPayloadSchema = z.object({
-  team_id: z.string(),
-  event: z.object({
-    ts: z.string(),
-    thread_ts: z.string().optional(),
+const slackStatusIngressPayloadSchema = object({
+  team_id: string(),
+  event: object({
+    ts: string(),
+    thread_ts: string().optional(),
   }),
 });
 

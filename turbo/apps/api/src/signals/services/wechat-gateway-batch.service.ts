@@ -1,5 +1,6 @@
 import { command } from "ccstate";
-import * as z from "zod";
+import { number, object, record, string, type infer as zInfer } from "zod";
+
 import { and, eq } from "drizzle-orm";
 import { wechatConnections, wechatMessages } from "@okouai/db/schema/wechat";
 import {
@@ -28,16 +29,16 @@ const log = logger("api:wechat:gateway");
 const MAX_INPUT_ATTEMPTS = 3;
 // Stored only inside the encrypted pending batch, scoped to its binding generation.
 const pendingBatchSchema = wechatUpdatesSchema.extend({
-  retries: z.record(
-    z.string(),
-    z.object({
-      failures: z.number().int().nonnegative(),
-      nextAttemptAt: z.number(),
+  retries: record(
+    string(),
+    object({
+      failures: number().int().nonnegative(),
+      nextAttemptAt: number(),
     }),
   ),
 });
 
-type InputRetry = z.infer<typeof pendingBatchSchema>["retries"][string];
+type InputRetry = zInfer<typeof pendingBatchSchema>["retries"][string];
 type Connection = typeof wechatConnections.$inferSelect;
 const receiveBatchInput$ = command(
   async (

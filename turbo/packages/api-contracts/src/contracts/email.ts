@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { literal, object, string, unknown as zUnknown } from "zod";
 
 import { initContract } from "./base";
 
@@ -8,15 +8,15 @@ export const emailInboundContract = c.router({
   post: {
     method: "POST",
     path: "/api/email/inbound",
-    headers: z.object({
-      "svix-id": z.string().optional(),
-      "svix-timestamp": z.string().optional(),
-      "svix-signature": z.string().optional(),
+    headers: object({
+      "svix-id": string().optional(),
+      "svix-timestamp": string().optional(),
+      "svix-signature": string().optional(),
     }),
-    body: z.unknown(),
+    body: zUnknown(),
     responses: {
-      200: z.object({ received: z.literal(true) }),
-      401: z.object({ error: z.string() }),
+      200: object({ received: literal(true) }),
+      401: object({ error: string() }),
     },
     summary: "Handle signed Resend email delivery events",
   },

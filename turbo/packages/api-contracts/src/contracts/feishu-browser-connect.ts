@@ -1,16 +1,16 @@
-import * as z from "zod";
+import { boolean, coerce, literal, object, string, url } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const feishuConnectTokenSchema = z.object({
-  installationId: z.string().uuid(),
-  openId: z.string().min(1),
-  chatId: z.string().min(1),
-  ts: z.coerce.number().int(),
-  sig: z.string().min(1),
+const feishuConnectTokenSchema = object({
+  installationId: string().uuid(),
+  openId: string().min(1),
+  chatId: string().min(1),
+  ts: coerce.number().int(),
+  sig: string().min(1),
 });
 
 export const feishuBrowserConnectContract = c.router({
@@ -20,7 +20,7 @@ export const feishuBrowserConnectContract = c.router({
     query: feishuConnectTokenSchema.partial(),
     responses: {
       307: c.noBody(),
-      500: z.object({ error: z.string() }),
+      500: object({ error: string() }),
     },
     summary: "Connect a Feishu user from a legacy direct message link",
   },
@@ -30,10 +30,10 @@ export const feishuBrowserConnectContract = c.router({
     headers: authHeadersSchema,
     body: feishuConnectTokenSchema,
     responses: {
-      200: z.object({
-        success: z.literal(true),
-        botName: z.string().nullable(),
-        openUrl: z.url(),
+      200: object({
+        success: literal(true),
+        botName: string().nullable(),
+        openUrl: url(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -49,10 +49,10 @@ export const feishuBrowserConnectContract = c.router({
     headers: authHeadersSchema,
     query: feishuConnectTokenSchema,
     responses: {
-      200: z.object({
-        isConnected: z.boolean(),
-        botName: z.string().nullable(),
-        openUrl: z.url(),
+      200: object({
+        isConnected: boolean(),
+        botName: string().nullable(),
+        openUrl: url(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,

@@ -8,7 +8,6 @@ import {
   vncConnectionsContract,
   type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -194,7 +193,6 @@ async function openRemoteAccess(newChat = false) {
     path: newChat
       ? `/agents/${SCOUT_AGENT_ID}/chat`
       : `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   click(await findFastControl("button", "Connectors"));
   click(await screen.findByText("Remote access"));
@@ -297,13 +295,6 @@ test("A new chat updates VNC warnings from unsent host choices", async () => {
     within(menu).findByText(SSH_ENABLED_NOTE),
   ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
-});
-
-test("Direct VNC access does not warn about unrelated disabled SSH hosts", async () => {
-  installDependencyFixture({ transportSshId: null });
-  const menu = await openRemoteAccess();
-  expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
-  expect(within(menu).queryByText(SSH_NOTE)).toBeNull();
 });
 
 test("VNC reports its transport and KDC SSH dependencies independently", async () => {

@@ -4,7 +4,8 @@ import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, isNotNull, notExists, or, sql, type SQL } from "drizzle-orm";
-import * as z from "zod";
+import { array, object, string, type infer as zInfer, type ZodType } from "zod";
+
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { optionalEnv } from "../../lib/env";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
@@ -41,32 +42,27 @@ const GOOGLE_WORKSPACE_RENEWAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
-const workspaceSubscriptionSchema = z
-  .object({
-    name: z.string(),
-    targetResource: z.string().optional(),
-    eventTypes: z.array(z.string()).optional(),
-    notificationEndpoint: z
-      .object({
-        pubsubTopic: z.string().optional(),
-      })
-      .passthrough()
-      .optional(),
-    state: z.string().optional(),
-    expireTime: z.string().optional(),
-    ttl: z.string().optional(),
+const workspaceSubscriptionSchema = object({
+  name: string(),
+  targetResource: string().optional(),
+  eventTypes: array(string()).optional(),
+  notificationEndpoint: object({
+    pubsubTopic: string().optional(),
   })
-  .passthrough();
+    .passthrough()
+    .optional(),
+  state: string().optional(),
+  expireTime: string().optional(),
+  ttl: string().optional(),
+}).passthrough();
 
-const workspaceOperationSchema = z
-  .object({
-    response: workspaceSubscriptionSchema.optional(),
-  })
-  .passthrough();
+const workspaceOperationSchema = object({
+  response: workspaceSubscriptionSchema.optional(),
+}).passthrough();
 
-const workspaceSubscriptionsListSchema = z.object({
-  subscriptions: z.array(workspaceSubscriptionSchema).optional(),
-  nextPageToken: z.string().optional(),
+const workspaceSubscriptionsListSchema = object({
+  subscriptions: array(workspaceSubscriptionSchema).optional(),
+  nextPageToken: string().optional(),
 });
 
 interface GoogleMeetAccess {
@@ -258,7 +254,7 @@ function workspaceEventsApiUrl(path: string): string {
 }
 
 async function workspaceEventsFetchJson<T>(
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   accessToken: string,
   url: string,
   init: RequestInit,
@@ -301,8 +297,8 @@ async function workspaceEventsFetchJson<T>(
 }
 
 function workspaceOperationSubscription(
-  operation: z.infer<typeof workspaceOperationSchema>,
-): z.infer<typeof workspaceSubscriptionSchema> | null {
+  operation: zInfer<typeof workspaceOperationSchema>,
+): zInfer<typeof workspaceSubscriptionSchema> | null {
   return operation.response ?? null;
 }
 
@@ -319,7 +315,7 @@ function googleMeetUserTargetResource(externalId: string): string {
 }
 
 function subscriptionExpireTime(
-  subscription: z.infer<typeof workspaceSubscriptionSchema>,
+  subscription: zInfer<typeof workspaceSubscriptionSchema>,
   currentTime: Date,
 ): Date {
   const parsed = subscription.expireTime
@@ -396,7 +392,7 @@ function googleMeetSubscriptionPublicationSql(args: {
   readonly targetResource: string;
   readonly eventTypes: readonly string[];
   readonly topicName: string;
-  readonly subscription: z.infer<typeof workspaceSubscriptionSchema>;
+  readonly subscription: zInfer<typeof workspaceSubscriptionSchema>;
   readonly currentTime: Date;
   readonly consumerCondition: SQL | undefined;
 }) {
@@ -448,7 +444,7 @@ async function createWorkspaceSubscription(
   },
   signal: AbortSignal,
 ): Promise<
-  WorkspaceEventsFetchResult<z.infer<typeof workspaceSubscriptionSchema>>
+  WorkspaceEventsFetchResult<zInfer<typeof workspaceSubscriptionSchema>>
 > {
   const operation = await workspaceEventsFetchJson(
     workspaceOperationSchema,
@@ -488,7 +484,7 @@ async function renewWorkspaceSubscription(
   },
   signal: AbortSignal,
 ): Promise<
-  WorkspaceEventsFetchResult<z.infer<typeof workspaceSubscriptionSchema>>
+  WorkspaceEventsFetchResult<zInfer<typeof workspaceSubscriptionSchema>>
 > {
   const url = new URL(workspaceEventsApiUrl(`/${args.subscriptionName}`));
   url.searchParams.set("updateMask", "ttl");
@@ -526,7 +522,7 @@ async function reactivateWorkspaceSubscription(
   },
   signal: AbortSignal,
 ): Promise<
-  WorkspaceEventsFetchResult<z.infer<typeof workspaceSubscriptionSchema>>
+  WorkspaceEventsFetchResult<zInfer<typeof workspaceSubscriptionSchema>>
 > {
   const operation = await workspaceEventsFetchJson(
     workspaceOperationSchema,
@@ -574,10 +570,10 @@ async function listWorkspaceSubscriptions(
   signal: AbortSignal,
 ): Promise<
   WorkspaceEventsFetchResult<
-    readonly z.infer<typeof workspaceSubscriptionSchema>[]
+    readonly zInfer<typeof workspaceSubscriptionSchema>[]
   >
 > {
-  const subscriptions: z.infer<typeof workspaceSubscriptionSchema>[] = [];
+  const subscriptions: zInfer<typeof workspaceSubscriptionSchema>[] = [];
   let pageToken: string | null = null;
   do {
     const url = new URL(workspaceEventsApiUrl("/subscriptions"));
@@ -611,7 +607,7 @@ async function listWorkspaceSubscriptions(
 }
 
 function workspaceSubscriptionMatches(args: {
-  readonly subscription: z.infer<typeof workspaceSubscriptionSchema>;
+  readonly subscription: zInfer<typeof workspaceSubscriptionSchema>;
   readonly targetResource: string;
   readonly eventTypes: readonly string[];
   readonly topicName: string;
@@ -635,7 +631,7 @@ async function adoptExistingWorkspaceSubscription(
   },
   signal: AbortSignal,
 ): Promise<
-  WorkspaceEventsFetchResult<z.infer<typeof workspaceSubscriptionSchema>>
+  WorkspaceEventsFetchResult<zInfer<typeof workspaceSubscriptionSchema>>
 > {
   const list = await listWorkspaceSubscriptions(args, signal);
   signal.throwIfAborted();
@@ -669,7 +665,7 @@ async function createOrAdoptWorkspaceSubscription(
   },
   signal: AbortSignal,
 ): Promise<
-  WorkspaceEventsFetchResult<z.infer<typeof workspaceSubscriptionSchema>>
+  WorkspaceEventsFetchResult<zInfer<typeof workspaceSubscriptionSchema>>
 > {
   const created = await createWorkspaceSubscription(args, signal);
   signal.throwIfAborted();
@@ -699,7 +695,7 @@ interface GoogleMeetSubscriptionPublication {
   readonly targetResource: string;
   readonly eventTypes: readonly string[];
   readonly topicName: string;
-  readonly subscription: z.infer<typeof workspaceSubscriptionSchema>;
+  readonly subscription: zInfer<typeof workspaceSubscriptionSchema>;
   readonly currentTime: Date;
   readonly accessToken: string;
 }
@@ -767,7 +763,7 @@ const prepareGoogleMeetTranscriptGeneratedSubscription$ = command(
     }
 
     let subscription: WorkspaceEventsFetchResult<
-      z.infer<typeof workspaceSubscriptionSchema>
+      zInfer<typeof workspaceSubscriptionSchema>
     >;
     let created = existing === null;
     if (existing) {
@@ -1084,7 +1080,7 @@ const persistGoogleMeetSubscription$ = command(
     signal: AbortSignal,
   ): Promise<readonly { readonly id: string }[]> => {
     const rows = parseRawRows(
-      z.object({ id: z.string() }),
+      object({ id: string() }),
       await set(writeDb$).execute(
         googleMeetSubscriptionPublicationSql({
           ...args.publication,
@@ -1325,7 +1321,7 @@ const publishGoogleMeetAutomationProjection$ = command(
       connectorSlug: "google-meet",
     });
     const [selected] = parseRawRows(
-      z.object({ connectorId: z.string().nullable() }),
+      object({ connectorId: string().nullable() }),
       await get(rawSqlReadDb$).execute(selectionSql),
     );
     signal.throwIfAborted();

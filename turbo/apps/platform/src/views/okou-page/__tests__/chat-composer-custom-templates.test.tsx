@@ -4,7 +4,6 @@ import {
   userTemplatesContract,
   type UserTemplateDetail,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -202,19 +201,13 @@ function menuItemByName(name: string): HTMLElement {
 }
 
 async function openCustomPanel(
-  enabled = true,
   category: "Presentation" | "Document" | "Image" = "Presentation",
-  builtInDocuments = false,
 ) {
   const user = userEvent.setup({ delay: null });
   const capture = mockTemplateChat();
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: enabled,
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: builtInDocuments,
-    },
   });
   const dialog = await openTemplatePicker(user);
   if (category !== "Presentation") {
@@ -222,15 +215,6 @@ async function openCustomPanel(
   }
   return { user, dialog, capture };
 }
-
-test("The switch preserves the ordinary Presentation catalog", async () => {
-  mockCustomTemplates([customTemplate()]);
-
-  const { dialog } = await openCustomPanel(false);
-
-  expect(queryTabByText("Presentation")).toBeTruthy();
-  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
-});
 
 test("The picker opens Presentation with separate Custom and Built-in sections", async () => {
   mockCustomTemplates([customTemplate()]);
@@ -247,20 +231,6 @@ test("The picker opens Presentation with separate Custom and Built-in sections",
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
-});
-
-test("The switch decides whether the catalog is requested at all", async () => {
-  let listed = 0;
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    listed += 1;
-    return respond(200, []);
-  });
-
-  await openCustomPanel(false);
-
-  // Hiding the Custom tab is not enough — a member without the feature must
-  // not have asked for the catalog at all.
-  expect(listed).toBe(0);
 });
 
 test("The Custom section lists owned and shared templates of the selected type", async () => {
@@ -661,17 +631,18 @@ test("A document template with no cover is tiled by its format", async () => {
   const template = documentTemplate();
   mockCustomTemplates([template]);
 
-  const { dialog } = await openCustomPanel(true, "Document");
+  const { dialog } = await openCustomPanel("Document");
   click(tabByText("Document"));
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
 
   await expect(
-    within(dialog).findByText("Brand report"),
+    within(custom).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
   // Nothing was rendered for it, so the tile carries the format it was
   // compiled from rather than an empty frame.
-  expect(within(dialog).getByText("DOCX")).toBeInTheDocument();
+  expect(within(custom).getByText("DOCX")).toBeInTheDocument();
   expect(
-    within(dialog).queryByTestId("document-cover-page"),
+    within(custom).queryByTestId("document-cover-page"),
   ).not.toBeInTheDocument();
 });
 
@@ -686,23 +657,24 @@ test("A document template with a cover is tiled by its first page over a stack",
     }),
   ]);
 
-  const { dialog } = await openCustomPanel(true, "Document");
+  const { dialog } = await openCustomPanel("Document");
   click(tabByText("Document"));
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
 
-  const page = await within(dialog).findByTestId("document-cover-page");
+  const page = await within(custom).findByTestId("document-cover-page");
   expect(page).toHaveAttribute("src", DOCUMENT_COVER_URL);
   // The page was rendered, so the format glyph steps aside for it.
-  expect(within(dialog).queryByText("DOCX")).not.toBeInTheDocument();
+  expect(within(custom).queryByText("DOCX")).not.toBeInTheDocument();
   // Two sheets for a source that continued, whether it continued for one more
   // page or three hundred: they carry no image, so there is nothing for a
   // third to add.
-  expect(within(dialog).getAllByTestId("document-cover-sheet")).toHaveLength(2);
+  expect(within(custom).getAllByTestId("document-cover-sheet")).toHaveLength(2);
 });
 
 test("Opening a Word template hands the source file to the Office viewer", async () => {
   mockCustomTemplateStore([documentTemplate()]);
 
-  const { dialog } = await openCustomPanel(true, "Document");
+  const { dialog } = await openCustomPanel("Document");
   click(tabByText("Document"));
   await within(dialog).findByText("Brand report");
   click(buttonByName("Preview Brand report", dialog)!);
@@ -734,7 +706,7 @@ test("A PDF template opens in the browser's own viewer", async () => {
     }),
   ]);
 
-  const { dialog } = await openCustomPanel(true, "Document");
+  const { dialog } = await openCustomPanel("Document");
   click(tabByText("Document"));
   await within(dialog).findByText("Annual report");
   click(buttonByName("Preview Annual report", dialog)!);
@@ -812,7 +784,7 @@ function exampleStrip(dialog: HTMLElement): HTMLElement[] {
 test("An image template is shown by the examples its style produced, not its source", async () => {
   mockCustomTemplateStore([exampledIllustrationTemplate()]);
 
-  const { dialog } = await openCustomPanel(true, "Image");
+  const { dialog } = await openCustomPanel("Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   const hero = () => {
@@ -845,7 +817,7 @@ test("An image template is shown by the examples its style produced, not its sou
 test("An image template with one example has nothing to choose between", async () => {
   mockCustomTemplateStore([exampledIllustrationTemplate([EXAMPLE_URLS[0]])]);
 
-  const { dialog } = await openCustomPanel(true, "Image");
+  const { dialog } = await openCustomPanel("Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   expect(
@@ -858,7 +830,7 @@ test("An image template with one example has nothing to choose between", async (
 test("Rename an image template from its card menu", async () => {
   mockCustomTemplateStore([exampledIllustrationTemplate()]);
 
-  const { dialog } = await openCustomPanel(true, "Image");
+  const { dialog } = await openCustomPanel("Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   click(buttonByName("Actions for Quiet UI mockup", dialog)!);
@@ -893,7 +865,7 @@ test("A rename the server refuses keeps the dialog and the typed name", async ()
     },
   });
 
-  const { dialog } = await openCustomPanel(true, "Image");
+  const { dialog } = await openCustomPanel("Image");
   await within(dialog).findByText("Quiet UI mockup");
 
   click(buttonByName("Actions for Quiet UI mockup", dialog)!);
@@ -1078,7 +1050,7 @@ test("Deleting an image template keeps its category and other cards", async () =
   };
   mockCustomTemplateStore([board, remaining]);
 
-  const { dialog } = await openCustomPanel(true, "Image");
+  const { dialog } = await openCustomPanel("Image");
   await within(dialog).findByText(board.title);
 
   click(buttonByName(`Actions for ${board.title}`, dialog)!);
@@ -1277,7 +1249,6 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: true },
   });
   const dialog = await openTemplatePicker(user);
 
@@ -1302,7 +1273,7 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
 
 test("Custom is a document filter beside All and the built-in purposes", async () => {
   mockCustomTemplates([documentTemplate()]);
-  const { dialog } = await openCustomPanel(true, "Document", true);
+  const { dialog } = await openCustomPanel("Document");
   const custom = within(dialog).getByRole("region", { name: "Custom" });
   await within(custom).findByText("Brand report");
   expect(

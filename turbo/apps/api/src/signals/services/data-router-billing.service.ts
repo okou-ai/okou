@@ -3,21 +3,21 @@ import { randomUUID } from "node:crypto";
 import { dataRouterRequests } from "@okouai/db/schema/data-router-request";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import * as z from "zod";
+import { array, literal, number, object, uuid } from "zod";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { recordDataRouterUsage$ } from "./data-router-usage.service";
 import { managedAttributionQuery } from "./managed-usage-attribution";
 
-const billingResponse = z.object({
-  result: z.object({
-    isError: z.literal(false).optional(),
-    structuredContent: z.object({
-      records: z.array(
-        z.object({
-          requestId: z.uuid(),
-          credits: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+const billingResponse = object({
+  result: object({
+    isError: literal(false).optional(),
+    structuredContent: object({
+      records: array(
+        object({
+          requestId: uuid(),
+          credits: number().int().min(0).max(Number.MAX_SAFE_INTEGER),
         }),
       ),
     }),

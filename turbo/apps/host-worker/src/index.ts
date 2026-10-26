@@ -37,6 +37,7 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { withArtifactOg } from "./artifact-og";
 import { standaloneSiteDocument, withSiteBanner } from "./site-banner";
+import { isSiteDownloadPath, siteDownloadResponse } from "./site-download";
 import type { HostedSiteAccessDecision } from "@okouai/api-contracts/contracts/hosted-site-access";
 
 interface R2ObjectBody {
@@ -866,6 +867,24 @@ async function serveLegacyHostedSite(
     return notFoundResponse();
   }
 
+  if (isSiteDownloadPath(pathname)) {
+    if (!presentation) return privateResponse(notFoundResponse());
+    return withSiteAuthHeaders(
+      await siteDownloadResponse(
+        request,
+        {
+          deploymentId: pointer.deploymentId,
+          siteUrl: presentation.siteUrl,
+          files: Object.values(manifest.files),
+        },
+        (path) => {
+          return serveManifestFile(request, env, path, pointer, manifest);
+        },
+      ),
+      authHeaders,
+    );
+  }
+
   const response = await serveManifestFile(
     request,
     env,
@@ -963,7 +982,11 @@ async function authorizeHostedSiteDelivery(
     prefix: pointer.prefix,
     manifestKey: pointer.manifestKey,
   }).toString();
-  if (layout === "current" && standaloneSiteDocument(request))
+  if (
+    layout === "current" &&
+    (standaloneSiteDocument(request) ||
+      isSiteDownloadPath(new URL(request.url).pathname))
+  )
     url.searchParams.set("presentation", "banner");
   return authorizeSiteRequest(request, env, url);
 }

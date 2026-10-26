@@ -1,57 +1,60 @@
-import * as z from "zod";
+import {
+  discriminatedUnion,
+  iso,
+  literal,
+  number,
+  object,
+  uuid,
+  enum as zEnum,
+  null as zNull,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 /** Successful observation JSON is bounded to 2 KiB, independently of input size. */
 export const CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES = 2048;
 
-const eventCoordinateSchema = z
-  .object({
-    eventId: z.uuid(),
-    seqId: z.number().int().positive(),
-    createdAt: z.iso.datetime(),
-  })
-  .strict();
+const eventCoordinateSchema = object({
+  eventId: uuid(),
+  seqId: number().int().positive(),
+  createdAt: iso.datetime(),
+}).strict();
 
 const observationShape = {
-  threadId: z.uuid(),
+  threadId: uuid(),
   /** The original accepted input, never replaced by its consuming event ID. */
-  eventId: z.uuid(),
+  eventId: uuid(),
   input: eventCoordinateSchema.nullable(),
   replacement: eventCoordinateSchema.nullable(),
 };
 
-export const chatInputStatusResponseSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      ...observationShape,
-      status: z.literal("consumed"),
-      /** Canonical consumption reference, usable with the existing cancel API. */
-      runId: z.uuid(),
-      /** Consumption is established, but no retained Chat terminal event was found. */
-      terminal: z.null(),
-    })
-    .strict(),
-  z
-    .object({
-      ...observationShape,
-      status: z.enum(["completed", "failed", "cancelled"]),
-      runId: z.uuid(),
-      /** Chat terminal event coordinates, not execution lifecycle timestamps. */
-      terminal: eventCoordinateSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...observationShape,
-      status: z.enum(["queued", "rejected", "revoked", "unavailable"]),
-      runId: z.null(),
-      terminal: z.null(),
-    })
-    .strict(),
+export const chatInputStatusResponseSchema = discriminatedUnion("status", [
+  object({
+    ...observationShape,
+    status: literal("consumed"),
+    /** Canonical consumption reference, usable with the existing cancel API. */
+    runId: uuid(),
+    /** Consumption is established, but no retained Chat terminal event was found. */
+    terminal: zNull(),
+  }).strict(),
+  object({
+    ...observationShape,
+    status: zEnum(["completed", "failed", "cancelled"]),
+    runId: uuid(),
+    /** Chat terminal event coordinates, not execution lifecycle timestamps. */
+    terminal: eventCoordinateSchema,
+  }).strict(),
+  object({
+    ...observationShape,
+    status: zEnum(["queued", "rejected", "revoked", "unavailable"]),
+    runId: zNull(),
+    terminal: zNull(),
+  }).strict(),
 ]);
 
-export type ChatInputStatusResponse = z.infer<
+export type ChatInputStatusResponse = zInfer<
   typeof chatInputStatusResponseSchema
 >;
 
@@ -61,12 +64,10 @@ export const chatInputStatusContract = c.router({
     method: "GET",
     path: "/api/chat-threads/:threadId/inputs/:eventId/status",
     headers: authHeadersSchema,
-    pathParams: z
-      .object({
-        threadId: z.uuid().toLowerCase(),
-        eventId: z.uuid().toLowerCase(),
-      })
-      .strict(),
+    pathParams: object({
+      threadId: uuid().toLowerCase(),
+      eventId: uuid().toLowerCase(),
+    }).strict(),
     responses: {
       200: chatInputStatusResponseSchema,
       400: apiErrorSchema,

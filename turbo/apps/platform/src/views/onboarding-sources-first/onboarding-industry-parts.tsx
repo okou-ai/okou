@@ -4,6 +4,26 @@ import {
   useComplianceTitle,
 } from "../components/compliance-badges.tsx";
 import { ILLUSTRATION_BASE } from "./onboarding-step-parts.tsx";
+import { ShieldCheck } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { securityPageUrl } from "./onboarding-security.ts";
+
+export function OnboardingSecurityLink() {
+  const { t, i18n } = useTranslation();
+  return (
+    <a
+      className="flex min-h-11 items-center justify-center gap-1.5 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+      href={securityPageUrl(i18n.resolvedLanguage ?? i18n.language)}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <ShieldCheck size={14} aria-hidden="true" />
+      {t(($) => {
+        return $.onboarding.sourcesFirst.sources.securityLink;
+      })}
+    </a>
+  );
+}
 
 export function OnboardingCompliance() {
   const title = useComplianceTitle();

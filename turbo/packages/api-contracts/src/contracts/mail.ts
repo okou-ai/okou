@@ -1,62 +1,74 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  email,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const mailProviderSchema = z.enum(["gmail", "outlook"]);
+export const mailProviderSchema = zEnum(["gmail", "outlook"]);
 
-export const mailDraftStatusSchema = z.enum(["draft", "sent", "deleted"]);
+export const mailDraftStatusSchema = zEnum(["draft", "sent", "deleted"]);
 
-export const mailAttachmentSchema = z.object({
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number().int().nonnegative(),
-  partId: z.string().optional(),
+export const mailAttachmentSchema = object({
+  filename: string(),
+  contentType: string(),
+  size: number().int().nonnegative(),
+  partId: string().optional(),
 });
 
-export const mailInlineImageSchema = z.object({
-  contentId: z.string().min(1),
-  partId: z.string().min(1),
-  alt: z.string(),
+export const mailInlineImageSchema = object({
+  contentId: string().min(1),
+  partId: string().min(1),
+  alt: string(),
 });
 
-const mailDraftBaseSchema = z.object({
-  provider: z.literal("gmail"),
-  from: z.email(),
-  fromName: z.string().optional(),
-  to: z.array(z.email()),
-  cc: z.array(z.email()),
-  bcc: z.array(z.email()),
-  subject: z.string(),
-  body: z.string(),
-  bodyHtml: z.string().optional(),
-  inlineImages: z.array(mailInlineImageSchema).optional(),
-  accessStatus: z.enum(["ready", "reconnect"]).optional(),
-  reconnectConnectionId: z.uuid().optional(),
-  replyTo: z.string().optional(),
-  inReplyTo: z.string().optional(),
-  references: z.array(z.string()),
+const mailDraftBaseSchema = object({
+  provider: literal("gmail"),
+  from: email(),
+  fromName: string().optional(),
+  to: array(email()),
+  cc: array(email()),
+  bcc: array(email()),
+  subject: string(),
+  body: string(),
+  bodyHtml: string().optional(),
+  inlineImages: array(mailInlineImageSchema).optional(),
+  accessStatus: zEnum(["ready", "reconnect"]).optional(),
+  reconnectConnectionId: uuid().optional(),
+  replyTo: string().optional(),
+  inReplyTo: string().optional(),
+  references: array(string()),
   status: mailDraftStatusSchema,
-  detailAvailable: z.boolean(),
-  gmailDraftId: z.string(),
-  gmailThreadId: z.string(),
-  gmailMessageId: z.string(),
-  sentGmailMessageId: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  sentAt: z.string().optional(),
+  detailAvailable: boolean(),
+  gmailDraftId: string(),
+  gmailThreadId: string(),
+  gmailMessageId: string(),
+  sentGmailMessageId: string().optional(),
+  createdAt: string(),
+  updatedAt: string(),
+  sentAt: string().optional(),
 });
 
 export const mailDraftSchema = mailDraftBaseSchema.extend({
-  version: z.literal(3),
-  attachments: z.array(mailAttachmentSchema),
+  version: literal(3),
+  attachments: array(mailAttachmentSchema),
 });
 
-const mailDraftResponseSchema = z.object({
-  mailDraftId: z.string().uuid(),
-  mailDraftUrl: z.url(),
+const mailDraftResponseSchema = object({
+  mailDraftId: string().uuid(),
+  mailDraftUrl: url(),
   mailDraft: mailDraftSchema,
 });
 
@@ -65,20 +77,20 @@ const mailLinkResponseSchema = mailDraftResponseSchema.pick({
   mailDraftUrl: true,
 });
 
-const mailDraftPathParamsSchema = z.object({
-  mailDraftId: z.string().uuid(),
+const mailDraftPathParamsSchema = object({
+  mailDraftId: string().uuid(),
 });
 
 const mailDraftAttachmentPathParamsSchema = mailDraftPathParamsSchema.extend({
-  partId: z.string().min(1),
+  partId: string().min(1),
 });
 
-export const threadMailSummarySchema = z.object({
-  mailDraftId: z.uuid(),
-  status: z.enum(["draft", "sent"]),
-  subject: z.string(),
-  from: z.string(),
-  createdAt: z.string(),
+export const threadMailSummarySchema = object({
+  mailDraftId: uuid(),
+  status: zEnum(["draft", "sent"]),
+  subject: string(),
+  from: string(),
+  createdAt: string(),
 });
 
 export const mailContract = c.router({
@@ -86,9 +98,9 @@ export const mailContract = c.router({
     method: "GET",
     path: "/api/mail/threads/:threadId/drafts",
     headers: authHeadersSchema,
-    pathParams: z.object({ threadId: z.uuid() }),
+    pathParams: object({ threadId: uuid() }),
     responses: {
-      200: z.object({ mails: z.array(threadMailSummarySchema) }),
+      200: object({ mails: array(threadMailSummarySchema) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -99,10 +111,10 @@ export const mailContract = c.router({
     method: "POST",
     path: "/api/mail/drafts/link",
     headers: authHeadersSchema,
-    body: z.object({
-      threadId: z.string().uuid(),
-      agentId: z.string().uuid().optional(),
-      gmailDraftId: z.string().min(1),
+    body: object({
+      threadId: string().uuid(),
+      agentId: string().uuid().optional(),
+      gmailDraftId: string().min(1),
     }),
     responses: {
       200: mailLinkResponseSchema,
@@ -177,10 +189,10 @@ export const mailContract = c.router({
   },
 });
 
-export type MailProvider = z.infer<typeof mailProviderSchema>;
-export type MailDraftStatus = z.infer<typeof mailDraftStatusSchema>;
-export type MailAttachment = z.infer<typeof mailAttachmentSchema>;
-export type MailInlineImage = z.infer<typeof mailInlineImageSchema>;
-export type MailDraft = z.infer<typeof mailDraftSchema>;
-export type ThreadMailSummary = z.infer<typeof threadMailSummarySchema>;
+export type MailProvider = zInfer<typeof mailProviderSchema>;
+export type MailDraftStatus = zInfer<typeof mailDraftStatusSchema>;
+export type MailAttachment = zInfer<typeof mailAttachmentSchema>;
+export type MailInlineImage = zInfer<typeof mailInlineImageSchema>;
+export type MailDraft = zInfer<typeof mailDraftSchema>;
+export type ThreadMailSummary = zInfer<typeof threadMailSummarySchema>;
 export type MailContract = typeof mailContract;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { z } from "zod";
+import { object, string, enum as zEnum } from "zod";
 import { expect, onTestFinished, test } from "vitest";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,13 +12,13 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 
 const context = testContext();
-const referenceSchema = z.object({
-  siteId: z.string().uuid(),
-  deploymentId: z.string().uuid(),
-  publicSlug: z.string(),
-  publicBrand: z.enum(["vm0", "okou"]),
-  prefix: z.string(),
-  manifestKey: z.string(),
+const referenceSchema = object({
+  siteId: string().uuid(),
+  deploymentId: string().uuid(),
+  publicSlug: string(),
+  publicBrand: zEnum(["vm0", "okou"]),
+  prefix: string(),
+  manifestKey: string(),
 });
 
 test("rejects malformed pointer identities at the anonymous request boundary", async () => {

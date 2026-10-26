@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -123,15 +123,13 @@ export async function exchangeGarminConnectCode(
     await throwOAuthError("Garmin Connect", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -182,16 +180,14 @@ export async function refreshGarminConnectToken(
     await throwOAuthError("Garmin Connect", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -227,12 +223,10 @@ async function fetchGarminConnectUserId(
     );
   }
 
-  const data = z
-    .object({
-      userId: z.string().optional(),
-      displayName: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    userId: string().optional(),
+    displayName: string().nullable().optional(),
+  }).parse(await response.json());
 
   return {
     id: requireConnectorGrantUserId(data.userId, "Garmin Connect"),

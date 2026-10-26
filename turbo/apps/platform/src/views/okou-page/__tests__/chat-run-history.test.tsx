@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { now } from "../../../lib/time.ts";
-import { setupPage } from "./chat-lifecycle-test-helpers.ts";
+import { AGENT_ID, setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
@@ -86,9 +86,9 @@ function assistantGroupFor(element: Element): HTMLElement {
   return group;
 }
 
-function viewAgentProfileLinks(): HTMLElement[] {
+function agentNameLines(): HTMLElement[] {
   return queryAllByRoleFast("link").filter((link) => {
-    return link.getAttribute("aria-label") === "View agent profile";
+    return link.dataset.chatAssistantNameLine !== undefined;
   });
 }
 
@@ -445,7 +445,44 @@ test("Count one output.message once when Markdown renders multiple child blocks"
   await expect(screen.findByTestId("plan-upgrade-card")).resolves.toBeVisible();
   expect(queryWorkHistoryToggles("collapsed")).toHaveLength(0);
   expect(screen.queryAllByText(/^Working(?: for)? /u)).toHaveLength(1);
-  expect(viewAgentProfileLinks()).toHaveLength(1);
+  expect(agentNameLines()).toHaveLength(1);
+});
+
+test("A reply opens with its agent's name, linked to the agent's profile", async () => {
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "named-reply-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Summarize the launch notes",
+      }),
+      assistantEvent({
+        id: "named-reply-output",
+        runId: RUN_A,
+        seqId: 2,
+        text: "The launch notes are summarized.",
+      }),
+      completedEvent({ id: "named-reply-completed", runId: RUN_A, seqId: 3 }),
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  await screen.findByText("The launch notes are summarized.");
+  await waitFor(() => {
+    expect(agentNameLines()).toHaveLength(1);
+  });
+  const [nameLine] = agentNameLines();
+  expect(nameLine).toHaveAccessibleName("Run Agent");
+  expect(nameLine).toHaveAttribute("href", `/agents/${AGENT_ID}`);
+  expect(nameLine?.closest('[data-role="assistant"]')).toHaveTextContent(
+    "The launch notes are summarized.",
+  );
 });
 
 test.each([
@@ -535,7 +572,7 @@ test.each(finalOutputDocuments)(
     await readyChat();
     const main = await find();
     expect(main).toBeVisible();
-    expect(viewAgentProfileLinks()).toHaveLength(1);
+    expect(agentNameLines()).toHaveLength(1);
     expect(screen.queryByText("Earlier output belongs in history")).toBeNull();
     expect(queryWorkHistoryToggles("collapsed")).toHaveLength(1);
     const thinking = document.querySelector<HTMLElement>(

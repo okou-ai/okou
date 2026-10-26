@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import * as z from "zod";
+import { boolean, literal, object, string, uuid } from "zod";
 import {
   CURRENT_LINK_LAYOUT,
   linkLayoutFromSegment,
@@ -33,13 +33,12 @@ import {
 } from "./artifact-catalog.service";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
-const privateMetadataSchema = z.object({
-  storage: z.literal(PRIVATE_STORAGE),
-  bucket: z.string().min(1),
+const privateMetadataSchema = object({
+  storage: literal(PRIVATE_STORAGE),
+  bucket: string().min(1),
   // Link-layout marker of the file's shares; the key name is persisted.
   publicBrand: linkLayoutSegmentSchema,
-  artifactReference: z
-    .string()
+  artifactReference: string()
     .regex(/^[a-z0-9]{10}$/u)
     .optional(),
 });
@@ -105,7 +104,7 @@ export function privateArtifactUrl(
 ): string {
   if (metadata.artifactReference !== undefined) {
     return privateArtifactReferenceUrl(
-      z.string().parse(metadata.artifactReference),
+      string().parse(metadata.artifactReference),
       filename,
     );
   }
@@ -264,7 +263,7 @@ export const allocatePrivateArtifact$ = command(
 export const privateArtifactRecord$ = command(
   async ({ get }, id: string, signal: AbortSignal) => {
     // Historical file IDs are not all UUIDs; the database key is a UUID.
-    if (!z.uuid().safeParse(id).success) {
+    if (!uuid().safeParse(id).success) {
       return null;
     }
     const [row] = await get(db$)
@@ -315,7 +314,7 @@ export const completePrivateArtifact$ = command(
     const db = set(writeDb$);
     // A completed file and its durable catalog handoff must commit together.
     const [outcome] = parseRawRows(
-      z.object({ changed: z.boolean() }),
+      object({ changed: boolean() }),
       await db.execute(
         queueChangedArtifactCatalogFileSql(
           args.id,

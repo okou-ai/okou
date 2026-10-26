@@ -297,11 +297,13 @@ function useGoogleWorkspaceTarget(
 ): GoogleWorkspaceTarget | undefined {
   const features = useLastResolved(featureSwitch$);
   const target = googleWorkspaceTarget(filename);
-  const flag =
-    target === "presentation"
-      ? FeatureSwitchKey.GoogleSlidesConversion
-      : FeatureSwitchKey.GoogleDocsSheetsConversion;
-  return features?.[flag] ? target : undefined;
+  if (
+    target === "presentation" &&
+    !features?.[FeatureSwitchKey.GoogleSlidesConversion]
+  ) {
+    return undefined;
+  }
+  return target;
 }
 
 function useGoogleDriveMenuLabels(target?: GoogleWorkspaceTarget) {

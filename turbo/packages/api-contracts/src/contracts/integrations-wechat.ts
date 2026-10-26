@@ -1,5 +1,17 @@
 import { wechatUpdatesSchema } from "./wechat-protocol";
-import * as z from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 const c = initContract();
@@ -11,21 +23,21 @@ const errors = {
   409: apiErrorSchema,
   503: apiErrorSchema,
 };
-export const wechatBindingSchema = z.object({
-  workspace: z.object({ id: z.string(), name: z.string() }),
-  accountId: z.string(),
+export const wechatBindingSchema = object({
+  workspace: object({ id: string(), name: string() }),
+  accountId: string(),
 });
-export const wechatStatusSchema = z.object({
-  configured: z.boolean(),
+export const wechatStatusSchema = object({
+  configured: boolean(),
   binding: wechatBindingSchema.nullable(),
-  status: z.enum(["disconnected", "active", "reconnect_required"]),
+  status: zEnum(["disconnected", "active", "reconnect_required"]),
 });
-export const wechatAttemptSchema = z.object({
-  id: z.uuid(),
-  qrContent: z.string(),
-  expiresAt: z.iso.datetime(),
+export const wechatAttemptSchema = object({
+  id: uuid(),
+  qrContent: string(),
+  expiresAt: iso.datetime(),
 });
-export const wechatPollStatusSchema = z.enum([
+export const wechatPollStatusSchema = zEnum([
   "waiting",
   "scanned",
   "verification_required",
@@ -54,21 +66,20 @@ export const integrationsWechatContract = c.router({
     method: "POST",
     path: "/api/integrations/wechat/connect/status",
     headers: authHeadersSchema,
-    body: z.object({
-      id: z.uuid(),
-      verifyCode: z
-        .string()
+    body: object({
+      id: uuid(),
+      verifyCode: string()
         .regex(/^\d{4,12}$/u)
         .optional(),
     }),
-    responses: { 200: z.object({ status: wechatPollStatusSchema }), ...errors },
+    responses: { 200: object({ status: wechatPollStatusSchema }), ...errors },
     summary: "Wait for the owner's WeChat scan confirmation",
   },
   cancel: {
     method: "DELETE",
     path: "/api/integrations/wechat/connect",
     headers: authHeadersSchema,
-    body: z.object({ id: z.uuid() }),
+    body: object({ id: uuid() }),
     responses: { 204: c.noBody(), ...errors },
     summary: "Cancel a WeChat connection attempt",
   },
@@ -76,15 +87,15 @@ export const integrationsWechatContract = c.router({
     method: "GET",
     path: "/api/integrations/wechat/reconnect",
     headers: authHeadersSchema,
-    query: z.object({ token: z.string().min(1).max(1024) }),
-    responses: { 200: z.object({ available: z.boolean() }), ...errors },
+    query: object({ token: string().min(1).max(1024) }),
+    responses: { 200: object({ available: boolean() }), ...errors },
     summary: "Check an owner's WeChat reconnect link",
   },
   reconnect: {
     method: "POST",
     path: "/api/integrations/wechat/reconnect",
     headers: authHeadersSchema,
-    body: z.object({ token: z.string().min(1).max(1024) }),
+    body: object({ token: string().min(1).max(1024) }),
     responses: { 204: c.noBody(), ...errors },
     summary: "Restore the owner's disconnected WeChat binding",
   },
@@ -97,13 +108,13 @@ export const integrationsWechatContract = c.router({
     summary: "Disconnect WeChat",
   },
 });
-const receiverHeadersSchema = z.object({
-  "x-wechat-timestamp": z.string(),
-  "x-wechat-signature": z.string(),
+const receiverHeadersSchema = object({
+  "x-wechat-timestamp": string(),
+  "x-wechat-signature": string(),
 });
-export type WechatStatus = z.infer<typeof wechatStatusSchema>;
-export type WechatAttempt = z.infer<typeof wechatAttemptSchema>;
-export type WechatPollStatus = z.infer<typeof wechatPollStatusSchema>;
+export type WechatStatus = zInfer<typeof wechatStatusSchema>;
+export type WechatAttempt = zInfer<typeof wechatAttemptSchema>;
+export type WechatPollStatus = zInfer<typeof wechatPollStatusSchema>;
 
 /** Private Worker protocol; credentials never enter browser responses. */
 export const wechatReceiverContract = c.router({
@@ -111,22 +122,20 @@ export const wechatReceiverContract = c.router({
     method: "POST",
     path: "/api/internal/wechat/receiver",
     headers: receiverHeadersSchema,
-    body: z.object({ connectionId: z.uuid(), generation: z.uuid().optional() }),
+    body: object({ connectionId: uuid(), generation: uuid().optional() }),
     responses: {
-      200: z.discriminatedUnion("active", [
-        z.object({ active: z.literal(false) }),
-        z.object({
-          active: z.literal(true),
-          generation: z.uuid(),
-          session: z
-            .object({
-              baseUrl: z.string().url(),
-              token: z.string().min(1),
-              cursor: z.string(),
-              preserveCursor: z.boolean(),
-              pending: wechatUpdatesSchema.nullable(),
-            })
-            .optional(),
+      200: discriminatedUnion("active", [
+        object({ active: literal(false) }),
+        object({
+          active: literal(true),
+          generation: uuid(),
+          session: object({
+            baseUrl: string().url(),
+            token: string().min(1),
+            cursor: string(),
+            preserveCursor: boolean(),
+            pending: wechatUpdatesSchema.nullable(),
+          }).optional(),
         }),
       ]),
       ...errors,
@@ -137,16 +146,16 @@ export const wechatReceiverContract = c.router({
     method: "POST",
     path: "/api/internal/wechat/deliver",
     headers: receiverHeadersSchema,
-    body: z.object({
-      connectionId: z.uuid(),
-      generation: z.uuid(),
+    body: object({
+      connectionId: uuid(),
+      generation: uuid(),
       updates: wechatUpdatesSchema,
     }),
     responses: {
-      200: z.object({
-        active: z.boolean(),
-        refresh: z.boolean().optional(),
-        retryAfterMs: z.number().int().min(1).max(5_000).optional(),
+      200: object({
+        active: boolean(),
+        refresh: boolean().optional(),
+        retryAfterMs: number().int().min(1).max(5_000).optional(),
       }),
       ...errors,
     },
@@ -156,9 +165,9 @@ export const wechatReceiverContract = c.router({
     method: "POST",
     path: "/api/internal/wechat/expire",
     headers: receiverHeadersSchema,
-    body: z.object({ connectionId: z.uuid(), generation: z.uuid() }),
+    body: object({ connectionId: uuid(), generation: uuid() }),
     responses: {
-      200: z.object({ active: z.boolean(), refresh: z.boolean().optional() }),
+      200: object({ active: boolean(), refresh: boolean().optional() }),
       ...errors,
     },
     summary: "Revoke an expired WeChat provider session",

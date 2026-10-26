@@ -8,7 +8,14 @@ import type {
   PiResourceIndexFile,
   PiResourceVersionIndex,
 } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+} from "zod";
 
 import { safeSync } from "../signals/utils";
 import { extractBinaryFilesFromTarGz } from "./tar";
@@ -34,25 +41,25 @@ export const IGNORE_FILE_NAMES = [
   ".fdignore",
 ] as const;
 
-const textSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("text"), value: z.string() }),
-  z.object({ kind: z.literal("invalid_utf8") }),
+const textSchema = discriminatedUnion("kind", [
+  object({ kind: literal("text"), value: string() }),
+  object({ kind: literal("invalid_utf8") }),
 ]);
-const skillSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("skill"),
-    name: z.string().optional(),
-    description: z.string().optional(),
-    disableModelInvocation: z.boolean().optional(),
+const skillSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("skill"),
+    name: string().optional(),
+    description: string().optional(),
+    disableModelInvocation: boolean().optional(),
   }),
-  z.object({ kind: z.literal("invalid_utf8") }),
-  z.object({ kind: z.literal("invalid_frontmatter") }),
+  object({ kind: literal("invalid_utf8") }),
+  object({ kind: literal("invalid_frontmatter") }),
 ]);
-export const piResourceVersionIndexSchema = z.object({
-  schemaVersion: z.literal(1),
-  files: z.array(
-    z.object({
-      path: z.string(),
+export const piResourceVersionIndexSchema = object({
+  schemaVersion: literal(1),
+  files: array(
+    object({
+      path: string(),
       text: textSchema.optional(),
       skill: skillSchema.optional(),
     }),

@@ -1,6 +1,6 @@
-import * as z from "zod";
+import { object, string } from "zod";
 
-export const skillFrontmatterSchema = z.object({
-  name: z.string().optional(),
-  description: z.string().optional(),
+export const skillFrontmatterSchema = object({
+  name: string().optional(),
+  description: string().optional(),
 });

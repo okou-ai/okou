@@ -1,11 +1,11 @@
-import * as z from "zod";
+import { object, string } from "zod";
 
 import { APP_VERSION_PATTERN, compareAppVersions } from "./app-version";
 import compatibilityConfig from "./web-client-compatibility.json";
 
-const appVersionSchema = z.string().regex(APP_VERSION_PATTERN);
+const appVersionSchema = string().regex(APP_VERSION_PATTERN);
 
-const webClientCompatibilityConfigSchema = z.object({
+const webClientCompatibilityConfigSchema = object({
   minimumSupportedVersion: appVersionSchema,
 });
 

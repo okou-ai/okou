@@ -26,7 +26,7 @@ Examples:
   Machine readable:  okou host title my-product-demo "Product demo" --json
 
 Notes:
-  - Requires OKOU_TOKEN with host:write and website title editing enabled
+  - Requires OKOU_TOKEN with host:write
   - Only the site's owner can rename it, from any chat in its organization
   - Updates the shared title shown in Chat and Artifacts; the URL stays the same
   - Redeployments keep the saved title; use this command to rename a site`,

@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { array, number, object, string, union } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -32,23 +32,19 @@ interface DeelRefreshResult {
   scopes: string[] | null;
 }
 
-const deelPersonSchema = z
-  .object({
-    id: z.union([z.string(), z.number()]).optional(),
-    full_name: z.string().nullable().optional(),
-    first_name: z.string().nullable().optional(),
-    last_name: z.string().nullable().optional(),
-    email: z.string().nullable().optional(),
-    emails: z
-      .array(
-        z.object({
-          type: z.string().optional(),
-          value: z.string().nullable().optional(),
-        }),
-      )
-      .optional(),
-  })
-  .passthrough();
+const deelPersonSchema = object({
+  id: union([string(), number()]).optional(),
+  full_name: string().nullable().optional(),
+  first_name: string().nullable().optional(),
+  last_name: string().nullable().optional(),
+  email: string().nullable().optional(),
+  emails: array(
+    object({
+      type: string().optional(),
+      value: string().nullable().optional(),
+    }),
+  ).optional(),
+}).passthrough();
 
 /**
  * Derive a PKCE code_verifier deterministically from the OAuth state.
@@ -141,16 +137,14 @@ export async function refreshDeelToken(
     await throwOAuthError("Deel", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -202,16 +196,14 @@ export async function exchangeDeelCode(
     await throwOAuthError("Deel", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);

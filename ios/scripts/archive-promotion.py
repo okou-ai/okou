@@ -2,6 +2,7 @@
 """Exact-input iOS test evidence and immutable archive promotion protocol."""
 
 import argparse
+from functools import cache
 import hashlib
 import io
 import json
@@ -33,6 +34,12 @@ VERSION_LINE = re.compile(
 TEST_STEP = "Build app and run isolated simulator tests"
 PACKAGE_STEP = "Run isolated Swift package tests"
 ARCHIVE_STEP = "Build unsigned device Release archive"
+NATIVE_JOBS = {
+    ARCHIVE_STEP: "build-archive",
+    TEST_STEP: "build-test",
+    PACKAGE_STEP: "test-packages",
+}
+TERMINAL_JOBS = {}
 
 
 def command(*args):
@@ -272,6 +279,29 @@ def required_object(store, key, path):
     return read_json(path)
 
 
+@cache
+def github_run(route):
+    # Repository, commit, event and workflow identity are fixed for an attempt.
+    return json.loads(command("gh", "api", route))
+
+
+def github_jobs(route, job_name):
+    key = (route, job_name)
+    if key not in TERMINAL_JOBS:
+        pages = json.loads(
+            command("gh", "api", f"{route}/jobs?per_page=100", "--paginate", "--slurp")
+        )
+        jobs = [job for page in pages for job in page["jobs"]]
+        # Only terminal records are immutable within this exact run attempt.
+        # Pending results remain uncached so API-lag retries see fresh state.
+        for name in NATIVE_JOBS.values():
+            matches = [job for job in jobs if job["name"] == name]
+            if matches and all(job["conclusion"] is not None for job in matches):
+                TERMINAL_JOBS[(route, name)] = matches
+        return [job for job in jobs if job["name"] == job_name]
+    return TERMINAL_JOBS[key]
+
+
 def github_record(record, required_step):
     if record["repository"] != os.environ["GITHUB_REPOSITORY"]:
         raise ValueError("Evidence belongs to another repository")
@@ -285,7 +315,7 @@ def github_record(record, required_step):
     ):
         raise ValueError("Invalid evidence run identity")
     route = f"repos/{record['repository']}/actions/runs/{run_id}/attempts/{attempt}"
-    run = json.loads(command("gh", "api", route))
+    run = github_run(route)
     if (
         run["head_sha"] != sha
         or run["event"] != "merge_group"
@@ -293,22 +323,13 @@ def github_record(record, required_step):
         or not run["head_branch"].startswith("gh-readonly-queue/main/")
     ):
         raise ValueError("Expected an exact main merge-group iOS builder")
-    job_name = {
-        ARCHIVE_STEP: "build-archive",
-        TEST_STEP: "build-test",
-        PACKAGE_STEP: "test-packages",
-    }[required_step]
+    job_name = NATIVE_JOBS[required_step]
     # The Jobs API can lag behind needs.*. Bound pending-result retries to seven
     # minutes; terminal results still need the exact successful job and test step.
     deadline = time.monotonic() + 420
     delay = 1
     while True:
-        pages = json.loads(
-            command("gh", "api", f"{route}/jobs?per_page=100", "--paginate", "--slurp")
-        )
-        jobs = [
-            job for page in pages for job in page["jobs"] if job["name"] == job_name
-        ]
+        jobs = github_jobs(route, job_name)
         if not (
             len(jobs) == 1
             and jobs[0]["conclusion"] is None

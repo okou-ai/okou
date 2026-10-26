@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
-import * as z from "zod";
+import { literal, object, string } from "zod";
 
 import { stubTestAwsKmsEnvironment } from "../../../../__tests__/env-stub";
 import { mockOptionalEnv } from "../../../../lib/env";
@@ -14,23 +14,19 @@ import { server } from "../../../../mocks/server";
 
 const KEY_ID =
   "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
-const encryptionContext = z
-  .object({ purpose: z.literal("vm0-stored-secret") })
-  .strict();
-const generateRequest = z
-  .object({
-    KeyId: z.literal("alias/okou-secrets-test"),
-    KeySpec: z.literal("AES_256"),
-    EncryptionContext: encryptionContext,
-  })
-  .strict();
-const decryptRequest = z
-  .object({
-    KeyId: z.literal(KEY_ID),
-    CiphertextBlob: z.string().min(1),
-    EncryptionContext: encryptionContext,
-  })
-  .strict();
+const encryptionContext = object({
+  purpose: literal("vm0-stored-secret"),
+}).strict();
+const generateRequest = object({
+  KeyId: literal("alias/okou-secrets-test"),
+  KeySpec: literal("AES_256"),
+  EncryptionContext: encryptionContext,
+}).strict();
+const decryptRequest = object({
+  KeyId: literal(KEY_ID),
+  CiphertextBlob: string().min(1),
+  EncryptionContext: encryptionContext,
+}).strict();
 
 function kmsResponse(body: Record<string, string>, status = 200) {
   return HttpResponse.json(body, {

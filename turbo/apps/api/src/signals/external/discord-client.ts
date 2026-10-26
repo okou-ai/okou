@@ -1,5 +1,21 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  tuple,
+  union,
+  url,
+  undefined as zUndefined,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import {
   discordApplicationSchema,
@@ -11,121 +27,118 @@ export { discordSnowflakeSchema };
 
 const DISCORD_API_ORIGIN = "https://discord.com/api/v10";
 
-const permissionsSchema = z.string().regex(/^\d+$/u);
+const permissionsSchema = string().regex(/^\d+$/u);
 
-export const discordUserSchema = z.object({
+export const discordUserSchema = object({
   id: discordSnowflakeSchema,
-  username: z.string(),
-  global_name: z.string().nullable().optional(),
-  bot: z.boolean().optional(),
+  username: string(),
+  global_name: string().nullable().optional(),
+  bot: boolean().optional(),
 });
 
-export const discordRoleSchema = z.object({
+export const discordRoleSchema = object({
   id: discordSnowflakeSchema,
-  name: z.string(),
+  name: string(),
   permissions: permissionsSchema,
 });
 
-export const discordMemberSchema = z.object({
+export const discordMemberSchema = object({
   user: discordUserSchema,
-  roles: z.array(discordSnowflakeSchema),
-  nick: z.string().nullable().optional(),
-  communication_disabled_until: z.iso
+  roles: array(discordSnowflakeSchema),
+  nick: string().nullable().optional(),
+  communication_disabled_until: iso
     .datetime({ offset: true })
     .nullable()
     .optional(),
 });
 
-const permissionOverwriteSchema = z.object({
+const permissionOverwriteSchema = object({
   id: discordSnowflakeSchema,
-  type: z.union([z.literal(0), z.literal(1)]),
+  type: union([literal(0), literal(1)]),
   allow: permissionsSchema,
   deny: permissionsSchema,
 });
 
-export const discordChannelSchema = z.object({
+export const discordChannelSchema = object({
   id: discordSnowflakeSchema,
-  type: z.number().int().nonnegative(),
+  type: number().int().nonnegative(),
   guild_id: discordSnowflakeSchema.optional(),
-  name: z.string().nullable().optional(),
+  name: string().nullable().optional(),
   parent_id: discordSnowflakeSchema.nullable().optional(),
-  permission_overwrites: z.array(permissionOverwriteSchema).optional(),
-  recipients: z.array(discordUserSchema).optional(),
-  thread_metadata: z
-    .object({
-      archived: z.boolean(),
-      locked: z.boolean(),
-      invitable: z.boolean().optional(),
-      auto_archive_duration: z.number().int().positive(),
-      archive_timestamp: z.iso.datetime({ offset: true }),
-    })
-    .optional(),
+  permission_overwrites: array(permissionOverwriteSchema).optional(),
+  recipients: array(discordUserSchema).optional(),
+  thread_metadata: object({
+    archived: boolean(),
+    locked: boolean(),
+    invitable: boolean().optional(),
+    auto_archive_duration: number().int().positive(),
+    archive_timestamp: iso.datetime({ offset: true }),
+  }).optional(),
 });
 
-export const discordGuildSchema = z.object({
+export const discordGuildSchema = object({
   id: discordSnowflakeSchema,
-  name: z.string(),
+  name: string(),
   owner_id: discordSnowflakeSchema,
 });
 
-const discordInviteSchema = z.object({
-  type: z.number().int().optional(),
-  guild: z
-    .object({ id: discordSnowflakeSchema, name: z.string() })
+const discordInviteSchema = object({
+  type: number().int().optional(),
+  guild: object({ id: discordSnowflakeSchema, name: string() })
     .nullable()
     .optional(),
-  expires_at: z.iso.datetime({ offset: true }).nullable().optional(),
+  expires_at: iso.datetime({ offset: true }).nullable().optional(),
 });
 
-export const discordThreadMemberSchema = z.object({
+export const discordThreadMemberSchema = object({
   id: discordSnowflakeSchema,
   user_id: discordSnowflakeSchema,
-  join_timestamp: z.iso.datetime({ offset: true }),
-  flags: z.number().int().nonnegative(),
+  join_timestamp: iso.datetime({ offset: true }),
+  flags: number().int().nonnegative(),
 });
 
-export const discordAttachmentSchema = z.object({
+export const discordAttachmentSchema = object({
   id: discordSnowflakeSchema,
-  filename: z.string(),
-  size: z.number().int().nonnegative(),
-  url: z.url(),
-  proxy_url: z.url().optional(),
-  content_type: z.string().optional(),
-  description: z.string().optional(),
+  filename: string(),
+  size: number().int().nonnegative(),
+  url: url(),
+  proxy_url: url().optional(),
+  content_type: string().optional(),
+  description: string().optional(),
 });
 
-export const discordMessageReferenceSchema = z.object({
-  type: z.number().int().nonnegative().optional(),
+export const discordMessageReferenceSchema = object({
+  type: number().int().nonnegative().optional(),
   message_id: discordSnowflakeSchema.optional(),
   channel_id: discordSnowflakeSchema.optional(),
   guild_id: discordSnowflakeSchema.optional(),
 });
 
-export const discordMessageSchema = z.object({
+export const discordMessageSchema = object({
   id: discordSnowflakeSchema,
   channel_id: discordSnowflakeSchema,
   author: discordUserSchema,
-  content: z.string(),
-  timestamp: z.iso.datetime({ offset: true }),
-  edited_timestamp: z.iso.datetime({ offset: true }).nullable().optional(),
-  attachments: z.array(discordAttachmentSchema),
-  mentions: z.array(discordUserSchema).optional(),
+  content: string(),
+  timestamp: iso.datetime({ offset: true }),
+  edited_timestamp: iso.datetime({ offset: true }).nullable().optional(),
+  attachments: array(discordAttachmentSchema),
+  mentions: array(discordUserSchema).optional(),
   webhook_id: discordSnowflakeSchema.optional(),
-  type: z.number().int().nonnegative().optional(),
-  flags: z.number().int().nonnegative().optional(),
-  nonce: z.union([z.string(), z.number().int()]).transform(String).optional(),
+  type: number().int().nonnegative().optional(),
+  flags: number().int().nonnegative().optional(),
+  nonce: union([string(), number().int()]).transform(String).optional(),
   message_reference: discordMessageReferenceSchema.optional(),
   thread: discordChannelSchema.optional(),
 });
 
-export type DiscordUser = z.infer<typeof discordUserSchema>;
-export type DiscordRole = z.infer<typeof discordRoleSchema>;
-export type DiscordMember = z.infer<typeof discordMemberSchema>;
-export type DiscordChannel = z.infer<typeof discordChannelSchema>;
-export type DiscordGuild = z.infer<typeof discordGuildSchema>;
-export type DiscordThreadMember = z.infer<typeof discordThreadMemberSchema>;
-export type DiscordAttachment = z.infer<typeof discordAttachmentSchema>;
-export type DiscordMessage = z.infer<typeof discordMessageSchema>;
+export type DiscordUser = zInfer<typeof discordUserSchema>;
+export type DiscordRole = zInfer<typeof discordRoleSchema>;
+export type DiscordMember = zInfer<typeof discordMemberSchema>;
+export type DiscordChannel = zInfer<typeof discordChannelSchema>;
+export type DiscordGuild = zInfer<typeof discordGuildSchema>;
+export type DiscordThreadMember = zInfer<typeof discordThreadMemberSchema>;
+export type DiscordAttachment = zInfer<typeof discordAttachmentSchema>;
+export type DiscordMessage = zInfer<typeof discordMessageSchema>;
 
 export interface DiscordApiError {
   readonly kind: "discord-error";
@@ -151,12 +164,11 @@ export interface DiscordUploadFile {
   readonly description?: string;
 }
 
-const rateLimitSchema = z.object({
-  retry_after: z
-    .number()
+const rateLimitSchema = object({
+  retry_after: number()
     .nonnegative()
     .max(Number.MAX_SAFE_INTEGER / 1000),
-  global: z.boolean(),
+  global: boolean(),
 });
 const allowedMentions = Object.freeze({
   parse: Object.freeze([]),
@@ -175,14 +187,14 @@ interface DiscordRequest<T> {
   readonly botToken?: string;
   readonly path: string;
   readonly method: "GET" | "POST" | "PATCH";
-  readonly schema: z.ZodType<T>;
+  readonly schema: ZodType<T>;
   readonly body?: string | FormData;
 }
 
 function decodeDiscordResponse<T>(
   response: Response,
   body: string,
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   accepted: boolean,
 ): DiscordApiResult<T> {
   if (response.status === 403 || response.status === 404) {
@@ -190,9 +202,9 @@ function decodeDiscordResponse<T>(
   }
   if (!accepted) {
     // Provider bodies and URL-bearing network errors may include private data.
-    const error = z
-      .object({ code: z.number().int() })
-      .safeParse(safeJsonParse(body));
+    const error = object({ code: number().int() }).safeParse(
+      safeJsonParse(body),
+    );
     return {
       ...discordError(
         response.status,
@@ -384,7 +396,7 @@ function fetchDiscordGuildRoles(
       ...args,
       path: `/guilds/${snowflake(args.guildId)}/roles`,
       method: "GET",
-      schema: z.array(discordRoleSchema),
+      schema: array(discordRoleSchema),
     },
     signal,
   );
@@ -417,7 +429,7 @@ function fetchDiscordGuildChannels(
       ...args,
       path: `/guilds/${snowflake(args.guildId)}/channels`,
       method: "GET",
-      schema: z.array(discordChannelSchema),
+      schema: array(discordChannelSchema),
     },
     signal,
   );
@@ -432,7 +444,7 @@ function fetchDiscordMessages(
   signal: AbortSignal,
 ): Promise<DiscordApiResult<DiscordMessage[]>> {
   const query = new URLSearchParams({
-    limit: String(z.number().int().min(1).max(100).parse(args.limit)),
+    limit: String(number().int().min(1).max(100).parse(args.limit)),
   });
   if (args.before !== undefined) {
     query.set("before", snowflake(args.before));
@@ -442,7 +454,7 @@ function fetchDiscordMessages(
       ...args,
       path: `/channels/${snowflake(args.channelId)}/messages?${query.toString()}`,
       method: "GET",
-      schema: z.array(discordMessageSchema),
+      schema: array(discordMessageSchema),
     },
     signal,
   );
@@ -483,7 +495,7 @@ function createDiscordMessage(
       discordError(400, "Discord allows at most 10 attachments per message"),
     );
   }
-  const content = z.string().max(2000).parse(args.content);
+  const content = string().max(2000).parse(args.content);
   if (!content && files.length === 0) {
     return Promise.resolve(
       discordError(400, "Discord message content or an attachment is required"),
@@ -494,8 +506,7 @@ function createDiscordMessage(
     allowed_mentions: allowedMentions,
     ...(args.components !== undefined
       ? {
-          components: z
-            .array(discordActionRowSchema)
+          components: array(discordActionRowSchema)
             .max(5)
             .parse(args.components),
         }
@@ -510,7 +521,7 @@ function createDiscordMessage(
       : {}),
     ...(args.nonce !== undefined
       ? {
-          nonce: z.string().min(1).max(25).parse(args.nonce),
+          nonce: string().min(1).max(25).parse(args.nonce),
           enforce_nonce: true,
         }
       : {}),
@@ -519,7 +530,7 @@ function createDiscordMessage(
           attachments: files.map((file, index) => {
             return {
               id: index,
-              filename: z.string().min(1).parse(file.filename),
+              filename: string().min(1).parse(file.filename),
               ...(file.description !== undefined
                 ? { description: file.description }
                 : {}),
@@ -564,7 +575,7 @@ function editDiscordMessage(
       method: "PATCH",
       schema: discordMessageSchema,
       body: JSON.stringify({
-        content: z.string().min(1).max(2000).parse(args.content),
+        content: string().min(1).max(2000).parse(args.content),
         allowed_mentions: allowedMentions,
       }),
     },
@@ -603,7 +614,7 @@ function createDiscordThreadFromMessage(
       method: "POST",
       schema: discordChannelSchema,
       body: JSON.stringify({
-        name: z.string().min(1).max(100).parse(args.name),
+        name: string().min(1).max(100).parse(args.name),
         auto_archive_duration: 1440,
       }),
     },
@@ -620,103 +631,98 @@ function sendDiscordTyping(
       ...args,
       path: `/channels/${snowflake(args.channelId)}/typing`,
       method: "POST",
-      schema: z.undefined(),
+      schema: zUndefined(),
     },
     signal,
   );
 }
 
-const buttonSchema = z.union([
-  z.object({
-    type: z.literal(2),
-    style: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-    label: z.string().min(1).max(80),
-    custom_id: z.string().min(1).max(100),
-    disabled: z.boolean().optional(),
+const buttonSchema = union([
+  object({
+    type: literal(2),
+    style: union([literal(1), literal(2), literal(3), literal(4)]),
+    label: string().min(1).max(80),
+    custom_id: string().min(1).max(100),
+    disabled: boolean().optional(),
   }),
-  z.object({
-    type: z.literal(2),
-    style: z.literal(5),
-    label: z.string().min(1).max(80),
-    url: z.url(),
-    disabled: z.boolean().optional(),
+  object({
+    type: literal(2),
+    style: literal(5),
+    label: string().min(1).max(80),
+    url: url(),
+    disabled: boolean().optional(),
   }),
 ]);
-const selectSchema = z.object({
-  type: z.literal(3),
-  custom_id: z.string().min(1).max(100),
-  options: z
-    .array(
-      z.object({
-        label: z.string().min(1).max(100),
-        value: z.string().min(1).max(100),
-        description: z.string().max(100).optional(),
-        default: z.boolean().optional(),
-      }),
-    )
+const selectSchema = object({
+  type: literal(3),
+  custom_id: string().min(1).max(100),
+  options: array(
+    object({
+      label: string().min(1).max(100),
+      value: string().min(1).max(100),
+      description: string().max(100).optional(),
+      default: boolean().optional(),
+    }),
+  )
     .min(1)
     .max(25),
-  placeholder: z.string().max(150).optional(),
-  min_values: z.number().int().min(0).max(25).optional(),
-  max_values: z.number().int().min(1).max(25).optional(),
-  disabled: z.boolean().optional(),
+  placeholder: string().max(150).optional(),
+  min_values: number().int().min(0).max(25).optional(),
+  max_values: number().int().min(1).max(25).optional(),
+  disabled: boolean().optional(),
 });
-export const discordActionRowSchema = z.object({
-  type: z.literal(1),
-  components: z.union([
-    z.array(buttonSchema).min(1).max(5),
-    z.tuple([selectSchema]),
-  ]),
+export const discordActionRowSchema = object({
+  type: literal(1),
+  components: union([array(buttonSchema).min(1).max(5), tuple([selectSchema])]),
 });
-const interactionMessageSchema = z.object({
-  content: z.string().max(2000).optional(),
-  flags: z.literal(64).optional(),
-  components: z.array(discordActionRowSchema).max(5).optional(),
+const interactionMessageSchema = object({
+  content: string().max(2000).optional(),
+  flags: literal(64).optional(),
+  components: array(discordActionRowSchema).max(5).optional(),
 });
-const interactionResponseSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal(4), data: interactionMessageSchema }),
-  z.object({
-    type: z.literal(5),
-    data: z.object({ flags: z.literal(64).optional() }).optional(),
+const interactionResponseSchema = discriminatedUnion("type", [
+  object({ type: literal(4), data: interactionMessageSchema }),
+  object({
+    type: literal(5),
+    data: object({ flags: literal(64).optional() }).optional(),
   }),
-  z.object({ type: z.literal(6) }),
-  z.object({ type: z.literal(7), data: interactionMessageSchema }),
-  z.object({
-    type: z.literal(9),
-    data: z.object({
-      custom_id: z.string().min(1).max(100),
-      title: z.string().min(1).max(45),
-      components: z
-        .array(
-          z.object({
-            type: z.literal(1),
-            components: z.tuple([
-              z.object({
-                type: z.literal(4),
-                custom_id: z.string().min(1).max(100),
-                style: z.union([z.literal(1), z.literal(2)]),
-                label: z.string().min(1).max(45),
-                min_length: z.number().int().min(0).max(4000).optional(),
-                max_length: z.number().int().min(1).max(4000).optional(),
-                required: z.boolean().optional(),
-                value: z.string().max(4000).optional(),
-                placeholder: z.string().max(100).optional(),
-              }),
-            ]),
-          }),
-        )
+  object({ type: literal(6) }),
+  object({ type: literal(7), data: interactionMessageSchema }),
+  object({
+    type: literal(9),
+    data: object({
+      custom_id: string().min(1).max(100),
+      title: string().min(1).max(45),
+      components: array(
+        object({
+          type: literal(1),
+          components: tuple([
+            object({
+              type: literal(4),
+              custom_id: string().min(1).max(100),
+              style: union([literal(1), literal(2)]),
+              label: string().min(1).max(45),
+              min_length: number().int().min(0).max(4000).optional(),
+              max_length: number().int().min(1).max(4000).optional(),
+              required: boolean().optional(),
+              value: string().max(4000).optional(),
+              placeholder: string().max(100).optional(),
+            }),
+          ]),
+        }),
+      )
         .min(1)
         .max(5),
     }),
   }),
 ]);
-export type DiscordActionRow = z.infer<typeof discordActionRowSchema>;
-export type DiscordInteractionResponse = z.infer<
+export type DiscordActionRow = zInfer<typeof discordActionRowSchema>;
+export type DiscordInteractionResponse = zInfer<
   typeof interactionResponseSchema
 >;
 
 function interactionToken(token: string): string {
-  return encodeURIComponent(z.string().min(1).max(2048).parse(token));
+  return encodeURIComponent(string().min(1).max(2048).parse(token));
 }
 
 function createDiscordInteractionResponse(
@@ -739,7 +745,7 @@ function createDiscordInteractionResponse(
     {
       path: `/interactions/${snowflake(args.interactionId)}/${interactionToken(args.interactionToken)}/callback`,
       method: "POST",
-      schema: z.undefined(),
+      schema: zUndefined(),
       body: JSON.stringify(body),
     },
     signal,
@@ -756,12 +762,11 @@ function editDiscordOriginalInteractionResponse(
   signal: AbortSignal,
 ): Promise<DiscordApiResult<DiscordMessage>> {
   const body = {
-    content: z.string().max(2000).parse(args.content),
+    content: string().max(2000).parse(args.content),
     allowed_mentions: allowedMentions,
     ...(args.components !== undefined
       ? {
-          components: z
-            .array(discordActionRowSchema)
+          components: array(discordActionRowSchema)
             .max(5)
             .parse(args.components),
         }

@@ -11,7 +11,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import { number, string, object as zObject } from "zod";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
@@ -120,18 +120,16 @@ async function fixture() {
       const url = new URL(
         `https://test.r2.cloudflarestorage.com/${command.input.Bucket}/${command.input.Key}?X-Amz-Signature=fixture`,
       );
-      const configured = z
-        .object({
-          config: z.object({
-            credentials: z.object({ accessKeyId: z.string() }),
-          }),
-        })
-        .parse(client);
+      const configured = zObject({
+        config: zObject({
+          credentials: zObject({ accessKeyId: string() }),
+        }),
+      }).parse(client);
       url.searchParams.set(
         "X-Amz-Credential",
         configured.config.credentials.accessKeyId,
       );
-      const { expiresIn } = z.object({ expiresIn: z.number() }).parse(options);
+      const { expiresIn } = zObject({ expiresIn: number() }).parse(options);
       url.searchParams.set("X-Amz-Expires", String(expiresIn));
       if (command instanceof GetObjectCommand) {
         if (command.input.ResponseContentDisposition) {

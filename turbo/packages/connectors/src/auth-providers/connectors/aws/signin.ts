@@ -10,7 +10,14 @@ import {
   type KeyObject,
 } from "node:crypto";
 
-import * as z from "zod";
+import {
+  number,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+  type ZodIssue,
+} from "zod";
 
 import { OAuthProviderHttpError } from "../../oauth/error";
 import { ProviderResponseError } from "../../provider-error";
@@ -35,34 +42,34 @@ const AWS_SIGNIN_SENSITIVE_REQUEST_KEYS = [
   "refreshToken",
 ] as const;
 
-const awsSigninTokenResponseBodySchema = z.object({
-  accessToken: z.object({
-    accessKeyId: z.string().min(1),
-    secretAccessKey: z.string().min(1),
-    sessionToken: z.string().min(1),
+const awsSigninTokenResponseBodySchema = object({
+  accessToken: object({
+    accessKeyId: string().min(1),
+    secretAccessKey: string().min(1),
+    sessionToken: string().min(1),
   }),
-  expiresIn: z.number().int().min(1),
-  refreshToken: z.string().min(1),
-  tokenType: z.string().min(1),
-  idToken: z.string().optional(),
+  expiresIn: number().int().min(1),
+  refreshToken: string().min(1),
+  tokenType: string().min(1),
+  idToken: string().optional(),
 });
-const awsSigninTokenResponseSchema = z.union([
+const awsSigninTokenResponseSchema = union([
   awsSigninTokenResponseBodySchema,
-  z
-    .object({ tokenOutput: awsSigninTokenResponseBodySchema })
-    .transform(({ tokenOutput }) => {
+  object({ tokenOutput: awsSigninTokenResponseBodySchema }).transform(
+    ({ tokenOutput }) => {
       return tokenOutput;
-    }),
+    },
+  ),
 ]);
 
-const awsSigninErrorResponseSchema = z.object({
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-  message: z.string().optional(),
-  Message: z.string().optional(),
-  code: z.string().optional(),
-  Code: z.string().optional(),
-  __type: z.string().optional(),
+const awsSigninErrorResponseSchema = object({
+  error: string().optional(),
+  error_description: string().optional(),
+  message: string().optional(),
+  Message: string().optional(),
+  code: string().optional(),
+  Code: string().optional(),
+  __type: string().optional(),
 });
 
 export interface AwsSigV4Credentials {
@@ -262,7 +269,7 @@ async function fetchAwsSigninToken(
 
 async function readAwsSigninTokenResponse(
   response: Response,
-): Promise<z.infer<typeof awsSigninTokenResponseBodySchema>> {
+): Promise<zInfer<typeof awsSigninTokenResponseBodySchema>> {
   let body: unknown;
   try {
     body = await response.json();
@@ -291,7 +298,7 @@ async function readAwsSigninTokenResponse(
 function invalidAwsSigninTokenResponseMessage(args: {
   readonly response: Response;
   readonly body?: unknown;
-  readonly issues?: readonly z.ZodIssue[];
+  readonly issues?: readonly ZodIssue[];
 }): string {
   const details = [
     `status=${args.response.status}`,
@@ -309,7 +316,7 @@ function invalidAwsSigninTokenResponseMessage(args: {
 }
 
 function awsSigninTokenResponseSchemaIssues(
-  issues: readonly z.ZodIssue[],
+  issues: readonly ZodIssue[],
 ): string {
   const summaries = issues
     .slice(0, AWS_RESPONSE_SCHEMA_ISSUE_MAX_COUNT)

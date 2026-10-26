@@ -13,7 +13,7 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import * as z from "zod";
+import { array, string } from "zod";
 import { and, asc, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";
@@ -119,9 +119,9 @@ export function acceptedCatalogFromRow(
   return {
     releaseId: row.releaseId,
     payload: officialWorkflowCatalogReleasePayloadSchema.parse(row.payload),
-    hiddenThreadDefinitionNames: z
-      .array(z.string())
-      .parse(row.hiddenThreadDefinitionNames ?? []),
+    hiddenThreadDefinitionNames: array(string()).parse(
+      row.hiddenThreadDefinitionNames ?? [],
+    ),
   };
 }
 

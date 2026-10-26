@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, uuid } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -9,9 +9,9 @@ export const welcomeChatThreadsContract = c.router({
     method: "POST",
     path: "/api/welcome-chat-threads",
     headers: authHeadersSchema,
-    body: z.object({ clientThreadId: z.uuid() }).strict(),
+    body: object({ clientThreadId: uuid() }).strict(),
     responses: {
-      201: z.object({ id: z.uuid() }),
+      201: object({ id: uuid() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

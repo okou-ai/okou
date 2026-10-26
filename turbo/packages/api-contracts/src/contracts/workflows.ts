@@ -1,4 +1,17 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  url,
+  enum as zEnum,
+  null as zNull,
+  type infer as zInfer,
+} from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -16,56 +29,56 @@ const c = initContract();
 
 // Reuse identical leaf schemas across automation variants. Keep full Zod
 // objects for runtime validation, schema reflection, and generated bindings.
-const textSchema = z.string();
-const nullValueSchema = z.null();
-const flagSchema = z.boolean();
-const eventAutomationKindSchema = z.literal("event");
-const scheduleAutomationKindSchema = z.literal("schedule");
-const githubProviderSchema = z.literal("github");
-const notionProviderSchema = z.literal("notion");
-const googleCalendarProviderSchema = z.literal("google-calendar");
-const urlSchema = z.url();
-const chatRunFinishedEventTypeSchema = z.literal("chat-run-finished");
-const gmailNewMessageEventTypeSchema = z.literal("gmail-new-message");
-const gmailLabelAppliedEventTypeSchema = z.literal("gmail-label-applied");
-const githubPullRequestEventTypeSchema = z.literal("github-pull-request");
-const githubWorkflowRunCompletedEventTypeSchema = z.literal(
+const textSchema = string();
+const nullValueSchema = zNull();
+const flagSchema = boolean();
+const eventAutomationKindSchema = literal("event");
+const scheduleAutomationKindSchema = literal("schedule");
+const githubProviderSchema = literal("github");
+const notionProviderSchema = literal("notion");
+const googleCalendarProviderSchema = literal("google-calendar");
+const urlSchema = url();
+const chatRunFinishedEventTypeSchema = literal("chat-run-finished");
+const gmailNewMessageEventTypeSchema = literal("gmail-new-message");
+const gmailLabelAppliedEventTypeSchema = literal("gmail-label-applied");
+const githubPullRequestEventTypeSchema = literal("github-pull-request");
+const githubWorkflowRunCompletedEventTypeSchema = literal(
   "github-workflow-run-completed",
 );
-const githubWorkflowJobCompletedEventTypeSchema = z.literal(
+const githubWorkflowJobCompletedEventTypeSchema = literal(
   "github-workflow-job-completed",
 );
-const githubPullRequestReviewSubmittedEventTypeSchema = z.literal(
+const githubPullRequestReviewSubmittedEventTypeSchema = literal(
   "github-pull-request-review-submitted",
 );
-const githubDeploymentStatusCreatedEventTypeSchema = z.literal(
+const githubDeploymentStatusCreatedEventTypeSchema = literal(
   "github-deployment-status-created",
 );
-const githubIssueCommentCreatedEventTypeSchema = z.literal(
+const githubIssueCommentCreatedEventTypeSchema = literal(
   "github-issue-comment-created",
 );
-const googleCalendarEventCreatedEventTypeSchema = z.literal(
+const googleCalendarEventCreatedEventTypeSchema = literal(
   "google-calendar-event-created",
 );
-const googleCalendarEventUpdatedEventTypeSchema = z.literal(
+const googleCalendarEventUpdatedEventTypeSchema = literal(
   "google-calendar-event-updated",
 );
-const googleCalendarEventCancelledEventTypeSchema = z.literal(
+const googleCalendarEventCancelledEventTypeSchema = literal(
   "google-calendar-event-cancelled",
 );
-const googleFormsResponseSubmittedEventTypeSchema = z.literal(
+const googleFormsResponseSubmittedEventTypeSchema = literal(
   "google-forms-response-submitted",
 );
-const googleMeetTranscriptGeneratedEventTypeSchema = z.literal(
+const googleMeetTranscriptGeneratedEventTypeSchema = literal(
   "google-meet-transcript-generated",
 );
-const notionChildPageCreatedEventTypeSchema = z.literal(
+const notionChildPageCreatedEventTypeSchema = literal(
   "notion-child-page-created",
 );
-const notionDatabaseItemCreatedEventTypeSchema = z.literal(
+const notionDatabaseItemCreatedEventTypeSchema = literal(
   "notion-database-item-created",
 );
-const notionPageContentUpdatedEventTypeSchema = z.literal(
+const notionPageContentUpdatedEventTypeSchema = literal(
   "notion-page-content-updated",
 );
 const workflowUuidSchema = textSchema.uuid();
@@ -84,8 +97,8 @@ const externalResourceUrlSchema = nonEmptyTrimmedTextSchema.max(2048);
 const trimmedTextMax1024Schema = nonEmptyTrimmedTextSchema.max(1024);
 const trimmedTextMax255Schema = nonEmptyTrimmedTextSchema.max(255);
 
-export const workflowVisibilitySchema = z.enum(["public", "private"]);
-export type WorkflowVisibility = z.infer<typeof workflowVisibilitySchema>;
+export const workflowVisibilitySchema = zEnum(["public", "private"]);
+export type WorkflowVisibility = zInfer<typeof workflowVisibilitySchema>;
 
 /**
  * Workflow name (slug) validation regex.
@@ -108,7 +121,7 @@ export const RESERVED_SKILL_FILE = "SKILL.md";
  * A single attached (supplementary) file. The synthesized SKILL.md is never
  * part of this set — `SKILL.md` is a reserved path and is rejected.
  */
-export const workflowFileEntrySchema = z.object({
+export const workflowFileEntrySchema = object({
   path: nonEmptyTextSchema
     .max(256)
     .refine(
@@ -138,8 +151,7 @@ const WORKFLOW_FILES_MAX_COUNT = 500;
 /**
  * Attached files (excluding the synthesized SKILL.md). May be empty.
  */
-export const workflowFilesSchema = z
-  .array(workflowFileEntrySchema)
+export const workflowFilesSchema = array(workflowFileEntrySchema)
   .max(
     WORKFLOW_FILES_MAX_COUNT,
     `Maximum ${WORKFLOW_FILES_MAX_COUNT} files allowed`,
@@ -154,24 +166,24 @@ export const workflowFilesSchema = z
     { message: "Total file size must not exceed 5MB" },
   );
 
-export const workflowFileMetadataSchema = z.object({
+export const workflowFileMetadataSchema = object({
   path: textSchema,
-  size: z.number(),
+  size: number(),
 });
 
 export const workflowInstructionSchema = textSchema.max(
   WORKFLOW_FILES_MAX_BYTES,
 );
 
-export const workflowScheduleTypeSchema = z.enum(["cron", "loop", "once"]);
-export type WorkflowScheduleType = z.infer<typeof workflowScheduleTypeSchema>;
+export const workflowScheduleTypeSchema = zEnum(["cron", "loop", "once"]);
+export type WorkflowScheduleType = zInfer<typeof workflowScheduleTypeSchema>;
 
-export const workflowAutomationKindSchema = z.enum(["schedule", "event"]);
-export type WorkflowAutomationKind = z.infer<
+export const workflowAutomationKindSchema = zEnum(["schedule", "event"]);
+export type WorkflowAutomationKind = zInfer<
   typeof workflowAutomationKindSchema
 >;
 
-export const automationEventTypeSchema = z.enum([
+export const automationEventTypeSchema = zEnum([
   "chat-run-finished",
   "gmail-new-message",
   "gmail-label-applied",
@@ -191,16 +203,16 @@ export const automationEventTypeSchema = z.enum([
   "notion-page-content-updated",
   "webhook-received",
 ]);
-export type WorkflowAutomationEventType = z.infer<
+export type WorkflowAutomationEventType = zInfer<
   typeof automationEventTypeSchema
 >;
 
-export const chatRunFinishedRunStatusSchema = z.enum([
+export const chatRunFinishedRunStatusSchema = zEnum([
   "completed",
   "failed",
   "cancelled",
 ]);
-export type ChatRunFinishedRunStatus = z.infer<
+export type ChatRunFinishedRunStatus = zInfer<
   typeof chatRunFinishedRunStatusSchema
 >;
 
@@ -212,26 +224,23 @@ export type ChatRunFinishedRunStatus = z.infer<
  * claude code: result). Failed runs without assistant text never match a
  * pattern; error messages are not searched.
  */
-export const chatRunFinishedEventConfigSchema = z
-  .object({
-    provider: z.literal("chat"),
-    event: z.literal("run_finished"),
-    chatThreadId: workflowUuidSchema,
-    runStatuses: z.array(chatRunFinishedRunStatusSchema).min(1).optional(),
-    outputPattern: nonEmptyTrimmedTextSchema.max(512).optional(),
-  })
-  .strict();
-export type ChatRunFinishedEventConfig = z.infer<
+export const chatRunFinishedEventConfigSchema = object({
+  provider: literal("chat"),
+  event: literal("run_finished"),
+  chatThreadId: workflowUuidSchema,
+  runStatuses: array(chatRunFinishedRunStatusSchema).min(1).optional(),
+  outputPattern: nonEmptyTrimmedTextSchema.max(512).optional(),
+}).strict();
+export type ChatRunFinishedEventConfig = zInfer<
   typeof chatRunFinishedEventConfigSchema
 >;
 
-const gmailTextMatchSchema = z
-  .object({
-    contains: optionalNonEmptyTextSchema,
-    containsAny: z.array(nonEmptyTextSchema).min(1).optional(),
-    doesNotContain: optionalNonEmptyTextSchema,
-    doesNotContainAny: z.array(nonEmptyTextSchema).min(1).optional(),
-  })
+const gmailTextMatchSchema = object({
+  contains: optionalNonEmptyTextSchema,
+  containsAny: array(nonEmptyTextSchema).min(1).optional(),
+  doesNotContain: optionalNonEmptyTextSchema,
+  doesNotContainAny: array(nonEmptyTextSchema).min(1).optional(),
+})
   .strict()
   .refine(
     (value) => {
@@ -245,63 +254,54 @@ const gmailTextMatchSchema = z
     { message: "At least one text matcher is required" },
   );
 
-export const gmailNewMessageEventConfigSchema = z
-  .object({
-    provider: z.literal("gmail"),
-    event: z.literal("new_message"),
-    threadId: optionalNonEmptyTextSchema,
-    match: z
-      .object({
-        from: gmailTextMatchSchema.optional(),
-        subject: gmailTextMatchSchema.optional(),
-        body: gmailTextMatchSchema.optional(),
-        to: gmailTextMatchSchema.optional(),
-        cc: gmailTextMatchSchema.optional(),
-      })
-      .strict()
-      .optional(),
+export const gmailNewMessageEventConfigSchema = object({
+  provider: literal("gmail"),
+  event: literal("new_message"),
+  threadId: optionalNonEmptyTextSchema,
+  match: object({
+    from: gmailTextMatchSchema.optional(),
+    subject: gmailTextMatchSchema.optional(),
+    body: gmailTextMatchSchema.optional(),
+    to: gmailTextMatchSchema.optional(),
+    cc: gmailTextMatchSchema.optional(),
   })
-  .strict();
-export type GmailNewMessageEventConfig = z.infer<
+    .strict()
+    .optional(),
+}).strict();
+export type GmailNewMessageEventConfig = zInfer<
   typeof gmailNewMessageEventConfigSchema
 >;
 
-export const gmailLabelAppliedEventConfigSchema = z
-  .object({
-    provider: z.literal("gmail"),
-    event: z.literal("label_applied"),
-    labelName: nonEmptyTrimmedTextSchema.max(225),
-    resolvedLabelId: nonEmptyTextSchema.max(128).optional(),
-  })
-  .strict();
-export type GmailLabelAppliedEventConfig = z.infer<
+export const gmailLabelAppliedEventConfigSchema = object({
+  provider: literal("gmail"),
+  event: literal("label_applied"),
+  labelName: nonEmptyTrimmedTextSchema.max(225),
+  resolvedLabelId: nonEmptyTextSchema.max(128).optional(),
+}).strict();
+export type GmailLabelAppliedEventConfig = zInfer<
   typeof gmailLabelAppliedEventConfigSchema
 >;
 
-export const gmailAutomationEventConfigSchema = z.discriminatedUnion("event", [
+export const gmailAutomationEventConfigSchema = discriminatedUnion("event", [
   gmailNewMessageEventConfigSchema,
   gmailLabelAppliedEventConfigSchema,
 ]);
-export type GmailAutomationEventConfig = z.infer<
+export type GmailAutomationEventConfig = zInfer<
   typeof gmailAutomationEventConfigSchema
 >;
 
-export const webhookReceivedEventConfigSchema = z
-  .object({
-    provider: z.literal("webhook"),
-    event: z.literal("received"),
-    auth: z
-      .object({
-        mode: z.literal("hmac-sha256"),
-      })
-      .strict(),
-  })
-  .strict();
-export type WebhookReceivedEventConfig = z.infer<
+export const webhookReceivedEventConfigSchema = object({
+  provider: literal("webhook"),
+  event: literal("received"),
+  auth: object({
+    mode: literal("hmac-sha256"),
+  }).strict(),
+}).strict();
+export type WebhookReceivedEventConfig = zInfer<
   typeof webhookReceivedEventConfigSchema
 >;
 
-export const githubWorkflowRunConclusionSchema = z.enum([
+export const githubWorkflowRunConclusionSchema = zEnum([
   "action_required",
   "cancelled",
   "failure",
@@ -312,100 +312,85 @@ export const githubWorkflowRunConclusionSchema = z.enum([
   "success",
   "timed_out",
 ]);
-export type GithubWorkflowRunConclusion = z.infer<
+export type GithubWorkflowRunConclusion = zInfer<
   typeof githubWorkflowRunConclusionSchema
 >;
 
-const githubFilterValuesSchema = z
-  .array(trimmedTextMax255Schema)
-  .min(1)
-  .max(100);
+const githubFilterValuesSchema = array(trimmedTextMax255Schema).min(1).max(100);
 
-export const githubWorkflowRunCompletedEventConfigSchema = z
-  .object({
-    provider: githubProviderSchema,
-    event: z.literal("workflow_run_completed"),
-    filters: z
-      .object({
-        repositories: githubFilterValuesSchema.optional(),
-        workflows: githubFilterValuesSchema.optional(),
-        conclusions: z
-          .array(githubWorkflowRunConclusionSchema)
-          .min(1)
-          .max(githubWorkflowRunConclusionSchema.options.length)
-          .optional(),
-        branches: githubFilterValuesSchema.optional(),
-        events: githubFilterValuesSchema.optional(),
-        actors: githubFilterValuesSchema.optional(),
-      })
-      .strict()
-      .default({}),
+export const githubWorkflowRunCompletedEventConfigSchema = object({
+  provider: githubProviderSchema,
+  event: literal("workflow_run_completed"),
+  filters: object({
+    repositories: githubFilterValuesSchema.optional(),
+    workflows: githubFilterValuesSchema.optional(),
+    conclusions: array(githubWorkflowRunConclusionSchema)
+      .min(1)
+      .max(githubWorkflowRunConclusionSchema.options.length)
+      .optional(),
+    branches: githubFilterValuesSchema.optional(),
+    events: githubFilterValuesSchema.optional(),
+    actors: githubFilterValuesSchema.optional(),
   })
-  .strict();
-export type GithubWorkflowRunCompletedEventConfig = z.infer<
+    .strict()
+    .default({}),
+}).strict();
+export type GithubWorkflowRunCompletedEventConfig = zInfer<
   typeof githubWorkflowRunCompletedEventConfigSchema
 >;
 
-export const githubWorkflowJobCompletedEventConfigSchema = z
-  .object({
-    provider: githubProviderSchema,
-    event: z.literal("workflow_job_completed"),
-    filters: z
-      .object({
-        repositories: githubFilterValuesSchema.optional(),
-        workflows: githubFilterValuesSchema.optional(),
-        jobs: githubFilterValuesSchema.optional(),
-        conclusions: z
-          .array(githubWorkflowRunConclusionSchema)
-          .min(1)
-          .max(githubWorkflowRunConclusionSchema.options.length)
-          .optional(),
-        branches: githubFilterValuesSchema.optional(),
-        runnerLabels: githubFilterValuesSchema.optional(),
-        runnerGroups: githubFilterValuesSchema.optional(),
-      })
-      .strict()
-      .default({}),
+export const githubWorkflowJobCompletedEventConfigSchema = object({
+  provider: githubProviderSchema,
+  event: literal("workflow_job_completed"),
+  filters: object({
+    repositories: githubFilterValuesSchema.optional(),
+    workflows: githubFilterValuesSchema.optional(),
+    jobs: githubFilterValuesSchema.optional(),
+    conclusions: array(githubWorkflowRunConclusionSchema)
+      .min(1)
+      .max(githubWorkflowRunConclusionSchema.options.length)
+      .optional(),
+    branches: githubFilterValuesSchema.optional(),
+    runnerLabels: githubFilterValuesSchema.optional(),
+    runnerGroups: githubFilterValuesSchema.optional(),
   })
-  .strict();
-export type GithubWorkflowJobCompletedEventConfig = z.infer<
+    .strict()
+    .default({}),
+}).strict();
+export type GithubWorkflowJobCompletedEventConfig = zInfer<
   typeof githubWorkflowJobCompletedEventConfigSchema
 >;
 
-export const githubPullRequestReviewStateSchema = z.enum([
+export const githubPullRequestReviewStateSchema = zEnum([
   "approved",
   "changes_requested",
   "commented",
 ]);
-export type GithubPullRequestReviewState = z.infer<
+export type GithubPullRequestReviewState = zInfer<
   typeof githubPullRequestReviewStateSchema
 >;
 
-export const githubPullRequestReviewSubmittedEventConfigSchema = z
-  .object({
-    provider: githubProviderSchema,
-    event: z.literal("pull_request_review_submitted"),
-    filters: z
-      .object({
-        repositories: githubFilterValuesSchema.optional(),
-        reviewStates: z
-          .array(githubPullRequestReviewStateSchema)
-          .min(1)
-          .max(githubPullRequestReviewStateSchema.options.length)
-          .optional(),
-        baseBranches: githubFilterValuesSchema.optional(),
-        headBranches: githubFilterValuesSchema.optional(),
-        trustedAuthors: githubFilterValuesSchema.optional(),
-      })
-      .strict()
-      .default({}),
+export const githubPullRequestReviewSubmittedEventConfigSchema = object({
+  provider: githubProviderSchema,
+  event: literal("pull_request_review_submitted"),
+  filters: object({
+    repositories: githubFilterValuesSchema.optional(),
+    reviewStates: array(githubPullRequestReviewStateSchema)
+      .min(1)
+      .max(githubPullRequestReviewStateSchema.options.length)
+      .optional(),
+    baseBranches: githubFilterValuesSchema.optional(),
+    headBranches: githubFilterValuesSchema.optional(),
+    trustedAuthors: githubFilterValuesSchema.optional(),
   })
-  .strict();
-export type GithubPullRequestReviewSubmittedEventConfig = z.infer<
+    .strict()
+    .default({}),
+}).strict();
+export type GithubPullRequestReviewSubmittedEventConfig = zInfer<
   typeof githubPullRequestReviewSubmittedEventConfigSchema
 >;
 
-export const githubDeploymentStateSchema = z.enum([
+export const githubDeploymentStateSchema = zEnum([
   "error",
   "failure",
   "inactive",
@@ -415,67 +400,56 @@ export const githubDeploymentStateSchema = z.enum([
   "success",
   "waiting",
 ]);
-export type GithubDeploymentState = z.infer<typeof githubDeploymentStateSchema>;
+export type GithubDeploymentState = zInfer<typeof githubDeploymentStateSchema>;
 
-export const githubDeploymentStatusCreatedEventConfigSchema = z
-  .object({
-    provider: githubProviderSchema,
-    event: z.literal("deployment_status_created"),
-    filters: z
-      .object({
-        repositories: githubFilterValuesSchema.optional(),
-        environments: githubFilterValuesSchema.optional(),
-        states: z
-          .array(githubDeploymentStateSchema)
-          .min(1)
-          .max(githubDeploymentStateSchema.options.length)
-          .optional(),
-        refs: githubFilterValuesSchema.optional(),
-        productionEnvironment: optionalFlagSchema,
-        creators: githubFilterValuesSchema.optional(),
-        apps: githubFilterValuesSchema.optional(),
-      })
-      .strict()
-      .default({}),
+export const githubDeploymentStatusCreatedEventConfigSchema = object({
+  provider: githubProviderSchema,
+  event: literal("deployment_status_created"),
+  filters: object({
+    repositories: githubFilterValuesSchema.optional(),
+    environments: githubFilterValuesSchema.optional(),
+    states: array(githubDeploymentStateSchema)
+      .min(1)
+      .max(githubDeploymentStateSchema.options.length)
+      .optional(),
+    refs: githubFilterValuesSchema.optional(),
+    productionEnvironment: optionalFlagSchema,
+    creators: githubFilterValuesSchema.optional(),
+    apps: githubFilterValuesSchema.optional(),
   })
-  .strict();
-export type GithubDeploymentStatusCreatedEventConfig = z.infer<
+    .strict()
+    .default({}),
+}).strict();
+export type GithubDeploymentStatusCreatedEventConfig = zInfer<
   typeof githubDeploymentStatusCreatedEventConfigSchema
 >;
 
-export const githubIssueCommentSubjectFilterSchema = z.enum([
+export const githubIssueCommentSubjectFilterSchema = zEnum([
   "both",
   "issues",
   "pull_requests",
 ]);
-export type GithubIssueCommentSubjectFilter = z.infer<
+export type GithubIssueCommentSubjectFilter = zInfer<
   typeof githubIssueCommentSubjectFilterSchema
 >;
 
-export const githubIssueCommentCreatedEventConfigSchema = z
-  .object({
-    provider: githubProviderSchema,
-    event: z.literal("issue_comment_created"),
-    filters: z
-      .object({
-        repositories: githubFilterValuesSchema.optional(),
-        subject: githubIssueCommentSubjectFilterSchema.default("both"),
-        trustedAuthors: githubFilterValuesSchema.optional(),
-        commentPrefixes: z
-          .array(trimmedTextMax1024Schema)
-          .min(1)
-          .max(100)
-          .optional(),
-      })
-      .strict()
-      .default({ subject: "both" }),
+export const githubIssueCommentCreatedEventConfigSchema = object({
+  provider: githubProviderSchema,
+  event: literal("issue_comment_created"),
+  filters: object({
+    repositories: githubFilterValuesSchema.optional(),
+    subject: githubIssueCommentSubjectFilterSchema.default("both"),
+    trustedAuthors: githubFilterValuesSchema.optional(),
+    commentPrefixes: array(trimmedTextMax1024Schema).min(1).max(100).optional(),
   })
-  .strict();
-export type GithubIssueCommentCreatedEventConfig = z.infer<
+    .strict()
+    .default({ subject: "both" }),
+}).strict();
+export type GithubIssueCommentCreatedEventConfig = zInfer<
   typeof githubIssueCommentCreatedEventConfigSchema
 >;
 
-export const githubPullRequestActionSchema = z.enum([
+export const githubPullRequestActionSchema = zEnum([
   "opened",
   "reopened",
   "closed",
@@ -487,7 +461,7 @@ export const githubPullRequestActionSchema = z.enum([
   "labeled",
   "unlabeled",
 ]);
-export type GithubPullRequestAction = z.infer<
+export type GithubPullRequestAction = zInfer<
   typeof githubPullRequestActionSchema
 >;
 
@@ -499,23 +473,21 @@ export type GithubPullRequestAction = z.infer<
  * `filters.labels` matches the added/removed label for the `labeled` and
  * `unlabeled` actions and any current pull request label otherwise.
  */
-export const githubPullRequestEventConfigSchema = z
-  .object({
-    provider: githubProviderSchema,
-    event: z.literal("pull_request"),
-    repository: trimmedTextMax255Schema,
-    action: githubPullRequestActionSchema,
-    merged: optionalFlagSchema,
-    filters: z
-      .object({
-        baseBranches: githubFilterValuesSchema.optional(),
-        authors: githubFilterValuesSchema.optional(),
-        pullRequestNumbers: githubFilterValuesSchema.optional(),
-        labels: githubFilterValuesSchema.optional(),
-      })
-      .strict()
-      .default({}),
+export const githubPullRequestEventConfigSchema = object({
+  provider: githubProviderSchema,
+  event: literal("pull_request"),
+  repository: trimmedTextMax255Schema,
+  action: githubPullRequestActionSchema,
+  merged: optionalFlagSchema,
+  filters: object({
+    baseBranches: githubFilterValuesSchema.optional(),
+    authors: githubFilterValuesSchema.optional(),
+    pullRequestNumbers: githubFilterValuesSchema.optional(),
+    labels: githubFilterValuesSchema.optional(),
   })
+    .strict()
+    .default({}),
+})
   .strict()
   .refine(
     (value) => {
@@ -523,11 +495,11 @@ export const githubPullRequestEventConfigSchema = z
     },
     { message: "merged only applies to the closed action" },
   );
-export type GithubPullRequestEventConfig = z.infer<
+export type GithubPullRequestEventConfig = zInfer<
   typeof githubPullRequestEventConfigSchema
 >;
 
-export const githubAutomationEventConfigSchema = z.discriminatedUnion("event", [
+export const githubAutomationEventConfigSchema = discriminatedUnion("event", [
   githubDeploymentStatusCreatedEventConfigSchema,
   githubIssueCommentCreatedEventConfigSchema,
   githubPullRequestEventConfigSchema,
@@ -535,44 +507,38 @@ export const githubAutomationEventConfigSchema = z.discriminatedUnion("event", [
   githubWorkflowJobCompletedEventConfigSchema,
   githubWorkflowRunCompletedEventConfigSchema,
 ]);
-export type GithubAutomationEventConfig = z.infer<
+export type GithubAutomationEventConfig = zInfer<
   typeof githubAutomationEventConfigSchema
 >;
 
-export const googleCalendarEventCreatedEventConfigSchema = z
-  .object({
-    provider: googleCalendarProviderSchema,
-    event: z.literal("event_created"),
-    calendarId: trimmedTextMax1024Schema.default("primary"),
-  })
-  .strict();
-export type GoogleCalendarEventCreatedEventConfig = z.infer<
+export const googleCalendarEventCreatedEventConfigSchema = object({
+  provider: googleCalendarProviderSchema,
+  event: literal("event_created"),
+  calendarId: trimmedTextMax1024Schema.default("primary"),
+}).strict();
+export type GoogleCalendarEventCreatedEventConfig = zInfer<
   typeof googleCalendarEventCreatedEventConfigSchema
 >;
 
-export const googleCalendarEventUpdatedEventConfigSchema = z
-  .object({
-    provider: googleCalendarProviderSchema,
-    event: z.literal("event_updated"),
-    calendarId: trimmedTextMax1024Schema.default("primary"),
-  })
-  .strict();
-export type GoogleCalendarEventUpdatedEventConfig = z.infer<
+export const googleCalendarEventUpdatedEventConfigSchema = object({
+  provider: googleCalendarProviderSchema,
+  event: literal("event_updated"),
+  calendarId: trimmedTextMax1024Schema.default("primary"),
+}).strict();
+export type GoogleCalendarEventUpdatedEventConfig = zInfer<
   typeof googleCalendarEventUpdatedEventConfigSchema
 >;
 
-export const googleCalendarEventCancelledEventConfigSchema = z
-  .object({
-    provider: googleCalendarProviderSchema,
-    event: z.literal("event_cancelled"),
-    calendarId: trimmedTextMax1024Schema.default("primary"),
-  })
-  .strict();
-export type GoogleCalendarEventCancelledEventConfig = z.infer<
+export const googleCalendarEventCancelledEventConfigSchema = object({
+  provider: googleCalendarProviderSchema,
+  event: literal("event_cancelled"),
+  calendarId: trimmedTextMax1024Schema.default("primary"),
+}).strict();
+export type GoogleCalendarEventCancelledEventConfig = zInfer<
   typeof googleCalendarEventCancelledEventConfigSchema
 >;
 
-export const googleCalendarAutomationEventConfigSchema = z.discriminatedUnion(
+export const googleCalendarAutomationEventConfigSchema = discriminatedUnion(
   "event",
   [
     googleCalendarEventCreatedEventConfigSchema,
@@ -580,181 +546,150 @@ export const googleCalendarAutomationEventConfigSchema = z.discriminatedUnion(
     googleCalendarEventCancelledEventConfigSchema,
   ],
 );
-export type GoogleCalendarAutomationEventConfig = z.infer<
+export type GoogleCalendarAutomationEventConfig = zInfer<
   typeof googleCalendarAutomationEventConfigSchema
 >;
 
-export const googleCalendarWatchActionRequiredReasonSchema = z.enum([
+export const googleCalendarWatchActionRequiredReasonSchema = zEnum([
   "calendar_not_found",
   "reconnect_required",
 ]);
-export type GoogleCalendarWatchActionRequiredReason = z.infer<
+export type GoogleCalendarWatchActionRequiredReason = zInfer<
   typeof googleCalendarWatchActionRequiredReasonSchema
 >;
 
-export const googleMeetTranscriptGeneratedEventConfigSchema = z
-  .object({
-    provider: z.literal("google-meet"),
-    event: z.literal("transcript_generated"),
-    scope: z
-      .object({
-        type: z.literal("organizer_user"),
-      })
-      .strict()
-      .default({ type: "organizer_user" }),
+export const googleMeetTranscriptGeneratedEventConfigSchema = object({
+  provider: literal("google-meet"),
+  event: literal("transcript_generated"),
+  scope: object({
+    type: literal("organizer_user"),
   })
-  .strict();
-export type GoogleMeetTranscriptGeneratedEventConfig = z.infer<
+    .strict()
+    .default({ type: "organizer_user" }),
+}).strict();
+export type GoogleMeetTranscriptGeneratedEventConfig = zInfer<
   typeof googleMeetTranscriptGeneratedEventConfigSchema
 >;
 export type GoogleMeetAutomationEventConfig =
   GoogleMeetTranscriptGeneratedEventConfig;
 
-export const googleFormsFormReferenceSchema = z
-  .object({
-    id: trimmedTextMax255Schema,
-    title: nonEmptyTrimmedTextSchema.max(512),
-    url: urlSchema,
-  })
-  .strict();
-export type GoogleFormsFormReference = z.infer<
+export const googleFormsFormReferenceSchema = object({
+  id: trimmedTextMax255Schema,
+  title: nonEmptyTrimmedTextSchema.max(512),
+  url: urlSchema,
+}).strict();
+export type GoogleFormsFormReference = zInfer<
   typeof googleFormsFormReferenceSchema
 >;
 
-export const googleFormsResponseSubmittedEventConfigSchema = z
-  .object({
-    provider: z.literal("google-forms"),
-    event: z.literal("response_submitted"),
-    connectorId: workflowUuidSchema,
-    form: googleFormsFormReferenceSchema,
-  })
-  .strict();
-export type GoogleFormsResponseSubmittedEventConfig = z.infer<
+export const googleFormsResponseSubmittedEventConfigSchema = object({
+  provider: literal("google-forms"),
+  event: literal("response_submitted"),
+  connectorId: workflowUuidSchema,
+  form: googleFormsFormReferenceSchema,
+}).strict();
+export type GoogleFormsResponseSubmittedEventConfig = zInfer<
   typeof googleFormsResponseSubmittedEventConfigSchema
 >;
 
-export const googleFormsResponseSubmittedEventCreateConfigSchema = z
-  .object({
-    provider: z.literal("google-forms"),
-    event: z.literal("response_submitted"),
-    formUrl: externalResourceUrlSchema,
-  })
-  .strict();
-export type GoogleFormsResponseSubmittedEventCreateConfig = z.infer<
+export const googleFormsResponseSubmittedEventCreateConfigSchema = object({
+  provider: literal("google-forms"),
+  event: literal("response_submitted"),
+  formUrl: externalResourceUrlSchema,
+}).strict();
+export type GoogleFormsResponseSubmittedEventCreateConfig = zInfer<
   typeof googleFormsResponseSubmittedEventCreateConfigSchema
 >;
 
 export type GoogleFormsAutomationEventConfig =
   GoogleFormsResponseSubmittedEventConfig;
 
-export const notionPageReferenceSchema = z
-  .object({
-    id: workflowUuidSchema,
-    url: urlSchema,
-    title: nullableTextSchema,
-    rawUrl: nonEmptyTextSchema.max(2048).optional(),
-  })
-  .strict();
-export type NotionPageReference = z.infer<typeof notionPageReferenceSchema>;
+export const notionPageReferenceSchema = object({
+  id: workflowUuidSchema,
+  url: urlSchema,
+  title: nullableTextSchema,
+  rawUrl: nonEmptyTextSchema.max(2048).optional(),
+}).strict();
+export type NotionPageReference = zInfer<typeof notionPageReferenceSchema>;
 
-export const notionDataSourceReferenceSchema = z
-  .object({
-    id: workflowUuidSchema,
-    url: urlSchema,
-    title: nullableTextSchema,
-    rawUrl: nonEmptyTextSchema.max(2048).optional(),
-  })
-  .strict();
-export type NotionDataSourceReference = z.infer<
+export const notionDataSourceReferenceSchema = object({
+  id: workflowUuidSchema,
+  url: urlSchema,
+  title: nullableTextSchema,
+  rawUrl: nonEmptyTextSchema.max(2048).optional(),
+}).strict();
+export type NotionDataSourceReference = zInfer<
   typeof notionDataSourceReferenceSchema
 >;
 
-export const notionChildPageCreatedEventConfigSchema = z
-  .object({
-    provider: notionProviderSchema,
-    event: z.literal("child_page_created"),
-    connectorId: workflowUuidSchema,
-    parentPage: notionPageReferenceSchema,
-  })
-  .strict();
-export type NotionChildPageCreatedEventConfig = z.infer<
+export const notionChildPageCreatedEventConfigSchema = object({
+  provider: notionProviderSchema,
+  event: literal("child_page_created"),
+  connectorId: workflowUuidSchema,
+  parentPage: notionPageReferenceSchema,
+}).strict();
+export type NotionChildPageCreatedEventConfig = zInfer<
   typeof notionChildPageCreatedEventConfigSchema
 >;
 
-export const notionChildPageCreatedEventCreateConfigSchema = z
-  .object({
-    provider: notionProviderSchema,
-    event: z.literal("child_page_created"),
-    parentPageUrl: externalResourceUrlSchema,
-  })
-  .strict();
-export type NotionChildPageCreatedEventCreateConfig = z.infer<
+export const notionChildPageCreatedEventCreateConfigSchema = object({
+  provider: notionProviderSchema,
+  event: literal("child_page_created"),
+  parentPageUrl: externalResourceUrlSchema,
+}).strict();
+export type NotionChildPageCreatedEventCreateConfig = zInfer<
   typeof notionChildPageCreatedEventCreateConfigSchema
 >;
 
-export const notionDatabaseItemCreatedEventConfigSchema = z
-  .object({
-    provider: notionProviderSchema,
-    event: z.literal("database_item_created"),
-    connectorId: workflowUuidSchema,
-    dataSource: notionDataSourceReferenceSchema,
-  })
-  .strict();
-export type NotionDatabaseItemCreatedEventConfig = z.infer<
+export const notionDatabaseItemCreatedEventConfigSchema = object({
+  provider: notionProviderSchema,
+  event: literal("database_item_created"),
+  connectorId: workflowUuidSchema,
+  dataSource: notionDataSourceReferenceSchema,
+}).strict();
+export type NotionDatabaseItemCreatedEventConfig = zInfer<
   typeof notionDatabaseItemCreatedEventConfigSchema
 >;
 
-export const notionDatabaseItemCreatedEventCreateConfigSchema = z
-  .object({
-    provider: notionProviderSchema,
-    event: z.literal("database_item_created"),
-    databaseUrl: externalResourceUrlSchema,
-  })
-  .strict();
-export type NotionDatabaseItemCreatedEventCreateConfig = z.infer<
+export const notionDatabaseItemCreatedEventCreateConfigSchema = object({
+  provider: notionProviderSchema,
+  event: literal("database_item_created"),
+  databaseUrl: externalResourceUrlSchema,
+}).strict();
+export type NotionDatabaseItemCreatedEventCreateConfig = zInfer<
   typeof notionDatabaseItemCreatedEventCreateConfigSchema
 >;
 
-export const notionPageContentUpdatedScopeSchema = z.discriminatedUnion(
-  "type",
-  [
-    z
-      .object({
-        type: z.literal("page"),
-        page: notionPageReferenceSchema,
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("data_source"),
-        dataSource: notionDataSourceReferenceSchema,
-      })
-      .strict(),
-  ],
-);
-export type NotionPageContentUpdatedScope = z.infer<
+export const notionPageContentUpdatedScopeSchema = discriminatedUnion("type", [
+  object({
+    type: literal("page"),
+    page: notionPageReferenceSchema,
+  }).strict(),
+  object({
+    type: literal("data_source"),
+    dataSource: notionDataSourceReferenceSchema,
+  }).strict(),
+]);
+export type NotionPageContentUpdatedScope = zInfer<
   typeof notionPageContentUpdatedScopeSchema
 >;
 
-export const notionPageContentUpdatedEventConfigSchema = z
-  .object({
-    provider: notionProviderSchema,
-    event: z.literal("page_content_updated"),
-    connectorId: workflowUuidSchema,
-    scope: notionPageContentUpdatedScopeSchema,
-  })
-  .strict();
-export type NotionPageContentUpdatedEventConfig = z.infer<
+export const notionPageContentUpdatedEventConfigSchema = object({
+  provider: notionProviderSchema,
+  event: literal("page_content_updated"),
+  connectorId: workflowUuidSchema,
+  scope: notionPageContentUpdatedScopeSchema,
+}).strict();
+export type NotionPageContentUpdatedEventConfig = zInfer<
   typeof notionPageContentUpdatedEventConfigSchema
 >;
 
-export const notionPageContentUpdatedEventCreateConfigSchema = z
-  .object({
-    provider: notionProviderSchema,
-    event: z.literal("page_content_updated"),
-    pageUrl: externalResourceUrlSchema.optional(),
-    databaseUrl: externalResourceUrlSchema.optional(),
-  })
+export const notionPageContentUpdatedEventCreateConfigSchema = object({
+  provider: notionProviderSchema,
+  event: literal("page_content_updated"),
+  pageUrl: externalResourceUrlSchema.optional(),
+  databaseUrl: externalResourceUrlSchema.optional(),
+})
   .strict()
   .refine(
     (value) => {
@@ -764,7 +699,7 @@ export const notionPageContentUpdatedEventCreateConfigSchema = z
     },
     { message: "Provide exactly one of pageUrl or databaseUrl" },
   );
-export type NotionPageContentUpdatedEventCreateConfig = z.infer<
+export type NotionPageContentUpdatedEventCreateConfig = zInfer<
   typeof notionPageContentUpdatedEventCreateConfigSchema
 >;
 
@@ -780,49 +715,48 @@ export type NotionAutomationEventConfig =
  * - `loop`: re-scheduled `intervalSeconds` after each completion.
  * - `once`: fires once at `atTime`, then auto-disables.
  */
-export const workflowScheduleSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("cron"),
+export const workflowScheduleSchema = discriminatedUnion("type", [
+  object({
+    type: literal("cron"),
     cronExpression: nonEmptyTextSchema.max(100),
     timezone: nonEmptyTextSchema,
   }),
-  z.object({
-    type: z.literal("loop"),
-    intervalSeconds: z.number().int().positive(),
+  object({
+    type: literal("loop"),
+    intervalSeconds: number().int().positive(),
   }),
-  z.object({
-    type: z.literal("once"),
+  object({
+    type: literal("once"),
     atTime: nonEmptyTextSchema,
     timezone: nonEmptyTextSchema,
   }),
 ]);
-export type WorkflowSchedule = z.infer<typeof workflowScheduleSchema>;
+export type WorkflowSchedule = zInfer<typeof workflowScheduleSchema>;
 
 /**
  * Automation summary. Under 1:N the agent is derived from the workflow, so
  * automations no longer carry an agentId. Detail responses only ever list the
  * caller's own automations.
  */
-const workflowAutomationSummaryBaseSchema = z.object({
+const workflowAutomationSummaryBaseSchema = object({
   id: textSchema,
   ownerUserId: textSchema,
   enabled: flagSchema,
   chatThreadId: nullableTextSchema,
   nextRunAt: nullableTimestampSchema,
   lastRunAt: nullableTimestampSchema,
-  official: z
-    .object({
-      blueprintKey: officialWorkflowBlueprintKeySchema,
-      appliedFingerprint: textSchema.regex(/^[0-9a-f]{64}$/),
-      reconciliationStatus: z.enum([
-        "current",
-        "reconciling",
-        "needs_reconfiguration",
-        "failed",
-      ]),
-      intendedEnabled: flagSchema,
-      parameterBindings: z.array(officialWorkflowParameterBindingSchema),
-    })
+  official: object({
+    blueprintKey: officialWorkflowBlueprintKeySchema,
+    appliedFingerprint: textSchema.regex(/^[0-9a-f]{64}$/),
+    reconciliationStatus: zEnum([
+      "current",
+      "reconciling",
+      "needs_reconfiguration",
+      "failed",
+    ]),
+    intendedEnabled: flagSchema,
+    parameterBindings: array(officialWorkflowParameterBindingSchema),
+  })
     .strict()
     .nullable(),
 });
@@ -994,18 +928,18 @@ export const workflowNotionPageContentUpdatedAutomationSummarySchema =
 export const workflowWebhookReceivedAutomationSummarySchema =
   workflowAutomationSummaryBaseSchema.extend({
     kind: eventAutomationKindSchema,
-    eventType: z.literal("webhook-received"),
+    eventType: literal("webhook-received"),
     eventConfig: webhookReceivedEventConfigSchema,
     schedule: nullValueSchema,
     scheduleSummary: nullValueSchema,
     webhookUrl: urlSchema.optional(),
     secretLastFour: textSchema.length(4),
-    disabledReason: z.literal("paid_plan_required").nullable().optional(),
+    disabledReason: literal("paid_plan_required").nullable().optional(),
     lastReceivedAt: nullableTimestampSchema,
     webhookSecret: optionalNonEmptyTextSchema,
   });
 
-export const eventAutomationSummarySchema = z.discriminatedUnion("eventType", [
+export const eventAutomationSummarySchema = discriminatedUnion("eventType", [
   workflowChatRunFinishedAutomationSummarySchema,
   workflowGmailNewMessageAutomationSummarySchema,
   workflowGmailLabelAppliedAutomationSummarySchema,
@@ -1026,15 +960,15 @@ export const eventAutomationSummarySchema = z.discriminatedUnion("eventType", [
   workflowWebhookReceivedAutomationSummarySchema,
 ]);
 
-export const workflowAutomationSummarySchema = z.union([
+export const workflowAutomationSummarySchema = union([
   workflowScheduleAutomationSummarySchema,
   eventAutomationSummarySchema,
 ]);
-export type WorkflowAutomationSummary = z.infer<
+export type WorkflowAutomationSummary = zInfer<
   typeof workflowAutomationSummarySchema
 >;
 
-const chatThreadWorkflowSchema = z.object({
+const chatThreadWorkflowSchema = object({
   id: workflowUuidSchema,
   agentId: workflowUuidSchema,
   name: workflowNameSchema,
@@ -1216,7 +1150,7 @@ export const chatThreadWorkflowWebhookReceivedAutomationSchema =
     workflow: chatThreadWorkflowSchema,
   });
 
-export const chatThreadWorkflowAutomationSchema = z.union([
+export const chatThreadWorkflowAutomationSchema = union([
   chatThreadWorkflowScheduleAutomationSchema,
   chatThreadWorkflowChatRunFinishedAutomationSchema,
   chatThreadWorkflowGmailNewMessageAutomationSchema,
@@ -1237,38 +1171,38 @@ export const chatThreadWorkflowAutomationSchema = z.union([
   chatThreadWorkflowNotionPageContentUpdatedAutomationSchema,
   chatThreadWorkflowWebhookReceivedAutomationSchema,
 ]);
-export type ChatThreadWorkflowAutomation = z.infer<
+export type ChatThreadWorkflowAutomation = zInfer<
   typeof chatThreadWorkflowAutomationSchema
 >;
 
-export const workflowScheduleAutomationCreateRequestSchema = z.object({
+export const workflowScheduleAutomationCreateRequestSchema = object({
   kind: scheduleAutomationKindSchema.optional(),
   schedule: workflowScheduleSchema,
   enabled: optionalFlagSchema,
 });
 
-export const workflowChatRunFinishedAutomationCreateRequestSchema = z.object({
+export const workflowChatRunFinishedAutomationCreateRequestSchema = object({
   kind: eventAutomationKindSchema,
   eventType: chatRunFinishedEventTypeSchema,
   eventConfig: chatRunFinishedEventConfigSchema,
   enabled: optionalFlagSchema,
 });
 
-export const workflowGmailNewMessageAutomationCreateRequestSchema = z.object({
+export const workflowGmailNewMessageAutomationCreateRequestSchema = object({
   kind: eventAutomationKindSchema,
   eventType: gmailNewMessageEventTypeSchema,
   eventConfig: gmailNewMessageEventConfigSchema,
   enabled: optionalFlagSchema,
 });
 
-export const workflowGmailLabelAppliedAutomationCreateRequestSchema = z.object({
+export const workflowGmailLabelAppliedAutomationCreateRequestSchema = object({
   kind: eventAutomationKindSchema,
   eventType: gmailLabelAppliedEventTypeSchema,
   eventConfig: gmailLabelAppliedEventConfigSchema,
   enabled: optionalFlagSchema,
 });
 
-export const workflowGithubPullRequestAutomationCreateRequestSchema = z.object({
+export const workflowGithubPullRequestAutomationCreateRequestSchema = object({
   kind: eventAutomationKindSchema,
   eventType: githubPullRequestEventTypeSchema,
   eventConfig: githubPullRequestEventConfigSchema,
@@ -1276,7 +1210,7 @@ export const workflowGithubPullRequestAutomationCreateRequestSchema = z.object({
 });
 
 export const workflowGithubWorkflowRunCompletedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: githubWorkflowRunCompletedEventTypeSchema,
     eventConfig: githubWorkflowRunCompletedEventConfigSchema,
@@ -1284,7 +1218,7 @@ export const workflowGithubWorkflowRunCompletedAutomationCreateRequestSchema =
   });
 
 export const workflowGithubWorkflowJobCompletedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: githubWorkflowJobCompletedEventTypeSchema,
     eventConfig: githubWorkflowJobCompletedEventConfigSchema,
@@ -1292,7 +1226,7 @@ export const workflowGithubWorkflowJobCompletedAutomationCreateRequestSchema =
   });
 
 export const workflowGithubPullRequestReviewSubmittedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: githubPullRequestReviewSubmittedEventTypeSchema,
     eventConfig: githubPullRequestReviewSubmittedEventConfigSchema,
@@ -1300,7 +1234,7 @@ export const workflowGithubPullRequestReviewSubmittedAutomationCreateRequestSche
   });
 
 export const workflowGithubDeploymentStatusCreatedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: githubDeploymentStatusCreatedEventTypeSchema,
     eventConfig: githubDeploymentStatusCreatedEventConfigSchema,
@@ -1308,7 +1242,7 @@ export const workflowGithubDeploymentStatusCreatedAutomationCreateRequestSchema 
   });
 
 export const workflowGithubIssueCommentCreatedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: githubIssueCommentCreatedEventTypeSchema,
     eventConfig: githubIssueCommentCreatedEventConfigSchema,
@@ -1316,7 +1250,7 @@ export const workflowGithubIssueCommentCreatedAutomationCreateRequestSchema =
   });
 
 export const workflowGoogleCalendarEventCreatedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: googleCalendarEventCreatedEventTypeSchema,
     eventConfig: googleCalendarEventCreatedEventConfigSchema
@@ -1330,7 +1264,7 @@ export const workflowGoogleCalendarEventCreatedAutomationCreateRequestSchema =
   });
 
 export const workflowGoogleCalendarEventUpdatedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: googleCalendarEventUpdatedEventTypeSchema,
     eventConfig: googleCalendarEventUpdatedEventConfigSchema
@@ -1344,7 +1278,7 @@ export const workflowGoogleCalendarEventUpdatedAutomationCreateRequestSchema =
   });
 
 export const workflowGoogleCalendarEventCancelledAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: googleCalendarEventCancelledEventTypeSchema,
     eventConfig: googleCalendarEventCancelledEventConfigSchema
@@ -1358,7 +1292,7 @@ export const workflowGoogleCalendarEventCancelledAutomationCreateRequestSchema =
   });
 
 export const workflowGoogleFormsResponseSubmittedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: googleFormsResponseSubmittedEventTypeSchema,
     eventConfig: googleFormsResponseSubmittedEventCreateConfigSchema,
@@ -1366,7 +1300,7 @@ export const workflowGoogleFormsResponseSubmittedAutomationCreateRequestSchema =
   });
 
 export const workflowGoogleMeetTranscriptGeneratedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: googleMeetTranscriptGeneratedEventTypeSchema,
     eventConfig: googleMeetTranscriptGeneratedEventConfigSchema
@@ -1380,7 +1314,7 @@ export const workflowGoogleMeetTranscriptGeneratedAutomationCreateRequestSchema 
   });
 
 export const workflowNotionChildPageCreatedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: notionChildPageCreatedEventTypeSchema,
     eventConfig: notionChildPageCreatedEventCreateConfigSchema,
@@ -1388,7 +1322,7 @@ export const workflowNotionChildPageCreatedAutomationCreateRequestSchema =
   });
 
 export const workflowNotionDatabaseItemCreatedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: notionDatabaseItemCreatedEventTypeSchema,
     eventConfig: notionDatabaseItemCreatedEventCreateConfigSchema,
@@ -1396,21 +1330,21 @@ export const workflowNotionDatabaseItemCreatedAutomationCreateRequestSchema =
   });
 
 export const workflowNotionPageContentUpdatedAutomationCreateRequestSchema =
-  z.object({
+  object({
     kind: eventAutomationKindSchema,
     eventType: notionPageContentUpdatedEventTypeSchema,
     eventConfig: notionPageContentUpdatedEventCreateConfigSchema,
     enabled: optionalFlagSchema,
   });
 
-export const workflowWebhookReceivedAutomationCreateRequestSchema = z.object({
+export const workflowWebhookReceivedAutomationCreateRequestSchema = object({
   kind: eventAutomationKindSchema,
-  eventType: z.literal("webhook-received"),
+  eventType: literal("webhook-received"),
   eventConfig: webhookReceivedEventConfigSchema.optional(),
   enabled: optionalFlagSchema,
 });
 
-export const workflowAutomationCreateRequestSchema = z.union([
+export const workflowAutomationCreateRequestSchema = union([
   workflowScheduleAutomationCreateRequestSchema,
   workflowChatRunFinishedAutomationCreateRequestSchema,
   workflowGmailNewMessageAutomationCreateRequestSchema,
@@ -1431,34 +1365,33 @@ export const workflowAutomationCreateRequestSchema = z.union([
   workflowNotionPageContentUpdatedAutomationCreateRequestSchema,
   workflowWebhookReceivedAutomationCreateRequestSchema,
 ]);
-export type WorkflowAutomationCreateRequest = z.infer<
+export type WorkflowAutomationCreateRequest = zInfer<
   typeof workflowAutomationCreateRequestSchema
 >;
 
-export const workflowScheduleAutomationUpdateRequestSchema = z.object({
+export const workflowScheduleAutomationUpdateRequestSchema = object({
   schedule: workflowScheduleSchema,
 });
 
-export const workflowGmailEventAutomationUpdateRequestSchema = z.object({
+export const workflowGmailEventAutomationUpdateRequestSchema = object({
   eventConfig: gmailAutomationEventConfigSchema,
 });
 
-export const workflowGithubEventAutomationUpdateRequestSchema = z.object({
+export const workflowGithubEventAutomationUpdateRequestSchema = object({
   eventConfig: githubAutomationEventConfigSchema,
 });
 
-export const workflowGoogleCalendarEventAutomationUpdateRequestSchema =
-  z.object({
-    eventConfig: googleCalendarAutomationEventConfigSchema,
-  });
+export const workflowGoogleCalendarEventAutomationUpdateRequestSchema = object({
+  eventConfig: googleCalendarAutomationEventConfigSchema,
+});
 
-export const workflowAutomationUpdateRequestSchema = z.union([
+export const workflowAutomationUpdateRequestSchema = union([
   workflowScheduleAutomationUpdateRequestSchema,
   workflowGmailEventAutomationUpdateRequestSchema,
   workflowGithubEventAutomationUpdateRequestSchema,
   workflowGoogleCalendarEventAutomationUpdateRequestSchema,
 ]);
-export type WorkflowAutomationUpdateRequest = z.infer<
+export type WorkflowAutomationUpdateRequest = zInfer<
   typeof workflowAutomationUpdateRequestSchema
 >;
 
@@ -1467,7 +1400,7 @@ export type WorkflowAutomationUpdateRequest = z.infer<
  * `canManage` reflects the caller's effective rights (agent write-permission
  * for public workflows; ownership for private ones).
  */
-export const workflowSummarySchema = z.object({
+export const workflowSummarySchema = object({
   id: workflowUuidSchema,
   agentId: workflowUuidSchema,
   agentName: nullableTextSchema,
@@ -1480,21 +1413,19 @@ export const workflowSummarySchema = z.object({
   createdAt: timestampSchema,
   canManage: flagSchema,
   canPublish: flagSchema,
-  official: z
-    .object({
-      definitionName: workflowNameSchema,
-      installationState: z.enum(["installing", "installed"]),
-      definitionLifecycle: z.enum(["active", "retired", "unavailable"]),
-      readOnly: z.literal(true),
-    })
+  official: object({
+    definitionName: workflowNameSchema,
+    installationState: zEnum(["installing", "installed"]),
+    definitionLifecycle: zEnum(["active", "retired", "unavailable"]),
+    readOnly: literal(true),
+  })
     .strict()
     .nullable(),
-  shadowedBy: z
-    .object({
-      id: workflowUuidSchema,
-      name: workflowNameSchema,
-      displayName: nullableWorkflowDisplayNameSchema,
-    })
+  shadowedBy: object({
+    id: workflowUuidSchema,
+    name: workflowNameSchema,
+    displayName: nullableWorkflowDisplayNameSchema,
+  })
     .nullable()
     .optional(),
   importSource: workflowImportSourceSchema.nullable(),
@@ -1505,12 +1436,12 @@ export const workflowDetailResponseSchema = workflowSummarySchema.extend({
   updatedByUserId: textSchema,
   updatedAt: timestampSchema,
   instruction: nullableTextSchema,
-  files: z.array(workflowFileMetadataSchema).nullable(),
-  fileContents: z.array(workflowFileEntrySchema).nullable(),
-  automations: z.array(workflowAutomationSummarySchema),
+  files: array(workflowFileMetadataSchema).nullable(),
+  fileContents: array(workflowFileEntrySchema).nullable(),
+  automations: array(workflowAutomationSummarySchema),
 });
 
-export const workflowListResponseSchema = z.array(workflowSummarySchema);
+export const workflowListResponseSchema = array(workflowSummarySchema);
 
 /**
  * What the chat composer needs to offer and highlight `/workflow` commands:
@@ -1523,19 +1454,17 @@ export const composerWorkflowSchema = workflowSummarySchema.pick({
   description: true,
 });
 
-export const composerWorkflowListResponseSchema = z.array(
-  composerWorkflowSchema,
-);
+export const composerWorkflowListResponseSchema = array(composerWorkflowSchema);
 
-export const workflowAutomationsListEntrySchema = z.object({
+export const workflowAutomationsListEntrySchema = object({
   workflow: workflowSummarySchema,
   automation: workflowAutomationSummarySchema,
 });
-export const workflowAutomationsListResponseSchema = z.array(
+export const workflowAutomationsListResponseSchema = array(
   workflowAutomationsListEntrySchema,
 );
 
-export const workflowCreateRequestSchema = z.object({
+export const workflowCreateRequestSchema = object({
   agentId: workflowUuidSchema,
   chatThreadId: workflowUuidSchema.optional(),
   name: workflowNameSchema,
@@ -1546,51 +1475,49 @@ export const workflowCreateRequestSchema = z.object({
   visibility: workflowVisibilitySchema.optional(),
 });
 
-export const workflowUpdateRequestSchema = z
-  .object({
-    name: workflowNameSchema.optional(),
-    instruction: workflowInstructionSchema.nullable().optional(),
-    files: workflowFilesSchema.optional(),
-    displayName: nullableWorkflowDisplayNameSchema.optional(),
-    description: workflowDescriptionSchema.nullable().optional(),
-  })
-  .refine(
-    (body) => {
-      return (
-        body.name !== undefined ||
-        body.instruction !== undefined ||
-        body.files !== undefined ||
-        body.displayName !== undefined ||
-        body.description !== undefined
-      );
-    },
-    { message: "At least one workflow update is required" },
-  );
+export const workflowUpdateRequestSchema = object({
+  name: workflowNameSchema.optional(),
+  instruction: workflowInstructionSchema.nullable().optional(),
+  files: workflowFilesSchema.optional(),
+  displayName: nullableWorkflowDisplayNameSchema.optional(),
+  description: workflowDescriptionSchema.nullable().optional(),
+}).refine(
+  (body) => {
+    return (
+      body.name !== undefined ||
+      body.instruction !== undefined ||
+      body.files !== undefined ||
+      body.displayName !== undefined ||
+      body.description !== undefined
+    );
+  },
+  { message: "At least one workflow update is required" },
+);
 
-export const workflowCopyRequestSchema = z.object({
+export const workflowCopyRequestSchema = object({
   toAgentId: workflowUuidSchema,
 });
 
-export const workflowRunResponseSchema = z.object({
+export const workflowRunResponseSchema = object({
   chatThreadId: workflowUuidSchema,
   // Null means the manual invocation is waiting in the chat thread queue and
   // no run has been created for it yet.
   runId: nullableTextSchema,
 });
 
-export const workflowChatThreadResponseSchema = z.object({
+export const workflowChatThreadResponseSchema = object({
   chatThreadId: workflowUuidSchema,
   prompt: textSchema,
 });
 
-const workflowIdParams = z.object({ workflowId: workflowUuidSchema });
+const workflowIdParams = object({ workflowId: workflowUuidSchema });
 
 export const workflowsCollectionContract = c.router({
   list: {
     method: "GET",
     path: "/api/workflows",
     headers: authHeadersSchema,
-    query: z.object({ agentId: workflowUuidSchema.optional() }),
+    query: object({ agentId: workflowUuidSchema.optional() }),
     responses: {
       200: workflowListResponseSchema,
       401: apiErrorSchema,
@@ -1602,7 +1529,7 @@ export const workflowsCollectionContract = c.router({
     method: "GET",
     path: "/api/workflows/for-composer",
     headers: authHeadersSchema,
-    query: z.object({ agentId: workflowUuidSchema }),
+    query: object({ agentId: workflowUuidSchema }),
     responses: {
       200: composerWorkflowListResponseSchema,
       400: apiErrorSchema,
@@ -1629,11 +1556,11 @@ export const workflowsCollectionContract = c.router({
   },
 });
 
-export const workflowOwnerProfileSchema = z.object({
+export const workflowOwnerProfileSchema = object({
   displayName: nullableTextSchema,
   imageUrl: nullableTextSchema,
 });
-export type WorkflowOwnerProfile = z.infer<typeof workflowOwnerProfileSchema>;
+export type WorkflowOwnerProfile = zInfer<typeof workflowOwnerProfileSchema>;
 
 export const workflowsDetailContract = c.router({
   ownerProfile: {
@@ -1784,14 +1711,14 @@ export const workflowVisibilityContract = c.router({
   },
 });
 
-const automationIdParams = z.object({ id: workflowUuidSchema });
-const chatThreadIdParams = z.object({ threadId: nonEmptyTextSchema });
+const automationIdParams = object({ id: workflowUuidSchema });
+const chatThreadIdParams = object({ threadId: nonEmptyTextSchema });
 
-export const workflowWebhookSecretResponseSchema = z.object({
+export const workflowWebhookSecretResponseSchema = object({
   webhookUrl: urlSchema,
   webhookSecret: nonEmptyTextSchema,
 });
-export type WorkflowWebhookSecretResponse = z.infer<
+export type WorkflowWebhookSecretResponse = zInfer<
   typeof workflowWebhookSecretResponseSchema
 >;
 
@@ -1813,7 +1740,7 @@ export const workflowAutomationsContract = c.router({
     headers: authHeadersSchema,
     pathParams: chatThreadIdParams,
     responses: {
-      200: z.array(chatThreadWorkflowAutomationSchema),
+      200: array(chatThreadWorkflowAutomationSchema),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -1826,7 +1753,7 @@ export const workflowAutomationsContract = c.router({
     headers: authHeadersSchema,
     pathParams: workflowIdParams,
     responses: {
-      200: z.array(workflowAutomationSummarySchema),
+      200: array(workflowAutomationSummarySchema),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -1959,21 +1886,21 @@ export const workflowAutomationsContract = c.router({
   },
 });
 
-export type WorkflowFileEntry = z.infer<typeof workflowFileEntrySchema>;
-export type WorkflowFileMetadata = z.infer<typeof workflowFileMetadataSchema>;
-export type WorkflowSummary = z.infer<typeof workflowSummarySchema>;
-export type ComposerWorkflow = z.infer<typeof composerWorkflowSchema>;
-export type WorkflowDetailResponse = z.infer<
+export type WorkflowFileEntry = zInfer<typeof workflowFileEntrySchema>;
+export type WorkflowFileMetadata = zInfer<typeof workflowFileMetadataSchema>;
+export type WorkflowSummary = zInfer<typeof workflowSummarySchema>;
+export type ComposerWorkflow = zInfer<typeof composerWorkflowSchema>;
+export type WorkflowDetailResponse = zInfer<
   typeof workflowDetailResponseSchema
 >;
-export type WorkflowCreateRequest = z.infer<typeof workflowCreateRequestSchema>;
-export type WorkflowUpdateRequest = z.infer<typeof workflowUpdateRequestSchema>;
-export type WorkflowCopyRequest = z.infer<typeof workflowCopyRequestSchema>;
-export type WorkflowChatThreadResponse = z.infer<
+export type WorkflowCreateRequest = zInfer<typeof workflowCreateRequestSchema>;
+export type WorkflowUpdateRequest = zInfer<typeof workflowUpdateRequestSchema>;
+export type WorkflowCopyRequest = zInfer<typeof workflowCopyRequestSchema>;
+export type WorkflowChatThreadResponse = zInfer<
   typeof workflowChatThreadResponseSchema
 >;
-export type WorkflowRunResponse = z.infer<typeof workflowRunResponseSchema>;
-export type WorkflowAutomationsListEntry = z.infer<
+export type WorkflowRunResponse = zInfer<typeof workflowRunResponseSchema>;
+export type WorkflowAutomationsListEntry = zInfer<
   typeof workflowAutomationsListEntrySchema
 >;
 export type WorkflowsCollectionContract = typeof workflowsCollectionContract;

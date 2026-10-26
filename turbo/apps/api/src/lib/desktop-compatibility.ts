@@ -1,11 +1,10 @@
-import * as z from "zod";
+import { object, string } from "zod";
 
 import compatibilityConfig from "./desktop-compatibility.json";
 import { desktopVersionIsSupported } from "./desktop-version";
 
-const desktopCompatibilityConfigSchema = z.object({
-  minimumSupportedVersion: z
-    .string()
+const desktopCompatibilityConfigSchema = object({
+  minimumSupportedVersion: string()
     .refine((value) => {
       return desktopVersionIsSupported(value, "0.51.0");
     }, "The Desktop floor must be a stable version at least 0.51.0")

@@ -1,4 +1,21 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  preprocess,
+  record,
+  string,
+  uuid,
+  enum as zEnum,
+  ZodIssueCode,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { timestampQueryNumberSchema } from "./base";
 import { firewallPoliciesSchema } from "@okouai/connectors/firewall-contracts";
 import {
@@ -18,8 +35,7 @@ const directRunModelProviderTypeSchema = modelProviderTypeSchema.refine(
   { message: "built-in model provider is only supported by agent runs" },
 );
 
-export const claudeToolEntrySchema = z
-  .string()
+export const claudeToolEntrySchema = string()
   .refine(
     (tool) => {
       return tool.trim().length > 0;
@@ -48,8 +64,7 @@ export const claudeToolEntrySchema = z
 // Stored in Postgres `integer` columns. Keep request validation aligned with
 // the DB range so malformed sandbox payloads fail as 400s instead of DB errors.
 export const MAX_EVENT_SEQUENCE_NUMBER = 2_147_483_647;
-export const eventSequenceNumberSchema = z
-  .number()
+export const eventSequenceNumberSchema = number()
   .int()
   .nonnegative()
   .max(MAX_EVENT_SEQUENCE_NUMBER);
@@ -70,108 +85,103 @@ export const ALL_RUN_STATUSES = [
 /**
  * Run status enum
  */
-const runStatusSchema = z.enum(ALL_RUN_STATUSES);
+const runStatusSchema = zEnum(ALL_RUN_STATUSES);
 
 /**
  * Unified run request schema - supports all run modes via optional parameters
  */
-const unifiedRunRequestSchema = z
-  .object({
-    agentId: z.string().optional(),
-    vars: z.record(z.string(), z.string()).optional(),
-    secrets: z.record(z.string(), z.string()).optional(),
-    volumeVersions: z.record(z.string(), z.string()).optional(),
+const unifiedRunRequestSchema = object({
+  agentId: string().optional(),
+  vars: record(string(), string()).optional(),
+  secrets: record(string(), string()).optional(),
+  volumeVersions: record(string(), string()).optional(),
 
-    // Additional volumes passed directly at run time (bypass compose)
-    additionalVolumes: z
-      .array(
-        z.object({
-          name: z.string(),
-          version: z.string().optional(),
-          mountPath: z.string(),
-        }),
-      )
-      .optional(),
+  // Additional volumes passed directly at run time (bypass compose)
+  additionalVolumes: array(
+    object({
+      name: string(),
+      version: string().optional(),
+      mountPath: string(),
+    }),
+  ).optional(),
 
-    // Preview evaluation escape hatch: bypass preview mock CLIs and use the
-    // real agent runtime.
-    realAgentInPreview: z.boolean().optional(),
+  // Preview evaluation escape hatch: bypass preview mock CLIs and use the
+  // real agent runtime.
+  realAgentInPreview: boolean().optional(),
 
-    // Capture HTTP header names, selected safe header values, request bodies, and response bodies
-    // in network logs
-    captureNetworkBodies: z.boolean().optional(),
+  // Capture HTTP header names, selected safe header values, request bodies, and response bodies
+  // in network logs
+  captureNetworkBodies: boolean().optional(),
 
-    // Required
-    prompt: z.string().min(1, "Missing prompt"),
+  // Required
+  prompt: string().min(1, "Missing prompt"),
 
-    // Optional system prompt to append to the agent's system prompt
-    appendSystemPrompt: z.string().optional(),
+  // Optional system prompt to append to the agent's system prompt
+  appendSystemPrompt: string().optional(),
 
-    // Optional list of tools to disable in Claude CLI (passed as --disallowed-tools)
-    disallowedTools: z.array(claudeToolEntrySchema).optional(),
+  // Optional list of tools to disable in Claude CLI (passed as --disallowed-tools)
+  disallowedTools: array(claudeToolEntrySchema).optional(),
 
-    // Optional list of tools to make available in Claude CLI (passed as --tools)
-    tools: z.array(claudeToolEntrySchema).optional(),
+  // Optional list of tools to make available in Claude CLI (passed as --tools)
+  tools: array(claudeToolEntrySchema).optional(),
 
-    // Settings JSON to pass to Claude CLI (passed as --settings)
-    settings: z.string().optional(),
+  // Settings JSON to pass to Claude CLI (passed as --settings)
+  settings: string().optional(),
 
-    triggerSource: triggerSourceSchema.optional(),
+  triggerSource: triggerSourceSchema.optional(),
 
-    // Per-permission policies (e.g., { "github": { "actions:read": "allow" } })
-    permissionPolicies: firewallPoliciesSchema.optional(),
+  // Per-permission policies (e.g., { "github": { "actions:read": "allow" } })
+  permissionPolicies: firewallPoliciesSchema.optional(),
 
-    // Internal: pin provider type for direct CLI runs used by E2E.
-    // The built-in provider is intentionally excluded here because direct CLI
-    // runs do not enforce built-in-provider credits.
-    modelProviderType: directRunModelProviderTypeSchema.optional(),
-  })
-  .strict();
+  // Internal: pin provider type for direct CLI runs used by E2E.
+  // The built-in provider is intentionally excluded here because direct CLI
+  // runs do not enforce built-in-provider credits.
+  modelProviderType: directRunModelProviderTypeSchema.optional(),
+}).strict();
 
 /**
  * Create run response schema
  */
-const createRunResponseSchema = z.object({
-  runId: z.string(),
+const createRunResponseSchema = object({
+  runId: string(),
   status: runStatusSchema,
-  sandboxId: z.string().optional(),
-  output: z.string().optional(),
-  error: z.string().optional(),
-  executionTimeMs: z.number().optional(),
-  createdAt: z.string().optional(),
+  sandboxId: string().optional(),
+  output: string().optional(),
+  error: string().optional(),
+  executionTimeMs: number().optional(),
+  createdAt: string().optional(),
 });
 
 /**
  * Get run response schema
  */
-const getRunResponseSchema = z.object({
-  runId: z.string(),
+const getRunResponseSchema = object({
+  runId: string(),
   status: runStatusSchema,
-  prompt: z.string(),
-  appendSystemPrompt: z.string().nullable(),
-  vars: z.record(z.string(), z.string()).optional(),
-  sandboxId: z.string().optional(),
-  result: z
-    .object({
-      output: z.string().optional(),
-      executionTimeMs: z.number().optional(),
-    })
+  prompt: string(),
+  appendSystemPrompt: string().nullable(),
+  vars: record(string(), string()).optional(),
+  sandboxId: string().optional(),
+  result: object({
+    output: string().optional(),
+    executionTimeMs: number().optional(),
+  })
     .passthrough()
     .optional(),
-  error: z.string().optional(),
-  createdAt: z.string(),
-  startedAt: z.string().optional(),
-  completedAt: z.string().optional(),
+  error: string().optional(),
+  createdAt: string(),
+  startedAt: string().optional(),
+  completedAt: string().optional(),
   /** Stored run identity. Never a current route projection. */
-  source: z.object({
+  source: object({
     providerType: modelProviderTypeSchema.nullable(),
     runtimeProviderType: modelProviderTypeSchema.nullable(),
-    model: z.string().nullable(),
+    model: string().nullable(),
     credentialScope: modelProviderCredentialScopeSchema.nullable(),
-    account: z.discriminatedUnion("status", [
-      z.object({ status: z.literal("unknown") }),
-      z.object({ status: z.literal("unavailable") }),
-      z.object({ status: z.literal("connected"), id: z.uuid() }),
+    account: discriminatedUnion("status", [
+      object({ status: literal("unknown") }),
+      object({ status: literal("unavailable") }),
+      object({ status: literal("connected"), id: uuid() }),
     ]),
   }),
 });
@@ -179,68 +189,68 @@ const getRunResponseSchema = z.object({
 /**
  * Run event schema
  */
-const runEventSchema = z.object({
+const runEventSchema = object({
   sequenceNumber: eventSequenceNumberSchema,
-  eventType: z.string(),
-  eventData: z.unknown(),
-  createdAt: z.string(),
+  eventType: string(),
+  eventData: zUnknown(),
+  createdAt: string(),
 });
 
 /**
  * Published writeback versions retained as exact Run completion retry evidence.
  */
-export const runStorageOutputSchema = z.object({
-  name: z.string(),
-  version: z.string(),
-  mountPath: z.string(),
-  missingRootPolicy: z.enum(["fail", "preserveParentVersion"]).optional(),
+export const runStorageOutputSchema = object({
+  name: string(),
+  version: string(),
+  mountPath: string(),
+  missingRootPolicy: zEnum(["fail", "preserveParentVersion"]).optional(),
 });
 
 /** Completion outputs, including those saved after failure/cancellation recovery. */
-const runResultSchema = z.object({
+const runResultSchema = object({
   // Only writeback outputs are persisted. Read-only versions belong to launch mounts.
-  storageOutputs: z.array(runStorageOutputSchema).optional(),
-  framework: z.enum(["pi", "claude-code", "codex"]).optional(),
-  frameworkSessionId: z.string().optional(),
+  storageOutputs: array(runStorageOutputSchema).optional(),
+  framework: zEnum(["pi", "claude-code", "codex"]).optional(),
+  frameworkSessionId: string().optional(),
 });
 
 /**
  * Run state schema for the current lifecycle event contract.
  */
-const runStateSchema = z.object({
+const runStateSchema = object({
   status: runStatusSchema,
   result: runResultSchema.optional(),
-  error: z.string().optional(),
+  error: string().optional(),
   lastEventSequence: eventSequenceNumberSchema.optional(),
 });
 
 /**
  * Run list item schema
  */
-const runListItemSchema = z.object({
-  id: z.string(),
-  agentName: z.string(),
+const runListItemSchema = object({
+  id: string(),
+  agentName: string(),
   status: runStatusSchema,
-  prompt: z.string(),
-  appendSystemPrompt: z.string().nullable(),
-  createdAt: z.string(),
-  startedAt: z.string().nullable(),
+  prompt: string(),
+  appendSystemPrompt: string().nullable(),
+  createdAt: string(),
+  startedAt: string().nullable(),
 });
 
 /**
  * Runs list response schema
  */
-const runsListResponseSchema = z.object({
-  runs: z.array(runListItemSchema),
+const runsListResponseSchema = object({
+  runs: array(runListItemSchema),
 });
 
 /**
  * Cancel run response schema
  */
-const cancelRunResponseSchema = z.object({
-  id: z.string(),
-  status: z.literal("cancelled"),
-  message: z.string(),
+const cancelRunResponseSchema = object({
+  id: string(),
+  status: literal("cancelled"),
+  message: string(),
 });
 
 type LogPaginationCursorKind = "sequence" | "time";
@@ -264,9 +274,9 @@ function rejectBlankQueryNumber(value: unknown): unknown {
   return value;
 }
 
-const safeIntegerQueryNumberSchema = z.preprocess(
+const safeIntegerQueryNumberSchema = preprocess(
   rejectBlankQueryNumber,
-  z.coerce.number().refine(Number.isSafeInteger, {
+  coerce.number().refine(Number.isSafeInteger, {
     message: "Value must be a safe integer",
   }),
 );
@@ -433,71 +443,67 @@ function sequenceCursorOutOfRange(cursor: ParsedLogCursor): boolean {
 export function createLogPaginationQuerySchema(
   options: LogPaginationQueryOptions,
 ) {
-  return z
-    .object({
-      since: logSinceQuerySchema(options.cursorKind).optional(),
-      sinceTime: timestampQueryNumberSchema.optional(),
-      cursor: z.string().min(1).optional(),
-      limit: z
-        .preprocess(
-          rejectBlankQueryNumber,
-          z.coerce
-            .number()
-            .int()
-            .min(1)
-            .max(options.maxLimit ?? 100),
-        )
-        .default(options.defaultLimit ?? 5),
-      order: z.enum(["asc", "desc"]).default(options.defaultOrder ?? "desc"),
-    })
-    .superRefine((query, ctx) => {
-      if (!query.cursor) {
-        return;
-      }
+  return object({
+    since: logSinceQuerySchema(options.cursorKind).optional(),
+    sinceTime: timestampQueryNumberSchema.optional(),
+    cursor: string().min(1).optional(),
+    limit: preprocess(
+      rejectBlankQueryNumber,
+      coerce
+        .number()
+        .int()
+        .min(1)
+        .max(options.maxLimit ?? 100),
+    ).default(options.defaultLimit ?? 5),
+    order: zEnum(["asc", "desc"]).default(options.defaultOrder ?? "desc"),
+  }).superRefine((query, ctx) => {
+    if (!query.cursor) {
+      return;
+    }
 
-      const cursor = parseLogCursor(query.cursor);
-      if (!cursor) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["cursor"],
-          message: "Cursor is malformed",
-        });
-        return;
-      }
+    const cursor = parseLogCursor(query.cursor);
+    if (!cursor) {
+      ctx.addIssue({
+        code: ZodIssueCode.custom,
+        path: ["cursor"],
+        message: "Cursor is malformed",
+      });
+      return;
+    }
 
-      if (cursor.kind !== options.cursorKind) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["cursor"],
-          message: `Cursor must be a ${options.cursorKind} cursor`,
-        });
-      }
+    if (cursor.kind !== options.cursorKind) {
+      ctx.addIssue({
+        code: ZodIssueCode.custom,
+        path: ["cursor"],
+        message: `Cursor must be a ${options.cursorKind} cursor`,
+      });
+    }
 
-      if (cursor.order !== query.order) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["cursor"],
-          message: "Cursor order must match query order",
-        });
-      }
+    if (cursor.order !== query.order) {
+      ctx.addIssue({
+        code: ZodIssueCode.custom,
+        path: ["cursor"],
+        message: "Cursor order must match query order",
+      });
+    }
 
-      if (sequenceCursorOutOfRange(cursor)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["cursor"],
-          message: "Sequence cursor is out of range",
-        });
-      }
-    });
+    if (sequenceCursorOutOfRange(cursor)) {
+      ctx.addIssue({
+        code: ZodIssueCode.custom,
+        path: ["cursor"],
+        message: "Sequence cursor is out of range",
+      });
+    }
+  });
 }
 
 /**
  * Agent events response schema
  */
-const agentEventsResponseSchema = z.object({
-  events: z.array(runEventSchema),
-  hasMore: z.boolean(),
-  nextCursor: z.string().nullable().optional(),
+const agentEventsResponseSchema = object({
+  events: array(runEventSchema),
+  hasMore: boolean(),
+  nextCursor: string().nullable().optional(),
   status: runStatusSchema,
   lastEventSequence: eventSequenceNumberSchema.nullable(),
 });
@@ -508,9 +514,9 @@ const agentEventsResponseSchema = z.object({
  * DENY means network policy denied the request.
  * BLOCK means platform/proxy/auth/preconditions blocked the request locally.
  */
-const networkLogActionSchema = z.enum(["ALLOW", "DENY", "BLOCK"]);
+const networkLogActionSchema = zEnum(["ALLOW", "DENY", "BLOCK"]);
 
-const modelCatalogCacheStatusSchema = z.enum([
+const modelCatalogCacheStatusSchema = zEnum([
   "model_catalog_bypass",
   "model_catalog_fresh_hit",
   "model_catalog_cold_stored",
@@ -523,7 +529,7 @@ const modelCatalogCacheStatusSchema = z.enum([
   "model_catalog_etag_invalidated",
 ]);
 
-const modelCatalogCacheBypassReasonSchema = z.enum([
+const modelCatalogCacheBypassReasonSchema = zEnum([
   "request_url",
   "request_method",
   "request_framing",
@@ -550,46 +556,44 @@ const modelCatalogCacheBypassReasonSchema = z.enum([
   "transport_error",
 ]);
 
-const modelCatalogCacheUpstreamEncodingSchema = z.enum(["identity", "br"]);
+const modelCatalogCacheUpstreamEncodingSchema = zEnum(["identity", "br"]);
 
-const modelCatalogPrefetchRoleSchema = z.enum([
+const modelCatalogPrefetchRoleSchema = zEnum([
   "producer",
   "completed_consumer",
   "inflight_consumer",
 ]);
 
-const modelCatalogCacheMillisecondsSchema = z
-  .number()
+const modelCatalogCacheMillisecondsSchema = number()
   .int()
   .min(0)
   .max(2_147_483_647);
 
-const modelCatalogCacheEvictionCountSchema = z.number().int().min(0).max(32);
+const modelCatalogCacheEvictionCountSchema = number().int().min(0).max(32);
 
 /**
  * Network log entry schema.
  * [NETWORK_LOG_FIELDS] — keep in sync with all network log schemas
  */
-const networkLogEntrySchema = z.object({
-  timestamp: z.string(),
-  type: z.string().optional(),
+const networkLogEntrySchema = object({
+  timestamp: string(),
+  type: string().optional(),
   action: networkLogActionSchema.optional(),
-  host: z.string().optional(),
-  port: z.number().optional(),
-  method: z.string().optional(),
-  url: z.string().optional(),
-  url_truncated: z.boolean().optional(),
-  url_original_char_count: z
-    .number()
+  host: string().optional(),
+  port: number().optional(),
+  method: string().optional(),
+  url: string().optional(),
+  url_truncated: boolean().optional(),
+  url_original_char_count: number()
     .int()
     .min(0)
     .max(Number.MAX_SAFE_INTEGER)
     .optional(),
-  status: z.number().optional(),
-  latency_ms: z.number().optional(),
-  request_size: z.number().optional(),
-  response_size: z.number().optional(),
-  browser_user_agent: z.boolean().optional(),
+  status: number().optional(),
+  latency_ms: number().optional(),
+  request_size: number().optional(),
+  response_size: number().optional(),
+  browser_user_agent: boolean().optional(),
   model_catalog_cache_status: modelCatalogCacheStatusSchema.optional(),
   model_catalog_cache_upstream_encoding:
     modelCatalogCacheUpstreamEncodingSchema.optional(),
@@ -602,48 +606,48 @@ const networkLogEntrySchema = z.object({
   model_catalog_cache_eviction_count:
     modelCatalogCacheEvictionCountSchema.optional(),
   model_catalog_prefetch_role: modelCatalogPrefetchRoleSchema.optional(),
-  dns_event: z.string().optional(),
-  dns_query_type: z.string().optional(),
-  dns_result: z.string().optional(),
-  dns_serial: z.string().optional(),
-  firewall_base: z.string().optional(),
-  firewall_name: z.string().optional(),
-  firewall_permission: z.string().optional(),
-  firewall_rule_match: z.string().optional(),
-  firewall_params: z.record(z.string(), z.string()).optional(),
-  firewall_billable: z.boolean().optional(),
-  firewall_error: z.string().optional(),
-  upstream_binding_reason: z.string().optional(),
-  upstream_binding_trusted_host: z.string().optional(),
-  upstream_binding_request_host: z.string().optional(),
-  upstream_binding_request_port: z.number().optional(),
-  upstream_binding_server_connected: z.boolean().optional(),
-  upstream_binding_server_address: z.string().optional(),
-  upstream_binding_server_peername: z.string().optional(),
-  upstream_binding_server_sockname: z.string().optional(),
-  upstream_binding_client_sockname: z.string().optional(),
-  upstream_binding_server_id: z.string().optional(),
-  upstream_binding_client_id: z.string().optional(),
-  upstream_binding_direct_binding_present: z.boolean().optional(),
-  upstream_binding_direct_binding_host: z.string().optional(),
-  upstream_binding_direct_binding_port: z.number().optional(),
-  upstream_binding_direct_binding_kinds: z.string().optional(),
-  upstream_binding_client_binding_count: z.number().optional(),
-  upstream_binding_client_binding_match: z.boolean().optional(),
-  upstream_binding_client_binding_endpoint_match: z.boolean().optional(),
-  upstream_binding_client_binding_hosts: z.string().optional(),
-  connector_diagnostic_slug: z.string().optional(),
-  connector_diagnostic_reason: z.string().optional(),
-  connector_diagnostic_env_names: z.array(z.string()).optional(),
-  connector_diagnostic_base: z.string().optional(),
-  connector_route_reason: z.string().optional(),
-  connector_route_candidates: z.array(z.string()).optional(),
-  auth_resolved_secrets: z.array(z.string()).optional(),
-  auth_refreshed_connectors: z.array(z.string()).optional(),
-  auth_refreshed_secrets: z.array(z.string()).optional(),
-  auth_cache_hit: z.boolean().optional(),
-  auth_url_rewrite: z.boolean().optional(),
-  error: z.string().optional(),
+  dns_event: string().optional(),
+  dns_query_type: string().optional(),
+  dns_result: string().optional(),
+  dns_serial: string().optional(),
+  firewall_base: string().optional(),
+  firewall_name: string().optional(),
+  firewall_permission: string().optional(),
+  firewall_rule_match: string().optional(),
+  firewall_params: record(string(), string()).optional(),
+  firewall_billable: boolean().optional(),
+  firewall_error: string().optional(),
+  upstream_binding_reason: string().optional(),
+  upstream_binding_trusted_host: string().optional(),
+  upstream_binding_request_host: string().optional(),
+  upstream_binding_request_port: number().optional(),
+  upstream_binding_server_connected: boolean().optional(),
+  upstream_binding_server_address: string().optional(),
+  upstream_binding_server_peername: string().optional(),
+  upstream_binding_server_sockname: string().optional(),
+  upstream_binding_client_sockname: string().optional(),
+  upstream_binding_server_id: string().optional(),
+  upstream_binding_client_id: string().optional(),
+  upstream_binding_direct_binding_present: boolean().optional(),
+  upstream_binding_direct_binding_host: string().optional(),
+  upstream_binding_direct_binding_port: number().optional(),
+  upstream_binding_direct_binding_kinds: string().optional(),
+  upstream_binding_client_binding_count: number().optional(),
+  upstream_binding_client_binding_match: boolean().optional(),
+  upstream_binding_client_binding_endpoint_match: boolean().optional(),
+  upstream_binding_client_binding_hosts: string().optional(),
+  connector_diagnostic_slug: string().optional(),
+  connector_diagnostic_reason: string().optional(),
+  connector_diagnostic_env_names: array(string()).optional(),
+  connector_diagnostic_base: string().optional(),
+  connector_route_reason: string().optional(),
+  connector_route_candidates: array(string()).optional(),
+  auth_resolved_secrets: array(string()).optional(),
+  auth_refreshed_connectors: array(string()).optional(),
+  auth_refreshed_secrets: array(string()).optional(),
+  auth_cache_hit: boolean().optional(),
+  auth_url_rewrite: boolean().optional(),
+  error: string().optional(),
   // Capture-only fields (opt-in via captureNetworkBodies). Header maps are
   // default-redacted, sanitized, and independently bounded to 512 fields / 32
   // KiB; see crates/runner/mitm-addon/src/body_capture.py for the contract.
@@ -651,62 +655,62 @@ const networkLogEntrySchema = z.object({
   // Body strings are bounded capture results; *_body_encoding distinguishes
   // UTF-8, base64, and binary outcomes, while *_body_truncated describes an
   // incomplete or suppressed capture. Empty bodies have no body or encoding.
-  request_headers: z.record(z.string(), z.string()).optional(),
-  request_headers_truncated: z.boolean().optional(),
-  request_body: z.string().optional(),
-  request_body_encoding: z.enum(["utf-8", "base64", "binary"]).optional(),
-  request_body_truncated: z.boolean().optional(),
-  response_headers: z.record(z.string(), z.string()).optional(),
-  response_headers_truncated: z.boolean().optional(),
-  response_body: z.string().optional(),
-  response_body_encoding: z.enum(["utf-8", "base64", "binary"]).optional(),
-  response_body_truncated: z.boolean().optional(),
+  request_headers: record(string(), string()).optional(),
+  request_headers_truncated: boolean().optional(),
+  request_body: string().optional(),
+  request_body_encoding: zEnum(["utf-8", "base64", "binary"]).optional(),
+  request_body_truncated: boolean().optional(),
+  response_headers: record(string(), string()).optional(),
+  response_headers_truncated: boolean().optional(),
+  response_body: string().optional(),
+  response_body_encoding: zEnum(["utf-8", "base64", "binary"]).optional(),
+  response_body_truncated: boolean().optional(),
 });
 
 /**
  * Network logs response schema
  */
-const networkLogsResponseSchema = z.object({
-  networkLogs: z.array(networkLogEntrySchema),
-  hasMore: z.boolean(),
-  nextCursor: z.string().nullable().optional(),
+const networkLogsResponseSchema = object({
+  networkLogs: array(networkLogEntrySchema),
+  hasMore: boolean(),
+  nextCursor: string().nullable().optional(),
 });
 
 /**
  * Running task schema — shows currently executing runs
  */
-const runningTaskSchema = z.object({
-  runId: z.string().nullable(),
-  agentName: z.string(),
-  agentDisplayName: z.string().nullable(),
-  userEmail: z.string(),
-  startedAt: z.string().nullable(),
-  isOwner: z.boolean(),
+const runningTaskSchema = object({
+  runId: string().nullable(),
+  agentName: string(),
+  agentDisplayName: string().nullable(),
+  userEmail: string(),
+  startedAt: string().nullable(),
+  isOwner: boolean(),
 });
 
 /**
  * Concurrency info schema
  */
-const concurrencyMemberUsageSchema = z.object({
-  userId: z.string(),
-  displayName: z.string(),
-  active: z.number(),
+const concurrencyMemberUsageSchema = object({
+  userId: string(),
+  displayName: string(),
+  active: number(),
 });
 
-const concurrencyInfoSchema = z.object({
+const concurrencyInfoSchema = object({
   tier: orgTierSchema,
-  limit: z.number(),
-  active: z.number(),
-  available: z.number(),
-  memberUsage: z.array(concurrencyMemberUsageSchema),
+  limit: number(),
+  active: number(),
+  available: number(),
+  memberUsage: array(concurrencyMemberUsageSchema),
 });
 
 /**
  * Queue response schema
  */
-const queueResponseSchema = z.object({
+const queueResponseSchema = object({
   concurrency: concurrencyInfoSchema,
-  runningTasks: z.array(runningTaskSchema),
+  runningTasks: array(runningTaskSchema),
 });
 
 // Export schemas for reuse
@@ -739,19 +743,19 @@ export {
 };
 
 // Export inferred types for consumers
-export type RunStatus = z.infer<typeof runStatusSchema>;
-export type RunResult = z.infer<typeof runResultSchema>;
-export type RunState = z.infer<typeof runStateSchema>;
-export type RunEvent = z.infer<typeof runEventSchema>;
-export type CreateRunResponse = z.infer<typeof createRunResponseSchema>;
-export type GetRunResponse = z.infer<typeof getRunResponseSchema>;
-export type RunListItem = z.infer<typeof runListItemSchema>;
-export type RunsListResponse = z.infer<typeof runsListResponseSchema>;
-export type CancelRunResponse = z.infer<typeof cancelRunResponseSchema>;
-export type AgentEventsResponse = z.infer<typeof agentEventsResponseSchema>;
-export type NetworkLogAction = z.infer<typeof networkLogActionSchema>;
-export type NetworkLogEntry = z.infer<typeof networkLogEntrySchema>;
-export type NetworkLogsResponse = z.infer<typeof networkLogsResponseSchema>;
+export type RunStatus = zInfer<typeof runStatusSchema>;
+export type RunResult = zInfer<typeof runResultSchema>;
+export type RunState = zInfer<typeof runStateSchema>;
+export type RunEvent = zInfer<typeof runEventSchema>;
+export type CreateRunResponse = zInfer<typeof createRunResponseSchema>;
+export type GetRunResponse = zInfer<typeof getRunResponseSchema>;
+export type RunListItem = zInfer<typeof runListItemSchema>;
+export type RunsListResponse = zInfer<typeof runsListResponseSchema>;
+export type CancelRunResponse = zInfer<typeof cancelRunResponseSchema>;
+export type AgentEventsResponse = zInfer<typeof agentEventsResponseSchema>;
+export type NetworkLogAction = zInfer<typeof networkLogActionSchema>;
+export type NetworkLogEntry = zInfer<typeof networkLogEntrySchema>;
+export type NetworkLogsResponse = zInfer<typeof networkLogsResponseSchema>;
 /**
  * Axiom raw network event — the shape returned by `queryAxiom` for network logs.
  * Uses `_time` (Axiom's timestamp field) instead of `timestamp`, and includes
@@ -762,9 +766,9 @@ export type AxiomNetworkEvent = Omit<NetworkLogEntry, "timestamp"> & {
   runId: string;
   userId: string;
 };
-export type RunningTask = z.infer<typeof runningTaskSchema>;
-export type ConcurrencyMemberUsage = z.infer<
+export type RunningTask = zInfer<typeof runningTaskSchema>;
+export type ConcurrencyMemberUsage = zInfer<
   typeof concurrencyMemberUsageSchema
 >;
-export type ConcurrencyInfo = z.infer<typeof concurrencyInfoSchema>;
-export type QueueResponse = z.infer<typeof queueResponseSchema>;
+export type ConcurrencyInfo = zInfer<typeof concurrencyInfoSchema>;
+export type QueueResponse = zInfer<typeof queueResponseSchema>;

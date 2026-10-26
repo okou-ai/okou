@@ -18,7 +18,20 @@ import {
   BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH,
   BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  unknown as zUnknown,
+  url as zUrl,
+  type infer as zInfer,
+} from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -41,75 +54,73 @@ const MAX_BROWSER_USE_TAB_URLS = 50;
 const MAX_BROWSER_USE_TAB_URL_CHARS = 8192;
 const BROWSER_USE_SCREENSHOT_WIDTH = 640;
 const BROWSER_USE_SCREENSHOT_QUALITY = 80;
-const browserUseLiveUrlSchema = z.url().refine((value) => {
+const browserUseLiveUrlSchema = zUrl().refine((value) => {
   return new URL(value).origin === "https://live.browser-use.com";
 });
 
-const browserUseCdpUrlSchema = z.url({
+const browserUseCdpUrlSchema = zUrl({
   protocol: /^(https|wss)$/u,
   hostname: /(^|\.)browser-use\.com$/u,
 });
-const browserUseCdpWebSocketUrlSchema = z.url({
+const browserUseCdpWebSocketUrlSchema = zUrl({
   protocol: /^wss$/u,
   hostname: /(^|\.)browser-use\.com$/u,
 });
-const browserUseCdpVersionSchema = z.object({
-  webSocketDebuggerUrl: z.string().min(1),
+const browserUseCdpVersionSchema = object({
+  webSocketDebuggerUrl: string().min(1),
 });
-const browserUseCdpResponseSchema = z.object({
-  id: z.number().int(),
-  result: z.unknown().optional(),
-  error: z
-    .object({
-      message: z.string(),
-    })
-    .optional(),
+const browserUseCdpResponseSchema = object({
+  id: number().int(),
+  result: zUnknown().optional(),
+  error: object({
+    message: string(),
+  }).optional(),
 });
-const browserUseCdpTargetsSchema = z.object({
-  targetInfos: z.array(
-    z.object({
-      targetId: z.string().min(1),
-      type: z.string(),
-      url: z.string(),
+const browserUseCdpTargetsSchema = object({
+  targetInfos: array(
+    object({
+      targetId: string().min(1),
+      type: string(),
+      url: string(),
     }),
   ),
 });
-const browserUseCdpWindowSchema = z.object({
-  windowId: z.number().int().nonnegative(),
+const browserUseCdpWindowSchema = object({
+  windowId: number().int().nonnegative(),
 });
-const browserUseCdpAttachedTargetSchema = z.object({
-  sessionId: z.string().min(1),
+const browserUseCdpAttachedTargetSchema = object({
+  sessionId: string().min(1),
 });
-const browserUseCdpFocusSchema = z.object({
-  result: z.object({
-    value: z.boolean().optional(),
+const browserUseCdpFocusSchema = object({
+  result: object({
+    value: boolean().optional(),
   }),
 });
-const browserUseCdpFrameTreeSchema = z.object({
-  frameTree: z.object({
-    frame: z.object({
-      id: z.string().min(1),
-      loaderId: z.string().min(1),
-      url: z.string(),
+const browserUseCdpFrameTreeSchema = object({
+  frameTree: object({
+    frame: object({
+      id: string().min(1),
+      loaderId: string().min(1),
+      url: string(),
     }),
   }),
 });
-const browserUseCdpRemoteObjectSchema = z.object({
-  object: z.object({ objectId: z.string().min(1) }),
+const browserUseCdpRemoteObjectSchema = object({
+  object: object({ objectId: string().min(1) }),
 });
-const browserUseCdpValueSchema = z.object({
-  result: z.object({ value: z.unknown().optional() }),
+const browserUseCdpValueSchema = object({
+  result: object({ value: zUnknown().optional() }),
 });
-const browserUseCdpLayoutMetricsSchema = z.object({
-  cssVisualViewport: z.object({
-    pageX: z.number().finite(),
-    pageY: z.number().finite(),
-    clientWidth: z.number().positive().finite(),
-    clientHeight: z.number().positive().finite(),
+const browserUseCdpLayoutMetricsSchema = object({
+  cssVisualViewport: object({
+    pageX: number().finite(),
+    pageY: number().finite(),
+    clientWidth: number().positive().finite(),
+    clientHeight: number().positive().finite(),
   }),
 });
-const browserUseCdpScreenshotSchema = z.object({
-  data: z.string().min(1),
+const browserUseCdpScreenshotSchema = object({
+  data: string().min(1),
 });
 type BrowserUseCdpSocketEventName = "open" | "message" | "error" | "close";
 interface BrowserUseCdpSocketEvent {
@@ -132,26 +143,26 @@ class BrowserUseCdpCommandError extends Error {
   }
 }
 
-const browserUseProfileSchema = z.object({
-  id: z.uuid(),
-  userId: z.string().nullable().optional(),
-  name: z.string().nullable().optional(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+const browserUseProfileSchema = object({
+  id: uuid(),
+  userId: string().nullable().optional(),
+  name: string().nullable().optional(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
 });
 
-const browserUseSessionSchema = z.object({
-  id: z.uuid(),
-  status: z.enum(["active", "stopped"]),
-  timeoutAt: z.iso.datetime(),
-  startedAt: z.iso.datetime(),
+const browserUseSessionSchema = object({
+  id: uuid(),
+  status: zEnum(["active", "stopped"]),
+  timeoutAt: iso.datetime(),
+  startedAt: iso.datetime(),
   liveUrl: browserUseLiveUrlSchema.nullish().transform((value) => {
     return value ?? null;
   }),
   cdpUrl: browserUseCdpUrlSchema.nullish().transform((value) => {
     return value ?? null;
   }),
-  finishedAt: z.iso
+  finishedAt: iso
     .datetime()
     .nullish()
     .transform((value) => {
@@ -159,7 +170,7 @@ const browserUseSessionSchema = z.object({
     }),
 });
 
-export type BrowserUseSession = z.infer<typeof browserUseSessionSchema>;
+export type BrowserUseSession = zInfer<typeof browserUseSessionSchema>;
 
 function parseBrowserUseSession(body: unknown): BrowserUseSession {
   return browserUseSessionSchema.parse(body, { reportInput: true });
@@ -1282,16 +1293,14 @@ interface BrowserUseRadioGroup {
   readonly selectedIndex: number;
 }
 
-const browserUseRadioOptionSchema = z
-  .object({
-    label: z.string().min(1).max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
-    value: z.string().max(BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH),
-    disabled: z.boolean(),
-    selected: z.boolean(),
-    required: z.boolean(),
-    writable: z.boolean(),
-  })
-  .strict();
+const browserUseRadioOptionSchema = object({
+  label: string().min(1).max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
+  value: string().max(BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH),
+  disabled: boolean(),
+  selected: boolean(),
+  required: boolean(),
+  writable: boolean(),
+}).strict();
 
 async function readBrowserUseRadioMembers(
   socket: WebSocket,
@@ -1307,24 +1316,24 @@ async function readBrowserUseRadioMembers(
 ): Promise<{
   readonly name: string | null;
   readonly options:
-    readonly z.infer<typeof browserUseRadioOptionSchema>[] | null;
+    readonly zInfer<typeof browserUseRadioOptionSchema>[] | null;
   readonly memberNodeIds: readonly number[];
   readonly commandId: number;
 }> {
   const { sessionId, arrayObjectId, anchorObjectId, memberObjectIds } = args;
   let commandId = args.firstCommandId;
-  const metadata = z
-    .object({ result: z.object({ value: z.unknown().optional() }) })
-    .parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: commandId++,
-          method: "Runtime.callFunctionOn",
-          sessionId,
-          params: {
-            objectId: arrayObjectId,
-            functionDeclaration: `function(anchor, owner) {
+  const metadata = object({
+    result: object({ value: zUnknown().optional() }),
+  }).parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: commandId++,
+        method: "Runtime.callFunctionOn",
+        sessionId,
+        params: {
+          objectId: arrayObjectId,
+          functionDeclaration: `function(anchor, owner) {
         if (!Array.isArray(this) || !(anchor instanceof HTMLInputElement) ||
             anchor.type !== "radio" || anchor.getRootNode() !== document || !anchor.name ||
             anchor.form !== owner ||
@@ -1341,24 +1350,22 @@ async function readBrowserUseRadioMembers(
         return options.filter((option) => option.selected).length <= 1
           ? { name: anchor.name, options } : null;
       }`,
-            arguments: [
-              { objectId: anchorObjectId },
-              args.formOwnerObjectId
-                ? { objectId: args.formOwnerObjectId }
-                : { value: null },
-            ],
-            returnByValue: true,
-          },
+          arguments: [
+            { objectId: anchorObjectId },
+            args.formOwnerObjectId
+              ? { objectId: args.formOwnerObjectId }
+              : { value: null },
+          ],
+          returnByValue: true,
         },
-        signal,
-      ),
-      { reportInput: true },
-    );
-  const metadataSchema = z.object({
-    name: z.string().min(1).max(128),
-    options: z
-      .array(browserUseRadioOptionSchema)
-      .length(memberObjectIds.length),
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  const metadataSchema = object({
+    name: string().min(1).max(128),
+    options: array(browserUseRadioOptionSchema).length(memberObjectIds.length),
   });
   const parsed = metadataSchema.safeParse(metadata.result.value);
   if (
@@ -1371,25 +1378,23 @@ async function readBrowserUseRadioMembers(
   }
   const memberNodeIds: number[] = [];
   for (const objectId of memberObjectIds) {
-    const description = z
-      .object({
-        node: z.object({
-          backendNodeId: z.number().int().positive().safe(),
-          nodeName: z.literal("INPUT"),
-        }),
-      })
-      .safeParse(
-        await sendBrowserUseCdpCommand(
-          socket,
-          {
-            id: commandId++,
-            method: "DOM.describeNode",
-            sessionId,
-            params: { objectId, depth: 0 },
-          },
-          signal,
-        ),
-      );
+    const description = object({
+      node: object({
+        backendNodeId: number().int().positive().safe(),
+        nodeName: literal("INPUT"),
+      }),
+    }).safeParse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: commandId++,
+          method: "DOM.describeNode",
+          sessionId,
+          params: { objectId, depth: 0 },
+        },
+        signal,
+      ),
+    );
     if (!description.success) {
       return { name: null, options: null, memberNodeIds: [], commandId };
     }
@@ -1407,7 +1412,7 @@ function browserUseRadioGroupFingerprint(
   name: string,
   formOwnerNodeId: number | null,
   memberNodeIds: readonly number[],
-  options: readonly z.infer<typeof browserUseRadioOptionSchema>[],
+  options: readonly zInfer<typeof browserUseRadioOptionSchema>[],
   siteRequired: boolean,
 ): string {
   return createHash("sha256")
@@ -1426,7 +1431,7 @@ function browserUseRadioGroupFingerprint(
 }
 
 function browserUseRadioGroupOptions(
-  options: readonly z.infer<typeof browserUseRadioOptionSchema>[],
+  options: readonly zInfer<typeof browserUseRadioOptionSchema>[],
 ): BrowserUseRadioGroup["options"] {
   return options.map((option, index) => {
     return {
@@ -1455,36 +1460,30 @@ async function readBrowserUseRadioGroupHandles(
   readonly commandId: number;
 }> {
   let commandId = firstCommandId;
-  const properties = z
-    .object({
-      result: z.array(
-        z
-          .object({
-            name: z.string(),
-            value: z
-              .object({
-                objectId: z.string().min(1).optional(),
-                subtype: z.string().optional(),
-                value: z.unknown().optional(),
-              })
-              .optional(),
-          })
-          .passthrough(),
-      ),
-    })
-    .parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: commandId++,
-          method: "Runtime.getProperties",
-          sessionId,
-          params: { objectId: arrayObjectId, ownProperties: true },
-        },
-        signal,
-      ),
-      { reportInput: true },
-    );
+  const properties = object({
+    result: array(
+      object({
+        name: string(),
+        value: object({
+          objectId: string().min(1).optional(),
+          subtype: string().optional(),
+          value: zUnknown().optional(),
+        }).optional(),
+      }).passthrough(),
+    ),
+  }).parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: commandId++,
+        method: "Runtime.getProperties",
+        sessionId,
+        params: { objectId: arrayObjectId, ownProperties: true },
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
   const indexed = properties.result
     .filter((property) => {
       return /^(0|[1-9][0-9]*)$/u.test(property.name);
@@ -1514,25 +1513,23 @@ async function readBrowserUseRadioGroupHandles(
   const formOwnerObjectId = formOwner.objectId ?? null;
   let formOwnerNodeId: number | null = null;
   if (formOwnerObjectId) {
-    const description = z
-      .object({
-        node: z.object({
-          backendNodeId: z.number().int().positive().safe(),
-          nodeName: z.literal("FORM"),
-        }),
-      })
-      .safeParse(
-        await sendBrowserUseCdpCommand(
-          socket,
-          {
-            id: commandId++,
-            method: "DOM.describeNode",
-            sessionId,
-            params: { objectId: formOwnerObjectId, depth: 0 },
-          },
-          signal,
-        ),
-      );
+    const description = object({
+      node: object({
+        backendNodeId: number().int().positive().safe(),
+        nodeName: literal("FORM"),
+      }),
+    }).safeParse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: commandId++,
+          method: "DOM.describeNode",
+          sessionId,
+          params: { objectId: formOwnerObjectId, depth: 0 },
+        },
+        signal,
+      ),
+    );
     if (!description.success) {
       return { handles: null, commandId };
     }
@@ -1562,18 +1559,18 @@ async function inspectBrowserUseRadioGroup(
   readonly commandId: number;
 }> {
   let commandId = firstCommandId;
-  const arrayResult = z
-    .object({ result: z.object({ objectId: z.string().min(1).optional() }) })
-    .parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: commandId++,
-          method: "Runtime.callFunctionOn",
-          sessionId,
-          params: {
-            objectId: anchorObjectId,
-            functionDeclaration: `function(limit) {
+  const arrayResult = object({
+    result: object({ objectId: string().min(1).optional() }),
+  }).parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: commandId++,
+        method: "Runtime.callFunctionOn",
+        sessionId,
+        params: {
+          objectId: anchorObjectId,
+          functionDeclaration: `function(limit) {
         if (!(this instanceof HTMLInputElement) || this.type !== "radio" ||
             this.getRootNode() !== document || !this.name || this.name.length > 128) return null;
         const members = [...document.querySelectorAll("input")].filter((node) =>
@@ -1583,14 +1580,14 @@ async function inspectBrowserUseRadioGroup(
         Object.defineProperty(members, "formOwner", { value: this.form });
         return members;
       }`,
-            arguments: [{ value: BROWSER_USER_ACTION_MAX_RADIO_MEMBERS }],
-            returnByValue: false,
-          },
+          arguments: [{ value: BROWSER_USER_ACTION_MAX_RADIO_MEMBERS }],
+          returnByValue: false,
         },
-        signal,
-      ),
-      { reportInput: true },
-    );
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
   const arrayObjectId = arrayResult.result.objectId;
   if (!arrayObjectId) {
     return { group: null, commandId };
@@ -2750,24 +2747,22 @@ async function resolveBrowserUseFileControl(
   if (!page) {
     return null;
   }
-  const world = z
-    .object({ executionContextId: z.number().int().positive() })
-    .parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: 4,
-          method: "Page.createIsolatedWorld",
-          params: {
-            frameId: page.frameId,
-            worldName: "okou-native-file-input",
-            grantUniveralAccess: false,
-          },
-          sessionId: page.sessionId,
+  const world = object({ executionContextId: number().int().positive() }).parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: 4,
+        method: "Page.createIsolatedWorld",
+        params: {
+          frameId: page.frameId,
+          worldName: "okou-native-file-input",
+          grantUniveralAccess: false,
         },
-        signal,
-      ),
-    );
+        sessionId: page.sessionId,
+      },
+      signal,
+    ),
+  );
   const remoteResult = await settle(
     sendBrowserUseCdpCommand(
       socket,
@@ -3376,6 +3371,64 @@ export async function getBrowserUseSession(
     signal,
   );
   return parseBrowserUseSession(body);
+}
+
+/** Release only a validated exact session endpoint, without provider diagnostics. */
+export async function getBrowserUseRunnerConnection(
+  providerSessionId: string,
+  signal: AbortSignal,
+): Promise<{ readonly cdpUrl: string; readonly timeoutAt: string } | null> {
+  const boundedSignal = browserUseCdpSignal(signal);
+  const result = await settle(
+    browserUseResponse(
+      `/browsers/${encodeURIComponent(providerSessionId)}`,
+      { method: "GET", signal: boundedSignal, redirect: "error" },
+      signal,
+      [404],
+    ),
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    if (boundedSignal.aborted) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_TIMEOUT",
+        "Managed browser provider connection timed out",
+      );
+    }
+    if (result.error instanceof BrowserUseProviderError) {
+      throw new BrowserUseProviderError(
+        result.error.status,
+        result.error.code,
+        "Managed browser provider connection is unavailable",
+      );
+    }
+    throw result.error;
+  }
+  if (result.value.response.status === 404) {
+    return null;
+  }
+  const parsed = browserUseSessionSchema.safeParse(result.value.body);
+  if (!parsed.success || parsed.data.id !== providerSessionId) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_INVALID_RESPONSE",
+      "Managed browser provider returned an invalid connection",
+    );
+  }
+  const session = parsed.data;
+  if (session.status !== "active" || session.cdpUrl === null) {
+    return null;
+  }
+  const endpoint = new URL(session.cdpUrl);
+  if (endpoint.username || endpoint.password || endpoint.hash) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_INVALID_RESPONSE",
+      "Managed browser provider returned an invalid connection",
+    );
+  }
+  return { cdpUrl: session.cdpUrl, timeoutAt: session.timeoutAt };
 }
 
 export async function stopBrowserUseSession(

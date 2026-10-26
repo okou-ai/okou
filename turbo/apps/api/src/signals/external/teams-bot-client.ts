@@ -1,7 +1,16 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { Buffer } from "node:buffer";
 
-import * as z from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  union,
+  unknown as zUnknown,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { safeJsonParse, safeUrlParse, settle } from "../utils";
@@ -10,125 +19,97 @@ const BOT_FRAMEWORK_SCOPE = "https://api.botframework.com/.default";
 const MICROSOFT_GRAPH_SCOPE = "https://graph.microsoft.com/.default";
 const DEFAULT_MICROSOFT_GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 
-const teamsTokenResponseSchema = z
-  .object({
-    access_token: z.string().min(1),
-    token_type: z.string().optional(),
-    expires_in: z.union([z.number(), z.string()]).optional(),
-  })
-  .passthrough();
+const teamsTokenResponseSchema = object({
+  access_token: string().min(1),
+  token_type: string().optional(),
+  expires_in: union([number(), string()]).optional(),
+}).passthrough();
 
-const teamsActivityResponseSchema = z
-  .object({
-    id: z.string().optional(),
-  })
-  .passthrough();
+const teamsActivityResponseSchema = object({
+  id: string().optional(),
+}).passthrough();
 
-const teamsConversationResponseSchema = z
-  .object({
-    id: z.string().min(1),
-  })
-  .passthrough();
+const teamsConversationResponseSchema = object({
+  id: string().min(1),
+}).passthrough();
 
-const teamsGraphIdentitySchema = z
-  .object({
-    id: z.string().nullable().optional(),
-    displayName: z.string().nullable().optional(),
-    userPrincipalName: z.string().nullable().optional(),
-    mail: z.string().nullable().optional(),
-  })
-  .passthrough();
+const teamsGraphIdentitySchema = object({
+  id: string().nullable().optional(),
+  displayName: string().nullable().optional(),
+  userPrincipalName: string().nullable().optional(),
+  mail: string().nullable().optional(),
+}).passthrough();
 
-const teamsGraphAttachmentSchema = z
-  .object({
-    id: z.string().nullable().optional(),
-    contentType: z.string().nullable().optional(),
-    contentUrl: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    content: z.unknown().optional(),
-  })
-  .passthrough();
+const teamsGraphAttachmentSchema = object({
+  id: string().nullable().optional(),
+  contentType: string().nullable().optional(),
+  contentUrl: string().nullable().optional(),
+  name: string().nullable().optional(),
+  content: zUnknown().optional(),
+}).passthrough();
 
-const teamsGraphMentionSchema = z
-  .object({
-    id: z.number().optional(),
-    mentionText: z.string().nullable().optional(),
-    mentioned: z
-      .object({
-        user: teamsGraphIdentitySchema.nullable().optional(),
-        application: teamsGraphIdentitySchema.nullable().optional(),
-        device: teamsGraphIdentitySchema.nullable().optional(),
-      })
-      .nullable()
-      .optional(),
+const teamsGraphMentionSchema = object({
+  id: number().optional(),
+  mentionText: string().nullable().optional(),
+  mentioned: object({
+    user: teamsGraphIdentitySchema.nullable().optional(),
+    application: teamsGraphIdentitySchema.nullable().optional(),
+    device: teamsGraphIdentitySchema.nullable().optional(),
   })
-  .passthrough();
+    .nullable()
+    .optional(),
+}).passthrough();
 
-const teamsGraphMessageSchema = z
-  .object({
-    id: z.string().optional(),
-    replyToId: z.string().nullable().optional(),
-    createdDateTime: z.string().nullable().optional(),
-    messageType: z.string().nullable().optional(),
-    from: z
-      .object({
-        user: teamsGraphIdentitySchema.nullable().optional(),
-        application: teamsGraphIdentitySchema.nullable().optional(),
-        device: teamsGraphIdentitySchema.nullable().optional(),
-      })
-      .nullable()
-      .optional(),
-    body: z
-      .object({
-        content: z.string().nullable().optional(),
-        contentType: z.string().nullable().optional(),
-      })
-      .nullable()
-      .optional(),
-    attachments: z.array(teamsGraphAttachmentSchema).optional(),
-    mentions: z.array(teamsGraphMentionSchema).optional(),
+const teamsGraphMessageSchema = object({
+  id: string().optional(),
+  replyToId: string().nullable().optional(),
+  createdDateTime: string().nullable().optional(),
+  messageType: string().nullable().optional(),
+  from: object({
+    user: teamsGraphIdentitySchema.nullable().optional(),
+    application: teamsGraphIdentitySchema.nullable().optional(),
+    device: teamsGraphIdentitySchema.nullable().optional(),
   })
-  .passthrough();
+    .nullable()
+    .optional(),
+  body: object({
+    content: string().nullable().optional(),
+    contentType: string().nullable().optional(),
+  })
+    .nullable()
+    .optional(),
+  attachments: array(teamsGraphAttachmentSchema).optional(),
+  mentions: array(teamsGraphMentionSchema).optional(),
+}).passthrough();
 
-const teamsGraphMessagesResponseSchema = z
-  .object({
-    value: z.array(teamsGraphMessageSchema),
-  })
-  .passthrough();
+const teamsGraphMessagesResponseSchema = object({
+  value: array(teamsGraphMessageSchema),
+}).passthrough();
 
-const teamsGraphChatSchema = z
-  .object({
-    id: z.string().min(1),
-    chatType: z.string().nullable().optional(),
-  })
-  .passthrough();
+const teamsGraphChatSchema = object({
+  id: string().min(1),
+  chatType: string().nullable().optional(),
+}).passthrough();
 
-const teamsGraphUserInstalledAppSchema = z
-  .object({
-    id: z.string().min(1),
-    teamsApp: z
-      .object({
-        externalId: z.string().nullable().optional(),
-      })
-      .nullable()
-      .optional(),
+const teamsGraphUserInstalledAppSchema = object({
+  id: string().min(1),
+  teamsApp: object({
+    externalId: string().nullable().optional(),
   })
-  .passthrough();
+    .nullable()
+    .optional(),
+}).passthrough();
 
-const teamsGraphUserInstalledAppsResponseSchema = z
-  .object({
-    value: z.array(teamsGraphUserInstalledAppSchema),
-  })
-  .passthrough();
+const teamsGraphUserInstalledAppsResponseSchema = object({
+  value: array(teamsGraphUserInstalledAppSchema),
+}).passthrough();
 
-const teamsGraphUserSchema = z
-  .object({
-    id: z.string().optional(),
-    displayName: z.string().nullable().optional(),
-    userPrincipalName: z.string().nullable().optional(),
-    mail: z.string().nullable().optional(),
-  })
-  .passthrough();
+const teamsGraphUserSchema = object({
+  id: string().optional(),
+  displayName: string().nullable().optional(),
+  userPrincipalName: string().nullable().optional(),
+  mail: string().nullable().optional(),
+}).passthrough();
 
 type TeamsApiErrorResult = {
   readonly kind: "teams-error";
@@ -157,8 +138,8 @@ type FetchTeamsGraphMessagesResult =
 type FetchTeamsFileResult =
   { readonly kind: "ok"; readonly response: Response } | TeamsApiErrorResult;
 
-export type TeamsGraphMessage = z.infer<typeof teamsGraphMessageSchema>;
-export type TeamsGraphAttachment = z.infer<typeof teamsGraphAttachmentSchema>;
+export type TeamsGraphMessage = zInfer<typeof teamsGraphMessageSchema>;
+export type TeamsGraphAttachment = zInfer<typeof teamsGraphAttachmentSchema>;
 
 export interface TeamsGraphUserInfo {
   readonly id: string;
@@ -509,7 +490,7 @@ async function fetchTeamsGraphJson<T>(
   args: {
     readonly tenantId: string;
     readonly url: string;
-    readonly schema: z.ZodType<T>;
+    readonly schema: ZodType<T>;
   },
   signal: AbortSignal,
 ): Promise<{ readonly kind: "ok"; readonly data: T } | TeamsApiErrorResult> {
@@ -877,9 +858,9 @@ export async function checkTeamsConversationMember(
   }
   const responseText = await response.text();
   signal.throwIfAborted();
-  const member = z
-    .object({ id: z.string(), tenantId: z.string() })
-    .safeParse(safeJsonParse(responseText));
+  const member = object({ id: string(), tenantId: string() }).safeParse(
+    safeJsonParse(responseText),
+  );
   signal.throwIfAborted();
   if (!member.success) {
     return teamsApiError(

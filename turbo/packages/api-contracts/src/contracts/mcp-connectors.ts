@@ -1,4 +1,15 @@
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  iso,
+  literal,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -12,60 +23,58 @@ import {
 
 const c = initContract();
 
-export const mcpConnectorSchema = z.object({
+export const mcpConnectorSchema = object({
   ...connectorAccountFieldMetadataSchema.shape,
   target: connectorAccountTargetSchema,
-  connectionId: z.uuid(),
-  slug: z.string().min(1),
-  displayName: z.string().min(1),
-  transport: z.literal("streamable-http"),
-  endpoint: z.string().min(1),
-  runtimeAvailable: z.boolean(),
+  connectionId: uuid(),
+  slug: string().min(1),
+  displayName: string().min(1),
+  transport: literal("streamable-http"),
+  endpoint: string().min(1),
+  runtimeAvailable: boolean(),
   connectionStatus: connectorResponseConnectionStatusSchema,
   reconnectReason: connectorReconnectReasonSchema.nullable(),
 });
-export type McpConnector = z.infer<typeof mcpConnectorSchema>;
+export type McpConnector = zInfer<typeof mcpConnectorSchema>;
 
-export const mcpConnectorListResponseSchema = z.object({
-  connectors: z.array(mcpConnectorSchema),
+export const mcpConnectorListResponseSchema = object({
+  connectors: array(mcpConnectorSchema),
 });
 
-export const mcpOAuthScopeTokenSchema = z
-  .string()
+export const mcpOAuthScopeTokenSchema = string()
   .min(1)
   .max(256)
   .regex(/^[\x21\x23-\x5b\x5d-\x7e]+$/u);
 
-export const mcpOAuthScopeListSchema = z
-  .array(mcpOAuthScopeTokenSchema)
+export const mcpOAuthScopeListSchema = array(mcpOAuthScopeTokenSchema)
   .min(1)
   .max(100)
   .refine((scopes) => {
     return new Set(scopes).size === scopes.length;
   }, "MCP OAuth scopes must be unique");
 
-export const mcpConnectorOAuthReauthorizationRequestSchema = z.object({
+export const mcpConnectorOAuthReauthorizationRequestSchema = object({
   target: connectorAccountTargetSchema,
   scopes: mcpOAuthScopeListSchema,
 });
-export type McpConnectorOAuthReauthorizationRequest = z.infer<
+export type McpConnectorOAuthReauthorizationRequest = zInfer<
   typeof mcpConnectorOAuthReauthorizationRequestSchema
 >;
 
 export const mcpConnectorOAuthReauthorizationResponseSchema =
-  z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("oauth"),
-      authorizationUrl: z.string().url(),
-      expiresAt: z.iso.datetime(),
+  discriminatedUnion("kind", [
+    object({
+      kind: literal("oauth"),
+      authorizationUrl: string().url(),
+      expiresAt: iso.datetime(),
     }),
-    z.object({
-      kind: z.literal("reconnect"),
-      connectionId: z.uuid(),
-      authorizationUrl: z.string().url(),
+    object({
+      kind: literal("reconnect"),
+      connectionId: uuid(),
+      authorizationUrl: string().url(),
     }),
   ]);
-export type McpConnectorOAuthReauthorizationResponse = z.infer<
+export type McpConnectorOAuthReauthorizationResponse = zInfer<
   typeof mcpConnectorOAuthReauthorizationResponseSchema
 >;
 

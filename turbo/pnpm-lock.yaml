@@ -367,6 +367,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../../packages/eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
@@ -570,6 +573,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../../packages/eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
@@ -594,6 +600,9 @@ importers:
       eslint:
         specifier: ^9.34.0
         version: 9.39.4(jiti@2.7.0)
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       happy-dom:
         specifier: ^21.0.4
         version: 21.0.4(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -628,6 +637,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../../packages/eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
@@ -993,6 +1005,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../../packages/eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
@@ -1033,6 +1048,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
@@ -1073,6 +1091,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
@@ -1112,6 +1133,9 @@ importers:
       entities:
         specifier: 7.0.1
         version: 7.0.1
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       fractional-indexing:
         specifier: ^3.4.0
         version: 3.4.0
@@ -1131,6 +1155,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
@@ -1325,6 +1352,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
@@ -1390,6 +1420,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config

@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "./error";
@@ -104,16 +104,14 @@ export async function exchangeGoogleOAuthCode(
     await throwOAuthError(connectorSlug, "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -165,16 +163,14 @@ export async function refreshGoogleToken(
     await throwOAuthError(connectorSlug, "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -228,13 +224,11 @@ async function fetchGoogleUserInfo(
     throw new Error(`Google user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      id: z.string(),
-      email: z.string().nullable().optional(),
-      name: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: string(),
+    email: string().nullable().optional(),
+    name: string().nullable().optional(),
+  }).parse(await response.json());
 
   return {
     id: data.id,

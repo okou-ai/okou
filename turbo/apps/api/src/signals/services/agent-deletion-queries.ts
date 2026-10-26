@@ -9,7 +9,14 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { and, asc, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import {
+  array,
+  object,
+  string,
+  enum as zEnum,
+  type output,
+  type ZodType,
+} from "zod";
 
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -20,25 +27,25 @@ export interface DeleteAgentArgs {
   readonly orgId: string;
   readonly member: { readonly userId: string; readonly role: string };
 }
-const agentRows = z.array(
-  z.object({
-    id: z.string(),
-    owner: z.string(),
-    visibility: z.enum(["public", "private"]),
+const agentRows = array(
+  object({
+    id: string(),
+    owner: string(),
+    visibility: zEnum(["public", "private"]),
   }),
 );
-const orgRows = z.array(z.object({ defaultAgentId: z.string().nullable() }));
-const runRows = z.array(
-  z.object({
-    id: z.string(),
-    orgId: z.string(),
-    agentId: z.string().nullable(),
-    status: z.string(),
+const orgRows = array(object({ defaultAgentId: string().nullable() }));
+const runRows = array(
+  object({
+    id: string(),
+    orgId: string(),
+    agentId: string().nullable(),
+    status: string(),
   }),
 );
 interface AdmissionStatement {
   readonly sql: SQL;
-  readonly rowSchema: z.ZodType;
+  readonly rowSchema: ZodType;
 }
 type AdmissionFailure =
   | { readonly kind: "missing" }
@@ -64,7 +71,7 @@ type AdmissionResult =
       readonly runIds: readonly string[];
     };
 type AdmissionPlan<T> = Generator<AdmissionStatement, T, readonly unknown[]>;
-function statement(query: SQL, rowSchema: z.ZodType): AdmissionStatement {
+function statement(query: SQL, rowSchema: ZodType): AdmissionStatement {
   return { sql: query, rowSchema };
 }
 export function agentDeletionIdentityCondition(args: {
@@ -111,7 +118,7 @@ function orgSnapshotSql(orgId: string) {
     .getSQL();
 }
 function deletionPermission(
-  agent: z.output<typeof agentRows>[number],
+  agent: output<typeof agentRows>[number],
   args: DeleteAgentArgs,
 ): AdmissionFailure | undefined {
   const permission = requireAgentPermission(
@@ -125,7 +132,7 @@ function deletionPermission(
 function* admitAgentIdentity(
   args: DeleteAgentArgs,
   lock: boolean,
-): AdmissionPlan<z.output<typeof agentRows>[number] | AdmissionFailure> {
+): AdmissionPlan<output<typeof agentRows>[number] | AdmissionFailure> {
   const [agent] = agentRows.parse(
     yield statement(agentSnapshotSql(args, lock), agentRows.element),
   );

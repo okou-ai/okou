@@ -44,7 +44,17 @@ import {
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
-import * as z from "zod";
+import {
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import {
   and,
   asc,
@@ -212,24 +222,24 @@ type ConfirmUsagePackPurchaseResult =
     }
   | { readonly status: "invalid_preview" };
 
-const usagePackPurchasePreviewTokenSchema = z.object({
-  version: z.literal(1),
-  usagePackSubscriptionId: z.uuid(),
-  orgId: z.string().min(1),
-  customerId: z.string().min(1),
-  sourceSubscriptionId: z.string().min(1).nullable(),
-  paymentMethodId: z.string().min(1),
-  tier: z.enum(["pro", "team"]),
-  planPriceId: z.string().min(1),
-  immediateAmountCents: z.number().int().nonnegative(),
-  nextRecurringAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  successUrl: z.string().url(),
-  cancelUrl: z.string().url(),
-  expiresAt: z.iso.datetime(),
+const usagePackPurchasePreviewTokenSchema = object({
+  version: literal(1),
+  usagePackSubscriptionId: uuid(),
+  orgId: string().min(1),
+  customerId: string().min(1),
+  sourceSubscriptionId: string().min(1).nullable(),
+  paymentMethodId: string().min(1),
+  tier: zEnum(["pro", "team"]),
+  planPriceId: string().min(1),
+  immediateAmountCents: number().int().nonnegative(),
+  nextRecurringAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  successUrl: string().url(),
+  cancelUrl: string().url(),
+  expiresAt: iso.datetime(),
 });
 
-type UsagePackPurchasePreviewToken = z.infer<
+type UsagePackPurchasePreviewToken = zInfer<
   typeof usagePackPurchasePreviewTokenSchema
 >;
 

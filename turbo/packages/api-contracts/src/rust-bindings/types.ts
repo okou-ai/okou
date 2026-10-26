@@ -1,4 +1,4 @@
-import * as z from "zod";
+import type { ZodType } from "zod";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
@@ -24,7 +24,7 @@ import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
 
 export interface RustTypeBinding {
-  readonly schema: z.ZodType;
+  readonly schema: ZodType;
   readonly rustModulePath: readonly string[];
   readonly rustTypeName: string;
   readonly direction: "request" | "response";

@@ -3,7 +3,7 @@ import { isValidTimeZone } from "@okouai/core/timezone";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-import * as z from "zod";
+import { object, string } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -12,9 +12,9 @@ import { settle } from "../utils";
 import { morningBriefTimezoneTargetSql } from "./morning-brief-preference-sql";
 import { calculateNextRun } from "./time-automation";
 
-const timezoneTarget = z.object({
-  workflowId: z.string(),
-  timezone: z.string().nullable(),
+const timezoneTarget = object({
+  workflowId: string(),
+  timezone: string().nullable(),
 });
 
 function automationTimezoneValues(

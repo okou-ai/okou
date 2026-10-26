@@ -1,4 +1,16 @@
-import * as z from "zod";
+import {
+  array,
+  discriminatedUnion,
+  int,
+  literal,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { vncConnectionObservationSchema } from "./vnc-connection-observations";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -32,73 +44,62 @@ export {
   vncTransportSchema,
 } from "./vnc-transport";
 
-const displayNameSchema = z
-  .string()
+const displayNameSchema = string()
   .trim()
   .min(1)
   .max(VNC_DISPLAY_NAME_MAX_LENGTH);
-const hostSchema = z.string().min(1).max(VNC_HOST_MAX_LENGTH);
-const portSchema = z.int().min(1).max(65_535);
-const generationSchema = z.int().positive().max(2_147_483_647);
+const hostSchema = string().min(1).max(VNC_HOST_MAX_LENGTH);
+const portSchema = int().min(1).max(65_535);
+const generationSchema = int().positive().max(2_147_483_647);
 
-const vncX509NoneSecurityVariantSchema = z
-  .object({
-    type: z.literal("x509_none"),
-    trust: vncTrustSchema,
-    serverName: hostSchema.optional(),
-  })
-  .strict();
-const vncX509VncSecurityVariantSchema = z
-  .object({
-    type: z.literal("x509_vnc"),
-    trust: vncTrustSchema,
-    serverName: hostSchema.optional(),
-  })
-  .strict();
-const vncX509PlainSecurityVariantSchema = z
-  .object({
-    type: z.literal("x509_plain"),
-    trust: vncTrustSchema,
-    serverName: hostSchema.optional(),
-  })
-  .strict();
-const vncQemuX509SaslSecurityVariantSchema = z
-  .object({
-    type: z.literal("qemu_x509_sasl"),
-    trust: vncTrustSchema,
-    serverName: hostSchema.optional(),
-  })
-  .strict();
-export const vncQemuGssapiSecuritySchema = z
-  .object({
-    type: z.literal("qemu_x509_gssapi"),
-    trust: vncTrustSchema,
-    serverName: hostSchema.optional(),
-    service: kerberosServicePrincipalSchema,
-    kdc: kerberosKdcSchema.optional(),
-  })
-  .strict();
-const vncAppleVncPasswordSecurityVariantSchema = z
-  .object({ type: z.literal("apple_vnc_password") })
-  .strict();
-const vncAppleDhSecurityVariantSchema = z
-  .object({ type: z.literal("apple_dh") })
-  .strict();
-const vncAppleSrpSecurityVariantSchema = z
-  .object({ type: z.literal("apple_srp") })
-  .strict();
-const vncAppleRsaSrpSecurityVariantSchema = z
-  .object({ type: z.literal("apple_rsa_srp") })
-  .strict();
+const vncX509NoneSecurityVariantSchema = object({
+  type: literal("x509_none"),
+  trust: vncTrustSchema,
+  serverName: hostSchema.optional(),
+}).strict();
+const vncX509VncSecurityVariantSchema = object({
+  type: literal("x509_vnc"),
+  trust: vncTrustSchema,
+  serverName: hostSchema.optional(),
+}).strict();
+const vncX509PlainSecurityVariantSchema = object({
+  type: literal("x509_plain"),
+  trust: vncTrustSchema,
+  serverName: hostSchema.optional(),
+}).strict();
+const vncQemuX509SaslSecurityVariantSchema = object({
+  type: literal("qemu_x509_sasl"),
+  trust: vncTrustSchema,
+  serverName: hostSchema.optional(),
+}).strict();
+export const vncQemuGssapiSecuritySchema = object({
+  type: literal("qemu_x509_gssapi"),
+  trust: vncTrustSchema,
+  serverName: hostSchema.optional(),
+  service: kerberosServicePrincipalSchema,
+  kdc: kerberosKdcSchema.optional(),
+}).strict();
+const vncAppleVncPasswordSecurityVariantSchema = object({
+  type: literal("apple_vnc_password"),
+}).strict();
+const vncAppleDhSecurityVariantSchema = object({
+  type: literal("apple_dh"),
+}).strict();
+const vncAppleSrpSecurityVariantSchema = object({
+  type: literal("apple_srp"),
+}).strict();
+const vncAppleRsaSrpSecurityVariantSchema = object({
+  type: literal("apple_rsa_srp"),
+}).strict();
 // Keep current-only Runner schemas as one-variant discriminated unions so the
 // Rust generator preserves the existing enum-shaped wire type.
-export const vncX509VncSecuritySchema = z.discriminatedUnion("type", [
+export const vncX509VncSecuritySchema = discriminatedUnion("type", [
   vncX509VncSecurityVariantSchema,
 ]);
-export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
+export const vncX509PlainSecuritySchema = discriminatedUnion("type", [
   vncX509PlainSecurityVariantSchema,
 ]);
-const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
+const vncCredentialSecuritySchema = discriminatedUnion("type", [
   vncQemuGssapiSecuritySchema.extend({
     kdc: kerberosKdcMetadataSchema.optional(),
   }),
@@ -112,7 +113,7 @@ const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
   vncAppleSrpSecurityVariantSchema,
   vncAppleRsaSrpSecurityVariantSchema,
 ]);
-export const vncSecuritySchema = z.discriminatedUnion("type", [
+export const vncSecuritySchema = discriminatedUnion("type", [
   vncQemuGssapiSecuritySchema,
   ...vncRsaAesSecuritySchema.options,
   vncX509NoneSecurityVariantSchema,
@@ -125,33 +126,30 @@ export const vncSecuritySchema = z.discriminatedUnion("type", [
   vncAppleRsaSrpSecurityVariantSchema,
 ]);
 
-export const vncConnectionCredentialSchema = z.union([
+export const vncConnectionCredentialSchema = union([
   vncCredentialSelectionSchema,
-  z.object({ type: z.literal("none") }).strict(),
+  object({ type: literal("none") }).strict(),
 ]);
 
-export const createVncConnectionRequestSchema = z
-  .object({
-    id: z.uuid(),
-    displayName: displayNameSchema,
-    host: hostSchema,
-    port: portSchema.default(5900),
-    credential: vncConnectionCredentialSchema,
-    security: vncSecuritySchema,
-    transport: vncTransportSchema.optional(),
-  })
-  .strict();
+export const createVncConnectionRequestSchema = object({
+  id: uuid(),
+  displayName: displayNameSchema,
+  host: hostSchema,
+  port: portSchema.default(5900),
+  credential: vncConnectionCredentialSchema,
+  security: vncSecuritySchema,
+  transport: vncTransportSchema.optional(),
+}).strict();
 
-export const updateVncConnectionRequestSchema = z
-  .object({
-    expectedGeneration: generationSchema,
-    displayName: displayNameSchema.optional(),
-    host: hostSchema.optional(),
-    port: portSchema.optional(),
-    credential: vncConnectionCredentialSchema.optional(),
-    security: vncSecuritySchema.optional(),
-    transport: vncTransportSchema.optional(),
-  })
+export const updateVncConnectionRequestSchema = object({
+  expectedGeneration: generationSchema,
+  displayName: displayNameSchema.optional(),
+  host: hostSchema.optional(),
+  port: portSchema.optional(),
+  credential: vncConnectionCredentialSchema.optional(),
+  security: vncSecuritySchema.optional(),
+  transport: vncTransportSchema.optional(),
+})
   .strict()
   .refine(
     (body) => {
@@ -167,43 +165,40 @@ export const updateVncConnectionRequestSchema = z
     { message: "At least one VNC connection field must be updated" },
   );
 
-export const vncConnectionPathParamsSchema = z
-  .object({ connectionId: z.uuid() })
-  .strict();
+export const vncConnectionPathParamsSchema = object({
+  connectionId: uuid(),
+}).strict();
 
-export const vncConnectionMetadataSchema = z
-  .object({
-    id: z.uuid(),
-    displayName: z.string(),
-    host: z.string(),
-    port: portSchema,
-    credentialId: z.uuid(),
-    credentialName: z.string(),
-    rsaAesAuthentication: vncRsaAesAuthenticationMethodSchema.optional(),
-    clientCertificateAuthentication: z
-      .enum(["client_certificate", "client_certificate_vnc_password"])
-      .optional(),
-    kerberosAuthentication: z
-      .enum([
-        "qemu_kerberos_ticket",
-        "qemu_kerberos_keytab",
-        "qemu_kerberos_password",
-      ])
-      .optional(),
-    security: vncCredentialSecuritySchema,
-    generation: generationSchema,
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-  })
-  .strict();
+export const vncConnectionMetadataSchema = object({
+  id: uuid(),
+  displayName: string(),
+  host: string(),
+  port: portSchema,
+  credentialId: uuid(),
+  credentialName: string(),
+  rsaAesAuthentication: vncRsaAesAuthenticationMethodSchema.optional(),
+  clientCertificateAuthentication: zEnum([
+    "client_certificate",
+    "client_certificate_vnc_password",
+  ]).optional(),
+  kerberosAuthentication: zEnum([
+    "qemu_kerberos_ticket",
+    "qemu_kerberos_keytab",
+    "qemu_kerberos_password",
+  ]).optional(),
+  security: vncCredentialSecuritySchema,
+  generation: generationSchema,
+  createdAt: string().datetime(),
+  updatedAt: string().datetime(),
+}).strict();
 
 const vncCredentiallessMetadataSchema = vncConnectionMetadataSchema
   .omit({ credentialId: true, credentialName: true, security: true })
   .extend({
-    credential: z.object({ type: z.literal("none") }).strict(),
+    credential: object({ type: literal("none") }).strict(),
     security: vncX509NoneSecurityVariantSchema,
   });
-export const vncConnectionResponseSchema = z.union([
+export const vncConnectionResponseSchema = union([
   vncConnectionMetadataSchema.extend({
     transport: vncTransportMetadataSchema.optional(),
   }),
@@ -212,12 +207,12 @@ export const vncConnectionResponseSchema = z.union([
   }),
 ]);
 
-export const vncConnectionsListResponseSchema = z
-  .object({ connections: z.array(vncConnectionResponseSchema) })
-  .strict();
-export const vncConnectionsSummaryResponseSchema = z
-  .object({ configuredCount: z.int().nonnegative() })
-  .strict();
+export const vncConnectionsListResponseSchema = object({
+  connections: array(vncConnectionResponseSchema),
+}).strict();
+export const vncConnectionsSummaryResponseSchema = object({
+  configuredCount: int().nonnegative(),
+}).strict();
 
 const c = initContract();
 const errors = {
@@ -235,9 +230,9 @@ export const vncConnectionsContract = c.router({
     path: "/api/vnc/connections/observations",
     headers: authHeadersSchema,
     responses: {
-      200: z
-        .object({ observations: z.array(vncConnectionObservationSchema) })
-        .strict(),
+      200: object({
+        observations: array(vncConnectionObservationSchema),
+      }).strict(),
       ...errors,
     },
     summary: "Read the owner's latest VNC connection observations",
@@ -246,22 +241,14 @@ export const vncConnectionsContract = c.router({
     method: "POST",
     path: "/api/vnc/rsa-key-pin",
     headers: authHeadersSchema,
-    body: z
-      .object({
-        publicKeyPem: z.string().min(1).max(VNC_RSA_PUBLIC_KEY_MAX_BYTES),
-      })
-      .strict(),
+    body: object({
+      publicKeyPem: string().min(1).max(VNC_RSA_PUBLIC_KEY_MAX_BYTES),
+    }).strict(),
     responses: {
-      200: z
-        .object({
-          serverKeySha256: z.string().regex(/^[a-f0-9]{64}$/u),
-          modulusBits: z.union([
-            z.literal(2048),
-            z.literal(3072),
-            z.literal(4096),
-          ]),
-        })
-        .strict(),
+      200: object({
+        serverKeySha256: string().regex(/^[a-f0-9]{64}$/u),
+        modulusBits: union([literal(2048), literal(3072), literal(4096)]),
+      }).strict(),
       ...errors,
     },
     summary:
@@ -303,19 +290,19 @@ export const vncConnectionsContract = c.router({
     path: "/api/vnc/connections/:connectionId",
     headers: authHeadersSchema,
     pathParams: vncConnectionPathParamsSchema,
-    body: z.object({ expectedGeneration: generationSchema }).strict(),
+    body: object({ expectedGeneration: generationSchema }).strict(),
     responses: { 204: c.noBody(), ...errors },
     summary: "Delete an owned VNC connection",
   },
 });
 
-export type CreateVncConnectionRequest = z.infer<
+export type CreateVncConnectionRequest = zInfer<
   typeof createVncConnectionRequestSchema
 >;
-export type UpdateVncConnectionRequest = z.infer<
+export type UpdateVncConnectionRequest = zInfer<
   typeof updateVncConnectionRequestSchema
 >;
-export type VncConnectionResponse = z.infer<typeof vncConnectionResponseSchema>;
-export type VncTrust = z.infer<typeof vncTrustSchema>;
-export type VncSecurity = z.infer<typeof vncSecuritySchema>;
-export type VncTransport = z.infer<typeof vncTransportSchema>;
+export type VncConnectionResponse = zInfer<typeof vncConnectionResponseSchema>;
+export type VncTrust = zInfer<typeof vncTrustSchema>;
+export type VncSecurity = zInfer<typeof vncSecuritySchema>;
+export type VncTransport = zInfer<typeof vncTransportSchema>;

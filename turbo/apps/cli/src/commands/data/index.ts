@@ -1,5 +1,5 @@
 import { Command, InvalidArgumentError } from "commander";
-import { z } from "zod";
+import { json, record, string } from "zod";
 import {
   callDataRouterTool,
   listDataRouterTools,
@@ -14,7 +14,7 @@ function inputObject(value: string): Record<string, unknown> {
   } catch {
     throw new InvalidArgumentError("--input must contain a JSON object");
   }
-  const result = z.record(z.string(), z.json()).safeParse(parsed);
+  const result = record(string(), json()).safeParse(parsed);
   if (!result.success)
     throw new InvalidArgumentError("--input must contain a JSON object");
   return result.data;
@@ -95,7 +95,7 @@ export function createDataCommand(): Command {
     );
   command.addHelpText(
     "after",
-    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Results are printed as JSON.\nCalls can consume credits. Follow the tool description for quotes and job status; do not automatically repeat an uncertain paid call.',
+    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Responses are printed as JSON.\nCalls can consume credits, which are totaled when the Run ends. Do not automatically repeat a paid request whose outcome is uncertain.',
   );
   return command;
 }

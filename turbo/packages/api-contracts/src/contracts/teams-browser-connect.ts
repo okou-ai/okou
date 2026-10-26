@@ -1,28 +1,28 @@
-import * as z from "zod";
+import { object, string, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 
 const c = initContract();
 
-export const teamsBrowserConnectQuerySchema = z.object({
-  tenantId: z.string().optional(),
-  tenantName: z.string().optional(),
-  teamsUserId: z.string().optional(),
-  teamsAadObjectId: z.string().optional(),
-  teamsUserDisplayName: z.string().optional(),
-  teamsUserPrincipalName: z.string().optional(),
-  displayName: z.string().optional(),
-  upn: z.string().optional(),
-  teamId: z.string().optional(),
-  teamName: z.string().optional(),
-  botName: z.string().optional(),
-  serviceUrl: z.string().optional(),
-  conversationId: z.string().optional(),
-  conversationType: z.string().optional(),
-  activityId: z.string().optional(),
-  channelId: z.string().optional(),
-  threadId: z.string().optional(),
-  orgId: z.string().optional(),
+export const teamsBrowserConnectQuerySchema = object({
+  tenantId: string().optional(),
+  tenantName: string().optional(),
+  teamsUserId: string().optional(),
+  teamsAadObjectId: string().optional(),
+  teamsUserDisplayName: string().optional(),
+  teamsUserPrincipalName: string().optional(),
+  displayName: string().optional(),
+  upn: string().optional(),
+  teamId: string().optional(),
+  teamName: string().optional(),
+  botName: string().optional(),
+  serviceUrl: string().optional(),
+  conversationId: string().optional(),
+  conversationType: string().optional(),
+  activityId: string().optional(),
+  channelId: string().optional(),
+  threadId: string().optional(),
+  orgId: string().optional(),
 });
 
 export const teamsBrowserConnectContract = c.router({
@@ -32,13 +32,13 @@ export const teamsBrowserConnectContract = c.router({
     query: teamsBrowserConnectQuerySchema,
     responses: {
       307: c.noBody(),
-      500: z.object({ error: z.string() }),
+      500: object({ error: string() }),
     },
     summary: "Browser Microsoft Teams connect flow",
   },
 });
 
 export type TeamsBrowserConnectContract = typeof teamsBrowserConnectContract;
-export type TeamsBrowserConnectQuery = z.infer<
+export type TeamsBrowserConnectQuery = zInfer<
   typeof teamsBrowserConnectQuerySchema
 >;

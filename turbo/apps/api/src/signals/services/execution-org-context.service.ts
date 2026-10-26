@@ -4,32 +4,32 @@ import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-s
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq, type SQL, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { boolean, number, object, string, unknown as zUnknown } from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { executionCreditQueries } from "./execution-credit-balance.service";
 import { activeConcurrencySubscriptionPredicate } from "./org-concurrency-entitlements.service";
 import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
 
-const rawDecoder = zodDriverValueDecoder(z.unknown());
-const metadataSchema = z.object({
-  credits: z.number(),
-  defaultAgentId: z.string().nullable(),
-  openrouterPreset: z.string().nullable(),
+const rawDecoder = zodDriverValueDecoder(zUnknown());
+const metadataSchema = object({
+  credits: number(),
+  defaultAgentId: string().nullable(),
+  openrouterPreset: string().nullable(),
 });
-const planSchema = z.object({
-  planKey: z.string(),
-  status: z.string(),
-  baseConcurrencyLimit: z.number(),
-  canBuyConcurrency: z.boolean(),
-  canBuyCredits: z.boolean(),
-  showUsagePack: z.boolean(),
-  autoRechargeAllowed: z.boolean(),
-  restrictedBuiltInModels: z.boolean().nullable(),
-  workflowWebhookAutomationAllowed: z.boolean(),
-  audioLifetimeLimit: z.number().nullable(),
-  audioDailyRateLimit: z.number(),
-  audioDailyDurationSeconds: z.number(),
+const planSchema = object({
+  planKey: string(),
+  status: string(),
+  baseConcurrencyLimit: number(),
+  canBuyConcurrency: boolean(),
+  canBuyCredits: boolean(),
+  showUsagePack: boolean(),
+  autoRechargeAllowed: boolean(),
+  restrictedBuiltInModels: boolean().nullable(),
+  workflowWebhookAutomationAllowed: boolean(),
+  audioLifetimeLimit: number().nullable(),
+  audioDailyRateLimit: number(),
+  audioDailyDurationSeconds: number(),
 });
 /**
  * Transport only: business decoding belongs to independent derived consumers.

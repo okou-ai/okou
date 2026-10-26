@@ -1,10 +1,20 @@
-import * as z from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type output,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 const nonblank = (limit: number) => {
-  return z.string().refine(
+  return string().refine(
     (value) => {
       return (
         value.length <= limit * 2 &&
@@ -27,51 +37,46 @@ export const notifyMailSubjectSchema = nonblank(180).refine(
   },
 );
 export const notifyMailTextSchema = nonblank(8000);
-const idempotencyKeySchema = z
-  .string()
+const idempotencyKeySchema = string()
   .min(1)
   .max(200)
   .regex(/^[A-Za-z0-9._:/-]+$/u);
 const notifyMailFields = {
-  to: z.literal("me").default("me"),
+  to: literal("me").default("me"),
   subject: notifyMailSubjectSchema,
   text: notifyMailTextSchema,
 };
 
-export const notifyMailBodySchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      ...notifyMailFields,
-      kind: z.literal("notification").default("notification"),
-      idempotencyKey: idempotencyKeySchema,
-    })
-    .strict(),
+export const notifyMailBodySchema = discriminatedUnion("kind", [
+  object({
+    ...notifyMailFields,
+    kind: literal("notification").default("notification"),
+    idempotencyKey: idempotencyKeySchema,
+  }).strict(),
   // Okou derives a Morning Brief key from the Run's automation event.
-  z
-    .object({
-      ...notifyMailFields,
-      kind: z.literal("morning-brief"),
-    })
-    .strict(),
+  object({
+    ...notifyMailFields,
+    kind: literal("morning-brief"),
+  }).strict(),
 ]);
 
-export const notificationReasonSchema = z.enum([
+export const notificationReasonSchema = zEnum([
   "unsubscribed",
   "suppressed",
   "no-email",
   "expired",
   "delivery-failed",
 ]);
-export const notificationResponseSchema = z.object({
-  notificationId: z.uuid(),
-  channel: z.literal("mail"),
-  recipient: z.literal("me"),
-  status: z.enum(["queued", "sent", "skipped", "failed"]),
+export const notificationResponseSchema = object({
+  notificationId: uuid(),
+  channel: literal("mail"),
+  recipient: literal("me"),
+  status: zEnum(["queued", "sent", "skipped", "failed"]),
   reason: notificationReasonSchema.nullable(),
-  deduplicated: z.boolean(),
+  deduplicated: boolean(),
 });
-export type NotifyMailBody = z.output<typeof notifyMailBodySchema>;
-export type NotificationResponse = z.output<typeof notificationResponseSchema>;
+export type NotifyMailBody = output<typeof notifyMailBodySchema>;
+export type NotificationResponse = output<typeof notificationResponseSchema>;
 
 export const notificationsContract = c.router({
   mail: {
@@ -93,7 +98,7 @@ export const notificationsContract = c.router({
   get: {
     method: "GET",
     path: "/api/notifications/:id",
-    pathParams: z.object({ id: z.uuid() }),
+    pathParams: object({ id: uuid() }),
     headers: authHeadersSchema,
     responses: {
       200: notificationResponseSchema,

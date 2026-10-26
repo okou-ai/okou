@@ -1,14 +1,13 @@
-import * as z from "zod";
+import { string, enum as zEnum, type infer as zInfer } from "zod";
 
-export const runFailureReasonTokenSchema = z
-  .string()
+export const runFailureReasonTokenSchema = string()
   .min(1)
   .max(64)
   .regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/);
 
-export type RunFailureReasonToken = z.infer<typeof runFailureReasonTokenSchema>;
+export type RunFailureReasonToken = zInfer<typeof runFailureReasonTokenSchema>;
 
-export const knownRunFailureReasonSchema = z.enum([
+export const knownRunFailureReasonSchema = zEnum([
   "session_history_limit",
   "guest_root_filesystem_full",
   "guest_home_filesystem_full",
@@ -35,4 +34,4 @@ export const knownRunFailureReasonSchema = z.enum([
   "usage_limit",
 ]);
 
-export type KnownRunFailureReason = z.infer<typeof knownRunFailureReasonSchema>;
+export type KnownRunFailureReason = zInfer<typeof knownRunFailureReasonSchema>;

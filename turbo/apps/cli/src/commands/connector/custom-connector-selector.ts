@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { uuid } from "zod";
 import { listCustomConnectors } from "../../lib/api/domains/connectors";
 import {
   findConnectorBySelector,
@@ -14,7 +14,7 @@ export async function resolveCustomConnectorId(
       `Expected a custom connector: ${selector}\nRun: okou connector custom list`,
     );
   }
-  const id = z.uuid().safeParse(value);
+  const id = uuid().safeParse(value);
   if (id.success) {
     return id.data.toLowerCase();
   }

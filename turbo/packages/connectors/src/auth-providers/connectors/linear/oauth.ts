@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { array, number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -84,16 +84,14 @@ export async function exchangeLinearCode(
     await throwOAuthError("Linear", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -143,16 +141,14 @@ export async function refreshLinearToken(
     await throwOAuthError("Linear", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -191,22 +187,16 @@ async function fetchLinearUserInfo(
     throw new Error(`Linear user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      data: z
-        .object({
-          viewer: z
-            .object({
-              id: z.string().optional(),
-              name: z.string().nullable().optional(),
-              email: z.string().nullable().optional(),
-            })
-            .optional(),
-        })
-        .optional(),
-      errors: z.array(z.object({ message: z.string() })).optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    data: object({
+      viewer: object({
+        id: string().optional(),
+        name: string().nullable().optional(),
+        email: string().nullable().optional(),
+      }).optional(),
+    }).optional(),
+    errors: array(object({ message: string() })).optional(),
+  }).parse(await response.json());
 
   if (data.errors?.length) {
     throw new Error(data.errors[0]?.message ?? "Unknown GraphQL error");

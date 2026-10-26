@@ -1,6 +1,12 @@
 import { settle } from "../utils";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import * as z from "zod";
+import {
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { now } from "../../lib/time";
 import type { prepareCodexResetCreditExpiryRead } from "./codex-reset-credit-expiry.service";
@@ -21,71 +27,54 @@ const HOUR_SECONDS = 60 * 60;
 const FIVE_HOUR_SECONDS = 5 * HOUR_SECONDS;
 const MINUTE_SECONDS = 60;
 
-const rateLimitWindowSchema = z
-  .object({
-    limit_window_seconds: z.number().nullable().optional(),
-    reset_after_seconds: z.number().nullable().optional(),
-    reset_at: z.number().nullable().optional(),
-    used_percent: z.number().nullable().optional(),
-  })
-  .passthrough();
+const rateLimitWindowSchema = object({
+  limit_window_seconds: number().nullable().optional(),
+  reset_after_seconds: number().nullable().optional(),
+  reset_at: number().nullable().optional(),
+  used_percent: number().nullable().optional(),
+}).passthrough();
 
-const rateLimitDetailsSchema = z
-  .object({
-    primary_window: rateLimitWindowSchema.nullable().optional(),
-    secondary_window: rateLimitWindowSchema.nullable().optional(),
-  })
-  .passthrough();
+const rateLimitDetailsSchema = object({
+  primary_window: rateLimitWindowSchema.nullable().optional(),
+  secondary_window: rateLimitWindowSchema.nullable().optional(),
+}).passthrough();
 
-const rateLimitResetCreditsSchema = z
-  .object({
-    available_count: z.number().int().nonnegative().nullable().optional(),
-  })
-  .passthrough();
+const rateLimitResetCreditsSchema = object({
+  available_count: number().int().nonnegative().nullable().optional(),
+}).passthrough();
 
-const namedMetadataSchema = z
-  .object({
-    title: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    display_name: z.string().nullable().optional(),
-    displayName: z.string().nullable().optional(),
-  })
-  .passthrough();
+const namedMetadataSchema = object({
+  title: string().nullable().optional(),
+  name: string().nullable().optional(),
+  display_name: string().nullable().optional(),
+  displayName: string().nullable().optional(),
+}).passthrough();
 
-const codexUsageResponseSchema = z
-  .object({
-    plan_type: z.string().nullable().optional(),
-    account: namedMetadataSchema.nullable().optional(),
-    account_name: z.string().nullable().optional(),
-    chatgpt_account_name: z.string().nullable().optional(),
-    chatgpt_organization_name: z.string().nullable().optional(),
-    chatgpt_workspace_display_name: z.string().nullable().optional(),
-    chatgpt_workspace_name: z.string().nullable().optional(),
-    chatgpt_workspace_title: z.string().nullable().optional(),
-    organization: namedMetadataSchema.nullable().optional(),
-    organization_name: z.string().nullable().optional(),
-    rate_limit: rateLimitDetailsSchema.nullable().optional(),
-    rate_limit_reset_credits: rateLimitResetCreditsSchema.nullable().optional(),
-    workspace: namedMetadataSchema.nullable().optional(),
-    workspace_name: z.string().nullable().optional(),
-  })
-  .passthrough();
+const codexUsageResponseSchema = object({
+  plan_type: string().nullable().optional(),
+  account: namedMetadataSchema.nullable().optional(),
+  account_name: string().nullable().optional(),
+  chatgpt_account_name: string().nullable().optional(),
+  chatgpt_organization_name: string().nullable().optional(),
+  chatgpt_workspace_display_name: string().nullable().optional(),
+  chatgpt_workspace_name: string().nullable().optional(),
+  chatgpt_workspace_title: string().nullable().optional(),
+  organization: namedMetadataSchema.nullable().optional(),
+  organization_name: string().nullable().optional(),
+  rate_limit: rateLimitDetailsSchema.nullable().optional(),
+  rate_limit_reset_credits: rateLimitResetCreditsSchema.nullable().optional(),
+  workspace: namedMetadataSchema.nullable().optional(),
+  workspace_name: string().nullable().optional(),
+}).passthrough();
 
-const codexRateLimitResetCreditConsumeResponseSchema = z
-  .object({
-    code: z.enum([
-      "reset",
-      "nothing_to_reset",
-      "no_credit",
-      "already_redeemed",
-    ]),
-    windows_reset: z.number().nullable().optional(),
-  })
-  .passthrough();
+const codexRateLimitResetCreditConsumeResponseSchema = object({
+  code: zEnum(["reset", "nothing_to_reset", "no_credit", "already_redeemed"]),
+  windows_reset: number().nullable().optional(),
+}).passthrough();
 
-type RateLimitWindow = z.infer<typeof rateLimitWindowSchema>;
-type CodexNamedMetadata = z.infer<typeof namedMetadataSchema>;
-type CodexUsageResponse = z.infer<typeof codexUsageResponseSchema>;
+type RateLimitWindow = zInfer<typeof rateLimitWindowSchema>;
+type CodexNamedMetadata = zInfer<typeof namedMetadataSchema>;
+type CodexUsageResponse = zInfer<typeof codexUsageResponseSchema>;
 
 interface CodexUsageMetadata {
   readonly accountEmail: string | null;
@@ -230,7 +219,7 @@ function resetWindowFromUsageWindow(
 }
 
 function chooseSubscriptionResetWindow(
-  rateLimit: z.infer<typeof rateLimitDetailsSchema> | null | undefined,
+  rateLimit: zInfer<typeof rateLimitDetailsSchema> | null | undefined,
 ): UsageResetWindow | null {
   if (!rateLimit) {
     return null;
@@ -284,7 +273,7 @@ function subscriptionUsageWindowFromCodexWindow(
 }
 
 function subscriptionUsageFromRateLimit(
-  rateLimit: z.infer<typeof rateLimitDetailsSchema> | null | undefined,
+  rateLimit: zInfer<typeof rateLimitDetailsSchema> | null | undefined,
 ): SubscriptionUsageMetadata | null {
   if (!rateLimit) {
     return null;
@@ -389,7 +378,7 @@ export async function fetchCodexUsageMetadata(
 }
 
 function codexResetCreditOutcome(
-  code: z.infer<typeof codexRateLimitResetCreditConsumeResponseSchema>["code"],
+  code: zInfer<typeof codexRateLimitResetCreditConsumeResponseSchema>["code"],
 ): CodexRateLimitResetCreditOutcome {
   switch (code) {
     case "reset": {

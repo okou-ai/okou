@@ -1,26 +1,32 @@
-import * as z from "zod";
+import {
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
-export const agentphoneDeliveryTargetSchema = z.object({
-  messageId: z.string().min(1),
-  conversationId: z.string().nullable(),
+export const agentphoneDeliveryTargetSchema = object({
+  messageId: string().min(1),
+  conversationId: string().nullable(),
   // Direct messages do not have a provider group ID.
-  groupId: z.string().nullable().optional(),
-  channel: z.enum(["imessage", "sms", "mms"]),
-  isGroup: z.boolean(),
-  rootMessageId: z.string().min(1),
-  phoneHandle: z.string().min(1),
-  fromNumber: z.string().min(1),
-  toNumber: z.string().min(1),
-  userLinkId: z.string().uuid(),
-  agentId: z.string().uuid(),
-  agentphoneAgentId: z.string().min(1),
+  groupId: string().nullable().optional(),
+  channel: zEnum(["imessage", "sms", "mms"]),
+  isGroup: boolean(),
+  rootMessageId: string().min(1),
+  phoneHandle: string().min(1),
+  fromNumber: string().min(1),
+  toNumber: string().min(1),
+  userLinkId: string().uuid(),
+  agentId: string().uuid(),
+  agentphoneAgentId: string().min(1),
 });
 
-export type AgentPhoneDeliveryTarget = z.infer<
+export type AgentPhoneDeliveryTarget = zInfer<
   typeof agentphoneDeliveryTargetSchema
 >;
 
 export const agentphoneChatCallbackPayloadSchema =
   agentphoneDeliveryTargetSchema.extend({
-    chatEventId: z.string().uuid(),
+    chatEventId: string().uuid(),
   });

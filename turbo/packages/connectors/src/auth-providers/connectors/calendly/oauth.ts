@@ -1,17 +1,17 @@
-import * as z from "zod";
+import { literal, number, object, string, url } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
 import { effectiveOAuthScopes, reportedOAuthScopes } from "../../oauth/scope";
 
 const TOKEN_URL = "https://auth.calendly.com/oauth/token";
-const tokenResponseSchema = z.object({
-  token_type: z.literal("Bearer"),
-  access_token: z.string().min(1),
+const tokenResponseSchema = object({
+  token_type: literal("Bearer"),
+  access_token: string().min(1),
   // Calendly rotates single-use refresh tokens on every successful exchange.
-  refresh_token: z.string().min(1),
-  expires_in: z.number().positive(),
-  scope: z.string().optional(),
+  refresh_token: string().min(1),
+  expires_in: number().positive(),
+  scope: string().optional(),
 });
 
 function base64Url(bytes: Uint8Array): string {
@@ -81,15 +81,13 @@ export async function exchangeCalendlyCode(
   if (!userResponse.ok) {
     throw new Error(`Calendly user info fetch failed: ${userResponse.status}`);
   }
-  const { resource } = z
-    .object({
-      resource: z.object({
-        uri: z.url().startsWith("https://api.calendly.com/users/"),
-        name: z.string(),
-        email: z.string(),
-      }),
-    })
-    .parse(await userResponse.json());
+  const { resource } = object({
+    resource: object({
+      uri: url().startsWith("https://api.calendly.com/users/"),
+      name: string(),
+      email: string(),
+    }),
+  }).parse(await userResponse.json());
   return {
     accessToken: token.access_token,
     refreshToken: token.refresh_token,

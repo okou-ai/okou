@@ -37,7 +37,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { PgDialect, QueryBuilder, type PgTable } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { object, string } from "zod";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import { agents } from "@okouai/db/schema/agent";
 import { nowDate } from "../../lib/time";
@@ -1021,13 +1021,13 @@ export function chatEventsInsertSql(values: readonly AppendChatEvent[]): SQL {
   );
 }
 
-export const chatEventReplacementTargetSchema = z.object({
-  id: z.string().uuid(),
-  chatThreadId: z.string().uuid(),
+export const chatEventReplacementTargetSchema = object({
+  id: string().uuid(),
+  chatThreadId: string().uuid(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
   eventType: chatEventTypeSchema,
-  contextType: z.string().nullable(),
-  contextId: z.string().uuid().nullable(),
+  contextType: string().nullable(),
+  contextId: string().uuid().nullable(),
   modelSelection: chatInputModelSelectionSchema.nullable(),
 });
 

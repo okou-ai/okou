@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { telegramMessages } from "@okouai/db/schema/telegram-message";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import * as z from "zod";
+import { object, string } from "zod";
 import { db$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import {
@@ -139,9 +139,7 @@ export const requireTelegramFileAccess$ = command(
       }),
     );
     for (const upload of uploads) {
-      const metadata = z
-        .object({ chatId: z.string() })
-        .safeParse(upload.metadata);
+      const metadata = object({ chatId: string() }).safeParse(upload.metadata);
       if (metadata.success) {
         chats.add(metadata.data.chatId);
       }

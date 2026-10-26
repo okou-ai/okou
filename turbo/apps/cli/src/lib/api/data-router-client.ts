@@ -2,7 +2,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { z } from "zod";
+import { json, number, object, record, string, unknown as zUnknown } from "zod";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { dataRouterHistoryContract } from "@okouai/api-contracts/contracts/data-router";
 import {
@@ -15,10 +15,10 @@ import {
   handleError,
 } from "./core/client-factory";
 
-const envelopeSchema = z.object({
-  data: z.object({ status: z.number().int(), body: z.unknown() }),
+const envelopeSchema = object({
+  data: object({ status: number().int(), body: zUnknown() }),
 });
-const argumentsSchema = z.record(z.string(), z.json());
+const argumentsSchema = record(string(), json());
 interface RequestOptions {
   signal: AbortSignal;
   timeout: number;
@@ -100,7 +100,7 @@ export async function listDataRouterTools(): Promise<DataRouterTool[]> {
   return withDataRouter(discoverTools);
 }
 
-/** The privileged MITM injects authentication and a managed request ID. */
+/** MITM injects authentication and records the billing identity returned by Router. */
 export async function callDataRouterTool(
   name: string,
   input: Record<string, unknown>,
@@ -123,7 +123,7 @@ export async function callDataRouterTool(
       )
       .catch((cause: unknown) => {
         throw new Error(
-          "Data Router did not return a complete response; a paid operation may have executed. Do not resubmit automatically; inspect saved jobs when available.",
+          "Data Router did not return a complete response; the request may have executed and incurred a charge. Do not repeat it automatically.",
           { cause },
         );
       });
@@ -131,7 +131,7 @@ export async function callDataRouterTool(
     if (!parsed.success && result.isError) return { status: 400, body: result };
     if (!parsed.success)
       throw new ApiRequestError(
-        "Data Router returned an invalid tool response; a paid operation may have executed. Do not resubmit automatically; inspect saved jobs when available.",
+        "Data Router returned an invalid tool response; the request may have executed and incurred a charge. Do not repeat it automatically.",
         "INVALID_DATA_RESPONSE",
         502,
       );

@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -78,24 +78,20 @@ export async function exchangeSentryCode(
     await throwOAuthError("Sentry", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      token_type: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-      user: z
-        .object({
-          id: z.string(),
-          name: z.string().nullable().optional(),
-          email: z.string().nullable().optional(),
-        })
-        .optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    token_type: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+    user: object({
+      id: string(),
+      name: string().nullable().optional(),
+      email: string().nullable().optional(),
+    }).optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -150,16 +146,14 @@ export async function refreshSentryToken(
     await throwOAuthError("Sentry", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);

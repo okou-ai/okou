@@ -798,13 +798,31 @@ impl SupervisedExecHandle {
     ///
     /// If the terminal result is already available or wins the race before
     /// cancel reaches the write boundary, this returns that result without
-    /// sending a stale cancel frame. `timeout` bounds the full operation:
+    /// sending a stale cancel frame. Once the cancel frame is sent, only
+    /// `ExecTermination::Cancelled` is returned successfully. Any other
+    /// terminal state, including `ExecTermination::Exited` with exit code 0,
+    /// becomes an [`io::ErrorKind::Other`] error describing the termination.
+    /// That error does not retain the complete [`ExecOperationResult`], its
+    /// captured stdout/stderr, or its diagnostic. This result-mapping error
+    /// still follows observed terminal proof and does not itself poison the
+    /// connection.
+    ///
+    /// `timeout` bounds the full operation:
     /// waiting to write cancel, writing cancel, and waiting for terminal proof.
     /// If the timeout elapses before cancel frame writing starts, cancel did
     /// not reach the guest and the connection is not poisoned. If cancel is
     /// sent but the terminal result does not arrive before the remaining
     /// timeout, the connection is poisoned because guest process state is no
     /// longer known.
+    ///
+    /// To inspect the eventual terminal state and captured output regardless
+    /// of termination, use [`Self::take_cancel_handle`], call
+    /// [`SupervisedExecCancelHandle::cancel`] with a bounded timeout, then
+    /// [`Self::wait`] on this handle with a bounded timeout. Handle cancel-send
+    /// errors separately and still attempt to wait for the terminal result;
+    /// cancellation-write or transport failures can leave the connection
+    /// unusable, so waiting can also fail. For one total budget, pass only the
+    /// remaining time to `wait` after cancellation.
     pub async fn cancel_and_wait(self, timeout: Duration) -> io::Result<ExecOperationResult> {
         let cancel_label_log = self.wait_core.diagnostic().label_log.clone();
         let registered_at = self.wait_core.diagnostic().registered_at;

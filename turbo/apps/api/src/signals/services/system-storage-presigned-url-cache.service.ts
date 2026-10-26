@@ -7,7 +7,7 @@ import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import * as z from "zod";
+import { object, string } from "zod";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,
@@ -72,7 +72,7 @@ const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
 export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
 // Leave enough time for Runner launch and archive downloads after cache selection.
 const STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS = 4 * 60 * 60 * 1000;
-const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
+const deletedCacheRowSchema = object({ cacheKey: string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
 

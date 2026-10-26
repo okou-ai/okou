@@ -1,13 +1,21 @@
-import * as z from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  url,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { hostedSiteFilesResponseSchema } from "./host";
 
 const c = initContract();
-const pathParams = z.object({
-  reference: z
-    .string()
-    .regex(/^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u),
+const pathParams = object({
+  reference: string().regex(
+    /^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u,
+  ),
 });
 const errors = {
   400: apiErrorSchema,
@@ -17,16 +25,16 @@ const errors = {
   500: apiErrorSchema,
 };
 
-export const artifactDownloadResponseSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("file"),
-    url: z.url(),
-    filename: z.string(),
-    contentType: z.string(),
+export const artifactDownloadResponseSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("file"),
+    url: url(),
+    filename: string(),
+    contentType: string(),
   }),
-  z.object({ kind: z.literal("html"), site: hostedSiteFilesResponseSchema }),
+  object({ kind: literal("html"), site: hostedSiteFilesResponseSchema }),
 ]);
-export type ArtifactDownloadResponse = z.infer<
+export type ArtifactDownloadResponse = zInfer<
   typeof artifactDownloadResponseSchema
 >;
 

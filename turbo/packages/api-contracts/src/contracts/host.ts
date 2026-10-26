@@ -1,5 +1,20 @@
 import { artifactUrlSchema } from "./artifact-references";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  ZodIssueCode,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -16,16 +31,15 @@ import {
 
 const c = initContract();
 
-export const hostedSiteTitleSchema = z.string().trim().min(1).max(200);
+export const hostedSiteTitleSchema = string().trim().min(1).max(200);
 
-export const hostedSiteTitleResponseSchema = z.object({
-  siteId: z.uuid(),
-  publicSlug: z.string(),
+export const hostedSiteTitleResponseSchema = object({
+  siteId: uuid(),
+  publicSlug: string(),
   title: hostedSiteTitleSchema,
 });
 
-export const hostedSiteUrlSlugSchema = z
-  .string()
+export const hostedSiteUrlSlugSchema = string()
   .min(3)
   .max(63)
   .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/)
@@ -33,25 +47,25 @@ export const hostedSiteUrlSlugSchema = z
     return !/^(?:dpl|pv|ps|sh)-/u.test(value);
   }, "This website prefix is reserved");
 
-export const hostedSiteUrlSchema = z.object({
-  siteId: z.string().uuid(),
-  publicSlug: z.string(),
-  url: z.string().url(),
-  isActive: z.boolean(),
+export const hostedSiteUrlSchema = object({
+  siteId: string().uuid(),
+  publicSlug: string(),
+  url: string().url(),
+  isActive: boolean(),
 });
 
-export const hostedSiteDeliveryPointerSchema = z.object({
-  version: z.literal(1),
-  publicBrand: z.enum(["vm0", "okou"]).optional(),
-  publicSlug: z.string(),
-  siteId: z.string().uuid(),
-  deploymentId: z.string().uuid(),
-  deploymentVersion: z.number().int().positive().optional(),
-  artifactUrl: z.string().optional(),
-  prefix: z.string().startsWith("sites/"),
-  manifestKey: z.string().startsWith("sites/"),
-  spaFallback: z.boolean(),
-  updatedAt: z.string(),
+export const hostedSiteDeliveryPointerSchema = object({
+  version: literal(1),
+  publicBrand: zEnum(["vm0", "okou"]).optional(),
+  publicSlug: string(),
+  siteId: string().uuid(),
+  deploymentId: string().uuid(),
+  deploymentVersion: number().int().positive().optional(),
+  artifactUrl: string().optional(),
+  prefix: string().startsWith("sites/"),
+  manifestKey: string().startsWith("sites/"),
+  spaFallback: boolean(),
+  updatedAt: string(),
 });
 
 const ORG_SLUG_HASH_LENGTH = 8;
@@ -59,14 +73,13 @@ const RANDOM_SLUG_SUFFIX_LENGTH = 8;
 const PUBLIC_SLUG_SEPARATOR_LENGTH = 2;
 const MAX_HOSTED_SITE_PUBLIC_SLUG_LENGTH = 96;
 
-export const hostedArtifactKindSchema = z.enum([
+export const hostedArtifactKindSchema = zEnum([
   "hosted-site",
   "presentation-html",
 ]);
-export type HostedArtifactKind = z.infer<typeof hostedArtifactKindSchema>;
+export type HostedArtifactKind = zInfer<typeof hostedArtifactKindSchema>;
 
-export const hostedSiteSlugSchema = z
-  .string()
+export const hostedSiteSlugSchema = string()
   .trim()
   .min(3)
   .max(63)
@@ -75,8 +88,7 @@ export const hostedSiteSlugSchema = z
     "Site slug must use lowercase letters, numbers, and hyphens, and must start and end with a letter or number",
   );
 
-export const hostedSiteSlugSuffixSchema = z
-  .string()
+export const hostedSiteSlugSuffixSchema = string()
   .trim()
   .min(3)
   .max(32)
@@ -85,8 +97,7 @@ export const hostedSiteSlugSuffixSchema = z
     "Site slug suffix must use lowercase letters, numbers, and hyphens, and must start and end with a letter or number",
   );
 
-export const hostedSitePublicSlugSchema = z
-  .string()
+export const hostedSitePublicSlugSchema = string()
   .trim()
   .min(3)
   .max(MAX_HOSTED_SITE_PUBLIC_SLUG_LENGTH)
@@ -95,12 +106,12 @@ export const hostedSitePublicSlugSchema = z
     "Hosted site public slug must use lowercase letters, numbers, and hyphens, and must start and end with a letter or number",
   );
 
-export const hostedSiteFileSchema = z.object({
-  path: z.string().min(1).max(1024).regex(/^\//, "File path must start with /"),
-  size: z.number().int().nonnegative(),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  contentType: z.string().min(1).max(200),
-  immutable: z.boolean().optional(),
+export const hostedSiteFileSchema = object({
+  path: string().min(1).max(1024).regex(/^\//, "File path must start with /"),
+  size: number().int().nonnegative(),
+  sha256: string().regex(/^[a-f0-9]{64}$/),
+  contentType: string().min(1).max(200),
+  immutable: boolean().optional(),
 });
 
 /**
@@ -186,130 +197,126 @@ export function hostedSiteAssetContentError(path: string): string {
 }
 
 export const hostedSiteDownloadFileSchema = hostedSiteFileSchema.extend({
-  downloadUrl: z.string().url(),
+  downloadUrl: string().url(),
 });
 
 export const MAX_HOSTED_PREVIEW_BYTES = 5 * 1024 * 1024;
 
-export const hostedSitePreviewSchema = z.object({
-  size: z.number().int().positive().max(MAX_HOSTED_PREVIEW_BYTES),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  contentType: z.enum(["image/png", "image/jpeg"]),
+export const hostedSitePreviewSchema = object({
+  size: number().int().positive().max(MAX_HOSTED_PREVIEW_BYTES),
+  sha256: string().regex(/^[a-f0-9]{64}$/),
+  contentType: zEnum(["image/png", "image/jpeg"]),
 });
-export type HostedSitePreview = z.infer<typeof hostedSitePreviewSchema>;
+export type HostedSitePreview = zInfer<typeof hostedSitePreviewSchema>;
 
-export const hostedSitePrepareRequestSchema = z
-  .object({
-    /** Fail before creating bytes when private artifact creation is unavailable. */
-    requirePrivateArtifact: z.boolean().optional(),
-    visibility: hostedSiteVisibilitySchema.optional(),
-    site: hostedSiteSlugSchema,
-    /** Initial display name; optional for retained CLI clients. */
-    title: hostedSiteTitleSchema.optional(),
-    slugSuffix: hostedSiteSlugSuffixSchema.optional(),
-    artifactKind: hostedArtifactKindSchema.default("hosted-site"),
-    spaFallback: z.boolean().default(false),
-    files: z.array(hostedSiteFileSchema).min(1).max(5000),
-    /** Uploaded separately to private storage, never into the public bundle. */
-    preview: hostedSitePreviewSchema.optional(),
-  })
-  .superRefine((value, ctx) => {
-    const suffixLength = value.slugSuffix?.length ?? RANDOM_SLUG_SUFFIX_LENGTH;
-    const publicSlugLength =
-      value.site.length +
-      ORG_SLUG_HASH_LENGTH +
-      suffixLength +
-      PUBLIC_SLUG_SEPARATOR_LENGTH;
+export const hostedSitePrepareRequestSchema = object({
+  /** Fail before creating bytes when private artifact creation is unavailable. */
+  requirePrivateArtifact: boolean().optional(),
+  visibility: hostedSiteVisibilitySchema.optional(),
+  site: hostedSiteSlugSchema,
+  /** Initial display name; optional for retained CLI clients. */
+  title: hostedSiteTitleSchema.optional(),
+  slugSuffix: hostedSiteSlugSuffixSchema.optional(),
+  artifactKind: hostedArtifactKindSchema.default("hosted-site"),
+  spaFallback: boolean().default(false),
+  files: array(hostedSiteFileSchema).min(1).max(5000),
+  /** Uploaded separately to private storage, never into the public bundle. */
+  preview: hostedSitePreviewSchema.optional(),
+}).superRefine((value, ctx) => {
+  const suffixLength = value.slugSuffix?.length ?? RANDOM_SLUG_SUFFIX_LENGTH;
+  const publicSlugLength =
+    value.site.length +
+    ORG_SLUG_HASH_LENGTH +
+    suffixLength +
+    PUBLIC_SLUG_SEPARATOR_LENGTH;
 
-    if (publicSlugLength > MAX_HOSTED_SITE_PUBLIC_SLUG_LENGTH) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: value.slugSuffix ? ["slugSuffix"] : ["site"],
-        message:
-          "Hosted site public slug must be 96 characters or fewer; shorten site or slug suffix",
-      });
-    }
-  });
-
-export const hostedSiteUploadSchema = z.object({
-  path: z.string(),
-  uploadUrl: z.string().url(),
+  if (publicSlugLength > MAX_HOSTED_SITE_PUBLIC_SLUG_LENGTH) {
+    ctx.addIssue({
+      code: ZodIssueCode.custom,
+      path: value.slugSuffix ? ["slugSuffix"] : ["site"],
+      message:
+        "Hosted site public slug must be 96 characters or fewer; shorten site or slug suffix",
+    });
+  }
 });
 
-export const hostedSitePrepareResponseSchema = z.object({
-  siteId: z.string().uuid(),
+export const hostedSiteUploadSchema = object({
+  path: string(),
+  uploadUrl: string().url(),
+});
+
+export const hostedSitePrepareResponseSchema = object({
+  siteId: string().uuid(),
   /** Acknowledges the site policy before uploads or publication can start. */
   visibility: hostedSiteVisibilitySchema.optional(),
   /** Acknowledges explicit titles; absent on APIs predating site titles. */
   title: hostedSiteTitleSchema.optional(),
-  deploymentId: z.string().uuid(),
-  publicSlug: z.string(),
+  deploymentId: string().uuid(),
+  publicSlug: string(),
   url: artifactUrlSchema,
-  deploymentVersion: z.number().int().positive().optional(),
+  deploymentVersion: number().int().positive().optional(),
   artifactUrl: artifactUrlSchema.optional(),
-  aliasUrl: z.string().url().optional(),
-  uploads: z.array(hostedSiteUploadSchema),
+  aliasUrl: string().url().optional(),
+  uploads: array(hostedSiteUploadSchema),
   /** Acknowledges that this API requires the preview before publication. */
-  preview: z
-    .object({ uploadUrl: z.string().url(), sha256: z.string() })
-    .optional(),
+  preview: object({ uploadUrl: string().url(), sha256: string() }).optional(),
 });
 
-export const hostedSiteCompleteResponseSchema = z.object({
-  siteId: z.string().uuid(),
-  deploymentId: z.string().uuid(),
-  publicSlug: z.string(),
+export const hostedSiteCompleteResponseSchema = object({
+  siteId: string().uuid(),
+  deploymentId: string().uuid(),
+  publicSlug: string(),
   url: artifactUrlSchema,
-  deploymentVersion: z.number().int().positive().optional(),
+  deploymentVersion: number().int().positive().optional(),
   artifactUrl: artifactUrlSchema.optional(),
-  aliasUrl: z.string().url().optional(),
-  isActive: z.boolean().optional(),
-  activeDeploymentVersion: z.number().int().positive().optional(),
-  status: z.literal("ready"),
+  aliasUrl: string().url().optional(),
+  isActive: boolean().optional(),
+  activeDeploymentVersion: number().int().positive().optional(),
+  status: literal("ready"),
   previewImageUrl: artifactUrlSchema.optional(),
 });
 
-export const hostedSiteFilesResponseSchema = z.object({
-  siteId: z.string().uuid(),
-  deploymentId: z.string().uuid(),
+export const hostedSiteFilesResponseSchema = object({
+  siteId: string().uuid(),
+  deploymentId: string().uuid(),
   publicSlug: hostedSitePublicSlugSchema,
   url: artifactUrlSchema,
-  deploymentVersion: z.number().int().positive().optional(),
+  deploymentVersion: number().int().positive().optional(),
   artifactUrl: artifactUrlSchema.optional(),
-  aliasUrl: z.string().url().optional(),
-  fileCount: z.number().int().nonnegative(),
-  size: z.number().int().nonnegative(),
-  files: z.array(hostedSiteDownloadFileSchema),
+  aliasUrl: string().url().optional(),
+  fileCount: number().int().nonnegative(),
+  size: number().int().nonnegative(),
+  files: array(hostedSiteDownloadFileSchema),
 });
 
-const hostedSiteDeploymentSummarySchema = z.object({
-  deploymentId: z.string().uuid(),
-  deploymentVersion: z.number().int().positive().nullable(),
+const hostedSiteDeploymentSummarySchema = object({
+  deploymentId: string().uuid(),
+  deploymentVersion: number().int().positive().nullable(),
   artifactUrl: artifactUrlSchema.nullable(),
-  status: z.enum(["uploading", "ready", "failed", "deleted"]),
-  isActive: z.boolean(),
-  createdAt: z.string().datetime(),
-  readyAt: z.string().datetime().nullable(),
+  status: zEnum(["uploading", "ready", "failed", "deleted"]),
+  isActive: boolean(),
+  createdAt: string().datetime(),
+  readyAt: string().datetime().nullable(),
 });
 
-export const hostedSiteDeploymentsResponseSchema = z.object({
-  siteId: z.string().uuid(),
+export const hostedSiteDeploymentsResponseSchema = object({
+  siteId: string().uuid(),
   site: hostedSiteSlugSchema,
   publicSlug: hostedSitePublicSlugSchema,
-  aliasUrl: z.string().url().nullable(),
-  activeDeploymentId: z.string().uuid().nullable(),
-  activeDeploymentVersion: z.number().int().positive().nullable(),
-  deployments: z.array(hostedSiteDeploymentSummarySchema),
+  aliasUrl: string().url().nullable(),
+  activeDeploymentId: string().uuid().nullable(),
+  activeDeploymentVersion: number().int().positive().nullable(),
+  deployments: array(hostedSiteDeploymentSummarySchema),
 });
 
-export const hostedSiteDeleteResponseSchema = z.object({
-  siteId: z.string().uuid(),
+export const hostedSiteDeleteResponseSchema = object({
+  siteId: string().uuid(),
   // The --site value that restores the site when redeployed.
   site: hostedSiteSlugSchema,
   publicSlug: hostedSitePublicSlugSchema,
-  aliasUrl: z.string().url(),
+  aliasUrl: string().url(),
   // Every site and version URL that no longer serves the site.
-  offlineUrls: z.array(z.string().url()),
+  offlineUrls: array(string().url()),
 });
 
 const creationRoute = {
@@ -333,10 +340,10 @@ export const hostContract = c.router({
   resolveAlias: {
     method: "GET",
     path: "/api/host/aliases/:publicSlug",
-    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
-    query: z.object({ publicBrand: z.enum(["vm0", "okou"]) }),
+    pathParams: object({ publicSlug: hostedSitePublicSlugSchema }),
+    query: object({ publicBrand: zEnum(["vm0", "okou"]) }),
     responses: {
-      200: z.object({ pointer: hostedSiteDeliveryPointerSchema.nullable() }),
+      200: object({ pointer: hostedSiteDeliveryPointerSchema.nullable() }),
       400: apiErrorSchema,
     },
     summary: "Resolve a published website address",
@@ -344,8 +351,8 @@ export const hostContract = c.router({
   siteUrl: {
     method: "GET",
     path: "/api/host/sites/:publicSlug/url",
-    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
-    query: z.object({ hostname: z.string().max(253) }),
+    pathParams: object({ publicSlug: hostedSitePublicSlugSchema }),
+    query: object({ hostname: string().max(253) }),
     headers: authHeadersSchema,
     responses: {
       200: hostedSiteUrlSchema,
@@ -359,11 +366,11 @@ export const hostContract = c.router({
   siteUrlAvailability: {
     method: "GET",
     path: "/api/host/sites/:siteId/url-availability",
-    pathParams: z.object({ siteId: z.string().uuid() }),
-    query: z.object({ publicSlug: hostedSiteUrlSlugSchema }),
+    pathParams: object({ siteId: string().uuid() }),
+    query: object({ publicSlug: hostedSiteUrlSlugSchema }),
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ available: z.boolean() }),
+      200: object({ available: boolean() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -374,8 +381,8 @@ export const hostContract = c.router({
   updateSiteUrl: {
     method: "PATCH",
     path: "/api/host/sites/:siteId/url",
-    pathParams: z.object({ siteId: z.string().uuid() }),
-    body: z.object({
+    pathParams: object({ siteId: string().uuid() }),
+    body: object({
       publicSlug: hostedSiteUrlSlugSchema,
       expectedPublicSlug: hostedSitePublicSlugSchema,
     }),
@@ -393,15 +400,15 @@ export const hostContract = c.router({
   authorizeSiteSession: {
     method: "POST",
     path: "/api/host/sites/:siteId/session-authorizations",
-    pathParams: z.object({ siteId: z.uuid() }),
+    pathParams: object({ siteId: uuid() }),
     headers: authHeadersSchema,
-    body: z.object({
-      origin: z.url(),
+    body: object({
+      origin: url(),
       codeChallenge: hostedSiteAuthProofSchema,
       state: hostedSiteAuthProofSchema,
     }),
     responses: {
-      200: z.object({ callbackUrl: z.url() }),
+      200: object({ callbackUrl: url() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -412,10 +419,10 @@ export const hostContract = c.router({
   exchangeSiteSession: {
     method: "POST",
     path: "/api/host/sites/:siteId/sessions",
-    pathParams: z.object({ siteId: z.uuid() }),
+    pathParams: object({ siteId: uuid() }),
     headers: authHeadersSchema,
-    body: z.object({
-      origin: z.url(),
+    body: object({
+      origin: url(),
       code: hostedSiteAuthCodeSchema,
       codeVerifier: hostedSiteAuthProofSchema,
     }),
@@ -430,14 +437,14 @@ export const hostContract = c.router({
   sitePreview: {
     method: "GET",
     path: "/api/host/sites/:publicSlug/preview",
-    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
-    query: z.object({ hostname: z.string().max(253) }),
+    pathParams: object({ publicSlug: hostedSitePublicSlugSchema }),
+    query: object({ hostname: string().max(253) }),
     headers: authHeadersSchema,
     responses: {
-      200: z.object({
-        url: z.url(),
-        expiresAt: z.iso.datetime().nullable(),
-        previewImageUrl: z.url().optional(),
+      200: object({
+        url: url(),
+        expiresAt: iso.datetime().nullable(),
+        previewImageUrl: url().optional(),
       }),
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -450,7 +457,7 @@ export const hostContract = c.router({
   siteVisibility: {
     method: "GET",
     path: "/api/host/sites/:siteId/visibility",
-    pathParams: z.object({ siteId: z.uuid() }),
+    pathParams: object({ siteId: uuid() }),
     headers: authHeadersSchema,
     responses: {
       200: hostedSiteVisibilityStatusSchema,
@@ -463,11 +470,11 @@ export const hostContract = c.router({
   updateSiteVisibility: {
     method: "PATCH",
     path: "/api/host/sites/:siteId/visibility",
-    pathParams: z.object({ siteId: z.uuid() }),
+    pathParams: object({ siteId: uuid() }),
     headers: authHeadersSchema,
-    body: z.object({
+    body: object({
       visibility: hostedSiteVisibilitySchema,
-      expectedRevision: z.uuid().nullable(),
+      expectedRevision: uuid().nullable(),
     }),
     responses: {
       200: hostedSiteVisibilityStatusSchema,
@@ -482,7 +489,7 @@ export const hostContract = c.router({
   siteBanner: {
     method: "GET",
     path: "/api/host/sites/:siteId/branding",
-    pathParams: z.object({ siteId: z.uuid() }),
+    pathParams: object({ siteId: uuid() }),
     headers: authHeadersSchema,
     responses: {
       200: hostedSiteBannerStatusSchema,
@@ -495,11 +502,11 @@ export const hostContract = c.router({
   updateSiteBanner: {
     method: "PATCH",
     path: "/api/host/sites/:siteId/branding",
-    pathParams: z.object({ siteId: z.uuid() }),
+    pathParams: object({ siteId: uuid() }),
     headers: authHeadersSchema,
-    body: z.object({
-      showBanner: z.boolean(),
-      expectedRevision: z.uuid().nullable(),
+    body: object({
+      showBanner: boolean(),
+      expectedRevision: uuid().nullable(),
     }),
     responses: {
       200: hostedSiteBannerStatusSchema,
@@ -515,8 +522,8 @@ export const hostContract = c.router({
     method: "GET",
     path: "/api/host/sites/:siteId/access",
     headers: authHeadersSchema,
-    pathParams: z.object({ siteId: z.uuid() }),
-    query: z.object({ origin: z.string().url() }),
+    pathParams: object({ siteId: uuid() }),
+    query: object({ origin: string().url() }),
     responses: {
       200: hostedSiteAccessDecisionSchema,
       400: apiErrorSchema,
@@ -527,10 +534,10 @@ export const hostContract = c.router({
   downloadAuthorization: {
     method: "GET",
     path: "/api/host/downloads/:token",
-    pathParams: z.object({ token: z.string().regex(/^[a-f0-9]{48}$/u) }),
-    query: z.object({
-      deploymentId: z.uuid(),
-      path: z.string().startsWith("/").max(1024),
+    pathParams: object({ token: string().regex(/^[a-f0-9]{48}$/u) }),
+    query: object({
+      deploymentId: uuid(),
+      path: string().startsWith("/").max(1024),
     }),
     responses: {
       200: hostedSiteDownloadAuthorizationSchema,
@@ -543,23 +550,23 @@ export const hostContract = c.router({
     method: "GET",
     path: "/api/host/delivery/:siteId/:deploymentId",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      siteId: z.string().uuid().toLowerCase(),
-      deploymentId: z.string().uuid().toLowerCase(),
+    pathParams: object({
+      siteId: string().uuid().toLowerCase(),
+      deploymentId: string().uuid().toLowerCase(),
     }),
-    query: z.object({
+    query: object({
       alias: hostedSitePublicSlugSchema,
       publicSlug: hostedSitePublicSlugSchema,
-      publicBrand: z.enum(["vm0", "okou"]),
-      prefix: z.string().startsWith("sites/").max(1024),
-      manifestKey: z.string().startsWith("sites/").max(1024),
-      presentation: z.literal("banner").optional(),
+      publicBrand: zEnum(["vm0", "okou"]),
+      prefix: string().startsWith("sites/").max(1024),
+      manifestKey: string().startsWith("sites/").max(1024),
+      presentation: literal("banner").optional(),
     }),
     responses: {
       200: hostedSiteAccessDecisionSchema,
       400: apiErrorSchema,
       // Database/invariant failures reach the API's generic error boundary.
-      500: z.object({ error: z.string() }),
+      500: object({ error: string() }),
     },
     summary: "Check the current authority of a public hosted deployment",
   },
@@ -571,11 +578,11 @@ export const hostContract = c.router({
   complete: {
     method: "POST",
     path: "/api/host/deployments/:deploymentId/complete",
-    pathParams: z.object({
-      deploymentId: z.string().uuid(),
+    pathParams: object({
+      deploymentId: string().uuid(),
     }),
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: hostedSiteCompleteResponseSchema,
       400: apiErrorSchema,
@@ -591,14 +598,14 @@ export const hostContract = c.router({
   files: {
     method: "GET",
     path: "/api/host/sites/:publicSlug/files",
-    pathParams: z.object({
+    pathParams: object({
       publicSlug: hostedSitePublicSlugSchema,
     }),
-    query: z.object({
+    query: object({
       // Pinned CLIs and historical sites retain this selector until #35240's
       // data/consumer retirement gates. Current CLI selects publication URLs.
-      version: z.coerce.number().int().positive().optional(),
-      hostname: z.string().min(1).max(253).optional(),
+      version: coerce.number().int().positive().optional(),
+      hostname: string().min(1).max(253).optional(),
     }),
     headers: authHeadersSchema,
     responses: {
@@ -617,7 +624,7 @@ export const hostContract = c.router({
     // artifact mapping and client drain documented in #35240.
     method: "GET",
     path: "/api/host/sites/:site/deployments",
-    pathParams: z.object({
+    pathParams: object({
       site: hostedSiteSlugSchema,
     }),
     headers: authHeadersSchema,
@@ -634,9 +641,9 @@ export const hostContract = c.router({
   updateSiteTitle: {
     method: "PATCH",
     path: "/api/host/sites/:publicSlug/title",
-    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
+    pathParams: object({ publicSlug: hostedSitePublicSlugSchema }),
     headers: authHeadersSchema,
-    body: z.object({ title: hostedSiteTitleSchema }),
+    body: object({ title: hostedSiteTitleSchema }),
     responses: {
       200: hostedSiteTitleResponseSchema,
       400: apiErrorSchema,
@@ -651,7 +658,7 @@ export const hostContract = c.router({
   deleteSite: {
     method: "DELETE",
     path: "/api/host/sites/:publicSlug",
-    pathParams: z.object({
+    pathParams: object({
       publicSlug: hostedSitePublicSlugSchema,
     }),
     headers: authHeadersSchema,
@@ -671,24 +678,24 @@ export const hostContract = c.router({
 });
 
 export type HostContract = typeof hostContract;
-export type HostedSiteTitleResponse = z.infer<
+export type HostedSiteTitleResponse = zInfer<
   typeof hostedSiteTitleResponseSchema
 >;
-export type HostedSitePrepareRequest = z.infer<
+export type HostedSitePrepareRequest = zInfer<
   typeof hostedSitePrepareRequestSchema
 >;
-export type HostedSitePrepareResponse = z.infer<
+export type HostedSitePrepareResponse = zInfer<
   typeof hostedSitePrepareResponseSchema
 >;
-export type HostedSiteCompleteResponse = z.infer<
+export type HostedSiteCompleteResponse = zInfer<
   typeof hostedSiteCompleteResponseSchema
 >;
-export type HostedSiteFilesResponse = z.infer<
+export type HostedSiteFilesResponse = zInfer<
   typeof hostedSiteFilesResponseSchema
 >;
-export type HostedSiteDeploymentsResponse = z.infer<
+export type HostedSiteDeploymentsResponse = zInfer<
   typeof hostedSiteDeploymentsResponseSchema
 >;
-export type HostedSiteDeleteResponse = z.infer<
+export type HostedSiteDeleteResponse = zInfer<
   typeof hostedSiteDeleteResponseSchema
 >;

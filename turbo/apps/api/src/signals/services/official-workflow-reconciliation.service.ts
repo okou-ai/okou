@@ -50,7 +50,7 @@ import {
   WithSubquery,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import * as z from "zod";
+import { boolean, object, string } from "zod";
 
 import { nowDate, nowDateSql, timestampWithoutTimeZone } from "../../lib/time";
 import {
@@ -4007,9 +4007,9 @@ const finalizeDormantMaterialization$ = command(
       nowDate(),
     );
     const [result] = parseRawRows(
-      z.object({
-        exactTimestamp: z.boolean(),
-        workflowId: z.string().uuid().nullable(),
+      object({
+        exactTimestamp: boolean(),
+        workflowId: string().uuid().nullable(),
       }),
       await db.execute(query),
     );
@@ -4297,7 +4297,7 @@ const discardDormantMaterialization$ = command(
       return false;
     }
     const [result] = parseRawRows(
-      z.object({ deleted: z.boolean() }),
+      object({ deleted: boolean() }),
       await db.execute(
         discardedMaterializationDeleteStatement(
           args,

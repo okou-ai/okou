@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import * as z from "zod";
+import { object, string } from "zod";
 import { desktopResponseTransforms } from "../client-transforms/desktop";
 import { compareRuntimeApiSchemas } from "./compat";
 import {
@@ -49,8 +49,8 @@ warn. Owners: ${runtimeApiRouteOwners.join(", ")}.
 
 class CliUsageError extends Error {}
 
-const desktopFloorFileSchema = z.object({
-  minimumSupportedVersion: z.string().nullable(),
+const desktopFloorFileSchema = object({
+  minimumSupportedVersion: string().nullable(),
 });
 
 /** Runs the runtime API schema CLI and returns its exit code. */

@@ -1,24 +1,24 @@
-import * as z from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 /**
  * Variable response (includes value - key difference from secrets)
  */
-export const variableResponseSchema = z.object({
-  id: z.uuid(),
-  name: z.string(),
-  value: z.string(),
-  description: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+export const variableResponseSchema = object({
+  id: uuid(),
+  name: string(),
+  value: string(),
+  description: string().nullable(),
+  createdAt: string(),
+  updatedAt: string(),
 });
 
-export type VariableResponse = z.infer<typeof variableResponseSchema>;
+export type VariableResponse = zInfer<typeof variableResponseSchema>;
 
 /**
  * List variables response
  */
-export const variableListResponseSchema = z.object({
-  variables: z.array(variableResponseSchema),
+export const variableListResponseSchema = object({
+  variables: array(variableResponseSchema),
 });
 
-export type VariableListResponse = z.infer<typeof variableListResponseSchema>;
+export type VariableListResponse = zInfer<typeof variableListResponseSchema>;

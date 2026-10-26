@@ -17,12 +17,12 @@ import {
   isNull,
   lte,
 } from "drizzle-orm";
-import * as z from "zod";
+import { enum as zEnum, type infer as zInfer } from "zod";
 
 import { command } from "ccstate";
 import { db$ } from "../external/db";
 
-export const discordExportKindSchema = z.enum([
+export const discordExportKindSchema = zEnum([
   "installations",
   "connections",
   "dm-preferences",
@@ -34,7 +34,7 @@ export const discordExportKindSchema = z.enum([
   "personal-consents",
 ]);
 
-type DiscordExportKind = z.infer<typeof discordExportKindSchema>;
+type DiscordExportKind = zInfer<typeof discordExportKindSchema>;
 
 interface DiscordExportArgs {
   readonly userId: string;

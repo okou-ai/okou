@@ -35,7 +35,7 @@ import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command } from "ccstate";
 import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";
-import * as z from "zod";
+import { object, string, type infer as zInfer } from "zod";
 
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
@@ -281,28 +281,24 @@ async function measureChatCallbackPreCreateTiming<T>(
   return await timing.measure(actionType, spanKind, operation);
 }
 
-const chatCallbackPayloadSchema = z
-  .object({
-    threadId: z.string(),
-    agentId: z.string(),
-    slackDelivery: z
-      .object({
-        workspaceId: z.string().optional(),
-        channelId: z.string(),
-        threadTs: z.string(),
-        routeThreadTs: z.string().optional(),
-      })
-      .optional(),
-    feishuDelivery: feishuDeliveryTargetSchema.optional(),
-    teamsDelivery: teamsDeliveryTargetSchema.optional(),
-    discordDelivery: discordDeliveryTargetSchema.optional(),
-    wechatDelivery: wechatDeliveryTargetSchema.optional(),
-    telegramDelivery: telegramDeliveryTargetSchema.optional(),
-    agentphoneDelivery: agentphoneDeliveryTargetSchema.optional(),
-  })
-  .passthrough();
+const chatCallbackPayloadSchema = object({
+  threadId: string(),
+  agentId: string(),
+  slackDelivery: object({
+    workspaceId: string().optional(),
+    channelId: string(),
+    threadTs: string(),
+    routeThreadTs: string().optional(),
+  }).optional(),
+  feishuDelivery: feishuDeliveryTargetSchema.optional(),
+  teamsDelivery: teamsDeliveryTargetSchema.optional(),
+  discordDelivery: discordDeliveryTargetSchema.optional(),
+  wechatDelivery: wechatDeliveryTargetSchema.optional(),
+  telegramDelivery: telegramDeliveryTargetSchema.optional(),
+  agentphoneDelivery: agentphoneDeliveryTargetSchema.optional(),
+}).passthrough();
 
-type ChatCallbackPayload = z.infer<typeof chatCallbackPayloadSchema>;
+type ChatCallbackPayload = zInfer<typeof chatCallbackPayloadSchema>;
 
 interface AssistantEventItem {
   readonly sequenceNumber: number;

@@ -2,7 +2,14 @@ import {
   wechatUpdatesSchema,
   wechatMessageSchema,
 } from "@okouai/api-contracts/contracts/wechat-protocol";
-import * as z from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+} from "zod";
 import { parseWechatJson } from "./wechat-json";
 export const WECHAT_ORIGIN = "https://ilinkai.weixin.qq.com";
 const REQUEST_TIMEOUT_MS = 40_000;
@@ -27,9 +34,9 @@ const baseInfo = Object.freeze({
   channel_version: "2.4.10",
   bot_agent: "Okou",
 });
-const resultSchema = z.object({
-  ret: z.number().optional(),
-  errcode: z.number().optional(),
+const resultSchema = object({
+  ret: number().optional(),
+  errcode: number().optional(),
 });
 export class WechatSessionExpiredError extends Error {}
 export class WechatRequestError extends Error {
@@ -109,9 +116,9 @@ async function requestWechat(
   }
   return data;
 }
-const qrSchema = z.object({
-  qrcode: z.string().min(1),
-  qrcode_img_content: z.string().min(1),
+const qrSchema = object({
+  qrcode: string().min(1),
+  qrcode_img_content: string().min(1),
 });
 export async function createWechatQr(signal: AbortSignal) {
   return qrSchema.parse(
@@ -124,8 +131,8 @@ export async function createWechatQr(signal: AbortSignal) {
     ),
   );
 }
-const qrStatusSchema = z.object({
-  status: z.enum([
+const qrStatusSchema = object({
+  status: zEnum([
     "wait",
     "scaned",
     "need_verifycode",
@@ -135,11 +142,11 @@ const qrStatusSchema = z.object({
     "binded_redirect",
     "confirmed",
   ]),
-  bot_token: z.string().optional(),
-  ilink_bot_id: z.string().optional(),
-  ilink_user_id: z.string().optional(),
-  baseurl: z.string().optional(),
-  redirect_host: z.string().optional(),
+  bot_token: string().optional(),
+  ilink_bot_id: string().optional(),
+  ilink_user_id: string().optional(),
+  baseurl: string().optional(),
+  redirect_host: string().optional(),
 });
 export async function pollWechatQr(
   baseUrl: string,
@@ -163,8 +170,7 @@ export async function pollWechatQr(
 }
 const providerUpdatesSchema = wechatUpdatesSchema.extend({
   // One malformed provider input must not discard the rest of its batch.
-  msgs: z
-    .array(z.unknown())
+  msgs: array(zUnknown())
     .transform((values) => {
       return values.flatMap((value) => {
         const parsed = wechatMessageSchema.safeParse(value);
@@ -206,8 +212,8 @@ export async function getWechatUpdates(
     throw error;
   }
 }
-const wechatConfigSchema = z.object({
-  typing_ticket: z.string().optional(),
+const wechatConfigSchema = object({
+  typing_ticket: string().optional(),
 });
 
 export async function getWechatTypingTicket(
@@ -259,8 +265,8 @@ export async function sendWechatTyping(
   );
 }
 
-export const wechatSendReceiptSchema = z.object({
-  message_id: z.string().optional(),
+export const wechatSendReceiptSchema = object({
+  message_id: string().optional(),
 });
 export async function sendWechatText(
   args: {

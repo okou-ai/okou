@@ -51,7 +51,7 @@ export const connectDiscordAccount$ = command(
     signal.throwIfAborted();
     const data = await get(discordOrgData$);
     signal.throwIfAborted();
-    if (!data?.isConnected) {
+    if (!data.isConnected) {
       return;
     }
     const params = new URLSearchParams({ status: "connected" });

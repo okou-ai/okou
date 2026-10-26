@@ -28,10 +28,14 @@ import {
 } from "../external/s3";
 import { settle } from "../utils";
 import { hostedLinkOrigin } from "../../lib/link-layout";
+import { nowDate } from "../../lib/time";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
+import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
+import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
+import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
 import {
   copySharedThreadArtifacts$,
   SharedThreadArtifactUnavailable,
@@ -48,20 +52,21 @@ type SnapshotIdentity = Pick<
   readonly linkLayoutSegment: string;
 };
 
+interface SharedThreadHostedSnapshotArgs {
+  readonly viewerId?: string;
+  readonly record: Pick<
+    Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
+    "publicBrand" | "threadId" | "publicToken" | "targetKind" | "targetId"
+  >;
+}
+
 /** Match the delivery Worker's authority without reopening the owner's live resource. */
-export const resolveSharedThreadHostedDownload$ = command(
+const authorizedSharedThreadHostedSnapshot$ = command(
   async (
     { get, set },
-    args: {
-      readonly publicSlug: string;
-      readonly viewerId?: string;
-      readonly record: Pick<
-        Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
-        "publicBrand" | "threadId" | "publicToken" | "targetKind" | "targetId"
-      >;
-    },
+    args: SharedThreadHostedSnapshotArgs,
     signal: AbortSignal,
-  ): Promise<HostedSiteFilesResponse | null> => {
+  ) => {
     const { record } = args;
     const stored = await settle(
       get(
@@ -108,13 +113,82 @@ export const resolveSharedThreadHostedDownload$ = command(
     ) {
       return null;
     }
+    return { policy, target };
+  },
+);
+
+export const resolveSharedThreadHostedPreview$ = command(
+  async (
+    { set },
+    args: { readonly publicSlug: string; readonly viewerId?: string },
+    signal: AbortSignal,
+  ) => {
+    const record = await set(
+      readArtifactDeliveryRecord$,
+      { layout: "current", kind: "html", alias: args.publicSlug },
+      signal,
+    );
+    if (record?.kind !== "thread-resource" || record.targetKind !== "html") {
+      return null;
+    }
+    const snapshot = await set(
+      authorizedSharedThreadHostedSnapshot$,
+      { record, viewerId: args.viewerId },
+      signal,
+    );
+    if (!snapshot) {
+      return null;
+    }
+    const { policy, target } = snapshot;
+    const preview = await set(
+      createHostedPreviewGrant$,
+      {
+        siteId: target.siteId,
+        deploymentId: target.id,
+        layout: linkLayoutFromSegment(policy.publicBrand),
+        snapshotId: target.snapshotId,
+      },
+      signal,
+    );
+    const cover = policy.previews?.[record.publicToken];
+    const image = cover ? policy.resources[cover.token] : undefined;
+    const resolvedImage =
+      image?.kind === "file"
+        ? await set(
+            resolveArtifactPreviewUrl$,
+            {
+              bucket: privateArtifactsBucket(),
+              key: image.key,
+              signingDate: nowDate(),
+            },
+            signal,
+          )
+        : null;
+    return { ...preview, previewImageUrl: resolvedImage?.url };
+  },
+);
+
+export const resolveSharedThreadHostedDownload$ = command(
+  async (
+    { set },
+    args: SharedThreadHostedSnapshotArgs & { readonly publicSlug: string },
+    signal: AbortSignal,
+  ): Promise<HostedSiteFilesResponse | null> => {
+    const snapshot = await set(
+      authorizedSharedThreadHostedSnapshot$,
+      args,
+      signal,
+    );
+    if (!snapshot) {
+      return null;
+    }
     return await set(
       signSharedThreadHostedDownload$,
       {
         publicSlug: args.publicSlug,
         viewerId: args.viewerId,
-        layoutSegment: record.publicBrand,
-        target,
+        layoutSegment: args.record.publicBrand,
+        target: snapshot.target,
       },
       signal,
     );

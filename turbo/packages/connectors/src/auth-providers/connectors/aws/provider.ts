@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { literal, object, string } from "zod";
 
 import type {
   ExternalCodeConnectorAuthProvider,
@@ -15,14 +15,14 @@ import { getAwsCallerIdentity, type AwsCallerIdentity } from "./sts";
 
 const AWS_EXTERNAL_CODE_SESSION_EXPIRES_IN_SECONDS = 10 * 60;
 
-const awsExternalCodeProviderStateSchema = z.object({
-  version: z.literal(1),
-  state: z.string().min(1).max(128),
-  codeVerifier: z.string().min(43).max(128),
-  dpopKey: z.string().min(1),
-  redirectUri: z.string().url(),
-  signinRegion: z.string().regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/),
-  runtimeRegion: z.string().regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/),
+const awsExternalCodeProviderStateSchema = object({
+  version: literal(1),
+  state: string().min(1).max(128),
+  codeVerifier: string().min(43).max(128),
+  dpopKey: string().min(1),
+  redirectUri: string().url(),
+  signinRegion: string().regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/),
+  runtimeRegion: string().regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/),
 });
 
 function createAwsExternalCodeGrantProvider(): ExternalCodeConnectorAuthProvider<

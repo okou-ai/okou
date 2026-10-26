@@ -1,4 +1,13 @@
-import * as z from "zod";
+import {
+  array,
+  discriminatedUnion,
+  int,
+  literal,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
+
 import {
   vncKdcTransportMetadataSchema,
   vncKdcTransportSchema,
@@ -25,11 +34,10 @@ function validPart(value: string) {
   );
 }
 
-export const kerberosPrincipalSchema = z
-  .object({
-    realm: z.string().max(255).refine(validPart),
-    components: z.array(z.string().max(255).refine(validPart)).min(1).max(8),
-  })
+export const kerberosPrincipalSchema = object({
+  realm: string().max(255).refine(validPart),
+  components: array(string().max(255).refine(validPart)).min(1).max(8),
+})
   .strict()
   .refine((value) => {
     return (
@@ -38,7 +46,7 @@ export const kerberosPrincipalSchema = z
       }, 0) <= 1024
     );
   });
-export type KerberosPrincipal = z.infer<typeof kerberosPrincipalSchema>;
+export type KerberosPrincipal = zInfer<typeof kerberosPrincipalSchema>;
 
 export function sameKerberosPrincipal(
   left: KerberosPrincipal,
@@ -59,13 +67,8 @@ export const kerberosServicePrincipalSchema = kerberosPrincipalSchema.refine(
   },
 );
 
-const materialSchema = z
-  .string()
-  .min(4)
-  .max(KERBEROS_INPUT_MAX_BASE64)
-  .base64();
-const passwordSchema = z
-  .string()
+const materialSchema = string().min(4).max(KERBEROS_INPUT_MAX_BASE64).base64();
+const passwordSchema = string()
   .min(1)
   .max(1023)
   .refine((value) => {
@@ -79,31 +82,25 @@ const passwordSchema = z
     );
   });
 
-export const vncKerberosAuthenticationSchema = z.discriminatedUnion("method", [
-  z
-    .object({
-      method: z.literal("qemu_kerberos_ticket"),
-      initiator: kerberosPrincipalSchema,
-      service: kerberosServicePrincipalSchema,
-      ticketCache: materialSchema,
-    })
-    .strict(),
-  z
-    .object({
-      method: z.literal("qemu_kerberos_keytab"),
-      initiator: kerberosPrincipalSchema,
-      keytab: materialSchema,
-    })
-    .strict(),
-  z
-    .object({
-      method: z.literal("qemu_kerberos_password"),
-      initiator: kerberosPrincipalSchema,
-      password: passwordSchema,
-    })
-    .strict(),
+export const vncKerberosAuthenticationSchema = discriminatedUnion("method", [
+  object({
+    method: literal("qemu_kerberos_ticket"),
+    initiator: kerberosPrincipalSchema,
+    service: kerberosServicePrincipalSchema,
+    ticketCache: materialSchema,
+  }).strict(),
+  object({
+    method: literal("qemu_kerberos_keytab"),
+    initiator: kerberosPrincipalSchema,
+    keytab: materialSchema,
+  }).strict(),
+  object({
+    method: literal("qemu_kerberos_password"),
+    initiator: kerberosPrincipalSchema,
+    password: passwordSchema,
+  }).strict(),
 ]);
-export type VncKerberosAuthentication = z.infer<
+export type VncKerberosAuthentication = zInfer<
   typeof vncKerberosAuthenticationSchema
 >;
 export type VncKerberosMethod = VncKerberosAuthentication["method"];
@@ -119,16 +116,14 @@ export function isVncKerberosMethod(
 }
 
 export const kerberosKdcTransportSchema = vncKdcTransportSchema;
-export const kerberosKdcSchema = z
-  .object({
-    host: z.string().min(1).max(253),
-    port: z.int().min(1).max(65_535),
-    transport: kerberosKdcTransportSchema,
-    ticketLifetimeSeconds: z.int().min(1).max(7200).default(1200),
-    renewableLifetimeSeconds: z.int().min(0).max(7200).default(7200),
-  })
-  .strict();
-export type KerberosKdc = z.infer<typeof kerberosKdcSchema>;
+export const kerberosKdcSchema = object({
+  host: string().min(1).max(253),
+  port: int().min(1).max(65_535),
+  transport: kerberosKdcTransportSchema,
+  ticketLifetimeSeconds: int().min(1).max(7200).default(1200),
+  renewableLifetimeSeconds: int().min(0).max(7200).default(7200),
+}).strict();
+export type KerberosKdc = zInfer<typeof kerberosKdcSchema>;
 
 export const kerberosKdcMetadataSchema = kerberosKdcSchema.extend({
   transport: vncKdcTransportMetadataSchema,

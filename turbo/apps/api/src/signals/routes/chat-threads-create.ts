@@ -6,8 +6,6 @@ import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
 import { authRoute } from "../auth/auth-route";
@@ -32,7 +30,6 @@ import {
   validateCodexServiceTier,
 } from "../services/model-selection.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
@@ -111,16 +108,11 @@ const validateInitialRemoteAccess$ = command(
     if (args.tokenType !== "session") {
       return resourceUnavailable("Remote access selection is not available");
     }
-    const featureContext = await get(
-      userFeatureSwitchContext(args.owner.orgId, args.owner.userId),
-    );
-    signal.throwIfAborted();
     if (
       args.overrides.some((item) => {
         return item.protocol === "vnc";
       }) &&
-      (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext) ||
-        !(await hasCurrentVncMembership(get(clerk$), args.owner, signal)))
+      !(await hasCurrentVncMembership(get(clerk$), args.owner, signal))
     ) {
       return badRequestMessage("VNC access is not available");
     }

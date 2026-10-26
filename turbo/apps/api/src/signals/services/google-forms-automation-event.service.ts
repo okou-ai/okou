@@ -16,7 +16,8 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";
-import * as z from "zod";
+import { literal, object, string, type infer as zInfer } from "zod";
+
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
@@ -50,20 +51,20 @@ const log = logger("api:google-forms-automation-event");
 
 const WATCH_RENEWAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-const pubSubPushSchema = z.object({
-  message: z.object({
-    messageId: z.string(),
-    attributes: z.object({
-      formId: z.string(),
-      watchId: z.string(),
-      eventType: z.literal("RESPONSES"),
+const pubSubPushSchema = object({
+  message: object({
+    messageId: string(),
+    attributes: object({
+      formId: string(),
+      watchId: string(),
+      eventType: literal("RESPONSES"),
     }),
-    data: z.string().optional(),
+    data: string().optional(),
   }),
-  subscription: z.string().optional(),
+  subscription: string().optional(),
 });
 
-type GoogleFormResponse = z.infer<typeof googleFormResponseSchema>;
+type GoogleFormResponse = zInfer<typeof googleFormResponseSchema>;
 
 interface PubSubOidcClaims {
   readonly email: string | null;

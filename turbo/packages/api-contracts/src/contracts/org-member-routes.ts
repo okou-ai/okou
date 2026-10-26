@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { literal, object, string, union, uuid } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -15,17 +15,17 @@ import {
 
 const c = initContract();
 
-const invitationPurchaseConfirmResponseSchema = z.union([
+const invitationPurchaseConfirmResponseSchema = union([
   orgMessageResponseSchema,
-  z.object({
-    status: z.literal("pending_payment"),
-    hostedInvoiceUrl: z.string().url(),
-    message: z.string().optional(),
+  object({
+    status: literal("pending_payment"),
+    hostedInvoiceUrl: string().url(),
+    message: string().optional(),
   }),
-  z.object({
-    status: z.literal("checkout_required"),
-    checkoutUrl: z.string().url(),
-    message: z.string().optional(),
+  object({
+    status: literal("checkout_required"),
+    checkoutUrl: string().url(),
+    message: string().optional(),
   }),
 ]);
 
@@ -37,8 +37,8 @@ export const orgMembersContract = c.router({
     method: "GET",
     path: "/api/org/members",
     headers: authHeadersSchema,
-    query: z.object({
-      view: z.literal("members").optional(),
+    query: object({
+      view: literal("members").optional(),
     }),
     responses: {
       200: orgMembersResponseSchema,
@@ -125,10 +125,10 @@ export const orgInviteContract = c.router({
   confirmPurchase: {
     method: "POST",
     path: "/api/org/invite/purchase/:purchaseId/confirm",
-    pathParams: z.object({ purchaseId: z.uuid() }),
+    pathParams: object({ purchaseId: uuid() }),
     headers: authHeadersSchema,
-    body: z.object({
-      paymentMethodPreviewToken: z.string().min(1).optional(),
+    body: object({
+      paymentMethodPreviewToken: string().min(1).optional(),
     }),
     responses: {
       200: invitationPurchaseConfirmResponseSchema,

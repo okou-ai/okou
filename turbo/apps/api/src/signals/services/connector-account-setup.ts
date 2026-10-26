@@ -18,7 +18,7 @@ import {
   customConnectorDefinitionFieldCompatibility,
   customConnectorAccountStorageIsCompatible,
 } from "./custom-connector-credential-access.service";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 interface AccountSetupContract {
   readonly id: string;
@@ -40,7 +40,7 @@ interface AccountSetupInput extends AccountSetupContract {
   readonly definitionFields: unknown;
 }
 
-type ConnectorAccountSetup = z.infer<
+type ConnectorAccountSetup = zInfer<
   typeof connectorAccountFieldMetadataSchema
 > & {
   readonly reconnectReason:

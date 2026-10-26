@@ -1,7 +1,19 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { db$, writeDb$ } from "../external/db";
@@ -12,7 +24,7 @@ import {
 } from "../external/feishu-client";
 import { settle } from "../utils";
 
-function parseAccessData<T>(schema: z.ZodType<T>, data: unknown): T {
+function parseAccessData<T>(schema: ZodType<T>, data: unknown): T {
   const parsed = schema.safeParse(data);
   if (!parsed.success) {
     throw new FeishuApiError(
@@ -30,30 +42,30 @@ function denied(): never {
   );
 }
 
-const chatSchema = z.object({
-  chat_mode: z.enum(["group", "topic", "p2p"]),
-  owner_id: z.string().optional(),
-  user_manager_id_list: z.array(z.string()).optional(),
-  moderation_permission: z
-    .enum(["all_members", "only_owner", "moderator_list"])
-    .optional(),
+const chatSchema = object({
+  chat_mode: zEnum(["group", "topic", "p2p"]),
+  owner_id: string().optional(),
+  user_manager_id_list: array(string()).optional(),
+  moderation_permission: zEnum([
+    "all_members",
+    "only_owner",
+    "moderator_list",
+  ]).optional(),
 });
-const membersSchema = z.object({
-  items: z.array(
-    z.object({ member_id: z.string(), member_id_type: z.literal("open_id") }),
+const membersSchema = object({
+  items: array(
+    object({ member_id: string(), member_id_type: literal("open_id") }),
   ),
-  has_more: z.boolean(),
-  page_token: z.string().optional(),
+  has_more: boolean(),
+  page_token: string().optional(),
 });
-const moderationSchema = z.object({
-  moderation_setting: z.enum(["all_members", "only_owner", "moderator_list"]),
-  items: z
-    .array(
-      z.object({ user_id: z.string(), user_id_type: z.literal("open_id") }),
-    )
-    .optional(),
-  has_more: z.boolean().optional(),
-  page_token: z.string().optional(),
+const moderationSchema = object({
+  moderation_setting: zEnum(["all_members", "only_owner", "moderator_list"]),
+  items: array(
+    object({ user_id: string(), user_id_type: literal("open_id") }),
+  ).optional(),
+  has_more: boolean().optional(),
+  page_token: string().optional(),
 });
 
 async function readAccessData(
@@ -111,7 +123,7 @@ async function readAccessData(
     );
   }
   const body = parseAccessData(
-    z.object({ code: z.number(), data: z.unknown().optional() }),
+    object({ code: number(), data: zUnknown().optional() }),
     decoded.value,
   );
   if (body.code !== 0) {
@@ -169,7 +181,7 @@ async function requireFeishuChatPosting(
     token: string;
     base: string;
     openId: string;
-    chat: z.infer<typeof chatSchema>;
+    chat: zInfer<typeof chatSchema>;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -300,10 +312,8 @@ export const requireFeishuConversationAccess$ = command(
         signal,
       );
       const messages = parseAccessData(
-        z.object({
-          items: z.array(
-            z.object({ message_id: z.string(), chat_id: z.string() }),
-          ),
+        object({
+          items: array(object({ message_id: string(), chat_id: string() })),
         }),
         data,
       );
@@ -331,7 +341,7 @@ export const requireFeishuConversationAccess$ = command(
     // Reading chat metadata with a tenant token does not prove the bot joined.
     if (chat.chat_mode !== "p2p") {
       const present = parseAccessData(
-        z.object({ is_in_chat: z.boolean() }),
+        object({ is_in_chat: boolean() }),
         await readAccessData(
           { token, url: new URL(`${base}/members/is_in_chat`) },
           signal,

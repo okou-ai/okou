@@ -47,9 +47,16 @@ Response modes and authenticated ETags
 Content-Encoding acquisition uses the shared raw field and folded-value budgets.
 Exhaustion declines storage and releases followers at response headers before capture
 or validation, leaving the ordinary response pipeline to handle the upstream bytes.
+Content-Type preflights raw bytes and comma-space folding separators against its
+256-byte limit before strict UTF-8 decoding, preserving the existing folded value.
 Cache-Control and Pragma share an aggregate raw-value budget checked before decoding;
 cache-policy inspection also bounds field traversal and stops at the first unsafe token.
 Policy exhaustion follows the same storage-bypass lifecycle without rewriting the response.
+Vary presence rejects storage using only raw field names, without inspecting values;
+the preceding encoding and cache-policy gates bound this field traversal.
+Ordinary catalog ETag acquisition checks 8,192 fields and an 8 KiB raw singleton
+before conversion, then retains the 512-byte limit on the trimmed UTF-8 validator.
+Missing, duplicate or exhausted acquisition uses the same storage-bypass lifecycle.
 Ordinary owners require identity responses. Prefetch owners request Brotli; for an eligible
 Brotli response, the compressed stream passes downstream unchanged while validation decodes
 the bounded capture. A successful response to an authenticated Codex Responses request can
@@ -121,9 +128,13 @@ _RAW_ACCEPT_ENCODING = b"accept-encoding"
 _MAX_ACCEPT_ENCODING_VALUE_BYTES = 64 * 1024
 _MAX_RESPONSE_CACHE_POLICY_FIELDS = 8 * 1024
 _MAX_RESPONSE_CACHE_POLICY_VALUE_BYTES = 8 * 1024
+_MAX_RESPONSE_ETAG_FIELDS = 8 * 1024
+_MAX_RESPONSE_ETAG_VALUE_BYTES = 8 * 1024
 _MAX_MODELS_ETAG_FIELDS = 8 * 1024
 _MAX_MODELS_ETAG_VALUE_BYTES = 8 * 1024
 _MAX_ETAG_BYTES = 512
+_RAW_CONTENT_TYPE = b"content-type"
+_MAX_CONTENT_TYPE_FIELDS = 8 * 1024
 _MAX_CONTENT_TYPE_BYTES = 256
 _MAX_JSON_NESTING = 128
 _MAX_TELEMETRY_MILLISECONDS = 2_147_483_647
@@ -429,10 +440,15 @@ def _usable_etag_value(value: str) -> str | None:
 
 
 def _single_usable_etag(headers: http.Headers) -> str | None:
-    values = headers.get_all("ETag")
-    if len(values) != 1:
+    raw_value = http_header_syntax.single_header_value(
+        headers.fields,
+        b"etag",
+        max_fields=_MAX_RESPONSE_ETAG_FIELDS,
+        max_value_bytes=_MAX_RESPONSE_ETAG_VALUE_BYTES,
+    )
+    if raw_value is None:
         return None
-    return _usable_etag_value(values[0])
+    return _usable_etag_value(raw_value.decode("utf-8", "surrogateescape"))
 
 
 def _single_content_encoding(values: tuple[str, ...]) -> str | None:
@@ -518,6 +534,31 @@ def _response_cache_control_is_unsafe(headers: http.Headers) -> bool:
                 return True
             start = end + 1
     return False
+
+
+def _bounded_content_type(headers: http.Headers) -> str | None:
+    """Preflight all raw values and folding separators before converting any value."""
+    fields = headers.fields
+    if len(fields) > _MAX_CONTENT_TYPE_FIELDS:
+        return None
+
+    values: list[bytes] = []
+    value_bytes = 0
+    separator = ", "
+    for raw_name, raw_value in fields:
+        if len(raw_name) != len(_RAW_CONTENT_TYPE) or raw_name.lower() != _RAW_CONTENT_TYPE:
+            continue
+        value_bytes += len(raw_value)
+        if values:
+            value_bytes += len(separator)
+        if value_bytes > _MAX_CONTENT_TYPE_BYTES:
+            return None
+        values.append(raw_value)
+
+    try:
+        return separator.join(value.decode("utf-8") for value in values)
+    except UnicodeDecodeError:
+        return None
 
 
 def _content_type_is_json(content_type: str) -> bool:
@@ -829,18 +870,14 @@ def _response_headers_bypass_reason(
     encoding = _single_content_encoding(encoding_values)
     if encoding != _IDENTITY_ENCODING and not (allow_brotli and encoding == _BROTLI_ENCODING):
         return "response_encoding"
-    content_type = headers.get("Content-Type", "")
-    encoded_content_type = _strict_utf8_bytes(content_type)
-    if (
-        encoded_content_type is None
-        or len(encoded_content_type) > _MAX_CONTENT_TYPE_BYTES
-        or not _content_type_is_json(content_type)
-    ):
+    content_type = _bounded_content_type(headers)
+    if content_type is None or not _content_type_is_json(content_type):
         return "response_content_type"
     if _response_cache_control_is_unsafe(headers):
         return "response_cache_control"
-    if headers.get_all("Vary"):
-        return "response_vary"
+    for name, _ in headers.fields:
+        if len(name) == len(b"vary") and name.lower() == b"vary":
+            return "response_vary"
     if _single_usable_etag(headers) is None:
         return "response_etag"
     parsed_content_length = _parse_content_length(headers)

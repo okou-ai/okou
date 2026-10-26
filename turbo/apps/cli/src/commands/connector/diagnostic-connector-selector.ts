@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { uuid } from "zod";
 
 import {
   listConnectorCatalog,
@@ -29,7 +29,7 @@ export async function resolveDiagnosticConnectorSelector(
   });
   if (
     kind !== "builtin" &&
-    (z.uuid().safeParse(value).success || !hasBuiltinSlug)
+    (uuid().safeParse(value).success || !hasBuiltinSlug)
   ) {
     const customConnectors = await listCustomConnectors();
     identities.push(

@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { literal, object, string, tuple } from "zod";
 import { formatRunBalanceError } from "./run-balance-errors";
 import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
@@ -259,26 +259,26 @@ const CLAUDE_CODE_LIMIT_SNIPPETS = [
   "five-hour limit",
 ] as const;
 
-const codexOAuthReconnectRequiredRunErrorBodySchema = z.object({
-  error: z.literal("TOKEN_REFRESH_FAILED"),
-  connectors: z.tuple([z.literal("codex-oauth-token")]),
-  failureReason: z.literal("reconnect_required"),
+const codexOAuthReconnectRequiredRunErrorBodySchema = object({
+  error: literal("TOKEN_REFRESH_FAILED"),
+  connectors: tuple([literal("codex-oauth-token")]),
+  failureReason: literal("reconnect_required"),
 });
 
-const codexOAuthReconnectRequiredRunErrorEnvelopeSchema = z.object({
-  error: z.object({
-    code: z.literal("TOKEN_REFRESH_FAILED"),
-    connectors: z.tuple([z.literal("codex-oauth-token")]),
-    failureReason: z.literal("reconnect_required"),
+const codexOAuthReconnectRequiredRunErrorEnvelopeSchema = object({
+  error: object({
+    code: literal("TOKEN_REFRESH_FAILED"),
+    connectors: tuple([literal("codex-oauth-token")]),
+    failureReason: literal("reconnect_required"),
   }),
 });
 
-const codexChatGptAccountUnsupportedModelRunErrorSchema = z.object({
-  type: z.literal("error"),
-  status: z.literal(400),
-  error: z.object({
-    type: z.literal("invalid_request_error"),
-    message: z.string(),
+const codexChatGptAccountUnsupportedModelRunErrorSchema = object({
+  type: literal("error"),
+  status: literal(400),
+  error: object({
+    type: literal("invalid_request_error"),
+    message: string(),
   }),
 });
 

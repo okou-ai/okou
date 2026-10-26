@@ -7,7 +7,14 @@ import {
 } from "@okouai/api-contracts/contracts/desktop-updates";
 import { DESKTOP_PRODUCT_OKOU } from "@okouai/api-contracts/contracts/client-headers";
 import { delay } from "signal-timers";
-import * as z from "zod";
+import {
+  array,
+  literal,
+  object,
+  record,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { logger } from "../../lib/log";
 import { desktopVersionIsSupported } from "../../lib/desktop-version";
@@ -125,34 +132,31 @@ const DESKTOP_RELEASE_TAG_PREFIX = "okou-desktop-v";
  */
 type ResolvableDesktopUpdateLine = typeof DESKTOP_UPDATE_LINE_OKOU;
 
-const desktopUpdateAssetSchema = z.object({
-  url: z.string().url(),
+const desktopUpdateAssetSchema = object({
+  url: string().url(),
 });
 
-const desktopUpdateReleaseSchema = z.object({
-  version: z.string().min(1),
-  name: z.string().optional(),
-  notes: z.string().optional(),
-  pubDate: z.string().datetime(),
-  platforms: z.record(
-    z.string(),
-    z.record(z.string(), desktopUpdateAssetSchema),
-  ),
+const desktopUpdateReleaseSchema = object({
+  version: string().min(1),
+  name: string().optional(),
+  notes: string().optional(),
+  pubDate: string().datetime(),
+  platforms: record(string(), record(string(), desktopUpdateAssetSchema)),
 });
 
-const desktopUpdateChannelSchema = z.object({
-  latest: z.string().min(1),
-  blocked: z.array(z.string().min(1)).optional(),
+const desktopUpdateChannelSchema = object({
+  latest: string().min(1),
+  blocked: array(string().min(1)).optional(),
 });
 
-const desktopUpdateManifestSchema = z.object({
-  schemaVersion: z.literal(1),
-  product: z.literal(DESKTOP_PRODUCT_OKOU),
-  channels: z.record(z.string(), desktopUpdateChannelSchema),
-  releases: z.record(z.string(), desktopUpdateReleaseSchema),
+const desktopUpdateManifestSchema = object({
+  schemaVersion: literal(1),
+  product: literal(DESKTOP_PRODUCT_OKOU),
+  channels: record(string(), desktopUpdateChannelSchema),
+  releases: record(string(), desktopUpdateReleaseSchema),
 });
 
-type DesktopUpdateManifest = z.infer<typeof desktopUpdateManifestSchema>;
+type DesktopUpdateManifest = zInfer<typeof desktopUpdateManifestSchema>;
 
 interface DesktopUpdateFeedRequest {
   readonly line: ResolvableDesktopUpdateLine;

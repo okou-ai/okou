@@ -4,7 +4,10 @@ import type { TestContext } from "../../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
-import { createBddIntegrationApi } from "./api-bdd-integrations";
+import {
+  createBddIntegrationApi,
+  mockSlackIdentityLookup,
+} from "./api-bdd-integrations";
 
 export interface PublicSlackOrgFixture {
   /** The org member the test acts as. */
@@ -69,6 +72,12 @@ export function createPublicSlackOrgApi(context: TestContext) {
         bdd.user({ orgRole: "org:admin" }),
       ));
     }
+    mockSlackIdentityLookup(context, {
+      id: slackUserId,
+      team_id: teamId,
+      real_name: "Slack User",
+      profile: { email: actor.email, display_name: "Slack User" },
+    });
     return {
       actor,
       orgId,

@@ -1,6 +1,6 @@
-import * as z from "zod";
+import { array, string } from "zod";
 
-const oauthScopesSchema = z.array(z.string());
+const oauthScopesSchema = array(string());
 
 export function resolveOAuthRequestedScopeSnapshot(
   storedScopes: string | null,

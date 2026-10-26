@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 
 /** A test-owned external CDP browser; the installed viewer runs normally. */
@@ -9,9 +9,9 @@ export function mockBrowserCdp(context: TestContext, cdpUrl: string): void {
     if (url !== cdpUrl) {
       throw new Error("Unexpected viewer endpoint");
     }
-    const request = z
-      .object({ id: z.number().optional(), method: z.string() })
-      .parse(JSON.parse(data));
+    const request = object({ id: number().optional(), method: string() }).parse(
+      JSON.parse(data),
+    );
     if (request.id === undefined) {
       return null;
     }

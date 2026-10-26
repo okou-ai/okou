@@ -163,80 +163,98 @@ describe("Native Computer Use session authentication", () => {
     await accept(client.stop({ headers, params, body }), [200]);
   });
 
-  it("registers, claims, reports, and stops using only a Clerk session", async () => {
-    const api = await app();
-    const client = api(contract);
-    const actor = identity();
-    authenticate(actor);
-    const registered = await accept(
-      client.register({ headers, body: runtimeBody }),
-      [200],
-    );
-    expect(registered.body).toStrictEqual({
-      hostId: expect.any(String),
-      connectionGeneration: 1,
-      commandNotifications: {
-        channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${registered.body.hostId}:1`,
-        eventName: "commandsChanged",
-      },
-    });
-    const params = { hostId: registered.body.hostId };
-    const body = { connectionGeneration: registered.body.connectionGeneration };
-    await accept(
-      client.heartbeat({ headers, params, body: { ...runtimeBody, ...body } }),
-      [200],
-    );
-    const created = await accept(
-      api(computerUseCommandContract).create({
-        headers,
-        body: { kind: "apps.list", timeoutMs: 10_000 },
-      }),
-      [200],
-    );
-    const claimed = await accept(
-      client.next({
-        headers,
-        params,
-        body: { ...body, supportedCapabilities: ["apps.list"] },
-      }),
-      [200],
-    );
-    expect(claimed.body).toMatchObject({
-      status: "command",
-      command: { id: created.body.commandId },
-    });
-    await accept(
-      client.complete({
-        headers,
-        params: { ...params, commandId: created.body.commandId },
-        body: { ...body, status: "succeeded", result: { apps: [] } },
-      }),
-      [200],
-    );
-    const observed = await accept(
-      api(computerUseCommandContract).get({
-        headers,
-        params: { commandId: created.body.commandId },
-      }),
-      [200],
-    );
-    expect(observed.body).toMatchObject({
-      status: "succeeded",
-      result: { apps: [] },
-    });
-    await accept(client.stop({ headers, params, body }), [200]);
-    await accept(
-      client.heartbeat({ headers, params, body: { ...runtimeBody, ...body } }),
-      [409],
-    );
-    const listed = await accept(
-      api(computerUseHostsContract).list({ headers }),
-      [200],
-    );
-    expect(listed.body.hosts).toContainEqual(
-      expect.objectContaining({ id: params.hostId, status: "offline" }),
-    );
-  });
+  it.each(["0.53.4", "0.54.0"])(
+    "preserves the GUI claim lifecycle for Desktop %s",
+    async (version) => {
+      const headers = {
+        authorization: "Bearer clerk-session",
+        "X-Client-Type": "Desktop",
+        "X-Client-Version": version,
+      };
+      const api = await app();
+      const client = api(contract);
+      const actor = identity();
+      authenticate(actor);
+      const registered = await accept(
+        client.register({ headers, body: runtimeBody }),
+        [200],
+      );
+      expect(registered.body).toStrictEqual({
+        hostId: expect.any(String),
+        connectionGeneration: 1,
+        commandNotifications: {
+          channelName: `computer-use-host:${actor.userId}:${actor.orgId}:${registered.body.hostId}:1`,
+          eventName: "commandsChanged",
+        },
+      });
+      const params = { hostId: registered.body.hostId };
+      const body = {
+        connectionGeneration: registered.body.connectionGeneration,
+      };
+      await accept(
+        client.heartbeat({
+          headers,
+          params,
+          body: { ...runtimeBody, ...body },
+        }),
+        [200],
+      );
+      const created = await accept(
+        api(computerUseCommandContract).create({
+          headers,
+          body: { kind: "apps.list", timeoutMs: 10_000 },
+        }),
+        [200],
+      );
+      const claimed = await accept(
+        client.next({
+          headers,
+          params,
+          body: { ...body, supportedCapabilities: ["apps.list"] },
+        }),
+        [200],
+      );
+      expect(claimed.body).toMatchObject({
+        status: "command",
+        command: { id: created.body.commandId },
+      });
+      await accept(
+        client.complete({
+          headers,
+          params: { ...params, commandId: created.body.commandId },
+          body: { ...body, status: "succeeded", result: { apps: [] } },
+        }),
+        [200],
+      );
+      const observed = await accept(
+        api(computerUseCommandContract).get({
+          headers,
+          params: { commandId: created.body.commandId },
+        }),
+        [200],
+      );
+      expect(observed.body).toMatchObject({
+        status: "succeeded",
+        result: { apps: [] },
+      });
+      await accept(client.stop({ headers, params, body }), [200]);
+      await accept(
+        client.heartbeat({
+          headers,
+          params,
+          body: { ...runtimeBody, ...body },
+        }),
+        [409],
+      );
+      const listed = await accept(
+        api(computerUseHostsContract).list({ headers }),
+        [200],
+      );
+      expect(listed.body.hosts).toContainEqual(
+        expect.objectContaining({ id: params.hostId, status: "offline" }),
+      );
+    },
+  );
 
   it.each([
     ["succeeded", 29_999],

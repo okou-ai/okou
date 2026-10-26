@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, string, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 
@@ -11,13 +11,13 @@ export {
 
 const c = initContract();
 
-const jsonErrorSchema = z.object({ error: z.string() });
+const jsonErrorSchema = object({ error: string() });
 
-export const teamsOauthConnectQuerySchema = z.object({
-  connectState: z.string().optional(),
-  orgId: z.string().optional(),
-  userId: z.string().optional(),
-  prompt: z.string().optional(),
+export const teamsOauthConnectQuerySchema = object({
+  connectState: string().optional(),
+  orgId: string().optional(),
+  userId: string().optional(),
+  prompt: string().optional(),
 });
 
 export const teamsOauthContract = c.router({
@@ -36,6 +36,6 @@ export const teamsOauthContract = c.router({
 });
 
 export type TeamsOauthContract = typeof teamsOauthContract;
-export type TeamsOauthConnectQuery = z.infer<
+export type TeamsOauthConnectQuery = zInfer<
   typeof teamsOauthConnectQuerySchema
 >;

@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import * as z from "zod";
+import { object, string, url, uuid } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, optionalEnv } from "../../../lib/env";
@@ -22,14 +22,14 @@ import {
 
 const context = testContext();
 const api = createRunsApi(context);
-const selectedInputs = z.object({
-  root: z.string(),
-  driver: z.string(),
-  sourceSha: z.string().regex(/^[0-9a-f]{40}$/),
-  databaseUrl: z.url(),
-  producerFile: z.string(),
+const selectedInputs = object({
+  root: string(),
+  driver: string(),
+  sourceSha: string().regex(/^[0-9a-f]{40}$/),
+  databaseUrl: url(),
+  producerFile: string(),
 });
-const claimSchema = z.object({ runId: z.uuid(), sandboxToken: z.string() });
+const claimSchema = object({ runId: uuid(), sandboxToken: string() });
 
 test("composes actual PostgreSQL claim arbitration with both native Guest owners", async () => {
   const raw: unknown = JSON.parse(

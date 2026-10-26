@@ -11,7 +11,6 @@ import {
   type VncSecurity,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
@@ -20,7 +19,6 @@ import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
 import { inlineSshKey } from "./helpers/ssh-credential";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { requireVncCredentialId } from "./helpers/vnc-response";
 import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
@@ -67,7 +65,7 @@ describe("explicit Owner Kerberos sources", () => {
     "rejects unavailable %s RFB and KDC bindings before encryption without changing saved data",
     async (type) => {
       const kms = useSecretKmsProbe();
-      await owner();
+      owner();
       const original = await accept(
         connections().create({ headers, body: hostBody() }),
         [201],
@@ -132,7 +130,7 @@ describe("explicit Owner Kerberos sources", () => {
     "selects one concurrent Kerberos rebind using a %s credential without orphaning the loser",
     async (selection) => {
       useSecretKmsProbe();
-      await owner();
+      owner();
       const original = await accept(
         connections().create({ headers, body: onlineBody() }),
         [201],
@@ -227,7 +225,7 @@ describe("explicit Owner Kerberos sources", () => {
   );
   it("keeps public Kerberos readback complete and metadata-only", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       connections().create({ headers, body: onlineBody() }),
       [201],
@@ -251,7 +249,7 @@ describe("explicit Owner Kerberos sources", () => {
   });
   it("refuses mismatched realm bindings before encryption or an orphan credential", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const body = onlineBody();
     const rejected = await accept(
       connections().create({
@@ -274,7 +272,7 @@ describe("explicit Owner Kerberos sources", () => {
   });
   it("refuses an online source without an independently saved KDC policy", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const rejected = await accept(
       connections().create({
         headers,
@@ -294,7 +292,7 @@ describe("explicit Owner Kerberos sources", () => {
   });
   it("rejects malformed FILE material before KMS using a generic credential error", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const response = await accept(
       credentials().create({
         headers,
@@ -317,7 +315,7 @@ describe("explicit Owner Kerberos sources", () => {
   });
   it("rotates the same source and fences principal changes without encrypting them", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       connections().create({ headers, body: onlineBody() }),
       [201],
@@ -389,17 +387,12 @@ function sshConnectionsClient() {
     sshConnectionsContract,
   );
 }
-async function owner(
-  overrides: Partial<{ orgId: string; userId: string }> = {},
-) {
+function owner(overrides: Partial<{ orgId: string; userId: string }> = {}) {
   const value = {
     orgId: `org_vnc_${randomUUID()}`,
     userId: `user_vnc_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.VncAccess]: true,
-  });
   mocks.clerk.session(value.userId, value.orgId);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
@@ -557,7 +550,7 @@ describe("VNC owner configuration", () => {
     "rebinds inline $authentication.method with $security.type and returns persisted metadata",
     async (profile) => {
       useSecretKmsProbe();
-      await owner();
+      owner();
       const created = await accept(
         connections().create({
           headers,
@@ -681,21 +674,10 @@ describe("VNC owner configuration", () => {
     },
   );
 
-  it("requires session, feature and current membership before exposing configuration", async () => {
+  it("requires session and current membership before exposing configuration", async () => {
     const kms = useSecretKmsProbe();
     await accept(credentials().list({ headers: {} }), [401]);
-    mocks.clerk.session(
-      `user_disabled_${randomUUID()}`,
-      `org_disabled_${randomUUID()}`,
-    );
-    expect(
-      (
-        await rawRequest("/api/vnc/credentials", {
-          authentication: passwordAuthentication("canary"),
-        })
-      ).status,
-    ).toBe(404);
-    await owner();
+    owner();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       { data: [], totalCount: 0 },
     );
@@ -706,7 +688,7 @@ describe("VNC owner configuration", () => {
 
   it("returns secret-free metadata, shared references and an accurate summary", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const credential = await accept(
       credentials().create({
         headers,
@@ -796,7 +778,7 @@ describe("VNC owner configuration", () => {
 
   it("stores two exact client-certificate pairs without changing certificate-free X509None", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const certificateOnly = await accept(
       credentials().create({
         headers,
@@ -923,7 +905,7 @@ describe("VNC owner configuration", () => {
 
   it("rejects a malformed or mismatched client identity before KMS", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const otherKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
       .privateKey.export({ format: "pem", type: "pkcs8" })
       .toString();
@@ -994,7 +976,7 @@ describe("VNC owner configuration", () => {
 
   it("persists explicitly selected X509None without a credential and requires explicit rebinds", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const none = {
       type: "x509_none" as const,
       trust: { mode: "system" as const },
@@ -1091,7 +1073,7 @@ describe("VNC owner configuration", () => {
 
   it("persists typed SSH routes, certificate identity and restrictive deletion", async () => {
     useSecretKmsProbe();
-    const routeOwner = await owner();
+    const routeOwner = owner();
     const ssh = await accept(
       sshConnectionsClient().create({
         headers,
@@ -1140,7 +1122,7 @@ describe("VNC owner configuration", () => {
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([tunneled.body]);
 
-    await owner({ orgId: routeOwner.orgId });
+    owner({ orgId: routeOwner.orgId });
     const foreign = await accept(
       connections().create({
         headers,
@@ -1155,7 +1137,7 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([]);
-    await owner(routeOwner);
+    owner(routeOwner);
 
     const referenced = await accept(
       sshConnectionsClient().delete({
@@ -1221,7 +1203,7 @@ describe("VNC owner configuration", () => {
 
   it("rejects non-ASCII and oversized passwords without truncating or echoing them", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     for (const password of ["123456789", "秘密", "x\n", "x\t", "\u007f", "é"]) {
       const response = await rawRequest("/api/vnc/credentials", {
         id: randomUUID(),
@@ -1249,7 +1231,7 @@ describe("VNC owner configuration", () => {
 
   it("bounds Apple DH credential fields before encryption and returns no password", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     for (const [username, password] of [
       ["é".repeat(32), "secret"],
       ["operator", "é".repeat(32)],
@@ -1298,7 +1280,7 @@ describe("VNC owner configuration", () => {
 
   it("bounds Apple SRP UTF-8 credentials before encryption and returns no password", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     for (const [username, password] of [
       ["é".repeat(128), "secret"],
       ["operator", "é".repeat(512)],
@@ -1347,7 +1329,7 @@ describe("VNC owner configuration", () => {
 
   it("bounds Apple RSA/SRP credentials at 234 UTF-8 bytes before encryption", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     for (const [username, password] of [
       ["é".repeat(118), "secret"],
       ["operator", "é".repeat(512)],
@@ -1396,7 +1378,7 @@ describe("VNC owner configuration", () => {
 
   it("rejects unsupported authentication and security profiles without changing saved configuration", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const saved = await accept(
       connections().create({ headers, body: hostBody() }),
       [201],
@@ -1469,7 +1451,7 @@ describe("VNC owner configuration", () => {
 
   it("stores only the exact QEMU SCRAM credential and verified-X509 pair without leaking secrets", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     const auth = (username: string, password: string) => {
       return {
         method: "qemu_scram_sha256" as const,
@@ -1570,7 +1552,7 @@ describe("VNC owner configuration", () => {
 
   it("models username/password credentials and enforces exact profile pairs", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     for (const authentication of [
       usernamePasswordAuthentication("bad\u0000name", "secret"),
       usernamePasswordAuthentication("é".repeat(128), "secret"),
@@ -1725,7 +1707,7 @@ describe("VNC owner configuration", () => {
 
   it("validates canonical endpoints and bounded certificate-only trust", async () => {
     const kms = useSecretKmsProbe();
-    await owner();
+    owner();
     for (const host of [
       "https://vnc.example.com",
       "user@vnc.example.com",
@@ -1823,7 +1805,7 @@ describe("VNC owner configuration", () => {
 
   it("isolates owners and rejects foreign creation IDs and credentials", async () => {
     useSecretKmsProbe();
-    const first = await owner();
+    const first = owner();
     const credential = await accept(
       credentials().create({
         headers,
@@ -1843,7 +1825,7 @@ describe("VNC owner configuration", () => {
       [201],
     );
     for (const other of [{ orgId: first.orgId }, { userId: first.userId }]) {
-      await owner(other);
+      owner(other);
       expect(
         (await accept(credentials().list({ headers }), [200])).body.credentials,
       ).toStrictEqual([]);
@@ -1898,14 +1880,14 @@ describe("VNC owner configuration", () => {
     "rejects an owned connection rebind to a foreign credential sharing the %s without changing configuration",
     async (shared) => {
       useSecretKmsProbe();
-      const first = await owner();
+      const first = owner();
       const created = await accept(
         connections().create({ headers, body: hostBody() }),
         [201],
       );
       const before = (await accept(credentials().list({ headers }), [200])).body
         .credentials;
-      const peer = await owner({ [shared]: first[shared] });
+      const peer = owner({ [shared]: first[shared] });
       const foreign = await accept(
         credentials().create({
           headers,
@@ -1917,7 +1899,7 @@ describe("VNC owner configuration", () => {
         }),
         [201],
       );
-      await owner(first);
+      owner(first);
       const denied = await accept(
         connections().update({
           headers,
@@ -1937,11 +1919,11 @@ describe("VNC owner configuration", () => {
       expect(
         (await accept(credentials().list({ headers }), [200])).body.credentials,
       ).toStrictEqual(before);
-      await owner(peer);
+      owner(peer);
       expect(
         (await accept(credentials().list({ headers }), [200])).body.credentials,
       ).toStrictEqual([foreign.body]);
-      await owner(first);
+      owner(first);
       const recovered = await accept(
         connections().update({
           headers,
@@ -1963,14 +1945,14 @@ describe("VNC owner configuration", () => {
     "rejects an owned connection rebind to a foreign SSH route sharing the %s without storing an inline credential",
     async (shared) => {
       useSecretKmsProbe();
-      const first = await owner();
+      const first = owner();
       const created = await accept(
         connections().create({ headers, body: hostBody() }),
         [201],
       );
       const before = (await accept(credentials().list({ headers }), [200])).body
         .credentials;
-      const peer = await owner({ [shared]: first[shared] });
+      const peer = owner({ [shared]: first[shared] });
       const foreign = await accept(
         sshConnectionsClient().create({
           headers,
@@ -1986,7 +1968,7 @@ describe("VNC owner configuration", () => {
       const peerRoutes = (
         await accept(sshConnectionsClient().list({ headers }), [200])
       ).body.connections;
-      await owner(first);
+      owner(first);
       const denied = await accept(
         connections().update({
           headers,
@@ -2012,7 +1994,7 @@ describe("VNC owner configuration", () => {
       expect(
         (await accept(credentials().list({ headers }), [200])).body.credentials,
       ).toStrictEqual(before);
-      await owner(peer);
+      owner(peer);
       expect(
         (await accept(sshConnectionsClient().list({ headers }), [200])).body
           .connections,
@@ -2020,7 +2002,7 @@ describe("VNC owner configuration", () => {
       expect(
         (await accept(credentials().list({ headers }), [200])).body.credentials,
       ).toStrictEqual([]);
-      await owner(first);
+      owner(first);
       const recovered = await accept(
         connections().update({
           headers,
@@ -2042,7 +2024,7 @@ describe("VNC owner configuration", () => {
 
   it("makes creation retries no-ops even with changed inline secrets and metadata", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const body = hostBody();
     const created = await accept(
       connections().create({ headers, body }),
@@ -2090,7 +2072,7 @@ describe("VNC owner configuration", () => {
 
   it("keeps configurations for one canonical endpoint independent during updates and deletion", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const first = await accept(
       connections().create({ headers, body: hostBody() }),
       [201],
@@ -2176,7 +2158,7 @@ describe("VNC owner configuration", () => {
 
   it("allows a new credential creation to reuse a deleted credential ID", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const body = {
       id: randomUUID(),
       name: "Deleted",
@@ -2218,7 +2200,7 @@ describe("VNC owner configuration", () => {
 
   it("allows a new host creation to reuse a deleted host ID with a new inline credential", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const body = hostBody();
     const saved = await accept(connections().create({ headers, body }), [201]);
     await accept(
@@ -2282,7 +2264,7 @@ describe("VNC owner configuration", () => {
 
   it("acknowledges completed creation retries during a KMS outage", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const body = hostBody();
     const saved = await accept(connections().create({ headers, body }), [201]);
     const kms = useSecretKmsProbe(() => {
@@ -2335,7 +2317,7 @@ describe("VNC owner configuration", () => {
 
   it("accepts only one concurrent metadata update at the reviewed credential revision", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       credentials().create({
         headers,
@@ -2384,7 +2366,7 @@ describe("VNC owner configuration", () => {
 
   it("leaves concurrent password rotations recoverable, advances every shared host and rejects stale writes", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const first = await accept(
       connections().create({ headers, body: hostBody() }),
       [201],
@@ -2531,7 +2513,7 @@ describe("VNC owner configuration", () => {
 
   it("preserves the credential and every host when a compatible auth method violates the native profile pin", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const first = await accept(
       connections().create({ headers, body: hostBody() }),
       [201],
@@ -2577,7 +2559,7 @@ describe("VNC owner configuration", () => {
 
   it("publishes a delayed rotation after a public host rename and rebind while returning the earlier host snapshot", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const body = hostBody();
     const host = await accept(connections().create({ headers, body }), [201]);
     const replacement = await accept(
@@ -2656,7 +2638,7 @@ describe("VNC owner configuration", () => {
 
   it("keeps a newly bound host at its generation when a delayed rotation initially observed no hosts", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       credentials().create({
         headers,
@@ -2721,7 +2703,7 @@ describe("VNC owner configuration", () => {
 
   it("reports a credential deleted through the public API during encryption as missing", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const created = await accept(
       credentials().create({
         headers,
@@ -2778,7 +2760,7 @@ describe("VNC owner configuration", () => {
 
   it("rejects a concurrent creation by another owner without leaving an inline credential", async () => {
     useSecretKmsProbe();
-    const owners = [await owner(), await owner()];
+    const owners = [owner(), owner()];
     context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
       if (!(request instanceof Request)) {
         throw new Error("Expected a Clerk authentication request");
@@ -2863,7 +2845,7 @@ describe("VNC owner configuration", () => {
 
   it("serializes concurrent duplicate creation and binding against credential deletion", async () => {
     useSecretKmsProbe();
-    await owner();
+    owner();
     const body = hostBody();
     const results = await Promise.all([
       connections().create({ headers, body }),

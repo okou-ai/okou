@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { unknown as zUnknown } from "zod";
 import { initContract } from "./base";
 
 const c = initContract();
@@ -6,24 +6,24 @@ const c = initContract();
 // The MCP SDK owns JSON-RPC validation and JSON/SSE serialization. These are
 // registration contracts, not a second HTTP business API.
 const responses = {
-  200: z.unknown(),
-  202: z.unknown(),
-  400: z.unknown(),
-  401: z.unknown(),
-  403: z.unknown(),
-  405: z.unknown(),
-  406: z.unknown(),
-  413: z.unknown(),
-  415: z.unknown(),
-  500: z.unknown(),
-  503: z.unknown(),
+  200: zUnknown(),
+  202: zUnknown(),
+  400: zUnknown(),
+  401: zUnknown(),
+  403: zUnknown(),
+  405: zUnknown(),
+  406: zUnknown(),
+  413: zUnknown(),
+  415: zUnknown(),
+  500: zUnknown(),
+  503: zUnknown(),
 };
 
 export const mcpServerContract = c.router({
   request: {
     method: "POST",
     path: "/mcp",
-    body: z.unknown(),
+    body: zUnknown(),
     responses,
   },
   get: { method: "GET", path: "/mcp", responses },

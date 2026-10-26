@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { number, string, enum as zEnum, type infer as zInfer } from "zod";
 
 /**
  * Dependency-leaf runner values shared by browser, worker, and server
@@ -22,7 +22,7 @@ export const CANONICAL_WORKING_DIR = `${CANONICAL_GUEST_HOME_DIR}/workspace`;
  * `noSessionId` is also legacy: preceding runners use it for multiple causes,
  * so historical rows cannot identify the exact non-reuse reason.
  */
-export const sandboxReuseResultSchema = z.enum([
+export const sandboxReuseResultSchema = zEnum([
   "reused",
   "featureDisabled",
   "noSessionId",
@@ -33,10 +33,10 @@ export const sandboxReuseResultSchema = z.enum([
   "unparkFailed",
 ]);
 
-export type SandboxReuseResult = z.infer<typeof sandboxReuseResultSchema>;
+export type SandboxReuseResult = zInfer<typeof sandboxReuseResultSchema>;
 
 /** Final home reuse outcome after sandbox preparation has settled. */
-export const homeReuseResultSchema = z.enum([
+export const homeReuseResultSchema = zEnum([
   "reused",
   "sandboxReused",
   "cacheMiss",
@@ -49,39 +49,34 @@ export const homeReuseResultSchema = z.enum([
   "sandboxPrepareFallback",
 ]);
 
-export type HomeReuseResult = z.infer<typeof homeReuseResultSchema>;
+export type HomeReuseResult = zInfer<typeof homeReuseResultSchema>;
 
 /** Actual sandbox/home resource after startup preparation and fallback settle. */
-export const sandboxStartupPathSchema = z.enum([
+export const sandboxStartupPathSchema = zEnum([
   "sandbox",
   "home",
   "blank",
   "cold",
 ]);
 
-export type SandboxStartupPath = z.infer<typeof sandboxStartupPathSchema>;
+export type SandboxStartupPath = zInfer<typeof sandboxStartupPathSchema>;
 
-export const runnerHeartbeatGenerationSchema = z
-  .number()
+export const runnerHeartbeatGenerationSchema = number()
   .int()
   .positive()
   .max(Number.MAX_SAFE_INTEGER);
 
 export const RUNNER_HOSTNAME_MAX_LENGTH = 255;
 export const RUNNER_VERSION_MAX_LENGTH = 128;
-export const runnerHostnameSchema = z
-  .string()
+export const runnerHostnameSchema = string()
   .min(1)
   .max(RUNNER_HOSTNAME_MAX_LENGTH);
-export const runnerVersionSchema = z
-  .string()
+export const runnerVersionSchema = string()
   .min(1)
   .max(RUNNER_VERSION_MAX_LENGTH);
 
 /** Runner group format: vm0/<name> (for example, "vm0/production"). */
-export const runnerGroupSchema = z
-  .string()
-  .regex(
-    /^[a-z0-9-]+\/[a-z0-9-]+$/,
-    "Runner group must be in vm0/<name> format (e.g., vm0/production)",
-  );
+export const runnerGroupSchema = string().regex(
+  /^[a-z0-9-]+\/[a-z0-9-]+$/,
+  "Runner group must be in vm0/<name> format (e.g., vm0/production)",
+);

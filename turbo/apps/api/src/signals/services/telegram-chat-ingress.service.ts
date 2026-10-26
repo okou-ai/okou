@@ -5,7 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db$, writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
-import * as z from "zod";
+import { object, string, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
@@ -274,7 +274,7 @@ export const ensureTelegramChatThreadRoute$ = command(
           FROM inserted_telegram_route`,
       });
       const [inserted] = parseRawRows(
-        z.object({ id: z.uuid(), chatId: z.string(), chatThreadId: z.uuid() }),
+        object({ id: uuid(), chatId: string(), chatThreadId: uuid() }),
         await db.execute(statement),
       );
       signal.throwIfAborted();

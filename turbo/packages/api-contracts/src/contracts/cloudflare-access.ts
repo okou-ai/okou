@@ -1,4 +1,14 @@
-import * as z from "zod";
+import {
+  array,
+  int,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { vncNetworkHostReferenceSchema } from "./vnc-transport";
@@ -6,47 +16,44 @@ import { vncNetworkHostReferenceSchema } from "./vnc-transport";
 export const CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH = 4_096;
 // Service-token values become HTTP headers. Preserve bytes, but reject controls,
 // whitespace and non-ASCII rather than silently changing the credential.
-const tokenValueSchema = z
-  .string()
+const tokenValueSchema = string()
   .min(1)
   .max(CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH)
   .regex(/^[\x21-\x7e]+$/u);
-export const cloudflareAccessCredentialsSchema = z
-  .object({
-    clientId: tokenValueSchema,
-    clientSecret: tokenValueSchema,
-  })
-  .strict();
-const revision = z.int().positive().max(2_147_483_647);
-const name = z.string().trim().min(1).max(128);
-export const createCloudflareAccessRequestSchema = z
-  .object({ name, credentials: cloudflareAccessCredentialsSchema })
-  .strict();
-const cloudflareAccessConfigMetadataSchema = z
-  .object({
-    id: z.uuid(),
-    name: z.string(),
-    revision,
-    generation: revision,
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-  })
-  .strict();
-const sshHostReferenceSchema = z
-  .object({ id: z.uuid(), displayName: z.string() })
-  .strict();
+export const cloudflareAccessCredentialsSchema = object({
+  clientId: tokenValueSchema,
+  clientSecret: tokenValueSchema,
+}).strict();
+const revision = int().positive().max(2_147_483_647);
+const name = string().trim().min(1).max(128);
+export const createCloudflareAccessRequestSchema = object({
+  name,
+  credentials: cloudflareAccessCredentialsSchema,
+}).strict();
+const cloudflareAccessConfigMetadataSchema = object({
+  id: uuid(),
+  name: string(),
+  revision,
+  generation: revision,
+  createdAt: string().datetime(),
+  updatedAt: string().datetime(),
+}).strict();
+const sshHostReferenceSchema = object({
+  id: uuid(),
+  displayName: string(),
+}).strict();
 export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
   .extend({
-    sshHosts: z.array(sshHostReferenceSchema),
-    vncHosts: z.array(vncNetworkHostReferenceSchema),
+    sshHosts: array(sshHostReferenceSchema),
+    vncHosts: array(vncNetworkHostReferenceSchema),
   })
   .strict();
 export const scopedCloudflareAccessConfigSchema =
   cloudflareAccessConfigSchema.extend({
-    scope: z.enum(["personal", "organization"]),
+    scope: zEnum(["personal", "organization"]),
   });
 const configResponseSchema = scopedCloudflareAccessConfigSchema;
-const viewQuery = z.object({ view: z.literal("scoped").optional() }).strict();
+const viewQuery = object({ view: literal("scoped").optional() }).strict();
 const c = initContract();
 const errors = {
   400: apiErrorSchema,
@@ -56,17 +63,16 @@ const errors = {
   409: apiErrorSchema,
   500: apiErrorSchema,
 };
-const pathParams = z.object({ configId: z.uuid() }).strict();
+const pathParams = object({ configId: uuid() }).strict();
 const createBody = createCloudflareAccessRequestSchema.extend({
-  id: z.uuid(),
-  scope: z.enum(["personal", "organization"]).optional(),
+  id: uuid(),
+  scope: zEnum(["personal", "organization"]).optional(),
 });
-const updateBody = z
-  .object({
-    expectedRevision: revision,
-    name: name.optional(),
-    credentials: cloudflareAccessCredentialsSchema.optional(),
-  })
+const updateBody = object({
+  expectedRevision: revision,
+  name: name.optional(),
+  credentials: cloudflareAccessCredentialsSchema.optional(),
+})
   .strict()
   .refine(
     (body) => {
@@ -74,33 +80,28 @@ const updateBody = z
     },
     { message: "At least one Cloudflare Access field must be updated" },
   );
-const impactSnapshot = z.string().regex(/^[a-f0-9]{64}$/u);
-const deleteBody = z
-  .object({
-    expectedRevision: revision,
-    impactSnapshot: impactSnapshot.optional(),
-  })
-  .strict();
+const impactSnapshot = string().regex(/^[a-f0-9]{64}$/u);
+const deleteBody = object({
+  expectedRevision: revision,
+  impactSnapshot: impactSnapshot.optional(),
+}).strict();
 // Only aggregate host usage is exposed to the reviewing administrator.
-const impactPreviewSchema = z
-  .object({
-    expectedRevision: revision,
-    ownHostCount: z.int().nonnegative(),
-    otherHostCount: z.int().nonnegative(),
-    affectedOwners: z.array(
-      z
-        .object({
-          userId: z.string().min(1),
-          displayName: z.string().nullable(),
-        })
-        .strict(),
-    ),
-    impactSnapshot,
-  })
-  .strict();
-const conversionBody = z
-  .object({ expectedRevision: revision, impactSnapshot })
-  .strict();
+const impactPreviewSchema = object({
+  expectedRevision: revision,
+  ownHostCount: int().nonnegative(),
+  otherHostCount: int().nonnegative(),
+  affectedOwners: array(
+    object({
+      userId: string().min(1),
+      displayName: string().nullable(),
+    }).strict(),
+  ),
+  impactSnapshot,
+}).strict();
+const conversionBody = object({
+  expectedRevision: revision,
+  impactSnapshot,
+}).strict();
 export const cloudflareAccessContract = c.router({
   list: {
     method: "GET",
@@ -108,7 +109,7 @@ export const cloudflareAccessContract = c.router({
     headers: authHeadersSchema,
     query: viewQuery,
     responses: {
-      200: z.object({ configs: z.array(configResponseSchema) }).strict(),
+      200: object({ configs: array(configResponseSchema) }).strict(),
       ...errors,
     },
   },
@@ -147,7 +148,7 @@ export const cloudflareAccessContract = c.router({
     path: "/api/cloudflare-access/configs/:configId/convert-to-organization",
     headers: authHeadersSchema,
     pathParams,
-    body: z.object({ expectedRevision: revision }).strict(),
+    body: object({ expectedRevision: revision }).strict(),
     responses: { 200: configResponseSchema, ...errors },
   },
   impactPreview: {
@@ -155,7 +156,7 @@ export const cloudflareAccessContract = c.router({
     path: "/api/cloudflare-access/configs/:configId/impact-preview",
     headers: authHeadersSchema,
     pathParams,
-    query: z.object({ operation: z.enum(["convert", "delete"]) }).strict(),
+    query: object({ operation: zEnum(["convert", "delete"]) }).strict(),
     responses: { 200: impactPreviewSchema, ...errors },
   },
   convertToPersonal: {
@@ -167,17 +168,17 @@ export const cloudflareAccessContract = c.router({
     responses: { 200: configResponseSchema, ...errors },
   },
 });
-export type CloudflareAccessConfig = z.infer<
+export type CloudflareAccessConfig = zInfer<
   typeof cloudflareAccessConfigSchema
 >;
-export type ScopedCloudflareAccessConfig = z.infer<
+export type ScopedCloudflareAccessConfig = zInfer<
   typeof scopedCloudflareAccessConfigSchema
 >;
-export type CreateCloudflareAccessRequest = z.infer<
+export type CreateCloudflareAccessRequest = zInfer<
   typeof createCloudflareAccessRequestSchema
 >;
-export type CreateCloudflareAccessConfigRequest = z.infer<typeof createBody>;
-export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;
-export type CloudflareAccessImpactPreview = z.infer<typeof impactPreviewSchema>;
-export type ConvertCloudflareAccessRequest = z.infer<typeof conversionBody>;
-export type DeleteCloudflareAccessRequest = z.infer<typeof deleteBody>;
+export type CreateCloudflareAccessConfigRequest = zInfer<typeof createBody>;
+export type UpdateCloudflareAccessRequest = zInfer<typeof updateBody>;
+export type CloudflareAccessImpactPreview = zInfer<typeof impactPreviewSchema>;
+export type ConvertCloudflareAccessRequest = zInfer<typeof conversionBody>;
+export type DeleteCloudflareAccessRequest = zInfer<typeof deleteBody>;

@@ -1,4 +1,13 @@
-import * as z from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  type output,
+} from "zod";
+
 import {
   and,
   asc,
@@ -48,38 +57,38 @@ interface AdmissionFacts {
   readonly validatedAccountIdentity: string | null;
 }
 
-const readRecordSchema = z.discriminatedUnion("phase", [
-  z.object({
-    phase: z.literal("thread"),
-    threadAgentId: z.string().nullable(),
-    framework: z.string().nullable(),
-    frameworkSessionId: z.string().nullable(),
-    frameworkSessionRunId: z.string().nullable(),
+const readRecordSchema = discriminatedUnion("phase", [
+  object({
+    phase: literal("thread"),
+    threadAgentId: string().nullable(),
+    framework: string().nullable(),
+    frameworkSessionId: string().nullable(),
+    frameworkSessionRunId: string().nullable(),
   }),
-  z.object({
-    phase: z.literal("subscription"),
-    type: z.string(),
-    externalAccountId: z.string().nullable(),
-    accountEmail: z.string().nullable(),
-    workspaceName: z.string().nullable(),
+  object({
+    phase: literal("subscription"),
+    type: string(),
+    externalAccountId: string().nullable(),
+    accountEmail: string().nullable(),
+    workspaceName: string().nullable(),
   }),
-  z.object({
-    phase: z.literal("head"),
-    id: z.string(),
-    chatThreadId: z.string(),
+  object({
+    phase: literal("head"),
+    id: string(),
+    chatThreadId: string(),
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
-    eventType: z.enum(["input.prompt", "input.automation"]),
+    eventType: zEnum(["input.prompt", "input.automation"]),
     contextType: chatEventContextTypeSchema.nullable(),
-    contextId: z.string().nullable(),
+    contextId: string().nullable(),
     userMessage: userMessageDocumentSchema.nullable(),
     modelSelection: chatInputModelSelectionSchema.nullable(),
   }),
 ]);
-export const pendingAdmissionRecordSchema = z.union([
+export const pendingAdmissionRecordSchema = union([
   readRecordSchema,
   chatEventCommandResultSchema,
 ]);
-type AdmissionRecord = z.output<typeof pendingAdmissionRecordSchema>;
+type AdmissionRecord = output<typeof pendingAdmissionRecordSchema>;
 
 type AdmissionStatement = AdmissionFacts & {
   readonly kind: "statement";

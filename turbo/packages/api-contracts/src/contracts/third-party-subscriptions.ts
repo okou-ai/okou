@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { array, object } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { modelProviderResponseSchema } from "./model-providers";
@@ -11,7 +11,7 @@ export const thirdPartySubscriptionsMainContract = c.router({
     path: "/api/me/3rd-party-subscriptions",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ subscriptions: z.array(modelProviderResponseSchema) }),
+      200: object({ subscriptions: array(modelProviderResponseSchema) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,

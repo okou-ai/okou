@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { array, number, object, string } from "zod";
 import { CitationLiteralEscaper } from "./pi-memory-citation-literals";
 
 /**
@@ -76,44 +76,39 @@ function utf8Bytes(value: string): number {
 }
 
 const boundedCitationStringSchema = (maxBytes: number) => {
-  return z
-    .string()
+  return string()
     .min(1)
     .refine((value) => {
       return utf8Bytes(value) <= maxBytes;
     });
 };
 
-export const piMemoryCitationEntrySchema = z
-  .object({
-    path: boundedCitationStringSchema(PI_MEMORY_CITATION_LIMITS.pathBytes),
-    lineStart: z
-      .number()
-      .int()
-      .positive()
-      .max(PI_MEMORY_CITATION_LIMITS.lineNumberMax),
-    lineEnd: z
-      .number()
-      .int()
-      .positive()
-      .max(PI_MEMORY_CITATION_LIMITS.lineNumberMax),
-    note: boundedCitationStringSchema(PI_MEMORY_CITATION_LIMITS.noteBytes),
-  })
+export const piMemoryCitationEntrySchema = object({
+  path: boundedCitationStringSchema(PI_MEMORY_CITATION_LIMITS.pathBytes),
+  lineStart: number()
+    .int()
+    .positive()
+    .max(PI_MEMORY_CITATION_LIMITS.lineNumberMax),
+  lineEnd: number()
+    .int()
+    .positive()
+    .max(PI_MEMORY_CITATION_LIMITS.lineNumberMax),
+  note: boundedCitationStringSchema(PI_MEMORY_CITATION_LIMITS.noteBytes),
+})
   .strict()
   .refine((entry) => {
     return entry.lineEnd >= entry.lineStart;
   });
 
 /** Strict boundary for the private Guest-to-API citation sidecar. */
-export const piMemoryCitationSchema = z
-  .object({
-    entries: z
-      .array(piMemoryCitationEntrySchema)
-      .max(PI_MEMORY_CITATION_LIMITS.entries),
-    rolloutIds: z
-      .array(z.string().regex(UUID_PATTERN))
-      .max(PI_MEMORY_CITATION_LIMITS.rolloutIds),
-  })
+export const piMemoryCitationSchema = object({
+  entries: array(piMemoryCitationEntrySchema).max(
+    PI_MEMORY_CITATION_LIMITS.entries,
+  ),
+  rolloutIds: array(string().regex(UUID_PATTERN)).max(
+    PI_MEMORY_CITATION_LIMITS.rolloutIds,
+  ),
+})
   .strict()
   .superRefine((citation, context) => {
     if (citation.entries.length === 0 && citation.rolloutIds.length === 0) {

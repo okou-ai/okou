@@ -10,7 +10,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
@@ -192,15 +192,13 @@ const steeringAnchorSeqId$ = command(
  * Prompts follow the last consumed queue input; the run's own budget remains
  * eligible regardless of that anchor. Both are returned in sequence order.
  * Read-only.
- * A prompt that cannot be steered as is (its template is disabled, its Discord
- * binding is gone, or it exceeds the control payload) yields `null` and stays
- * queued for the next pick, which rejects or launches it; later prompts do not
- * overtake it.
+ * A prompt that cannot be steered as is (its Discord binding is gone, or it
+ * exceeds the control payload) yields `null` and stays queued for the next
+ * pick, which rejects or launches it; later prompts do not overtake it.
  */
 export const loadNextSteerableInput$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     args: {
       readonly runId: string;
       readonly userId: string;
@@ -208,6 +206,7 @@ export const loadNextSteerableInput$ = command(
     },
     signal: AbortSignal,
   ): Promise<NextSteerableInputResult> => {
+    const db = get(db$);
     const scope = await set(loadActiveInputDeliveryScope$, args, signal);
     if (!scope) {
       return { outcome: "forbidden" };
@@ -243,7 +242,7 @@ export const loadNextSteerableInput$ = command(
       throw new Error("Pending steerable input disappeared from its thread");
     }
     const prompt = await settle(
-      set(materializeActiveInputSource$, db, source, scope, signal),
+      set(materializeActiveInputSource$, source, scope, signal),
       signal,
     );
     if (!prompt.ok) {
@@ -255,10 +254,7 @@ export const loadNextSteerableInput$ = command(
       }
       return { outcome: "found", input: null };
     }
-    if (
-      prompt.value === null ||
-      !activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)
-    ) {
+    if (!activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)) {
       return { outcome: "found", input: null };
     }
     return {

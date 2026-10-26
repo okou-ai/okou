@@ -8,7 +8,16 @@ import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import * as z from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
 
 import { logger } from "../../lib/log";
 import { db$, writeDb$ } from "../external/db";
@@ -28,51 +37,51 @@ import {
 
 const L = logger("WebhookGithub");
 
-const gitHubUserSchema = z.object({
-  id: z.number(),
-  login: z.string(),
-  type: z.string(),
+const gitHubUserSchema = object({
+  id: number(),
+  login: string(),
+  type: string(),
 });
 
-const gitHubLabelSchema = z.object({
-  id: z.number(),
-  name: z.string(),
+const gitHubLabelSchema = object({
+  id: number(),
+  name: string(),
 });
 
-const gitHubPullRequestMarkerSchema = z.object({}).passthrough();
+const gitHubPullRequestMarkerSchema = object({}).passthrough();
 
-const gitHubIssueSchema = z.object({
-  number: z.number(),
-  title: z.string(),
-  body: z.string().nullable(),
-  html_url: z.string().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
-  labels: z.array(gitHubLabelSchema),
+const gitHubIssueSchema = object({
+  number: number(),
+  title: string(),
+  body: string().nullable(),
+  html_url: string().optional(),
+  created_at: string().optional(),
+  updated_at: string().optional(),
+  labels: array(gitHubLabelSchema),
   user: gitHubUserSchema,
   pull_request: gitHubPullRequestMarkerSchema.optional(),
 });
 
-const gitHubCommentSchema = z.object({
-  id: z.number(),
-  body: z.string(),
-  html_url: z.string().optional(),
-  created_at: z.string().optional(),
+const gitHubCommentSchema = object({
+  id: number(),
+  body: string(),
+  html_url: string().optional(),
+  created_at: string().optional(),
   user: gitHubUserSchema,
-  author_association: z.string().optional(),
+  author_association: string().optional(),
 });
 
-const gitHubRepositorySchema = z.object({
-  id: z.number().optional(),
-  full_name: z.string(),
+const gitHubRepositorySchema = object({
+  id: number().optional(),
+  full_name: string(),
 });
 
-const gitHubInstallationRefSchema = z.object({
-  id: z.number(),
+const gitHubInstallationRefSchema = object({
+  id: number(),
 });
 
-export const gitHubIssueCommentEventSchema = z.object({
-  action: z.string(),
+export const gitHubIssueCommentEventSchema = object({
+  action: string(),
   issue: gitHubIssueSchema,
   comment: gitHubCommentSchema,
   repository: gitHubRepositorySchema,
@@ -80,90 +89,90 @@ export const gitHubIssueCommentEventSchema = z.object({
   sender: gitHubUserSchema,
 });
 
-export const gitHubWorkflowJobActionSchema = z.object({
-  action: z.string(),
+export const gitHubWorkflowJobActionSchema = object({
+  action: string(),
 });
 
-export const gitHubWorkflowJobEventSchema: z.ZodType<GithubWorkflowJobEventPayload> =
-  z.object({
-    action: z.literal("completed"),
-    workflow_job: z.object({
-      id: z.number(),
-      run_id: z.number(),
-      workflow_name: z.string().nullable(),
-      head_branch: z.string().nullable(),
-      head_sha: z.string(),
-      run_url: z.string(),
-      run_attempt: z.number(),
-      name: z.string(),
-      status: z.string(),
+export const gitHubWorkflowJobEventSchema: ZodType<GithubWorkflowJobEventPayload> =
+  object({
+    action: literal("completed"),
+    workflow_job: object({
+      id: number(),
+      run_id: number(),
+      workflow_name: string().nullable(),
+      head_branch: string().nullable(),
+      head_sha: string(),
+      run_url: string(),
+      run_attempt: number(),
+      name: string(),
+      status: string(),
       conclusion: githubWorkflowRunConclusionSchema.nullable(),
-      html_url: z.string(),
-      labels: z.array(z.string()),
-      runner_id: z.number().nullable().default(null),
-      runner_name: z.string().nullable().default(null),
-      runner_group_id: z.number().nullable().default(null),
-      runner_group_name: z.string().nullable().default(null),
+      html_url: string(),
+      labels: array(string()),
+      runner_id: number().nullable().default(null),
+      runner_name: string().nullable().default(null),
+      runner_group_id: number().nullable().default(null),
+      runner_group_name: string().nullable().default(null),
     }),
     repository: gitHubRepositorySchema,
     installation: gitHubInstallationRefSchema,
     sender: gitHubUserSchema,
   });
 
-export const gitHubPullRequestReviewActionSchema = z.object({
-  action: z.string(),
+export const gitHubPullRequestReviewActionSchema = object({
+  action: string(),
 });
 
-export const gitHubPullRequestReviewEventSchema: z.ZodType<GithubPullRequestReviewEventPayload> =
-  z.object({
-    action: z.literal("submitted"),
-    review: z.object({
-      id: z.number(),
+export const gitHubPullRequestReviewEventSchema: ZodType<GithubPullRequestReviewEventPayload> =
+  object({
+    action: literal("submitted"),
+    review: object({
+      id: number(),
       user: gitHubUserSchema,
       state: githubPullRequestReviewStateSchema,
-      html_url: z.string(),
-      commit_id: z.string(),
-      submitted_at: z.string().nullable().default(null),
-      author_association: z.string(),
+      html_url: string(),
+      commit_id: string(),
+      submitted_at: string().nullable().default(null),
+      author_association: string(),
     }),
-    pull_request: z.object({
-      number: z.number(),
-      title: z.string(),
-      html_url: z.string(),
-      draft: z.boolean(),
-      base: z.object({ ref: z.string() }),
-      head: z.object({ ref: z.string() }),
+    pull_request: object({
+      number: number(),
+      title: string(),
+      html_url: string(),
+      draft: boolean(),
+      base: object({ ref: string() }),
+      head: object({ ref: string() }),
     }),
     repository: gitHubRepositorySchema,
     installation: gitHubInstallationRefSchema,
     sender: gitHubUserSchema,
   });
 
-const gitHubAppReferenceSchema = z.object({
-  id: z.number(),
-  slug: z.string().nullable(),
-  name: z.string().nullable(),
+const gitHubAppReferenceSchema = object({
+  id: number(),
+  slug: string().nullable(),
+  name: string().nullable(),
 });
 
-export const gitHubDeploymentStatusEventSchema: z.ZodType<GithubDeploymentStatusEventPayload> =
-  z.object({
-    action: z.string(),
-    deployment_status: z.object({
-      id: z.number(),
+export const gitHubDeploymentStatusEventSchema: ZodType<GithubDeploymentStatusEventPayload> =
+  object({
+    action: string(),
+    deployment_status: object({
+      id: number(),
       state: githubDeploymentStateSchema,
-      environment: z.string().nullable().default(null),
-      environment_url: z.string().nullable().default(null),
-      log_url: z.string().nullable().default(null),
+      environment: string().nullable().default(null),
+      environment_url: string().nullable().default(null),
+      log_url: string().nullable().default(null),
       creator: gitHubUserSchema.nullable().default(null),
     }),
-    deployment: z.object({
-      id: z.number(),
-      ref: z.string(),
-      sha: z.string(),
-      task: z.string(),
-      environment: z.string(),
-      production_environment: z.boolean(),
-      transient_environment: z.boolean(),
+    deployment: object({
+      id: number(),
+      ref: string(),
+      sha: string(),
+      task: string(),
+      environment: string(),
+      production_environment: boolean(),
+      transient_environment: boolean(),
       creator: gitHubUserSchema.nullable().default(null),
       performed_via_github_app: gitHubAppReferenceSchema
         .nullable()
@@ -174,22 +183,22 @@ export const gitHubDeploymentStatusEventSchema: z.ZodType<GithubDeploymentStatus
     sender: gitHubUserSchema,
   });
 
-export const gitHubPullRequestEventSchema: z.ZodType<GithubPullRequestEventPayload> =
-  z.object({
-    action: z.string(),
-    pull_request: z.object({
-      number: z.number(),
-      title: z.string(),
-      html_url: z.string(),
-      draft: z.boolean(),
-      merged: z.boolean().nullable().default(null),
-      merged_at: z.string().nullable().default(null),
-      merge_commit_sha: z.string().nullable().default(null),
+export const gitHubPullRequestEventSchema: ZodType<GithubPullRequestEventPayload> =
+  object({
+    action: string(),
+    pull_request: object({
+      number: number(),
+      title: string(),
+      html_url: string(),
+      draft: boolean(),
+      merged: boolean().nullable().default(null),
+      merged_at: string().nullable().default(null),
+      merge_commit_sha: string().nullable().default(null),
       merged_by: gitHubUserSchema.nullable().default(null),
       user: gitHubUserSchema,
-      base: z.object({ ref: z.string() }),
-      head: z.object({ ref: z.string(), sha: z.string() }),
-      labels: z.array(gitHubLabelSchema),
+      base: object({ ref: string() }),
+      head: object({ ref: string(), sha: string() }),
+      labels: array(gitHubLabelSchema),
     }),
     label: gitHubLabelSchema.optional(),
     repository: gitHubRepositorySchema,
@@ -197,56 +206,54 @@ export const gitHubPullRequestEventSchema: z.ZodType<GithubPullRequestEventPaylo
     sender: gitHubUserSchema,
   });
 
-export const gitHubWorkflowRunEventSchema: z.ZodType<GithubWorkflowRunEventPayload> =
-  z.object({
-    action: z.string(),
-    workflow_run: z.object({
-      id: z.number(),
-      workflow_id: z.number(),
-      name: z.string().nullable(),
-      path: z.string(),
-      run_number: z.number(),
-      run_attempt: z.number(),
-      status: z.string(),
+export const gitHubWorkflowRunEventSchema: ZodType<GithubWorkflowRunEventPayload> =
+  object({
+    action: string(),
+    workflow_run: object({
+      id: number(),
+      workflow_id: number(),
+      name: string().nullable(),
+      path: string(),
+      run_number: number(),
+      run_attempt: number(),
+      status: string(),
       conclusion: githubWorkflowRunConclusionSchema.nullable(),
-      head_branch: z.string().nullable(),
-      head_sha: z.string(),
-      event: z.string(),
-      html_url: z.string(),
+      head_branch: string().nullable(),
+      head_sha: string(),
+      event: string(),
+      html_url: string(),
       actor: gitHubUserSchema.nullable(),
       triggering_actor: gitHubUserSchema.nullable(),
-      pull_requests: z.array(z.object({ number: z.number() })),
+      pull_requests: array(object({ number: number() })),
     }),
-    repository: z.object({
-      id: z.number(),
-      full_name: z.string(),
+    repository: object({
+      id: number(),
+      full_name: string(),
     }),
     installation: gitHubInstallationRefSchema,
     sender: gitHubUserSchema,
   });
 
-const gitHubInstallationAccountSchema = z.object({
-  id: z.number(),
-  login: z.string(),
-  type: z.string(),
+const gitHubInstallationAccountSchema = object({
+  id: number(),
+  login: string(),
+  type: string(),
 });
 
-export const gitHubInstallationEventSchema = z.object({
-  action: z.string(),
-  installation: z.object({
-    id: z.number(),
+export const gitHubInstallationEventSchema = object({
+  action: string(),
+  installation: object({
+    id: number(),
     account: gitHubInstallationAccountSchema,
   }),
-  sender: z
-    .object({
-      id: z.number(),
-      login: z.string(),
-    })
-    .optional(),
+  sender: object({
+    id: number(),
+    login: string(),
+  }).optional(),
 });
 
-type GitHubIssueCommentEvent = z.infer<typeof gitHubIssueCommentEventSchema>;
-type GitHubInstallationEvent = z.infer<typeof gitHubInstallationEventSchema>;
+type GitHubIssueCommentEvent = zInfer<typeof gitHubIssueCommentEventSchema>;
+type GitHubInstallationEvent = zInfer<typeof gitHubInstallationEventSchema>;
 
 export const handleGithubPullRequestEvent$ = command(
   async (

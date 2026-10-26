@@ -8,7 +8,7 @@ import {
 } from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
-import * as z from "zod";
+import { array, number, object, string, union, url } from "zod";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
 import { safeJsonParse, settle } from "../utils";
@@ -21,22 +21,21 @@ export interface ClerkOAuthIdentity {
   readonly expiresAt: number;
 }
 
-const oauthClaimsSchema = z.object({
-  iss: z.string(),
-  aud: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
-  sub: z.string().startsWith("user_").min(6),
-  org_id: z.string().startsWith("org_").min(5),
+const oauthClaimsSchema = object({
+  iss: string(),
+  aud: union([string().min(1), array(string().min(1)).min(1)]),
+  sub: string().startsWith("user_").min(6),
+  org_id: string().startsWith("org_").min(5),
   // Must fit the persisted MCP source contract before any input is accepted.
-  client_id: z
-    .string()
+  client_id: string()
     .min(1)
     .max(2048)
     .refine((value) => {
       return value.trim().length > 0;
     }),
-  exp: z.number().int().positive(),
-  scope: z.string().optional(),
-  scp: z.array(z.string().min(1)).optional(),
+  exp: number().int().positive(),
+  scope: string().optional(),
+  scp: array(string().min(1)).optional(),
 });
 
 const invalidOAuthTokenReasons: readonly string[] = Object.freeze([
@@ -64,11 +63,9 @@ export function isClerkOAuthAccessToken(token: string): boolean {
   if (!header) {
     return false;
   }
-  const parsed = z
-    .object({ typ: z.string() })
-    .safeParse(
-      safeJsonParse(Buffer.from(header, "base64url").toString("utf8")),
-    );
+  const parsed = object({ typ: string() }).safeParse(
+    safeJsonParse(Buffer.from(header, "base64url").toString("utf8")),
+  );
   return (
     parsed.success &&
     ["at+jwt", "application/at+jwt"].includes(parsed.data.typ.toLowerCase())
@@ -711,7 +708,7 @@ export async function authenticateClerkSession(
   const auth = requestState.toAuth();
   const party = auth.sessionClaims?.azp;
   if (typeof party === "string") {
-    const origin = z.url().safeParse(party);
+    const origin = url().safeParse(party);
     if (!origin.success) {
       return { identity: null };
     }

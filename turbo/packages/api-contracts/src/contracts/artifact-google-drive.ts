@@ -1,4 +1,4 @@
-import * as z from "zod";
+import { object, string, uuid, enum as zEnum } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -9,20 +9,20 @@ const c = initContract();
  * catalog artifact UUID (current projection) or an uploaded artifact's UUID
  * (that exact file), including files intentionally grouped out of the catalog.
  */
-const uploadBody = z.object({
-  agentId: z.uuid(),
-  connectionId: z.uuid().optional(),
+const uploadBody = object({
+  agentId: uuid(),
+  connectionId: uuid().optional(),
 });
 const uploadRoute = {
   method: "POST",
   headers: authHeadersSchema,
-  pathParams: z.object({ artifactId: z.uuid() }),
+  pathParams: object({ artifactId: uuid() }),
   responses: {
-    200: z.object({
-      id: z.string(),
-      name: z.string(),
-      webViewLink: z.string().nullable(),
-      mimeType: z.string().optional(),
+    200: object({
+      id: string(),
+      name: string(),
+      webViewLink: string().nullable(),
+      mimeType: string().optional(),
     }),
     400: apiErrorSchema,
     401: apiErrorSchema,
@@ -45,7 +45,7 @@ export const artifactGoogleDriveContract = c.router({
   uploadWithMode: {
     ...uploadRoute,
     path: "/api/artifacts/:artifactId/google-drive/uploads",
-    body: uploadBody.extend({ mode: z.enum(["original", "google"]) }),
+    body: uploadBody.extend({ mode: zEnum(["original", "google"]) }),
     summary:
       "Upload an original artifact or convert it to a Google editor format",
   },
