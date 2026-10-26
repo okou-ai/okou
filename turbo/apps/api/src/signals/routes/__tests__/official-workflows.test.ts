@@ -421,14 +421,13 @@ function mockBriefMemberships(
   entries: readonly {
     readonly actor: ApiTestUser;
     readonly createdAt: Date;
-    readonly membershipId?: string;
   }[],
 ): void {
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
-      data: entries.map(({ actor, createdAt, membershipId }) => {
+      data: entries.map(({ actor, createdAt }) => {
         return {
-          id: membershipId ?? `membership-${actor.userId}-${actor.orgId}`,
+          id: `membership-${actor.userId}-${actor.orgId}`,
           role: actor.orgRole ?? "org:member",
           createdAt: createdAt.getTime(),
           organization: { id: actor.orgId },
