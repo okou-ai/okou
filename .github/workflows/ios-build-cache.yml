@@ -19,7 +19,7 @@ on:
         type: boolean
         default: false
       package_cache_feasibility:
-        description: Exercise fresh package builds with native compiler caching
+        description: Exercise package object reuse with freshly linked test bundles
         type: boolean
         default: false
 
@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Qualify compiler replay with fresh build directories
+      - name: Qualify object replay with freshly linked test bundles
         run: python3 ops/ios-ci/package-cache-feasibility.py
       - name: Retain package cache feasibility evidence
         if: always()
