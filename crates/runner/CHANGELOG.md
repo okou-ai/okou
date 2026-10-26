@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.237.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.3...runner-rs-v0.237.4) (2026-10-26)
+
 ## [0.237.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.2...runner-rs-v0.237.3) (2026-10-26)
 
 
