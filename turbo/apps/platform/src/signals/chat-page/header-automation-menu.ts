@@ -28,40 +28,22 @@ export interface HeaderWorkflowAutomationEntry {
   readonly automation: ChatThreadWorkflowAutomation;
 }
 
+type HeaderAutomationUpdate = { readonly automationId: string } & (
+  | { readonly schedule: WorkflowSchedule }
+  | {
+      readonly eventConfig:
+        GmailNewMessageEventConfig | GmailLabelAppliedEventConfig;
+    }
+);
+
 export interface HeaderAutomationSignals {
   readonly automations$: Computed<
     Promise<readonly HeaderWorkflowAutomationEntry[]>
   >;
   readonly reloadAutomations$: Command<void, []>;
-  readonly updateSchedule$: Command<
+  readonly save$: Command<
     Promise<void>,
-    [
-      {
-        readonly automationId: string;
-        readonly schedule: WorkflowSchedule;
-      },
-      AbortSignal,
-    ]
-  >;
-  readonly updateGmailNewMessage$: Command<
-    Promise<void>,
-    [
-      {
-        readonly automationId: string;
-        readonly eventConfig: GmailNewMessageEventConfig;
-      },
-      AbortSignal,
-    ]
-  >;
-  readonly updateGmailLabelApplied$: Command<
-    Promise<void>,
-    [
-      {
-        readonly automationId: string;
-        readonly eventConfig: GmailLabelAppliedEventConfig;
-      },
-      AbortSignal,
-    ]
+    [HeaderAutomationUpdate, () => void, AbortSignal]
   >;
   readonly runNow$: Command<Promise<void>, [string, AbortSignal]>;
 }
@@ -230,72 +212,28 @@ export function createHeaderAutomationSignals(
     },
   );
 
-  const updateSchedule$ = command(
+  const save$ = command(
     async (
       { get, set },
-      params: {
-        readonly automationId: string;
-        readonly schedule: WorkflowSchedule;
-      },
+      params: HeaderAutomationUpdate,
+      onSaved: () => void,
       signal: AbortSignal,
     ) => {
       const client = get(apiClient$)(workflowAutomationsContract);
       await accept(
         client.update({
           params: { id: params.automationId },
-          body: { schedule: params.schedule },
+          body:
+            "schedule" in params
+              ? { schedule: params.schedule }
+              : { eventConfig: params.eventConfig },
           fetchOptions: { signal },
         }),
         [200],
       );
       signal.throwIfAborted();
       set(reloadAutomations$);
-    },
-  );
-
-  const updateGmailNewMessage$ = command(
-    async (
-      { get, set },
-      params: {
-        readonly automationId: string;
-        readonly eventConfig: GmailNewMessageEventConfig;
-      },
-      signal: AbortSignal,
-    ) => {
-      const client = get(apiClient$)(workflowAutomationsContract);
-      await accept(
-        client.update({
-          params: { id: params.automationId },
-          body: { eventConfig: params.eventConfig },
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
-      signal.throwIfAborted();
-      set(reloadAutomations$);
-    },
-  );
-
-  const updateGmailLabelApplied$ = command(
-    async (
-      { get, set },
-      params: {
-        readonly automationId: string;
-        readonly eventConfig: GmailLabelAppliedEventConfig;
-      },
-      signal: AbortSignal,
-    ) => {
-      const client = get(apiClient$)(workflowAutomationsContract);
-      await accept(
-        client.update({
-          params: { id: params.automationId },
-          body: { eventConfig: params.eventConfig },
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
-      signal.throwIfAborted();
-      set(reloadAutomations$);
+      onSaved();
     },
   );
 
@@ -317,9 +255,7 @@ export function createHeaderAutomationSignals(
   return {
     automations$,
     reloadAutomations$,
-    updateSchedule$,
-    updateGmailNewMessage$,
-    updateGmailLabelApplied$,
+    save$,
     runNow$,
   };
 }

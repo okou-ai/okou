@@ -65,7 +65,9 @@ function automationControl(
   return control;
 }
 
-async function openAutomationBrowser(): Promise<void> {
+async function openAutomationBrowser(): Promise<
+  readonly ChatThreadWorkflowAutomation[]
+> {
   const automations = [
     {
       id: ACTIVE_SCHEDULE_ID,
@@ -188,6 +190,7 @@ async function openAutomationBrowser(): Promise<void> {
     name: "Automations",
   });
   expect(automationSidebar).toBeVisible();
+  return automations;
 }
 
 test("Browse an active scheduled workflow and its available controls", async () => {
@@ -328,3 +331,64 @@ test("Refresh the automation list when the thread's automations change", async (
     within(automationSidebar).getByText("Active release schedule"),
   ).toBeVisible();
 });
+
+test.each(["Active release schedule", "Paused digest schedule"])(
+  "An earlier chat automation save preserves a newer editor for %s",
+  async (title) => {
+    const automations = await openAutomationBrowser();
+    const active = automations.find((automation) => {
+      return automation.id === ACTIVE_SCHEDULE_ID;
+    });
+    if (!active || active.kind !== "schedule") {
+      throw new Error("Expected the active schedule");
+    }
+    let current: readonly ChatThreadWorkflowAutomation[] = automations;
+    context.mocks.api(
+      workflowAutomationsContract.listForChatThread,
+      ({ respond }) => {
+        return respond(200, [...current]);
+      },
+    );
+    const started = context.mocks.deferred<void>();
+    const response = context.mocks.deferred<void>();
+    context.mocks.api(
+      workflowAutomationsContract.update,
+      async ({ respond }) => {
+        started.resolve();
+        await response.promise;
+        const saved = {
+          ...active,
+          schedule: { type: "loop" as const, intervalSeconds: 18_000 },
+          scheduleSummary: "Every 5 hours",
+        };
+        current = automations.map((item) => {
+          return item.id === active.id ? saved : item;
+        });
+        return respond(200, saved);
+      },
+    );
+    click(
+      automationControl(
+        automationPanel("Active release schedule"),
+        "button",
+        "Edit",
+      ),
+    );
+    const first = await screen.findByRole("dialog");
+    click(automationControl(first, "button", "Save automation"));
+    await started.promise;
+    click(await findButton("Close"));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    click(automationControl(automationPanel(title), "button", "Edit"));
+    const newer = await screen.findByRole("dialog");
+    const value = within(newer).getByRole("combobox");
+    click(value);
+    click(await screen.findByRole("option", { name: "30 minutes" }));
+    response.resolve();
+    await screen.findByText("Every 5 hours");
+    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    expect(value).toHaveTextContent("30 minutes");
+  },
+);
