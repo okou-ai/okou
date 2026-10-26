@@ -662,6 +662,11 @@ pub(super) async fn command(
             );
             let value: Value = serde_json::from_str(&text).unwrap();
             if value["id"] == id {
+                assert_eq!(
+                    value.get("sessionId").and_then(Value::as_str),
+                    session,
+                    "CDP responses must retain the command's flattened session"
+                );
                 return value;
             }
         }

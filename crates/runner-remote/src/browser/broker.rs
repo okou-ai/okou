@@ -121,12 +121,24 @@ impl Broker {
             .and_then(Value::as_u64)
             .filter(|id| *id <= 9_007_199_254_740_991)
             .ok_or(Failure)?;
-        let denied = || json!({"id":id,"error":{"code":-32601,"message":"Operation unavailable in this chat window"}});
         let method = input.get("method").and_then(Value::as_str).ok_or(Failure)?;
         let session = input
             .get("sessionId")
             .map(|s| s.as_str().ok_or(Failure))
             .transpose()?;
+        let denied = || {
+            let mut response = serde_json::Map::from_iter([
+                ("id".to_owned(), id.into()),
+                (
+                    "error".to_owned(),
+                    json!({"code":-32601,"message":"Operation unavailable in this chat window"}),
+                ),
+            ]);
+            if let Some(session) = session {
+                response.insert("sessionId".to_owned(), session.into());
+            }
+            Value::Object(response)
+        };
         let mut params = input.get("params").cloned().unwrap_or_else(|| json!({}));
         let released_object = if method == "Runtime.releaseObject" {
             params
