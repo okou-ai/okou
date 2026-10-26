@@ -1,10 +1,10 @@
 import { renderAsync } from "docx-preview";
-import { z } from "zod";
+import { array, object, string } from "zod";
 import { fetchResource } from "./resource-fetch.ts";
 
-const renderedWordSchema = z.object({
-  documentPart: z.object({
-    rels: z.array(z.object({ type: z.string() })).nullable(),
+const renderedWordSchema = object({
+  documentPart: object({
+    rels: array(object({ type: string() })).nullable(),
   }),
 });
 
