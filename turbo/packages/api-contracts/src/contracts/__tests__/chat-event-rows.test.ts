@@ -7,7 +7,11 @@ import {
 import { chatEventFromRow } from "../chat-event-row-projection";
 import { chatEventRowSchema, type ChatEventRow } from "../chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../chat-event-schema-version";
-import { chatEventSchema, chatThreadEventsContract } from "../chat-threads";
+import {
+  chatEventResponse,
+  chatEventSchema,
+  chatThreadEventsContract,
+} from "../chat-threads";
 
 const CREATED_AT = "2026-08-08T10:00:00.000Z";
 
@@ -259,7 +263,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     },
   );
 
-  it("rejects private Discord launch fields in public source metadata", () => {
+  it("rejects private Discord launch fields at the public ChatEvent contract", () => {
     const row = canonicalRow({
       eventType: "input.prompt",
       contextType: "discord",
@@ -280,7 +284,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       },
     });
     expect(() => {
-      return chatEventFromRow(row);
+      return chatEventResponse(chatEventFromRow(row));
     }).toThrow();
   });
 

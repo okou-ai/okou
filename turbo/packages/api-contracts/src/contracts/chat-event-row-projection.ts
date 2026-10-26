@@ -1,6 +1,10 @@
 import type { ChatEventRow } from "./chat-event-rows";
 import type { ChatEventType } from "./chat-events";
-import { chatEventSchema, type ChatEvent } from "./chat-threads";
+import type {
+  ChatEvent,
+  ChatEventUsagePayload,
+  UserMessageDocument,
+} from "./chat-threads";
 
 function requiredRowField<T>(
   value: T | null,
@@ -15,8 +19,11 @@ function requiredRowField<T>(
 
 /**
  * Projects one canonical row into the public ChatEvent response shape without
- * rewriting its text. The contract test suite pins every supported event type.
- * A control.interrupt target is emitted as interruptsRunId, never as run ownership.
+ * rewriting its text or re-validating its payload documents. The API validates
+ * those documents when it writes them, and snapshot publication checks every
+ * projected row against the public ChatEvent contract before readers can load
+ * it. A control.interrupt target is emitted as interruptsRunId, never as run
+ * ownership.
  */
 export function chatEventFromRow(row: ChatEventRow): ChatEvent {
   const payload = row.payload;
@@ -35,17 +42,20 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
     sequenceNumber: row.runEventSequenceNumber,
     createdAt: row.createdAt,
   };
-  const candidates: Record<ChatEventType, () => unknown> = {
+  const userMessage = (): UserMessageDocument => {
+    return requiredRowField(
+      payload?.userMessage ?? null,
+      row.eventType,
+      "userMessage",
+    ) as UserMessageDocument;
+  };
+  const candidates: Record<ChatEventType, () => ChatEvent> = {
     "input.prompt": () => {
       return {
         ...base,
         eventType: "input.prompt",
         content: null,
-        userMessage: requiredRowField(
-          payload?.userMessage ?? null,
-          row.eventType,
-          "userMessage",
-        ),
+        userMessage: userMessage(),
       };
     },
     "input.automation": () => {
@@ -53,7 +63,8 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         ...base,
         eventType: "input.automation",
         content: null,
-        userMessage: payload?.userMessage ?? undefined,
+        userMessage:
+          payload?.userMessage === undefined ? undefined : userMessage(),
       };
     },
     "input.budget": () => {
@@ -61,11 +72,7 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         ...base,
         eventType: "input.budget",
         content: null,
-        userMessage: requiredRowField(
-          payload?.userMessage ?? null,
-          row.eventType,
-          "userMessage",
-        ),
+        userMessage: userMessage(),
       };
     },
     "input.rejected": () => {
@@ -73,11 +80,7 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         ...base,
         eventType: "input.rejected",
         content: null,
-        userMessage: requiredRowField(
-          payload?.userMessage ?? null,
-          row.eventType,
-          "userMessage",
-        ),
+        userMessage: userMessage(),
         error: requiredRowField(payload?.error ?? null, row.eventType, "error"),
       };
     },
@@ -161,10 +164,14 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         eventType: "usage.recorded",
         runId: requiredRowField(row.runId, row.eventType, "runId"),
         content: null,
-        usage: requiredRowField(payload?.usage ?? null, row.eventType, "usage"),
+        usage: requiredRowField(
+          payload?.usage ?? null,
+          row.eventType,
+          "usage",
+        ) as ChatEventUsagePayload,
       };
     },
   };
 
-  return chatEventSchema.parse(candidates[row.eventType]());
+  return candidates[row.eventType]();
 }

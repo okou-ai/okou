@@ -3,10 +3,7 @@ import {
   chatThreadSnapshotProjectionSchema,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  chatEventRowSchema,
-  type ChatEventRow,
-} from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { z } from "zod";
 
 export const sharedDatabaseIdentitySchema = z
@@ -113,9 +110,9 @@ export function parseSharedDatabaseQueryResult<
   TKey extends SharedDatabaseDataKey,
 >(dataKey: TKey, value: unknown): SharedDatabaseQueryResult<TKey> {
   if (dataKey.kind === "chat-event") {
-    return chatEventRowSchema
-      .array()
-      .parse(value) as SharedDatabaseQueryResult<TKey>;
+    // The same-build Worker decodes cached and snapshot rows, and row pages
+    // come from the API row contract. The port only clones them.
+    return value as SharedDatabaseQueryResult<TKey>;
   }
   return chatThreadEventQueryResultSchema.parse(
     value,
