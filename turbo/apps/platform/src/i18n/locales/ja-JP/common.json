@@ -1562,8 +1562,7 @@
         "whatsCooking": "{{userName}}、料理は何ですか?",
         "whatsOnYourMind": "{{userName}} さん、何を考えていますか?",
         "whatsTheMove": "{{userName}} さん、どうしますか?"
-      },
-      "viewAgentProfile": "エージェントのプロフィールを表示する"
+      }
     },
     "agentSuggestions": {
       "dismiss": "非表示にする",

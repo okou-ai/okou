@@ -1564,8 +1564,7 @@
         "whatsCooking": "Was steht an, {{userName}}?",
         "whatsOnYourMind": "Was beschäftigt Sie, {{userName}}?",
         "whatsTheMove": "Was ist der nächste Schritt, {{userName}}?"
-      },
-      "viewAgentProfile": "Agentenprofil anzeigen"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Verwerfen",
