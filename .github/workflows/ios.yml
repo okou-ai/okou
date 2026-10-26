@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      package_object_cache_experiment:
+        description: Compare fresh package runners with an isolated object cache
+        type: boolean
+        default: false
       sample_xcode_startup:
         description: Sample the compile-phase Xcode startup
         type: boolean
@@ -33,6 +37,67 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  package-object-seed:
+    if: github.event_name == 'workflow_dispatch' && inputs.package_object_cache_experiment
+    uses: ./.github/workflows/ios-package-object-cache-trial.yml
+    with:
+      mode: seed
+      label: seed
+
+  package-object-baseline-before:
+    needs: package-object-seed
+    uses: ./.github/workflows/ios-package-object-cache-trial.yml
+    with:
+      mode: baseline
+      label: A1
+
+  package-object-warm-one:
+    needs: package-object-baseline-before
+    uses: ./.github/workflows/ios-package-object-cache-trial.yml
+    with:
+      mode: warm
+      label: B1
+
+  package-object-warm-two:
+    needs: package-object-warm-one
+    uses: ./.github/workflows/ios-package-object-cache-trial.yml
+    with:
+      mode: warm
+      label: B2
+
+  package-object-baseline-after:
+    needs: package-object-warm-two
+    uses: ./.github/workflows/ios-package-object-cache-trial.yml
+    with:
+      mode: baseline
+      label: A2
+
+  package-object-experiment-result:
+    needs:
+      [
+        package-object-seed,
+        package-object-baseline-before,
+        package-object-warm-one,
+        package-object-warm-two,
+        package-object-baseline-after,
+      ]
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.package_object_cache_experiment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected package cache trial
+        env:
+          SEED_RESULT: ${{ needs.package-object-seed.result }}
+          A1_RESULT: ${{ needs.package-object-baseline-before.result }}
+          B1_RESULT: ${{ needs.package-object-warm-one.result }}
+          B2_RESULT: ${{ needs.package-object-warm-two.result }}
+          A2_RESULT: ${{ needs.package-object-baseline-after.result }}
+        run: |
+          set -euo pipefail
+          for result in "$SEED_RESULT" "$A1_RESULT" "$B1_RESULT" "$B2_RESULT" "$A2_RESULT"; do
+            test "$result" = success
+          done
+
   archive-cache-seed:
     if: github.event_name == 'workflow_dispatch' && inputs.archive_cache_experiment
     uses: ./.github/workflows/ios-archive-cache-experiment.yml

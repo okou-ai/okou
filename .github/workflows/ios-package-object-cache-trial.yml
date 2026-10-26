@@ -1,0 +1,73 @@
+name: iOS Package Object Cache Trial
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+      label:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  measure:
+    name: ${{ inputs.label }}
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      PACKAGE_CACHE_TRIAL_MODE: ${{ inputs.mode }}
+      PACKAGE_CACHE_TRIAL_LABEL: ${{ inputs.label }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Capture package inputs and start measurement
+        run: python3 ops/ios-ci/package-object-cache.py start
+      - name: Restore the isolated package object snapshot
+        id: cache
+        if: inputs.mode == 'warm'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/okou-ios-ci/ChatDomain
+            ${{ runner.temp }}/okou-ios-ci/ChatData
+            ${{ runner.temp }}/okou-ios-ci/package-cache-identity.json
+          key: ios-package-objects-experiment-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Validate exact cache reuse before building
+        if: inputs.mode == 'warm'
+        env:
+          PACKAGE_CACHE_EXACT_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: python3 ops/ios-ci/package-object-cache.py validate
+      - name: Build and run every package test
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ios/scripts/ci-package-test.sh 2>&1 | tee "$RUNNER_TEMP/package-object-trial/build.log"
+      - name: Prepare objects and metadata for cache publication
+        if: inputs.mode == 'seed'
+        run: python3 ops/ios-ci/package-object-cache.py snapshot
+      - name: Save the branch-scoped experiment snapshot
+        if: inputs.mode == 'seed'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/okou-ios-ci/ChatDomain
+            ${{ runner.temp }}/okou-ios-ci/ChatData
+            ${{ runner.temp }}/okou-ios-ci/package-cache-identity.json
+          key: ios-package-objects-experiment-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Record package trial measurements
+        run: python3 ops/ios-ci/package-object-cache.py report
+      - name: Retain trial evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-object-trial-${{ inputs.label }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/package-object-trial
+          if-no-files-found: error
+          retention-days: 1
