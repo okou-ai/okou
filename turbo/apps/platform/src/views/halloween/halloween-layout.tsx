@@ -8,6 +8,10 @@ import {
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { ArrowLeft, ArrowUpRight, Info, Volume2, VolumeX } from "lucide-react";
+import {
+  platformOkouWordmarkDarkImg,
+  platformOkouWordmarkLightImg,
+} from "../../lib/static-assets.ts";
 import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
 import { playHalloweenClick$ } from "../../signals/halloween/halloween-motion.ts";
 import {
@@ -22,7 +26,6 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { HalloweenMark } from "./halloween-art.tsx";
 
 export const goldButton =
   "relative h-auto min-h-12 gap-3 rounded-xl border border-[#fbe7c1b3] bg-[linear-gradient(180deg,#f0d6a5,#dfb879)] px-7 py-3.5 text-sm font-semibold text-[#302519] shadow-[inset_0_1px_0_#fff5,0_4px_20px_#0003] transition-all duration-200 hover:border-[#ffebc8] hover:bg-[linear-gradient(180deg,#f7e3bf,#eac88e)] hover:shadow-[inset_0_1px_0_#fff5,0_6px_28px_#e2bc7620] active:translate-y-px motion-safe:hover:-translate-y-0.5";
@@ -41,12 +44,17 @@ export function HalloweenHeader() {
     <header className="relative z-20 flex min-h-[76px] shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-5 py-4 text-[#eef1f5] md:px-12">
       <Link
         pathname="/"
-        className="flex shrink-0 items-center gap-2.5 text-xl font-semibold tracking-[-.045em] transition-opacity hover:opacity-75"
+        aria-label={copy.brand}
+        className="flex h-8 shrink-0 items-center transition-opacity hover:opacity-75"
       >
-        <span className="size-6">
-          <HalloweenMark />
-        </span>
-        {copy.brand}
+        <img
+          src={platformOkouWordmarkLightImg}
+          alt=""
+          aria-hidden
+          width={91}
+          height={24}
+          className="h-6 w-[91px]"
+        />
       </Link>
       <div className="ml-auto flex max-w-[74%] flex-wrap items-center justify-end gap-x-3 gap-y-2 text-xs md:max-w-none md:gap-5">
         <span className="hidden font-medium text-[#c5cfdd] md:inline">
@@ -165,7 +173,13 @@ export function HalloweenRules() {
             <ArrowLeft className="size-3.5" />
             {copy.backToGame}
           </Button>
-          <span className="text-[#8a8b8e]">{copy.rulesBrand}</span>
+          <img
+            src={platformOkouWordmarkDarkImg}
+            alt={copy.rulesBrand}
+            width={76}
+            height={20}
+            className="h-5 w-[76px]"
+          />
         </div>
         <DialogTitle className="mb-3 text-[28px] font-semibold leading-tight tracking-[-.035em] sm:text-[32px]">
           {copy.rulesHeading}

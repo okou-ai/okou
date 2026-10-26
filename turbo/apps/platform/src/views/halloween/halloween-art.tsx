@@ -3,48 +3,6 @@ import { cn } from "@okouai/ui";
 import { halloweenStageMotion$ } from "../../signals/halloween/halloween-motion.ts";
 
 // Original campaign artwork, with restrained stage lighting around the content.
-export function HalloweenMark() {
-  return (
-    <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden="true">
-      <g fill="#F6A21B">
-        <ellipse cx="32" cy="13" rx="9" ry="11" />
-        <ellipse cx="32" cy="51" rx="9" ry="11" />
-        <ellipse cx="13" cy="32" rx="11" ry="9" />
-        <ellipse cx="51" cy="32" rx="11" ry="9" />
-        <ellipse
-          cx="18.5"
-          cy="18.5"
-          rx="10"
-          ry="8.5"
-          transform="rotate(-45 18.5 18.5)"
-        />
-        <ellipse
-          cx="45.5"
-          cy="18.5"
-          rx="10"
-          ry="8.5"
-          transform="rotate(45 45.5 18.5)"
-        />
-        <ellipse
-          cx="18.5"
-          cy="45.5"
-          rx="10"
-          ry="8.5"
-          transform="rotate(45 18.5 45.5)"
-        />
-        <ellipse
-          cx="45.5"
-          cy="45.5"
-          rx="10"
-          ry="8.5"
-          transform="rotate(-45 45.5 45.5)"
-        />
-      </g>
-      <circle cx="32" cy="32" r="7.5" fill="#fff" />
-    </svg>
-  );
-}
-
 export function HalloweenGhost() {
   return (
     <svg viewBox="0 0 120 130" className="h-full w-full" aria-hidden="true">
