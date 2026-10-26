@@ -12,6 +12,36 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1064.1](https://github.com/okou-ai/okou/compare/app-v0.1064.0...app-v0.1064.1) (2026-10-26)
+
+
+### Refactoring
+
+* **app:** own custom connector connection completion ([#43034](https://github.com/okou-ai/okou/issues/43034)) ([cdfbcf1](https://github.com/okou-ai/okou/commit/cdfbcf1b57de1e2a6e8b2c8845aa279d7a4590d8))
+
+## [0.1064.0](https://github.com/okou-ai/okou/compare/app-v0.1063.2...app-v0.1064.0) (2026-10-26)
+
+
+### Features
+
+* roll out tailscale setup and remove its feature switch ([#43012](https://github.com/okou-ai/okou/issues/43012)) ([78533ae](https://github.com/okou-ai/okou/commit/78533ae6f68a2ba6c58412e84c3e797646ec611f))
+* unify proactive planning and action settings ([#43022](https://github.com/okou-ai/okou/issues/43022)) ([305115c](https://github.com/okou-ai/okou/commit/305115c9796cd4994f93e152391c2d815720b482))
+
+
+### Bug Fixes
+
+* **app:** make composer task chips horizontally scrollable ([#43016](https://github.com/okou-ai/okou/issues/43016)) ([a88f0c4](https://github.com/okou-ai/okou/commit/a88f0c44a4c4a2040698e42c8a0bfed5690b3371))
+* **app:** size the rail chat list toggle like the nav chips ([#43013](https://github.com/okou-ai/okou/issues/43013)) ([db1f376](https://github.com/okou-ai/okou/commit/db1f376bbd4822a3d623539c69978b3b0a1af8d6))
+* **platform:** title every template picker category ([#43030](https://github.com/okou-ai/okou/issues/43030)) ([b21b3ab](https://github.com/okou-ai/okou/commit/b21b3ab1eb0ec40be198e3908d6bd722e6a6e4c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.5.0
+    * @okouai/core bumped to 8.790.0
+
 ## [0.1063.2](https://github.com/okou-ai/okou/compare/app-v0.1063.1...app-v0.1063.2) (2026-10-26)
 
 

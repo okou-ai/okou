@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { currentRequestRuntime } from "../../lib/request-runtime";
 import { now } from "../../lib/time";
 import { singleton } from "../../lib/singleton";
 import {
@@ -22,6 +23,7 @@ import {
 
 const L = logger("GcpLlmAuth");
 const STS_URL = "https://sts.us-west1.rep.googleapis.com/v1/token";
+const MTLS_STS_URL = "https://sts.mtls.googleapis.com/v1/token";
 const SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token";
 const REFRESH_SKEW_MS = 5 * 60_000;
@@ -43,7 +45,18 @@ const configurationSchema = z.object({
       /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/u,
     ),
 });
-type Configuration = z.infer<typeof configurationSchema>;
+const certificateChainSchema = z
+  .array(z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/u))
+  .min(1)
+  .max(5);
+type Configuration = z.infer<typeof configurationSchema> &
+  (
+    | { readonly identity: "oidc" }
+    | {
+        readonly identity: "mtls";
+        readonly certificateChain: readonly string[];
+      }
+  );
 
 /** Validate only when a Google LLM operation needs this optional configuration. */
 export function gcpLlmConfiguration(): Configuration | undefined {
@@ -52,12 +65,30 @@ export function gcpLlmConfiguration(): Configuration | undefined {
     provider: optionalEnv("GCP_LLM_WORKLOAD_IDENTITY_PROVIDER"),
     serviceAccount: optionalEnv("GCP_LLM_SERVICE_ACCOUNT_EMAIL"),
   });
-  return result.success ? result.data : undefined;
+  if (!result.success) {
+    return undefined;
+  }
+  const runtime = currentRequestRuntime();
+  if (!runtime) {
+    return { ...result.data, identity: "oidc" };
+  }
+  const chain = optionalEnv("GCP_MTLS_CERTIFICATE_CHAIN");
+  const certificates = certificateChainSchema.safeParse(
+    chain ? safeJsonParse(chain) : undefined,
+  );
+  if (!runtime.gcpMtls || !certificates.success) {
+    return undefined;
+  }
+  return {
+    ...result.data,
+    identity: "mtls",
+    certificateChain: certificates.data,
+  };
 }
 
 export class GcpLlmAuthError extends Error {
   constructor(
-    readonly stage: "oidc" | "sts" | "impersonation",
+    readonly stage: "oidc" | "mtls" | "sts" | "impersonation",
     readonly status: number,
     readonly temporary = false,
     readonly reason:
@@ -182,17 +213,37 @@ async function tokenResponse(
   }
 }
 
-async function exchange(
+function stsRequest(
   configuration: Configuration,
   signal: AbortSignal,
-): Promise<Credential> {
-  signal.throwIfAborted();
+): () => Promise<Response> {
+  if (configuration.identity === "mtls") {
+    const binding = currentRequestRuntime()?.gcpMtls;
+    if (!binding) {
+      throw new GcpLlmAuthError("mtls", 503, false, "missing_identity");
+    }
+    return () => {
+      return binding.fetch(MTLS_STS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+          audience: `//iam.googleapis.com/${configuration.provider}`,
+          scope: SCOPE,
+          requested_token_type: ACCESS_TOKEN_TYPE,
+          subject_token_type: "urn:ietf:params:oauth:token-type:mtls",
+          subject_token: JSON.stringify(configuration.certificateChain),
+        }),
+        signal,
+      });
+    };
+  }
   // Read the current request context without the SDK's local CLI refresh path.
   const subjectToken = safeSync(getVercelOidcTokenSync);
   if (!("ok" in subjectToken) || !subjectToken.ok) {
     throw new GcpLlmAuthError("oidc", 401, false, "missing_identity");
   }
-  const stsResponse = () => {
+  return () => {
     return fetch(STS_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -207,8 +258,15 @@ async function exchange(
       signal,
     });
   };
+}
+
+async function exchange(
+  configuration: Configuration,
+  signal: AbortSignal,
+): Promise<Credential> {
+  signal.throwIfAborted();
   const sts = stsResponseSchema.safeParse(
-    await tokenResponse(stsResponse, "sts", signal),
+    await tokenResponse(stsRequest(configuration, signal), "sts", signal),
   );
   if (!sts.success) {
     throw new GcpLlmAuthError("sts", 502);
@@ -273,7 +331,7 @@ export async function gcpLlmAccessToken(
   signal: AbortSignal,
 ): Promise<string> {
   signal.throwIfAborted();
-  const key = JSON.stringify([configuration, env("ENV"), STS_URL, SCOPE]);
+  const key = JSON.stringify([configuration, env("ENV"), SCOPE]);
   const cached = credentials().get(key);
   if (cached && cached.expiresAt > now() + REFRESH_SKEW_MS) {
     return cached.accessToken;

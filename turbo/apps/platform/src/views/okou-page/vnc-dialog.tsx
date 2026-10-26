@@ -31,6 +31,15 @@ import {
   vncDialog$,
   vncEditor$,
   vncProfile$,
+  vncTransport$,
+  vncNetworkConfigId$,
+  vncKdcTransport$,
+  vncKdcNetworkConfigId$,
+  vncKdcHost$,
+  vncSshConnectionId$,
+  vncKdcSshConnectionId$,
+  vncDirectDestinationHost$,
+  vncCredentialSelection$,
   vncCredentialMatchesProfile,
   isVncReviewableConflict,
   vncSaveMessage$,
@@ -169,7 +178,12 @@ function VncSaveNotice({
 function useNativeVncNetworkBlocked() {
   const access = useLoadable(cloudflareAccessConfigs$);
   const tailscale = useLoadable(tailscaleConfigs$);
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const transport = useGet(vncTransport$);
+  const networkConfigId = useGet(vncNetworkConfigId$);
+  const kdcTransport = useGet(vncKdcTransport$);
+  const kdcNetworkConfigId = useGet(vncKdcNetworkConfigId$);
+  const kdcHost = useGet(vncKdcHost$);
   const networkUnavailable = (type: string, id: string) => {
     if (type !== "cloudflare_access" && type !== "tailscale") {
       return false;
@@ -183,20 +197,23 @@ function useNativeVncNetworkBlocked() {
     );
   };
   const onlineKdc =
-    isVncKerberosMethod(editor.profile) &&
-    editor.profile !== "qemu_kerberos_ticket";
+    isVncKerberosMethod(profile) && profile !== "qemu_kerberos_ticket";
   return (
-    networkUnavailable(editor.transport, editor.networkConfigId) ||
+    networkUnavailable(transport, networkConfigId) ||
     (onlineKdc &&
-      (networkUnavailable(editor.kdcTransport, editor.kdcNetworkConfigId) ||
-        (editor.kdcTransport === "direct" &&
-          isPrivateVncLiteral(editor.kdcHost))))
+      (networkUnavailable(kdcTransport, kdcNetworkConfigId) ||
+        (kdcTransport === "direct" && isPrivateVncLiteral(kdcHost))))
   );
 }
 
 function useVncRouteBlocked() {
   const sshConnections = useLoadable(sshConnections$);
-  const editor = useGet(vncEditor$);
+  const transport = useGet(vncTransport$);
+  const sshConnectionId = useGet(vncSshConnectionId$);
+  const profile = useGet(vncProfile$);
+  const kdcTransport = useGet(vncKdcTransport$);
+  const kdcSshConnectionId = useGet(vncKdcSshConnectionId$);
+  const directDestinationHost = useGet(vncDirectDestinationHost$);
   const nativeBlocked = useNativeVncNetworkBlocked();
   const sshUnavailable = (id: string) => {
     return (
@@ -208,21 +225,22 @@ function useVncRouteBlocked() {
     );
   };
   const transportBlocked =
-    editor.transport === "ssh" && sshUnavailable(editor.sshConnectionId);
+    transport === "ssh" && sshUnavailable(sshConnectionId);
   const kdcBlocked =
-    isVncKerberosMethod(editor.profile) &&
-    editor.profile !== "qemu_kerberos_ticket" &&
-    editor.kdcTransport === "ssh" &&
-    sshUnavailable(editor.kdcSshConnectionId);
+    isVncKerberosMethod(profile) &&
+    profile !== "qemu_kerberos_ticket" &&
+    kdcTransport === "ssh" &&
+    sshUnavailable(kdcSshConnectionId);
   const destinationBlocked =
-    editor.transport === "direct" &&
-    isPrivateVncLiteral(editor.destinationHost);
+    directDestinationHost !== null &&
+    isPrivateVncLiteral(directDestinationHost);
   return transportBlocked || kdcBlocked || nativeBlocked || destinationBlocked;
 }
 
 function useSaveBlocked(dialog: VncDialogState) {
   const credentials = useLoadable(vncCredentials$);
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const selection = useGet(vncCredentialSelection$);
   const routeBlocked = useVncRouteBlocked();
   const conflict = useGet(vncConflict$);
   if (conflict) {
@@ -230,14 +248,14 @@ function useSaveBlocked(dialog: VncDialogState) {
   }
   if (dialog.kind === "create" || dialog.kind === "edit") {
     const credentialBlocked =
-      editor.profile !== "x509_none" &&
+      profile !== "x509_none" &&
       (credentials.state !== "hasData" ||
         credentials.data === null ||
-        (editor.selection !== "new" &&
+        (selection !== "new" &&
           !credentials.data.some((credential) => {
             return (
-              credential.id === editor.selection &&
-              vncCredentialMatchesProfile(credential, editor.profile)
+              credential.id === selection &&
+              vncCredentialMatchesProfile(credential, profile)
             );
           })));
     return credentialBlocked || routeBlocked;
@@ -606,7 +624,8 @@ function useVncFormSubmission(
   const saving = operation.state === "loading";
   const setup = useGet(remoteSetup$);
   const guided = useGet(remoteControlGuidedEnabled$);
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const selection = useGet(vncCredentialSelection$);
   const confirmLogin = useSet(requestRemoteLoginSave$);
   const uncertain = useGet(vncSaveUncertain$);
   const conflict = useGet(vncConflict$);
@@ -648,8 +667,8 @@ function useVncFormSubmission(
         guided &&
         dialog.kind === "edit" &&
         dialog.loginCredential &&
-        editor.selection === dialog.loginCredential.id &&
-        vncCredentialMatchesProfile(dialog.loginCredential, editor.profile) &&
+        selection === dialog.loginCredential.id &&
+        vncCredentialMatchesProfile(dialog.loginCredential, profile) &&
         !confirmLogin(
           "vnc",
           dialog.loginCredential.hosts,

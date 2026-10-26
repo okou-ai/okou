@@ -27,6 +27,7 @@ import { createDeferredPromise, settleIncludingAbort } from "./signals/utils";
 interface WorkerBindings {
   readonly HYPERDRIVE: Hyperdrive;
   readonly API_NATIVE_TELEMETRY?: string;
+  readonly GCP_MTLS?: RequestRuntime["gcpMtls"];
 }
 
 /** Keep the pool alive until both response streaming and registered work finish. */
@@ -145,6 +146,7 @@ function workerFetch(
     });
     const runtime: RequestRuntime = {
       nativeTelemetry: bindings.API_NATIVE_TELEMETRY === "true",
+      gcpMtls: bindings.GCP_MTLS,
       database() {
         if (closing) {
           throw new Error("Worker request database is closed");

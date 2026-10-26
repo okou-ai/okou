@@ -46,10 +46,13 @@ function setupGitHubTokenMock(installationId: string): void {
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       ({ request }) => {
         expect(request.headers.get("authorization")).toMatch(/^Bearer /u);
-        return HttpResponse.json({
-          token: "ghs_test_token",
-          expires_at: "2099-01-01T00:00:00Z",
-        });
+        return HttpResponse.json(
+          {
+            token: "ghs_test_token",
+            expires_at: "2099-01-01T00:00:00Z",
+          },
+          { status: 201 },
+        );
       },
     ),
   );
@@ -268,7 +271,7 @@ describe("GitHub file integration routes", () => {
           const body = (await request.json()) as Record<string, unknown>;
           capturedCommentBody =
             typeof body.body === "string" ? body.body : undefined;
-          return HttpResponse.json({ id: 98_765 });
+          return HttpResponse.json({ id: 98_765 }, { status: 201 });
         },
       ),
     );

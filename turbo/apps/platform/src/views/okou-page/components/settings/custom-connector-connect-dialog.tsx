@@ -25,11 +25,9 @@ import { useTranslation } from "react-i18next";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
-  closeCustomConnectorDialog$,
   submitCustomConnectorConnection$,
   cancelCustomConnectorConnection$,
   customConnectorConnectForm$,
-  resetCustomConnectorConnectInput$,
   setCustomConnectorConnectField$,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
 import { sanitizeTokenInputRecord } from "../../../../signals/okou-page/settings/token-input.ts";
@@ -288,19 +286,6 @@ function CustomConnectorConnectForm({
   );
 }
 
-function useCloseCustomConnectorDialog(onClose: (() => void) | undefined) {
-  const resetForm = useSet(resetCustomConnectorConnectInput$);
-  const closeDialog = useSet(closeCustomConnectorDialog$);
-  return () => {
-    resetForm();
-    if (onClose) {
-      onClose();
-    } else {
-      closeDialog();
-    }
-  };
-}
-
 function useCustomConnectorAccountSetup(
   connector: CustomConnectorResponse,
   accountMode: CustomConnectorConnectDialogProps["accountMode"],
@@ -422,7 +407,6 @@ function CustomConnectorConnectDialogContent({
   const { t } = useTranslation();
   const form = useGet(customConnectorConnectForm$);
   const setField = useSet(setCustomConnectorConnectField$);
-  const close = useCloseCustomConnectorDialog(onClose);
   const [connectionLoadable, submit] = useLoadableSet(
     submitCustomConnectorConnection$,
   );
@@ -445,8 +429,7 @@ function CustomConnectorConnectDialogContent({
     (authorization || (hasRequiredValues && (noAuth || values.length > 0)));
 
   const cancel = () => {
-    cancelConnection();
-    close();
+    cancelConnection(onClose);
   };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -455,23 +438,19 @@ function CustomConnectorConnectDialogContent({
       return;
     }
     detach(
-      (async () => {
-        const connected = await submit(
-          {
-            connector,
-            agentId,
-            values,
-            accountOptions,
-            accountMode,
-            onConnected,
-          },
+      submit(
+        {
+          connector,
+          agentId,
+          values,
+          accountOptions,
+          accountMode,
+          onConnected,
           onSuccess,
-          signal,
-        );
-        if (connected) {
-          close();
-        }
-      })(),
+          onClose,
+        },
+        signal,
+      ),
       Reason.DomCallback,
     );
   };

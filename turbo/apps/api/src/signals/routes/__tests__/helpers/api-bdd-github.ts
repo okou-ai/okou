@@ -179,10 +179,13 @@ function mockGithubInstallationApi(args: {
     http.post(
       `https://api.github.com/app/installations/${args.installationId}/access_tokens`,
       () => {
-        return HttpResponse.json({
-          token: args.token ?? "ghs_bdd_installation_token",
-          expires_at: "2099-01-01T00:00:00Z",
-        });
+        return HttpResponse.json(
+          {
+            token: args.token ?? "ghs_bdd_installation_token",
+            expires_at: "2099-01-01T00:00:00Z",
+          },
+          { status: 201 },
+        );
       },
     ),
   );

@@ -75,7 +75,6 @@ const zipUrl = requiredArg(args, "zip-url");
 const channel = args.get("channel") ?? "stable";
 const platform = args.get("platform") ?? "darwin";
 const arch = args.get("arch") ?? "arm64";
-const pubDate = args.get("pub-date") ?? new Date().toISOString();
 
 if (!isNativeDesktopVersion(version)) {
   throw new Error(
@@ -134,7 +133,8 @@ manifest.releases[version] = {
   version,
   name: currentRelease.name ?? `Okou ${version}`,
   notes: currentRelease.notes ?? "",
-  pubDate,
+  pubDate:
+    args.get("pub-date") ?? currentRelease.pubDate ?? new Date().toISOString(),
   platforms,
 };
 

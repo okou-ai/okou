@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.52](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.51...guest-control-client-v0.23.52) (2026-10-26)
+
+
+### Performance Improvements
+
+* **runner:** batch instruction sources with bootstrap files ([#43021](https://github.com/okou-ai/okou/issues/43021)) ([929b0c4](https://github.com/okou-ai/okou/commit/929b0c4ebb8730bb795478d218202c3424e82879))
+
 ## [0.23.51](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.50...guest-control-client-v0.23.51) (2026-10-26)
 
 ## [0.23.50](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.49...guest-control-client-v0.23.50) (2026-10-25)

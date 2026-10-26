@@ -110,13 +110,12 @@ jobs:
           key: ${{ steps.cache.outputs.dependencies-key }}
           lookup-only: true
           fail-on-cache-miss: true
-      - name: Prepare simulator and compiler cache
+      - name: Prepare compiler cache
         id: compile
         if: steps.cache.outputs.compilation-hit != 'true'
         run: |
           sysctl hw.ncpu hw.memsize
           vm_stat
-          python3 ios/scripts/preboot-simulator.py
           bash ios/scripts/ci-test.sh compile
           vm_stat
       - name: Save main Xcode compilation cache

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.38](https://github.com/okou-ai/okou/compare/runner-host-v0.9.37...runner-host-v0.9.38) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner-network:** retain ca authority through physical preparation ([#43055](https://github.com/okou-ai/okou/issues/43055)) ([5191452](https://github.com/okou-ai/okou/commit/5191452e0f77c4504965705d032120d51e4b1d63))
+
+## [0.9.37](https://github.com/okou-ai/okou/compare/runner-host-v0.9.36...runner-host-v0.9.37) (2026-10-26)
+
 ## [0.9.36](https://github.com/okou-ai/okou/compare/runner-host-v0.9.35...runner-host-v0.9.36) (2026-10-26)
 
 ## [0.9.35](https://github.com/okou-ai/okou/compare/runner-host-v0.9.34...runner-host-v0.9.35) (2026-10-26)

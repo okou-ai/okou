@@ -470,8 +470,21 @@ export const vncProfile$ = computed((get) => {
 export const vncTransport$ = computed((get) => {
   return get(editor$).transport;
 });
+export const vncDirectDestinationHost$ = computed((get) => {
+  const editor = get(editor$);
+  return editor.transport === "direct" ? editor.destinationHost : null;
+});
+export const vncSshConnectionId$ = computed((get) => {
+  return get(editor$).sshConnectionId;
+});
 export const vncKdcTransport$ = computed((get) => {
   return get(editor$).kdcTransport;
+});
+export const vncKdcSshConnectionId$ = computed((get) => {
+  return get(editor$).kdcSshConnectionId;
+});
+export const vncKdcHost$ = computed((get) => {
+  return get(editor$).kdcHost;
 });
 export const vncCredentialSelection$ = computed((get) => {
   return get(editor$).selection;

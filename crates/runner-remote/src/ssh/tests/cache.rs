@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use runner_provider::AblySideMessageHandler;
 use russh::keys::Algorithm;
 use serde_json::{Value, json};
 
@@ -13,7 +14,7 @@ use super::{
 use runner_types::ids::RunId;
 
 fn notify(h: &Harness, data: Value) {
-    assert!(h.runtime.ably_message(&ably_subscriber::Message {
+    assert!(h.runtime.handle(&ably_subscriber::Message {
         name: Some("ssh-authority-invalidated".into()),
         data,
         id: None,
@@ -151,18 +152,12 @@ async fn targeted_and_run_wide_notifications_evict_without_stale_fallback() {
 }
 
 #[tokio::test]
-async fn notification_outages_preserve_cached_authority_and_idle_transport() {
+async fn cached_authority_and_idle_transport_are_reused_without_a_subscription() {
     let h = Harness::new(Reply::default()).await;
     let resolve = h.resolve(h.credential(true)).await;
-    let mut notifications = h.notifications();
-    // First use succeeds before there has ever been a subscription.
-    assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
-    for event in super::notifications::outage_events() {
-        notifications.send(event).await;
+    for _ in 0..2 {
         assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     }
-    drop(notifications);
-    assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     resolve.assert_calls_async(1).await;
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 1);
     assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
@@ -276,17 +271,10 @@ async fn invalidation_during_resolve_fences_the_late_result_before_authenticatio
         let server = async {
             let (mut socket, _) = listener.accept().await.unwrap();
             read_http_request(&mut socket).await;
-            let mut notifications = h.notifications();
-            for event in super::notifications::outage_events() {
-                notifications.send(event).await;
-            }
             notify(
                 &h,
                 json!({"runId":h.run, "connectionId":harness::CONNECTION}),
             );
-            notifications
-                .send(Some(ably_subscriber::Event::Connected))
-                .await;
             respond(&mut socket, h.credential(true)).await.unwrap();
             let (mut socket, _) = listener.accept().await.unwrap();
             read_http_request(&mut socket).await;

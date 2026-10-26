@@ -861,6 +861,8 @@ jobs:
     name: publish-desktop-update-manifest
     # Publish Native release metadata after its API and notarized assets are live.
     # The fixed Electron migration feed is independent of this mutable manifest.
+    # R2 is authoritative. Retain the GitHub mirror until outgoing API requests
+    # have drained and supported rollback artifacts no longer read its asset.
     needs: [release-please, promote-desktop-release, promote-api-production]
     if: ${{ needs.release-please.outputs.desktop_release_created == 'true' && needs.promote-desktop-release.result == 'success' && needs.promote-api-production.result == 'success' }}
     runs-on: ubuntu-latest
@@ -900,84 +902,7 @@ jobs:
             fi
           done
 
-      - name: Publish Desktop update manifest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          manifest_tag=ai-okou-desktop-updates
-          manifest_filename=ai-okou-desktop-update-manifest.json
-          manifest_dir="desktop/out/update-manifest/okou"
-          manifest_path="$manifest_dir/$manifest_filename"
-
-          mkdir -p "$manifest_dir"
-          if gh release view "$manifest_tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            if gh release view "$manifest_tag" \
-              --repo "${{ github.repository }}" \
-              --json assets \
-              --jq '.assets[].name' | grep -qx "$manifest_filename"; then
-              gh release download "$manifest_tag" \
-                --repo "${{ github.repository }}" \
-                --pattern "$manifest_filename" \
-                --dir "$manifest_dir" \
-                --clobber
-            fi
-          else
-            gh release create "$manifest_tag" \
-              --repo "${{ github.repository }}" \
-              --title "Okou Desktop Updates" \
-              --notes "Mutable manifest used by the Okou desktop auto-update feed." \
-              --latest=false
-          fi
-
-          zip_url="https://github.com/${{ github.repository }}/releases/download/$OKOU_RELEASE_TAG/Okou-darwin-arm64-$DESKTOP_VERSION.zip"
-          node desktop/scripts/update-desktop-release-manifest.mjs \
-            --manifest "$manifest_path" \
-            --version "$DESKTOP_VERSION" \
-            --zip-url "$zip_url" \
-            --channel stable \
-            --platform darwin \
-            --arch arm64
-
-          gh release upload "$manifest_tag" "$manifest_path" \
-            --repo "${{ github.repository }}" \
-            --clobber
-
-  publish-desktop-update-manifest-r2:
-    name: publish-desktop-update-manifest-r2
-    # Stage one of #42183: mirror the authoritative GitHub document, including
-    # releases without a new Desktop version. API readers still use GitHub.
-    # Retire this bridge after the R2 reader cutover, API drain and rollback gate.
-    needs: [release-please, publish-desktop-update-manifest]
-    if: >-
-      ${{ always() && !cancelled() &&
-      needs.release-please.result == 'success' &&
-      needs.release-please.outputs.releases_created == 'true' &&
-      (needs.publish-desktop-update-manifest.result == 'success' ||
-      needs.publish-desktop-update-manifest.result == 'skipped') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    defaults:
-      run:
-        shell: bash
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.release-please.outputs.release_target }}
-
-      - name: Read the published Desktop update manifest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/desktop-update-manifest"
-          gh release download ai-okou-desktop-updates \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern ai-okou-desktop-update-manifest.json \
-            --dir "$RUNNER_TEMP/desktop-update-manifest"
-
-      - name: Publish and verify the Desktop manifest in R2
+      - name: Publish Desktop update manifest to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
@@ -989,11 +914,24 @@ jobs:
           set -euo pipefail
           : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID variable is required}"
           : "${R2_BUCKET_NAME:?R2_STATIC_BUCKET_NAME variable is required}"
+          mkdir -p "$RUNNER_TEMP/desktop-update-manifest"
+          zip_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$OKOU_RELEASE_TAG/Okou-darwin-arm64-$DESKTOP_VERSION.zip"
           bash .github/scripts/release/publish-desktop-manifest-r2.sh \
             "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             "$R2_BUCKET_NAME" \
             "$RUNNER_TEMP/desktop-update-manifest/ai-okou-desktop-update-manifest.json" \
-            "$PUBLICATION_SHA"
+            "$PUBLICATION_SHA" \
+            "$DESKTOP_VERSION" \
+            "$zip_url"
+
+      - name: Mirror Desktop update manifest for previous API releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ai-okou-desktop-updates \
+            "$RUNNER_TEMP/desktop-update-manifest/ai-okou-desktop-update-manifest.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
   detect-host-worker-deploy-inputs:
     needs: release-please
