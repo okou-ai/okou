@@ -254,7 +254,8 @@ final class NotificationTests: XCTestCase {
     service.receiveTap(
       try XCTUnwrap(
         NotificationDestination(userInfo: payload(user: userID, workspace: "org_unavailable"))))
-    let unavailableWorkspace = await service.openPending(authentication: authentication, store: target)
+    let unavailableWorkspace = await service.openPending(
+      authentication: authentication, store: target)
     XCTAssertFalse(unavailableWorkspace)
     XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
   }
