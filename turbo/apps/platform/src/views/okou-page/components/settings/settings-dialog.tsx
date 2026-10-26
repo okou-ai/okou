@@ -160,7 +160,9 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
-  const showProactiveAgent = features[FeatureSwitchKey.ProactiveAgent] ?? false;
+  const showProactiveAgent =
+    features[FeatureSwitchKey.ProactiveAgent] ||
+    features[FeatureSwitchKey.AgentSuggestion];
 
   const sectionMeta = {
     "proactive-agent": {

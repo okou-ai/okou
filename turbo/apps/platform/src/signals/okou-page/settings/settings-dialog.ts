@@ -371,7 +371,8 @@ export const checkUnifiedSettingsParam$ = command(
     const resolved = resolveAvailableSettingsSection(section, {
       isAdmin,
       proactiveAgentAvailable:
-        get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent] ?? false,
+        get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent] ||
+        get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion],
     });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");

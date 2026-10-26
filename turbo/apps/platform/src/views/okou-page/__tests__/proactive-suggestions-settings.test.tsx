@@ -17,7 +17,10 @@ test("hides Proactive while retaining the released Morning Brief", async () => {
   await setupPage({
     context,
     path: "/agents?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: false },
+    featureSwitches: {
+      [FeatureSwitchKey.AgentSuggestion]: false,
+      [FeatureSwitchKey.ProactiveAgent]: false,
+    },
   });
   await expect(
     screen.findByRole("switch", { name: "Morning brief" }),
@@ -50,7 +53,10 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
-    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.ProactiveAgent]: false,
+    },
   });
   const toggle = await screen.findByRole("switch", {
     name: "Suggestions",
@@ -98,7 +104,10 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
-    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.ProactiveAgent]: false,
+    },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
   await expect(
@@ -137,7 +146,10 @@ test("retries a failed opt-out without enabling proactive suggestions", async ()
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
-    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.ProactiveAgent]: false,
+    },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
   const retry = await waitFor(() => {
@@ -178,7 +190,10 @@ test("keeps suggestions opted in during platform recovery without asking the use
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
-    featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.ProactiveAgent]: false,
+    },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
   await expect(

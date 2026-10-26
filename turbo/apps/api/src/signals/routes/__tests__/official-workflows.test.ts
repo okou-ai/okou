@@ -333,7 +333,10 @@ describe("Planning and action preference", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveAgent]: true },
+      {
+        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.AgentSuggestion]: true,
+      },
     );
     const client = app(proactiveJobsContract);
     for (const independent of [
@@ -424,23 +427,38 @@ describe("Planning and action preference", () => {
 });
 
 describe("Proactive Suggestions preference", () => {
-  it("keeps the explicit choice while the catalog is unavailable", async () => {
+  it("keeps the independent Suggestions choice while the catalog is unavailable", async () => {
     const app = await setupApp({
       context,
-      routes: proactiveSuggestionsRoutes,
+      routes: [...proactiveSuggestionsRoutes, ...proactiveJobsRoutes],
       isolatePg: true,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
     const client = app(proactiveSuggestionsContract);
-    await accept(client.get({ headers: authHeaders(actor) }), [403]);
     if (!actor.orgId) {
       throw new Error("Expected organization");
     }
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveAgent]: true },
+      {
+        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.AgentSuggestion]: false,
+      },
+    );
+    await accept(client.get({ headers: authHeaders(actor) }), [403]);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.ProactiveAgent]: false,
+        [FeatureSwitchKey.AgentSuggestion]: true,
+      },
+    );
+    await accept(
+      app(proactiveJobsContract).get({ headers: authHeaders(actor) }),
+      [403],
     );
     const initial = await accept(
       client.get({ headers: authHeaders(actor) }),
@@ -470,13 +488,19 @@ describe("Proactive Suggestions preference", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveAgent]: false },
+      {
+        [FeatureSwitchKey.ProactiveAgent]: true,
+        [FeatureSwitchKey.AgentSuggestion]: false,
+      },
     );
     await accept(client.get({ headers: authHeaders(actor) }), [403]);
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveAgent]: true },
+      {
+        [FeatureSwitchKey.ProactiveAgent]: false,
+        [FeatureSwitchKey.AgentSuggestion]: true,
+      },
     );
     const restored = await accept(
       client.get({ headers: authHeaders(actor) }),

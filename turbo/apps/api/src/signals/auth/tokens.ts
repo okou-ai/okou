@@ -39,8 +39,8 @@ const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 const CONDITIONAL_CAPABILITIES = [
   ["host-visibility:write", FeatureSwitchKey.HostedSiteVisibility],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
-  ["suggestion:read", FeatureSwitchKey.ProactiveAgent],
-  ["suggestion:write", FeatureSwitchKey.ProactiveAgent],
+  ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
+  ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["job:read", FeatureSwitchKey.ProactiveAgent],
   ["job:write", FeatureSwitchKey.ProactiveAgent],
   ["banking:read", FeatureSwitchKey.Banking],
