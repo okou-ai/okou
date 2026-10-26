@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.0...runner-rs-v0.237.1) (2026-10-26)
+
+
+### Refactoring
+
+* **runner:** make local rootfs publication synchronous ([#42943](https://github.com/okou-ai/okou/issues/42943)) ([fadd1aa](https://github.com/okou-ai/okou/commit/fadd1aa020469825be4f95f4726f32a515c9d5eb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.37...runner-rs-v0.237.0) (2026-10-25)
 
 

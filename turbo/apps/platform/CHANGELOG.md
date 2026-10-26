@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1063.0](https://github.com/okou-ai/okou/compare/app-v0.1062.0...app-v0.1063.0) (2026-10-26)
+
+
+### Features
+
+* **core:** enable custom templates for all users ([#42921](https://github.com/okou-ai/okou/issues/42921)) ([1cc417d](https://github.com/okou-ai/okou/commit/1cc417d66219754cfeefbdd01df557f84a245a02))
+
+
+### Refactoring
+
+* **data:** remove retired managed data runtime scaffolding ([#42935](https://github.com/okou-ai/okou/issues/42935)) ([b220a50](https://github.com/okou-ai/okou/commit/b220a504c5e633de162791f1216c4458188ffe72))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.1
+    * @okouai/core bumped to 8.788.0
+
 ## [0.1062.0](https://github.com/okou-ai/okou/compare/app-v0.1061.0...app-v0.1062.0) (2026-10-25)
 
 

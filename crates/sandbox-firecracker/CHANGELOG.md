@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.35](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.34...sandbox-firecracker-v0.53.35) (2026-10-26)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** own failed cow checkout cleanup ([#42922](https://github.com/okou-ai/okou/issues/42922)) ([c352f1c](https://github.com/okou-ai/okou/commit/c352f1ca39c3009ab7b0eb3578c1662ce69e0c93))
+
 ## [0.53.34](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.33...sandbox-firecracker-v0.53.34) (2026-10-25)
 
 ## [0.53.33](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.32...sandbox-firecracker-v0.53.33) (2026-10-25)
