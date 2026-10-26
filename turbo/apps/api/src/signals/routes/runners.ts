@@ -2229,9 +2229,9 @@ const nextSteerableInputInner$ = command(
     if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
       return forbidden("Steering is not available");
     }
+    set(writeDb$);
     const result = await set(
       loadNextSteerableInput$,
-      set(writeDb$),
       { runId, userId: auth.userId, orgId: auth.orgId },
       signal,
     );

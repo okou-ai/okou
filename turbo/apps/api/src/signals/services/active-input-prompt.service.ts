@@ -22,7 +22,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SelectResultFields } from "drizzle-orm/query-builders/select.types";
 import { and, eq } from "drizzle-orm";
 
-import { db$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
@@ -129,7 +129,6 @@ export type ActiveInputSourceRow = SelectResultFields<
 export const materializeActiveInputSource$ = command(
   async (
     { set },
-    db: Db,
     source: ActiveInputSourceRow,
     auth: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
@@ -164,7 +163,6 @@ export const materializeActiveInputSource$ = command(
     }
     return await set(
       materializeActiveInputPrompt$,
-      db,
       {
         event: {
           id: source.id,
@@ -192,8 +190,7 @@ function isContextBackedContextType(
 
 const loadIntegrationPromptMaterial$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     event: ActiveInputPromptEvent,
     args: {
       readonly orgId: string;
@@ -214,6 +211,7 @@ const loadIntegrationPromptMaterial$ = command(
         return await set(loadSlackQueuedLaunchMaterial$, loaderArgs);
       }
       case "feishu": {
+        const db = get(db$);
         return await (async () => {
           const context = await (async () => {
             const plan = feishuQueuedLaunchContextReadPlan(loaderArgs);
@@ -291,7 +289,6 @@ function unreachableActiveInputContextType(contextType: never): never {
 const materializeActiveInputPrompt$ = command(
   async (
     { get, set },
-    db: Db,
     args: {
       readonly event: ActiveInputPromptEvent;
       readonly orgId: string;
@@ -309,7 +306,6 @@ const materializeActiveInputPrompt$ = command(
     }
     const integration = await set(
       loadIntegrationPromptMaterial$,
-      db,
       args.event,
       args,
       signal,
