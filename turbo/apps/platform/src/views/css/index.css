@@ -714,90 +714,114 @@ body {
 
 /* Each named theme pairs one anchor with one companion; the same pair drives
    picker swatches, primary actions, and the workspace ambience below. The HSL
-   primary value also feeds the shared semantic token without duplicating it. */
-[data-color-theme="golden-hour"] {
-  --okou-color-theme-primary: 38.9 98.4% 48.8%;
-  --okou-color-theme-primary-foreground: 40 4.3% 13.5%;
-  --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
-  --okou-color-theme-companion: #f4e33c;
-  --okou-color-theme-hue: 38.9;
-  --okou-color-theme-ring: 39.1 73.6% 52.5%;
-}
+   primary value also feeds the shared semantic token without duplicating it.
 
+   A filled primary carries whichever label colour reads better on it, chosen
+   per fill by APCA rather than inherited from the Amber brand: Amber is too
+   light for white (Lc 42), so it takes Ink, but a mid-tone red or blue reads
+   white (WCAG 2 would pick black there and overstate it). Labels clear Lc 60.
+   Where the light fill is too dark to stand off the dark card (under 3:1), a
+   `-dark` stop lifts it the way a tonal palette does, and the label is chosen
+   again for that stop; otherwise the dark stop repeats the light one.
+
+   The two ambient strengths are the alphas at which the anchor and the
+   companion reach one shared perceptual distance from the canvas fill
+   (OKLab ΔE 4.6 / 3.8 in light, 3.4 / 2.9 in dark), so every palette's
+   ambient light is equally visible instead of scaling with how dark its
+   anchor happens to be. */
 [data-color-theme="citrus-spark"] {
   --okou-color-theme-primary: 54.5 89.3% 59.6%;
   --okou-color-theme-primary-foreground: 40 4.3% 13.5%;
+  --okou-color-theme-primary-dark: var(--okou-color-theme-primary);
+  --okou-color-theme-primary-dark-foreground: 40 4.3% 13.5%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #b5d329;
   --okou-color-theme-hue: 54.5;
   --okou-color-theme-ring: 65.4 58.7% 40.8%;
+  --okou-color-theme-ambient-anchor: 18.9%;
+  --okou-color-theme-ambient-companion: 12.8%;
+  --okou-color-theme-ambient-anchor-dark: 4.6%;
+  --okou-color-theme-ambient-companion-dark: 4.5%;
 }
 
+/* Raspberry rather than a pure red: at 1.6deg the fill sat 11deg of OKLCH hue
+   from the destructive and interrupt corals, so every primary action read as
+   a delete. */
 [data-color-theme="berry-blush"] {
-  --okou-color-theme-primary: 1.6 72.4% 58.8%;
-  --okou-color-theme-primary-foreground: 0 0% 0%;
+  --okou-color-theme-primary: 342 62% 47%;
+  --okou-color-theme-primary-foreground: 0 0% 100%;
+  --okou-color-theme-primary-dark: 342 62% 58%;
+  --okou-color-theme-primary-dark-foreground: 0 0% 100%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #e4abc8;
-  --okou-color-theme-hue: 1.6;
-  --okou-color-theme-ring: 351 39.7% 57.1%;
+  --okou-color-theme-hue: 342;
+  --okou-color-theme-ring: 342 40% 56%;
+  --okou-color-theme-ambient-anchor: 8.8%;
+  --okou-color-theme-ambient-companion: 18.4%;
+  --okou-color-theme-ambient-anchor-dark: 11.1%;
+  --okou-color-theme-ambient-companion-dark: 4.9%;
 }
 
 [data-color-theme="cotton-sky"] {
   --okou-color-theme-primary: 329.5 51.4% 78.2%;
   --okou-color-theme-primary-foreground: 40 4.3% 13.5%;
+  --okou-color-theme-primary-dark: var(--okou-color-theme-primary);
+  --okou-color-theme-primary-dark-foreground: 40 4.3% 13.5%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #b5d4e5;
   --okou-color-theme-hue: 329.5;
   --okou-color-theme-ring: 319.6 20.7% 56.5%;
+  --okou-color-theme-ambient-anchor: 22.3%;
+  --okou-color-theme-ambient-companion: 25.7%;
+  --okou-color-theme-ambient-anchor-dark: 5.8%;
+  --okou-color-theme-ambient-companion-dark: 4.4%;
 }
 
 [data-color-theme="blue-horizon"] {
   --okou-color-theme-primary: 221.3 49.1% 42.4%;
   --okou-color-theme-primary-foreground: 0 0% 100%;
+  --okou-color-theme-primary-dark: 221.3 62% 64%;
+  --okou-color-theme-primary-dark-foreground: 0 0% 100%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #b5d4e5;
   --okou-color-theme-hue: 221.3;
   --okou-color-theme-ring: 221.3 35.4% 55.7%;
+  --okou-color-theme-ambient-anchor: 9%;
+  --okou-color-theme-ambient-companion: 25.8%;
+  --okou-color-theme-ambient-anchor-dark: 15.1%;
+  --okou-color-theme-ambient-companion-dark: 4.4%;
 }
 
+/* Lifted from 74.1% to 78%: at 74% neither label cleared Lc 60 (white 50,
+   Ink 55). */
 [data-color-theme="daydream"] {
-  --okou-color-theme-primary: 221.2 77.3% 74.1%;
+  --okou-color-theme-primary: 221.2 77.3% 78%;
   --okou-color-theme-primary-foreground: 40 4.3% 13.5%;
+  --okou-color-theme-primary-dark: var(--okou-color-theme-primary);
+  --okou-color-theme-primary-dark-foreground: 40 4.3% 13.5%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #9c78d8;
   --okou-color-theme-hue: 232;
   --okou-color-theme-ring: 232 38% 55%;
+  --okou-color-theme-ambient-anchor: 20%;
+  --okou-color-theme-ambient-companion: 10.3%;
+  --okou-color-theme-ambient-anchor-dark: 6%;
+  --okou-color-theme-ambient-companion-dark: 6.9%;
 }
 
 [data-color-theme="deep-lagoon"] {
   --okou-color-theme-primary: 170.2 98.3% 23.1%;
   --okou-color-theme-primary-foreground: 0 0% 100%;
+  --okou-color-theme-primary-dark: 170.2 50% 55%;
+  --okou-color-theme-primary-dark-foreground: 40 4.3% 13.5%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #3758a1;
   --okou-color-theme-hue: 170.2;
   --okou-color-theme-ring: 171.8 47.1% 33.3%;
-}
-
-/* The wash behind the picker's selected option, owned at the document root so
-   it resolves on the default palette as well: that palette writes no attribute,
-   so the gradient rule that otherwise supplies this value never keys in and the
-   selected card would lose its fill. It is the same blend the palettes take
-   below, carrying the default palette's own colour, so one option's selected
-   card is not visibly heavier than another's. */
-:root {
-  --okou-color-theme-selected: color-mix(
-    in srgb,
-    #ffffff 84%,
-    hsl(var(--primary-300)) 16%
-  );
-}
-
-:root:where([data-theme="dark"]) {
-  --okou-color-theme-selected: color-mix(
-    in srgb,
-    hsl(var(--card)) 86%,
-    hsl(var(--primary-300)) 14%
-  );
+  --okou-color-theme-ambient-anchor: 8.9%;
+  --okou-color-theme-ambient-companion: 7.4%;
+  --okou-color-theme-ambient-anchor-dark: 14.6%;
+  --okou-color-theme-ambient-companion-dark: 13.2%;
 }
 
 /* Card geometry and elevation. These are document-level runtime theme values, so
@@ -1339,44 +1363,57 @@ details > summary {
 
 :root[data-gradient-color-themes] {
   --okou-workspace-canvas-fill: hsl(var(--card));
+  --okou-ambient-anchor: color-mix(
+    in srgb,
+    var(--okou-color-theme-anchor) var(--okou-color-theme-ambient-anchor),
+    transparent
+  );
+  --okou-ambient-companion: color-mix(
+    in srgb,
+    var(--okou-color-theme-companion) var(--okou-color-theme-ambient-companion),
+    transparent
+  );
+  /* Ambient light falling from the top edge: the anchor from the left, the
+     companion from the right, each fading on an eased curve so no edge of
+     the ellipse is visible. It is gone by about half the pane's height, so
+     the greeting sits in the light while the composer and the transcript sit
+     on the plain card fill. Each stop mixes the full-strength tint with
+     `transparent`, which scales its alpha. */
   --okou-workspace-canvas-image:
     radial-gradient(
-      ellipse 58% 64% at 0% 0%,
-      color-mix(in srgb, hsl(var(--card)) 88%, var(--okou-color-theme-anchor))
-        0%,
-      transparent 70%
+      ellipse 72% 62% at 16% 0%,
+      var(--okou-ambient-anchor) 0%,
+      color-mix(in srgb, var(--okou-ambient-anchor) 82%, transparent) 14%,
+      color-mix(in srgb, var(--okou-ambient-anchor) 55%, transparent) 30%,
+      color-mix(in srgb, var(--okou-ambient-anchor) 28%, transparent) 46%,
+      color-mix(in srgb, var(--okou-ambient-anchor) 10%, transparent) 62%,
+      transparent 80%
     ),
     radial-gradient(
-      ellipse 54% 60% at 100% 100%,
-      color-mix(
-          in srgb,
-          hsl(var(--card)) 92%,
-          var(--okou-color-theme-companion)
-        )
-        0%,
-      transparent 70%
+      ellipse 72% 62% at 84% 0%,
+      var(--okou-ambient-companion) 0%,
+      color-mix(in srgb, var(--okou-ambient-companion) 82%, transparent) 14%,
+      color-mix(in srgb, var(--okou-ambient-companion) 55%, transparent) 30%,
+      color-mix(in srgb, var(--okou-ambient-companion) 28%, transparent) 46%,
+      color-mix(in srgb, var(--okou-ambient-companion) 10%, transparent) 62%,
+      transparent 80%
     );
 }
 
+/* Dark keeps the same light and only swaps in the strengths solved against
+   the dark card. */
 :root:where([data-theme="dark"])[data-gradient-color-themes] {
-  --okou-workspace-canvas-fill: hsl(var(--card));
-  --okou-workspace-canvas-image:
-    radial-gradient(
-      ellipse 58% 64% at 0% 0%,
-      color-mix(in srgb, hsl(var(--card)) 92%, var(--okou-color-theme-anchor))
-        0%,
-      transparent 70%
-    ),
-    radial-gradient(
-      ellipse 54% 60% at 100% 100%,
-      color-mix(
-          in srgb,
-          hsl(var(--card)) 94%,
-          var(--okou-color-theme-companion)
-        )
-        0%,
-      transparent 70%
-    );
+  --okou-ambient-anchor: color-mix(
+    in srgb,
+    var(--okou-color-theme-anchor) var(--okou-color-theme-ambient-anchor-dark),
+    transparent
+  );
+  --okou-ambient-companion: color-mix(
+    in srgb,
+    var(--okou-color-theme-companion)
+      var(--okou-color-theme-ambient-companion-dark),
+    transparent
+  );
 }
 
 /* --- Tiptap Instructions Editor ---------------------------------------- */
@@ -1473,22 +1510,16 @@ details > summary {
   }
 }
 
-/* Colour themes realigned to the permanent palette's lightness steps. */
+/* Colour themes. A palette repaints the primary fill and the accent text, and
+   lends its hue to the neutral ramp; it never moves a neutral's lightness.
+   Each gray stop keeps the OKLab lightness of the product's own stop and only
+   takes the palette hue at a capped chroma (about 0.003 on surfaces and 0.008
+   on lines and text, OKLCH), so switching palettes recolours the interface
+   without making any line heavier. Borders and dividers point at the same
+   stops the product's own palette uses. */
 :root[data-gradient-color-themes][data-color-theme] {
   --primary: var(--okou-color-theme-primary);
   --primary-foreground: var(--okou-color-theme-primary-foreground);
-  /* Blend toward the companion so filled actions stay in the selected palette
-     and retain label contrast in both light and dark modes. */
-  --color-primary-hover: color-mix(
-    in srgb,
-    var(--okou-color-theme-anchor),
-    var(--okou-color-theme-companion) var(--state-on-filled-hover-alpha)
-  );
-  --color-primary-pressed: color-mix(
-    in srgb,
-    var(--okou-color-theme-anchor),
-    var(--okou-color-theme-companion) var(--state-on-filled-pressed-alpha)
-  );
 
   /* The checked switch track is the one filled control that reads a raw stop
      of the Amber ramp instead of `--primary`: 400 sits one step darker than
@@ -1497,40 +1528,35 @@ details > summary {
      the stop resolves to that anchor while the preset is active and the track
      lands on the same fill the checkbox, the radio and every filled button
      already take from `--primary`. Without this the toggle stayed Amber under
-     all eight palettes. The `--brand-*` stops deliberately keep reading the
-     Amber ramp: the brand mark is not palette-driven. */
+     every palette. */
   --primary-400: var(--okou-color-theme-primary);
 
-  /* The label of a selected control, on the palette's own hue. The brand stops
-     above stay Amber because the brand mark is not palette-driven, but this one
-     is not the brand: it is painted on the `primary/10` selection wash, which
-     the preset already repaints, so an Amber label there reads as a second
-     colour system instead of as the selected state. A preset supplies one
-     anchor and no ramp, so the text stop is built the way `--nav-copy` is —
-     the preset's hue at a fixed saturation and a lightness dark enough to clear
-     4.5:1 on that near-white wash across all eight palettes. */
-  --selected-foreground: var(--okou-color-theme-hue) 55% 28%;
+  /* Accent text and its wash on the palette's own hue. Every consumer of these
+     is interface accent — links, highlighted icons, the slash marker, quest
+     counters, the selection highlight — not the brand mark, so an Amber value
+     here read as a second colour system under a blue or pink palette. A preset
+     supplies one anchor and no ramp, so the text stop is built the way
+     `--nav-copy` is: the preset's hue at a fixed saturation and a lightness
+     dark enough to clear 4.5:1 on the card and on the wash across every
+     palette. `--selected-foreground` reads `--brand-text`, so the selected
+     label follows without its own override. */
+  --brand-text: var(--okou-color-theme-hue) 55% 28%;
+  --brand-text-hover: var(--okou-color-theme-hue) 55% 22%;
+  --brand-subtle: var(--okou-color-theme-hue) 55% 94%;
 
-  --gray-0: var(--okou-color-theme-hue) 24% 98.3%;
-  --gray-50: var(--okou-color-theme-hue) 22% 97.7%;
-  --gray-100: var(--okou-color-theme-hue) 20% 96.7%;
-  --gray-200: var(--okou-color-theme-hue) 18% 86.9%;
-  --gray-300: var(--okou-color-theme-hue) 17% 79.4%;
-  --gray-400: var(--okou-color-theme-hue) 16% 71.2%;
-  --gray-500: var(--okou-color-theme-hue) 16% 62.2%;
+  --gray-0: var(--okou-color-theme-hue) 100% 99.5%;
+  --gray-50: var(--okou-color-theme-hue) 38% 98.2%;
+  --gray-100: var(--okou-color-theme-hue) 33% 96.9%;
+  --gray-200: var(--okou-color-theme-hue) 19% 93.4%;
+  --gray-300: var(--okou-color-theme-hue) 11% 87.5%;
+  --gray-400: var(--okou-color-theme-hue) 7% 80.8%;
+  --gray-500: var(--okou-color-theme-hue) 4% 64.6%;
 
-  --divider: var(--gray-200);
   --background: var(--okou-color-theme-hue) 24% 98.8%;
   --card: var(--okou-color-theme-hue) 30% 99.4%;
   --popover: var(--card);
   --secondary: var(--okou-color-theme-hue) 22% 96.7%;
-  --muted: var(--gray-100);
   --accent: var(--okou-color-theme-hue) 24% 96.7%;
-  --border: var(--gray-200);
-  /* One step off the gray-200 fill it is drawn on: here `--border` and
-     `--divider` both resolve to that fill, so a rule on a filled surface needs
-     its own stop. See the rule-on-fill note in the styles guide. */
-  --border-on-fill: var(--gray-300);
   --input: var(--card);
   --ring: var(--okou-color-theme-ring);
   /* Halved with the neutral sidebar: this surface now frames the workspace
@@ -1539,67 +1565,52 @@ details > summary {
   --sidebar: var(--okou-color-theme-hue) 30% 98.4%;
   --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
   --nav-border: hsl(var(--border) / 0.5);
-  --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
-  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
+  --nav-copy: hsl(var(--okou-color-theme-hue) 10% 14.2%);
+  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 5% 30.6%);
   --background-50: var(--gray-50);
   --state-layer: var(--okou-color-theme-ring);
   --segment-selected: var(--card);
-  --okou-color-theme-selected: color-mix(
-    in srgb,
-    #ffffff 84%,
-    color-mix(
-        in srgb,
-        var(--okou-color-theme-anchor) 82%,
-        var(--okou-color-theme-companion)
-      )
-      16%
-  );
 }
 
 :root:is(
     .dark,
     [data-theme="dark"]
   )[data-gradient-color-themes][data-color-theme] {
-  --gray-0: var(--okou-color-theme-hue) 5% 10.5%;
-  --gray-50: var(--okou-color-theme-hue) 6% 13.5%;
-  --gray-100: var(--okou-color-theme-hue) 8% 18.5%;
-  --gray-200: var(--okou-color-theme-hue) 9% 22.5%;
-  --gray-300: var(--okou-color-theme-hue) 10% 26.5%;
-  --gray-400: var(--okou-color-theme-hue) 11% 30.5%;
-  --gray-500: var(--okou-color-theme-hue) 12% 36.5%;
+  /* See the per-palette note: a fill too dark for the dark card takes its
+     lifted stop, and the label is re-chosen for it. */
+  --primary: var(--okou-color-theme-primary-dark);
+  --primary-foreground: var(--okou-color-theme-primary-dark-foreground);
+  --primary-400: var(--okou-color-theme-primary-dark);
 
-  --divider: var(--gray-200);
+  /* See the light note. Dark takes the opposite end of the same idea: the
+     text rises above the wash instead of sinking below it. */
+  --brand-text: var(--okou-color-theme-hue) 72% 80%;
+  --brand-text-hover: var(--okou-color-theme-hue) 72% 88%;
+  --brand-subtle: var(--okou-color-theme-hue) 25% 22%;
+
+  --gray-0: var(--okou-color-theme-hue) 5% 10.8%;
+  --gray-50: var(--okou-color-theme-hue) 5% 14%;
+  --gray-100: var(--okou-color-theme-hue) 4% 20.5%;
+  --gray-200: var(--okou-color-theme-hue) 4% 24.3%;
+  --gray-300: var(--okou-color-theme-hue) 3% 28.6%;
+  --gray-400: var(--okou-color-theme-hue) 3% 33.5%;
+  --gray-500: var(--okou-color-theme-hue) 2% 47.9%;
+
   --background: var(--gray-50);
-  --card: var(--okou-color-theme-hue) 8% 16.5%;
+  --card: var(--okou-color-theme-hue) 4% 17.2%;
   --popover: var(--gray-100);
-  --secondary: var(--okou-color-theme-hue) 9% 20.5%;
-  --muted: var(--gray-200);
-  --accent: var(--okou-color-theme-hue) 12% 26.5%;
-  --border: var(--gray-200);
-  --border-on-fill: var(--gray-300); /* see the light note above */
+  --secondary: var(--okou-color-theme-hue) 3% 21.1%;
+  --accent: var(--gray-300);
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
-  --sidebar: var(--okou-color-theme-hue) 14% 12%;
-  --nav-rail: hsl(var(--okou-color-theme-hue) 18% 8%);
+  --sidebar: var(--okou-color-theme-hue) 6% 12.4%;
+  --nav-rail: hsl(var(--okou-color-theme-hue) 10% 8.9%);
   --nav-border: hsl(var(--border) / 0.5);
-  --nav-copy: hsl(var(--okou-color-theme-hue) 22% 90%);
-  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 16% 64%);
-  /* See the light note. Dark takes the opposite end of the same idea: the stop
-     rises above the wash instead of sinking below it. */
-  --selected-foreground: var(--okou-color-theme-hue) 72% 80%;
+  --nav-copy: hsl(var(--okou-color-theme-hue) 46% 97.1%);
+  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 6% 77.9%);
   --background-50: var(--gray-50);
   --state-layer: var(--okou-color-theme-hue) 35% 82%;
   --segment-selected: var(--gray-400);
-  --okou-color-theme-selected: color-mix(
-    in srgb,
-    hsl(var(--card)) 86%,
-    color-mix(
-        in srgb,
-        var(--okou-color-theme-anchor) 82%,
-        var(--okou-color-theme-companion)
-      )
-      14%
-  );
 }
 
 /* PWA page navigation. The route sets the transition type: "push" slides a
