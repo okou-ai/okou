@@ -87,6 +87,7 @@ export function OnboardingSkillsPage() {
             copyPrompt$={signals.copyPrompt$}
             disabled={session.state !== "hasData"}
             primary
+            showPending
             size="lg"
             label={t(($) => {
               return $.onboarding.sourcesFirst.mobile.copyImportPrompt;

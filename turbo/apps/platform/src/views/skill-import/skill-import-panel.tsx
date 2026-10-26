@@ -134,6 +134,7 @@ export function SkillImportCopyButton({
   className,
   label,
   disabled = false,
+  showPending = false,
 }: {
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
   /** Where copying is the one thing to do, it is the primary action. */
@@ -142,6 +143,7 @@ export function SkillImportCopyButton({
   readonly className?: string;
   readonly label?: string;
   readonly disabled?: boolean;
+  readonly showPending?: boolean;
 }) {
   const { t } = useTranslation();
   const [copyResult, copyPrompt] = useLoadableSet(copyPrompt$);
@@ -154,8 +156,8 @@ export function SkillImportCopyButton({
       variant={primary ? "default" : "outline"}
       size={size}
       className={cn("shrink-0 gap-1.5", className)}
-      disabled={disabled}
-      pending={copyResult.state === "loading"}
+      disabled={disabled || copyResult.state === "loading"}
+      pending={showPending && copyResult.state === "loading"}
       onClick={() => {
         detach(
           (async () => {
