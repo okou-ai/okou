@@ -62,6 +62,12 @@ pub mod codex_oauth_token {
     }
 }
 
+/// Data Router contract constants shared with the Runner addon.
+pub mod data_router {
+    /// Maximum raw request-body bytes accepted by Data Router.
+    pub const DATA_ROUTER_REQUEST_BODY_MAX_BYTES: u64 = 1048576;
+}
+
 /// Model-provider environment contract constants shared by TypeScript and Rust.
 pub mod model_provider_env {
     /// Fake model-provider environment placeholder marker values.
