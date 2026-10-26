@@ -23,6 +23,9 @@ permissions:
   actions: read
   contents: write
 
+env:
+  npm_config_audit: "false"
+
 jobs:
   publish:
     if: github.ref == 'refs/heads/main'

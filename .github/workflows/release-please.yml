@@ -869,7 +869,9 @@ jobs:
     uses: ./.github/workflows/desktop-update-manifest.yml
     with:
       release_run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      R2_STATIC_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+      R2_STATIC_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
 
   detect-host-worker-deploy-inputs:
     needs: release-please
