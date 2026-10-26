@@ -163,13 +163,26 @@ function preparedRunnerUsageValues(
   };
 }
 
+function runnerLockedRunQuery(args: RunnerUsageBatch) {
+  const query = new QueryBuilder();
+  return query.$with("runner_locked_run").as(
+    query
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.orgId),
+          eq(agentRuns.userId, args.userId),
+        ),
+      )
+      .for("key share"),
+  );
+}
+
 /** A Runner batch retains its live owner and commits captured identity with its events. */
 export const recordRunnerUsageBatch$ = command(
-  async (
-    { set },
-    args: RunnerUsageBatch,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  async ({ set }, args: RunnerUsageBatch, signal: AbortSignal) => {
     const db = set(writeDb$);
     signal.throwIfAborted();
     const outcome = await settle(
@@ -260,6 +273,7 @@ export const recordRunnerUsageBatch$ = command(
             }
           }
         }
+        const lockedRun = runnerLockedRunQuery(args);
         const inserted = db
           .$with("runner_inserted_usage")
           .as(
@@ -278,20 +292,23 @@ export const recordRunnerUsageBatch$ = command(
                 eq(billingRunAttribution.runId, args.runId),
                 eq(billingRunAttribution.usageObserved, false),
                 exists(db.select({ id: inserted.id }).from(inserted)),
+                // INSERT's Run FK checks run after the modifying CTEs. Resolve
+                // the FK-compatible Run lock before attribution, matching
+                // completion's Run-first lock order.
+                exists(db.select({ id: lockedRun.id }).from(lockedRun)),
               ),
             ),
         );
         await db
-          .with(inserted, observed)
+          .with(lockedRun, inserted, observed)
           .select({ id: inserted.id })
           .from(inserted);
         signal.throwIfAborted();
       })(),
       signal,
     );
-    // usage_event.run_id is the only FK written here. Its implicit key-share
-    // check replaces a Run row lock; losing it means the Run was deleted after
-    // the read above, the same outcome as a Run that was never found.
+    // usage_event.run_id is the only FK written here. If the Run was deleted
+    // after the read above, retain the same missing-Run outcome as an absent Run.
     if (!outcome.ok) {
       throw isForeignKeyViolation(outcome.error)
         ? new RunnerUsageRunMissingError("Run not found")
