@@ -733,7 +733,6 @@ describe("personal subscription run identity", () => {
       );
     };
     const responses = await Promise.all([send(), send()]);
-    expect(responses).toHaveLength(2);
     for (const response of responses) {
       if (response.status !== 201) {
         throw new Error("Expected both idempotent sends to be accepted");

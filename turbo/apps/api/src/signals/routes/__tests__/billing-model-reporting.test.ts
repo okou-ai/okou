@@ -23,6 +23,131 @@ const context = testContext();
 const fixture = createChatEventsFixture(context);
 
 describe("Billing model reporting", () => {
+  it("settles the first Runner usage batch once when completion and duplicate reports overlap", async () => {
+    const at = Date.UTC(2026, 2, 1, 12, 15);
+    mockNow(at);
+    const {
+      actor,
+      agentId,
+      runnerGroup,
+      run: own,
+      sendChatRun,
+      claimChatRun,
+    } = await publicChatActor(context, { clockTime: at });
+    await own(async () => {
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "Publish first usage while completing",
+        model: "auto",
+      });
+      const claim = await claimChatRun(runnerGroup, run.runId);
+      await fixture.webhooks.requestAgentEvents(
+        {
+          runId: run.runId,
+          events: [
+            {
+              type: "assistant",
+              sequenceNumber: 1,
+              message: { content: [{ type: "text", text: "Completed" }] },
+            },
+            { type: "result", sequenceNumber: 2, result: "Completed" },
+          ],
+        },
+        claim.sandboxHeaders,
+        [200],
+      );
+      const usage = {
+        runId: run.runId,
+        events: [1000, 2000, 7000].map((quantity) => {
+          return {
+            idempotencyKey: randomUUID(),
+            kind: "model" as const,
+            provider: "gpt-6-astra",
+            category: "tokens.output",
+            quantity,
+          };
+        }),
+      };
+      const completedAt = at + 60_000;
+      mockNow(completedAt);
+      const outcomes = await Promise.allSettled([
+        fixture.webhooks.requestAgentComplete(
+          {
+            runId: run.runId,
+            exitCode: 0,
+            lastEventSequence: 2,
+            completion: {
+              cliAgentType: "pi",
+              cliAgentSessionId: run.threadId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+          claim.sandboxHeaders,
+          [200],
+        ),
+        fixture.webhooks.requestAgentUsageEvent(
+          usage,
+          claim.sandboxHeaders,
+          [200],
+        ),
+        fixture.webhooks.requestAgentUsageEvent(
+          usage,
+          claim.sandboxHeaders,
+          [200],
+        ),
+      ]);
+      for (const outcome of outcomes) {
+        if (outcome.status === "rejected") {
+          throw outcome.reason;
+        }
+      }
+      await flushWaitUntilForTest();
+      await fixture.waitForRunStatus(actor, run.runId, "completed");
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
+      );
+      const chatUsage = () => {
+        return accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadUsageContract,
+          ).read({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { id: run.threadId },
+            body: { runIds: [run.runId] },
+          }),
+          [200],
+        );
+      };
+      const report = (await chatUsage()).body;
+      expect(report.runs).toStrictEqual([
+        {
+          runId: run.runId,
+          usage: {
+            version: 1,
+            totalCredits: 10,
+            settledAt: new Date(completedAt).toISOString(),
+            breakdown: [
+              {
+                kind: "model",
+                credits: 10,
+                providers: [{ provider: "@preset/okou-1-0", credits: 10 }],
+              },
+            ],
+          },
+        },
+      ]);
+      await fixture.webhooks.requestAgentUsageEvent(
+        usage,
+        claim.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect((await chatUsage()).body).toStrictEqual(report);
+    });
+  });
+
   it.each(["failed", "cancelled"] as const)(
     "returns settled usage and the captured completion time after a %s Run",
     async (status) => {

@@ -716,6 +716,14 @@ untruncated bodies refine pricing; inspection never enables persisted body field
 Other uncaptured requests retain only byte counters. Small declared
 bodies up to 64 KiB retain their existing buffered path and billing inspection.
 
+Data Router requests stay buffered so trusted request registration completes
+before upstream execution. They require a valid Content-Length of at most
+1 MiB, except when native framing proves the request ends at headers. Oversized
+or unsupported unknown-length uploads terminate at headers before body retention,
+credential resolution or registration. The limit comes from the TS Data Router
+contract through generated Python/Rust bindings. It is a per-request raw-byte
+cap, without an aggregate reservation or decoded-JSON memory bound.
+
 Body-dependent auth.base and AWS SigV4 retain their separate bounded admissions.
 Both credential and policy-only `publicDestination` requests stay buffered for
 request-phase destination revalidation. Large bodies outside the specialized

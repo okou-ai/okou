@@ -248,7 +248,6 @@ test("Explain unavailable email cards in a conversation", async () => {
   const reconnectCard = fastButton(
     "Reconnect Gmail to access email: Quarterly access review",
   );
-  expect(reconnectCard).toBeVisible();
   expect(reconnectCard).toHaveTextContent("Need reconnect");
 });
 

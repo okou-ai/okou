@@ -2,7 +2,7 @@ use super::*;
 
 use crate::control::protocol::MAX_FRAME_PAYLOAD_SIZE;
 
-async fn expect_closed(stream: &mut UnixStream, within: Duration) {
+pub(super) async fn expect_closed(stream: &mut UnixStream, within: Duration) {
     let result = tokio::time::timeout(within, stream.read_u8())
         .await
         .expect("server should close the connection before the deadline");
@@ -16,7 +16,7 @@ async fn expect_closed(stream: &mut UnixStream, within: Duration) {
     );
 }
 
-async fn expect_terminate_available(sock_path: &Path) {
+pub(super) async fn expect_terminate_available(sock_path: &Path) {
     assert_eq!(
         send_terminate(
             sock_path,

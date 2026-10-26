@@ -217,11 +217,10 @@ test("Service tier and Computer Use settings update independently", async () => 
   });
   await expectSelectedModel("GPT 5.6 Sol");
   await openComputerMenu();
-  const disconnectedHost = await screen.findByRole("switch", {
+  await screen.findByRole("switch", {
     name: "Studio Mac",
     checked: false,
   });
-  expect(disconnectedHost).not.toBeChecked();
   remote.resolve();
   await page.ready;
 

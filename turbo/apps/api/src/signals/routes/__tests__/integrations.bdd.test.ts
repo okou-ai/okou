@@ -2813,9 +2813,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       assistantText: "Canonical Slack retry answer",
     });
     await flushWaitUntilForTest();
-    if (!actor.orgId) {
-      throw new Error("Expected canonical Slack actor to belong to an org");
-    }
   });
 
   it("keeps queued Web and Slack inputs on one canonical route", async () => {

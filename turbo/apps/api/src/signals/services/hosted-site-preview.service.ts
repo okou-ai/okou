@@ -1,4 +1,4 @@
-import { createHostedSitePreviewGrant$ } from "./hosted-site-preview-grant.service";
+import { createHostedSitePreviewGrant$ } from "./private-hosted-preview.service";
 import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
 import { resolveSharedThreadHostedPreview$ } from "./shared-thread-artifacts.service";
 import { command } from "ccstate";
