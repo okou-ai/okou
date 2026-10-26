@@ -10,6 +10,12 @@ export const iosNotificationsContract = c.router({
     path: "/api/ios-notifications/reconcile",
     headers: authHeadersSchema,
     body: object({
+      installationId: uuid(),
+      registrationRevision: number()
+        .int()
+        .min(1)
+        .max(Number.MAX_SAFE_INTEGER)
+        .optional(),
       notifications: array(
         object({
           identifier: string().min(1).max(512),

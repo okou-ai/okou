@@ -3,11 +3,13 @@ import { EventEmitter, once } from "node:events";
 import type { ServerHttp2Session } from "node:http2";
 import { onTestFinished, vi } from "vitest";
 import { iosPushRegistrationsContract } from "@okouai/api-contracts/contracts/ios-push-registrations";
+import { iosNotificationsContract } from "@okouai/api-contracts/contracts/ios-notifications";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { iosPushRegistrationsRoutes } from "../../ios-push-registrations";
+import { iosNotificationsRoutes } from "../../ios-notifications";
 
 export function authenticateIosSession(
   context: TestContext,
@@ -40,6 +42,7 @@ export async function registerIosPush(
     revision?: number;
     deviceToken?: string;
     environment?: "production" | "sandbox";
+    supportsNotificationState?: boolean;
   } = {},
 ) {
   authenticateIosSession(context, actor.userId, actor.orgId);
@@ -58,7 +61,31 @@ export async function registerIosPush(
     }),
     [200],
   );
+  if (options.supportsNotificationState !== false) {
+    await reconcileIosNotifications(context, actor, binding);
+  }
   return binding;
+}
+
+export async function reconcileIosNotifications(
+  context: TestContext,
+  actor: { userId: string; orgId: string },
+  binding: { installationId: string; revision: number },
+) {
+  authenticateIosSession(context, actor.userId, actor.orgId);
+  return await accept(
+    setupApp({ context, routes: iosNotificationsRoutes })(
+      iosNotificationsContract,
+    ).reconcile({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        installationId: binding.installationId,
+        registrationRevision: binding.revision,
+        notifications: [],
+      },
+    }),
+    [200],
+  );
 }
 
 /** Real HTTP/2 framing and provider response lifecycle; only the remote APNs origin is replaced. */

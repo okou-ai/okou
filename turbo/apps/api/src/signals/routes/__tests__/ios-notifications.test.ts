@@ -55,12 +55,17 @@ function reconcile(
     runId: string;
   }[],
 ) {
-  if (!actor.orgId) throw new Error("Expected a workspace-scoped test session");
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace-scoped test session");
+  }
   authenticateIosSession(context, actor.userId, actor.orgId);
   return accept(
     setupApp({ context, routes: iosNotificationsRoutes })(
       iosNotificationsContract,
-    ).reconcile({ headers, body: { notifications } }),
+    ).reconcile({
+      headers,
+      body: { installationId: randomUUID(), notifications },
+    }),
     [200],
   );
 }

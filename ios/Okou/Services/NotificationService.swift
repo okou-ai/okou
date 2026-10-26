@@ -234,6 +234,7 @@ final class NotificationService {
       try Task.checkCancellation()
       guard self.generation == generation else { return }
       error = nil
+      requestNotificationStateRefresh()
     } catch {
       guard self.generation == generation, !Task.isCancelled else { return }
       binding = nil
@@ -340,6 +341,7 @@ final class NotificationService {
         for offset in stride(from: 0, to: max(1, current.count), by: 500) {
           let batch = Array(current.dropFirst(offset).prefix(500))
           let request = NotificationStateRequest(
+            installationId: installationID, registrationRevision: binding?.revision,
             notifications: batch.map {
               NotificationStateRequest.Receipt(
                 identifier: $0.identifier, threadId: $0.destination.threadId,

@@ -96,6 +96,7 @@
     "src/signals/services/google-forms-cursor-lifecycle.ts",
     "src/signals/services/hosted-site-scope.service.ts",
     "src/signals/services/internal-run-callback.ts",
+    "src/signals/services/ios-notification-query.ts",
     "src/signals/services/managed-usage-attribution.ts",
     "src/signals/services/model-provider-device-session-publication.ts",
     "src/signals/services/model-token-categories.ts",

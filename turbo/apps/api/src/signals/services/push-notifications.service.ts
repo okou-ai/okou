@@ -41,7 +41,7 @@ interface NativePushDelivery {
 
 function nativeRunNotification(
   args: PushDelivery,
-  unreadCount: number,
+  unreadCount?: number,
 ): NativePushDelivery {
   const notificationId = `${args.runId}:${args.status}`;
   return {
@@ -57,7 +57,7 @@ function nativeRunNotification(
           body: args.notification.body.slice(0, 512),
         },
         sound: "default",
-        badge: unreadCount,
+        ...(unreadCount === undefined ? {} : { badge: unreadCount }),
         "content-available": 1,
       },
       okou: {
@@ -147,26 +147,38 @@ export const sendUserPushNotifications$ = command(
       signal,
     );
 
-    const unreadCount =
-      nativeSubscriptions.length === 0
-        ? 0
-        : await get(db$).$count(
-            chatThreads,
-            unreadIosNotificationThreadCondition(args.userId),
-          );
+    const unreadCount = !nativeSubscriptions.some(
+      (subscription) =>
+        subscription.notificationStateRevision === subscription.revision,
+    )
+      ? 0
+      : await get(db$).$count(
+          chatThreads,
+          unreadIosNotificationThreadCondition(args.userId),
+        );
     signal.throwIfAborted();
-    const native: NativePushDelivery = foreground
-      ? {
-          orgId: args.orgId,
-          notificationId: `badge:${args.userId}`,
-          payload: JSON.stringify({ aps: { badge: unreadCount } }),
-        }
-      : nativeRunNotification(args, unreadCount);
-
     await Promise.all([
-      ...nativeSubscriptions.map((subscription) => {
-        return set(sendNativeRegistration$, native, subscription, signal);
-      }),
+      ...nativeSubscriptions
+        .filter(
+          (subscription) =>
+            !foreground ||
+            subscription.notificationStateRevision === subscription.revision,
+        )
+        .map((subscription) => {
+          const supportsState =
+            subscription.notificationStateRevision === subscription.revision;
+          const native: NativePushDelivery = foreground
+            ? {
+                orgId: args.orgId,
+                notificationId: `badge:${args.userId}`,
+                payload: JSON.stringify({ aps: { badge: unreadCount } }),
+              }
+            : nativeRunNotification(
+                args,
+                supportsState ? unreadCount : undefined,
+              );
+          return set(sendNativeRegistration$, native, subscription, signal);
+        }),
       ...(!foreground && publicKey && privateKey
         ? subscriptions.map((subscription) => {
             return set(
@@ -188,8 +200,12 @@ export const sendUserPushNotifications$ = command(
 /** Badge-only pushes keep installed clients current after reads on any device. */
 export const synchronizeUserPushBadge$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
-    if (!hasApnsConfiguration("production") && !hasApnsConfiguration("sandbox"))
+    if (
+      !hasApnsConfiguration("production") &&
+      !hasApnsConfiguration("sandbox")
+    ) {
       return;
+    }
     const subscriptions = await get(db$)
       .select()
       .from(iosPushRegistrations)
@@ -197,10 +213,16 @@ export const synchronizeUserPushBadge$ = command(
         and(
           eq(iosPushRegistrations.userId, userId),
           eq(iosPushRegistrations.enabled, true),
+          eq(
+            iosPushRegistrations.notificationStateRevision,
+            iosPushRegistrations.revision,
+          ),
         ),
       );
     signal.throwIfAborted();
-    if (subscriptions.length === 0) return;
+    if (subscriptions.length === 0) {
+      return;
+    }
     const unreadCount = await get(db$).$count(
       chatThreads,
       unreadIosNotificationThreadCondition(userId),

@@ -11,6 +11,8 @@ struct NotificationStateRequest: Encodable {
     let threadId: String
     let runId: String
   }
+  let installationId: String
+  let registrationRevision: Int?
   let notifications: [Receipt]
 }
 

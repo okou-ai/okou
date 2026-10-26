@@ -14,6 +14,10 @@ export const iosPushRegistrations = pgTable(
   {
     installationId: uuid("installation_id").primaryKey(),
     revision: bigint("revision", { mode: "number" }).notNull(),
+    // A legacy writer advancing revision automatically retires this capability.
+    notificationStateRevision: bigint("notification_state_revision", {
+      mode: "number",
+    }),
     userId: text("user_id").notNull(),
     sessionId: text("session_id").notNull(),
     deviceToken: text("device_token").notNull(),

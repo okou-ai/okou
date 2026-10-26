@@ -1,5 +1,9 @@
 import { jwtVerify, decodeProtectedHeader } from "jose";
-import { createApnsFixture, registerIosPush } from "./helpers/ios-push";
+import {
+  createApnsFixture,
+  reconcileIosNotifications,
+  registerIosPush,
+} from "./helpers/ios-push";
 import { HttpResponse } from "msw";
 import {
   resolveChatEventRecommendedFollowups,
@@ -5135,6 +5139,62 @@ describe("CHAT-02: push notification gating", () => {
     );
     await flushWaitUntilForTest();
     expect(provider.requests).toHaveLength(2);
+  }, 60_000);
+
+  it("keeps legacy alerts and retires notification-state support when registration advances", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const provider = await createApnsFixture(context);
+    const registration = await registerIosPush(
+      context,
+      { ...actor, orgId: actor.orgId! },
+      {
+        supportsNotificationState: false,
+      },
+    );
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "Legacy notification client",
+    });
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      run.runId,
+      await claimChatRun(runnerGroup, run.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.payload).toMatchObject({
+      aps: { "content-available": 1, sound: "default" },
+      okou: { threadId: run.threadId, runId: run.runId },
+    });
+    expect(provider.requests[0]?.payload).not.toHaveProperty("aps.badge");
+    await chat.markThreadRead(actor, run.threadId);
+    await flushWaitUntilForTest();
+    expect(provider.requests).toHaveLength(1);
+
+    const identity = { ...actor, orgId: actor.orgId! };
+    await reconcileIosNotifications(context, identity, registration);
+    await registerIosPush(context, identity, {
+      ...registration,
+      revision: registration.revision + 1,
+      supportsNotificationState: false,
+    });
+    // A delayed handshake cannot opt a newer legacy registration into badges.
+    await reconcileIosNotifications(context, identity, registration);
+    const later = await startChatRun(actor, {
+      agentId,
+      prompt: "Legacy registration advanced",
+    });
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      later.runId,
+      await claimChatRun(runnerGroup, later.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(provider.requests).toHaveLength(2);
+    expect(provider.requests[1]?.payload).toMatchObject({
+      okou: { runId: later.runId },
+    });
+    expect(provider.requests[1]?.payload).not.toHaveProperty("aps.badge");
   }, 60_000);
 
   it("updates the icon badge after reads, unread changes, muting, and bulk reads without another alert", async () => {
