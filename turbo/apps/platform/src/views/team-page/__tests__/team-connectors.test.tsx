@@ -645,3 +645,58 @@ test.each(["Feishu", "Lark"])(
     expect(screen.queryByText(/No connected services yet/i)).toBeNull();
   },
 );
+
+test("A slower account check preserves the newer connector permission draft", async () => {
+  const first = acmeConnectorFixture({
+    permissionBundleRef: "builtin:acme-search@1",
+  });
+  const second = acmeConnectorFixture({
+    id: "d0000000-0000-4000-a000-000000000009",
+    slug: "second-search",
+    displayName: "Second Search",
+    permissionBundleRef: "builtin:acme-search@1",
+  });
+  mockConnectorSurface(context, { customConnectors: [first, second] });
+  context.mocks.api(customConnectorByIdContract.permissions, ({ respond }) => {
+    return respond(200, {
+      ref: "builtin:acme-search@1",
+      permissions: [{ name: "search:run", description: "Run a search" }],
+      defaultPolicies: { "search:run": "deny" },
+    });
+  });
+  const started = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    async ({ query, respond }) => {
+      if (query.kind !== "custom") {
+        throw new Error("Expected a custom connector account check");
+      }
+      if (query.customConnectorId === first.id) {
+        started.resolve();
+        await response.promise;
+      }
+      const account = customConnectorAccount(query.customConnectorId);
+      return respond(200, {
+        connections: [account],
+        defaultConnection: account,
+        nextCursor: null,
+      });
+    },
+  );
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("Acme Search");
+  const firstSwitch = connectorAccessSwitch("Grant Acme Search access");
+  click(firstSwitch);
+  await started.promise;
+  click(connectorAccessSwitch("Grant Second Search access"));
+  await screen.findByRole("heading", { name: /Second Search permissions/i });
+  response.resolve();
+  await waitFor(() => {
+    expect(firstSwitch).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(
+    screen.getByRole("heading", { name: /Second Search permissions/i }),
+  ).toBeInTheDocument();
+  expect(screen.queryAllByRole("alert", { hidden: true })).toHaveLength(0);
+});
