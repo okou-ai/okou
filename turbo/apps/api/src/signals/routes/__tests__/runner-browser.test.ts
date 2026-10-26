@@ -621,6 +621,168 @@ describe("official Runner Browser lifecycle", () => {
 });
 
 describe("owner provider profiles", () => {
+  it("reports a losing candidate's cleanup deadline without deleting the winner", async () => {
+    const both = createDeferredPromise<void>(context.signal);
+    const deleting = createDeferredPromise<void>(context.signal);
+    const aborted = createDeferredPromise<void>(context.signal);
+    const deadline = new AbortController();
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 2) {
+          context.mocks.abortSignal.timeout.mockReturnValueOnce(
+            deadline.signal,
+          );
+          both.resolve();
+        }
+        await both.promise;
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      server.use(
+        http.delete(`${PROVIDER_URL}/profiles/:id`, async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              aborted.resolve();
+            },
+            { once: true },
+          );
+          deleting.resolve();
+          await aborted.promise;
+          return HttpResponse.error();
+        }),
+      );
+      const allocations = Promise.all([
+        a.control({ kind: "allocate" }),
+        b.control({ kind: "allocate" }),
+      ]);
+      await deleting.promise;
+      deadline.abort(new DOMException("Cleanup deadline", "TimeoutError"));
+      const results = await allocations;
+      await aborted.promise;
+      context.mocks.abortSignal.timeout.mockReset();
+      expect(
+        results
+          .map((result) => {
+            return result.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 502]);
+      expect(
+        results.find((result) => {
+          return result.status === 502;
+        }),
+      ).toMatchObject({
+        body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+      });
+      const winner = accepted(await a.request({ kind: "inspect" }));
+      expect(
+        (await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`))
+          .status,
+      ).toBe(200);
+    });
+  });
+
+  it("reports a provider deadline without treating it as request cancellation", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const deadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockReturnValueOnce(deadline.signal);
+      const started = createDeferredPromise<void>(context.signal);
+      const aborted = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              aborted.resolve();
+            },
+            { once: true },
+          );
+          started.resolve();
+          await aborted.promise;
+          return HttpResponse.error();
+        }),
+      );
+      const allocation = chat.control({ kind: "allocate" });
+      await started.promise;
+      deadline.abort(new DOMException("Provider deadline", "TimeoutError"));
+      const result = await allocation;
+      await aborted.promise;
+      context.mocks.abortSignal.timeout.mockReset();
+      expect(result).toMatchObject({
+        status: 502,
+        body: {
+          error: {
+            code: "BROWSER_USE_TIMEOUT",
+            message: "Managed browser provider profile is unavailable",
+          },
+        },
+      });
+      await expect(chat.request({ kind: "inspect" })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+    });
+  });
+
+  it("rejects a late candidate after another request's retained profile disappears", async () => {
+    const prepared = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let arrivals = 0;
+    const f = await fixture(
+      true,
+      profileProvider(async () => {
+        if (++arrivals === 1) {
+          prepared.resolve();
+          await release.promise;
+        }
+      }),
+    );
+    await f.owned.run(async () => {
+      const a = await f.start(),
+        b = await f.start();
+      const late = settle(a.request({ kind: "allocate" }));
+      await prepared.promise;
+      const winner = await allocate(b);
+      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+      accepted(
+        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      );
+      expect(
+        (
+          await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(204);
+      release.resolve();
+      const result = await late;
+      if (!result.ok) {
+        throw result.error;
+      }
+      expect(result.value).toStrictEqual({ outcome: "unavailable" });
+      expect(accepted(await b.request({ kind: "inspect" }))).toMatchObject({
+        id: winner.id,
+        providerProfileId: winner.providerProfileId,
+        status: "stopped",
+      });
+      expect(f.provider.createdIds).toHaveLength(2);
+      for (const id of f.provider.createdIds) {
+        expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(
+          404,
+        );
+      }
+      await expect(b.request({ kind: "allocate" })).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+    });
+  });
+
   it("preserves a legacy thread profile when the provider repeats its identity", async () => {
     const f = await fixture();
     await f.owned.run(async () => {

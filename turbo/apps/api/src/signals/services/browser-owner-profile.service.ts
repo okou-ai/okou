@@ -9,19 +9,20 @@ import {
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { db$ } from "../external/db";
-import { settle } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import {
   authorityStillCurrent,
   type BrowserOwnerAuthority,
   controlBrowserOwner$,
 } from "./browser-owner.service";
 import {
+  BrowserUseProviderError,
   createBrowserUseProfile,
   deleteBrowserUseProfile,
   getBrowserUseProfile,
 } from "./browser-use.service";
 
-const PROFILE_TIMEOUT_MS = 15_000;
+const PROFILE_CLEANUP_TIMEOUT_MS = 15_000;
 
 /** A candidate remains unsafe to delete while publication is unresolved. */
 const cleanupProfileCandidate$ = command(
@@ -72,8 +73,19 @@ const cleanupProfileCandidate$ = command(
     }
     // A different accepted owner profile is immutable through ordinary
     // allocation, so a late publication cannot adopt this candidate.
-    await deleteBrowserUseProfile(providerProfileId, signal);
-    signal.throwIfAborted();
+    const deleted = await settle(
+      deleteBrowserUseProfile(providerProfileId, signal),
+    );
+    if (signal.aborted) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_TIMEOUT",
+        "Managed browser provider profile cleanup timed out",
+      );
+    }
+    if (!deleted.ok) {
+      throw deleted.error;
+    }
   },
 );
 
@@ -119,17 +131,13 @@ export function createRunnerBrowserAllocation(
         return { outcome: "unavailable" };
       }
       const { owner, profile } = context;
-      const providerSignal = AbortSignal.any([
-        signal,
-        AbortSignal.timeout(PROFILE_TIMEOUT_MS),
-      ]);
       const providerProfileId = profile
-        ? await getBrowserUseProfile(profile.providerProfileId, providerSignal)
+        ? await getBrowserUseProfile(profile.providerProfileId, signal)
         : await createBrowserUseProfile(
             `okou-owner-profile-${createHash("sha256")
               .update(JSON.stringify([owner.orgId, owner.userId]))
               .digest("hex")}`,
-            providerSignal,
+            signal,
           );
       if (providerProfileId === null) {
         return { outcome: "unavailable" };
@@ -141,12 +149,13 @@ export function createRunnerBrowserAllocation(
             owner,
             providerProfileId,
             false,
-            AbortSignal.timeout(PROFILE_TIMEOUT_MS),
+            AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
           );
         }
         signal.throwIfAborted();
       }
-      const published = await settle(
+      // Cancellation can arrive after publication committed; reconcile first.
+      const published = await settleIncludingAbort(
         set(
           controlBrowserOwner$,
           owner,
@@ -162,7 +171,7 @@ export function createRunnerBrowserAllocation(
               owner,
               providerProfileId,
               !published.ok,
-              AbortSignal.timeout(PROFILE_TIMEOUT_MS),
+              AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
             ),
           );
           signal.throwIfAborted();
@@ -181,7 +190,7 @@ export function createRunnerBrowserAllocation(
                 owner,
                 providerProfileId,
                 !published.ok,
-                AbortSignal.timeout(PROFILE_TIMEOUT_MS),
+                AbortSignal.timeout(PROFILE_CLEANUP_TIMEOUT_MS),
               ),
             )
           : null;

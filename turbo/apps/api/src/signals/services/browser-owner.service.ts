@@ -378,6 +378,7 @@ const allocateOwnerBrowser$ = command(
           },
           setWhere: and(
             eq(profiles.status, "stopped"),
+            eq(profiles.providerProfileId, action.providerProfileId),
             authorityStillCurrent(owner),
           ),
         })
