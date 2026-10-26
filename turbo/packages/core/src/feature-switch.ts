@@ -59,7 +59,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Slack workspace identity",
     description:
       "Connect your Slack identity independently of bot installation and use it in shared channels.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
