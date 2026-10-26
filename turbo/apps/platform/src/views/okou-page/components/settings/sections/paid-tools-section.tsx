@@ -33,7 +33,6 @@ import {
   type ImageModelSettings,
   type PaidToolsSettings,
   type PaidToolSettings,
-  type DataRouterToolSettings,
 } from "../../../../../signals/okou-page/settings/paid-tools.ts";
 import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
@@ -58,20 +57,16 @@ function PaidToolRow({
   tool,
   grouped = false,
 }: {
-  readonly tool: PaidToolSettings | DataRouterToolSettings;
+  readonly tool: PaidToolSettings;
   readonly grouped?: boolean;
 }) {
   const { t } = useTranslation();
   const enabled = useLoadable(tool.enabled$);
-  const familyEnabled = useLoadable(tool.familyEnabled$);
   const [save, update] = useLoadableSet(tool.update$);
   const signal = useGet(settingsActionSignal$);
-  const title =
-    "definition" in tool
-      ? tool.definition.title
-      : t(($) => {
-          return $.settings.paidTools.tools[tool.toolId].name;
-        });
+  const title = t(($) => {
+    return $.settings.paidTools.tools[tool.toolId].name;
+  });
   const pending = save.state === "loading";
   const current = enabled.state === "hasData" ? enabled.data : false;
   const toggle = (checked: boolean) => {
@@ -81,18 +76,12 @@ function PaidToolRow({
   };
   return (
     <PreferenceCardRow
-      icon={
-        TOOL_ICONS["definition" in tool ? tool.definition.family : tool.toolId]
-      }
+      icon={TOOL_ICONS[tool.toolId]}
       grouped={grouped}
       title={title}
-      description={
-        "definition" in tool
-          ? tool.definition.description
-          : t(($) => {
-              return $.settings.paidTools.tools[tool.toolId].description;
-            })
-      }
+      description={t(($) => {
+        return $.settings.paidTools.tools[tool.toolId].description;
+      })}
       status={
         pending ? (
           <p role="status" className="text-sm text-muted-foreground">
@@ -126,12 +115,7 @@ function PaidToolRow({
         aria-label={title}
         checked={current}
         disabled={
-          enabled.state !== "hasData" ||
-          familyEnabled.state !== "hasData" ||
-          !familyEnabled.data ||
-          pending ||
-          !signal ||
-          signal.aborted
+          enabled.state !== "hasData" || pending || !signal || signal.aborted
         }
         onCheckedChange={toggle}
       />
@@ -338,7 +322,6 @@ function PaidToolsContent({
   const { t } = useTranslation();
   const loadable = useLoadable(settings.disabledTools$);
   const workspace = useLoadable(currentOrgInfo$);
-  const dataTools = useLoadable(settings.dataTools$);
   const retry = useSet(settings.retry$);
   return (
     <div className="flex flex-col gap-4">
@@ -349,12 +332,6 @@ function PaidToolsContent({
         />
       ) : (
         <>
-          {dataTools.state !== "hasData" && (
-            <PaidToolsLoadStatus
-              failed={dataTools.state === "hasError"}
-              retry={retry}
-            />
-          )}
           <div className="flex flex-col gap-3">
             {settings.tools.map((tool) => {
               return tool.toolId === "image-generation" ? (
@@ -364,20 +341,7 @@ function PaidToolsContent({
                   imageModel={settings.imageModel}
                 />
               ) : (
-                <div key={tool.toolId} className="flex flex-col gap-2">
-                  <PaidToolRow tool={tool} />
-                  <div className="ml-4 flex flex-col gap-2">
-                    {(dataTools.state === "hasData" ? dataTools.data : [])
-                      .filter((dataTool) => {
-                        return dataTool.definition.family === tool.toolId;
-                      })
-                      .map((dataTool) => {
-                        return (
-                          <PaidToolRow key={dataTool.toolId} tool={dataTool} />
-                        );
-                      })}
-                  </div>
-                </div>
+                <PaidToolRow key={tool.toolId} tool={tool} />
               );
             })}
           </div>
