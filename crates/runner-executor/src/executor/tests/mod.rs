@@ -1,3 +1,4 @@
+mod allocation;
 mod support;
 
 mod agent_run_tests;

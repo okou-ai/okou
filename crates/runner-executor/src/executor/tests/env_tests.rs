@@ -1,3 +1,5 @@
+mod memory;
+
 use std::collections::{HashMap, HashSet};
 
 use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
