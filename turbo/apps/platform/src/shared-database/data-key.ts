@@ -110,8 +110,8 @@ export function parseSharedDatabaseQueryResult<
   TKey extends SharedDatabaseDataKey,
 >(dataKey: TKey, value: unknown): SharedDatabaseQueryResult<TKey> {
   if (dataKey.kind === "chat-event") {
-    // The same-build Worker decodes cached and snapshot rows, and row pages
-    // come from the API row contract. The port only clones them.
+    // The same-build Worker decodes cached, snapshot, and row-page rows before
+    // returning them; the port only clones them.
     return value as SharedDatabaseQueryResult<TKey>;
   }
   return chatThreadEventQueryResultSchema.parse(

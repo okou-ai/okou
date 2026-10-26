@@ -40,6 +40,8 @@ const THREAD_IDS = {
   incomingHistory: "b0000000-0000-4000-a000-000000000923",
   prependedHistory: "b0000000-0000-4000-a000-000000000929",
   expandedWork: "b0000000-0000-4000-a000-000000000932",
+  unfilledViewport: "b0000000-0000-4000-a000-000000000941",
+  runWindowStart: "b0000000-0000-4000-a000-000000000942",
 } as const;
 
 interface ChatScrollGeometry {
@@ -183,6 +185,55 @@ function installChatScrollGeometry(
       heightBeforeMessages += height;
     },
   };
+}
+
+/**
+ * Gives every chat viewport a fixed height and a content height derived from
+ * its rendered messages from the first render, before a test can reach the
+ * mounted container.
+ */
+function installViewportHeightBeforeOpen(viewportHeight: number): void {
+  const clientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  );
+  const scrollHeight = Object.getOwnPropertyDescriptor(
+    Element.prototype,
+    "scrollHeight",
+  );
+  Object.defineProperties(HTMLElement.prototype, {
+    clientHeight: {
+      configurable: true,
+      get(this: HTMLElement): number {
+        return Object.hasOwn(this.dataset, "scrollContainer")
+          ? viewportHeight
+          : Number(clientHeight?.get?.call(this) ?? 0);
+      },
+    },
+    scrollHeight: {
+      configurable: true,
+      get(this: HTMLElement): number {
+        return Object.hasOwn(this.dataset, "scrollContainer")
+          ? renderedAnchors(this).length * ROW_HEIGHT_PX +
+              CONTENT_BOTTOM_PADDING_PX
+          : Number(scrollHeight?.get?.call(this) ?? 0);
+      },
+    },
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      if (clientHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientHeight",
+          clientHeight,
+        );
+      }
+      Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+    },
+    { once: true },
+  );
 }
 
 function completedTurn(turn: number): MockChatEventInput[] {
@@ -687,4 +738,73 @@ test("Loading older messages preserves the reading position", async () => {
       anchorById(container, readingAnchorId).getBoundingClientRect().top,
     ).toBe(readingTop);
   });
+});
+
+test("Load earlier messages until the latest ones fill the viewport", async () => {
+  // Six rendered messages are shorter than this viewport; sixteen overflow it.
+  installViewportHeightBeforeOpen(1500);
+  mockMutableConversation(
+    THREAD_IDS.unfilledViewport,
+    completedHistoryEvents(12),
+  );
+  await openConversation(THREAD_IDS.unfilledViewport, "History answer 12");
+
+  await expect(
+    screen.findByText("History question 5"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("History question 4")).not.toBeInTheDocument();
+});
+
+test("Show the prompt and full work duration of the oldest visible answer", async () => {
+  mockMutableConversation(THREAD_IDS.runWindowStart, [
+    ...completedHistoryEvents(1),
+    {
+      id: "scroll-window-run-user",
+      role: "user",
+      content: "Review the release checklist",
+      runId: "scroll-window-run",
+      seqId: 4,
+      createdAt: "2026-08-20T12:02:00.000Z",
+    },
+    {
+      id: "scroll-window-run-work",
+      role: "assistant",
+      content: "Checked the release notes",
+      runId: "scroll-window-run",
+      seqId: 5,
+      createdAt: "2026-08-20T12:02:30.000Z",
+    },
+    {
+      id: "scroll-window-run-answer",
+      role: "assistant",
+      content: "The release checklist is complete",
+      runId: "scroll-window-run",
+      seqId: 6,
+      createdAt: "2026-08-20T12:03:00.000Z",
+    },
+    {
+      id: "scroll-window-run-completed",
+      role: "assistant",
+      content: null,
+      runId: "scroll-window-run",
+      runLifecycleEvent: "completed",
+      seqId: 7,
+      createdAt: "2026-08-20T12:03:00.000Z",
+    },
+    ...completedHistoryEvents(4)
+      .slice(6)
+      .map((event) => {
+        return { ...event, seqId: (event.seqId ?? 0) + 1 };
+      }),
+  ]);
+  await openConversation(THREAD_IDS.runWindowStart, "History answer 4");
+
+  expect(
+    screen.getByText("The release checklist is complete"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Review the release checklist")).toBeInTheDocument();
+  await expect(
+    screen.findByText("Worked for 1 min"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("History question 1")).not.toBeInTheDocument();
 });

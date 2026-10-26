@@ -2321,6 +2321,7 @@ function createChatThreadMessagePipeline({
       afterThreadScrollPositionChanged$: afterPositionChanged$,
       preloadPreviousRenderWindowForEvent$:
         renderWindow.preloadPreviousRenderWindowForEvent$,
+      loadEarlierGroups$: renderWindow.loadMoreRenderedChatGroups$,
     },
     chatEvents.chatEvents$,
     initialEventsReadyView$,
@@ -2468,7 +2469,29 @@ function takesRenderWindowSlot(
   return groupIndex === 0 || (groups[groupIndex]?.events.length ?? 0) > 0;
 }
 
-/** The start index that shows `slotCount` window slots before `endIndex`. */
+/** The first group of the run `runId` that continues at `groupIndex`. */
+function runStartGroupIndex(
+  groups: readonly ChatEventGroup[],
+  groupIndex: number,
+  runId: string | undefined,
+): number {
+  let startIndex = groupIndex;
+  while (
+    runId !== undefined &&
+    startIndex > 0 &&
+    groups[startIndex - 1]?.events.some((event) => {
+      return event.runId === runId;
+    })
+  ) {
+    startIndex--;
+  }
+  return startIndex;
+}
+
+/**
+ * The start index that shows `slotCount` window slots before `endIndex`. A
+ * window opens at the start of a run, so a visible answer keeps its prompt.
+ */
 function renderWindowStartIndexBefore(
   groups: readonly ChatEventGroup[],
   endIndex: number,
@@ -2483,7 +2506,12 @@ function renderWindowStartIndexBefore(
     if (takesRenderWindowSlot(groups, groupIndex)) {
       slots++;
       if (slots >= slotCount) {
-        return groupIndex;
+        const group = groups[groupIndex];
+        return runStartGroupIndex(
+          groups,
+          groupIndex,
+          group === undefined ? undefined : firstRunIdForGroup(group),
+        );
       }
     }
   }
@@ -2556,17 +2584,7 @@ function eventRunStartIndex(
   const targetRunId = groups[targetGroupIndex]?.events.find((event) => {
     return event.id === eventId;
   })?.runId;
-  let startIndex = targetGroupIndex;
-  while (
-    targetRunId !== undefined &&
-    startIndex > 0 &&
-    groups[startIndex - 1]?.events.some((event) => {
-      return event.runId === targetRunId;
-    })
-  ) {
-    startIndex--;
-  }
-  return startIndex;
+  return runStartGroupIndex(groups, targetGroupIndex, targetRunId);
 }
 
 function scrollTargetStartIndex(

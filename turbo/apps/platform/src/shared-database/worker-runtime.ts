@@ -769,7 +769,12 @@ export class SharedDatabaseWorkerRuntime {
       if (page.status !== 200) {
         throw new SharedDatabaseHttpError(page.status);
       }
-      remoteRows = mergeChatEventRows([remoteRows, page.body.rows]);
+      // The page receives Worker rows without decoding them again, so row pages
+      // are decoded here like cached and snapshot rows.
+      const pageRows = page.body.rows.map((row) => {
+        return chatEventRowSchema.parse(row);
+      });
+      remoteRows = mergeChatEventRows([remoteRows, pageRows]);
       cursor = page.body.cursor;
       const confirmColdStartTail = needsColdStartTailConfirmation;
       needsColdStartTailConfirmation = false;

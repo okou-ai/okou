@@ -18,11 +18,12 @@ function requiredRowField<T>(
 }
 
 /**
- * Projects one canonical row into the public ChatEvent response shape without
- * rewriting its text or re-validating its payload documents. The API validates
- * those documents when it writes them, and snapshot publication checks every
- * projected row against the public ChatEvent contract before readers can load
- * it. A control.interrupt target is emitted as interruptsRunId, never as run
+ * Projects one decoded canonical row into the public ChatEvent response shape
+ * without rewriting its text or re-validating its payload documents. The API
+ * validates user-message and usage documents when it writes them, and snapshot
+ * publication additionally checks projected rows with `chatEventResponse`.
+ * Callers that need a validated public event apply that check themselves. A
+ * control.interrupt target is emitted as interruptsRunId, never as run
  * ownership.
  */
 export function chatEventFromRow(row: ChatEventRow): ChatEvent {

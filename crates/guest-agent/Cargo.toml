@@ -20,7 +20,7 @@ pin-project-lite = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls"] }
 rustix = { workspace = true, features = ["fs", "linux_4_11", "process", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
-serde_json = { workspace = true, features = ["raw_value", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 hex = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
 tempfile = { workspace = true, features = ["getrandom"] }
