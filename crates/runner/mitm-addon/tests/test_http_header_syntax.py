@@ -352,3 +352,33 @@ def test_single_header_value_accepts_inclusive_field_and_value_limits() -> None:
         )
         == b"value"
     )
+
+
+def test_single_header_value_preserves_caller_selected_whitespace() -> None:
+    assert (
+        http_header_syntax.single_header_value(
+            ((b"Content-Type", b" \tapplication/json\t "),),
+            b"content-type",
+            max_fields=1,
+            max_value_bytes=32,
+            strip_chars=b" ",
+        )
+        == b"\tapplication/json\t"
+    )
+
+
+def test_single_header_value_stops_at_early_duplicate_without_conversion() -> None:
+    fields = _FieldReadGuard(
+        (
+            (b"Content-Type", _FullValueOperationGuard(b"application/json")),
+            (b"cOnTeNt-TyPe", _FullValueOperationGuard(b"application/json")),
+            (b"Content-Type", _FullValueOperationGuard(b"x" * 10_000)),
+        ),
+        read_limit=2,
+    )
+    assert (
+        http_header_syntax.single_header_value(
+            fields, b"content-type", max_fields=3, max_value_bytes=512
+        )
+        is None
+    )
