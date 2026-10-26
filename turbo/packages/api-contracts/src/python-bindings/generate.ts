@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { PUBLIC_DESTINATION_ADDRESS_POLICY } from "@okouai/connectors/public-destination-policy";
 
+import { DATA_ROUTER_REQUEST_BODY_MAX_BYTES } from "../contracts/data-router";
 import {
   BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION,
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
@@ -18,6 +19,12 @@ const generatedBuiltinFirewallCachePath = fileURLToPath(
 const generatedPublicDestinationPolicyPath = fileURLToPath(
   new URL(
     "../../../../../crates/runner/mitm-addon/src/generated/public_destination_policy.py",
+    import.meta.url,
+  ),
+);
+const generatedDataRouterPath = fileURLToPath(
+  new URL(
+    "../../../../../crates/runner/mitm-addon/src/generated/data_router.py",
     import.meta.url,
   ),
 );
@@ -70,6 +77,21 @@ export function renderBuiltinFirewallCacheContract(): string {
   ].join("\n");
 }
 
+function renderDataRouterContract(): string {
+  return [
+    '"""Generated Data Router body limit shared with Rust.',
+    "",
+    "Do not edit by hand; regenerate with",
+    "``cd turbo && pnpm -F @okouai/api-contracts generate:python``.",
+    '"""',
+    "",
+    "from typing import Final",
+    "",
+    `DATA_ROUTER_REQUEST_BODY_MAX_BYTES: Final[int] = ${pythonPositiveInteger(DATA_ROUTER_REQUEST_BODY_MAX_BYTES, "Data Router request body maximum bytes")}`,
+    "",
+  ].join("\n");
+}
+
 function renderPublicDestinationPolicyContract(): string {
   const { ipv4NonPublicRanges, ipv6 } = PUBLIC_DESTINATION_ADDRESS_POLICY;
   const lines = [
@@ -112,6 +134,7 @@ export async function generatePythonBindings(): Promise<void> {
     generatedPublicDestinationPolicyPath,
     renderPublicDestinationPolicyContract(),
   );
+  await writeFile(generatedDataRouterPath, renderDataRouterContract());
 }
 
 function isMainModule(): boolean {
