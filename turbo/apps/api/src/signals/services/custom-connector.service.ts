@@ -34,9 +34,7 @@ import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-co
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
-import { secrets } from "@okouai/db/schema/secret";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { variables } from "@okouai/db/schema/variable";
 import {
   orgCustomConnectorOauthConfigs,
   type OrgCustomConnectorOAuthPkceMethod,
@@ -110,9 +108,7 @@ import {
   type CustomConnectorStoredValue,
 } from "./custom-connector-credential-access.service";
 import {
-  connectorOwnedSecretWrite,
   requireManualGrantWrite,
-  connectorOwnedVariableWrite,
   connectorCredentialStorageConnectionDeletionPlan as connectionDeletionPlan,
   connectorCredentialStorageSelectionDeletionPlan as selectionDeletionPlan,
   connectorCredentialStorageCursorDeletionPlan as cursorDeletionPlan,
@@ -127,7 +123,8 @@ import {
 } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import {
-  customConnectorStorageDeclaration,
+  customConnectorCredentialValues as credentialValues,
+  customConnectorCredentialWrites as credentialWrites,
   type CustomConnectorMemberConnectionDeletionResult,
   type PreparedCustomConnectorValue,
 } from "./custom-connector-credential-storage.service";
@@ -3411,47 +3408,6 @@ interface CustomConnectorValuePersistenceArgs {
   readonly preparedValues: readonly PreparedCustomConnectorValue[];
 }
 
-function customConnectorValueCredentialScope(
-  preparedWrite: {
-    readonly connectionId: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  storage: ReturnType<typeof customConnectorStorageDeclaration>,
-) {
-  return {
-    connectorId: preparedWrite.connectionId,
-    storage,
-    orgId: preparedWrite.orgId,
-    userId: preparedWrite.userId,
-  };
-}
-
-function customConnectorValueCredentialWrite(
-  preparedWrite: Parameters<typeof customConnectorValueCredentialScope>[0],
-  storage: ReturnType<typeof customConnectorStorageDeclaration>,
-  value: PreparedCustomConnectorValue,
-) {
-  const credential = {
-    ...customConnectorValueCredentialScope(preparedWrite, storage),
-    name: value.key,
-    description: null,
-    updatedDescription: null,
-  };
-  return value.kind === "secret"
-    ? {
-        table: secrets,
-        ...connectorOwnedSecretWrite({
-          ...credential,
-          encryptedValue: value.encryptedValue,
-        }),
-      }
-    : {
-        table: variables,
-        ...connectorOwnedVariableWrite({ ...credential, value: value.value }),
-      };
-}
-
 function customConnectorValueConnectionMetadata(
   request: Pick<
     SetCustomConnectorValuesArgs,
@@ -3486,34 +3442,11 @@ async function persistCustomConnectorValues(
   if ("status" in state) {
     return state;
   }
-  const writeValues = async (
-    connectionId: string,
-    writeSignal: AbortSignal,
-  ) => {
-    const credentialDb = args.tx;
-    const preparedWrite = {
-      connectionId,
-      fields: state.connector.fields,
-      orgId: args.request.orgId,
-      userId: args.request.userId,
-      values: args.preparedValues,
-    };
-    const storage = customConnectorStorageDeclaration(preparedWrite.fields);
-    for (const value of preparedWrite.values) {
-      const write = customConnectorValueCredentialWrite(
-        preparedWrite,
-        storage,
-        value,
-      );
-      const [row] = await credentialDb
-        .insert(write.table)
-        .values(write.values)
-        .onConflictDoUpdate(write.conflict)
-        .returning({ id: write.table.id });
-      requireManualGrantWrite(row, value.kind, value.key);
-      writeSignal.throwIfAborted();
-    }
-  };
+  const credentials = credentialValues(
+    args.request,
+    state.connector.fields,
+    args.preparedValues,
+  );
   const connectionArgs = customConnectorValueConnectionMetadata(
     args.request,
     state,
@@ -3549,7 +3482,17 @@ async function persistCustomConnectorValues(
     })();
     connectedAccountId = connection.id;
     signal.throwIfAborted();
-    await writeValues(connection.id, signal);
+    await (async () => {
+      for (const write of credentialWrites(credentials, connection.id)) {
+        const [row] = await db
+          .insert(write.table)
+          .values(write.values)
+          .onConflictDoUpdate(write.conflict)
+          .returning({ id: write.table.id });
+        requireManualGrantWrite(row, write.field.kind, write.field.key);
+        signal.throwIfAborted();
+      }
+    })();
   } else {
     const tx = args.tx;
 
@@ -3592,7 +3535,15 @@ async function persistCustomConnectorValues(
         }
         const connectorId = connection.id;
         await (async () => {
-          await writeValues(connectorId, signal);
+          for (const write of credentialWrites(credentials, connectorId)) {
+            const [row] = await tx
+              .insert(write.table)
+              .values(write.values)
+              .onConflictDoUpdate(write.conflict)
+              .returning({ id: write.table.id });
+            requireManualGrantWrite(row, write.field.kind, write.field.key);
+            signal.throwIfAborted();
+          }
         })();
         signal.throwIfAborted();
         return outcome;
