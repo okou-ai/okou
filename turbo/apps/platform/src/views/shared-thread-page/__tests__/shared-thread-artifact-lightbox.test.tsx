@@ -360,6 +360,32 @@ test("a shared video uses its generated cover and plays the original in the view
   });
 });
 
+test.each(["missing", "failed"] as const)(
+  "a shared site with a %s cover falls back to its authorized iframe",
+  async (cover) => {
+    const { site } = mockSnapshotResources();
+    if (cover === "missing") {
+      delete site.previewImageUrl;
+    }
+    mockSharedMessage(`![Launch site](${SITE})`);
+
+    await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+    const card = await screen.findByTestId("markdown-artifact-preview-html");
+    if (cover === "failed") {
+      const thumbnail = await within(card).findByTestId(
+        "attachment-preview-thumbnail",
+      );
+      fireEvent.error(thumbnail);
+    }
+    await within(card).findByTestId("attachment-preview-html-viewport");
+    const frame = card.querySelector("iframe");
+    expect(frame).toHaveAttribute("src", `${SITE_URL}#slide-2`);
+    expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
+    expect(card).toHaveAttribute("href", SITE);
+  },
+);
+
 test.each([
   {
     kind: "html",
