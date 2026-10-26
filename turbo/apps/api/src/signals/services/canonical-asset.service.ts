@@ -60,7 +60,6 @@ import {
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
 
-const INPUT_IMPORT_TIMEOUT_MS = 10_000;
 const MAX_INPUT_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 
 type CanonicalArtifactLocation = ArtifactObjectLocation & {
@@ -707,14 +706,10 @@ type PreparedCanonicalInputFile =
   | { readonly kind: "complete"; readonly asset: CanonicalInputAsset }
   | { readonly kind: "import"; readonly plan: CanonicalInputImportPlan };
 
-/** One deadline covers provider download, bounded reading and object upload. */
+/** The import owner covers provider download, bounded reading and object upload. */
 export function canonicalInputImportSignals(signal: AbortSignal) {
   const importController = new AbortController();
-  const importSignal = AbortSignal.any([
-    signal,
-    importController.signal,
-    AbortSignal.timeout(INPUT_IMPORT_TIMEOUT_MS),
-  ]);
+  const importSignal = AbortSignal.any([signal, importController.signal]);
   return { importController, importSignal };
 }
 

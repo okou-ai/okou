@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import * as z from "zod";
 
 import { env } from "../../lib/env";
@@ -9,6 +10,7 @@ import {
   type LinkWalletReadRequest,
 } from "../external/link-wallet-client";
 import {
+  settle,
   readBoundedResponseText,
   safeJsonParse,
   settleIncludingAbort,
@@ -186,23 +188,32 @@ async function linkFetch(
   diagnostic: LinkRequestDiagnostic,
   signal: AbortSignal,
 ): Promise<LinkResponse> {
-  const timeout = AbortSignal.timeout(15_000);
   const result = await settleIncludingAbort(
-    fetch(url, {
-      ...options,
-      redirect: "error",
-      signal: AbortSignal.any([signal, timeout]),
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(url, {
+            ...options,
+            signal,
+          }),
+          [200, 201, 202, 204],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
   );
   if (!result.ok) {
     const failure = linkFailureDiagnostic(diagnostic, {
       stage: "transport",
       transportError: result.error,
-      transportReason: signal.aborted
-        ? "cancelled"
-        : timeout.aborted
-          ? "timeout"
-          : "network",
+      transportReason: signal.aborted ? "cancelled" : "network",
     });
     signal.throwIfAborted();
     throw new LinkWalletError(

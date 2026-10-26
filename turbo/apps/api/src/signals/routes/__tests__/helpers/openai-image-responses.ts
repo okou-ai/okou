@@ -50,7 +50,11 @@ export function mockOpenAiImageResponses(
       const id = String(params.responseId);
       deletions.push(id);
       responses.delete(id);
-      return new HttpResponse(null, { status: 204 });
+      return HttpResponse.json({
+        id,
+        object: "response.deleted",
+        deleted: true,
+      });
     }),
     http.get(`${OPENAI_RESPONSES_URL}/:responseId`, ({ params }) => {
       const id = String(params.responseId);

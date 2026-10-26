@@ -1,5 +1,5 @@
 import { isAutoRunPreset } from "@okouai/core/auto-run-model";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { logger } from "../../lib/log";
 import { usageUnderbillingFields } from "../usage-underbilling";
 import type { CreditLowBalanceAlertArgs } from "./credit-low-balance-alert.service";

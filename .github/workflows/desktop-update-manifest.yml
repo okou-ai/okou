@@ -1,0 +1,131 @@
+name: Publish Desktop update manifest
+
+on:
+  workflow_call:
+    inputs:
+      release_run_id:
+        description: "Release workflow run with successful Desktop and API promotions"
+        type: string
+        required: true
+    secrets:
+      R2_STATIC_ACCESS_KEY_ID:
+        required: true
+      R2_STATIC_SECRET_ACCESS_KEY:
+        required: true
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: "Release workflow run with successful Desktop and API promotions"
+        type: string
+        required: true
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  npm_config_audit: "false"
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Verify source release deployments
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 2
+          release_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID")"
+          jq -e '
+            .path == ".github/workflows/release-please.yml" and
+            .event == "push" and .head_branch == "main" and
+            (.conclusion == null or .conclusion == "success") and
+            (.head_sha | test("^[0-9a-f]{40}$"))
+          ' <<<"$release_run" >/dev/null
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID/jobs?per_page=100" \
+            --jq '.jobs[] | {name, conclusion}' |
+            jq -se '
+              . as $jobs |
+              ["release-please", "promote-desktop-release", "promote-api-production"] |
+              all(.[]; . as $name |
+                [$jobs[] | select(.name == $name)] |
+                length == 1 and .[0].conclusion == "success")
+            ' >/dev/null
+          printf 'sha=%s\n' "$(jq -r '.head_sha' <<<"$release_run")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+
+      - name: Resolve Desktop release identity
+        run: |
+          set -euo pipefail
+          version="$(<desktop/version.txt)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
+          printf 'DESKTOP_VERSION=%s\nOKOU_RELEASE_TAG=okou-desktop-v%s\n' "$version" "$version" >> "$GITHUB_ENV"
+
+      - name: Verify Desktop release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TARGET: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual_target="$(gh release view "$OKOU_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          [[ "$actual_target" == "$RELEASE_TARGET" ]] || { echo "::error::Desktop release target mismatch"; exit 1; }
+          release_assets="$(gh release view "$OKOU_RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name')"
+
+          for extension in zip dmg; do
+            asset_name="Okou-darwin-arm64-$DESKTOP_VERSION.$extension"
+            if ! printf '%s\n' "$release_assets" | grep -qx "$asset_name"; then
+              echo "::error::Missing Desktop release asset: $asset_name"
+              printf '%s\n' "$release_assets"
+              exit 1
+            fi
+          done
+
+      - name: Publish Desktop update manifest to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+          PUBLICATION_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID variable is required}"
+          : "${R2_BUCKET_NAME:?R2_STATIC_BUCKET_NAME variable is required}"
+          mkdir -p "$RUNNER_TEMP/desktop-update-manifest"
+          zip_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$OKOU_RELEASE_TAG/Okou-darwin-arm64-$DESKTOP_VERSION.zip"
+          bash .github/scripts/release/publish-desktop-manifest-r2.sh \
+            "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            "$R2_BUCKET_NAME" \
+            "$RUNNER_TEMP/desktop-update-manifest/ai-okou-desktop-update-manifest.json" \
+            "$PUBLICATION_SHA" \
+            "$DESKTOP_VERSION" \
+            "$zip_url"
+
+      - name: Mirror Desktop update manifest for previous API releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ai-okou-desktop-updates \
+            "$RUNNER_TEMP/desktop-update-manifest/ai-okou-desktop-update-manifest.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

@@ -132,13 +132,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.TailscaleAccess]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Tailscale setup",
-    description: "Manage Tailscale networks and bind or rebind SSH hosts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.RemoteConnectionDiagnostics]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Remote connection diagnostics",
@@ -170,7 +163,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ProactiveAgent]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Proactive Agent",
+    displayName: "Proactive",
     description:
       "Review activity, learn, plan next steps, advance entrusted Tasks and curate Suggestions.",
     enabled: false,
@@ -244,6 +237,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use Okou's interactive browser viewer in conversations and standalone browser pages",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.BrowserSharedOwner]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Shared Browser",
+    description:
+      "Share website logins across chats with a separate window for each chat",
+    enabled: false,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",

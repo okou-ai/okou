@@ -27,6 +27,7 @@ import { createDeferredPromise, settleIncludingAbort } from "./signals/utils";
 interface WorkerBindings {
   readonly HYPERDRIVE: Hyperdrive;
   readonly API_NATIVE_TELEMETRY?: string;
+  readonly GCP_MTLS?: RequestRuntime["gcpMtls"];
 }
 
 /** Keep the pool alive until both response streaming and registered work finish. */
@@ -34,7 +35,6 @@ function ownResponse(
   response: Response,
   finish: () => void,
   waitUntil: (work: Promise<unknown>) => void,
-  signal: AbortSignal,
 ): Response {
   if (!response.body) {
     finish();
@@ -46,7 +46,6 @@ function ownResponse(
   const complete = () => {
     if (!finished) {
       finished = true;
-      signal.removeEventListener("abort", abort);
       reader.releaseLock();
       finish();
     }
@@ -54,21 +53,11 @@ function ownResponse(
   const cancel = (reason: unknown): void => {
     if (!cancellation) {
       // A second reader.cancel() need not join the original source cleanup.
-      // Both downstream cancellation and abort must own this same operation.
+      // A downstream stream cancellation joins this one cleanup operation.
       cancellation = reader.cancel(reason).finally(complete);
       waitUntil(cancellation);
     }
   };
-  const abort = () => {
-    if (!finished) {
-      cancel(signal.reason);
-    }
-  };
-  if (signal.aborted) {
-    abort();
-  } else {
-    signal.addEventListener("abort", abort, { once: true });
-  }
   return new Response(
     new ReadableStream<Uint8Array>({
       async pull(controller) {
@@ -139,15 +128,9 @@ function workerFetch(
   let pool: Pool | undefined;
   let database: ApiDb | undefined;
   const background = new Set<Promise<unknown>>();
-  // This bounds admitted request work; it does not extend Workers waitUntil's
-  // 30-second post-response budget or turn background work into durable work.
-  const signal = AbortSignal.any([
-    request.signal,
-    AbortSignal.timeout(300_000),
-  ]);
-  // Cancellation requests that work stop; it does not prove that the handler
-  // or stream has joined. Completion latches belong to the resource owner.
+  // The request owner lasts through foreground, response, and background work.
   const lifetime = new AbortController();
+  const signal = lifetime.signal;
   const responseFinished = createDeferredPromise<void>(lifetime.signal);
   const foregroundFinished = createDeferredPromise<void>(lifetime.signal);
   let closing = false;
@@ -164,6 +147,7 @@ function workerFetch(
     });
     const runtime: RequestRuntime = {
       nativeTelemetry: bindings.API_NATIVE_TELEMETRY === "true",
+      gcpMtls: bindings.GCP_MTLS,
       database() {
         if (closing) {
           throw new Error("Worker request database is closed");
@@ -234,7 +218,7 @@ function workerFetch(
           bindings,
           context,
         );
-        return ownResponse(response, finish, runtime.waitUntil, signal);
+        return ownResponse(response, finish, runtime.waitUntil);
       });
       foregroundFinished.resolve();
       if (!result.ok) {

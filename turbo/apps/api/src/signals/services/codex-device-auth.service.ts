@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import type { CodexDeviceAuthMode } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
@@ -526,17 +527,29 @@ async function readErrorMessage(
 }
 
 async function requestOpenAiDeviceUserCode(
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<CodexDeviceUserCode> {
-  const response = await fetch(
-    `${CODEX_DEVICE_AUTH_API_BASE_URL}/deviceauth/usercode`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: CODEX_DEVICE_AUTH_CLIENT_ID }),
-      signal,
-    },
+  const acceptedResponse = await settle(
+    accept(
+      fetch(`${CODEX_DEVICE_AUTH_API_BASE_URL}/deviceauth/usercode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: CODEX_DEVICE_AUTH_CLIENT_ID }),
+      }),
+      [200],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
   if (!response.ok) {
     throw new Error(
       await readErrorMessage(response, "Codex device code request failed"),
@@ -567,20 +580,32 @@ async function pollOpenAiDeviceToken(
     readonly deviceAuthId: string;
     readonly userCode: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<CodexDeviceTokenPollResult> {
-  const response = await fetch(
-    `${CODEX_DEVICE_AUTH_API_BASE_URL}/deviceauth/token`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        device_auth_id: args.deviceAuthId,
-        user_code: args.userCode,
+  const acceptedResponse2 = await settle(
+    accept(
+      fetch(`${CODEX_DEVICE_AUTH_API_BASE_URL}/deviceauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          device_auth_id: args.deviceAuthId,
+          user_code: args.userCode,
+        }),
       }),
-      signal,
-    },
+      [200, 403, 404],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse2.ok) {
+    response = acceptedResponse2.value;
+  } else if (
+    acceptedResponse2.error instanceof HttpStatusError &&
+    acceptedResponse2.error.status >= 300
+  ) {
+    response = acceptedResponse2.error.response;
+  } else {
+    throw acceptedResponse2.error;
+  }
 
   if (response.status === 403 || response.status === 404) {
     return { status: "pending" };
@@ -613,20 +638,35 @@ async function exchangeOpenAiAuthorizationCode(
     readonly authorizationCode: string;
     readonly codeVerifier: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<CodexOAuthTokens> {
-  const response = await fetch(`${CODEX_DEVICE_AUTH_ISSUER}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code: args.authorizationCode,
-      redirect_uri: CODEX_DEVICE_AUTH_REDIRECT_URI,
-      client_id: CODEX_DEVICE_AUTH_CLIENT_ID,
-      code_verifier: args.codeVerifier,
-    }),
-    signal,
-  });
+  const acceptedResponse3 = await settle(
+    accept(
+      fetch(`${CODEX_DEVICE_AUTH_ISSUER}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: args.authorizationCode,
+          redirect_uri: CODEX_DEVICE_AUTH_REDIRECT_URI,
+          client_id: CODEX_DEVICE_AUTH_CLIENT_ID,
+          code_verifier: args.codeVerifier,
+        }),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse3.ok) {
+    response = acceptedResponse3.value;
+  } else if (
+    acceptedResponse3.error instanceof HttpStatusError &&
+    acceptedResponse3.error.status >= 300
+  ) {
+    response = acceptedResponse3.error.response;
+  } else {
+    throw acceptedResponse3.error;
+  }
 
   if (!response.ok) {
     throw new Error(

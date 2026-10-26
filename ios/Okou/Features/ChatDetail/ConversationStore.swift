@@ -115,6 +115,7 @@ final class ConversationStore {
   private var stopTask: Task<Void, Never>?
   private var expansionTask: Task<Void, Never>?
   private var renderWindow = ConversationRenderWindow()
+  @ObservationIgnored private var preservesRenderWindow = false
   private var items: [ConversationItem] = []
   private var expandedWorkSections: Set<String> = []
   private var closed = false
@@ -628,6 +629,12 @@ final class ConversationStore {
     publishWindow()
   }
 
+  func preserveRenderWindow() { preservesRenderWindow = true }
+
+  // Release without changing coordinates during cancellation or a native keyboard animation.
+  // The next projection update can advance the boundary, unless history reading has resumed.
+  func releaseRenderWindow() { preservesRenderWindow = false }
+
   func toggleWorkHistory(_ sectionID: String) {
     guard !closed, let section = history?.workSections.first(where: { $0.id == sectionID }),
       section.isCollapsible
@@ -687,7 +694,7 @@ final class ConversationStore {
       }
     }
     items = nextItems
-    renderWindow.update(nextItems)
+    renderWindow.update(nextItems, preservingBoundary: preservesRenderWindow)
     if let readingPosition { renderWindow.include(readingPosition.messageID) }
     publishWindow()
   }

@@ -813,7 +813,7 @@ const addFeishuThinkingReaction$ = command(
           }
           return credentials.context;
         })();
-        const response = await fetch(
+        const response = fetch(
           feishuReactionCreationUrl(apiOrigin, creationArgs.messageId),
           {
             method: "POST",
@@ -824,7 +824,6 @@ const addFeishuThinkingReaction$ = command(
             body: JSON.stringify({
               reaction_type: { emoji_type: creationArgs.emojiType },
             }),
-            signal: creationSignal,
           },
         );
         return parseFeishuReactionCreationResponse(
@@ -905,12 +904,11 @@ const loadFeishuHistory$ = command(
           return credentials.context;
         })();
         const url = feishuMessageHistoryUrl(apiOrigin, args);
-        const response = await fetch(url, {
+        const response = fetch(url, {
           headers: {
             authorization: `Bearer ${token}`,
             "content-type": "application/json; charset=utf-8",
           },
-          signal,
         });
         return parseFeishuMessageHistoryResponse(
           await readFeishuResponseJson(response, providerName),

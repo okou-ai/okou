@@ -298,6 +298,29 @@ test("existing E2E consumers wait for the complete API job", () => {
   }
 });
 
+test("PR and staging Workers select their configured Google identities", () => {
+  const worker = stepNamed(workerName);
+  for (const name of [
+    "CERTIFICATE_ID",
+    "CERTIFICATE_CHAIN",
+    "WORKLOAD_IDENTITY_PROVIDER",
+  ]) {
+    const expression = field(worker, `GCP_MTLS_${name}`, 10);
+    const vars = {
+      [`CF_API_GCP_MTLS_${name}_PREVIEW`]: `preview-${name}`,
+      [`CF_API_GCP_MTLS_${name}_STAGING`]: `staging-${name}`,
+    };
+    const data = {
+      ...context(),
+      vars,
+      format: (pattern, target) => pattern.replace("{0}", target),
+    };
+    assert.equal(render(expression, data), `preview-${name}`);
+    data.needs.prepare.outputs["job-ref"] = "staging";
+    assert.equal(render(expression, data), `staging-${name}`);
+  }
+});
+
 test("API temporary environment cleanup always removes both owned files", () => {
   const removal = deploySteps.at(-1);
   assert.equal(field(removal, "if", 8), "always()");

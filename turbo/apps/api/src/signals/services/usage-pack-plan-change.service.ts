@@ -23,6 +23,7 @@ import {
   eq,
   exists,
   getTableColumns,
+  gte,
   inArray,
   isNull,
   isNotNull,
@@ -2071,6 +2072,128 @@ function supersededDeferredScheduleId(
   return allocationScheduleId ?? planScheduleId ?? unrecordedScheduleId;
 }
 
+function hasDeferredPlanChanges(stored: StoredSubscriptionChange) {
+  return (
+    planIsDowngrade(stored.root.sourceTier, stored.root.targetTier) ||
+    stored.allocationChanges.some((change) => {
+      return change.kind === "downgrade" || change.kind === "removal";
+    })
+  );
+}
+
+const readDeferredSubscriptionChangePublication$ = command(
+  async (
+    { set },
+    stored: StoredSubscriptionChange,
+    allocationReplacementScheduleId: string | null,
+  ) => {
+    const db = set(writeDb$);
+    const planRoot = stored.root;
+    // Read the root and replacement inputs in one snapshot. A replay cannot
+    // combine an old applying root with a completed writer's new org schedule.
+    const rows = await db
+      .select({
+        root: {
+          status: usagePackSubscriptionChanges.status,
+          effectiveAt: usagePackSubscriptionChanges.effectiveAt,
+        },
+        org: {
+          tier: orgMetadata.tier,
+          scheduleId: orgMetadata.pendingSubscriptionScheduleId,
+          targetTier: orgMetadata.pendingSubscriptionTargetTier,
+        },
+        allocation: usagePackAllocationChanges,
+      })
+      .from(usagePackSubscriptionChanges)
+      .leftJoin(
+        orgMetadata,
+        planIsDowngrade(planRoot.sourceTier, planRoot.targetTier)
+          ? eq(orgMetadata.orgId, planRoot.orgId)
+          : sql`false`,
+      )
+      .leftJoin(
+        usagePackAllocationChanges,
+        stored.allocationChanges.length === 0
+          ? scheduledAllocationCondition(stored.subscription.id)
+          : sql`false`,
+      )
+      .where(subscriptionChangeIdentity(stored.root));
+    const current = rows[0];
+    if (!current || current.root.status === "failed") {
+      throw new Error("Deferred subscription change is no longer applicable");
+    }
+    if (current.root.status === "completed") {
+      return { kind: "completed" as const };
+    }
+    const planReplacementScheduleId = planIsDowngrade(
+      planRoot.sourceTier,
+      planRoot.targetTier,
+    )
+      ? matchingPlanReplacementScheduleId(planRoot, current.org ?? undefined)
+      : null;
+    const unrecordedReplacementScheduleId =
+      stored.allocationChanges.length === 0
+        ? restorableScheduleId(
+            rows.flatMap((row) => {
+              return row.allocation ? [row.allocation] : [];
+            }),
+          )
+        : null;
+    const supersededScheduleId = supersededDeferredScheduleId(
+      allocationReplacementScheduleId,
+      planReplacementScheduleId,
+      unrecordedReplacementScheduleId,
+    );
+    return { kind: "ready" as const, root: current.root, supersededScheduleId };
+  },
+);
+
+function deferredSubscriptionPublicationValues(args: {
+  readonly root: Pick<UsagePackSubscriptionChangeRow, "effectiveAt">;
+  readonly targetTier: UsagePackTier;
+  readonly scheduleId: string;
+  readonly effectiveAt: Date;
+  readonly updatedAt: Date;
+  readonly hasDeferredChanges: boolean;
+}) {
+  const {
+    root,
+    targetTier,
+    scheduleId,
+    effectiveAt,
+    updatedAt,
+    hasDeferredChanges,
+  } = args;
+  return {
+    completed: {
+      status: "completed",
+      effectiveAt: hasDeferredChanges ? effectiveAt : root.effectiveAt,
+      completedAt: updatedAt,
+      updatedAt,
+    },
+    superseded: {
+      status: "failed",
+      failureReason: "scheduled_change_superseded",
+      completedAt: updatedAt,
+      updatedAt,
+    },
+    scheduled: {
+      status: "scheduled",
+      stripeScheduleId: scheduleId,
+      effectiveAt,
+      updatedAt,
+    },
+    organization: {
+      cancelAtPeriodEnd: false,
+      pendingSubscriptionScheduleId: scheduleId,
+      pendingSubscriptionTargetTier: targetTier,
+      pendingSubscriptionChangeAt: effectiveAt,
+      currentPeriodEnd: effectiveAt,
+      updatedAt,
+    },
+  } as const;
+}
+
 // Publication completes without adding a checkpoint after the provider phase.
 const persistDeferredSubscriptionChangeSchedule$ = command(
   async function persistDeferredSubscriptionChangeSchedule(
@@ -2084,121 +2207,116 @@ const persistDeferredSubscriptionChangeSchedule$ = command(
     const allocationReplacementScheduleId = replacementScheduleId(
       stored.allocationChanges,
     );
-    const hasDeferredChanges =
-      planIsDowngrade(stored.root.sourceTier, stored.root.targetTier) ||
-      stored.allocationChanges.some((change) => {
-        return change.kind === "downgrade" || change.kind === "removal";
-      });
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0287; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const [root] = await tx
-        .select()
-        .from(usagePackSubscriptionChanges)
-        .where(subscriptionChangeIdentity(stored.root))
-        .limit(1);
-      if (!root || root.status === "failed") {
-        throw new Error("Deferred subscription change is no longer applicable");
-      }
-      if (root.status === "completed") {
-        return;
-      }
-      const [completed] = await tx
+    const hasDeferredChanges = hasDeferredPlanChanges(stored);
+    const preparation = await set(
+      readDeferredSubscriptionChangePublication$,
+      stored,
+      allocationReplacementScheduleId,
+    );
+    if (preparation.kind === "completed") {
+      return effectiveAt;
+    }
+    const { root, supersededScheduleId } = preparation;
+    const values = deferredSubscriptionPublicationValues({
+      root,
+      targetTier: stored.root.targetTier,
+      scheduleId,
+      effectiveAt,
+      updatedAt,
+      hasDeferredChanges,
+    });
+
+    // Prepare the unchanged replacement policy before writing. Only the actual
+    // status/identity transition owns any of the dependent publications.
+    const completed = db.$with("completed_deferred_subscription_change").as(
+      db
         .update(usagePackSubscriptionChanges)
-        .set({
-          status: "completed",
-          effectiveAt: hasDeferredChanges ? effectiveAt : root.effectiveAt,
-          completedAt: updatedAt,
-          updatedAt,
-        })
+        .set(values.completed)
         .where(
           and(
             subscriptionChangeIdentity(stored.root),
             eq(usagePackSubscriptionChanges.status, root.status),
           ),
         )
-        .returning({ id: usagePackSubscriptionChanges.id });
-      if (!completed) {
-        const [winner] = await tx
-          .select({ status: usagePackSubscriptionChanges.status })
-          .from(usagePackSubscriptionChanges)
-          .where(subscriptionChangeIdentity(stored.root))
-          .limit(1);
-        if (winner?.status === "completed") {
-          return;
-        }
-        throw new Error(
-          "Deferred subscription change changed before publication",
-        );
-      }
-      const planRoot = stored.root;
-      const planReplacementScheduleId = await (async () => {
-        if (!planIsDowngrade(planRoot.sourceTier, planRoot.targetTier)) {
-          return null;
-        }
-        const [org] = await tx
-          .select({
-            tier: orgMetadata.tier,
-            scheduleId: orgMetadata.pendingSubscriptionScheduleId,
-            targetTier: orgMetadata.pendingSubscriptionTargetTier,
-          })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, planRoot.orgId))
-          .limit(1);
-        return matchingPlanReplacementScheduleId(planRoot, org);
-      })();
-      const unrecordedReplacementScheduleId =
-        stored.allocationChanges.length === 0
-          ? restorableScheduleId(
-              await tx
-                .select()
-                .from(usagePackAllocationChanges)
-                .where(scheduledAllocationCondition(stored.subscription.id)),
+        .returning({ id: usagePackSubscriptionChanges.id }),
+    );
+    const winner = db.select({ id: completed.id }).from(completed);
+    const superseded = supersededScheduleId
+      ? db.$with("superseded_deferred_allocations").as(
+          db
+            .update(usagePackAllocationChanges)
+            .set(values.superseded)
+            .where(
+              and(
+                supersededAllocationCondition(
+                  stored.subscription.id,
+                  supersededScheduleId,
+                ),
+                exists(winner),
+              ),
             )
-          : null;
-      const supersededScheduleId = supersededDeferredScheduleId(
-        allocationReplacementScheduleId,
-        planReplacementScheduleId,
-        unrecordedReplacementScheduleId,
-      );
-      if (supersededScheduleId) {
-        await tx
-          .update(usagePackAllocationChanges)
-          .set({
-            status: "failed",
-            failureReason: "scheduled_change_superseded",
-            completedAt: updatedAt,
-            updatedAt,
-          })
-          .where(
-            supersededAllocationCondition(
-              stored.subscription.id,
-              supersededScheduleId,
-            ),
-          );
-      }
-      await tx
+            .returning({ id: usagePackAllocationChanges.id }),
+        )
+      : undefined;
+    // These original status predicates are disjoint: scheduled versus
+    // applying/pending_payment. No row is modified by both CTEs.
+    const scheduled = db.$with("published_deferred_allocations").as(
+      db
         .update(usagePackAllocationChanges)
-        .set({
-          status: "scheduled",
-          stripeScheduleId: scheduleId,
-          effectiveAt,
-          updatedAt,
-        })
-        .where(deferredAllocationCondition(stored.root.id));
-      if (planIsDowngrade(stored.root.sourceTier, stored.root.targetTier)) {
-        await tx
-          .update(orgMetadata)
-          .set({
-            cancelAtPeriodEnd: false,
-            pendingSubscriptionScheduleId: scheduleId,
-            pendingSubscriptionTargetTier: stored.root.targetTier,
-            pendingSubscriptionChangeAt: effectiveAt,
-            currentPeriodEnd: effectiveAt,
-            updatedAt,
-          })
-          .where(eq(orgMetadata.orgId, stored.root.orgId));
+        .set(values.scheduled)
+        .where(
+          and(
+            deferredAllocationCondition(stored.root.id),
+            exists(winner),
+            superseded
+              ? gte(db.select({ count: count() }).from(superseded), 0)
+              : undefined,
+          ),
+        )
+        .returning({ id: usagePackAllocationChanges.id }),
+    );
+    const organization = planIsDowngrade(
+      stored.root.sourceTier,
+      stored.root.targetTier,
+    )
+      ? db.$with("published_deferred_org_plan").as(
+          db
+            .update(orgMetadata)
+            .set(values.organization)
+            .where(
+              and(
+                eq(orgMetadata.orgId, stored.root.orgId),
+                exists(winner),
+                gte(db.select({ count: count() }).from(scheduled), 0),
+              ),
+            )
+            .returning({ orgId: orgMetadata.orgId }),
+        )
+      : undefined;
+    const [published] = await db
+      .with(
+        completed,
+        ...(superseded ? [superseded] : []),
+        scheduled,
+        ...(organization ? [organization] : []),
+      )
+      .select({ id: completed.id })
+      .from(completed);
+    if (!published) {
+      // A lost root transition made no dependent writes. Re-read only this
+      // original identity, preserving the completed-winner replay result.
+      const [winner] = await db
+        .select({ status: usagePackSubscriptionChanges.status })
+        .from(usagePackSubscriptionChanges)
+        .where(subscriptionChangeIdentity(stored.root))
+        .limit(1);
+      if (winner?.status === "completed") {
+        return effectiveAt;
       }
-    });
+      throw new Error(
+        "Deferred subscription change changed before publication",
+      );
+    }
     return effectiveAt;
   },
 );

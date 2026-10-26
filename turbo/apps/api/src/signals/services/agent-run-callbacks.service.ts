@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { and, eq, isNull, notInArray, or } from "drizzle-orm";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -165,16 +166,18 @@ export const dispatchProgressCallbacks$ = command(
           timestamp,
         );
 
-        return fetch(resolveCallbackUrl(callback.url), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Okou-Signature": signature,
-            "X-Okou-Timestamp": timestamp.toString(),
-          },
-          body,
-          signal,
-        });
+        return accept(
+          fetch(resolveCallbackUrl(callback.url), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Okou-Signature": signature,
+              "X-Okou-Timestamp": timestamp.toString(),
+            },
+            body,
+          }),
+          [200, 201, 202, 204],
+        );
       }),
     );
   },

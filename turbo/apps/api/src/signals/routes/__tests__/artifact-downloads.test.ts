@@ -31,7 +31,7 @@ import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -226,7 +226,7 @@ async function fixture() {
     throw new Error("Unexpected storage operation");
   });
 
-  const host = createHostMapsBddApi(context);
+  const host = createHostBddApi(context);
   async function deploy(site = `download-${randomUUID().slice(0, 8)}`) {
     const prepared = await host.prepareHostedSite(actor, {
       site,

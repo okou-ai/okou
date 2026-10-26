@@ -1723,47 +1723,15 @@ describe("FILE-03 desktop computer-use runtime", () => {
           kind: "app.state",
           app: "Safari",
         });
-        // Empty claims retain the last non-empty capability set.
-        const claimed = await api.claimNextComputerUseCommand(
-          host.connection,
-          [],
-        );
+        const claimed = await api.claimNextComputerUseCommand(host.connection, [
+          "app.state",
+        ]);
         expect(claimed).toMatchObject({
           status: "command",
           command: {
             id: created.commandId,
             kind: "app.state",
             timeoutMs: 60_000,
-          },
-        });
-      });
-    });
-  });
-
-  it("preserves native create and claim for legacy capability-empty hosts", async () => {
-    const scenario = createScenario();
-    const { bdd, api } = scenario;
-    return await withNowScopeForTest(() => {
-      return scenario.run(async () => {
-        const actor = bdd.user();
-        const host = await api.startComputerUseHost(actor, {
-          supportedCapabilities: [],
-        });
-        const created = await api.createComputerUseReadCommand(actor, {
-          kind: "apps.list",
-        });
-        const claimed = await api.claimNextComputerUseCommand(
-          host.connection,
-          [],
-        );
-        expect(claimed).toMatchObject({
-          status: "command",
-          command: {
-            id: created.commandId,
-            kind: "apps.list",
-            timeoutMs: 60_000,
-            createdAt: expect.any(String),
-            claimedAt: expect.any(String),
           },
         });
       });

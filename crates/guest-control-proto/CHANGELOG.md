@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.39](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.38...guest-control-proto-v0.22.39) (2026-10-26)
+
+## [0.22.38](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.37...guest-control-proto-v0.22.38) (2026-10-26)
+
+
+### Documentation
+
+* **rust:** document role-specific exec_start command payloads ([#43004](https://github.com/okou-ai/okou/issues/43004)) ([39cc4b0](https://github.com/okou-ai/okou/commit/39cc4b02b0c3989a407f0770f5dc1eae6d094fc5))
+
 ## [0.22.37](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.36...guest-control-proto-v0.22.37) (2026-10-25)
 
 ## [0.22.36](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.35...guest-control-proto-v0.22.36) (2026-10-25)

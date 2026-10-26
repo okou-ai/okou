@@ -810,52 +810,6 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     ).toHaveBeenCalledTimes(1);
   });
 
-  it("stops Clerk 5xx retries when usage pack checkout is cancelled", async () => {
-    const fixture = createOrgFixture();
-    authenticateOrg(fixture);
-    const controller = new AbortController();
-    const retryStarted = createDeferredPromise<void>(context.signal);
-    let retrySignal: AbortSignal | undefined;
-    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
-      const signal = options?.signal;
-      if (!signal) {
-        throw new Error("Expected Clerk retry delay to receive a signal");
-      }
-      retrySignal = signal;
-      retryStarted.resolve();
-      return createDeferredPromise<void>(signal).promise;
-    });
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(1, 521),
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
-    const request = setupApp({ context, routes: billingCheckoutRoutes })(
-      billingUsagePackCheckoutContract,
-    ).create({
-      body: usagePackCheckoutBody(fixture.userId),
-      headers: { authorization: "Bearer clerk-session" },
-      fetchOptions: { signal: controller.signal },
-    });
-
-    await retryStarted.promise;
-    const abortError = new Error("usage pack checkout cancelled");
-    abortError.name = "AbortError";
-    controller.abort(abortError);
-    const response = await accept(request, [500]);
-
-    expect(response.status).toBe(500);
-    expect(retrySignal?.aborted).toBeTruthy();
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(1);
-    expect(context.mocks.stripe.customers.create).not.toHaveBeenCalled();
-    expect(
-      context.mocks.stripe.checkout.sessions.create,
-    ).not.toHaveBeenCalled();
-  });
-
   it.each(["pro", "team"] as const)(
     "configures the current %s plan after an Atom grant",
     async (tier) => {

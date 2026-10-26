@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
@@ -172,23 +173,15 @@ export async function getGithubInstallationInfo(
     readonly privateKey: string;
     readonly installationId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<GitHubInstallationInfo> {
   const installationId = validateInstallationId(args.installationId);
-  const response = await fetch(
-    `https://api.github.com/app/installations/${installationId}`,
-    {
+  const response = await accept(
+    fetch(`https://api.github.com/app/installations/${installationId}`, {
       headers: githubHeaders(args.appId, args.privateKey),
-      signal,
-    },
+    }),
+    [200],
   );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Failed to get installation info: ${response.status} ${body}`,
-    );
-  }
 
   const data = appInstallationSchema.parse(await response.json());
 
@@ -207,24 +200,19 @@ export async function getGithubInstallationAccessToken(
     readonly privateKey: string;
     readonly installationId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<{ readonly token: string; readonly expiresAt: string }> {
   const installationId = validateInstallationId(args.installationId);
-  const response = await fetch(
-    `https://api.github.com/app/installations/${installationId}/access_tokens`,
-    {
-      method: "POST",
-      headers: githubHeaders(args.appId, args.privateKey),
-      signal,
-    },
+  const response = await accept(
+    fetch(
+      `https://api.github.com/app/installations/${installationId}/access_tokens`,
+      {
+        method: "POST",
+        headers: githubHeaders(args.appId, args.privateKey),
+      },
+    ),
+    [201],
   );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Failed to get installation access token: ${response.status} ${body}`,
-    );
-  }
 
   const data = (await response.json()) as {
     readonly token: string;

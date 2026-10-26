@@ -428,6 +428,23 @@ test("Content categories scope custom templates and reset their search", async (
   );
 });
 
+test("Every category names itself above its templates", async () => {
+  mockCustomTemplates([]);
+  const { dialog } = await openCustomPanel();
+  for (const category of [
+    "Presentation",
+    "Document",
+    "Website",
+    "Image",
+    "Workflow",
+  ]) {
+    click(tabByText(category));
+    expect(
+      within(dialog).getByRole("heading", { name: category, level: 2 }),
+    ).toBeInTheDocument();
+  }
+});
+
 test("An empty Custom section keeps the import tile and built-in styles usable", async () => {
   mockCustomTemplates([customTemplate()]);
   const { dialog } = await openCustomPanel();

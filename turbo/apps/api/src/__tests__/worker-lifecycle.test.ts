@@ -7,13 +7,23 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import type { ExecutionContext, Hyperdrive } from "@cloudflare/workers-types";
+import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
-import { env } from "../lib/env";
+import { env, mockOptionalEnv } from "../lib/env";
+import { now } from "../lib/time";
+import { server } from "../mocks/server";
 import { createDeferredPromise } from "../signals/utils";
 import { testContext } from "./test-context";
+import { stubTestVercelRuntimeToken } from "./env-stub";
 import { createRouteMocks } from "../signals/routes/__tests__/helpers/route-test";
 import { installDurableUserExportStorage } from "../signals/routes/__tests__/helpers/durable-user-export-storage";
 import { mockClerkUsers } from "../signals/routes/__tests__/helpers/clerk-users";
+import {
+  GOOGLE_IMPERSONATION_URL,
+  VERTEX_VOICE_URL,
+  mockGoogleVoice,
+  vertexVoiceResponse,
+} from "../signals/routes/__tests__/helpers/google-voice";
 // Do not call setupApp/isolatePg here. The common case-database adapter has no
 // selected database and delegates to original.db(), so Worker AsyncLocalStorage
 // selects the request's real pg Pool, not a PGlite or test-owned DB handle.
@@ -47,7 +57,9 @@ function actor() {
   });
 }
 
-function caller() {
+function caller(gcpMtls?: {
+  fetch: (url: string, init?: RequestInit) => Promise<Response>;
+}) {
   const pending: Promise<unknown>[] = [];
   const failures: unknown[] = [];
   const execution = {
@@ -109,7 +121,7 @@ function caller() {
             ...init.headers,
           },
         }),
-        { HYPERDRIVE: binding },
+        { HYPERDRIVE: binding, GCP_MTLS: gcpMtls },
         execution,
       );
     },
@@ -144,7 +156,7 @@ test("serves DB-backed foreground writes through response EOF and a subsequent W
   await expect(http.settle()).resolves.toStrictEqual([]);
 });
 
-test.each(["eof", "cancel", "abort"] as const)(
+test.each(["eof", "cancel"] as const)(
   "continues admitted export DB work after response %s while a concurrent request finishes",
   async (completion) => {
     actor();
@@ -180,13 +192,8 @@ test.each(["eof", "cancel", "abort"] as const)(
       },
     });
     const owner = caller();
-    const controller = new AbortController();
-    onTestFinished(() => {
-      controller.abort();
-    });
     const response = await owner.request("/api/user/export", {
       method: "POST",
-      signal: controller.signal,
     });
     expect(response.status).toBe(202);
     await entered.promise;
@@ -195,11 +202,8 @@ test.each(["eof", "cancel", "abort"] as const)(
         jobId: expect.any(String),
         status: expect.stringMatching(/pending|running/),
       });
-    } else if (completion === "cancel") {
-      await response.body!.cancel("caller stopped reading");
     } else {
-      controller.abort(new DOMException("Caller disconnected", "AbortError"));
-      await response.body!.cancel();
+      await response.body!.cancel("caller stopped reading");
     }
     // Finishing an independent request must not dispose the blocked owner's DB.
     await createAgent("Concurrent foreground");
@@ -216,7 +220,7 @@ test.each(["eof", "cancel", "abort"] as const)(
   },
 );
 
-test("joins cancelled foreground upload work through the provider's multipart cleanup", async () => {
+test("completes admitted foreground upload after the HTTP caller disconnects", async () => {
   actor();
   const entered = latch();
   const release = latch();
@@ -264,11 +268,13 @@ test("joins cancelled foreground upload work through the provider's multipart cl
   controller.abort(new DOMException("Caller disconnected", "AbortError"));
   await createAgent("Surviving foreground");
   release.resolve();
-  const cancelled = await response;
-  expect(cancelled.status).toBe(500);
-  await cancelled.body?.cancel();
+  const completed = await response;
+  expect(completed.status).toBe(200);
+  await expect(completed.json()).resolves.toMatchObject({
+    multipart: { uploadId: "owned-worker-upload" },
+  });
   await expect(http.settle()).resolves.toStrictEqual([]);
-  expect(receipts).toStrictEqual(["owned-worker-upload"]);
+  expect(receipts).toStrictEqual([]);
 });
 
 test("retains the publicly accepted export job after a background provider receipt fails", async () => {
@@ -317,4 +323,89 @@ test("retains the publicly accepted export job after a background provider recei
     status: "pending",
   });
   await expect(observer.settle()).resolves.toStrictEqual([]);
+});
+
+test("uses the certificate binding to call Vertex through the Worker HTTP entrypoint", async () => {
+  const stsUrl = "https://sts.mtls.googleapis.com/v1/token";
+  const provider =
+    "projects/123456789/locations/global/workloadIdentityPools/worker-preview/providers/x509";
+  const certificateChain = ["cHJldmlldy1sZWFm", "cHJldmlldy1jYQ=="];
+  const scope = "https://www.googleapis.com/auth/cloud-platform";
+
+  actor();
+  const setup = caller();
+  const onboarding = await setup.request("/api/onboarding/complete", {
+    method: "POST",
+    body: "{}",
+  });
+  expect(onboarding.status).toBe(200);
+  await expect(onboarding.json()).resolves.toMatchObject({
+    onboardingComplete: true,
+  });
+  await expect(setup.settle()).resolves.toStrictEqual([]);
+
+  mockGoogleVoice();
+  mockOptionalEnv("GCP_LLM_WORKLOAD_IDENTITY_PROVIDER", provider);
+  mockOptionalEnv(
+    "GCP_MTLS_CERTIFICATE_CHAIN",
+    JSON.stringify(certificateChain),
+  );
+  stubTestVercelRuntimeToken(undefined);
+  let certificateExchanges = 0;
+  const binding = {
+    fetch(url: string, init?: RequestInit) {
+      certificateExchanges += 1;
+      return fetch(url, init);
+    },
+  };
+  server.use(
+    http.post(stsUrl, async ({ request }) => {
+      expect(request.headers.get("content-type")).toBe("application/json");
+      await expect(request.json()).resolves.toStrictEqual({
+        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+        audience: `//iam.googleapis.com/${provider}`,
+        scope,
+        requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
+        subject_token_type: "urn:ietf:params:oauth:token-type:mtls",
+        subject_token: JSON.stringify(certificateChain),
+      });
+      return HttpResponse.json({
+        access_token: "worker-sts-token",
+        token_type: "Bearer",
+        issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+        expires_in: 3600,
+      });
+    }),
+    http.post(GOOGLE_IMPERSONATION_URL, async ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer worker-sts-token",
+      );
+      await expect(request.json()).resolves.toStrictEqual({
+        scope: [scope],
+        lifetime: "3600s",
+      });
+      return HttpResponse.json({
+        accessToken: "worker-impersonated-token",
+        expireTime: new Date(now() + 3_599_000).toISOString(),
+      });
+    }),
+    http.post(VERTEX_VOICE_URL, ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer worker-impersonated-token",
+      );
+      return vertexVoiceResponse("Synthetic worker dictation.");
+    }),
+  );
+
+  const client = caller(binding);
+  const response = await client.request("/api/voice-io/polish/segments", {
+    method: "POST",
+    body: JSON.stringify({ segments: ["Synthetic worker dictation."] }),
+  });
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toStrictEqual({
+    text: "Synthetic worker dictation.",
+  });
+  await expect(client.settle()).resolves.toStrictEqual([]);
+  expect(certificateExchanges).toBe(1);
 });

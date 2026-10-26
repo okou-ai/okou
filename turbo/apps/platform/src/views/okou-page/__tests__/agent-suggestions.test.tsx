@@ -18,6 +18,7 @@ import {
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import {
   click,
   fill,
@@ -100,6 +101,13 @@ function queryTab(name: string) {
 function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   let items = initial;
   const consumed: string[] = [];
+  context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
+    return respond(200, {
+      enabled: true,
+      status: "enabled",
+      unavailableReason: null,
+    });
+  });
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
     return respond(200, { suggestions: items });
   });

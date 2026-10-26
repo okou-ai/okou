@@ -291,12 +291,22 @@ pub struct CliExecutionResult {
     /// the actual failure reason in its final run error.
     pub failure_diagnostic: Option<CliFailureDiagnostic>,
 
-    /// Guest-agent control-path error that caused the CLI process group to be
-    /// terminated after a meaningful process summary could still be collected.
+    /// Guest-agent control-path failure or cancellation retained alongside the
+    /// execution summary.
+    ///
+    /// Pi protocol cancellation can populate this even when the child exits
+    /// normally after an `abort` request.
     pub control_error: Option<AgentError>,
 
-    /// Structured attribution for guest-agent initiated CLI process-group
-    /// termination.
+    /// Initiator and reason for CLI termination requested by the guest agent,
+    /// including protocol-level cancellation.
+    ///
+    /// Presence alone does not establish that the process group was signaled or
+    /// that group cleanup completed. [`CliTerminationDiagnostic::signal_sent`]
+    /// and its related optional metadata record signal attempts, while
+    /// [`Self::cli_observed_exit`] separately records the raw child exit when
+    /// available. Missing signal metadata does not prove that no signal was
+    /// attempted.
     pub cli_termination: Option<CliTerminationDiagnostic>,
 }
 

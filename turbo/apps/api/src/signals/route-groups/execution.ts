@@ -46,6 +46,7 @@ import { vncConnectionsRoutes } from "../routes/vnc-connections";
 import { chatRemoteAccessRoutes } from "../routes/chat-remote-access";
 import { vncAccessRoutes } from "../routes/vnc-access";
 import { runnerVncRoutes } from "../routes/runner-vnc";
+import { runnerBrowserRoutes } from "../routes/runner-browser";
 import { cloudflareAccessRoutes } from "../routes/cloudflare-access";
 import { tailscaleRoutes } from "../routes/tailscale";
 import { sshAccessRoutes } from "../routes/ssh-access";
@@ -59,10 +60,7 @@ import { runDetailRoutes } from "../routes/run-detail";
 import { runsRoutes } from "../routes/runs";
 import { runsCancelRoutes } from "../routes/runs-cancel";
 import { onboardingRecommendationRoutes } from "../routes/onboarding-recommendations";
-import {
-  proactiveLearningRoutes,
-  proactivePlanningRoutes,
-} from "../routes/proactive-preferences";
+import { proactiveLearningRoutes } from "../routes/proactive-preferences";
 
 import { debugMorningBriefRoutes } from "../routes/debug-morning-brief";
 import { workflowsRoutes } from "../routes/workflows";
@@ -118,6 +116,7 @@ export const EXECUTION_ROUTES: readonly RouteEntry[] = [
   ...chatRemoteAccessRoutes,
   ...vncAccessRoutes,
   ...runnerVncRoutes,
+  ...runnerBrowserRoutes,
   ...cloudflareAccessRoutes,
   ...tailscaleRoutes,
   ...sshAccessRoutes,
@@ -132,7 +131,6 @@ export const EXECUTION_ROUTES: readonly RouteEntry[] = [
   ...runsCancelRoutes,
   ...onboardingRecommendationRoutes,
   ...proactiveLearningRoutes,
-  ...proactivePlanningRoutes,
   ...debugMorningBriefRoutes,
   ...workflowsRoutes,
   ...workflowAutomationsRoutes,

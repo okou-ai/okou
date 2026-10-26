@@ -18,6 +18,8 @@ function isSchemaModule(source: string | undefined): boolean {
     source === "@okouai/db/runtime/chat-thread" ||
     source === "@okouai/db/runtime/connector-catalog" ||
     source === "@okouai/db/runtime/email-outbox" ||
+    source === "@okouai/db/runtime/usage-event" ||
+    source === "@okouai/db/runtime/usage-pricing" ||
     source === "@okouai/db/runtime/workflow-automation"
   );
 }

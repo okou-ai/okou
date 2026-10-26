@@ -3,7 +3,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";
 import {
   and,

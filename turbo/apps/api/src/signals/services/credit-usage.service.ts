@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { and, asc, eq } from "drizzle-orm";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { writeDb$ } from "../external/db";

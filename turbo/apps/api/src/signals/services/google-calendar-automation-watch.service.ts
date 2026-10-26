@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   googleCalendarEventCancelledEventConfigSchema,
   googleCalendarEventCreatedEventConfigSchema,
@@ -27,7 +28,7 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
 import { db$, writeDb$ } from "../external/db";
-import { onRejection, tapError } from "../utils";
+import { settle, onRejection, tapError } from "../utils";
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection$,
@@ -53,8 +54,6 @@ const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 export const WATCH_RENEWAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const WATCH_TTL_SECONDS = 7 * 24 * 60 * 60;
-
-const WATCH_LIFECYCLE_TIMEOUT_MS = 30 * 1000;
 
 const CALENDAR_EVENTS_PAGE_SIZE = 2500;
 
@@ -396,15 +395,29 @@ async function googleCalendarFetchJson<T>(
   signal: AbortSignal,
 ): Promise<GoogleCalendarFetchResult<T>> {
   const response = await tapError(
-    fetch(url, {
-      ...init,
-      signal,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(url, {
+            ...init,
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+              ...init.headers,
+            },
+          }),
+          [200],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
   );
   signal.throwIfAborted();
   if (!response) {
@@ -426,26 +439,36 @@ async function googleCalendarFetchJson<T>(
   return { kind: "ok", value: schema.parse(await response.json()) };
 }
 
-async function googleCalendarFetchNoContent(
-  args: {
-    readonly accessToken: string;
-    readonly url: string;
-    readonly init: RequestInit;
-  },
-  signal: AbortSignal,
-): Promise<GoogleCalendarFetchResult<null>> {
+async function googleCalendarFetchNoContent(args: {
+  readonly accessToken: string;
+  readonly url: string;
+  readonly init: RequestInit;
+}): Promise<GoogleCalendarFetchResult<null>> {
   const response = await tapError(
-    fetch(args.url, {
-      ...args.init,
-      signal,
-      headers: {
-        Authorization: `Bearer ${args.accessToken}`,
-        "Content-Type": "application/json",
-        ...args.init.headers,
-      },
-    }),
+    (async () => {
+      const acceptedResponse2 = await settle(
+        accept(
+          fetch(args.url, {
+            ...args.init,
+            headers: {
+              Authorization: `Bearer ${args.accessToken}`,
+              "Content-Type": "application/json",
+              ...args.init.headers,
+            },
+          }),
+          [204],
+        ),
+      );
+      if (!acceptedResponse2.ok) {
+        const error = acceptedResponse2.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse2.value;
+    })(),
   );
-  signal.throwIfAborted();
   if (!response) {
     return {
       kind: "error",
@@ -529,29 +552,22 @@ async function probeExactCalendarTarget(
       : "retryable";
 }
 
-async function stopCalendarChannel(
-  args: {
-    readonly accessToken: string;
-    readonly channelId: string;
-    readonly resourceId: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const result = await googleCalendarFetchNoContent(
-    {
-      accessToken: args.accessToken,
-      url: calendarApiUrl("/channels/stop"),
-      init: {
-        method: "POST",
-        body: JSON.stringify({
-          id: args.channelId,
-          resourceId: args.resourceId,
-        }),
-      },
+async function stopCalendarChannel(args: {
+  readonly accessToken: string;
+  readonly channelId: string;
+  readonly resourceId: string;
+}): Promise<boolean> {
+  const result = await googleCalendarFetchNoContent({
+    accessToken: args.accessToken,
+    url: calendarApiUrl("/channels/stop"),
+    init: {
+      method: "POST",
+      body: JSON.stringify({
+        id: args.channelId,
+        resourceId: args.resourceId,
+      }),
     },
-    signal,
-  );
-  signal.throwIfAborted();
+  });
   if (result.kind !== "ok") {
     if (result.status === 404) {
       return true;
@@ -572,14 +588,11 @@ export async function stopCalendarChannelWithLifecycleOwnership(args: {
   readonly channel: GoogleCalendarChannelIdentity;
 }): Promise<boolean> {
   const stopped = await tapError(
-    stopCalendarChannel(
-      {
-        accessToken: args.accessToken,
-        channelId: args.channel.channelId,
-        resourceId: args.channel.resourceId,
-      },
-      AbortSignal.timeout(WATCH_LIFECYCLE_TIMEOUT_MS),
-    ),
+    stopCalendarChannel({
+      accessToken: args.accessToken,
+      channelId: args.channel.channelId,
+      resourceId: args.channel.resourceId,
+    }),
     (error) => {
       log.warn("Failed to finish Google Calendar watch channel cleanup", {
         provider: "google_calendar",

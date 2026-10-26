@@ -22,17 +22,18 @@ import {
 import {
   notionAutomationProjectionColumns,
   notionAutomationProjectionCondition,
-  notionAutomationPendingEventsScope,
   notionAutomationProjectionValues,
+  notionAutomationPendingEventsScope,
   notionPendingEventsSkipWrite,
 } from "./notion-automation-account.service";
+
 import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
 import {
   workflowAutomationDefaultAccountReadPlan,
   workflowAutomationSelectedAccountReadPlan,
 } from "./workflow-automation-account.service";
 
-type ProjectedAutomation =
+export type ProjectedAutomation =
   | Pick<
       typeof workflowAutomations.$inferSelect,
       "id" | "workflowId" | "eventConnectorId" | "eventType" | "eventConfig"
@@ -41,6 +42,48 @@ type ProjectedAutomation =
       typeof workflowAutomations.$inferSelect,
       "id" | "workflowId" | "eventConnectorId"
     >;
+
+type RowProjectionConnector =
+  "gmail" | "google-calendar" | "google-meet" | "notion";
+
+export function workflowAutomationReprojectionColumns(
+  connectorSlug: RowProjectionConnector,
+) {
+  switch (connectorSlug) {
+    case "gmail": {
+      return gmailAutomationProjectionColumns();
+    }
+    case "google-calendar": {
+      return googleCalendarAutomationProjectionColumns();
+    }
+    case "google-meet": {
+      return googleMeetAutomationProjectionColumns();
+    }
+    case "notion": {
+      return notionAutomationProjectionColumns();
+    }
+  }
+}
+
+export function workflowAutomationReprojectionCondition(
+  args: { readonly orgId: string; readonly userId: string },
+  connectorSlug: RowProjectionConnector,
+) {
+  switch (connectorSlug) {
+    case "gmail": {
+      return gmailAutomationProjectionCondition(args);
+    }
+    case "google-calendar": {
+      return googleCalendarAutomationProjectionCondition(args);
+    }
+    case "google-meet": {
+      return googleMeetAutomationProjectionCondition(args);
+    }
+    case "notion": {
+      return notionAutomationProjectionCondition(args);
+    }
+  }
+}
 
 export interface PreparedDefaultAccountProjection {
   readonly id: string;
@@ -175,34 +218,15 @@ export async function reprojectWorkflowAutomationsForOwner(
       const projectionDb = db;
       const projectionArgs = args;
       await (async () => {
-        const automations: ProjectedAutomation[] =
-          connectorSlug === "gmail" || connectorSlug === "notion"
-            ? await projectionDb
-                .select(
-                  connectorSlug === "gmail"
-                    ? gmailAutomationProjectionColumns()
-                    : notionAutomationProjectionColumns(),
-                )
-                .from(workflowAutomations)
-                .where(
-                  connectorSlug === "gmail"
-                    ? gmailAutomationProjectionCondition(projectionArgs)
-                    : notionAutomationProjectionCondition(projectionArgs),
-                )
-            : await projectionDb
-                .select(
-                  connectorSlug === "google-calendar"
-                    ? googleCalendarAutomationProjectionColumns()
-                    : googleMeetAutomationProjectionColumns(),
-                )
-                .from(workflowAutomations)
-                .where(
-                  connectorSlug === "google-calendar"
-                    ? googleCalendarAutomationProjectionCondition(
-                        projectionArgs,
-                      )
-                    : googleMeetAutomationProjectionCondition(projectionArgs),
-                );
+        const automations: ProjectedAutomation[] = await projectionDb
+          .select(workflowAutomationReprojectionColumns(connectorSlug))
+          .from(workflowAutomations)
+          .where(
+            workflowAutomationReprojectionCondition(
+              projectionArgs,
+              connectorSlug,
+            ),
+          );
 
         for (const automation of automations) {
           const workflowScope = {

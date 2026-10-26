@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import * as z from "zod";
 
 import {
@@ -184,93 +185,84 @@ export async function generateVertexTextWithUsage(
   if (!configuration) {
     return null;
   }
-  // Bound generation even when the caller owns a long-lived background task.
-  const deadline = AbortSignal.timeout(30_000);
-  const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
-  const assertActive = () => {
-    signal?.throwIfAborted();
-    if (deadline.aborted) {
-      throw new VertexTextError("upstream_timeout");
-    }
-  };
+  const requestSignal = signal ?? new AbortController().signal;
   const selected = VERTEX_MODELS[model];
-  const token = await onRejection(
-    gcpLlmAccessToken(configuration, requestSignal),
-    assertActive,
-  );
-  assertActive();
+  const token = await gcpLlmAccessToken(configuration, requestSignal);
   const response = await onRejection(
-    fetch(
-      `https://${selected.host}/v1/projects/${configuration.project}/locations/${selected.location}/publishers/google/models/${selected.model}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: messages
+    accept(
+      fetch(
+        `https://${selected.host}/v1/projects/${configuration.project}/locations/${selected.location}/publishers/google/models/${selected.model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: messages
+                .filter((message) => {
+                  return message.role === "system";
+                })
+                .map((message) => {
+                  return { text: message.content };
+                }),
+            },
+            contents: messages
               .filter((message) => {
-                return message.role === "system";
+                return message.role !== "system";
               })
               .map((message) => {
-                return { text: message.content };
+                return {
+                  role: message.role === "assistant" ? "model" : "user",
+                  parts: [{ text: message.content }],
+                };
               }),
-          },
-          contents: messages
-            .filter((message) => {
-              return message.role !== "system";
-            })
-            .map((message) => {
-              return {
-                role: message.role === "assistant" ? "model" : "user",
-                parts: [{ text: message.content }],
-              };
-            }),
-          generationConfig: {
-            ...selected.generationConfig,
-            ...("temperature" in selected.generationConfig
-              ? { temperature: options?.temperature ?? 0.3 }
-              : {}),
-            maxOutputTokens: maxTokens,
-            ...(options?.responseJsonSchema === undefined
-              ? {}
-              : {
-                  responseMimeType: "application/json",
-                  responseJsonSchema: options.responseJsonSchema,
-                }),
-          },
-        }),
-        signal: requestSignal,
-      },
+            generationConfig: {
+              ...selected.generationConfig,
+              ...("temperature" in selected.generationConfig
+                ? { temperature: options?.temperature ?? 0.3 }
+                : {}),
+              maxOutputTokens: maxTokens,
+              ...(options?.responseJsonSchema === undefined
+                ? {}
+                : {
+                    responseMimeType: "application/json",
+                    responseJsonSchema: options.responseJsonSchema,
+                  }),
+            },
+          }),
+          signal: requestSignal,
+        },
+      ),
+      [200],
     ),
     (error) => {
-      assertActive();
+      requestSignal.throwIfAborted();
+      if (error instanceof HttpStatusError) {
+        if (error.response.body) {
+          startUntrackedBestEffortCleanup(error.response.body.cancel());
+        }
+        throw new VertexTextError(httpReason(error.status), error.status);
+      }
       const reason = gcpLlmTransportReason(error);
       if (reason) {
         throw new VertexTextError(reason);
       }
     },
   );
-  assertActive();
-  if (!response.ok) {
-    if (response.body) {
-      startUntrackedBestEffortCleanup(response.body.cancel());
-    }
-    throw new VertexTextError(httpReason(response.status), response.status);
-  }
+  requestSignal.throwIfAborted();
   const body = await onRejection(
     readBoundedResponseText(response, RESPONSE_MAX_BYTES),
     (error) => {
-      assertActive();
+      requestSignal.throwIfAborted();
       const reason = gcpLlmTransportReason(error);
       if (reason) {
         throw new VertexTextError(reason);
       }
     },
   );
-  assertActive();
+  requestSignal.throwIfAborted();
   if (body.kind !== "text") {
     throw new VertexTextError("invalid_output");
   }

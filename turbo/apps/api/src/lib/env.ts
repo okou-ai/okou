@@ -33,6 +33,7 @@ const SCHEMA = {
   GCP_LLM_PROJECT_ID: z.string().optional(),
   GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: z.string().optional(),
   GCP_LLM_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
+  GCP_MTLS_CERTIFICATE_CHAIN: z.string().optional(),
   OKOU_DATA_ROUTER_URL: z.url().optional(),
   OKOU_DATA_TOKEN: z.string().min(1).optional(),
   OKOU_BROWSER_USE_API_KEY: z.string().min(1).optional(),

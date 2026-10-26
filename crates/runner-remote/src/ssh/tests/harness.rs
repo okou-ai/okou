@@ -259,12 +259,6 @@ impl AdditionalRun {
 }
 
 impl Harness {
-    pub(crate) fn notifications(&self) -> TestNotifications {
-        TestNotifications {
-            runtime: Arc::clone(&self.runtime),
-        }
-    }
-
     pub(crate) async fn new(reply: Reply) -> Self {
         Self::with_keys(reply, key(Algorithm::Ed25519), key(Algorithm::Ed25519)).await
     }
@@ -564,17 +558,6 @@ impl Harness {
     }
 }
 
-pub(crate) struct TestNotifications {
-    runtime: Arc<SshRuntime>,
-}
-
-impl TestNotifications {
-    pub(crate) async fn send(&mut self, event: Option<ably_subscriber::Event>) {
-        if let Some(ably_subscriber::Event::Message(message)) = event {
-            self.runtime.ably_message(&message);
-        }
-    }
-}
 impl Drop for Harness {
     fn drop(&mut self) {
         self.cancel.cancel();
@@ -851,10 +834,10 @@ impl server::Handler for Peer {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        key: &PublicKey,
+        key: server::VerifiedPublicKey<'_>,
     ) -> Result<server::Auth, Self::Error> {
         self.observed.auth.fetch_add(1, Ordering::SeqCst);
-        Ok(if user == "test-user" && key == &self.key {
+        Ok(if user == "test-user" && key.public_key == &self.key {
             server::Auth::Accept
         } else {
             server::Auth::Reject {

@@ -1,3 +1,5 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
+import { settle } from "../utils";
 import { optionalEnv } from "../../lib/env";
 import * as z from "zod";
 
@@ -71,16 +73,30 @@ async function callTelegramApi<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const url = buildTelegramApiUrl(token, method);
-  const response = await fetch(
-    `${url}${params ? `?${new URLSearchParams(params).toString()}` : ""}`,
-    { signal },
+  const responseResult = await settle(
+    accept(
+      fetch(
+        `${url}${params ? `?${new URLSearchParams(params).toString()}` : ""}`,
+        { signal },
+      ),
+      [200],
+    ),
   );
+  let response: Response;
+  if (responseResult.ok) {
+    response = responseResult.value;
+  } else {
+    if (!(responseResult.error instanceof HttpStatusError)) {
+      throw responseResult.error;
+    }
+    response = responseResult.error.response;
+  }
 
   const data: unknown = await response.json();
 
   const errorPayload = isTelegramApiErrorPayload(data) ? data : null;
 
-  if (!response.ok || errorPayload) {
+  if (!responseResult.ok || errorPayload) {
     throw new TelegramApiError(
       errorPayload?.error_code ?? response.status,
       response.statusText,
@@ -244,16 +260,15 @@ export async function sendChatAction(
   chatId: string,
   action: string,
 ): Promise<void> {
-  const response = await fetch(buildTelegramApiUrl(token, "sendChatAction"), {
-    method: "POST",
-    headers: buildTelegramApiHeaders(),
-    body: JSON.stringify({ chat_id: chatId, action }),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Telegram API error: ${response.status} ${response.statusText}`,
-    );
-  }
+  const response = await accept(
+    fetch(buildTelegramApiUrl(token, "sendChatAction"), {
+      method: "POST",
+      headers: buildTelegramApiHeaders(),
+      body: JSON.stringify({ chat_id: chatId, action }),
+    }),
+    [200],
+  );
+
   const data: unknown = await response.json();
   if (isTelegramApiErrorPayload(data)) {
     throw new Error(`Telegram API error: ${data.description}`);
@@ -271,16 +286,15 @@ export async function deleteMessage(
   chatId: string,
   messageId: number,
 ): Promise<void> {
-  const response = await fetch(buildTelegramApiUrl(token, "deleteMessage"), {
-    method: "POST",
-    headers: buildTelegramApiHeaders(),
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Telegram API error: ${response.status} ${response.statusText}`,
-    );
-  }
+  const response = await accept(
+    fetch(buildTelegramApiUrl(token, "deleteMessage"), {
+      method: "POST",
+      headers: buildTelegramApiHeaders(),
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+    }),
+    [200],
+  );
+
   const data: unknown = await response.json();
   if (isTelegramApiErrorPayload(data)) {
     throw new Error(`Telegram API error: ${data.description}`);
@@ -314,8 +328,8 @@ interface TelegramSentMessage {
 /**
  * Send a Telegram message using the bot API and surface upstream HTTP status
  * via a result-union. Callers map status >= 500 to 502 and status < 500 to 400
- * (Telegram client error). No exceptions are thrown for HTTP failures so
- * handlers can stay free of try/catch (per project policy).
+ * (Telegram client error). HTTP acceptance failures become the provider result
+ * consumed by the route.
  */
 export async function sendMessage(
   token: string,
@@ -342,15 +356,29 @@ export async function sendMessage(
     payload.reply_markup = options.replyMarkup;
   }
 
-  const response = await fetch(buildTelegramApiUrl(token, "sendMessage"), {
-    method: "POST",
-    headers: buildTelegramApiHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const responseResult = await settle(
+    accept(
+      fetch(buildTelegramApiUrl(token, "sendMessage"), {
+        method: "POST",
+        headers: buildTelegramApiHeaders(),
+        body: JSON.stringify(payload),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (responseResult.ok) {
+    response = responseResult.value;
+  } else {
+    if (!(responseResult.error instanceof HttpStatusError)) {
+      throw responseResult.error;
+    }
+    response = responseResult.error.response;
+  }
 
   const data: unknown = await response.json();
 
-  if (!response.ok) {
+  if (!responseResult.ok) {
     const description =
       data && typeof data === "object" && "description" in data
         ? typeof (data as { description: unknown }).description === "string"
@@ -413,8 +441,8 @@ export type SendTelegramDocumentResult =
 /**
  * Send a Telegram document using the bot API and surface upstream HTTP status
  * via a result-union. Callers map status >= 500 to 502 and status < 500 to 400
- * (Telegram client error). No exceptions are thrown for HTTP failures so
- * handlers can stay free of try/catch (per project policy).
+ * (Telegram client error). HTTP acceptance failures become the provider result
+ * consumed by the route.
  */
 export async function sendDocument(
   token: string,
@@ -436,15 +464,29 @@ export async function sendDocument(
     payload.message_thread_id = options.messageThreadId;
   }
 
-  const response = await fetch(buildTelegramApiUrl(token, "sendDocument"), {
-    method: "POST",
-    headers: buildTelegramApiHeaders(),
-    body: JSON.stringify(payload),
-  });
+  const responseResult = await settle(
+    accept(
+      fetch(buildTelegramApiUrl(token, "sendDocument"), {
+        method: "POST",
+        headers: buildTelegramApiHeaders(),
+        body: JSON.stringify(payload),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (responseResult.ok) {
+    response = responseResult.value;
+  } else {
+    if (!(responseResult.error instanceof HttpStatusError)) {
+      throw responseResult.error;
+    }
+    response = responseResult.error.response;
+  }
 
   const data: unknown = await response.json();
 
-  if (!response.ok) {
+  if (!responseResult.ok) {
     const description =
       data && typeof data === "object" && "description" in data
         ? typeof (data as { description: unknown }).description === "string"

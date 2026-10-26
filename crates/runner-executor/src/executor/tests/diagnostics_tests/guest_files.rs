@@ -170,10 +170,11 @@ async fn read_guest_failure_diagnostic_file_accepts_unknown_schema_field() {
 async fn read_guest_failure_diagnostic_file_accepts_unknown_event_attempt_field() {
     let sandbox = MockSandbox::new("test");
     let diagnostic = FailureDiagnostic::new(
-        FailureClass::EventUploadFailed,
+        FailureClass::CliNonzero,
         AgentFramework::ClaudeCode,
         PromptMetadata::from_prompt("continue"),
     )
+    .with_cli_exit_code(1)
     .with_event_delivery(EventDeliveryDiagnostic {
         total_events: 1,
         total_batches: 1,

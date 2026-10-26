@@ -396,7 +396,7 @@ export const reconcileProactiveWorkflows$ = command(
         .from(orgMembersMetadata)
         .where(
           and(
-            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveJobsEnabled} = true OR ${orgMembersMetadata.proactiveLearningEnabled} = true OR ${orgMembersMetadata.proactivePlanningEnabled} = true OR EXISTS (
+            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveJobsEnabled} = true OR ${orgMembersMetadata.proactiveLearningEnabled} = true OR EXISTS (
               SELECT 1 FROM workflows AS proactive_workflow WHERE proactive_workflow.org_id = ${orgMembersMetadata.orgId}
                 AND proactive_workflow.owner_user_id = ${orgMembersMetadata.userId}
                 AND proactive_workflow.official_definition_name IN (${PROACTIVE_WORKFLOW_DEFINITIONS.suggestions.name}, ${RETIRED_PROACTIVE_DEFINITION_NAME}, ${PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name}, ${PROACTIVE_WORKFLOW_DEFINITIONS.learning.name}, ${PROACTIVE_WORKFLOW_DEFINITIONS.planning.name})

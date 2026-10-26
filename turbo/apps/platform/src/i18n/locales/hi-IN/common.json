@@ -5138,8 +5138,8 @@
           "title": "वरीयता"
         },
         "proactiveAgent": {
-          "description": "चुनें कि Okou कैसे सीखे, योजना बनाए, Tasks आगे बढ़ाए और सुझाव दे।",
-          "title": "Proactive Agent"
+          "description": "चुनें कि Okou कैसे सक्रिय रूप से काम करे।",
+          "title": "Proactive"
         },
         "tools": {
           "title": "टूल"
@@ -5545,16 +5545,6 @@
         "retryMessage": "Morning Brief सेटिंग लोड या अपडेट नहीं हो सकीं। जारी रखने के लिए फिर से कोशिश करें।",
         "title": "सुबह की संक्षिप्त जानकारी"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "रात में आपकी गतिविधि की समीक्षा करें और व्यक्तिगत स्मृति बेहतर बनाएँ।",
         "missingDefaultAgent": "उपलब्ध डिफ़ॉल्ट Agent चुनें।",
@@ -5565,15 +5555,15 @@
         "retryMessage": "यह सेटिंग लोड या अपडेट नहीं हो सकी। फिर प्रयास करें।",
         "title": "सीखना"
       },
-      "proactivePlanning": {
-        "description": "आपके स्पष्ट रूप से सौंपे गए काम के दायरे में योजना बनाएँ और Tasks अपडेट करें। Tasks चालू होने पर नया काम तुरंत शुरू हो सकता है।",
+      "proactivePlanningAction": {
+        "description": "आपके सौंपे गए काम की योजना बनाए और उसे पूरा करे, और जब आपकी ज़रूरत हो तो आपको सूचित करे।",
         "missingDefaultAgent": "उपलब्ध डिफ़ॉल्ट Agent चुनें।",
         "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
         "preparationFailed": "यह कार्यप्रवाह अस्थायी रूप से उपलब्ध नहीं है। Okou फिर प्रयास करेगा।",
         "preparing": "यह कार्यप्रवाह तैयार हो रहा है।",
         "retry": "Retry",
         "retryMessage": "यह सेटिंग लोड या अपडेट नहीं हो सकी। फिर प्रयास करें।",
-        "title": "योजना"
+        "title": "योजना और कार्रवाई"
       },
       "proactiveSuggestions": {
         "description": "Okou हर घंटे आपके जुड़े स्रोतों की जाँच करता है और होम पेज पर उपयोगी अगले कदम सुझाता है।",
@@ -5583,7 +5573,7 @@
         "preparing": "हर घंटे के सुझाव तैयार किए जा रहे हैं। आप इन्हें कभी भी बंद कर सकते हैं।",
         "retry": "फिर कोशिश करें",
         "retryMessage": "सेटिंग लोड या अपडेट नहीं हो सकीं। फिर से कोशिश करें।",
-        "title": "सक्रिय सुझाव"
+        "title": "सुझाव"
       },
       "send": {
         "cmdEnter": "⌘ दर्ज करें",
@@ -5990,8 +5980,6 @@
     "tailscale": {
       "authenticationFailed": "Tailscale SSH प्रमाणीकरण विफल हुआ। सिस्टम उपयोगकर्ता नाम जाँचें, टैग वाले गंतव्य पर Tailscale SSH सक्षम करें और tailnet की SSH accept नीति में इस लॉगिन को अनुमति दें।",
       "deleteHelp": "यह होस्ट हटाएँ? एजेंटों को यह होस्ट अब लाइव इन्वेंट्री में नहीं दिखेगा।",
-      "editUnavailable": "यह होस्ट अब Tailscale का उपयोग करता है। यहाँ Tailscale का संपादन और दोबारा बाइंड करना अभी उपलब्ध नहीं है। इसके सहेजे गए परिवहन को बनाए रखने के लिए यह संपादन रद्द करें।",
-      "needsRebind": "इस होस्ट के लिए नया Tailscale कॉन्फ़िगरेशन आवश्यक है। Tailscale सेटअप और दोबारा बाइंड करने की सुविधा अभी यहाँ उपलब्ध नहीं है।",
       "sshDocs": "Tailscale SSH दस्तावेज़",
       "sshHelp": "चुने हुए Tailscale नेटवर्क की पहचान से प्रमाणित करता है; SSH पासवर्ड या निजी कुंजी की ज़रूरत नहीं है। टैग वाले गंतव्य पर Tailscale SSH सक्षम करें और SSH accept नीति में इस सिस्टम उपयोगकर्ता नाम को अनुमति दें।",
       "sshTitle": "Tailscale SSH",
@@ -6369,7 +6357,6 @@
       "sshHelp": "SSH Runner से SSH सर्वर तक के चरण को सुरक्षित करता है। वह सर्वर RFB गंतव्य तक पहुँचने में सक्षम होना चाहिए। कोई चैट इस रूट का उपयोग तभी कर सकती है जब उसमें वह SSH होस्ट भी सक्षम हो।",
       "sshNeedsRebind": "इस VNC कनेक्शन के SSH होस्ट को Cloudflare Access से फिर जोड़ना होगा। कनेक्ट करने से पहले SSH सेटिंग में उसे फिर जोड़ें या वहाँ स्पष्ट रूप से Direct चुनें।",
       "sshNeedsRebindStatus": "SSH को फिर जोड़ना होगा",
-      "sshTailscaleNeedsRebind": "इस VNC कनेक्शन के SSH होस्ट के लिए नया Tailscale कॉन्फ़िगरेशन चाहिए। यहाँ Tailscale सेटअप और दोबारा जोड़ने की सुविधा अभी उपलब्ध नहीं है।",
       "title": "कनेक्शन रूट",
       "unavailable": "इस खाते के लिए SSH सेटिंग उपलब्ध नहीं हैं।",
       "via": "SSH होस्ट:"

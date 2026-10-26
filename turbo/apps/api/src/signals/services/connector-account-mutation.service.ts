@@ -19,22 +19,19 @@ export const connectorCredentialDeletionKinds = [
 
 export function connectorCredentialDeletion(
   kind: (typeof connectorCredentialDeletionKinds)[number],
-  scope: {
-    readonly connectorId: string;
-    readonly connection: { readonly id: string };
-  },
+  connection: { readonly id: string },
 ) {
   switch (kind) {
     case "secret": {
       return {
         from: secrets,
-        where: eq(secrets.connectorId, scope.connectorId),
+        where: eq(secrets.connectorId, connection.id),
       };
     }
     case "variable": {
       return {
         from: variables,
-        where: eq(variables.connectorId, scope.connectorId),
+        where: eq(variables.connectorId, connection.id),
       };
     }
     case "builtin-oauth": {
@@ -42,7 +39,7 @@ export function connectorCredentialDeletion(
         from: builtinConnectorAccountOauthBindings,
         where: eq(
           builtinConnectorAccountOauthBindings.connectorAccountId,
-          scope.connection.id,
+          connection.id,
         ),
       };
     }

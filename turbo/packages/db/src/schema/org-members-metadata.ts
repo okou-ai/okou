@@ -27,9 +27,10 @@ export const orgMembersMetadata = pgTable(
     timezone: text("timezone"),
     /** User intent; execution availability never overwrites this preference. */
     proactiveSuggestionsEnabled: boolean("proactive_suggestions_enabled"),
-    // Jobs inherits the saved opt-in without changing its physical column.
+    // Shared opt-in for Planning and action; keep its physical column.
     proactiveJobsEnabled: boolean("proactive_action_enabled"),
     proactiveLearningEnabled: boolean("proactive_learning_enabled"),
+    // Retired preference; keep the column until outgoing APIs have drained.
     proactivePlanningEnabled: boolean("proactive_planning_enabled"),
     locale: text("locale"),
     // Retired chat preference; keep the physical column and schema in sync

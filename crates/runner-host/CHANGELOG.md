@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.38](https://github.com/okou-ai/okou/compare/runner-host-v0.9.37...runner-host-v0.9.38) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner-network:** retain ca authority through physical preparation ([#43055](https://github.com/okou-ai/okou/issues/43055)) ([5191452](https://github.com/okou-ai/okou/commit/5191452e0f77c4504965705d032120d51e4b1d63))
+
+## [0.9.37](https://github.com/okou-ai/okou/compare/runner-host-v0.9.36...runner-host-v0.9.37) (2026-10-26)
+
+## [0.9.36](https://github.com/okou-ai/okou/compare/runner-host-v0.9.35...runner-host-v0.9.36) (2026-10-26)
+
+## [0.9.35](https://github.com/okou-ai/okou/compare/runner-host-v0.9.34...runner-host-v0.9.35) (2026-10-26)
+
+
+### Refactoring
+
+* **runner-host:** encode bounded output capture contracts ([#42957](https://github.com/okou-ai/okou/issues/42957)) ([87e4f15](https://github.com/okou-ai/okou/commit/87e4f156bc02894a5d0f494550f77edfce561a46))
+
 ## [0.9.34](https://github.com/okou-ai/okou/compare/runner-host-v0.9.33...runner-host-v0.9.34) (2026-10-25)
 
 ## [0.9.33](https://github.com/okou-ai/okou/compare/runner-host-v0.9.32...runner-host-v0.9.33) (2026-10-25)

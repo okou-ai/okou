@@ -84,7 +84,7 @@ export const deliverFeishuMessage$ = command(
         return credentials.context;
       })();
       if (args.kind === "reply") {
-        const response = await fetch(
+        const response = fetch(
           `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reply`,
           {
             method: "POST",
@@ -97,7 +97,6 @@ export const deliverFeishuMessage$ = command(
               ...(args.replyInThread ? { reply_in_thread: true } : {}),
               ...(args.idempotencyKey ? { uuid: args.idempotencyKey } : {}),
             }),
-            signal,
           },
         );
         return parseFeishuSentMessage(
@@ -108,7 +107,7 @@ export const deliverFeishuMessage$ = command(
       }
       const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
       url.searchParams.set("receive_id_type", args.receiveIdType);
-      const response = await fetch(url, {
+      const response = fetch(url, {
         method: "POST",
         headers: {
           authorization: `Bearer ${token}`,
@@ -119,7 +118,6 @@ export const deliverFeishuMessage$ = command(
           ...feishuMessagePayload(args.message),
           ...(args.idempotencyKey ? { uuid: args.idempotencyKey } : {}),
         }),
-        signal,
       });
       return parseFeishuSentMessage(
         await readFeishuResponseJson(response, providerName),

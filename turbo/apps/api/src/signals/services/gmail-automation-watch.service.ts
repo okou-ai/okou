@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
@@ -11,7 +12,7 @@ import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { tapError } from "../utils";
+import { settle, tapError } from "../utils";
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection$,
@@ -210,15 +211,29 @@ export async function gmailFetchJson<T>(
   signal: AbortSignal,
 ): Promise<GmailFetchResult<T>> {
   const response = await tapError(
-    fetch(url, {
-      ...init,
-      signal,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(url, {
+            ...init,
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+              ...init.headers,
+            },
+          }),
+          [200, 204],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
   );
   signal.throwIfAborted();
   if (!response) {

@@ -9,7 +9,7 @@ import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   createChatEventsFixture,
@@ -24,7 +24,7 @@ const context = testContext();
 describe("FILE-01: hosted-site deployments through host APIs", () => {
   it("preserves history and aliases across out-of-order completion [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const actor = bdd.user();
     const capture = api.captureHostedSitesS3();
     const site = `publication-history-${randomUUID().slice(0, 8)}`;
@@ -76,7 +76,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
   it("refuses completion by another member of the owner's organization", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const actor = bdd.user();
     api.captureHostedSitesS3();
     const prepared = await api.prepareHostedSite(actor, {
@@ -94,7 +94,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
   it("gives concurrent publications of one preferred slug their own versions [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const actor = bdd.user();
     api.captureHostedSitesS3();
     const body = {
@@ -144,7 +144,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     mockEnv("OKOU_HOST_SCHEME", "http");
     mockEnv("ZERO_HOST_SCHEME", "https");
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const actor = bdd.user();
     api.captureHostedSitesS3();
     const site = `bdd-published-${randomUUID().slice(0, 8)}`;
@@ -232,7 +232,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
   it("redeploys the same preferred slug more times than the collision retry limit [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const actor = bdd.user();
     api.captureHostedSitesS3();
     const body = {
@@ -282,7 +282,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     mockEnv("ZERO_HOST_DOMAIN", "sites.vm0.io");
     mockEnv("OKOU_HOST_SCHEME", "https");
     mockEnv("ZERO_HOST_SCHEME", "https");
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const fixture = createChatEventsFixture(context);
     const entitled = await fixture.entitledNativeChatActor();
     const actor = entitled.actor;
@@ -353,7 +353,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
   it("adds a four-character hash only when the simple alias is already occupied [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     api.captureHostedSitesS3();
 
     const aliasOwner = bdd.user();
@@ -398,7 +398,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
   it("serves owner file metadata after retrying incomplete uploads and gates suspended orgs [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected hosted site actor to have an org");
@@ -575,7 +575,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
   });
 
   it("rejects unauthenticated prepares [HOST-D]", async () => {
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const files = [hostedTextFile("/index.html", "<main>auth matrix</main>")];
 
     const unauthenticated = await api.requestPrepareHostedSite(
@@ -595,7 +595,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
 
 describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () => {
   it("attributes hosted-site artifacts through a run-scoped token [HOST-B]", async () => {
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const runs = createRunsApi(context);
     const owned = await publicChatActor(context);
     const { actor, agentId, runnerGroup } = owned;

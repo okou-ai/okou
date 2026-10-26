@@ -1,3 +1,5 @@
+import { settle } from "../utils";
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import * as z from "zod";
 
 import { now } from "../../lib/time";
@@ -337,24 +339,34 @@ export async function fetchCodexUsageMetadata(
   const detailsWaiter = new AbortController();
   const detailsSignal = AbortSignal.any([signal, detailsWaiter.signal]);
   const [response, resetCreditExpiry] = await Promise.all([
-    fetch(CHATGPT_USAGE_URL, {
-      method: "GET",
-      headers: {
-        authorization: `Bearer ${args.accessToken}`,
-        "chatgpt-account-id": args.accountId,
-        originator: CODEX_ORIGINATOR,
-        "user-agent": CODEX_USER_AGENT,
-      },
-      signal,
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(CHATGPT_USAGE_URL, {
+            method: "GET",
+            headers: {
+              authorization: `Bearer ${args.accessToken}`,
+              "chatgpt-account-id": args.accountId,
+              originator: CODEX_ORIGINATOR,
+              "user-agent": CODEX_USER_AGENT,
+            },
+          }),
+          [200],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError) {
+          throw createCodexUsageRequestError(error.status);
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
     args.readResetCreditExpiry(args, detailsSignal),
   ]).finally(() => {
     detailsWaiter.abort(new Error("Codex usage metadata read settled"));
   });
-
-  if (!response.ok) {
-    throw createCodexUsageRequestError(response.status);
-  }
 
   const parsed = codexUsageResponseSchema.safeParse(await response.json());
   if (!parsed.success) {
@@ -401,30 +413,26 @@ export async function consumeCodexRateLimitResetCredit(
     readonly accountId: string;
     readonly idempotencyKey: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<{
   readonly outcome: CodexRateLimitResetCreditOutcome;
 }> {
-  const response = await fetch(CHATGPT_RESET_CREDITS_CONSUME_URL, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${args.accessToken}`,
-      "chatgpt-account-id": args.accountId,
-      "content-type": "application/json",
-      originator: CODEX_ORIGINATOR,
-      "user-agent": CODEX_USER_AGENT,
-    },
-    body: JSON.stringify({
-      redeem_request_id: args.idempotencyKey,
+  const response = await accept(
+    fetch(CHATGPT_RESET_CREDITS_CONSUME_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${args.accessToken}`,
+        "chatgpt-account-id": args.accountId,
+        "content-type": "application/json",
+        originator: CODEX_ORIGINATOR,
+        "user-agent": CODEX_USER_AGENT,
+      },
+      body: JSON.stringify({
+        redeem_request_id: args.idempotencyKey,
+      }),
     }),
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Codex reset credit consume request failed with status ${response.status}`,
-    );
-  }
+    [200],
+  );
 
   const parsed = codexRateLimitResetCreditConsumeResponseSchema.safeParse(
     await response.json(),

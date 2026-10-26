@@ -287,7 +287,7 @@ const createSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
             spendId: spend.id,
             deadline: spend.expiresAt,
           },
-          AbortSignal.timeout(10_000),
+          signal,
         ),
         (error) => {
           logger("LinkApproval").warn(

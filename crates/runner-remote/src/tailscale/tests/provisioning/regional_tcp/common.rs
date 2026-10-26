@@ -9,6 +9,7 @@ use crate::ssh::tests::{
     harness::{CONNECTION, Harness, PASSWORD, Reply, params},
     sessions,
 };
+use runner_provider::AblySideMessageHandler;
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 use tokio_util::sync::CancellationToken;
@@ -819,31 +820,18 @@ async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {
             peers.finish(sessions::state(h, &a, "running")).await;
             peers.finish(sessions::state(h, &b, "running")).await;
             if matches!(case, Case::TargetedSessions) {
-                use ably_subscriber::{Event, Message};
-                let mut notifications = h.notifications();
-                peers
-                    .finish(notifications.send(Some(Event::Message(Message {
-                        name: Some("ssh-authority-invalidated".into()),
-                        data: json!({"runId":h.run,"connectionId":CONNECTION}),
-                        id: None,
-                        client_id: None,
-                        timestamp: None,
-                    }))))
-                    .await;
+                assert!(h.runtime.handle(&ably_subscriber::Message {
+                    name: Some("ssh-authority-invalidated".into()),
+                    data: json!({"runId":h.run,"connectionId":CONNECTION}),
+                    id: None,
+                    client_id: None,
+                    timestamp: None,
+                }));
                 let failed = peers
                     .finish(sessions::rpc(h, "status", json!({"sessionId":a})))
                     .await;
                 assert_eq!(failed["type"], "failed");
                 assert_eq!(failed["failure_reason"], "unavailable");
-                peers
-                    .finish(notifications.send(Some(Event::Disconnected { reason: None })))
-                    .await;
-                peers
-                    .finish(notifications.send(Some(Event::Error {
-                        code: 40142,
-                        message: "synthetic unavailable".into(),
-                    })))
-                    .await;
             } else {
                 let closed = peers
                     .finish(sessions::rpc(h, "close", json!({"sessionId":a})))

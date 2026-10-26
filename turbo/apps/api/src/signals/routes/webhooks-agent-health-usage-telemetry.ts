@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import type { HomeReuseResult } from "@okouai/api-contracts/contracts/runner-primitives";
-import { AGENT_TELEMETRY_INGEST_TIMEOUT_MS } from "@okouai/api-contracts/contracts/runners";
 import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
@@ -637,19 +636,14 @@ async function ingestTelemetryBatch(
   readonly oomEvidenceIngested: boolean;
 }> {
   const result = await settle(
-    ingestAxiomDirect(
-      batch.dataset,
-      batch.events,
-      AGENT_TELEMETRY_INGEST_TIMEOUT_MS,
-      signal,
-    ),
+    ingestAxiomDirect(batch.dataset, batch.events, signal),
   );
   signal.throwIfAborted();
   if (!result.ok) {
     const { error } = result;
     if (
       error instanceof DirectAxiomIngestError &&
-      (error.reason === "timeout" || error.reason === "transport_error")
+      error.reason === "transport_error"
     ) {
       return { retryableFailure: true, oomEvidenceIngested: false };
     }

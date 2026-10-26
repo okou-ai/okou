@@ -315,11 +315,7 @@ function hostSupportsCommand(params: {
       shellPermissionId(params.host) !== undefined
     );
   }
-  // Older hosts advertise no capabilities and support the native commands.
-  return (
-    params.host.supportedCapabilities.length === 0 ||
-    params.host.supportedCapabilities.includes(params.kind)
-  );
+  return params.host.supportedCapabilities.includes(params.kind);
 }
 
 function candidateShellSupport(capabilities: readonly string[]): boolean {
@@ -1600,10 +1596,6 @@ export const claimNextComputerUseHostCommand$ = command(
       return { status: "idle" };
     }
 
-    const effectiveCapabilities =
-      capabilities.length > 0 ? capabilities : host.supportedCapabilities;
-    // Shell requires this request's explicit advertisement; the GUI-only
-    // compatibility path above must never grant Shell access to an old client.
     const shellEnabled = candidateShellSupport(capabilities)
       ? isFeatureEnabled(
           FeatureSwitchKey.DesktopShell,
@@ -1631,15 +1623,11 @@ export const claimNextComputerUseHostCommand$ = command(
       .limit(50);
     signal.throwIfAborted();
 
-    const hostWithEffectiveCapabilities = {
-      ...host,
-      supportedCapabilities: effectiveCapabilities,
-    };
     const row = candidateRows.find((candidate) => {
       return (
         (!candidate.kind.startsWith("shell.") || shellEnabled) &&
         hostSupportsCommand({
-          host: hostWithEffectiveCapabilities,
+          host: { supportedCapabilities: capabilities },
           kind: candidate.kind as ComputerUseCommandKind,
         })
       );

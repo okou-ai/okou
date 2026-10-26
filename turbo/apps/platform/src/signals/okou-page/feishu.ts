@@ -258,6 +258,7 @@ export const setupFeishuOrg$ = command(
     },
     signal: AbortSignal,
   ): Promise<FeishuConnectStatus> => {
+    const form = get(internalSetupForm$);
     const client = get(apiClient$)(
       get(feishuPlatform$) === "lark"
         ? larkConnectContract
@@ -271,11 +272,14 @@ export const setupFeishuOrg$ = command(
       [200],
     );
     signal.throwIfAborted();
-    set(internalDialogExisting$, true);
-    set(
-      internalDialogInstallationId$,
-      result.body.installationId ?? input.installationId ?? null,
-    );
+    if (get(internalDialogOpen$) && get(internalSetupForm$) === form) {
+      set(internalDialogExisting$, true);
+      set(
+        internalDialogInstallationId$,
+        result.body.installationId ?? input.installationId ?? null,
+      );
+      set(advanceFeishuSetupStep$);
+    }
     set(reload$, (value) => {
       return value + 1;
     });
@@ -284,7 +288,8 @@ export const setupFeishuOrg$ = command(
 );
 
 export const checkFeishuAppIdAvailable$ = command(
-  async ({ get }, appId: string, signal: AbortSignal): Promise<void> => {
+  async ({ get, set }, appId: string, signal: AbortSignal): Promise<void> => {
+    const form = get(internalSetupForm$);
     const client = get(apiClient$)(
       get(feishuPlatform$) === "lark"
         ? larkConnectContract
@@ -298,11 +303,15 @@ export const checkFeishuAppIdAvailable$ = command(
       [200],
     );
     signal.throwIfAborted();
+    if (get(internalDialogOpen$) && get(internalSetupForm$) === form) {
+      set(advanceFeishuSetupStep$);
+    }
   },
 );
 
 export const completeFeishuInstallationSetup$ = command(
   async ({ get, set }, installationId: string, signal: AbortSignal) => {
+    const form = get(internalSetupForm$);
     const client = get(apiClient$)(
       get(feishuPlatform$) === "lark"
         ? larkConnectContract
@@ -326,6 +335,10 @@ export const completeFeishuInstallationSetup$ = command(
           .botInstalled;
       }),
     );
+    if (!get(internalDialogOpen$) || get(internalSetupForm$) !== form) {
+      return;
+    }
+    set(closeFeishuDialog$);
     if (!result.body.isConnected && result.body.connectUrl) {
       const url = new URL(result.body.connectUrl);
       url.searchParams.set("callbackTarget", "app");

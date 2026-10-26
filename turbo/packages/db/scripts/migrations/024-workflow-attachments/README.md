@@ -46,6 +46,19 @@ The private plan captures instruction-hash baselines for the whole page.
 Legacy normalized/duplicate paths follow the published encoder's canonical
 filesystem; differing duplicate archive bytes remain an anomaly.
 
+Plans now use `schemaVersion: 2` and capture the exact manifest checksum and
+source evidence. Regenerate and review every plan with this operator version;
+version 1 plans cannot be applied. A manifest change after review stops apply,
+even if its archive and effective attachment files are unchanged.
+
+Some retained manifests carry an obsolete `version` label. A differing label is
+accepted only when the manifest's complete raw file list, hashed with the owned
+Storage ID by the published content-hash algorithm, equals the captured HEAD.
+The archive and every supplementary file still undergo the same integrity
+checks. `legacyManifestLabels` reports verified rows using this compatibility;
+the migration never rewrites their legacy manifests. This path is limited to
+this one-time operator and retires with the legacy sources under Epic #42362.
+
 An apply rereads and verifies each exact immutable source, uploads before
 publication, and updates only a row with the same captured descriptor, owner,
 visibility, instruction hash, timestamp, HEAD, and no pending publication.
@@ -57,6 +70,57 @@ Use the returned `lastWorkflowId` as `--after <uuid>` for the next dry-run batch
 Revisit skipped/blocked rows with a fresh plan; a cursor is not proof of global
 completion. Output files are private, create-only, and contain only identifiers,
 metadata, and hashes. Preserve plans and apply receipts for acceptance.
+
+## Reviewed unpublished empty sources
+
+An existing Storage container with no HEAD and no versions remains blocked by
+default. If a bounded read-only investigation finds an exact orphan archive
+containing `SKILL.md` and no supplementary files, an operator can supply an
+explicit private review file:
+
+```json
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "workflowId": "<reviewed-workflow-uuid>",
+      "storageId": "<reviewed-storage-uuid>",
+      "archiveKey": "<exact-storage-prefix>/<64-character-version>/archive.tar.gz",
+      "archiveSha256": "<reviewed-archive-sha256>"
+    }
+  ]
+}
+```
+
+```bash
+node --import tsx scripts/migrations/024-workflow-attachments/backfill.ts \
+  --reviewed-empty-sources /private/tmp/workflow-empty-sources.json \
+  --limit 100 --output /private/tmp/workflow-reviewed-plan.json
+```
+
+The Workflow and Storage identities must match. The exact archive must be inside
+the current database-owned prefix, and a single non-truncated listing (at most
+two keys) must contain that archive alone. The archive checksum must match the
+review, `SKILL.md` must exist, and supplementary files must be absent. Missing
+archives, additional objects, existing versions and pending publications remain
+blocked; an unavailable source is never inferred empty. `reviewedEmptySources`
+counts verified explicit reviews, including already-current descriptors.
+
+Apply uses only the checksummed version 2 plan, without the review-file flag. It
+rereads the same archive and prefix and rechecks the source evidence. Publication
+requires the same container, prefix, Storage timestamp, absent HEAD, zero
+versions, unchanged Workflow fields and no pending publication in the final
+conditional update. A changed source is skipped; no Storage/version rows or
+legacy objects are repaired, created or deleted. Empty conversion uploads no
+new package. Keep the private review file for the full legacy parity audit:
+
+```bash
+node --import tsx scripts/migrations/024-workflow-attachments/backfill.ts \
+  --audit --reviewed-empty-sources /private/tmp/workflow-empty-sources.json \
+  --limit 100
+```
+
+This explicit recovery path retires with this operator under Epic #42362.
 
 ## Full acceptance
 

@@ -414,7 +414,7 @@ function registerWebTool<
       ...(outputSchema ? { outputSchema: inlineZodSchema(outputSchema) } : {}),
       annotations,
     },
-    async (input, context) => {
+    async (input) => {
       const parsed = inputSchema.safeParse(input);
       if (!parsed.success) {
         return toolBody(
@@ -424,12 +424,7 @@ function registerWebTool<
           true,
         );
       }
-      // Mutation background work retains the same caller lifetime as Web. The
-      // SDK exchange signal can abort merely because its successful reply closes.
-      const signal = annotations.readOnlyHint
-        ? AbortSignal.any([requestSignal, context.mcpReq.signal])
-        : requestSignal;
-      const result = await operation(parsed.data, signal);
+      const result = await operation(parsed.data, requestSignal);
       return result instanceof Response ? await toolResponse(result) : result;
     },
   );

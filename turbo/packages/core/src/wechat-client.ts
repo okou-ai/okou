@@ -6,7 +6,7 @@ import * as z from "zod";
 import { parseWechatJson } from "./wechat-json";
 export const WECHAT_ORIGIN = "https://ilinkai.weixin.qq.com";
 const REQUEST_TIMEOUT_MS = 40_000;
-/** Only Tencent iLink HTTPS origins may receive credentials. */
+/** Validate the initial Tencent iLink HTTPS service origin. */
 export function wechatOrigin(value: string): string {
   const url = new URL(value);
   if (
@@ -88,7 +88,6 @@ async function requestWechat(
   }
   const response = await fetch(`${wechatOrigin(baseUrl)}${path}`, {
     method: body === undefined ? "GET" : "POST",
-    redirect: "manual",
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,

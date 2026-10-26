@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./accept": {
+      "import": "./src/accept.ts",
+      "types": "./src/accept.ts"
+    },
     "./connector-auth-method": {
       "import": "./src/connector-auth-method.ts",
       "types": "./src/connector-auth-method.ts"

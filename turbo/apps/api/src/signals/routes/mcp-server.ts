@@ -140,13 +140,12 @@ const metadata$ = computed(() => {
   );
 });
 
-const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
+const mcpRequest$ = command(async ({ get, set }, signal: AbortSignal) => {
   const config = mcpServerConfig();
   if (!config) {
     return unavailable();
   }
   const original = get(request$).raw;
-  const signal = AbortSignal.any([rootSignal, original.signal]);
   const authorization = original.headers.get("authorization");
   if (!authorization) {
     return challenge(config.metadataUrl);

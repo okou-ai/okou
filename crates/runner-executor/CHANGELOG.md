@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.15.34](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.33...runner-executor-v0.15.34) (2026-10-26)
+
+## [0.15.33](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.32...runner-executor-v0.15.33) (2026-10-26)
+
+
+### Refactoring
+
+* **guest-contracts:** retire obsolete event-upload failure class ([#43010](https://github.com/okou-ai/okou/issues/43010)) ([9baa346](https://github.com/okou-ai/okou/commit/9baa346113c4e0b241ae71579b3019f5361c9364))
+
+
+### Performance Improvements
+
+* **runner:** batch instruction sources with bootstrap files ([#43021](https://github.com/okou-ai/okou/issues/43021)) ([929b0c4](https://github.com/okou-ai/okou/commit/929b0c4ebb8730bb795478d218202c3424e82879))
+
+## [0.15.32](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.31...runner-executor-v0.15.32) (2026-10-26)
+
+## [0.15.31](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.30...runner-executor-v0.15.31) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner-executor:** size decoded storage batches without input copies ([#42934](https://github.com/okou-ai/okou/issues/42934)) ([1269306](https://github.com/okou-ai/okou/commit/1269306b4437ac222d6bc78adc9a2c46e745b40f))
+
 ## [0.15.30](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.29...runner-executor-v0.15.30) (2026-10-25)
 
 ## [0.15.29](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.28...runner-executor-v0.15.29) (2026-10-25)

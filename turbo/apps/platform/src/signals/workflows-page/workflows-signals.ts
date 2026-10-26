@@ -1,3 +1,4 @@
+import { toast } from "@okouai/ui/components/ui/sonner";
 import { command, computed, state } from "ccstate";
 import {
   workflowsCollectionContract,
@@ -247,7 +248,9 @@ const internalWorkflowCopyForm$ = state<WorkflowCopyFormState>(
 );
 const internalWorkflowFileDraft$ = state<WorkflowDetailFileDraft | null>(null);
 const internalWorkflowFileEditorRevision$ = state(0);
-const internalEditingWorkflowAutomationId$ = state<string | null>(null);
+const internalWorkflowAutomationEditor$ = state<{
+  readonly automation: WorkflowAutomationSummary;
+} | null>(null);
 const internalEditingGoogleCalendarId$ = state("");
 const internalWorkflowMetadataPatch$ = state<WorkflowMetadataPatch | null>(
   null,
@@ -256,8 +259,9 @@ const internalCreateGithubPullRequestAction$ =
   state<GithubPullRequestAction>("closed");
 const internalEditingGithubPullRequestAction$ =
   state<GithubPullRequestAction | null>(null);
-const internalWorkflowAutomationCreateDialog$ =
-  state<WorkflowAutomationCreateDialog>(null);
+const internalWorkflowAutomationCreateDialog$ = state<{
+  readonly kind: Exclude<WorkflowAutomationCreateDialog, null>;
+} | null>(null);
 const internalCreatedWorkflowWebhookAutomation$ =
   state<WorkflowWebhookAutomationSummary | null>(null);
 const internalWorkflowAutomationPickerOpen$ = state(false);
@@ -463,7 +467,7 @@ export const resetWorkflowDetailUiState$ = command(({ set }) => {
   set(internalWorkflowCopyForm$, defaultWorkflowCopyForm());
   set(internalWorkflowFileDraft$, null);
   set(internalWorkflowFileEditorRevision$, 0);
-  set(internalEditingWorkflowAutomationId$, null);
+  set(internalWorkflowAutomationEditor$, null);
   set(internalEditingGoogleCalendarId$, "");
   set(internalWorkflowMetadataPatch$, null);
   set(internalWorkflowAutomationCreateDialog$, null);
@@ -500,17 +504,20 @@ export const setWorkflowDetailActiveTab$ = command(
   },
 );
 
-export const editingWorkflowAutomationId$ = computed((get) => {
-  return get(internalEditingWorkflowAutomationId$);
+export const editingWorkflowAutomation$ = computed((get) => {
+  return get(internalWorkflowAutomationEditor$)?.automation ?? null;
 });
 
-export const setEditingWorkflowAutomationId$ = command(
-  ({ set }, automationId: string | null) => {
-    if (automationId) {
+export const setEditingWorkflowAutomation$ = command(
+  ({ set }, automation: WorkflowAutomationSummary | null) => {
+    if (automation) {
       set(internalEditingGithubPullRequestAction$, null);
       set(internalEditingGmailMatchConditions$, {});
     }
-    set(internalEditingWorkflowAutomationId$, automationId);
+    set(
+      internalWorkflowAutomationEditor$,
+      automation === null ? null : { automation },
+    );
   },
 );
 
@@ -525,7 +532,7 @@ export const setEditingGoogleCalendarId$ = command(
 );
 
 export const workflowAutomationCreateDialog$ = computed((get) => {
-  return get(internalWorkflowAutomationCreateDialog$);
+  return get(internalWorkflowAutomationCreateDialog$)?.kind ?? null;
 });
 
 export const createdWorkflowWebhookAutomation$ = computed((get) => {
@@ -550,7 +557,10 @@ export const setRevealWebhookSecretAutomationId$ = command(
 
 export const setWorkflowAutomationCreateDialog$ = command(
   ({ set }, dialog: WorkflowAutomationCreateDialog) => {
-    set(internalWorkflowAutomationCreateDialog$, dialog);
+    set(
+      internalWorkflowAutomationCreateDialog$,
+      dialog === null ? null : { kind: dialog },
+    );
     if (dialog !== "webhook") {
       set(internalCreatedWorkflowWebhookAutomation$, null);
     }
@@ -1002,6 +1012,7 @@ export const createWorkflowScheduleAutomation$ = command(
     input: { workflowId: string; schedule: WorkflowSchedule },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1013,6 +1024,9 @@ export const createWorkflowScheduleAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1025,6 +1039,7 @@ export const createWorkflowGmailNewMessageAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1040,6 +1055,9 @@ export const createWorkflowGmailNewMessageAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1052,6 +1070,7 @@ export const createWorkflowGmailLabelAppliedAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1067,6 +1086,9 @@ export const createWorkflowGmailLabelAppliedAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1079,6 +1101,7 @@ export const createWorkflowGithubWorkflowRunCompletedAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1094,6 +1117,9 @@ export const createWorkflowGithubWorkflowRunCompletedAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1130,6 +1156,7 @@ export const createWorkflowGithubWebhookAutomation$ = command(
     input: GithubWebhookAutomationCreateInput,
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const body: WorkflowAutomationCreateRequest =
       input.eventType === "github-pull-request"
@@ -1171,6 +1198,9 @@ export const createWorkflowGithubWebhookAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1195,6 +1225,7 @@ export const createWorkflowGoogleCalendarEventAutomation$ = command(
         },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const body: WorkflowAutomationCreateRequest =
       input.eventType === "google-calendar-event-created"
@@ -1224,6 +1255,9 @@ export const createWorkflowGoogleCalendarEventAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1235,7 +1269,8 @@ export const createWorkflowGoogleFormsResponseSubmittedAutomation$ = command(
       readonly eventConfig: GoogleFormsResponseSubmittedEventCreateConfig;
     },
     signal: AbortSignal,
-  ): Promise<string | undefined> => {
+  ): Promise<void> => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.create({
@@ -1258,7 +1293,12 @@ export const createWorkflowGoogleFormsResponseSubmittedAutomation$ = command(
       throw new Error("Expected Google Forms workflow automation summary");
     }
     set(reloadWorkflows$);
-    return result.body.warning;
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
+    if (result.body.warning) {
+      toast.warning(result.body.warning);
+    }
   },
 );
 
@@ -1271,6 +1311,7 @@ export const createWorkflowChatRunFinishedAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1286,6 +1327,9 @@ export const createWorkflowChatRunFinishedAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1298,6 +1342,7 @@ export const createWorkflowGoogleMeetTranscriptGeneratedAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1317,6 +1362,9 @@ export const createWorkflowGoogleMeetTranscriptGeneratedAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1329,6 +1377,7 @@ export const createWorkflowNotionChildPageAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1344,6 +1393,9 @@ export const createWorkflowNotionChildPageAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1356,6 +1408,7 @@ export const createWorkflowNotionDatabaseItemAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1371,6 +1424,9 @@ export const createWorkflowNotionDatabaseItemAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1383,6 +1439,7 @@ export const createWorkflowNotionPageContentUpdatedAutomation$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     await accept(
       client.create({
@@ -1398,6 +1455,9 @@ export const createWorkflowNotionPageContentUpdatedAutomation$ = command(
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(setWorkflowAutomationCreateDialog$, null);
+    }
   },
 );
 
@@ -1407,6 +1467,7 @@ export const createWorkflowWebhookAutomation$ = command(
     input: { readonly workflowId: string },
     signal: AbortSignal,
   ): Promise<WorkflowWebhookAutomationSummary | null> => {
+    const dialog = get(internalWorkflowAutomationCreateDialog$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.create({
@@ -1427,6 +1488,12 @@ export const createWorkflowWebhookAutomation$ = command(
     signal.throwIfAborted();
     if (result.status === 402) {
       if (result.body.error.code === "TEAM_REQUIRED") {
+        if (
+          !dialog ||
+          get(internalWorkflowAutomationCreateDialog$) !== dialog
+        ) {
+          return null;
+        }
         set(internalWorkflowWebhookUpgradeDialogSource$, {
           action: "create",
           workflowId: input.workflowId,
@@ -1440,6 +1507,11 @@ export const createWorkflowWebhookAutomation$ = command(
       result.body.eventType !== "webhook-received"
     ) {
       throw new Error("Expected webhook workflow automation summary");
+    }
+    if (dialog && get(internalWorkflowAutomationCreateDialog$) === dialog) {
+      set(internalCreatedWorkflowWebhookAutomation$, result.body);
+    } else {
+      set(reloadWorkflows$);
     }
     return result.body;
   },
@@ -1465,13 +1537,10 @@ export const revealWorkflowWebhookSecret$ = command(
   },
 );
 
-export const updateWorkflowAutomationEventConfig$ = command(
+const updateWorkflowAutomation$ = command(
   async (
     { get, set },
-    input: { readonly automationId: string } & Extract<
-      WorkflowAutomationUpdateRequest,
-      { readonly eventConfig: unknown }
-    >,
+    input: { readonly automationId: string } & WorkflowAutomationUpdateRequest,
     signal: AbortSignal,
   ) => {
     const { automationId, ...body } = input;
@@ -1489,7 +1558,7 @@ export const updateWorkflowAutomationEventConfig$ = command(
   },
 );
 
-export const updateWorkflowGoogleCalendarAutomationEventConfig$ = command(
+const updateWorkflowGoogleCalendarAutomationEventConfig$ = command(
   async (
     { get, set },
     input: {
@@ -1498,7 +1567,7 @@ export const updateWorkflowGoogleCalendarAutomationEventConfig$ = command(
     },
     signal: AbortSignal,
   ): Promise<GoogleCalendarWorkflowAutomationSummary> => {
-    await set(updateWorkflowAutomationEventConfig$, input, signal);
+    await set(updateWorkflowAutomation$, input, signal);
     const detail = await get(currentWorkflowDetail$);
     signal.throwIfAborted();
     const automation = detail?.automations.find((candidate) => {
@@ -1524,26 +1593,32 @@ export const updateWorkflowGoogleCalendarAutomationEventConfig$ = command(
   },
 );
 
-export const updateWorkflowScheduleAutomation$ = command(
+export const saveWorkflowAutomation$ = command(
   async (
     { get, set },
-    input: {
-      readonly automationId: string;
-      readonly schedule: WorkflowSchedule;
-    },
+    input: { readonly automationId: string } & WorkflowAutomationUpdateRequest,
     signal: AbortSignal,
-  ) => {
-    const client = get(apiClient$)(workflowAutomationsContract);
-    await accept(
-      client.update({
-        params: { id: input.automationId },
-        body: { schedule: input.schedule },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
+  ): Promise<void> => {
+    const editor = get(internalWorkflowAutomationEditor$);
+    if (
+      "eventConfig" in input &&
+      input.eventConfig.provider === "google-calendar"
+    ) {
+      await set(
+        updateWorkflowGoogleCalendarAutomationEventConfig$,
+        {
+          automationId: input.automationId,
+          eventConfig: input.eventConfig,
+        },
+        signal,
+      );
+    } else {
+      await set(updateWorkflowAutomation$, input, signal);
+    }
     signal.throwIfAborted();
-    set(reloadWorkflows$);
+    if (editor && get(internalWorkflowAutomationEditor$) === editor) {
+      set(setEditingWorkflowAutomation$, null);
+    }
   },
 );
 

@@ -24,7 +24,6 @@ import {
   invalidateTailscale$,
   retryTailscale$,
   tailscaleConfigs$,
-  tailscaleEnabled$,
   tailscaleFieldsFromForm,
 } from "./tailscale.ts";
 import {
@@ -295,12 +294,6 @@ export const sshConnectionModeEditor$ = computed((get) => {
 });
 export const chooseSshConnectionMode$ = command(
   ({ get, set }, mode: SshConnectionMode) => {
-    if (
-      (mode === "tailscale" || mode === "tailscale_ssh") &&
-      !get(tailscaleEnabled$)
-    ) {
-      return;
-    }
     set(connectionModeEditor$, (current) => {
       return { ...current, mode };
     });
@@ -318,7 +311,6 @@ export const chooseSshConnectionMode$ = command(
 export const chooseSshTailscaleConfig$ = command(
   ({ get, set }, configId: string | null) => {
     if (
-      !get(tailscaleEnabled$) ||
       configId === null ||
       get(connectionModeEditor$).tailscaleConfigId === configId
     ) {
@@ -411,15 +403,6 @@ export const sshConflict$ = computed((get) => {
 export const sshDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
   if (!dialog || dialog.sessionKey !== get(authenticatedSessionKey$)) {
-    return null;
-  }
-  const hostEditor = dialog?.kind === "create" || dialog?.kind === "edit";
-  const tailscale =
-    dialog?.connection &&
-    "transport" in dialog.connection &&
-    (dialog.connection.transport.type === "tailscale" ||
-      dialog.connection.transport.type === "tailscale_ssh");
-  if (hostEditor && tailscale && !get(tailscaleEnabled$)) {
     return null;
   }
   return dialog?.identity === (await get(sshIdentity$)) ? dialog : null;
@@ -624,13 +607,6 @@ export const openSshDialog$ = command(
     connection: SshConnectionResponse | null,
     signal: AbortSignal,
   ) => {
-    if (
-      kind === "edit" &&
-      usesTailscaleNetwork(connection) &&
-      !get(tailscaleEnabled$)
-    ) {
-      return;
-    }
     const identity = await get(sshIdentity$);
     signal.throwIfAborted();
     if (!identity) {
@@ -774,10 +750,9 @@ export const acceptSshConflictReview$ = command(
       reviewed.sessionKey !== get(authenticatedSessionKey$) ||
       (current.kind === "edit" &&
         usesTailscaleNetwork(reviewed.connection) &&
-        (!get(tailscaleEnabled$) ||
-          !["tailscale", "tailscale_ssh"].includes(
-            get(connectionModeEditor$).mode,
-          )))
+        !["tailscale", "tailscale_ssh"].includes(
+          get(connectionModeEditor$).mode,
+        ))
     ) {
       return;
     }
@@ -1008,18 +983,6 @@ const deleteSshHost$ = command(
   },
 );
 
-function unavailableSshNetwork(
-  kind: SshDialogState["kind"],
-  mode: SshConnectionMode,
-  enabled: boolean,
-) {
-  return (
-    (kind === "create" || kind === "edit") &&
-    (mode === "tailscale" || mode === "tailscale_ssh") &&
-    !enabled
-  );
-}
-
 const saveSshHost$ = command(
   async (
     { get, set },
@@ -1041,16 +1004,6 @@ const saveSshHost$ = command(
     let conflicted: string | null = null;
     const client = clients.connections;
     const connectionEditor = get(connectionModeEditor$);
-    if (
-      unavailableSshNetwork(
-        dialog.kind,
-        connectionEditor.mode,
-        get(tailscaleEnabled$),
-      )
-    ) {
-      return false;
-    }
-
     const fields = hostFieldsFromForm(dialog, form, editor, connectionEditor);
     if (dialog.kind === "create") {
       const id = set(getSshCreationId$);

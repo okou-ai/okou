@@ -1,6 +1,7 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import * as z from "zod";
 
-import { safeJsonParse } from "../utils";
+import { settle, safeJsonParse } from "../utils";
 import { logger } from "../../lib/log";
 
 import type {
@@ -273,56 +274,64 @@ export async function submitOpenAiImageResponse(
   signal: AbortSignal,
 ): Promise<{ readonly id: string } | OpenAiImageResponseError> {
   const editing = references.sourceImageUrls.length > 0;
-  const response = await fetch(RESPONSES_URL, {
-    method: "POST",
-    headers: headers(apiKey),
-    signal,
-    body: JSON.stringify({
-      model: MAINLINE_MODEL,
-      background: true,
-      store: true,
-      metadata: { generation_id: generationId },
-      tool_choice: { type: "image_generation" },
-      max_tool_calls: 1,
-      tools: [
-        {
-          type: "image_generation",
-          model: options.model,
-          action: editing ? "edit" : "generate",
-          size: options.size,
-          quality: options.quality,
-          background: options.background,
-          output_format: options.outputFormat,
-          output_compression: options.outputCompression,
-          moderation: options.moderation,
-          ...(editing && options.inputFidelity
-            ? { input_fidelity: options.inputFidelity }
-            : {}),
-          ...(editing && references.maskImageUrl
-            ? { input_image_mask: { image_url: references.maskImageUrl } }
-            : {}),
-        },
-      ],
-      input: [
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: options.prompt },
-            ...references.sourceImageUrls.map((imageUrl) => {
-              return {
-                type: "input_image",
-                image_url: imageUrl,
-                detail: "auto",
-              };
-            }),
+  const fetched = await settle(
+    accept(
+      fetch(RESPONSES_URL, {
+        method: "POST",
+        headers: headers(apiKey),
+        body: JSON.stringify({
+          model: MAINLINE_MODEL,
+          background: true,
+          store: true,
+          metadata: { generation_id: generationId },
+          tool_choice: { type: "image_generation" },
+          max_tool_calls: 1,
+          tools: [
+            {
+              type: "image_generation",
+              model: options.model,
+              action: editing ? "edit" : "generate",
+              size: options.size,
+              quality: options.quality,
+              background: options.background,
+              output_format: options.outputFormat,
+              output_compression: options.outputCompression,
+              moderation: options.moderation,
+              ...(editing && options.inputFidelity
+                ? { input_fidelity: options.inputFidelity }
+                : {}),
+              ...(editing && references.maskImageUrl
+                ? { input_image_mask: { image_url: references.maskImageUrl } }
+                : {}),
+            },
           ],
-        },
-      ],
-    }),
-  });
-  if (!response.ok) {
-    return readFailure(response, signal);
+          input: [
+            {
+              role: "user",
+              content: [
+                { type: "input_text", text: options.prompt },
+                ...references.sourceImageUrls.map((imageUrl) => {
+                  return {
+                    type: "input_image",
+                    image_url: imageUrl,
+                    detail: "auto",
+                  };
+                }),
+              ],
+            },
+          ],
+        }),
+      }),
+      [200],
+    ),
+  );
+  if (!fetched.ok) {
+    if (!(fetched.error instanceof HttpStatusError)) {
+      throw fetched.error;
+    }
+    return readFailure(fetched.error.response, signal);
   }
+  const response = fetched.value;
   // JSON/transport/shape errors after POST remain uncertain: never resubmit.
   const body: unknown = await response.json();
   signal.throwIfAborted();
@@ -340,17 +349,13 @@ export async function deleteOpenAiImageResponse(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(
-    `${RESPONSES_URL}/${encodeURIComponent(responseId)}`,
-    {
+  const response = await accept(
+    fetch(`${RESPONSES_URL}/${encodeURIComponent(responseId)}`, {
       method: "DELETE",
       headers: headers(apiKey),
-      signal,
-    },
+    }),
+    [200, 404],
   );
-  if (!response.ok && response.status !== 404) {
-    throw new Error("OpenAI image response cleanup is temporarily unavailable");
-  }
   await response.arrayBuffer();
   signal.throwIfAborted();
 }
@@ -378,23 +383,27 @@ export async function retrieveOpenAiImageResponse(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<OpenAiImageResponse | OpenAiImageResponseError> {
-  const response = await fetch(
-    `${RESPONSES_URL}/${encodeURIComponent(responseId)}`,
-    {
-      method: "GET",
-      headers: headers(apiKey),
-      signal,
-    },
+  const fetched = await settle(
+    accept(
+      fetch(`${RESPONSES_URL}/${encodeURIComponent(responseId)}`, {
+        method: "GET",
+        headers: headers(apiKey),
+      }),
+      [200],
+    ),
   );
-  if (!response.ok) {
-    // A transient GET is retrievable later, not a terminal generation failure.
-    if (response.status === 429) {
+  if (!fetched.ok) {
+    if (!(fetched.error instanceof HttpStatusError)) {
+      throw fetched.error;
+    }
+    if (fetched.error.status === 429) {
       throw new Error(
         "OpenAI image response retrieval is temporarily unavailable",
       );
     }
-    return readFailure(response, signal);
+    return readFailure(fetched.error.response, signal);
   }
+  const response = fetched.value;
   const body: unknown = await response.json();
   signal.throwIfAborted();
   return readOpenAiImageResponse(body, responseId);

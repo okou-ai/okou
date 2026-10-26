@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/agent-setup-prompts";
 import { command } from "ccstate";
 
-import { requestSignal$ } from "../context/hono";
 import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
 import {
   VERTEX_AUXILIARY_MAX_TOKENS,
@@ -76,20 +75,19 @@ async function generateAgentSetupPrompt(
 }
 
 export const createAgentSetupPrompt$ = command(
-  async ({ get }, body: AgentSetupPromptRequest, signal: AbortSignal) => {
-    const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
+  async (_, body: AgentSetupPromptRequest, signal: AbortSignal) => {
     const polished = await generateAuxiliary(
       {
         feature: "agent_setup_prompt",
         generate: (record) => {
-          return generateAgentSetupPrompt(body, record, requestSignal);
+          return generateAgentSetupPrompt(body, record, signal);
         },
         usable: usableAgentSetupPrompt,
       },
-      requestSignal,
+      signal,
     );
     signal.throwIfAborted();
-    requestSignal.throwIfAborted();
+    signal.throwIfAborted();
     // Polishing is an optional enhancement over an external provider; the raw
     // responsibility already makes a complete first message.
     const response: AgentSetupPromptResponse = {

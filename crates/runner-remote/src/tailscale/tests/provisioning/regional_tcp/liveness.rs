@@ -41,11 +41,12 @@ async fn unchanged_traffic(peer_count: usize) {
         false,
     )
     .await;
+    control.abandon_tls_connections().await;
     let gate = WriteGate::new();
     let descriptors = Arc::new(Mutex::new(Vec::new()));
     let counts = Arc::new(Liveness::default());
     let cache = Cache::new();
-    let run = cache.register(RunId::new_v4());
+    let run = cache.register_with_diagnostics(RunId::new_v4(), true);
     let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
     let dial = api.secure.as_ref().unwrap().clone();
     let factory = control.provisioned_root_factory(
@@ -53,14 +54,20 @@ async fn unchanged_traffic(peer_count: usize) {
         Relay::new(&home, Arc::clone(&gate), Arc::clone(&descriptors)),
     );
     let observer = Arc::clone(&counts);
+    let config = configuration(uuid::Uuid::new_v4());
     let native = access
-        .native_configured(
-            configuration(uuid::Uuid::new_v4()),
-            move |configuration, journal| observer.observe(factory(configuration, journal)),
-        )
+        .native_configured(config.clone(), move |configuration, journal| {
+            observer.observe(factory(configuration, journal))
+        })
         .unwrap();
+    let source = native.diagnostic_source(config.key());
     control.allow_all();
-    bounded(native.ready()).await.unwrap();
+    bounded(native.ready()).await.unwrap_or_else(|failure| {
+        panic!(
+            "{peer_count} peers: {failure:?}; evidence={}",
+            serde_json::to_value(source.evidence.layers().snapshot()).unwrap()
+        )
+    });
     let (frames, client) = bounded(home.task).await.unwrap();
     let mut peers = Peers {
         services: vec![Service {

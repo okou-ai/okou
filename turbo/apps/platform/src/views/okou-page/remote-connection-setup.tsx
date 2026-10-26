@@ -27,7 +27,6 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
-import { tailscaleEnabled$ } from "../../signals/tailscale.ts";
 import { OKOU_DESKTOP_DOWNLOAD_URL } from "../../signals/okou-page/computer-use-hosts.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
@@ -100,24 +99,19 @@ function ProtocolChoice({
   const choose = useSet(chooseRemoteProtocol$);
   const [opening, open] = useLoadableSet(openRemoteLogin$);
   const signal = useGet(pageSignal$);
-  const tailscale = useGet(tailscaleEnabled$);
   const options = [
-    ...(setup.sourceNetwork?.route !== "tailscale" || tailscale
-      ? [
-          {
-            value: "ssh" as const,
-            label: t(($) => {
-              return setup.fromComputer
-                ? $.remoteComputerSetup.commands
-                : $.ssh.label;
-            }),
-            description: t(($) => {
-              return $.remoteControlSetup.sshDescription;
-            }),
-            icon: <Terminal size={22} aria-hidden />,
-          },
-        ]
-      : []),
+    {
+      value: "ssh" as const,
+      label: t(($) => {
+        return setup.fromComputer
+          ? $.remoteComputerSetup.commands
+          : $.ssh.label;
+      }),
+      description: t(($) => {
+        return $.remoteControlSetup.sshDescription;
+      }),
+      icon: <Terminal size={22} aria-hidden />,
+    },
     ...(vncEnabled
       ? [
           {

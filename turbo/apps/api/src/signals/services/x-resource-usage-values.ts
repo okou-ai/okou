@@ -1,7 +1,7 @@
 import type { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { xResourceReads } from "@okouai/db/schema/x-resource-usage";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";

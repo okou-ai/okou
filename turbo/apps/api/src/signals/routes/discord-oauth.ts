@@ -11,7 +11,7 @@ import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { now, nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { request$, requestSignal$, setResHeader$ } from "../context/hono";
+import { request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import {
@@ -184,8 +184,7 @@ function discordAuthorizationUrl(args: {
 }
 
 const startDiscordOauth$ = command(
-  async ({ get, set }, rootSignal: AbortSignal) => {
-    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
+  async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const body = await get(bodyResultOf(discordOauthContract.start));
     signal.throwIfAborted();
@@ -372,8 +371,7 @@ const verifyCallback$ = command(
 );
 
 const callbackDiscordOauth$ = command(
-  async ({ get, set }, rootSignal: AbortSignal) => {
-    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
+  async ({ get, set }, signal: AbortSignal) => {
     const query = get(queryOf(discordOauthContract.callback));
     if (!query.state || !PROOF.test(query.state)) {
       return callbackError("invalid_state");
@@ -400,8 +398,7 @@ const callbackDiscordOauth$ = command(
 );
 
 const approveDiscordOauth$ = command(
-  async ({ get, set }, rootSignal: AbortSignal) => {
-    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
+  async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const body = await get(bodyResultOf(discordOauthContract.approve));
     signal.throwIfAborted();
@@ -536,8 +533,7 @@ const completeApproved$ = command(
 );
 
 const completeDiscordOauth$ = command(
-  async ({ get, set }, rootSignal: AbortSignal) => {
-    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
+  async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const body = await get(bodyResultOf(discordOauthContract.complete));
     signal.throwIfAborted();

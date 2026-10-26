@@ -40,17 +40,7 @@ export const CAPABILITIES = [
   "banking:read",
   "wallet:read",
   "wallet:write",
-  "maps:read",
-  "weather:read",
-  "scrape:read",
-  "people-search:read",
-  "web-search:read",
-  "social:read",
   "data-search:read",
-  "data-enrichment:read",
-  "finance:read",
-  "seo:read",
-  "commerce:read",
   "computer-use:write",
   "computer-use:shell:write",
   "browser:read",
@@ -213,46 +203,9 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
     group: "Banking",
     label: "Read enabled banking accounts",
   },
-  "maps:read": { group: "Maps", label: "Search with Google Maps grounding" },
-  "weather:read": {
-    group: "Weather",
-    label: "Use managed weather and air quality services",
-  },
-  "scrape:read": {
-    group: "Scrape",
-    label: "Use managed web scraping",
-  },
-  "people-search:read": {
-    group: "People Search",
-    label: "Use managed people search",
-  },
-  "web-search:read": {
-    group: "Web Search",
-    label: "Use managed web search",
-  },
   "data-search:read": {
     group: "Data Search",
     label: "Search reviewed business data sources",
-  },
-  "data-enrichment:read": {
-    group: "Data Search",
-    label: "Enrich public professional profiles and work emails",
-  },
-  "social:read": {
-    group: "Social",
-    label: "Use managed public social data",
-  },
-  "finance:read": {
-    group: "Finance",
-    label: "Use managed finance services",
-  },
-  "commerce:read": {
-    group: "Commerce",
-    label: "Use managed Amazon product data",
-  },
-  "seo:read": {
-    group: "SEO",
-    label: "Use managed SEO services",
   },
   "computer-use:write": {
     group: "Computer Use",

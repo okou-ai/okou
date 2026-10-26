@@ -12,6 +12,89 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1064.2](https://github.com/okou-ai/okou/compare/app-v0.1064.1...app-v0.1064.2) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.6.0
+    * @okouai/core bumped to 8.790.1
+
+## [0.1064.1](https://github.com/okou-ai/okou/compare/app-v0.1064.0...app-v0.1064.1) (2026-10-26)
+
+
+### Refactoring
+
+* **app:** own custom connector connection completion ([#43034](https://github.com/okou-ai/okou/issues/43034)) ([cdfbcf1](https://github.com/okou-ai/okou/commit/cdfbcf1b57de1e2a6e8b2c8845aa279d7a4590d8))
+
+## [0.1064.0](https://github.com/okou-ai/okou/compare/app-v0.1063.2...app-v0.1064.0) (2026-10-26)
+
+
+### Features
+
+* roll out tailscale setup and remove its feature switch ([#43012](https://github.com/okou-ai/okou/issues/43012)) ([78533ae](https://github.com/okou-ai/okou/commit/78533ae6f68a2ba6c58412e84c3e797646ec611f))
+* unify proactive planning and action settings ([#43022](https://github.com/okou-ai/okou/issues/43022)) ([305115c](https://github.com/okou-ai/okou/commit/305115c9796cd4994f93e152391c2d815720b482))
+
+
+### Bug Fixes
+
+* **app:** make composer task chips horizontally scrollable ([#43016](https://github.com/okou-ai/okou/issues/43016)) ([a88f0c4](https://github.com/okou-ai/okou/commit/a88f0c44a4c4a2040698e42c8a0bfed5690b3371))
+* **app:** size the rail chat list toggle like the nav chips ([#43013](https://github.com/okou-ai/okou/issues/43013)) ([db1f376](https://github.com/okou-ai/okou/commit/db1f376bbd4822a3d623539c69978b3b0a1af8d6))
+* **platform:** title every template picker category ([#43030](https://github.com/okou-ai/okou/issues/43030)) ([b21b3ab](https://github.com/okou-ai/okou/commit/b21b3ab1eb0ec40be198e3908d6bd722e6a6e4c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.5.0
+    * @okouai/core bumped to 8.790.0
+
+## [0.1063.2](https://github.com/okou-ai/okou/compare/app-v0.1063.1...app-v0.1063.2) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.4.0
+    * @okouai/core bumped to 8.789.0
+
+## [0.1063.1](https://github.com/okou-ai/okou/compare/app-v0.1063.0...app-v0.1063.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** cancel superseded custom permission preparation ([#42895](https://github.com/okou-ai/okou/issues/42895)) ([26857c7](https://github.com/okou-ai/okou/commit/26857c71094ed3307049ba3afedd481ebd5e7b6d))
+* **app:** preserve newer workflow automation creation dialogs ([#42896](https://github.com/okou-ai/okou/issues/42896)) ([dc06c78](https://github.com/okou-ai/okou/commit/dc06c7836a75eb46c61d5993694aaacd195239dd))
+* **app:** preserve reopened feishu setup on completion ([#42892](https://github.com/okou-ai/okou/issues/42892)) ([806243e](https://github.com/okou-ai/okou/commit/806243e94c2beb35352c1de2e4900ea367253991))
+* **app:** scope feishu app validation to its wizard ([#42893](https://github.com/okou-ai/okou/issues/42893)) ([2208f8b](https://github.com/okou-ai/okou/commit/2208f8b29a1164a60bb8875fb16d4febaffa1b3a))
+* preserve reopened workflow automation drafts ([#42898](https://github.com/okou-ai/okou/issues/42898)) ([88213db](https://github.com/okou-ai/okou/commit/88213db20cbedf1e5bff47d0a44e6ed37d2ecfe0))
+* preserve the current email after an earlier deletion ([#42901](https://github.com/okou-ai/okou/issues/42901)) ([f4f7346](https://github.com/okou-ai/okou/commit/f4f7346880fc0e4b6733f8d47a0596f9d07892a5))
+* scope chat automation saves to their editor ([#42899](https://github.com/okou-ai/okou/issues/42899)) ([deadd17](https://github.com/okou-ai/okou/commit/deadd17850aa209039edb26ac301fd4b821ff8e9))
+
+## [0.1063.0](https://github.com/okou-ai/okou/compare/app-v0.1062.0...app-v0.1063.0) (2026-10-26)
+
+
+### Features
+
+* **core:** enable custom templates for all users ([#42921](https://github.com/okou-ai/okou/issues/42921)) ([1cc417d](https://github.com/okou-ai/okou/commit/1cc417d66219754cfeefbdd01df557f84a245a02))
+
+
+### Refactoring
+
+* **data:** remove retired managed data runtime scaffolding ([#42935](https://github.com/okou-ai/okou/issues/42935)) ([b220a50](https://github.com/okou-ai/okou/commit/b220a504c5e633de162791f1216c4458188ffe72))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.1
+    * @okouai/core bumped to 8.788.0
+
 ## [0.1062.0](https://github.com/okou-ai/okou/compare/app-v0.1061.0...app-v0.1062.0) (2026-10-25)
 
 

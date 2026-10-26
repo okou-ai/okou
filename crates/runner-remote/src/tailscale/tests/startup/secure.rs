@@ -1,7 +1,7 @@
 //! A controlled external TLS authority exercises the shared complete startup.
 //! The production connector continues using the SDK's unchanged WebPKI roots.
 
-use super::fixture::{ACCEPTED, DERIVED, NoiseService};
+use super::fixture::{ACCEPTED, DERIVED, NoiseService, accept_tls};
 use crate::{
     tailscale::tests::fixture::Cache,
     tailscale::{
@@ -22,7 +22,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 use tracing::instrument::WithSubscriber;
 
@@ -92,6 +92,7 @@ pub(in crate::tailscale::tests) struct Service {
     key_address: std::net::SocketAddr,
     key_requested: Arc<tokio::sync::Notify>,
     pub(in crate::tailscale::tests) key_response: CancellationToken,
+    key_stopped: CancellationToken,
     key_task: tokio::task::JoinHandle<()>,
     noise: NoiseService,
     tls: FixtureTls,
@@ -203,12 +204,13 @@ impl Service {
         let seen = Arc::clone(&key_requested);
         let key_response = CancellationToken::new();
         let gate = key_response.clone();
+        let key_stopped = CancellationToken::new();
+        let stopping = key_stopped.clone();
         let key_task = tokio::spawn(
             async move {
-                let (socket, _) = listener.accept().await.unwrap();
-                let stream = match tokio_rustls::TlsAcceptor::from(tls).accept(socket).await {
-                    Ok(stream) => stream,
-                    Err(_) => return, // Production roots can reject this synthetic authority.
+                let stream = match accept_tls(&listener, tls, &stopping).await {
+                    Some(stream) => stream,
+                    None => return,
                 };
                 let service = service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
                     assert_eq!(request.method(), "GET");
@@ -237,6 +239,7 @@ impl Service {
             key_address,
             key_requested,
             key_response,
+            key_stopped,
             key_task,
             noise,
             tls: FixtureTls(Arc::new(client)),
@@ -424,6 +427,17 @@ impl Service {
         self.noise.map_response.cancel();
     }
 
+    pub(in crate::tailscale::tests) async fn abandon_tls_connections(&self) {
+        for address in [self.key_address, self.noise.address] {
+            let mut socket = bounded(tokio::net::TcpStream::connect(address))
+                .await
+                .unwrap();
+            bounded(socket.shutdown()).await.unwrap();
+            // Observe server-side retirement before the genuine startup connects.
+            assert_eq!(bounded(socket.read(&mut [0])).await.unwrap(), 0);
+        }
+    }
+
     pub(in crate::tailscale::tests) fn assert_control_closed(&self) {
         self.control_socket
             .lock()
@@ -437,6 +451,10 @@ impl Service {
         self.allow_all();
         self.noise.logout.response.cancel();
         self.noise.handshake_continue.cancel();
+        // A failed key request can retire the native control socket before TLS
+        // starts. Explicit fixture shutdown releases listeners still awaiting it.
+        self.key_stopped.cancel();
+        self.noise.stopped.cancel();
         bounded(self.key_task).await.unwrap();
         bounded(self.noise.task).await.unwrap();
     }

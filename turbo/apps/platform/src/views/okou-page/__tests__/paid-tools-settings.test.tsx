@@ -79,12 +79,8 @@ async function readySwitch(name: string) {
   return toggle;
 }
 
-test("Members manage Paid tools in Tools, separately from Chat", async () => {
+test("Members manage Paid tools in Tools", async () => {
   const dialog = await openPaidTools("/?settings=preference");
-  click(button("Chat", dialog));
-  expect(
-    within(dialog).queryByRole("switch", { name: "Web search" }),
-  ).not.toBeInTheDocument();
   click(button("Tools", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
@@ -100,19 +96,6 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
     within(dialog).getByText(/Tasks already running or prepared/),
   ).toBeInTheDocument();
   expect(window.location.search).toContain("settings=tools");
-  expect(
-    queryAllByRoleFast("button", dialog).some((element) => {
-      return element.textContent === "Tools";
-    }),
-  ).toBeTruthy();
-});
-
-test("A member without feature switches manages Paid tools in Tools", async () => {
-  await setupPage({ context, path: "/?settings=tools" });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  await within(dialog).findByRole("heading", { name: "Tools" });
-  expect(button("Tools", dialog)).toBeInTheDocument();
-  await expect(readySwitch("Web search")).resolves.toBeChecked();
 });
 
 test("Paid tools toggles save inverted enabled state and can re-enable a tool", async () => {

@@ -11,6 +11,7 @@ export function preparedVolumePublicationPlan(
   volume: PreparedServerSideVolume,
   publishedAt: Date,
   publicationCondition?: SQL,
+  namespace = "",
 ) {
   if (!volume.piResourceIndex) {
     throw new Error(
@@ -19,13 +20,13 @@ export function preparedVolumePublicationPlan(
   }
   const query = new QueryBuilder();
   const version = volume.version;
-  const retained = query.$with("retained_storage").as(
+  const retained = query.$with(`${namespace}retained_storage`).as(
     query
       .select({ id: storages.id })
       .from(storages)
       .where(and(eq(storages.id, version.storageId), publicationCondition)),
   );
-  const registered = query.$with("registered", {
+  const registered = query.$with(`${namespace}registered`, {
     id: storageVersions.id,
     storageId: storageVersions.storageId,
   }).as(sql`INSERT INTO ${storageVersions}
@@ -42,13 +43,15 @@ export function preparedVolumePublicationPlan(
       AND storage_versions.message IS NOT DISTINCT FROM EXCLUDED.message
       AND storage_versions.created_by = EXCLUDED.created_by
     RETURNING id, storage_id`);
-  const published = query.$with("published", { id: storages.id }).as(
-    sql`UPDATE ${storages} SET head_version_id = ${version.versionId},
+  const published = query
+    .$with(`${namespace}published`, { id: storages.id })
+    .as(
+      sql`UPDATE ${storages} SET head_version_id = ${version.versionId},
       size = ${version.size}, file_count = ${version.fileCount},
       updated_at = ${volume.updatedAt.toISOString()}::timestamp
     WHERE ${inArray(storages.id, query.select({ storageId: registered.storageId }).from(registered))}
     RETURNING id`,
-  );
+    );
   if (volume.piResourceIndex.kind === "reused") {
     return { ctes: [retained, registered, published], published };
   }
@@ -57,7 +60,7 @@ export function preparedVolumePublicationPlan(
     version.archiveSize,
     publishedAt,
   );
-  const indexed = query.$with("indexed", {
+  const indexed = query.$with(`${namespace}indexed`, {
     storageVersionId: piResourceVersionIndexes.storageVersionId,
   }).as(sql`INSERT INTO ${piResourceVersionIndexes}
       (storage_version_id, extractor_version, status, projection,
@@ -72,7 +75,7 @@ export function preparedVolumePublicationPlan(
       projection_hash = EXCLUDED.projection_hash, source_archive_size = EXCLUDED.source_archive_size,
       lease_id = NULL, lease_expires_at = NULL, updated_at = EXCLUDED.updated_at
     RETURNING storage_version_id`);
-  const ready = query.$with("published_volume").as(
+  const ready = query.$with(`${namespace}published_volume`).as(
     query
       .select({ id: published.id })
       .from(published)

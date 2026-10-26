@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import * as z from "zod";
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import {
@@ -9,7 +10,6 @@ import { safeJsonParse, settle } from "../utils";
 export { discordSnowflakeSchema };
 
 const DISCORD_API_ORIGIN = "https://discord.com/api/v10";
-const REQUEST_TIMEOUT_MS = 15_000;
 
 const permissionsSchema = z.string().regex(/^\d+$/u);
 
@@ -183,11 +183,12 @@ function decodeDiscordResponse<T>(
   response: Response,
   body: string,
   schema: z.ZodType<T>,
+  accepted: boolean,
 ): DiscordApiResult<T> {
   if (response.status === 403 || response.status === 404) {
     return { kind: "unavailable", status: response.status };
   }
-  if (!response.ok) {
+  if (!accepted) {
     // Provider bodies and URL-bearing network errors may include private data.
     const error = z
       .object({ code: z.number().int() })
@@ -209,7 +210,7 @@ function decodeDiscordResponse<T>(
   return { kind: "ok", data: parsed.data };
 }
 
-/** Read snapshots are timeout-owned; writes also require their caller's signal. */
+/** Writes require their caller's resource-ownership signal. */
 async function requestDiscord<T>(
   args: DiscordRequest<T>,
   signal?: AbortSignal,
@@ -228,32 +229,29 @@ async function requestDiscord<T>(
   if (typeof args.body === "string") {
     headers["content-type"] = "application/json";
   }
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  const requestSignal =
-    signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
   const responseResult = await settle(
-    fetch(`${DISCORD_API_ORIGIN}${args.path}`, {
-      method: args.method,
-      headers,
-      ...(args.body !== undefined ? { body: args.body } : {}),
-      redirect: "error",
-      signal: requestSignal,
-    }),
+    accept(
+      fetch(`${DISCORD_API_ORIGIN}${args.path}`, {
+        method: args.method,
+        headers,
+        ...(args.body !== undefined ? { body: args.body } : {}),
+        signal,
+      }),
+      [200, 201, 204, 403, 404, 429],
+    ),
     signal,
   );
-  if (!responseResult.ok) {
-    return discordError(
-      timeout.aborted ? 504 : 502,
-      timeout.aborted ? "Discord request timed out" : "Discord request failed",
-    );
+  const response = responseResult.ok
+    ? responseResult.value
+    : responseResult.error instanceof HttpStatusError
+      ? responseResult.error.response
+      : undefined;
+  if (!response) {
+    return discordError(502, "Discord request failed");
   }
-  const response = responseResult.value;
   const bodyResult = await settle(response.text(), signal);
   if (!bodyResult.ok) {
-    return discordError(
-      timeout.aborted ? 504 : 502,
-      "Discord response could not be read",
-    );
+    return discordError(502, "Discord response could not be read");
   }
   signal?.throwIfAborted();
   if (response.status === 429) {
@@ -275,7 +273,12 @@ async function requestDiscord<T>(
       global: rateLimit.data.global,
     };
   }
-  return decodeDiscordResponse(response, bodyResult.value, args.schema);
+  return decodeDiscordResponse(
+    response,
+    bodyResult.value,
+    args.schema,
+    responseResult.ok,
+  );
 }
 
 function fetchDiscordCurrentUser(

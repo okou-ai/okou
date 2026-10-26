@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   DESKTOP_UPDATE_LINE_OKOU,
   type DesktopUpdateArchitecture,
@@ -26,14 +27,14 @@ const L = logger("DesktopUpdates");
  */
 export const DESKTOP_UPDATE_MANIFEST_LOG_TYPE =
   "desktop_update_manifest_upstream";
-export const DESKTOP_UPDATE_MANIFEST_PROVIDER = "github_release_asset";
+export const DESKTOP_UPDATE_MANIFEST_PROVIDER = "cloudflare_r2";
 
 const DESKTOP_RELEASE_DOWNLOAD_URL_PREFIX =
   "https://github.com/okou-ai/okou/releases/download";
 const DESKTOP_RELEASE_PAGE_URL_PREFIX =
   "https://github.com/okou-ai/okou/releases/tag";
 const DESKTOP_UPDATE_MANIFEST_URL =
-  "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
+  "https://static.okou.io/desktop-updates/okou/manifest.json";
 // 0.50.0 is the first Native release, independent of Computer Use admission.
 const MIN_NATIVE_DESKTOP_VERSION = "0.50.0";
 
@@ -57,18 +58,13 @@ const DESKTOP_UPDATE_MANIFEST_CACHE_TTL_MS = 60_000;
 const DESKTOP_UPDATE_MANIFEST_STALE_MAX_AGE_MS = 30 * 60_000;
 
 /**
- * Attempts, per-attempt deadline, and spacing for one request's manifest
- * fetch.
+ * Attempts and spacing for one request's manifest fetch.
  *
  * A desktop updater polls on its own schedule, so the retry budget only has to
  * absorb a single-instance blip; anything longer is the caller's next poll or
- * the stale window above, not a longer wait inside this request. The
- * per-attempt deadline matters as much as the retry: production has recorded
- * an upstream gateway that held a request for 11s before failing, and three
- * unbounded attempts would be worse than the single unbounded one it replaces.
+ * the stale window above, not more attempts inside this request.
  */
 const DESKTOP_UPDATE_MANIFEST_FETCH_ATTEMPTS = 3;
-const DESKTOP_UPDATE_MANIFEST_ATTEMPT_TIMEOUT_MS = 3000;
 const DESKTOP_UPDATE_MANIFEST_RETRY_DELAY_MS = 200;
 
 /**
@@ -322,18 +318,25 @@ type DesktopUpdateManifestFetchResult =
 async function fetchDesktopUpdateManifestOnce(
   signal: AbortSignal,
 ): Promise<DesktopUpdateManifestFetchResult> {
-  // The attempt gets its own deadline, but `settle` is given the caller's
-  // signal: a caller cancellation re-throws as a cancellation, while the
-  // deadline surfaces as a `TimeoutError` this function can retry.
-  const attemptSignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(DESKTOP_UPDATE_MANIFEST_ATTEMPT_TIMEOUT_MS),
-  ]);
   const fetched = await settle(
-    fetch(DESKTOP_UPDATE_MANIFEST_URL, {
-      headers: { accept: "application/json" },
-      signal: attemptSignal,
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(DESKTOP_UPDATE_MANIFEST_URL, {
+            headers: { accept: "application/json" },
+          }),
+          [200],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
     signal,
   );
   if (!fetched.ok) {

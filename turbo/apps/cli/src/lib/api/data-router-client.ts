@@ -41,13 +41,9 @@ export function getDataRouterUrl(): URL {
 
 async function withDataRouter<T>(
   operation: (client: Client, options: RequestOptions) => Promise<T>,
-  callerSignal?: AbortSignal,
 ): Promise<T> {
   await getClientConfig();
-  const signal = AbortSignal.any([
-    AbortSignal.timeout(300_000),
-    ...(callerSignal ? [callerSignal] : []),
-  ]);
+  const signal = AbortSignal.timeout(300_000);
   const transport = new StreamableHTTPClientTransport(getDataRouterUrl(), {
     requestInit: { redirect: "error", signal },
     reconnectionOptions: {
@@ -108,7 +104,6 @@ export async function listDataRouterTools(): Promise<DataRouterTool[]> {
 export async function callDataRouterTool(
   name: string,
   input: Record<string, unknown>,
-  callerSignal?: AbortSignal,
 ): Promise<{ status: number; body: unknown }> {
   return withDataRouter(async (client, options) => {
     const tools = await discoverTools(client, options);
@@ -141,5 +136,5 @@ export async function callDataRouterTool(
         502,
       );
     return parsed.data.data;
-  }, callerSignal);
+  });
 }

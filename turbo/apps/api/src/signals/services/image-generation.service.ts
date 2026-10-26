@@ -1,9 +1,11 @@
+import { settle } from "../utils";
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { Buffer } from "node:buffer";
 
 import { command, computed, type Computed } from "ccstate";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import {
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODEL_ALIASES,
@@ -1535,12 +1537,27 @@ export async function submitFalImageQueueGeneration(
   const endpointId = falImageEndpointId(options);
   const queueUrl = new URL(`${FAL_IMAGE_QUEUE_URL_PREFIX}/${endpointId}`);
   queueUrl.searchParams.set("fal_webhook", webhookUrl);
-  const response = await fetch(queueUrl, {
-    method: "POST",
-    headers: falHeaders(falKey),
-    body: JSON.stringify(falImageInput(options, references)),
-    signal,
-  });
+  const acceptedResponse = await settle(
+    accept(
+      fetch(queueUrl, {
+        method: "POST",
+        headers: falHeaders(falKey),
+        body: JSON.stringify(falImageInput(options, references)),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
 
   if (!response.ok) {
     const errorBody = await readImageProviderErrorBody(response, signal);
@@ -1591,11 +1608,26 @@ export async function getFalImageBillableUnits(
     );
   }
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: falHeaders(falKey),
-    signal,
-  });
+  const acceptedResponse2 = await settle(
+    accept(
+      fetch(url, {
+        method: "GET",
+        headers: falHeaders(falKey),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse2.ok) {
+    response = acceptedResponse2.value;
+  } else if (
+    acceptedResponse2.error instanceof HttpStatusError &&
+    acceptedResponse2.error.status >= 300
+  ) {
+    response = acceptedResponse2.error.response;
+  } else {
+    throw acceptedResponse2.error;
+  }
   if (!response.ok) {
     const errorBody = await readImageProviderErrorBody(response, signal);
     L.error("Fal image billing response failed", {
@@ -1794,14 +1826,27 @@ export async function downloadFalImage(
   result: FalImageResult,
   options: ImageOptions,
   falBillableUnits: number | undefined,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<ParsedImageGeneration | ErrorResponse> {
   const billing = falBillingEntries(result.image, options, falBillableUnits);
   if ("status" in billing) {
     return billing;
   }
 
-  const response = await fetch(result.image.url, { method: "GET", signal });
+  const acceptedResponse3 = await settle(
+    accept(fetch(result.image.url, { method: "GET" }), [200]),
+  );
+  let response: Response;
+  if (acceptedResponse3.ok) {
+    response = acceptedResponse3.value;
+  } else if (
+    acceptedResponse3.error instanceof HttpStatusError &&
+    acceptedResponse3.error.status >= 300
+  ) {
+    response = acceptedResponse3.error.response;
+  } else {
+    throw acceptedResponse3.error;
+  }
   if (!response.ok) {
     return badGateway(
       "Could not download generated image",

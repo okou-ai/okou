@@ -9,7 +9,7 @@ import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { computed } from "ccstate";
 import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import * as z from "zod";

@@ -176,7 +176,7 @@ const sendFeishuCallbackResponse$ = command(
         })();
         const url = feishuMessageSendUrl(apiOrigin);
         url.searchParams.set("receive_id_type", sendArgs.receiveIdType);
-        const response = await fetch(url, {
+        const response = fetch(url, {
           method: "POST",
           headers: {
             authorization: `Bearer ${token}`,
@@ -189,7 +189,6 @@ const sendFeishuCallbackResponse$ = command(
               sendArgs.idempotencyKey,
             ),
           ),
-          signal: sendSignal,
         });
         return parseFeishuSentMessage(
           await readFeishuResponseJson(response, providerName),

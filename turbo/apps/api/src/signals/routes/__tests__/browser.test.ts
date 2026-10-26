@@ -3034,49 +3034,6 @@ describe("Browser user-action route", () => {
     },
   );
 
-  it("returns a retryable provider timeout when the internal CDP deadline expires", async () => {
-    const { token, providerId } =
-      await createNativePasswordActionForPreflightTest();
-    const deadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 15_000 ? deadline.signal : undefined;
-    });
-    const discoveryStarted = createDeferredPromise<void>(context.signal);
-    const discoveryAborted = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.get(
-        `https://${providerId}.cdp.browser-use.com/json/version`,
-        async ({ request }) => {
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              discoveryAborted.resolve(undefined);
-            },
-            { once: true },
-          );
-          discoveryStarted.resolve(undefined);
-          await discoveryAborted.promise;
-          return HttpResponse.json({
-            webSocketDebuggerUrl: browserUseCdpWebSocketUrl(providerId),
-          });
-        },
-      ),
-    );
-    const preflight = userActionClient().preflight({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: {},
-    });
-    await discoveryStarted.promise;
-    deadline.abort(new DOMException("CDP deadline", "TimeoutError"));
-    const checked = await preflight;
-    await discoveryAborted.promise;
-    expect(checked).toMatchObject({
-      status: 503,
-      body: { error: { code: "BROWSER_USE_TIMEOUT" } },
-    });
-  });
-
   it("keeps a preflight pending when its attach reply is withheld until the deadline", async () => {
     const attachStarted = createDeferredPromise<void>(context.signal);
     let holdAttachReply = false;

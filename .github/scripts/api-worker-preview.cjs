@@ -3,6 +3,11 @@
 // deploy: JOB_REF, API_ENV_FILE, NEON_API_KEY, NEON_PROJECT_ID,
 // CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GH_TOKEN, GITHUB_REPOSITORY.
 // PR deploys also require the captured event's EXPECTED_PR_HEAD_SHA.
+// Google operations require GCP_MTLS_CERTIFICATE_ID, GCP_MTLS_CERTIFICATE_CHAIN
+// (JSON, base64 DER leaf first), and GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER from the
+// target's own certificate federation configuration. The shared Vercel env file
+// supplies GCP_LLM_PROJECT_ID and GCP_LLM_SERVICE_ACCOUNT_EMAIL, never its OIDC
+// provider for a Worker. Certificate provisioning and rotation are operator-owned.
 // CF_API_NATIVE_TELEMETRY=true requires preconfigured Axiom dev OTLP destination
 // slugs in CF_API_{LOGS,TRACES}_DESTINATION; otherwise those exports are optional.
 // Account destination provisioning and credentials belong to their operator.
@@ -76,8 +81,8 @@ function packSecrets(runtime) {
     bytes += size;
   }
   if (part) parts.push(part);
-  // Reserve one Hyperdrive binding as well as the encrypted part count.
-  if (parts.length > 126)
+  // Reserve Hyperdrive, API_NATIVE_TELEMETRY, the part count and optional mTLS.
+  if (parts.length > 125 - Number(Boolean(runtime.GCP_MTLS_CERTIFICATE_CHAIN)))
     throw new Error("Runtime configuration exceeds the Worker binding budget");
   return {
     API_ENV_JSON_PARTS: String(parts.length),
@@ -85,6 +90,61 @@ function packSecrets(runtime) {
       parts.map((value, index) => [`API_ENV_JSON_${index}`, value]),
     ),
   };
+}
+
+function googleCertificateBinding(runtime) {
+  const certificateId = process.env.GCP_MTLS_CERTIFICATE_ID;
+  const certificateChain = process.env.GCP_MTLS_CERTIFICATE_CHAIN;
+  const provider = process.env.GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER;
+  const configured = [
+    certificateId,
+    certificateChain,
+    provider,
+    runtime.GCP_LLM_PROJECT_ID,
+    runtime.GCP_LLM_SERVICE_ACCOUNT_EMAIL,
+    runtime.GCP_LLM_WORKLOAD_IDENTITY_PROVIDER,
+  ].some(Boolean);
+  if (!configured) return [];
+  if (
+    !certificateId ||
+    !/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(
+      certificateId,
+    ) ||
+    !certificateChain ||
+    !provider ||
+    !/^projects\/\d+\/locations\/global\/workloadIdentityPools\/[a-z0-9-]+\/providers\/[a-z0-9-]+$/.test(
+      provider,
+    ) ||
+    !runtime.GCP_LLM_PROJECT_ID ||
+    !runtime.GCP_LLM_SERVICE_ACCOUNT_EMAIL
+  )
+    throw new Error(
+      "Google operations require complete GCP mTLS configuration for this Worker target",
+    );
+  if (provider === runtime.GCP_LLM_WORKLOAD_IDENTITY_PROVIDER)
+    throw new Error(
+      "Worker certificate federation requires a distinct X.509 workload identity provider",
+    );
+  let chain;
+  try {
+    chain = JSON.parse(certificateChain);
+  } catch {
+    throw new Error("Invalid GCP_MTLS_CERTIFICATE_CHAIN");
+  }
+  if (
+    !Array.isArray(chain) ||
+    chain.length < 1 ||
+    chain.length > 5 ||
+    chain.some(
+      (certificate) =>
+        typeof certificate !== "string" ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(certificate),
+    )
+  )
+    throw new Error("Invalid GCP_MTLS_CERTIFICATE_CHAIN");
+  runtime.GCP_LLM_WORKLOAD_IDENTITY_PROVIDER = provider;
+  runtime.GCP_MTLS_CERTIFICATE_CHAIN = JSON.stringify(chain);
+  return [{ binding: "GCP_MTLS", certificate_id: certificateId }];
 }
 
 async function request(base, token, method, route, body, allowMissing = false) {
@@ -376,6 +436,7 @@ async function main(mode) {
   runtime.DATABASE_URL = database.toString();
   if (runtime.ENV !== "preview")
     throw new Error("Only preview runtime configuration is allowed");
+  const googleCertificates = googleCertificateBinding(runtime);
   const nativeTelemetry = process.env.CF_API_NATIVE_TELEMETRY === "true";
   if (nativeTelemetry && !ref.startsWith("pr-"))
     throw new Error("Native telemetry validation requires a PR preview");
@@ -458,6 +519,7 @@ async function main(mode) {
     vars: { API_NATIVE_TELEMETRY: String(nativeTelemetry) },
     env: {},
     hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdrive.id }],
+    mtls_certificates: googleCertificates,
     observability: {
       enabled: true,
       logs: {

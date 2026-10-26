@@ -165,6 +165,13 @@ function mockJob(initial = makeJob(), failFirstReply = false) {
   return { replies };
 }
 async function setupJobs() {
+  context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
+    return respond(200, {
+      enabled: true,
+      status: "enabled",
+      unavailableReason: null,
+    });
+  });
   await setupPage({
     context,
     path: `/agents/${agentId}/chat`,
@@ -352,7 +359,8 @@ test("a late initial Tasks response cannot override a task the user selected", a
   expect(queryControl(/Research customers/, "button")).not.toBeInTheDocument();
 });
 
-test("shows Proactive tasks and keeps Suggestions independently enabled", async () => {
+test("hides home Tasks when Planning and action is off and restores saved Tasks when enabled", async () => {
+  mockJob();
   let enabled = true;
   context.mocks.api(proactiveJobsContract.get, ({ respond }) => {
     return respond(200, {
@@ -378,14 +386,14 @@ test("shows Proactive tasks and keeps Suggestions independently enabled", async 
   });
   await setupPage({
     context,
-    path: "/agents?settings=proactive-agent",
+    path: `/agents/${agentId}/chat?settings=proactive-agent`,
     featureSwitches: {
       [FeatureSwitchKey.ProactiveAgent]: true,
     },
   });
-  const jobs = await screen.findByRole("switch", { name: "Proactive tasks" });
+  const jobs = await screen.findByRole("switch", { name: "Planning & action" });
   const suggestions = await screen.findByRole("switch", {
-    name: "Proactive Suggestions",
+    name: "Suggestions",
   });
   await waitFor(() => {
     expect(jobs).toBeChecked();
@@ -396,4 +404,30 @@ test("shows Proactive tasks and keeps Suggestions independently enabled", async 
     expect(jobs).not.toBeChecked();
     expect(suggestions).toBeChecked();
   });
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  click(control("Close", "button", settings));
+  await findControl("Workflow", "tab");
+  expect(queryControl("Tasks", "tab")).not.toBeInTheDocument();
+
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  click(within(rail).getByLabelText("Test User"));
+  click(within(await screen.findByRole("menu")).getByText("Settings"));
+  const reopened = await screen.findByRole("dialog", { name: "Settings" });
+  click(control("Proactive", "button", reopened));
+  const planning = await within(reopened).findByRole("switch", {
+    name: "Planning & action",
+  });
+  await waitFor(() => {
+    return expect(planning).toBeEnabled();
+  });
+  click(planning);
+  await waitFor(() => {
+    return expect(planning).toBeChecked();
+  });
+  click(control("Close", "button", reopened));
+  const tasks = await findControl("Tasks", "tab");
+  click(tasks);
+  await expect(
+    findControl(/Research customers/, "button"),
+  ).resolves.toBeInTheDocument();
 });

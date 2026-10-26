@@ -10,7 +10,6 @@ import { getDatasetName, ingestAxiomTrace } from "../external/axiom";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 const AGENT_RUN_EVENTS_DATASET = "agent-run-events";
-const AXIOM_EVENT_INGEST_TIMEOUT_MS = 10_000;
 const AXIOM_EVENT_DATA_MAX_BYTES = 900_000;
 const AXIOM_TRUNCATED_STRING_VALUE = "[truncated]";
 const AXIOM_TRUNCATED_STRING_SUFFIX = `\n\n${AXIOM_TRUNCATED_STRING_VALUE}`;
@@ -258,7 +257,6 @@ export const ingestAxiomEvents$ = command(
     const result = await ingestAxiomTrace(
       getDatasetName(AGENT_RUN_EVENTS_DATASET),
       axiomEvents,
-      AXIOM_EVENT_INGEST_TIMEOUT_MS,
       signal,
     );
     signal.throwIfAborted();

@@ -1,5 +1,54 @@
 # Changelog
 
+## [10.2.4](https://github.com/okou-ai/okou/compare/cli-v10.2.3...cli-v10.2.4) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.6.0
+    * @okouai/core bumped to 8.790.1
+    * @okouai/pi-agent-runtime bumped to 1.50.74
+
+## [10.2.3](https://github.com/okou-ai/okou/compare/cli-v10.2.2...cli-v10.2.3) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.5.0
+    * @okouai/core bumped to 8.790.0
+    * @okouai/pi-agent-runtime bumped to 1.50.73
+
+## [10.2.2](https://github.com/okou-ai/okou/compare/cli-v10.2.1...cli-v10.2.2) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.4.0
+    * @okouai/core bumped to 8.789.0
+    * @okouai/pi-agent-runtime bumped to 1.50.72
+
+## [10.2.1](https://github.com/okou-ai/okou/compare/cli-v10.2.0...cli-v10.2.1) (2026-10-26)
+
+
+### Refactoring
+
+* **data:** remove retired managed data runtime scaffolding ([#42935](https://github.com/okou-ai/okou/issues/42935)) ([b220a50](https://github.com/okou-ai/okou/commit/b220a504c5e633de162791f1216c4458188ffe72))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.3.1
+    * @okouai/core bumped to 8.788.0
+    * @okouai/pi-agent-runtime bumped to 1.50.71
+
 ## [10.2.0](https://github.com/okou-ai/okou/compare/cli-v10.1.4...cli-v10.2.0) (2026-10-25)
 
 

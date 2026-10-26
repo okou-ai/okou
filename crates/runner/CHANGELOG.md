@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.237.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.4...runner-rs-v0.237.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner:** preserve resume override restoration ownership ([#43054](https://github.com/okou-ai/okou/issues/43054)) ([1084c22](https://github.com/okou-ai/okou/commit/1084c22752ea80de73b0b7114e2e37213bda95ed))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.3...runner-rs-v0.237.4) (2026-10-26)
+
+## [0.237.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.2...runner-rs-v0.237.3) (2026-10-26)
+
+
+### Performance Improvements
+
+* **python:** skip body work for native-rejected requests ([#43023](https://github.com/okou-ai/okou/issues/43023)) ([e67a6b5](https://github.com/okou-ai/okou/commit/e67a6b582dbfcd7bdd9421992197d5417bf7987e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.1...runner-rs-v0.237.2) (2026-10-26)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.0...runner-rs-v0.237.1) (2026-10-26)
+
+
+### Refactoring
+
+* **runner:** make local rootfs publication synchronous ([#42943](https://github.com/okou-ai/okou/issues/42943)) ([fadd1aa](https://github.com/okou-ai/okou/commit/fadd1aa020469825be4f95f4726f32a515c9d5eb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.37...runner-rs-v0.237.0) (2026-10-25)
 
 

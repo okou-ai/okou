@@ -153,7 +153,7 @@ function mockNativeNetworks() {
   return network;
 }
 
-test("VNC access alone can create a reusable Tailscale configuration from network settings", async () => {
+test("Network settings can create a reusable Tailscale configuration for VNC", async () => {
   mockSettings();
   const network = mockNativeNetworks();
   let configs: TailscaleConfig[] = [];
@@ -176,7 +176,6 @@ test("VNC access alone can create a reusable Tailscale configuration from networ
     auth,
     featureSwitches: {
       [FeatureSwitchKey.VncAccess]: true,
-      [FeatureSwitchKey.TailscaleAccess]: false,
     },
   });
   const section = await screen.findByRole("region", { name: "Tailscale" });

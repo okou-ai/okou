@@ -15,7 +15,6 @@ import {
   setRemoteNetworkPicker$,
   chooseRemoteNetworkProvider$,
 } from "../../signals/remote-control-setup.ts";
-import { tailscaleSettingsEnabled$ } from "../../signals/tailscale.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 export function NetworkProviderPicker({
@@ -24,43 +23,40 @@ export function NetworkProviderPicker({
   const { t } = useTranslation();
   const open = useGet(remoteNetworkPicker$);
   const setOpen = useSet(setRemoteNetworkPicker$);
-  const tailscale = useGet(tailscaleSettingsEnabled$);
   const [choosing, choose] = useLoadableSet(chooseRemoteNetworkProvider$);
   const signal = useGet(pageSignal$);
   const choices = (
     <div className="grid gap-3">
-      {tailscale && (
-        <Button
-          variant="outline"
-          className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
-          disabled={choosing.state === "loading"}
-          onClick={(event) => {
-            const tags =
-              event.currentTarget
-                .closest("main")
-                ?.querySelector<HTMLInputElement>('input[name="tailscaleTags"]')
-                ?.value ?? "tag:okou";
-            detach(choose("tailscale", tags, signal), Reason.DomCallback);
-          }}
-        >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
-            <Network size={20} aria-hidden />
+      <Button
+        variant="outline"
+        className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"
+        disabled={choosing.state === "loading"}
+        onClick={(event) => {
+          const tags =
+            event.currentTarget
+              .closest("main")
+              ?.querySelector<HTMLInputElement>('input[name="tailscaleTags"]')
+              ?.value ?? "tag:okou";
+          detach(choose("tailscale", tags, signal), Reason.DomCallback);
+        }}
+      >
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50">
+          <Network size={20} aria-hidden />
+        </span>
+        <span className="grid flex-1 gap-1">
+          <span>
+            {t(($) => {
+              return $.tailscale.title;
+            })}
           </span>
-          <span className="grid flex-1 gap-1">
-            <span>
-              {t(($) => {
-                return $.tailscale.title;
-              })}
-            </span>
-            <span className="text-sm font-normal text-muted-foreground">
-              {t(($) => {
-                return $.remoteControlSetup.networkTailscaleHelp;
-              })}
-            </span>
+          <span className="text-sm font-normal text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.networkTailscaleHelp;
+            })}
           </span>
-          <ChevronRight size={16} aria-hidden />
-        </Button>
-      )}
+        </span>
+        <ChevronRight size={16} aria-hidden />
+      </Button>
       <Button
         variant="outline"
         className="h-auto min-h-16 justify-start gap-4 whitespace-normal rounded-xl border-divider p-4 text-left"

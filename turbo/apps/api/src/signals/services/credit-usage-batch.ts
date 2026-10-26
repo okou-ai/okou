@@ -3,8 +3,8 @@ import {
   type PricedUsageEvent,
   type UsageEventRecord,
 } from "./credit-usage-pricing";
-import { usageEvent } from "@okouai/db/schema/usage-event";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 export class UsageSettlementSnapshotConflict extends Error {}

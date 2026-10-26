@@ -1,5 +1,5 @@
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { xResourceReads } from "@okouai/db/schema/x-resource-usage";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";

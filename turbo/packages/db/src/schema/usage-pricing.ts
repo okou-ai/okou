@@ -1,14 +1,6 @@
 import { sql } from "drizzle-orm";
-import {
-  pgTable,
-  uuid,
-  varchar,
-  text,
-  bigint,
-  timestamp,
-  uniqueIndex,
-  check,
-} from "drizzle-orm/pg-core";
+import { pgTable, bigint, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { usagePricingColumns } from "../columns/usage-pricing";
 
 /**
  * Per-resource pricing for `usage_event` rows.
@@ -35,17 +27,12 @@ import {
 export const usagePricing = pgTable(
   "usage_pricing",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    kind: varchar("kind", { length: 30 }).notNull(),
-    provider: text("provider").notNull(),
-    category: varchar("category", { length: 100 }).notNull(),
-    unitPrice: bigint("unit_price", { mode: "number" }).notNull(),
-    unitSize: bigint("unit_size", { mode: "number" }).notNull(),
+    ...usagePricingColumns(),
+    // Keep physical storage until this runtime is deployed, preceding API SQL
+    // has drained and incompatible rollback targets are excluded.
     sourceCostUsdMicrosPerCredit: bigint("source_cost_usd_micros_per_credit", {
       mode: "number",
     }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
     return [

@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { connectors } from "@okouai/db/schema/connector";
 import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google-workspace-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -261,17 +262,32 @@ async function workspaceEventsFetchJson<T>(
   accessToken: string,
   url: string,
   init: RequestInit,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<WorkspaceEventsFetchResult<T>> {
-  const response = await fetch(url, {
-    ...init,
-    signal,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...init.headers,
-    },
-  });
+  const acceptedResponse = await settle(
+    accept(
+      fetch(url, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          ...init.headers,
+        },
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
 
   if (!response.ok) {
     return {

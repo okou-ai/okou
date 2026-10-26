@@ -15,6 +15,8 @@ type ShortcutLabelId =
   | "blurComposer"
   | "changeIcon"
   | "clearIcon"
+  | "movePinDown"
+  | "movePinUp"
   | "newChat"
   | "nextAgent"
   | "nextThread"
@@ -43,7 +45,7 @@ interface ShortcutSectionDefinition {
   readonly shortcuts: readonly ShortcutDefinition[];
 }
 
-type ShortcutSectionTitleId = "composer" | "global" | "messages";
+type ShortcutSectionTitleId = "composer" | "global" | "messages" | "pinned";
 
 const GLOBAL_NAVIGATION_SHORTCUTS = [
   { key: "shift+/", labelId: "showShortcuts" },
@@ -70,6 +72,20 @@ const COMPOSER_SHORTCUT_SECTION = {
     { key: "enter", labelId: "sendMessage" },
     { key: COMPOSER_VOICE_INPUT_SHORTCUT, labelId: "voiceInput" },
     { key: "escape", labelId: "blurComposer" },
+  ],
+} as const satisfies ShortcutSectionDefinition;
+
+const PINNED_SHORTCUT_SECTION = {
+  titleId: "pinned",
+  shortcuts: [
+    {
+      key: GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinUp.binding,
+      labelId: "movePinUp",
+    },
+    {
+      key: GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinDown.binding,
+      labelId: "movePinDown",
+    },
   ],
 } as const satisfies ShortcutSectionDefinition;
 
@@ -100,6 +116,7 @@ const CHAT_THREAD_SHORTCUT_SECTIONS = [
       { key: "mod+shift+arrowdown", labelId: "nextThread" },
     ],
   },
+  PINNED_SHORTCUT_SECTION,
   COMPOSER_SHORTCUT_SECTION,
 ] as const satisfies readonly ShortcutSectionDefinition[];
 
@@ -111,11 +128,13 @@ const AGENT_CHAT_SHORTCUT_SECTIONS = [
       { key: "mod+shift+arrowdown", labelId: "openFirstThread" },
     ],
   },
+  PINNED_SHORTCUT_SECTION,
   COMPOSER_SHORTCUT_SECTION,
 ] as const satisfies readonly ShortcutSectionDefinition[];
 
 const SIDEBAR_SHORTCUT_SECTIONS = [
   { titleId: "global", shortcuts: GLOBAL_NAVIGATION_SHORTCUTS },
+  PINNED_SHORTCUT_SECTION,
 ] as const satisfies readonly ShortcutSectionDefinition[];
 
 function shortcutSectionsForRoute(
@@ -143,6 +162,9 @@ function translatedSectionTitles(): Readonly<
     messages: i18n.t(($) => {
       return $.appShell.shortcutHelp.sections.messages;
     }),
+    pinned: i18n.t(($) => {
+      return $.chat.sidebar.pinned;
+    }),
   };
 }
 
@@ -156,6 +178,12 @@ function translatedShortcutLabels(): Readonly<Record<ShortcutLabelId, string>> {
     }),
     clearIcon: i18n.t(($) => {
       return $.appShell.shortcutHelp.shortcuts.clearIcon;
+    }),
+    movePinDown: i18n.t(($) => {
+      return $.chat.sidebar.movePinDown;
+    }),
+    movePinUp: i18n.t(($) => {
+      return $.chat.sidebar.movePinUp;
     }),
     newChat: i18n.t(($) => {
       return $.appShell.shortcutHelp.shortcuts.newChat;

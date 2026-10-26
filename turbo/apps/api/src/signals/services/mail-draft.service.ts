@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   threadMailSummarySchema,
   mailDraftSchema,
@@ -852,15 +853,30 @@ async function gmailGetDraftResource(
     readonly accessToken: string;
     readonly gmailDraftId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<z.infer<typeof gmailDraftResourceSchema> | null> {
-  const response = await fetch(
-    `${GMAIL_API_BASE}/drafts/${encodeURIComponent(args.gmailDraftId)}?format=full`,
-    {
-      signal,
-      headers: { Authorization: `Bearer ${args.accessToken}` },
-    },
+  const acceptedResponse = await settle(
+    accept(
+      fetch(
+        `${GMAIL_API_BASE}/drafts/${encodeURIComponent(args.gmailDraftId)}?format=full`,
+        {
+          headers: { Authorization: `Bearer ${args.accessToken}` },
+        },
+      ),
+      [200, 404],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
   if (await gmailResponseRequiresReconnect(response)) {
     throw new GmailAuthorizationError();
   }
@@ -901,7 +917,7 @@ async function gmailSendLinkedDraft(
     readonly accessToken: string;
     readonly gmailDraftId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<
   | {
       readonly kind: "sent";
@@ -911,15 +927,30 @@ async function gmailSendLinkedDraft(
   | GmailDraftRejection
   | null
 > {
-  const response = await fetch(`${GMAIL_API_BASE}/drafts/send`, {
-    method: "POST",
-    signal,
-    headers: {
-      Authorization: `Bearer ${args.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ id: args.gmailDraftId }),
-  });
+  const acceptedResponse2 = await settle(
+    accept(
+      fetch(`${GMAIL_API_BASE}/drafts/send`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${args.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: args.gmailDraftId }),
+      }),
+      [200, 404],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse2.ok) {
+    response = acceptedResponse2.value;
+  } else if (
+    acceptedResponse2.error instanceof HttpStatusError &&
+    acceptedResponse2.error.status >= 300
+  ) {
+    response = acceptedResponse2.error.response;
+  } else {
+    throw acceptedResponse2.error;
+  }
   if (response.status === 404) {
     return null;
   }
@@ -935,15 +966,30 @@ async function gmailGetMessageResource(
     readonly accessToken: string;
     readonly gmailMessageId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<z.infer<typeof gmailMessageResourceSchema> | null> {
-  const response = await fetch(
-    `${GMAIL_API_BASE}/messages/${encodeURIComponent(args.gmailMessageId)}?format=full`,
-    {
-      signal,
-      headers: { Authorization: `Bearer ${args.accessToken}` },
-    },
+  const acceptedResponse3 = await settle(
+    accept(
+      fetch(
+        `${GMAIL_API_BASE}/messages/${encodeURIComponent(args.gmailMessageId)}?format=full`,
+        {
+          headers: { Authorization: `Bearer ${args.accessToken}` },
+        },
+      ),
+      [200, 404],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse3.ok) {
+    response = acceptedResponse3.value;
+  } else if (
+    acceptedResponse3.error instanceof HttpStatusError &&
+    acceptedResponse3.error.status >= 300
+  ) {
+    response = acceptedResponse3.error.response;
+  } else {
+    throw acceptedResponse3.error;
+  }
   if (await gmailResponseRequiresReconnect(response)) {
     throw new GmailAuthorizationError();
   }
@@ -986,15 +1032,30 @@ async function gmailGetAttachment(
     readonly gmailMessageId: string;
     readonly attachmentId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<Uint8Array | null> {
-  const response = await fetch(
-    `${GMAIL_API_BASE}/messages/${encodeURIComponent(args.gmailMessageId)}/attachments/${encodeURIComponent(args.attachmentId)}`,
-    {
-      signal,
-      headers: { Authorization: `Bearer ${args.accessToken}` },
-    },
+  const acceptedResponse4 = await settle(
+    accept(
+      fetch(
+        `${GMAIL_API_BASE}/messages/${encodeURIComponent(args.gmailMessageId)}/attachments/${encodeURIComponent(args.attachmentId)}`,
+        {
+          headers: { Authorization: `Bearer ${args.accessToken}` },
+        },
+      ),
+      [200, 404],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse4.ok) {
+    response = acceptedResponse4.value;
+  } else if (
+    acceptedResponse4.error instanceof HttpStatusError &&
+    acceptedResponse4.error.status >= 300
+  ) {
+    response = acceptedResponse4.error.response;
+  } else {
+    throw acceptedResponse4.error;
+  }
   if (await gmailResponseRequiresReconnect(response)) {
     throw new GmailAuthorizationError();
   }
@@ -1015,16 +1076,31 @@ async function gmailDeleteDraft(
     readonly accessToken: string;
     readonly gmailDraftId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(
-    `${GMAIL_API_BASE}/drafts/${encodeURIComponent(args.gmailDraftId)}`,
-    {
-      method: "DELETE",
-      signal,
-      headers: { Authorization: `Bearer ${args.accessToken}` },
-    },
+  const acceptedResponse5 = await settle(
+    accept(
+      fetch(
+        `${GMAIL_API_BASE}/drafts/${encodeURIComponent(args.gmailDraftId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${args.accessToken}` },
+        },
+      ),
+      [204, 404],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse5.ok) {
+    response = acceptedResponse5.value;
+  } else if (
+    acceptedResponse5.error instanceof HttpStatusError &&
+    acceptedResponse5.error.status >= 300
+  ) {
+    response = acceptedResponse5.error.response;
+  } else {
+    throw acceptedResponse5.error;
+  }
   if (await gmailResponseRequiresReconnect(response)) {
     throw new GmailAuthorizationError();
   }

@@ -6,7 +6,6 @@ import {
 import { command } from "ccstate";
 
 import { notConfigured } from "../../lib/error";
-import { requestSignal$ } from "../context/hono";
 import { gcpLlmConfiguration, GcpLlmAuthError } from "../external/gcp-llm-auth";
 import {
   generateVertexVoice,
@@ -14,10 +13,7 @@ import {
   VertexVoiceError,
 } from "../external/vertex-voice";
 import { VoiceProviderUnavailableError } from "../external/voice-provider-request";
-import { onRejection, settle } from "../utils";
-import { VoiceResponseError } from "../external/voice-response-error";
-
-const VOICE_IO_POLISH_DEADLINE_MS = 60_000;
+import { settle } from "../utils";
 
 const VOICE_IO_POLISH_SYSTEM_PROMPT = [
   "Merge the ordered transcript segments into one complete, send-ready text. This is editing, not summarization or assistance.",
@@ -42,9 +38,7 @@ function providerError(error: unknown) {
   if (
     error instanceof VoiceProviderUnavailableError ||
     (error instanceof GcpLlmAuthError && error.temporary) ||
-    (error instanceof VertexVoiceError && error.temporary) ||
-    (error instanceof VoiceResponseError &&
-      error.reason === "deadline_exceeded")
+    (error instanceof VertexVoiceError && error.temporary)
   ) {
     return polishError(
       503,
@@ -60,48 +54,37 @@ function providerError(error: unknown) {
 }
 
 export const polishVoiceTranscript$ = command(
-  async ({ get }, body: VoiceIoPolishSegmentsRequest, signal: AbortSignal) => {
-    const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
-    requestSignal.throwIfAborted();
+  async (_, body: VoiceIoPolishSegmentsRequest, signal: AbortSignal) => {
+    signal.throwIfAborted();
     if (!gcpLlmConfiguration()) {
       return notConfigured("Voice draft cleanup is not configured");
     }
 
-    const deadline = AbortSignal.timeout(VOICE_IO_POLISH_DEADLINE_MS);
     const textCharacters = body.segments.reduce((total, segment) => {
       return total + segment.length;
     }, 0);
     const generated = await settle(
-      onRejection(
-        generateVertexVoice(
-          {
-            model: "google/gemini-3.1-flash-lite",
-            maxOutputTokens: Math.min(
-              VERTEX_VOICE_MAX_OUTPUT_TOKENS,
-              textCharacters + 4096,
-            ),
-            systemPrompt: VOICE_IO_POLISH_SYSTEM_PROMPT,
-            content: JSON.stringify({ segments: body.segments }),
-          },
-          (text) => {
-            if (text.length > VOICE_IO_POLISH_MAX_TEXT_CHARS) {
-              throw new Error("Voice draft cleanup returned invalid text");
-            }
-            return text;
-          },
-          AbortSignal.any([requestSignal, deadline]),
-        ),
-        () => {
-          requestSignal.throwIfAborted();
-          if (deadline.aborted) {
-            throw new VoiceResponseError("deadline_exceeded");
-          }
+      generateVertexVoice(
+        {
+          model: "google/gemini-3.1-flash-lite",
+          maxOutputTokens: Math.min(
+            VERTEX_VOICE_MAX_OUTPUT_TOKENS,
+            textCharacters + 4096,
+          ),
+          systemPrompt: VOICE_IO_POLISH_SYSTEM_PROMPT,
+          content: JSON.stringify({ segments: body.segments }),
         },
+        (text) => {
+          if (text.length > VOICE_IO_POLISH_MAX_TEXT_CHARS) {
+            throw new Error("Voice draft cleanup returned invalid text");
+          }
+          return text;
+        },
+        signal,
       ),
       signal,
     );
     signal.throwIfAborted();
-    requestSignal.throwIfAborted();
     if (!generated.ok) {
       return providerError(generated.error);
     }

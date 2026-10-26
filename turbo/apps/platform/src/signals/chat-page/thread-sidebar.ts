@@ -1,3 +1,4 @@
+import type { ChatThreadWorkflowAutomation } from "@okouai/api-contracts/contracts/workflows";
 import {
   attachmentPreviewSignalsFor,
   createAttachmentPreviewSignals,
@@ -210,6 +211,10 @@ type NonMailThreadSidebarTarget = Exclude<
   { readonly type: "email-draft" }
 >;
 
+interface ThreadAutomationEditor {
+  readonly automation: ChatThreadWorkflowAutomation;
+}
+
 export interface ThreadSidebarSignals {
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
@@ -227,8 +232,15 @@ export interface ThreadSidebarSignals {
    */
   readonly animateEntry$: Computed<boolean>;
   readonly enableEntryAnimations$: Command<void, []>;
-  readonly editingAutomationId$: Computed<string | null>;
-  readonly setEditingAutomationId$: Command<void, [string | null]>;
+  readonly editingAutomation$: Computed<ThreadAutomationEditor | null>;
+  readonly closeEditingAutomation$: Command<
+    void,
+    [ThreadAutomationEditor | null]
+  >;
+  readonly setEditingAutomation$: Command<
+    void,
+    [ChatThreadWorkflowAutomation | null]
+  >;
   /**
    * Sidebar fullscreen. Artifacts render a fullscreen toggle;
    * the state belongs to the current sidebar session and
@@ -289,6 +301,30 @@ function createThreadSidebarTarget(
   });
 }
 
+function createThreadAutomationEditorSignals() {
+  const internalAutomationEditor$ = state<ThreadAutomationEditor | null>(null);
+  return {
+    editingAutomation$: computed((get) => {
+      return get(internalAutomationEditor$);
+    }),
+    setEditingAutomation$: command(
+      ({ set }, automation: ChatThreadWorkflowAutomation | null) => {
+        set(
+          internalAutomationEditor$,
+          automation === null ? null : { automation },
+        );
+      },
+    ),
+    closeEditingAutomation$: command(
+      ({ get, set }, editor: ThreadAutomationEditor | null) => {
+        if (editor && get(internalAutomationEditor$) === editor) {
+          set(internalAutomationEditor$, null);
+        }
+      },
+    ),
+  };
+}
+
 export function createThreadSidebarSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
@@ -297,7 +333,7 @@ export function createThreadSidebarSignals(
   const internalEntryAnimationsEnabled$ = state(false);
   const internalAnimateEntry$ = state(false);
   const internalFullscreen$ = state(false);
-  const internalEditingAutomationId$ = state<string | null>(null);
+  const automationEditor = createThreadAutomationEditorSignals();
   const imageCanvas = createZoomableImageCanvasSignals();
   const diagram = createArtifactDiagramPreviewSignals();
   const { resetSidebarSessionSignal$, startSession$ } =
@@ -371,7 +407,7 @@ export function createThreadSidebarSignals(
     set(internalTarget$, null);
     set(internalAnimateEntry$, false);
     set(internalFullscreen$, false);
-    set(internalEditingAutomationId$, null);
+    set(automationEditor.setEditingAutomation$, null);
     set(imageCanvas.reset$);
   });
   const close$ = command(({ set }) => {
@@ -396,12 +432,7 @@ export function createThreadSidebarSignals(
     enableEntryAnimations$: command(({ set }) => {
       set(internalEntryAnimationsEnabled$, true);
     }),
-    editingAutomationId$: computed((get) => {
-      return get(internalEditingAutomationId$);
-    }),
-    setEditingAutomationId$: command(({ set }, automationId: string | null) => {
-      set(internalEditingAutomationId$, automationId);
-    }),
+    ...automationEditor,
     fullscreen$: computed((get) => {
       return get(internalFullscreen$);
     }),

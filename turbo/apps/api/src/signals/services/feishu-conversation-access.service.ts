@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import * as z from "zod";
@@ -63,10 +64,24 @@ async function readAccessData(
   signal: AbortSignal,
 ): Promise<unknown> {
   const requested = await settle(
-    fetch(args.url, {
-      headers: { authorization: `Bearer ${args.token}` },
-      signal,
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(args.url, {
+            headers: { authorization: `Bearer ${args.token}` },
+          }),
+          [200],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
     signal,
   );
   if (!requested.ok) {

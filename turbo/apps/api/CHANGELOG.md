@@ -9,6 +9,133 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.10.0](https://github.com/okou-ai/okou/compare/api-v2.9.1...api-v2.10.0) (2026-10-26)
+
+
+### Features
+
+* **browser:** create and reuse owner provider profiles ([#43019](https://github.com/okou-ai/okou/issues/43019)) ([42d685e](https://github.com/okou-ai/okou/commit/42d685e6f3ac2319bedec1a10d90e25df9ae1409))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.6.0
+    * @okouai/core bumped to 8.790.1
+    * @okouai/db bumped to 2.5.2
+    * @okouai/pi-agent-runtime bumped to 1.50.74
+
+## [2.9.1](https://github.com/okou-ai/okou/compare/api-v2.9.0...api-v2.9.1) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.5.1
+
+## [2.9.0](https://github.com/okou-ai/okou/compare/api-v2.8.0...api-v2.9.0) (2026-10-26)
+
+
+### Features
+
+* **api:** authenticate workers to google with certificate federation ([#43020](https://github.com/okou-ai/okou/issues/43020)) ([3b4c49c](https://github.com/okou-ai/okou/commit/3b4c49cf1ae93bf640d00da44069890c7b1d9d22))
+
+
+### Bug Fixes
+
+* publish desktop update manifests atomically from r2 ([#43047](https://github.com/okou-ai/okou/issues/43047)) ([2cb8694](https://github.com/okou-ai/okou/commit/2cb8694d3a9a6172219e515bc47981329e707ca5))
+
+
+### Refactoring
+
+* **api:** localize connected automation reprojection ([#43037](https://github.com/okou-ai/okou/issues/43037)) ([1a42597](https://github.com/okou-ai/okou/commit/1a425971e2597fb91e648fd190f3307caa931717))
+
+## [2.8.0](https://github.com/okou-ai/okou/compare/api-v2.7.0...api-v2.8.0) (2026-10-26)
+
+
+### Features
+
+* roll out tailscale setup and remove its feature switch ([#43012](https://github.com/okou-ai/okou/issues/43012)) ([78533ae](https://github.com/okou-ai/okou/commit/78533ae6f68a2ba6c58412e84c3e797646ec611f))
+* unify proactive planning and action settings ([#43022](https://github.com/okou-ai/okou/issues/43022)) ([305115c](https://github.com/okou-ai/okou/commit/305115c9796cd4994f93e152391c2d815720b482))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.5.0
+    * @okouai/core bumped to 8.790.0
+    * @okouai/db bumped to 2.5.0
+    * @okouai/pi-agent-runtime bumped to 1.50.73
+
+## [2.7.0](https://github.com/okou-ai/okou/compare/api-v2.6.1...api-v2.7.0) (2026-10-26)
+
+
+### Features
+
+* **browser:** model owner sessions and chat primary windows ([#42938](https://github.com/okou-ai/okou/issues/42938)) ([5cd8ddb](https://github.com/okou-ai/okou/commit/5cd8ddb331eff41efb1504416ad0f2619e5ed62b))
+
+
+### Refactoring
+
+* **api:** publish deferred schedules atomically ([#42993](https://github.com/okou-ai/okou/issues/42993)) ([1ae5da7](https://github.com/okou-ai/okou/commit/1ae5da71f9242e3edc27836ffa86ed4dc4963bc6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.4.0
+    * @okouai/core bumped to 8.789.0
+    * @okouai/db bumped to 2.4.0
+    * @okouai/pi-agent-runtime bumped to 1.50.72
+
+## [2.6.1](https://github.com/okou-ai/okou/compare/api-v2.6.0...api-v2.6.1) (2026-10-26)
+
+
+### Refactoring
+
+* **api:** localize custom connector credential publication ([#42979](https://github.com/okou-ai/okou/issues/42979)) ([a14f41d](https://github.com/okou-ai/okou/commit/a14f41d174f00d7298057d59f9878d6efa5ba5c8))
+
+## [2.6.0](https://github.com/okou-ai/okou/compare/api-v2.5.0...api-v2.6.0) (2026-10-26)
+
+
+### Features
+
+* **core:** enable custom templates for all users ([#42921](https://github.com/okou-ai/okou/issues/42921)) ([1cc417d](https://github.com/okou-ai/okou/commit/1cc417d66219754cfeefbdd01df557f84a245a02))
+
+
+### Refactoring
+
+* **api:** cancel banned user runs atomically ([#42969](https://github.com/okou-ai/okou/issues/42969)) ([9d916c2](https://github.com/okou-ai/okou/commit/9d916c208ba4ffb03205247cfa19522e5b84cc10))
+* **api:** cancel single runs atomically ([#42973](https://github.com/okou-ai/okou/issues/42973)) ([343ad23](https://github.com/okou-ai/okou/commit/343ad2337ba36667101e6a2b83562a86e7553c5a))
+* **api:** localize builtin token credential writes ([#42961](https://github.com/okou-ai/okou/issues/42961)) ([9e950cc](https://github.com/okou-ai/okou/commit/9e950cc613b1da4511b85d7d767c2c0d5ffce3aa))
+* **api:** localize builtin token replacement cleanup ([#42971](https://github.com/okou-ai/okou/issues/42971)) ([759231c](https://github.com/okou-ai/okou/commit/759231cc025afd1fe06be772d0ad1ccea35595c3))
+* **api:** localize connector connection metadata writes ([#42948](https://github.com/okou-ai/okou/issues/42948)) ([265b6d6](https://github.com/okou-ai/okou/commit/265b6d6d42a2f00436ea86df24a09cfc777d5e66))
+* **api:** localize connector replacement credential writes ([#42925](https://github.com/okou-ai/okou/issues/42925)) ([437e8fe](https://github.com/okou-ai/okou/commit/437e8fefb9b50bd09a0cae4125bf76e6205f7858))
+* **api:** publish allocation quotes atomically ([#42965](https://github.com/okou-ai/okou/issues/42965)) ([14593d3](https://github.com/okou-ai/okou/commit/14593d34464fd3e5046ac1eb7b4cb240acbcf3b7))
+* **api:** publish managed feishu connectors atomically ([#42959](https://github.com/okou-ai/okou/issues/42959)) ([c062ae4](https://github.com/okou-ai/okou/commit/c062ae4366d157dc231f74e102d574f44afa19cf))
+* **api:** publish official workflow catalogs atomically ([#42955](https://github.com/okou-ai/okou/issues/42955)) ([4ff25ad](https://github.com/okou-ai/okou/commit/4ff25ad198b37a12e79ecca7e3dc04b7e708313e))
+* **api:** publish reflected usage pack allocations atomically ([#42941](https://github.com/okou-ai/okou/issues/42941)) ([3475d9e](https://github.com/okou-ai/okou/commit/3475d9e5a89704d66bbaecdc6bc51b910d195198))
+* **api:** publish usage pack checkout state atomically ([#42917](https://github.com/okou-ai/okou/issues/42917)) ([41fcc19](https://github.com/okou-ai/okou/commit/41fcc193c2f1126494de788a0e3476c62bd0f7e6))
+* **api:** remove managed feishu installations atomically ([#42963](https://github.com/okou-ai/okou/issues/42963)) ([935491e](https://github.com/okou-ai/okou/commit/935491e356aacad32f86e730831739e50f4ca6ea))
+* **api:** retire reconciled usage pack snapshots atomically ([#42945](https://github.com/okou-ai/okou/issues/42945)) ([588e43c](https://github.com/okou-ai/okou/commit/588e43c65b7094ca3e378075673102d26c65cf28))
+* **api:** time out stale runs atomically ([#42975](https://github.com/okou-ai/okou/issues/42975)) ([363d1a0](https://github.com/okou-ai/okou/commit/363d1a0e502d705985081c19e88cb164c412980a))
+* **computer-use:** drop capability-empty Desktop host compatibility ([#42966](https://github.com/okou-ai/okou/issues/42966)) ([fe10614](https://github.com/okou-ai/okou/commit/fe106140ae2558594f7284ac7994eeee0c077b43))
+* **data:** remove retired managed data runtime scaffolding ([#42935](https://github.com/okou-ai/okou/issues/42935)) ([b220a50](https://github.com/okou-ai/okou/commit/b220a504c5e633de162791f1216c4458188ffe72))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.1
+    * @okouai/core bumped to 8.788.0
+    * @okouai/db bumped to 2.3.1
+    * @okouai/pi-agent-runtime bumped to 1.50.71
+
 ## [2.5.0](https://github.com/okou-ai/okou/compare/api-v2.4.2...api-v2.5.0) (2026-10-25)
 
 
