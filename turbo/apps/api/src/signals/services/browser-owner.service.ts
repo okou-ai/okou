@@ -54,7 +54,7 @@ type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
   { kind: K }
 >;
 type BrowserOwnerMutation =
-  | Exclude<RunnerBrowserAction, { kind: "inspect" | "allocate" }>
+  | Exclude<RunnerBrowserAction, { kind: "inspect" | "authorize" | "allocate" }>
   | {
       readonly kind: "allocate";
       readonly providerProfileId: string;
@@ -237,10 +237,10 @@ export function createRunnerBrowserAuthority(
   });
 }
 
-/** Physical stop retains the owner's reusable profile for later Runners. */
-export function createRunnerBrowserInspection(
+/** Inspect retains cleanup identities; authorize requires the exact live window. */
+export function createRunnerBrowserRead(
   owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
-  action$: Computed<Promise<BrowserAction<"inspect"> | null>>,
+  action$: Computed<Promise<BrowserAction<"inspect" | "authorize"> | null>>,
 ) {
   return computed(async (get): Promise<RunnerBrowserResponse> => {
     const owner = await get(owner$),
@@ -248,6 +248,7 @@ export function createRunnerBrowserInspection(
     if (!owner || !action) {
       return { outcome: "unavailable" };
     }
+    const now = nowDate();
     const [row] = await get(db$)
       .select({
         profile: getTableColumns(profiles),
@@ -274,6 +275,16 @@ export function createRunnerBrowserInspection(
           action.instanceId === undefined
             ? undefined
             : eq(profiles.instanceId, action.instanceId),
+          action.kind === "authorize"
+            ? and(
+                eq(profiles.providerSessionId, action.providerSessionId),
+                eq(profiles.status, "active"),
+                gt(profiles.timeoutAt, now),
+                eq(windows.primaryWindowId, action.primaryWindowId),
+                eq(windows.state, "active"),
+                gt(windows.expiresAt, now),
+              )
+            : undefined,
         ),
       );
     return response(row);
