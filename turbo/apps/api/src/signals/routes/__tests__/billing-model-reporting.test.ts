@@ -58,7 +58,7 @@ describe("Billing model reporting", () => {
       );
       const usage = {
         runId: run.runId,
-        events: [1_000, 2_000, 7_000].map((quantity) => {
+        events: [1000, 2000, 7000].map((quantity) => {
           return {
             idempotencyKey: randomUUID(),
             kind: "model" as const,
