@@ -21,7 +21,7 @@ import { pathToFileURL } from "url";
 
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
-import { z } from "zod";
+import { array, number, object, string, type infer as zInfer } from "zod";
 
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -96,26 +96,24 @@ interface VerifyReport {
   readonly visualComparison: "not-performed";
 }
 
-const renderMetaSchema = z.object({
-  slides: z.number().int().positive(),
-  length: z.number().int().positive(),
+const renderMetaSchema = object({
+  slides: number().int().positive(),
+  length: number().int().positive(),
   nativePaint: nativePaintSchema,
-  unsupported: z.array(
-    z.object({
-      page: z.number().int().positive(),
-      tag: z.string(),
-      images: z.number().int().nonnegative(),
-      node: z.number().int().optional(),
-      feature: z.string().optional(),
-      reason: z.string().optional(),
-      box: z
-        .object({
-          x: z.number().finite(),
-          y: z.number().finite(),
-          w: z.number().nonnegative(),
-          h: z.number().nonnegative(),
-        })
-        .optional(),
+  unsupported: array(
+    object({
+      page: number().int().positive(),
+      tag: string(),
+      images: number().int().nonnegative(),
+      node: number().int().optional(),
+      feature: string().optional(),
+      reason: string().optional(),
+      box: object({
+        x: number().finite(),
+        y: number().finite(),
+        w: number().nonnegative(),
+        h: number().nonnegative(),
+      }).optional(),
     }),
   ),
 });
@@ -127,7 +125,7 @@ interface Rendered {
   readonly texts: readonly string[];
   readonly pageTexts: readonly (readonly string[])[];
   readonly layout: Layout;
-  readonly unsupported: z.infer<typeof renderMetaSchema>["unsupported"];
+  readonly unsupported: zInfer<typeof renderMetaSchema>["unsupported"];
 }
 
 function positiveNumber(value: string): number {

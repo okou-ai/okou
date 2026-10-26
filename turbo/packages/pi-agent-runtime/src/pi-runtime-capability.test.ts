@@ -17,7 +17,7 @@ import {
   PI_RUNTIME_RESOLVABLE_MODELS,
   type PiRuntimeIdentity,
 } from "@okouai/core/pi-runtime-capability";
-import { resolvePiAgentModel } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 
 /**
  * `@okouai/core/pi-execution` reaches the Platform browser bundle, so its

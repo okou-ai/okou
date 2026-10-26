@@ -1,29 +1,41 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 import { invokeRunnerRpc, rpcErrorSchema } from "../../lib/runner-rpc";
 import { failureReasonSchema, remoteExitSchema, SshProtocolError } from "./rpc";
 
-const cursor = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
-const effects = z.enum(["not_started", "unknown", "completed"]);
-const state = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("starting") }).strict(),
-  z.object({ type: z.literal("running") }).strict(),
-  z.object({ type: z.literal("finished"), exit: remoteExitSchema }).strict(),
-  z
-    .object({ type: z.literal("failed"), failure_reason: failureReasonSchema })
-    .strict(),
+const cursor = number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const effects = zEnum(["not_started", "unknown", "completed"]);
+const state = discriminatedUnion("type", [
+  object({ type: literal("starting") }).strict(),
+  object({ type: literal("running") }).strict(),
+  object({ type: literal("finished"), exit: remoteExitSchema }).strict(),
+  object({
+    type: literal("failed"),
+    failure_reason: failureReasonSchema,
+  }).strict(),
 ]);
-const info = z
-  .object({
-    session_id: z.uuid(),
-    ssh_connection_id: z.uuid(),
-    generation: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
-    state,
-    effects,
-    stdin_closed: z.boolean(),
-    oldest_cursor: cursor,
-    end_cursor: cursor,
-  })
+const info = object({
+  session_id: uuid(),
+  ssh_connection_id: uuid(),
+  generation: number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
+  state,
+  effects,
+  stdin_closed: boolean(),
+  oldest_cursor: cursor,
+  end_cursor: cursor,
+})
   .strict()
   .refine((value) => {
     return (
@@ -34,73 +46,55 @@ const info = z
       (value.state.type !== "running" || value.effects === "unknown")
     );
   });
-const failure = z
-  .object({
-    type: z.literal("failed"),
+const failure = object({
+  type: literal("failed"),
+  diagnostic_text: diagnosticTextSchema,
+  failure_reason: failureReasonSchema,
+  effects: zEnum(["not_started", "unknown"]),
+}).strict();
+const resultSchema = discriminatedUnion("type", [
+  object({ type: literal("started"), session_id: uuid() }).strict(),
+  object({ type: literal("sessions"), sessions: array(info).max(8) }).strict(),
+  object({
+    type: literal("status"),
+    session: info,
     diagnostic_text: diagnosticTextSchema,
-    failure_reason: failureReasonSchema,
-    effects: z.enum(["not_started", "unknown"]),
-  })
-  .strict();
-const resultSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("started"), session_id: z.uuid() }).strict(),
-  z
-    .object({ type: z.literal("sessions"), sessions: z.array(info).max(8) })
-    .strict(),
-  z
-    .object({
-      type: z.literal("status"),
-      session: info,
-      diagnostic_text: diagnosticTextSchema,
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("read"),
-      diagnostic_text: diagnosticTextSchema,
-      session: info,
-      wait_expired: z.boolean(),
-      chunks: z
-        .array(
-          z
-            .object({
-              cursor,
-              stream: z.enum(["stdout", "stderr"]),
-              data: z.string().max(5464),
-            })
-            .strict(),
-        )
-        .max(32),
-      next_cursor: cursor,
-      lost: z.object({ from: cursor, to: cursor }).strict().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("submitted"),
-      session_id: z.uuid(),
-      effects: z.literal("unknown"),
-    })
-    .strict(),
-  z
-    .object({ type: z.literal("closed"), session_id: z.uuid(), effects })
-    .strict(),
-  z
-    .object({
-      type: z.literal("rejected"),
-      reason: z.enum(["not_running", "stdin_closed"]),
-    })
-    .strict(),
+  }).strict(),
+  object({
+    type: literal("read"),
+    diagnostic_text: diagnosticTextSchema,
+    session: info,
+    wait_expired: boolean(),
+    chunks: array(
+      object({
+        cursor,
+        stream: zEnum(["stdout", "stderr"]),
+        data: string().max(5464),
+      }).strict(),
+    ).max(32),
+    next_cursor: cursor,
+    lost: object({ from: cursor, to: cursor }).strict().optional(),
+  }).strict(),
+  object({
+    type: literal("submitted"),
+    session_id: uuid(),
+    effects: literal("unknown"),
+  }).strict(),
+  object({ type: literal("closed"), session_id: uuid(), effects }).strict(),
+  object({
+    type: literal("rejected"),
+    reason: zEnum(["not_running", "stdin_closed"]),
+  }).strict(),
   failure,
 ]);
-const envelope = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("result"), data: resultSchema }).strict(),
+const envelope = discriminatedUnion("type", [
+  object({ type: literal("result"), data: resultSchema }).strict(),
   rpcErrorSchema,
 ]);
-type Result = z.infer<typeof resultSchema>;
+type Result = zInfer<typeof resultSchema>;
 type Outcome =
   | Result
-  | (Omit<z.infer<typeof rpcErrorSchema>, "type"> & { type: "rpc_error" });
+  | (Omit<zInfer<typeof rpcErrorSchema>, "type"> & { type: "rpc_error" });
 export type SessionReadPage = Extract<Result, { type: "read" }>;
 export type SessionReadFailure = Extract<
   Outcome,

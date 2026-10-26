@@ -1,6 +1,6 @@
 import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import { literal, object, string } from "zod";
 import { server } from "../../../mocks/server";
 import { dataRouterToolsRoutes } from "../data-router-tools";
 import { randomUUID } from "node:crypto";
@@ -287,13 +287,11 @@ test("discovers Router tools and schemas across pages without a local tool catal
       expect(request.headers.get("authorization")).toBe(
         "Bearer test-router-token",
       );
-      const message = z
-        .object({
-          id: z.string(),
-          method: z.literal("tools/list"),
-          params: z.object({ cursor: z.string().optional() }),
-        })
-        .parse(await request.json());
+      const message = object({
+        id: string(),
+        method: literal("tools/list"),
+        params: object({ cursor: string().optional() }),
+      }).parse(await request.json());
       return HttpResponse.json({
         jsonrpc: "2.0",
         id: message.id,

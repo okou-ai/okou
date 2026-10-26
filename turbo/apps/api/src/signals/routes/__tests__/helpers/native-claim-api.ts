@@ -5,7 +5,7 @@ import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { http, passthrough } from "msw";
-import { z } from "zod";
+import { object, uuid } from "zod";
 
 import type { TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
@@ -42,8 +42,8 @@ interface ClaimReceipt {
   runningObservedNs?: string;
 }
 
-const claimantSchema = z.object({
-  runnerIdentity: z.object({ runnerId: z.uuid() }),
+const claimantSchema = object({
+  runnerIdentity: object({ runnerId: uuid() }),
 });
 
 async function regularFile(path: string): Promise<boolean> {

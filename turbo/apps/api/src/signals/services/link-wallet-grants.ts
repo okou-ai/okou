@@ -1,11 +1,11 @@
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 import {
   LinkWalletError,
   linkCredentialsSchema,
 } from "./link-wallet-provider.service";
 
-type Credentials = z.infer<typeof linkCredentialsSchema>;
+type Credentials = zInfer<typeof linkCredentialsSchema>;
 export type WalletPermission =
   "payments" | "spendHistory" | "paymentMethods" | "userInfo" | "transactions";
 

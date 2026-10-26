@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import {
   artifactKeySchema,
@@ -36,170 +47,136 @@ const CONNECTOR_SKILL_MAX_TOTAL_BYTES = 1024 * 1024;
 const CONNECTOR_SKILL_MAX_ARCHIVE_BYTES = CONNECTOR_SKILL_MAX_TOTAL_BYTES * 2;
 const CONNECTOR_SKILL_STORAGE_PATH_PREFIX = "__system__/volume";
 
-const connectorCatalogIconSchema = z
-  .object({
-    key: z
-      .string()
-      .refine(
-        isConnectorCatalogIconKey,
-        "Connector icon key must be a safe supported static asset path",
-      ),
-    invertInDarkMode: z.boolean(),
-    scale: z.number().min(1).max(3).optional(),
-  })
-  .strict();
+const connectorCatalogIconSchema = object({
+  key: string().refine(
+    isConnectorCatalogIconKey,
+    "Connector icon key must be a safe supported static asset path",
+  ),
+  invertInDarkMode: boolean(),
+  scale: number().min(1).max(3).optional(),
+}).strict();
 
-const outputBindingsSchema = z.record(
-  z.string().min(1),
-  connectorValueRefSchema,
-);
+const outputBindingsSchema = record(string().min(1), connectorValueRefSchema);
 
-const connectorCatalogManualGrantFieldSchema = z
-  .object({
-    privateName: privateNameSchema,
-    publicId: publicFieldIdSchema,
-    label: z.string().min(1),
-    required: z.boolean(),
-    placeholder: z.string().min(1).nullable(),
-    storage: z.enum(["secret", "variable"]),
-    normalize: z.literal("host").optional(),
-  })
-  .strict();
+const connectorCatalogManualGrantFieldSchema = object({
+  privateName: privateNameSchema,
+  publicId: publicFieldIdSchema,
+  label: string().min(1),
+  required: boolean(),
+  placeholder: string().min(1).nullable(),
+  storage: zEnum(["secret", "variable"]),
+  normalize: literal("host").optional(),
+}).strict();
 
-const connectorCatalogDeviceStartOptionSchema = z
-  .object({
-    privateName: internalOptionNameSchema,
-    publicId: publicFieldIdSchema,
-    kind: z.literal("select"),
-    label: z.string().min(1),
-    required: z.boolean(),
-    defaultValue: z.string().min(1).nullable(),
-    options: z
-      .array(
-        z
-          .object({
-            value: z.string().min(1),
-            label: z.string().min(1),
-          })
-          .strict(),
-      )
-      .min(1),
-  })
-  .strict();
+const connectorCatalogDeviceStartOptionSchema = object({
+  privateName: internalOptionNameSchema,
+  publicId: publicFieldIdSchema,
+  kind: literal("select"),
+  label: string().min(1),
+  required: boolean(),
+  defaultValue: string().min(1).nullable(),
+  options: array(
+    object({
+      value: string().min(1),
+      label: string().min(1),
+    }).strict(),
+  ).min(1),
+}).strict();
 
-const connectorCatalogGrantSchema = z.discriminatedUnion("kind", [
+const connectorCatalogGrantSchema = discriminatedUnion("kind", [
   noneGrantSourceSchema,
   automaticGrantSourceSchema,
-  z
-    .object({
-      kind: z.literal("manual"),
-      fields: z.array(connectorCatalogManualGrantFieldSchema).min(1),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("auth-code"),
-      scopes: z.array(z.string()),
-      callbackOrigin: z.enum(["web", "api"]),
-      outputs: outputBindingsSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("openid-auth"),
-      callbackOrigin: z.enum(["web", "api"]),
-      outputs: outputBindingsSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("external-code"),
-      scopes: z.array(z.string()),
-      outputs: outputBindingsSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("device-auth"),
-      scopes: z.array(z.string()),
-      outputs: outputBindingsSchema,
-      startOptions: z.array(connectorCatalogDeviceStartOptionSchema),
-    })
-    .strict(),
+  object({
+    kind: literal("manual"),
+    fields: array(connectorCatalogManualGrantFieldSchema).min(1),
+  }).strict(),
+  object({
+    kind: literal("auth-code"),
+    scopes: array(string()),
+    callbackOrigin: zEnum(["web", "api"]),
+    outputs: outputBindingsSchema,
+  }).strict(),
+  object({
+    kind: literal("openid-auth"),
+    callbackOrigin: zEnum(["web", "api"]),
+    outputs: outputBindingsSchema,
+  }).strict(),
+  object({
+    kind: literal("external-code"),
+    scopes: array(string()),
+    outputs: outputBindingsSchema,
+  }).strict(),
+  object({
+    kind: literal("device-auth"),
+    scopes: array(string()),
+    outputs: outputBindingsSchema,
+    startOptions: array(connectorCatalogDeviceStartOptionSchema),
+  }).strict(),
 ]);
 
-export const connectorCatalogAuthMethodSchema = z
-  .object({
-    id: connectorAuthMethodIdSchema,
-    label: z.string().min(1),
-    description: z.string().min(1).nullable(),
-    visible: z.boolean(),
-    client: connectorAuthClientSourceSchema.optional(),
-    storage: connectorStorageSourceSchema,
-    grant: connectorCatalogGrantSchema,
-    access: connectorAccessSourceSchema,
-    revoke: connectorRevokeSourceSchema,
-  })
-  .strict();
+export const connectorCatalogAuthMethodSchema = object({
+  id: connectorAuthMethodIdSchema,
+  label: string().min(1),
+  description: string().min(1).nullable(),
+  visible: boolean(),
+  client: connectorAuthClientSourceSchema.optional(),
+  storage: connectorStorageSourceSchema,
+  grant: connectorCatalogGrantSchema,
+  access: connectorAccessSourceSchema,
+  revoke: connectorRevokeSourceSchema,
+}).strict();
 
-const connectorSkillStorageNameSchema = z
-  .string()
+const connectorSkillStorageNameSchema = string()
   .max(256)
   .regex(/^connector-skill@[a-z0-9]+(?:-[a-z0-9]+)*$/u);
 
-const connectorSkillVersionIdSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const connectorSkillVersionIdSchema = string().regex(/^[a-f0-9]{64}$/u);
 
-export const connectorCatalogSkillSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("none") }).strict(),
-  z
-    .object({
-      kind: z.literal("bundled"),
-      storageName: connectorSkillStorageNameSchema,
-      versionId: connectorSkillVersionIdSchema,
-      storageVersionPrefix: artifactKeySchema,
-      size: z.number().int().nonnegative().max(CONNECTOR_SKILL_MAX_TOTAL_BYTES),
-      archiveSize: z
-        .number()
-        .int()
-        .positive()
-        .max(CONNECTOR_SKILL_MAX_ARCHIVE_BYTES),
-      fileCount: z.number().int().positive().max(CONNECTOR_SKILL_MAX_FILES),
-    })
-    .strict(),
+export const connectorCatalogSkillSchema = discriminatedUnion("kind", [
+  object({ kind: literal("none") }).strict(),
+  object({
+    kind: literal("bundled"),
+    storageName: connectorSkillStorageNameSchema,
+    versionId: connectorSkillVersionIdSchema,
+    storageVersionPrefix: artifactKeySchema,
+    size: number().int().nonnegative().max(CONNECTOR_SKILL_MAX_TOTAL_BYTES),
+    archiveSize: number()
+      .int()
+      .positive()
+      .max(CONNECTOR_SKILL_MAX_ARCHIVE_BYTES),
+    fileCount: number().int().positive().max(CONNECTOR_SKILL_MAX_FILES),
+  }).strict(),
 ]);
 
 const connectorCatalogFirewallConfigSchema = firewallConfigSchema
   .omit({ name: true })
   .strict();
 
-const connectorCatalogFirewallSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("none") }).strict(),
-  z
-    .object({
-      kind: z.literal("generated"),
-      billable: z.boolean(),
-      config: connectorCatalogFirewallConfigSchema,
-      categories: firewallCategoriesSchema.nullable(),
-      defaultAllowed: z.array(z.string().min(1)).nullable(),
-      defaultUnknownPolicy: firewallPolicyValueSchema,
-    })
-    .strict(),
+const connectorCatalogFirewallSchema = discriminatedUnion("kind", [
+  object({ kind: literal("none") }).strict(),
+  object({
+    kind: literal("generated"),
+    billable: boolean(),
+    config: connectorCatalogFirewallConfigSchema,
+    categories: firewallCategoriesSchema.nullable(),
+    defaultAllowed: array(string().min(1)).nullable(),
+    defaultUnknownPolicy: firewallPolicyValueSchema,
+  }).strict(),
 ]);
 
-export const connectorCatalogArtifactConnectorSchema = z
-  .object({
-    slug: connectorSlugSchema,
-    label: z.string().min(1),
-    description: z.string().min(1),
-    category: z.string().min(1),
-    generation: z.array(z.string().min(1)),
-    tags: z.array(z.string().min(1)),
-    mcp: connectorMcpSchema.optional(),
-    authMethods: z.array(connectorCatalogAuthMethodSchema).min(1),
-    icon: connectorCatalogIconSchema,
-    skill: connectorCatalogSkillSchema,
-    firewall: connectorCatalogFirewallSchema,
-  })
+export const connectorCatalogArtifactConnectorSchema = object({
+  slug: connectorSlugSchema,
+  label: string().min(1),
+  description: string().min(1),
+  category: string().min(1),
+  generation: array(string().min(1)),
+  tags: array(string().min(1)),
+  mcp: connectorMcpSchema.optional(),
+  authMethods: array(connectorCatalogAuthMethodSchema).min(1),
+  icon: connectorCatalogIconSchema,
+  skill: connectorCatalogSkillSchema,
+  firewall: connectorCatalogFirewallSchema,
+})
   .strict()
   .superRefine((connector, context) => {
     try {
@@ -246,15 +223,12 @@ export const connectorCatalogArtifactConnectorSchema = z
     }
   });
 
-export const connectorCatalogArtifactSchema = z
-  .object({
-    artifactSchemaVersion: z.literal(
-      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-    ),
-    catalogVersion: connectorCatalogVersionSchema,
-    categoryMetadata: catalogSourceSchema.shape.categoryMetadata,
-    connectors: z.array(connectorCatalogArtifactConnectorSchema).min(1),
-  })
+export const connectorCatalogArtifactSchema = object({
+  artifactSchemaVersion: literal(SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION),
+  catalogVersion: connectorCatalogVersionSchema,
+  categoryMetadata: catalogSourceSchema.shape.categoryMetadata,
+  connectors: array(connectorCatalogArtifactConnectorSchema).min(1),
+})
   .strict()
   .superRefine((artifact, context) => {
     const slugs = new Set(
@@ -271,13 +245,13 @@ export const connectorCatalogArtifactSchema = z
     }
   });
 
-export type ConnectorCatalogArtifact = z.infer<
+export type ConnectorCatalogArtifact = zInfer<
   typeof connectorCatalogArtifactSchema
 >;
-export type ConnectorCatalogArtifactConnector = z.infer<
+export type ConnectorCatalogArtifactConnector = zInfer<
   typeof connectorCatalogArtifactConnectorSchema
 >;
-export type ConnectorCatalogAuthMethod = z.infer<
+export type ConnectorCatalogAuthMethod = zInfer<
   typeof connectorCatalogAuthMethodSchema
 >;
-export type ConnectorCatalogSkill = z.infer<typeof connectorCatalogSkillSchema>;
+export type ConnectorCatalogSkill = zInfer<typeof connectorCatalogSkillSchema>;

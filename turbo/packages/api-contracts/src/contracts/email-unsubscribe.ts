@@ -1,19 +1,25 @@
-import { z } from "zod";
+import {
+  literal,
+  object,
+  string,
+  undefined as zUndefined,
+  type infer as zInfer,
+} from "zod";
 
 import { initContract } from "./base";
 
 const c = initContract();
 
-export const emailUnsubscribeQuerySchema = z.object({
-  token: z.string().optional(),
+export const emailUnsubscribeQuerySchema = object({
+  token: string().optional(),
 });
 
-export const emailUnsubscribeResponseSchema = z.object({
-  unsubscribed: z.literal(true),
+export const emailUnsubscribeResponseSchema = object({
+  unsubscribed: literal(true),
 });
 
-export const emailUnsubscribeErrorSchema = z.object({
-  error: z.string(),
+export const emailUnsubscribeErrorSchema = object({
+  error: string(),
 });
 
 export const emailUnsubscribeContract = c.router({
@@ -31,7 +37,7 @@ export const emailUnsubscribeContract = c.router({
     method: "POST",
     path: "/api/email/unsubscribe",
     query: emailUnsubscribeQuerySchema,
-    body: z.undefined(),
+    body: zUndefined(),
     responses: {
       200: emailUnsubscribeResponseSchema,
       400: emailUnsubscribeErrorSchema,
@@ -41,8 +47,8 @@ export const emailUnsubscribeContract = c.router({
 });
 
 export type EmailUnsubscribeContract = typeof emailUnsubscribeContract;
-export type EmailUnsubscribeQuery = z.infer<typeof emailUnsubscribeQuerySchema>;
-export type EmailUnsubscribeResponse = z.infer<
+export type EmailUnsubscribeQuery = zInfer<typeof emailUnsubscribeQuerySchema>;
+export type EmailUnsubscribeResponse = zInfer<
   typeof emailUnsubscribeResponseSchema
 >;
-export type EmailUnsubscribeError = z.infer<typeof emailUnsubscribeErrorSchema>;
+export type EmailUnsubscribeError = zInfer<typeof emailUnsubscribeErrorSchema>;

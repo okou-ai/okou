@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "tsup";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { z } from "zod";
+import { array, object, record, string } from "zod";
 
 let directory: string;
 beforeAll(async () => {
@@ -39,15 +39,15 @@ afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-const eventSchema = z.object({
-  tags: z.record(z.string(), z.string()),
-  exception: z.object({
-    values: z.array(
-      z.object({
-        type: z.string(),
-        value: z.string(),
-        stacktrace: z.object({
-          frames: z.array(z.object({ filename: z.string() })),
+const eventSchema = object({
+  tags: record(string(), string()),
+  exception: object({
+    values: array(
+      object({
+        type: string(),
+        value: string(),
+        stacktrace: object({
+          frames: array(object({ filename: string() })),
         }),
       }),
     ),

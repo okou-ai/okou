@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -67,14 +67,12 @@ export async function exchangeGitHubCode(
     await throwOAuthError("GitHub", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description || data.error);
@@ -108,13 +106,11 @@ export async function fetchGitHubUserInfo(
     throw new Error(`GitHub user API failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      id: z.number(),
-      login: z.string(),
-      email: z.string().nullable(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: number(),
+    login: string(),
+    email: string().nullable(),
+  }).parse(await response.json());
 
   return {
     id: String(data.id),

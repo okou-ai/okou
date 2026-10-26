@@ -1,7 +1,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  record,
+  string,
+  union,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { validateRule } from "../firewall-expander";
 import {
@@ -14,151 +25,151 @@ import {
 } from "../firewall-rule-matcher";
 import { parseSegment, splitPathSegments } from "../segment-parser";
 
-const segmentExpectedSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("literal"),
-    value: z.string(),
+const segmentExpectedSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("literal"),
+    value: string(),
   }),
-  z.object({
-    kind: z.literal("param"),
-    prefix: z.string(),
-    name: z.string(),
-    suffix: z.string(),
-    greedy: z.union([z.literal(""), z.literal("+"), z.literal("*")]),
+  object({
+    kind: literal("param"),
+    prefix: string(),
+    name: string(),
+    suffix: string(),
+    greedy: union([literal(""), literal("+"), literal("*")]),
   }),
-  z.object({
-    kind: z.literal("error"),
-    reasonIncludes: z.string(),
-  }),
-]);
-
-const paramsMatchExpectedSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("match"),
-    params: z.record(z.string(), z.string()),
-  }),
-  z.object({
-    kind: z.literal("no-match"),
+  object({
+    kind: literal("error"),
+    reasonIncludes: string(),
   }),
 ]);
 
-const relativePathMatchExpectedSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("match"),
-    relativePath: z.string(),
+const paramsMatchExpectedSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("match"),
+    params: record(string(), string()),
   }),
-  z.object({
-    kind: z.literal("no-match"),
+  object({
+    kind: literal("no-match"),
   }),
 ]);
 
-const firewallDecisionExpectedSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("no_match"),
+const relativePathMatchExpectedSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("match"),
+    relativePath: string(),
   }),
-  z.object({
-    kind: z.literal("allow"),
-    firewallName: z.string(),
-    base: z.string(),
-    relativePath: z.string(),
-    permission: z.string().optional(),
-    rule: z.string().optional(),
+  object({
+    kind: literal("no-match"),
   }),
-  z.object({
-    kind: z.literal("block"),
-    firewallName: z.string(),
-    base: z.string(),
-    relativePath: z.string(),
-    reason: z.union([
-      z.literal("permission_denied"),
-      z.literal("unknown_endpoint"),
-      z.literal("malformed_firewall_config"),
-      z.literal("malformed_network_policy"),
-      z.literal("unsafe_path"),
+]);
+
+const firewallDecisionExpectedSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("no_match"),
+  }),
+  object({
+    kind: literal("allow"),
+    firewallName: string(),
+    base: string(),
+    relativePath: string(),
+    permission: string().optional(),
+    rule: string().optional(),
+  }),
+  object({
+    kind: literal("block"),
+    firewallName: string(),
+    base: string(),
+    relativePath: string(),
+    reason: union([
+      literal("permission_denied"),
+      literal("unknown_endpoint"),
+      literal("malformed_firewall_config"),
+      literal("malformed_network_policy"),
+      literal("unsafe_path"),
     ]),
-    permissions: z.array(z.string()),
+    permissions: array(string()),
   }),
-  z.object({
-    kind: z.literal("ambiguous"),
-    method: z.string(),
-    path: z.string(),
-    candidates: z.array(z.string()),
-    reason: z.union([
-      z.literal("connector_intent_required"),
-      z.literal("malformed_connector_intent"),
-      z.literal("connector_intent_not_candidate"),
+  object({
+    kind: literal("ambiguous"),
+    method: string(),
+    path: string(),
+    candidates: array(string()),
+    reason: union([
+      literal("connector_intent_required"),
+      literal("malformed_connector_intent"),
+      literal("connector_intent_not_candidate"),
     ]),
   }),
 ]);
 
-const connectorIntentSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("absent") }),
-  z.object({ status: z.literal("malformed") }),
-  z.object({ status: z.literal("present"), value: z.string() }),
+const connectorIntentSchema = discriminatedUnion("status", [
+  object({ status: literal("absent") }),
+  object({ status: literal("malformed") }),
+  object({ status: literal("present"), value: string() }),
 ]);
 
-const contractSchema = z.object({
-  awsRuleValidationCases: z.array(
-    z.object({
-      name: z.string(),
-      rule: z.string(),
-      valid: z.boolean(),
+const contractSchema = object({
+  awsRuleValidationCases: array(
+    object({
+      name: string(),
+      rule: string(),
+      valid: boolean(),
     }),
   ),
-  segmentParseCases: z.array(
-    z.object({
-      name: z.string(),
-      segment: z.string(),
+  segmentParseCases: array(
+    object({
+      name: string(),
+      segment: string(),
       expected: segmentExpectedSchema,
     }),
   ),
-  pathSplitCases: z.array(
-    z.object({
-      name: z.string(),
-      path: z.string(),
-      expected: z.array(z.string()),
+  pathSplitCases: array(
+    object({
+      name: string(),
+      path: string(),
+      expected: array(string()),
     }),
   ),
-  pathMatchCases: z.array(
-    z.object({
-      name: z.string(),
-      path: z.string(),
-      pattern: z.string(),
+  pathMatchCases: array(
+    object({
+      name: string(),
+      path: string(),
+      pattern: string(),
       expected: paramsMatchExpectedSchema,
     }),
   ),
-  hostMatchCases: z.array(
-    z.object({
-      name: z.string(),
-      host: z.string(),
-      pattern: z.string(),
+  hostMatchCases: array(
+    object({
+      name: string(),
+      host: string(),
+      pattern: string(),
       expected: paramsMatchExpectedSchema,
     }),
   ),
-  pathPrefixMatchCases: z.array(
-    z.object({
-      name: z.string(),
-      path: z.string(),
-      pattern: z.string(),
+  pathPrefixMatchCases: array(
+    object({
+      name: string(),
+      path: string(),
+      pattern: string(),
       expected: relativePathMatchExpectedSchema,
     }),
   ),
-  baseUrlMatchCases: z.array(
-    z.object({
-      name: z.string(),
-      url: z.string(),
-      base: z.string(),
+  baseUrlMatchCases: array(
+    object({
+      name: string(),
+      url: string(),
+      base: string(),
       expected: relativePathMatchExpectedSchema,
     }),
   ),
-  finalDecisionCases: z.array(
-    z.object({
-      name: z.string(),
-      firewalls: z.unknown(),
-      networkPolicies: z.unknown().optional(),
-      request: z.object({
-        method: z.string(),
-        url: z.string(),
+  finalDecisionCases: array(
+    object({
+      name: string(),
+      firewalls: zUnknown(),
+      networkPolicies: zUnknown().optional(),
+      request: object({
+        method: string(),
+        url: string(),
         connectorIntent: connectorIntentSchema.optional(),
       }),
       expected: firewallDecisionExpectedSchema,
@@ -166,14 +177,12 @@ const contractSchema = z.object({
   ),
 });
 
-type SegmentExpected = z.infer<typeof segmentExpectedSchema>;
-type ParamsMatchExpected = z.infer<typeof paramsMatchExpectedSchema>;
-type RelativePathMatchExpected = z.infer<
-  typeof relativePathMatchExpectedSchema
->;
-type FirewallDecisionExpected = z.infer<typeof firewallDecisionExpectedSchema>;
+type SegmentExpected = zInfer<typeof segmentExpectedSchema>;
+type ParamsMatchExpected = zInfer<typeof paramsMatchExpectedSchema>;
+type RelativePathMatchExpected = zInfer<typeof relativePathMatchExpectedSchema>;
+type FirewallDecisionExpected = zInfer<typeof firewallDecisionExpectedSchema>;
 
-function loadContract(): z.infer<typeof contractSchema> {
+function loadContract(): zInfer<typeof contractSchema> {
   const rawContract: unknown = JSON.parse(
     fs.readFileSync(
       path.resolve(import.meta.dirname, "firewall-semantics-contract.json"),

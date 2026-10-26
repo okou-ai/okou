@@ -1,7 +1,7 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
+import { number, object, string } from "zod";
 import {
   pgInt8ToSafeIntegerSchema,
   pgTimestampWithoutTimezoneToDateSchema,
@@ -24,11 +24,11 @@ export type PreparedChatEventRow = Omit<
   readonly contextType?: string | null;
 };
 
-export const chatEventAppendResultSchema = z.object({
-  id: z.string().uuid(),
+export const chatEventAppendResultSchema = object({
+  id: string().uuid(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
   seqId: pgInt8ToSafeIntegerSchema,
-  sequenceNumber: z.number().int().nullable(),
+  sequenceNumber: number().int().nullable(),
 });
 
 /** Preserve the single-event command result without leaking batch-only fields. */

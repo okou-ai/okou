@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client, escapeIdentifier } from "pg";
-import { z } from "zod";
+import {
+  array,
+  record,
+  strictObject,
+  string,
+  tuple,
+  type infer as zInfer,
+} from "zod";
+
 import {
   physicalCatalogRows,
   physicalCatalogSql,
@@ -42,7 +50,7 @@ const requiredSettings = [
   "statement_timeout",
 ] as const;
 function requiredShownSetting(rows: unknown, name: string) {
-  const [row] = z.tuple([z.record(z.string(), z.string())]).parse(rows);
+  const [row] = tuple([record(string(), string())]).parse(rows);
   assert.deepEqual(Object.keys(row), [name]);
   const value = row[name];
   assert.ok(value !== undefined);
@@ -109,7 +117,7 @@ async function captureRequiredFrontier(
   }
   const permissions: {
     name: string;
-    rows: z.infer<
+    rows: zInfer<
       (typeof requiredPermissions)[keyof typeof requiredPermissions]["rows"]
     >;
   }[] = [];
@@ -139,8 +147,8 @@ async function captureRequiredFrontier(
 
 function requiredCopyValues(
   row:
-    | z.infer<typeof preparedRequiredRows>[number]
-    | z.infer<typeof contractedRequiredRows>[number],
+    | zInfer<typeof preparedRequiredRows>[number]
+    | zInfer<typeof contractedRequiredRows>[number],
   phase: RequiredColumnPhase,
 ) {
   const values = [
@@ -206,16 +214,14 @@ async function validateRequiredColumnRejections(
     assert.deepEqual(childIdentity, parentIdentity);
     assert.notEqual(pid, parentPid);
     assert.deepEqual(
-      z
-        .array(z.strictObject({ nspname: z.string() }))
-        .parse(
-          (
-            await client.query(
-              "SELECT nspname FROM pg_namespace WHERE nspname = $1",
-              [schema],
-            )
-          ).rows,
-        ),
+      array(strictObject({ nspname: string() })).parse(
+        (
+          await client.query(
+            "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+            [schema],
+          )
+        ).rows,
+      ),
       [],
     );
     await client.query("SET lock_timeout = '1s'");
@@ -364,16 +370,14 @@ async function validateRequiredColumnRejections(
       // Observe uncertain/unowned residue without adopting or dropping it.
       try {
         assert.deepEqual(
-          z
-            .array(z.strictObject({ nspname: z.string() }))
-            .parse(
-              (
-                await client.query(
-                  "SELECT nspname FROM pg_namespace WHERE nspname = $1",
-                  [schema],
-                )
-              ).rows,
-            ),
+          array(strictObject({ nspname: string() })).parse(
+            (
+              await client.query(
+                "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+                [schema],
+              )
+            ).rows,
+          ),
           [],
         );
       } catch (error: unknown) {

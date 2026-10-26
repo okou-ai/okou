@@ -1,6 +1,13 @@
 import { and, asc, eq, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+} from "zod";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
@@ -26,23 +33,23 @@ import type {
   ExecutionMemberMetadata,
 } from "./execution-member-metadata.service";
 
-const rawDecoder = zodDriverValueDecoder(z.unknown());
-const profileSchema = z.object({
-  name: z.string().nullable(),
-  email: z.string().nullable(),
+const rawDecoder = zodDriverValueDecoder(zUnknown());
+const profileSchema = object({
+  name: string().nullable(),
+  email: string().nullable(),
 });
-const preferencesSchema = z.object({
-  timezone: z.string().nullable(),
-  selectedImageModel: z.string().nullable(),
-  selectedModel: z.string().nullable(),
-  serviceTier: z.string().nullable(),
+const preferencesSchema = object({
+  timezone: string().nullable(),
+  selectedImageModel: string().nullable(),
+  selectedModel: string().nullable(),
+  serviceTier: string().nullable(),
   modelSettings: modelSettingsSchema,
-  cloudBrowserEnabledByDefault: z.boolean(),
+  cloudBrowserEnabledByDefault: boolean(),
 });
-const switchSchema = z.array(
-  z.object({ userId: z.string(), switches: z.record(z.string(), z.boolean()) }),
+const switchSchema = array(
+  object({ userId: string(), switches: record(string(), boolean()) }),
 );
-const toolSchema = z.array(z.object({ toolId: z.string() }));
+const toolSchema = array(object({ toolId: string() }));
 
 /**
  * Composable member UNION; consumers decode only their own payload. The member

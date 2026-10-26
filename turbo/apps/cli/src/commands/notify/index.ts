@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { Command } from "commander";
-import { z } from "zod";
+import { uuid } from "zod";
 import {
   notifyMailBodySchema,
   type NotificationResponse,
@@ -182,7 +182,7 @@ Provider requests already in flight cannot be recalled. --text/--file take prece
     .action(
       withErrorHandler(
         async (id: string, options: { readonly json?: boolean }) => {
-          const parsed = z.uuid().safeParse(id);
+          const parsed = uuid().safeParse(id);
           if (!parsed.success) {
             throw new NotificationInputError(
               "notification-id must be the UUID returned by okou notify mail.",

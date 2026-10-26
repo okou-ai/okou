@@ -1,4 +1,17 @@
-import { z } from "zod";
+import {
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  url as zUrl,
+  type output,
+  type ZodType,
+} from "zod";
+
 import {
   initClient,
   type ApiFetcher,
@@ -43,10 +56,10 @@ export async function getConnectorManagementConfig() {
 }
 
 /** Parsing failures must not serialize credential-bearing response values. */
-export function parseConnectorManagementResponse<T extends z.ZodType>(
+export function parseConnectorManagementResponse<T extends ZodType>(
   schema: T,
   body: unknown,
-): z.output<T> {
+): output<T> {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     throw new Error(
@@ -139,10 +152,10 @@ export async function connectorAccountDeletionImpact(
       "Failed to inspect connector account deletion impact",
     );
   const impact = parseConnectorManagementResponse(
-    z.object({
-      connectionId: z.uuid(),
-      explicitSelectionCount: z.number().int().nonnegative(),
-      hasSibling: z.boolean(),
+    object({
+      connectionId: uuid(),
+      explicitSelectionCount: number().int().nonnegative(),
+      hasSibling: boolean(),
     }),
     result.body,
   );
@@ -165,10 +178,10 @@ export async function deleteConnectorAccount(
   if (result.status !== 200)
     handleManagementError(result, "Failed to delete connector account");
   const deleted = parseConnectorManagementResponse(
-    z.object({
-      deletedConnectionId: z.uuid(),
-      resolvedSelectionCount: z.number().int().nonnegative(),
-      promotedDefaultConnectionId: z.uuid().nullable(),
+    object({
+      deletedConnectionId: uuid(),
+      resolvedSelectionCount: number().int().nonnegative(),
+      promotedDefaultConnectionId: uuid().nullable(),
     }),
     result.body,
   );
@@ -177,15 +190,13 @@ export async function deleteConnectorAccount(
   return deleted;
 }
 
-const memberConnectionSchema = z
-  .object({
-    id: z.uuid(),
-    slug: z.string(),
-    kind: z.enum(["http", "mcp"]),
-    displayName: z.string(),
-    authMode: z.enum(["manual", "none", "oauth", "automatic"]),
-  })
-  .and(connectorCompletedOperationResponseSchema);
+const memberConnectionSchema = object({
+  id: uuid(),
+  slug: string(),
+  kind: zEnum(["http", "mcp"]),
+  displayName: string(),
+  authMode: zEnum(["manual", "none", "oauth", "automatic"]),
+}).and(connectorCompletedOperationResponseSchema);
 
 export async function connectCustomConnectorMember(
   id: string,
@@ -211,7 +222,7 @@ export async function connectCustomConnectorMember(
   return connector;
 }
 
-const authorizationUrlSchema = z.url().refine((value) => {
+const authorizationUrlSchema = zUrl().refine((value) => {
   const url = new URL(value);
   if (
     url.username ||
@@ -226,19 +237,19 @@ const authorizationUrlSchema = z.url().refine((value) => {
     );
   });
 });
-const authorizationSchema = z.object({
+const authorizationSchema = object({
   authorizationUrl: authorizationUrlSchema,
-  oauthAttemptId: z.uuid(),
-  connectionId: z.uuid().optional(),
+  oauthAttemptId: uuid(),
+  connectionId: uuid().optional(),
 });
-const automaticSchema = z.union([
-  authorizationSchema.extend({ result: z.literal("authorization") }),
-  z
-    .object({ result: z.literal("connected") })
-    .and(connectorCompletedOperationResponseSchema),
+const automaticSchema = union([
+  authorizationSchema.extend({ result: literal("authorization") }),
+  object({ result: literal("connected") }).and(
+    connectorCompletedOperationResponseSchema,
+  ),
 ]);
 
-function verifyAuthorizationAccount<T extends z.output<typeof automaticSchema>>(
+function verifyAuthorizationAccount<T extends output<typeof automaticSchema>>(
   result: T,
   account: ConnectorAccountMutationIntent,
 ): T {

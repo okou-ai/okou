@@ -1,6 +1,6 @@
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import { command, computed, type Computed } from "ccstate";
-import { z } from "zod";
+import { array, string } from "zod";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { jsonParseOr } from "../utils.ts";
 import {
@@ -8,7 +8,7 @@ import {
   type SlashWorkflowRange,
 } from "./workflow-composer-domain.ts";
 
-const recentWorkflowIdsSchema = z.array(z.string());
+const recentWorkflowIdsSchema = array(string());
 const recentWorkflowStorage = localStorageSignals("recent-workflows");
 
 function readRecentWorkflowIds(value: string | null): readonly string[] {

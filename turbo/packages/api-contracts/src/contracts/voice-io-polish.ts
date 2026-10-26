@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { array, object, string, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -9,35 +9,30 @@ const c = initContract();
 export const VOICE_IO_POLISH_MAX_TEXT_CHARS = 262_144;
 export const VOICE_IO_POLISH_MAX_SEGMENTS = 128;
 
-export const voiceIoPolishSegmentsRequestSchema = z
-  .object({
-    segments: z
-      .array(z.string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS))
-      .min(1)
-      .max(VOICE_IO_POLISH_MAX_SEGMENTS)
-      .refine((segments) => {
-        return (
-          segments.reduce(
-            (total, segment) => {
-              return total + segment.length;
-            },
-            Math.max(0, segments.length - 1),
-          ) <= VOICE_IO_POLISH_MAX_TEXT_CHARS
-        );
-      }, "Voice segments exceed the total text limit"),
-  })
-  .strict();
+export const voiceIoPolishSegmentsRequestSchema = object({
+  segments: array(string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS))
+    .min(1)
+    .max(VOICE_IO_POLISH_MAX_SEGMENTS)
+    .refine((segments) => {
+      return (
+        segments.reduce(
+          (total, segment) => {
+            return total + segment.length;
+          },
+          Math.max(0, segments.length - 1),
+        ) <= VOICE_IO_POLISH_MAX_TEXT_CHARS
+      );
+    }, "Voice segments exceed the total text limit"),
+}).strict();
 
-export const voiceIoPolishResponseSchema = z
-  .object({
-    text: z.string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
-  })
-  .strict();
+export const voiceIoPolishResponseSchema = object({
+  text: string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
+}).strict();
 
-export type VoiceIoPolishSegmentsRequest = z.infer<
+export type VoiceIoPolishSegmentsRequest = zInfer<
   typeof voiceIoPolishSegmentsRequestSchema
 >;
-export type VoiceIoPolishResponse = z.infer<typeof voiceIoPolishResponseSchema>;
+export type VoiceIoPolishResponse = zInfer<typeof voiceIoPolishResponseSchema>;
 
 export const voiceIoPolishSegmentsContract = c.router({
   post: {

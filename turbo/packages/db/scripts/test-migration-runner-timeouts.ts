@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { z } from "zod";
+import { number, object, string } from "zod";
 import postgres from "postgres";
 import { Client, DatabaseError, Query } from "pg";
 import {
@@ -195,18 +195,16 @@ async function validateMigrationRunnerTimeouts(): Promise<void> {
         return line.startsWith('{"event":');
       })
       .map((line) => {
-        return z
-          .object({
-            event: z.string(),
-            file: z.string(),
-            phase: z.string().optional(),
-            statement: z.number().nullable().optional(),
-            statementCount: z.number().optional(),
-            batch: z.number().nullable().optional(),
-            elapsedMs: z.number().optional(),
-            sqlstate: z.string().nullable().optional(),
-          })
-          .parse(JSON.parse(line));
+        return object({
+          event: string(),
+          file: string(),
+          phase: string().optional(),
+          statement: number().nullable().optional(),
+          statementCount: number().optional(),
+          batch: number().nullable().optional(),
+          elapsedMs: number().optional(),
+          sqlstate: string().nullable().optional(),
+        }).parse(JSON.parse(line));
       });
     const failures = records.filter((record) => {
       return record.event === "migration_failed";

@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import {
   initContract,
   authHeadersSchema,
@@ -9,20 +20,20 @@ import { apiErrorSchema } from "./errors";
 /**
  * Cursor-based pagination schema with total pages
  */
-export const paginationSchema = z.object({
-  hasMore: z.boolean(),
-  nextCursor: z.string().nullable(),
-  totalPages: z.number(),
+export const paginationSchema = object({
+  hasMore: boolean(),
+  nextCursor: string().nullable(),
+  totalPages: number(),
 });
 
-export type Pagination = z.infer<typeof paginationSchema>;
+export type Pagination = zInfer<typeof paginationSchema>;
 
 /**
  * Common query parameters for list endpoints
  */
-const listQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+const listQuerySchema = object({
+  cursor: string().optional(),
+  limit: coerce.number().int().min(1).max(100).default(20),
 });
 
 const c = initContract();
@@ -30,7 +41,7 @@ const c = initContract();
 /**
  * Run status enum for logs
  */
-const logStatusSchema = z.enum([
+const logStatusSchema = zEnum([
   "queued",
   "pending",
   "running",
@@ -43,7 +54,7 @@ const logStatusSchema = z.enum([
 /**
  * Trigger source enum — how the run was initiated
  */
-export const triggerSourceSchema = z.enum([
+export const triggerSourceSchema = zEnum([
   "web",
   "slack",
   "discord",
@@ -62,43 +73,43 @@ export const triggerSourceSchema = z.enum([
   "automation-event",
 ]);
 
-export type TriggerSource = z.infer<typeof triggerSourceSchema>;
+export type TriggerSource = zInfer<typeof triggerSourceSchema>;
 
 /**
  * Log entry in list response - includes basic fields for list display
  */
-const logEntrySchema = z.object({
-  id: z.uuid(),
-  sessionId: z.string().nullable(),
-  agentId: z.string().nullable(),
-  displayName: z.string().nullable(),
-  framework: z.string().nullable(),
+const logEntrySchema = object({
+  id: uuid(),
+  sessionId: string().nullable(),
+  agentId: string().nullable(),
+  displayName: string().nullable(),
+  framework: string().nullable(),
   triggerSource: triggerSourceSchema.nullable(),
   status: logStatusSchema,
   /** Prompt text the run was launched with. Used as a row description. */
-  prompt: z.string(),
-  createdAt: z.string(),
-  startedAt: z.string().nullable(),
-  completedAt: z.string().nullable(),
+  prompt: string(),
+  createdAt: string(),
+  startedAt: string().nullable(),
+  completedAt: string().nullable(),
 });
 
 /**
  * Available filter values returned by the list endpoint.
  * agents contains canonical agent IDs.
  */
-const logsFiltersSchema = z.object({
-  statuses: z.array(logStatusSchema),
-  sources: z.array(triggerSourceSchema),
-  agents: z.array(z.string()),
+const logsFiltersSchema = object({
+  statuses: array(logStatusSchema),
+  sources: array(triggerSourceSchema),
+  agents: array(string()),
 });
 
-export type LogsFilters = z.infer<typeof logsFiltersSchema>;
+export type LogsFilters = zInfer<typeof logsFiltersSchema>;
 
 /**
  * Logs list response schema with pagination
  */
-const logsListResponseSchema = z.object({
-  data: z.array(logEntrySchema),
+const logsListResponseSchema = object({
+  data: array(logEntrySchema),
   pagination: paginationSchema,
   filters: logsFiltersSchema,
 });
@@ -106,24 +117,24 @@ const logsListResponseSchema = z.object({
 /**
  * Log detail response schema
  */
-const logDetailSchema = z.object({
-  id: z.uuid(),
-  sessionId: z.string().nullable(),
-  agentId: z.string().nullable(),
-  displayName: z.string().nullable(),
-  framework: z.string().nullable(),
-  modelProvider: z.string().nullable(),
-  selectedModel: z.string().nullable(),
-  modelRuntimeProvider: z.string().nullable().optional(),
-  modelRuntimeModel: z.string().nullable().optional(),
+const logDetailSchema = object({
+  id: uuid(),
+  sessionId: string().nullable(),
+  agentId: string().nullable(),
+  displayName: string().nullable(),
+  framework: string().nullable(),
+  modelProvider: string().nullable(),
+  selectedModel: string().nullable(),
+  modelRuntimeProvider: string().nullable().optional(),
+  modelRuntimeModel: string().nullable().optional(),
   triggerSource: triggerSourceSchema.nullable(),
   status: logStatusSchema,
-  prompt: z.string(),
-  appendSystemPrompt: z.string().nullable(),
-  error: z.string().nullable(),
-  createdAt: z.string(),
-  startedAt: z.string().nullable(),
-  completedAt: z.string().nullable(),
+  prompt: string(),
+  appendSystemPrompt: string().nullable(),
+  error: string().nullable(),
+  createdAt: string(),
+  startedAt: string().nullable(),
+  completedAt: string().nullable(),
 });
 
 /**
@@ -136,9 +147,9 @@ export const logsListContract = c.router({
     path: "/api/logs",
     headers: authHeadersSchema,
     query: listQuerySchema.extend({
-      search: z.string().optional(),
-      agentId: z.string().uuid().optional(),
-      name: z.string().optional(),
+      search: string().optional(),
+      agentId: string().uuid().optional(),
+      name: string().optional(),
       since: timestampQueryNumberSchema.optional(),
 
       status: logStatusSchema.optional(),
@@ -163,8 +174,8 @@ export const logsByIdContract = c.router({
     method: "GET",
     path: "/api/logs/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.string().uuid("Invalid log ID"),
+    pathParams: object({
+      id: string().uuid("Invalid log ID"),
     }),
     responses: {
       200: logDetailSchema,
@@ -189,7 +200,7 @@ export {
 };
 
 // Inferred type exports
-export type LogStatus = z.infer<typeof logStatusSchema>;
-export type LogEntry = z.infer<typeof logEntrySchema>;
-export type LogsListResponse = z.infer<typeof logsListResponseSchema>;
-export type LogDetail = z.infer<typeof logDetailSchema>;
+export type LogStatus = zInfer<typeof logStatusSchema>;
+export type LogEntry = zInfer<typeof logEntrySchema>;
+export type LogsListResponse = zInfer<typeof logsListResponseSchema>;
+export type LogDetail = zInfer<typeof logDetailSchema>;

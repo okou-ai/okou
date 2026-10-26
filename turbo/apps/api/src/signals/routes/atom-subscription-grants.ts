@@ -5,7 +5,7 @@ import {
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { command, computed } from "ccstate";
 import { eq } from "drizzle-orm";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 import { optionalEnv } from "../../lib/env";
 import {
@@ -26,7 +26,7 @@ import { upsertPersonalModelProviderAccount$ } from "../services/model-provider-
 import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 import { settle } from "../utils";
 
-type Grant = z.infer<typeof atomSubscriptionGrantSchema>;
+type Grant = zInfer<typeof atomSubscriptionGrantSchema>;
 const SOURCE = "atom-subscription-grant";
 
 function receipt(grantId: string) {

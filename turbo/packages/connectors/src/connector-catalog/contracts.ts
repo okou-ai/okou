@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { enum as zEnum, type infer as zInfer } from "zod";
 
 export const CONNECTOR_CATALOG_MAX_RAW_BYTES = 64 * 1024 * 1024;
 export const BUILTIN_FIREWALL_CATALOG_MAX_BYTES = 16 * 1024 * 1024;
@@ -15,15 +15,15 @@ export const CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES = [
   "relationship-mismatch",
 ] as const;
 
-export const connectorCatalogValidationFailureCodeSchema = z.enum(
+export const connectorCatalogValidationFailureCodeSchema = zEnum(
   CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES,
 );
 
-export type ConnectorCatalogValidationFailureCode = z.infer<
+export type ConnectorCatalogValidationFailureCode = zInfer<
   typeof connectorCatalogValidationFailureCodeSchema
 >;
 
-export const connectorCatalogCompatibilityReasonSchema = z.enum([
+export const connectorCatalogCompatibilityReasonSchema = zEnum([
   "unsupported-protocol",
   "missing-grant-provider",
   "missing-access-provider",
@@ -32,6 +32,6 @@ export const connectorCatalogCompatibilityReasonSchema = z.enum([
   "missing-platform-configuration",
 ]);
 
-export type ConnectorCatalogCompatibilityReason = z.infer<
+export type ConnectorCatalogCompatibilityReason = zInfer<
   typeof connectorCatalogCompatibilityReasonSchema
 >;

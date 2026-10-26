@@ -15,7 +15,8 @@ import {
   onTestFinished,
 } from "vitest";
 
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import rateLimitMessage from "./test/fixtures/codex-rate-limit.json";
 import cyberSafetyRefusal from "./test/fixtures/codex-cyber-safety-refusal.json";

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import { array, object, string } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 
@@ -61,12 +61,10 @@ export function mockDiscordMemberships(
 ): void {
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
-      const params = z
-        .object({
-          organizationId: z.string(),
-          userId: z.array(z.string()).optional(),
-        })
-        .parse(input);
+      const params = object({
+        organizationId: string(),
+        userId: array(string()).optional(),
+      }).parse(input);
       const matches = actors.filter((actor) => {
         return (
           actor.orgId === params.organizationId &&
@@ -228,9 +226,9 @@ export function createPublicDiscordBinding(
       if (!active) {
         return;
       }
-      const body = z
-        .object({ recipient_id: z.string() })
-        .parse(await request.json());
+      const body = object({ recipient_id: string() }).parse(
+        await request.json(),
+      );
       if (body.recipient_id !== identity.discordUserId) {
         return;
       }
@@ -256,9 +254,7 @@ export function createPublicDiscordBinding(
         if (!active) {
           return;
         }
-        const body = z
-          .object({ content: z.string() })
-          .parse(await request.json());
+        const body = object({ content: string() }).parse(await request.json());
         return HttpResponse.json({
           id: uniqueDiscordSnowflake(),
           channel_id: dmChannelId,

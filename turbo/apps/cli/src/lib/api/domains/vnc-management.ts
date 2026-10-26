@@ -7,7 +7,19 @@ import {
   vncAuthenticationSchema,
   vncCredentialsContract,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { z } from "zod";
+import {
+  array,
+  int,
+  literal,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type output,
+  type ZodType,
+} from "zod";
+
 import { vncRsaServerKeyPinSchema } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { getClientConfig } from "../core/client-factory";
 import { handleManagementError } from "../../management-input";
@@ -15,84 +27,85 @@ import { handleManagementError } from "../../management-input";
 // Select public identity/trust metadata rather than serializing API objects.
 // Provider credentials, CA bundles and injected secret fields are stripped at
 // every object boundary before command output.
-const trustMetadataSchema = z.object({ mode: z.enum(["system", "custom_ca"]) });
+const trustMetadataSchema = object({ mode: zEnum(["system", "custom_ca"]) });
 const nonAccessRoutes = [
-  z.object({ type: z.literal("direct") }),
-  z.object({ type: z.literal("ssh"), connectionId: z.uuid() }),
-  z.object({ type: z.literal("tailscale"), configId: z.uuid() }),
-  z.object({ type: z.literal("tailscale"), needsRebind: z.literal(true) }),
+  object({ type: literal("direct") }),
+  object({ type: literal("ssh"), connectionId: uuid() }),
+  object({ type: literal("tailscale"), configId: uuid() }),
+  object({ type: literal("tailscale"), needsRebind: literal(true) }),
 ] as const;
-const kdcRouteMetadataSchema = z.union([
+const kdcRouteMetadataSchema = union([
   ...nonAccessRoutes,
-  z.object({ type: z.literal("cloudflare_access"), configId: z.uuid() }),
-  z.object({
-    type: z.literal("cloudflare_access"),
-    needsRebind: z.literal(true),
+  object({ type: literal("cloudflare_access"), configId: uuid() }),
+  object({
+    type: literal("cloudflare_access"),
+    needsRebind: literal(true),
   }),
 ]);
-const vncRouteMetadataSchema = z.union([
+const vncRouteMetadataSchema = union([
   ...nonAccessRoutes,
-  z.object({
-    type: z.literal("cloudflare_access"),
-    configId: z.uuid(),
-    originTls: z
-      .object({ serverName: z.string(), trust: trustMetadataSchema })
-      .optional(),
+  object({
+    type: literal("cloudflare_access"),
+    configId: uuid(),
+    originTls: object({
+      serverName: string(),
+      trust: trustMetadataSchema,
+    }).optional(),
   }),
-  z.object({
-    type: z.literal("cloudflare_access"),
-    needsRebind: z.literal(true),
-    originTls: z
-      .object({ serverName: z.string(), trust: trustMetadataSchema })
-      .optional(),
+  object({
+    type: literal("cloudflare_access"),
+    needsRebind: literal(true),
+    originTls: object({
+      serverName: string(),
+      trust: trustMetadataSchema,
+    }).optional(),
   }),
 ]);
-const hostMetadataSchema = z.object({
-  id: z.uuid(),
-  displayName: z.string(),
-  host: z.string(),
-  port: z.int(),
-  credentialId: z.uuid().optional(),
-  credentialName: z.string().optional(),
-  security: z.object({
-    type: z.union(
+const hostMetadataSchema = object({
+  id: uuid(),
+  displayName: string(),
+  host: string(),
+  port: int(),
+  credentialId: uuid().optional(),
+  credentialName: string().optional(),
+  security: object({
+    type: union(
       vncSecuritySchema.options.map((option) => {
         return option.shape.type;
       }),
     ),
-    serverName: z.string().optional(),
+    serverName: string().optional(),
     serverKeySha256: vncRsaServerKeyPinSchema.optional(),
-    service: z
-      .object({ realm: z.string(), components: z.array(z.string()) })
-      .optional(),
+    service: object({
+      realm: string(),
+      components: array(string()),
+    }).optional(),
     trust: trustMetadataSchema.optional(),
-    kdc: z
-      .object({
-        host: z.string(),
-        port: z.int(),
-        transport: kdcRouteMetadataSchema,
-        ticketLifetimeSeconds: z.int(),
-        renewableLifetimeSeconds: z.int(),
-      })
-      .optional(),
+    kdc: object({
+      host: string(),
+      port: int(),
+      transport: kdcRouteMetadataSchema,
+      ticketLifetimeSeconds: int(),
+      renewableLifetimeSeconds: int(),
+    }).optional(),
   }),
   transport: vncRouteMetadataSchema.optional(),
-  generation: z.int().positive(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  generation: int().positive(),
+  createdAt: string(),
+  updatedAt: string(),
 });
-const credentialMetadataSchema = z.object({
-  id: z.uuid(),
-  name: z.string(),
-  authMethod: z.union(
+const credentialMetadataSchema = object({
+  id: uuid(),
+  name: string(),
+  authMethod: union(
     vncAuthenticationSchema.options.map((option) => {
       return option.shape.method;
     }),
   ),
-  revision: z.int().positive(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  hosts: z.array(z.object({ id: z.uuid(), displayName: z.string() })),
+  revision: int().positive(),
+  createdAt: string(),
+  updatedAt: string(),
+  hosts: array(object({ id: uuid(), displayName: string() })),
 });
 
 async function request<T>(operation: () => Promise<T>): Promise<T> {
@@ -105,10 +118,7 @@ async function request<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-function safeMetadata<T extends z.ZodType>(
-  schema: T,
-  body: unknown,
-): z.output<T> {
+function safeMetadata<T extends ZodType>(schema: T, body: unknown): output<T> {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     throw new Error(
@@ -126,13 +136,13 @@ export async function listConfiguredVncHosts() {
   if (result.status !== 200)
     handleManagementError(result, "Cannot list configured VNC hosts");
   return safeMetadata(
-    z.object({ connections: z.array(hostMetadataSchema) }),
+    object({ connections: array(hostMetadataSchema) }),
     result.body,
   );
 }
 
 export async function createConfiguredVncHost(
-  body: z.output<typeof vncConnectionsContract.create.body>,
+  body: output<typeof vncConnectionsContract.create.body>,
 ) {
   const client = initClient(vncConnectionsContract, await getClientConfig());
   const result = await request(() => {
@@ -146,7 +156,7 @@ export async function createConfiguredVncHost(
 
 export async function updateConfiguredVncHost(
   connectionId: string,
-  body: z.output<typeof vncConnectionsContract.update.body>,
+  body: output<typeof vncConnectionsContract.update.body>,
 ) {
   const client = initClient(vncConnectionsContract, await getClientConfig());
   const result = await request(() => {
@@ -159,7 +169,7 @@ export async function updateConfiguredVncHost(
 
 export async function deleteConfiguredVncHost(
   connectionId: string,
-  body: z.output<typeof vncConnectionsContract.delete.body>,
+  body: output<typeof vncConnectionsContract.delete.body>,
 ) {
   const client = initClient(vncConnectionsContract, await getClientConfig());
   const result = await request(() => {
@@ -178,13 +188,13 @@ export async function listVncCredentials() {
   if (result.status !== 200)
     handleManagementError(result, "Cannot list VNC credentials");
   return safeMetadata(
-    z.object({ credentials: z.array(credentialMetadataSchema) }),
+    object({ credentials: array(credentialMetadataSchema) }),
     result.body,
   );
 }
 
 export async function createVncCredential(
-  body: z.output<typeof vncCredentialsContract.create.body>,
+  body: output<typeof vncCredentialsContract.create.body>,
 ) {
   const client = initClient(vncCredentialsContract, await getClientConfig());
   const result = await request(() => {
@@ -198,7 +208,7 @@ export async function createVncCredential(
 
 export async function updateVncCredential(
   credentialId: string,
-  body: z.output<typeof vncCredentialsContract.update.body>,
+  body: output<typeof vncCredentialsContract.update.body>,
 ) {
   const client = initClient(vncCredentialsContract, await getClientConfig());
   const result = await request(() => {
@@ -211,7 +221,7 @@ export async function updateVncCredential(
 
 export async function deleteVncCredential(
   credentialId: string,
-  body: z.output<typeof vncCredentialsContract.delete.body>,
+  body: output<typeof vncCredentialsContract.delete.body>,
 ) {
   const client = initClient(vncCredentialsContract, await getClientConfig());
   const result = await request(() => {

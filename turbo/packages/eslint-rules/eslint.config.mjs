@@ -1,7 +1,9 @@
+import { namedZodImportsConfig } from "./src/zod/index.ts";
 import { config, oxlint } from "@okouai/eslint-config/base";
 
 export default [
   ...config,
+  namedZodImportsConfig,
   {
     ignores: ["**/dist/**"],
   },

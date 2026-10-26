@@ -12,9 +12,9 @@ import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { pageVersion$ } from "../page-signal.ts";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
-type GoogleDriveUploadedFile = z.infer<
+type GoogleDriveUploadedFile = zInfer<
   (typeof artifactGoogleDriveContract.uploadWithMode.responses)[200]
 >;
 

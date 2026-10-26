@@ -1,7 +1,7 @@
 /**
  * Canonical IDs for the member's built-in image generation model setting.
  */
-import { z } from "zod";
+import { enum as zEnum } from "zod";
 
 export const IMAGE_MODEL_IDS = [
   "gpt-image-1",
@@ -30,4 +30,4 @@ export function isImageModelId(
 }
 
 /** A canonical selectable image model id on the wire. */
-export const imageModelIdSchema = z.enum(IMAGE_MODEL_IDS);
+export const imageModelIdSchema = zEnum(IMAGE_MODEL_IDS);

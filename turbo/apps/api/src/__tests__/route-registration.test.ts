@@ -1,3 +1,5 @@
+import { desktopResponseTransforms } from "@okouai/api-contracts/client-transforms/desktop";
+
 import { ROUTES } from "../signals/route";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { mcpServerRoutes } from "../signals/routes/mcp-server";
@@ -6,6 +8,26 @@ describe("API route registrations", () => {
   it("registers the hosted MCP endpoint and resource metadata", () => {
     for (const entry of mcpServerRoutes) {
       expect(ROUTES).toContain(entry);
+    }
+  });
+
+  it("mounts the Desktop compatibility inventory on its owning routes", () => {
+    for (const transform of desktopResponseTransforms) {
+      const entry = ROUTES.find(({ route }) => {
+        return (
+          route.method === transform.method && route.path === transform.path
+        );
+      });
+      expect(entry?.responseTransforms).toContain(transform);
+    }
+    for (const entry of ROUTES) {
+      const expected = desktopResponseTransforms.filter((transform) => {
+        return (
+          transform.method === entry.route.method &&
+          transform.path === entry.route.path
+        );
+      });
+      expect(entry.responseTransforms ?? []).toStrictEqual(expected);
     }
   });
 

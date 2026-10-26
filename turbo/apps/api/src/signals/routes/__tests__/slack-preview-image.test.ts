@@ -3,7 +3,7 @@ import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og"
 import { escapeAttribute } from "entities/escape";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, object, record, string } from "zod";
 import {
   setupAppWithRoutes,
   setupRawAppRequestWithRoutes,
@@ -84,21 +84,19 @@ async function previewUrls(teamId: string, sources: readonly string[]) {
   );
   await flushWaitUntilForTest();
   expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledTimes(1);
-  const payload = z
-    .object({
-      unfurls: z.record(
-        z.string(),
-        z.object({
-          blocks: z.array(
-            z.object({
-              type: z.string(),
-              image_url: z.string().optional(),
-            }),
-          ),
-        }),
-      ),
-    })
-    .parse(context.mocks.slack.chat.unfurl.mock.calls[0]?.[0]);
+  const payload = object({
+    unfurls: record(
+      string(),
+      object({
+        blocks: array(
+          object({
+            type: string(),
+            image_url: string().optional(),
+          }),
+        ),
+      }),
+    ),
+  }).parse(context.mocks.slack.chat.unfurl.mock.calls[0]?.[0]);
   return pages.map((page) => {
     const image = payload.unfurls[page]?.blocks.find((block) => {
       return block.type === "image";
@@ -121,13 +119,13 @@ function signedSource(url: URL | null | undefined) {
 
 function readImage(url: URL) {
   expect(url.origin).toBe(
-    new URL(z.string().parse(env("OKOU_API_BACKEND_URL"))).origin,
+    new URL(string().parse(env("OKOU_API_BACKEND_URL"))).origin,
   );
   expect(url.pathname).toBe("/api/artifact-og/slack.png");
   return imageClient.slackImage({
     query: {
-      url: z.string().parse(url.searchParams.get("url")),
-      signature: z.string().parse(url.searchParams.get("signature")),
+      url: string().parse(url.searchParams.get("url")),
+      signature: string().parse(url.searchParams.get("signature")),
     },
   });
 }

@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { Command } from "commander";
-import { z } from "zod";
+import { string, uuid } from "zod";
 import {
   suggestionCreateSchema,
   suggestionUpdateSchema,
@@ -83,7 +83,7 @@ export function createSuggestionCommand() {
     .action(
       withErrorHandler(
         async (options: { readonly key: string; readonly json?: boolean }) => {
-          const key = z.string().trim().min(1).max(2048).parse(options.key);
+          const key = string().trim().min(1).max(2048).parse(options.key);
           // UUID v5 with a fixed Okou suggestion namespace; this never publishes an item.
           const bytes = createHash("sha1")
             .update(Buffer.from("a91f53c81e9d54d6a3f99cda27e35e48", "hex"))
@@ -209,7 +209,7 @@ export function createSuggestionCommand() {
                 : {},
           );
           printSuggestion(
-            await updateSuggestion(z.uuid().parse(id), body),
+            await updateSuggestion(uuid().parse(id), body),
             options.json,
           );
         },
@@ -226,7 +226,7 @@ export function createSuggestionCommand() {
     .action(
       withErrorHandler(
         async (id: string, options: { readonly json?: boolean }) => {
-          await deleteSuggestion(z.uuid().parse(id));
+          await deleteSuggestion(uuid().parse(id));
           console.log(
             options.json
               ? JSON.stringify({ id, removed: true })

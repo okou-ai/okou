@@ -1,6 +1,6 @@
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
 import type { VoiceIoTranscribeContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { z } from "zod";
+import { object, string, type infer as zInfer } from "zod";
 
 import { safeJsonParse } from "../utils";
 import { generateVertexVoice, VOICE_INPUT_MODEL } from "./vertex-voice";
@@ -28,14 +28,12 @@ const TRANSCRIPTION_SYSTEM_PROMPT = [
   "Return only JSON matching the provided schema.",
 ].join("\n");
 
-const transcriptResponseSchema = z
-  .object({
-    transcript: z.string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
-    language: z.string().trim().min(1).max(64),
-  })
-  .strict();
+const transcriptResponseSchema = object({
+  transcript: string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
+  language: string().trim().min(1).max(64),
+}).strict();
 
-type VoiceTranscript = z.infer<typeof transcriptResponseSchema>;
+type VoiceTranscript = zInfer<typeof transcriptResponseSchema>;
 
 function transcriptJsonSchema(): VoiceJsonSchema {
   return {

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import { boolean, object } from "zod";
 import type {
   ComputerUseAuthorizationSource,
   ComputerUseHostListResponse,
@@ -384,7 +384,7 @@ const applyChatAuthorizationScope$ = command(
     // A nullable agent still commits the preference, without reserving an event.
     const eligibleThread = sql`EXISTS (SELECT 1 FROM updated_thread WHERE agent_id IS NOT NULL)`;
     const [result] = parseRawRows(
-      z.object({ applied: z.boolean() }),
+      object({ applied: boolean() }),
       await db.execute(
         chatThreadEventInsertSql(
           {
@@ -487,7 +487,7 @@ const applyTeamsAuthorizationScope$ = command(
       });
     // Route selection, preference and durable event share one statement.
     const [result] = parseRawRows(
-      z.object({ applied: z.boolean() }),
+      object({ applied: boolean() }),
       await db.execute(
         chatThreadEventInsertSql(
           {

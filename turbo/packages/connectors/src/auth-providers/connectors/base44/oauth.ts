@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string, type infer as zInfer } from "zod";
 
 import type { OAuthRefreshResult } from "../../oauth/types";
 import type {
@@ -15,42 +15,40 @@ const BASE44_TOKEN_URL = "https://app.base44.com/oauth/token";
 const BASE44_USERINFO_URL = "https://app.base44.com/oauth/userinfo";
 const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 
-const deviceAuthResponseSchema = z.object({
-  device_code: z.string(),
-  user_code: z.string(),
-  verification_uri: z.string(),
-  verification_uri_complete: z.string().optional(),
-  expires_in: z.number(),
-  interval: z.number().optional(),
+const deviceAuthResponseSchema = object({
+  device_code: string(),
+  user_code: string(),
+  verification_uri: string(),
+  verification_uri_complete: string().optional(),
+  expires_in: number(),
+  interval: number().optional(),
 });
 
-const tokenResponseSchema = z.object({
-  access_token: z.string().optional(),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().optional(),
-  token_type: z.string().optional(),
-  scope: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
+const tokenResponseSchema = object({
+  access_token: string().optional(),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().optional(),
+  token_type: string().optional(),
+  scope: string().optional(),
+  error: string().optional(),
+  error_description: string().optional(),
 });
 
-const tokenErrorResponseSchema = z.object({
-  error: z.string(),
-  error_description: z.string().optional(),
+const tokenErrorResponseSchema = object({
+  error: string(),
+  error_description: string().optional(),
 });
 
-const userInfoResponseSchema = z
-  .object({
-    sub: z.string().optional(),
-    id: z.string().optional(),
-    user_id: z.string().optional(),
-    account_id: z.string().optional(),
-    preferred_username: z.string().nullable().optional(),
-    username: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    email: z.string().nullable().optional(),
-  })
-  .passthrough();
+const userInfoResponseSchema = object({
+  sub: string().optional(),
+  id: string().optional(),
+  user_id: string().optional(),
+  account_id: string().optional(),
+  preferred_username: string().nullable().optional(),
+  username: string().nullable().optional(),
+  name: string().nullable().optional(),
+  email: string().nullable().optional(),
+}).passthrough();
 
 function devicePollErrorResult(args: {
   readonly error: string;
@@ -84,7 +82,7 @@ function devicePollErrorResult(args: {
 }
 
 function requireAccessToken(
-  data: z.infer<typeof tokenResponseSchema>,
+  data: zInfer<typeof tokenResponseSchema>,
   operation: string,
 ): string {
   if (data.error) {

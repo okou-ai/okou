@@ -19,7 +19,18 @@ import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { secrets } from "@okouai/db/schema/secret";
 import { command } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import {
+  boolean,
+  literal,
+  object,
+  string,
+  union,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import {
   connectorOAuthStateExpiresAt,
   generateConnectorOAuthState,
@@ -77,10 +88,10 @@ import {
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
 
-const httpsUrl = z.url({ protocol: /^https$/u });
-const contextBase = z.object({
-  version: z.literal(1),
-  kind: z.literal("connector-mcp-automatic"),
+const httpsUrl = url({ protocol: /^https$/u });
+const contextBase = object({
+  version: literal(1),
+  kind: literal("connector-mcp-automatic"),
   connectorSlug: connectorSlugSchema,
   authMethodId: connectorAuthMethodIdSchema,
   issuer: httpsUrl,
@@ -88,22 +99,22 @@ const contextBase = z.object({
   resourceMetadataUrl: httpsUrl.nullable(),
   authorizationEndpoint: httpsUrl,
   tokenEndpoint: httpsUrl,
-  authorizationResponseIssParameterSupported: z.boolean(),
-  clientId: z.string().min(1),
-  tokenEndpointAuthMethod: z.enum([
+  authorizationResponseIssParameterSupported: boolean(),
+  clientId: string().min(1),
+  tokenEndpointAuthMethod: zEnum([
     "none",
     "client_secret_basic",
     "client_secret_post",
   ]),
 });
-const builtinAutomaticContextSchema = z.union([
+const builtinAutomaticContextSchema = union([
   contextBase.extend({
-    registrationMethod: z.literal("cimd"),
-    tokenEndpointAuthMethod: z.literal("none"),
+    registrationMethod: literal("cimd"),
+    tokenEndpointAuthMethod: literal("none"),
   }),
   contextBase.extend({
-    registrationMethod: z.literal("dcr"),
-    dcrRegistrationId: z.uuid(),
+    registrationMethod: literal("dcr"),
+    dcrRegistrationId: uuid(),
   }),
 ]);
 type BuiltinAutomaticMethod = Extract<
@@ -501,7 +512,7 @@ export const startBuiltinConnectorAutomatic$ = command(
 async function prepareAutomaticCallbackPublication(
   args: {
     readonly stored: StoredBuiltinOAuthState;
-    readonly context: z.infer<typeof builtinAutomaticContextSchema>;
+    readonly context: zInfer<typeof builtinAutomaticContextSchema>;
     readonly contract: BuiltinAutomaticContract;
     readonly token: McpAutomaticOAuthTokenResult;
   },
@@ -556,7 +567,7 @@ const finishAutomaticOAuth$ = command(
     { set },
     args: {
       readonly stored: StoredBuiltinOAuthState;
-      readonly context: z.infer<typeof builtinAutomaticContextSchema>;
+      readonly context: zInfer<typeof builtinAutomaticContextSchema>;
       readonly contract: BuiltinAutomaticContract | null;
       readonly code: string;
       readonly codeVerifier: string;

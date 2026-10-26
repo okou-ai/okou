@@ -1,5 +1,12 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  unknown as zUnknown,
+} from "zod";
 
 import {
   onRejection,
@@ -60,36 +67,31 @@ interface VertexTextGeneration {
   readonly tokens: VertexTextTokens;
 }
 
-const responseSchema = z.object({
-  promptFeedback: z.object({ blockReason: z.string().optional() }).optional(),
+const responseSchema = object({
+  promptFeedback: object({ blockReason: string().optional() }).optional(),
   // Optional diagnostics must not decide whether usable text is accepted.
-  usageMetadata: z.unknown().optional(),
-  candidates: z
-    .array(
-      z.object({
-        finishReason: z.string(),
-        content: z
-          .object({
-            parts: z.array(
-              z.object({
-                text: z.string().optional(),
-                thought: z.boolean().optional(),
-                functionCall: z.unknown().optional(),
-              }),
-            ),
-          })
-          .optional(),
-      }),
-    )
-    .optional(),
+  usageMetadata: zUnknown().optional(),
+  candidates: array(
+    object({
+      finishReason: string(),
+      content: object({
+        parts: array(
+          object({
+            text: string().optional(),
+            thought: boolean().optional(),
+            functionCall: zUnknown().optional(),
+          }),
+        ),
+      }).optional(),
+    }),
+  ).optional(),
 });
 
-const usageMetadataSchema = z.object({
-  candidatesTokenCount: z.unknown().optional(),
-  thoughtsTokenCount: z.unknown().optional(),
+const usageMetadataSchema = object({
+  candidatesTokenCount: zUnknown().optional(),
+  thoughtsTokenCount: zUnknown().optional(),
 });
-const tokenCountSchema = z
-  .number()
+const tokenCountSchema = number()
   .int()
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER);

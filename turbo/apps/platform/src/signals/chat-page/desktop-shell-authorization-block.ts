@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { z } from "zod";
+import { uuid } from "zod";
 import { timeout } from "signal-timers";
 import { desktopShellAuthorizationContract } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { accept } from "../../lib/accept.ts";
@@ -22,7 +22,7 @@ export function parseDesktopShellAuthorizationUrl(
   const match = url?.pathname.match(
     /^\/computer-use\/shell\/authorize\/([^/]+)$/u,
   );
-  const parsed = z.uuid().safeParse(match?.[1]);
+  const parsed = uuid().safeParse(match?.[1]);
   return parsed.success ? { id: parsed.data, originalUrl: value } : null;
 }
 

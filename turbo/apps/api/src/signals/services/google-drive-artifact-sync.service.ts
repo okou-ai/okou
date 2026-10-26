@@ -41,7 +41,15 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { ZipArchive } from "archiver";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  record,
+  string,
+  object as zObject,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import {
@@ -103,14 +111,14 @@ const GOOGLE_DRIVE_CATALOG_ARTIFACT_APP_PROPERTY = "okouArtifactId";
 const GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY = "okouTextImport";
 const GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_DRIVE_TOKEN";
 
-const driveFileSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  webViewLink: z.string().nullable().optional(),
-  appProperties: z.record(z.string(), z.string()).optional(),
-  mimeType: z.string().optional(),
+const driveFileSchema = zObject({
+  id: string(),
+  name: string(),
+  webViewLink: string().nullable().optional(),
+  appProperties: record(string(), string()).optional(),
+  mimeType: string().optional(),
 });
-const driveFileListSchema = z.object({ files: z.array(driveFileSchema) });
+const driveFileListSchema = zObject({ files: array(driveFileSchema) });
 
 interface DriveSyncResult {
   readonly id: string;
@@ -379,7 +387,7 @@ const refreshDriveAccessToken$ = command(
 );
 
 type DriveListResult =
-  | { readonly type: "ok"; readonly files: z.infer<typeof driveFileSchema>[] }
+  | { readonly type: "ok"; readonly files: zInfer<typeof driveFileSchema>[] }
   | { readonly type: "unauthorized" };
 
 async function listArtifactFiles(
@@ -460,7 +468,7 @@ const listArtifactFilesWithRefresh$ = command(
     },
     signal: AbortSignal,
   ): Promise<
-    z.infer<typeof driveFileSchema>[] | "reconnect-required" | "unauthorized"
+    zInfer<typeof driveFileSchema>[] | "reconnect-required" | "unauthorized"
   > => {
     const first = await listArtifactFiles(
       {
@@ -505,7 +513,7 @@ const listArtifactFilesWithRefresh$ = command(
 );
 
 function buildStatusMap(
-  files: readonly z.infer<typeof driveFileSchema>[],
+  files: readonly zInfer<typeof driveFileSchema>[],
 ): ReadonlyMap<string, DriveSyncStatusResult> {
   const map = new Map<string, DriveSyncStatusResult>();
   for (const file of files) {
@@ -759,15 +767,15 @@ export const googleDriveArtifactStatusLookup$ = command(
 // Upload-side: sync a single artifact to the user's Google Drive.
 // =====================================================================
 
-const driveFolderSchema = z.object({ id: z.string(), name: z.string() });
-const driveFolderListSchema = z.object({
-  files: z.array(driveFolderSchema),
+const driveFolderSchema = zObject({ id: string(), name: string() });
+const driveFolderListSchema = zObject({
+  files: array(driveFolderSchema),
 });
-const driveUploadResponseSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  webViewLink: z.string().nullable().optional(),
-  mimeType: z.string().optional(),
+const driveUploadResponseSchema = zObject({
+  id: string(),
+  name: string(),
+  webViewLink: string().nullable().optional(),
+  mimeType: string().optional(),
 });
 
 const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
@@ -1114,7 +1122,7 @@ async function findDriveFolder(args: {
   readonly accessToken: string;
   readonly parentFolderId: string | null;
   readonly name: string;
-}): Promise<DriveTokenResult<z.infer<typeof driveFolderSchema> | null>> {
+}): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema> | null>> {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set(
     "q",
@@ -1165,7 +1173,7 @@ async function createDriveFolder(args: {
   readonly accessToken: string;
   readonly parentFolderId: string | null;
   readonly name: string;
-}): Promise<DriveTokenResult<z.infer<typeof driveFolderSchema>>> {
+}): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema>>> {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set("fields", "id,name");
 
@@ -1215,7 +1223,7 @@ async function ensureDriveFolder(args: {
   readonly accessToken: string;
   readonly parentFolderId: string | null;
   readonly name: string;
-}): Promise<DriveTokenResult<z.infer<typeof driveFolderSchema>>> {
+}): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema>>> {
   const existing = await findDriveFolder(args);
   if (existing.type === "unauthorized") {
     return existing;
@@ -1405,9 +1413,9 @@ async function uploadArtifactWithToken(args: {
   return { type: "ok", value: response };
 }
 
-const driveErrorResponseSchema = z.object({
-  error: z.object({
-    errors: z.array(z.object({ reason: z.string().optional() })).optional(),
+const driveErrorResponseSchema = zObject({
+  error: zObject({
+    errors: array(zObject({ reason: string().optional() })).optional(),
   }),
 });
 
@@ -1445,10 +1453,10 @@ async function parseUploadResponse(
   };
 }
 
-const slidesPresentationSchema = z.object({
-  slides: z
-    .array(z.object({ pageElements: z.array(z.unknown()).optional() }))
-    .optional(),
+const slidesPresentationSchema = zObject({
+  slides: array(
+    zObject({ pageElements: array(zUnknown()).optional() }),
+  ).optional(),
 });
 
 /** Returns whether Drive accepted the discard. */
@@ -1575,7 +1583,7 @@ async function findWorkspaceImport(
   },
   _signal: AbortSignal,
 ): Promise<
-  | DriveTokenResult<z.infer<typeof driveFileSchema> | null>
+  | DriveTokenResult<zInfer<typeof driveFileSchema> | null>
   | { readonly type: "unavailable" }
 > {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
@@ -1662,7 +1670,7 @@ async function verifyWorkspaceImport(
     return "Google created the file, but its conversion result could not be confirmed. Check Drive before retrying.";
   }
   const parsed = driveUploadResponseSchema
-    .extend({ trashed: z.boolean().optional() })
+    .extend({ trashed: boolean().optional() })
     .safeParse(await response.json());
   if (!parsed.success || parsed.data.id !== args.fileId) {
     return "Google created the file, but its conversion result could not be confirmed. Check Drive before retrying.";

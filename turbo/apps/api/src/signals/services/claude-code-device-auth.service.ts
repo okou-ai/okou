@@ -7,7 +7,13 @@ import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/mode
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
+import {
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -47,29 +53,29 @@ const CLAUDE_CODE_DEVICE_AUTH_SESSION_TTL_SECONDS = 15 * 60;
 const CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE = "claude-code-oauth-token";
 const CLAUDE_CODE_DEVICE_AUTH_SOURCE = "claude-code-device-auth";
 
-const claudeCodeDeviceAuthSessionTokenSchema = z.object({
-  version: z.literal(1),
-  sessionId: z.string().uuid(),
+const claudeCodeDeviceAuthSessionTokenSchema = object({
+  version: literal(1),
+  sessionId: string().uuid(),
 });
 
-const claudeCodeDeviceAuthProviderStateSchema = z.object({
-  version: z.literal(1),
-  type: z.literal("claude-code"),
-  scope: z.literal("personal"),
-  mode: z.enum(["add", "reconnect"]).optional(),
-  modelProviderId: z.string().uuid().optional(),
-  state: z.string().min(1),
-  codeVerifier: z.string().min(1),
+const claudeCodeDeviceAuthProviderStateSchema = object({
+  version: literal(1),
+  type: literal("claude-code"),
+  scope: literal("personal"),
+  mode: zEnum(["add", "reconnect"]).optional(),
+  modelProviderId: string().uuid().optional(),
+  state: string().min(1),
+  codeVerifier: string().min(1),
 });
 
-const claudeCodeOAuthTokenResponseSchema = z.object({
-  access_token: z.string().min(1),
+const claudeCodeOAuthTokenResponseSchema = object({
+  access_token: string().min(1),
 });
 
-type ClaudeCodeDeviceAuthSessionToken = z.infer<
+type ClaudeCodeDeviceAuthSessionToken = zInfer<
   typeof claudeCodeDeviceAuthSessionTokenSchema
 >;
-type ClaudeCodeDeviceAuthProviderState = z.infer<
+type ClaudeCodeDeviceAuthProviderState = zInfer<
   typeof claudeCodeDeviceAuthProviderStateSchema
 >;
 type ModelProviderAuthSession = typeof modelProviderAuthSessions.$inferSelect;

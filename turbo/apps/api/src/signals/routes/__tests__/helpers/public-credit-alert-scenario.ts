@@ -1,7 +1,16 @@
 import { chargePublicDataUsage } from "./public-data-charge";
 import { randomBytes, randomUUID } from "node:crypto";
 import { expect, vi } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  number,
+  record,
+  string,
+  object as zObject,
+  type infer as zInfer,
+} from "zod";
+
 import { Webhook } from "svix";
 import {
   billingAutoRechargeContract,
@@ -45,30 +54,30 @@ type FixtureStripeCheckoutSession = StripeCheckoutSession & {
 };
 type FixtureStripeInvoice = StripeInvoice & { readonly subtotal: number };
 
-const metadataSchema = z.record(z.string(), z.string());
-const checkoutSchema = z.object({
-  mode: z.literal("subscription"),
-  customer: z.string(),
-  line_items: z.array(
-    z.object({ price: z.string(), quantity: z.number().int().positive() }),
+const metadataSchema = record(string(), string());
+const checkoutSchema = zObject({
+  mode: literal("subscription"),
+  customer: string(),
+  line_items: array(
+    zObject({ price: string(), quantity: number().int().positive() }),
   ),
   metadata: metadataSchema,
-  subscription_data: z.object({ metadata: metadataSchema }),
+  subscription_data: zObject({ metadata: metadataSchema }),
 });
-const createInvoiceSchema = z.object({
-  customer: z.string(),
-  default_payment_method: z.string(),
-  auto_advance: z.literal(false),
+const createInvoiceSchema = zObject({
+  customer: string(),
+  default_payment_method: string(),
+  auto_advance: literal(false),
   metadata: metadataSchema,
 });
-const itemSchema = z.object({
-  invoice: z.string(),
-  customer: z.string(),
-  amount: z.number().int().positive(),
-  currency: z.literal("usd"),
-  description: z.string(),
+const itemSchema = zObject({
+  invoice: string(),
+  customer: string(),
+  amount: number().int().positive(),
+  currency: literal("usd"),
+  description: string(),
 });
-const idSchema = z.string().min(1);
+const idSchema = string().min(1);
 function required<T>(values: ReadonlyMap<string, T>, input: unknown): T {
   const id = idSchema.parse(input);
   const value = values.get(id);
@@ -98,7 +107,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   const orgId = admin.orgId;
   const customers = new Map<string, StripeCustomer>();
   const sessions = new Map<string, FixtureStripeCheckoutSession>();
-  const carts = new Map<string, z.infer<typeof checkoutSchema>>();
+  const carts = new Map<string, zInfer<typeof checkoutSchema>>();
   const subscriptions = new Map<string, StripeSubscription>();
   const invoices = new Map<string, FixtureStripeInvoice>();
   const cards = new Map<string, StripePaymentMethod>();
@@ -123,9 +132,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
       if (!(request instanceof Request)) {
         throw new Error("Expected the actual Clerk request");
       }
-      const configuration = z
-        .object({ signingSecret: z.string() })
-        .parse(options);
+      const configuration = zObject({ signingSecret: string() }).parse(options);
       return clerkSdk.verifyWebhook(request, configuration);
     });
     const body = JSON.stringify({
@@ -159,9 +166,9 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
     (body, signature, secret) => {
       return verifier.webhooks.constructEvent(
-        z.string().parse(body),
-        z.string().parse(signature),
-        z.string().parse(secret),
+        string().parse(body),
+        string().parse(signature),
+        string().parse(secret),
       );
     },
   );
@@ -210,7 +217,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     return await Promise.resolve(required(catalog, id));
   });
   context.mocks.stripe.customers.create.mockImplementation(async (input) => {
-    const { metadata } = z.object({ metadata: metadataSchema }).parse(input);
+    const { metadata } = zObject({ metadata: metadataSchema }).parse(input);
     if (metadata.orgId !== orgId) {
       throw new Error("Customer creation escaped the workspace");
     }
@@ -231,9 +238,10 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     },
   );
   context.mocks.stripe.paymentMethods.list.mockImplementation(async (input) => {
-    const { customer } = z
-      .object({ customer: z.string(), type: z.literal("card") })
-      .parse(input);
+    const { customer } = zObject({
+      customer: string(),
+      type: literal("card"),
+    }).parse(input);
     required(customers, customer);
     return await Promise.resolve({
       data: [...cards.values()].filter((card) => {
@@ -283,9 +291,10 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     return await Promise.resolve(required(subscriptions, id));
   });
   context.mocks.stripe.subscriptions.list.mockImplementation(async (input) => {
-    const { customer, status } = z
-      .object({ customer: z.string(), status: z.string().optional() })
-      .parse(input);
+    const { customer, status } = zObject({
+      customer: string(),
+      status: string().optional(),
+    }).parse(input);
     required(customers, customer);
     return await Promise.resolve({
       data: [...subscriptions.values()].filter((subscription) => {
@@ -300,7 +309,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   context.mocks.stripe.subscriptions.update.mockImplementation(
     async (id, input) => {
       const subscription = required(subscriptions, id);
-      const { metadata } = z.object({ metadata: metadataSchema }).parse(input);
+      const { metadata } = zObject({ metadata: metadataSchema }).parse(input);
       const updated = {
         ...subscription,
         metadata: { ...subscription.metadata, ...metadata },
@@ -399,13 +408,11 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     return await Promise.resolve(required(invoices, id));
   });
   context.mocks.stripe.invoices.list.mockImplementation(async (input) => {
-    const { subscription, customer, status } = z
-      .object({
-        subscription: z.string().optional(),
-        customer: z.string().optional(),
-        status: z.string().optional(),
-      })
-      .parse(input);
+    const { subscription, customer, status } = zObject({
+      subscription: string().optional(),
+      customer: string().optional(),
+      status: string().optional(),
+    }).parse(input);
     return await Promise.resolve({
       data: [...invoices.values()].filter((invoice) => {
         return (
@@ -422,13 +429,13 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   context.mocks.stripe.invoices.listLineItems.mockImplementation(async (id) => {
     return await Promise.resolve(required(invoices, id).lines);
   });
-  const refundSchema = z.object({
-    invoice: z.string(),
-    amount: z.number().int().positive(),
+  const refundSchema = zObject({
+    invoice: string(),
+    amount: number().int().positive(),
     metadata: metadataSchema,
   });
   context.mocks.stripe.creditNotes.list.mockImplementation(async (input) => {
-    const { invoice } = z.object({ invoice: z.string() }).parse(input);
+    const { invoice } = zObject({ invoice: string() }).parse(input);
     required(invoices, invoice);
     return await Promise.resolve({
       data: [...creditNotes.values()].filter((note) => {
@@ -450,7 +457,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   });
   context.mocks.stripe.creditNotes.create.mockImplementation(async (input) => {
     const request = refundSchema
-      .extend({ refund_amount: z.number().int().positive() })
+      .extend({ refund_amount: number().int().positive() })
       .parse(input);
     const invoice = required(invoices, request.invoice);
     if (
@@ -686,7 +693,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   );
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
     async (input) => {
-      const { userId } = z.object({ userId: z.string() }).parse(input);
+      const { userId } = zObject({ userId: string() }).parse(input);
       const actors: {
         readonly actor: ApiTestUser;
         readonly role: "org:admin" | "org:member";
@@ -804,13 +811,11 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
         ];
         context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
           async (input) => {
-            const { organizationId, offset } = z
-              .object({
-                organizationId: z.literal(orgId),
-                offset: z.number().int(),
-                limit: z.literal(100),
-              })
-              .parse(input);
+            const { organizationId, offset } = zObject({
+              organizationId: literal(orgId),
+              offset: number().int(),
+              limit: literal(100),
+            }).parse(input);
             if (organizationId !== orgId || (offset !== 0 && offset !== 100)) {
               throw new Error("Unexpected case-owned Clerk page");
             }

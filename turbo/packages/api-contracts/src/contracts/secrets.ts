@@ -1,22 +1,22 @@
-import { z } from "zod";
+import { object, string, uuid, enum as zEnum, type infer as zInfer } from "zod";
 
 /**
  * Secret type schema
  */
-export const secretTypeSchema = z.enum(["user", "model-provider", "connector"]);
+export const secretTypeSchema = zEnum(["user", "model-provider", "connector"]);
 
-export type SecretType = z.infer<typeof secretTypeSchema>;
+export type SecretType = zInfer<typeof secretTypeSchema>;
 
 /**
  * Secret metadata response (value is never returned)
  */
-export const secretResponseSchema = z.object({
-  id: z.uuid(),
-  name: z.string(),
-  description: z.string().nullable(),
+export const secretResponseSchema = object({
+  id: uuid(),
+  name: string(),
+  description: string().nullable(),
   type: secretTypeSchema,
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  createdAt: string(),
+  updatedAt: string(),
 });
 
-export type SecretResponse = z.infer<typeof secretResponseSchema>;
+export type SecretResponse = zInfer<typeof secretResponseSchema>;

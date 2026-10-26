@@ -1,3 +1,4 @@
+import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
 import fs from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,7 @@ function existingTestExceptions(entries) {
 
 export default [
   ...config,
+  namedZodImportsConfig,
   {
     files: ["src/**/*.ts"],
     ignores: [

@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { Response } from "miniflare";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { number, object } from "zod";
 import {
   APPLICATION_ID,
   BOT_TOKEN,
@@ -273,13 +273,11 @@ describe("Discord Gateway relay", () => {
     await relay.deliveries.next();
     await expect
       .poll(async () => {
-        const health = z
-          .object({
-            pending: z.number(),
-            deliveryFailures: z.number(),
-            oldestPendingAgeMs: z.number().nullable(),
-          })
-          .parse(await relay.health());
+        const health = object({
+          pending: number(),
+          deliveryFailures: number(),
+          oldestPendingAgeMs: number().nullable(),
+        }).parse(await relay.health());
         return (
           health.pending === 1 &&
           health.deliveryFailures >= 1 &&

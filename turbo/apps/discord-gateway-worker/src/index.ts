@@ -1,4 +1,11 @@
-import { z } from "zod";
+import {
+  boolean,
+  string,
+  record as zRecord,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { discordApplicationSchema } from "@okouai/api-contracts/contracts/discord-application";
 import {
   ConnectionDiagnostics,
@@ -559,7 +566,7 @@ export class DiscordGateway {
   }
 
   private async packet(
-    packet: z.infer<typeof packetSchema>,
+    packet: zInfer<typeof packetSchema>,
     generation: number,
   ): Promise<void> {
     switch (packet.op) {
@@ -621,7 +628,7 @@ export class DiscordGateway {
       case 9:
         await this.retry(
           { reason: "invalid-session" },
-          !z.boolean().parse(packet.d),
+          !boolean().parse(packet.d),
           1000 + Math.floor(Math.random() * 4000),
         );
         return;
@@ -633,7 +640,7 @@ export class DiscordGateway {
     }
   }
 
-  private async dispatch(packet: z.infer<typeof packetSchema>): Promise<void> {
+  private async dispatch(packet: zInfer<typeof packetSchema>): Promise<void> {
     if (packet.s === null || packet.s === undefined || !packet.t)
       throw new Error("Invalid dispatch");
     let session = this.state.session;
@@ -669,11 +676,10 @@ export class DiscordGateway {
     }
     const next = { ...this.state, session, failures: 0 };
     const payload = forwarded
-      ? z.record(z.string(), z.unknown()).parse(packet.d)
+      ? zRecord(string(), zUnknown()).parse(packet.d)
       : null;
     if (payload) {
-      const id = z
-        .string()
+      const id = string()
         .regex(/^\d{17,20}$/u)
         .parse(payload.id);
       const envelope = discordGatewayEnvelopeSchema.parse({

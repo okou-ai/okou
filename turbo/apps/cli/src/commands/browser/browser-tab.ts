@@ -1,20 +1,20 @@
 import { spawnSync } from "node:child_process";
 
 import { Command, InvalidArgumentError, Option } from "commander";
-import { z } from "zod";
+import { array, boolean, literal, object, string } from "zod";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 export const DEFAULT_AGENT_BROWSER_SESSION = "okou-browser";
-const tabIdSchema = z.string().regex(/^t[1-9]\d*$/u);
-const tabListSchema = z.object({
-  success: z.literal(true),
-  data: z.object({
-    tabs: z.array(
-      z.object({
+const tabIdSchema = string().regex(/^t[1-9]\d*$/u);
+const tabListSchema = object({
+  success: literal(true),
+  data: object({
+    tabs: array(
+      object({
         tabId: tabIdSchema,
-        url: z.string(),
-        active: z.boolean(),
+        url: string(),
+        active: boolean(),
       }),
     ),
   }),

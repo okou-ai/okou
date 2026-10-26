@@ -13,7 +13,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { boolean, object, uuid } from "zod";
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -232,7 +232,7 @@ export const createDesktopShellAuthorization$ = command(
       )
       .returning({ id: desktopShellAuthorizations.id });
     const [created] = parseRawRows(
-      z.object({ id: z.uuid() }),
+      object({ id: uuid() }),
       await set(writeDb$).execute(sql`
       WITH retired AS (${retired.getSQL()}), created AS (
         INSERT INTO ${desktopShellAuthorizations} (id, org_id, user_id, chat_thread_id, computer_use_host_id, requested_by_run_id, reason, status, request_expires_at, created_at, updated_at)
@@ -384,7 +384,7 @@ export const approveDesktopShellAuthorization$ = command(
       orgId: owner.orgId,
     });
     const [result] = parseRawRows(
-      z.object({ applied: z.boolean() }),
+      object({ applied: boolean() }),
       await db.execute(sql`
       WITH approved AS (${approved.getSQL()}), ${input}, enqueued AS (
         INSERT INTO ${queuedChatThreads} (chat_thread_id, org_id, queued_at)
@@ -441,7 +441,7 @@ export const retireDesktopShellAuthorization$ = command(
         ),
       );
     const retiredRows = parseRawRows(
-      z.object({ id: z.uuid() }),
+      object({ id: uuid() }),
       await db.execute(
         sql`WITH retired AS (${retired.getSQL()}), failed AS (${failed.getSQL()}) SELECT id FROM retired`,
       ),
