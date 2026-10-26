@@ -209,6 +209,48 @@ test("keeps a queued explicit invocation unavailable after its Workflow is delet
   await runs.requestCancelRun(actor, run.runId, [200]);
 });
 
+test("does not redirect a queued invocation when its renamed Workflow slug is reused", async () => {
+  const { actor, agent, group } = await fixture();
+  const workflow = await createWorkflow(actor, agent.agentId);
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: `/${workflow.name}`,
+  });
+  const renamed = `${workflow.name}-renamed`;
+  await accept(
+    detailClient().update({
+      headers: headers(actor),
+      params: { workflowId: workflow.id },
+      body: { name: renamed },
+    }),
+    [200],
+  );
+  const replacement = await createWorkflow(actor, agent.agentId, {
+    name: workflow.name,
+    instruction: "different invocation target",
+  });
+  await runs.heartbeatRunner(group);
+  await runs.requestClaimRunnerJob(true, run.runId, [404]);
+  expect((await runs.readRun(actor, run.runId)).status).toBe("pending");
+  await runs.requestCancelRun(actor, run.runId, [200]);
+
+  const fresh = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: `/${renamed}`,
+  });
+  const claim = await runs.claimRunnerJob(fresh.runId);
+  expect(claim.storageManifest?.workflowSkills).toStrictEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        workflowId: workflow.id,
+        mountPath: expect.stringMatching(new RegExp(`/${renamed}$`, "u")),
+      }),
+      expect.objectContaining({ workflowId: replacement.id }),
+    ]),
+  );
+  await finish(fresh.runId, claim.sandboxToken);
+});
+
 test("leaves a job pending for a preceding Runner and lets the document reader claim it", async () => {
   const { actor, agent, group } = await fixture();
   await createWorkflow(actor, agent.agentId);

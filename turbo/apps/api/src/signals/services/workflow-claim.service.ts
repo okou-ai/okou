@@ -35,6 +35,7 @@ export interface WorkflowClaimInput {
   readonly selection: StoredExecutionContext["customWorkflowSelection"];
   readonly skillRoot: string;
   readonly invokedWorkflowId: string | null;
+  readonly invokedWorkflowName: string | null;
   readonly ambiguousMountPaths: readonly string[];
 }
 
@@ -79,6 +80,7 @@ export function workflowClaimInput(
             })
             ?.name.slice("custom-skill@".length) ?? null)
         : null),
+    invokedWorkflowName: slash,
     // Stage 1 captured Agent identity, but not source precedence. A collision
     // with an unclassified old mount is rejected rather than guessed by slug.
     ambiguousMountPaths:
@@ -140,7 +142,10 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
             WHERE ${and(eq(storagePublicationTokens.orgId, sql`locked_run."orgId"`), eq(storagePublicationTokens.agentId, sql`locked_run."agentId"`))}
           )
           AND EXISTS (SELECT 1 FROM ${agents} WHERE ${and(eq(agents.id, sql`locked_run."agentId"`), eq(agents.orgId, sql`locked_run."orgId"`), or(eq(agents.visibility, "public"), eq(agents.owner, sql`locked_run."userId"`)))})
-          AND (${input.invokedWorkflowId}::uuid IS NULL OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${input.invokedWorkflowId}::uuid))
+          -- A mutable slug must still resolve to the captured invocation identity.
+          AND (${input.invokedWorkflowId}::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM selected_workflows WHERE id = ${input.invokedWorkflowId}::uuid AND name = ${input.invokedWorkflowName}
+          ))
           AND (COALESCE(${automationId}::uuid, locked_run."workflowAutomationId") IS NULL OR EXISTS (
             SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
             WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, locked_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`locked_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`locked_run."userId"`), eq(workflows.agentId, sql`locked_run."agentId"`), eq(workflows.orgId, sql`locked_run."orgId"`))}
