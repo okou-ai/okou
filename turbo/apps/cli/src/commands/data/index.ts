@@ -95,7 +95,7 @@ export function createDataCommand(): Command {
     );
   command.addHelpText(
     "after",
-    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Results are printed as JSON.\nCalls can consume credits. Follow the tool description for quotes and job status; do not automatically repeat an uncertain paid call.',
+    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Responses are printed as JSON.\nCalls can consume credits, which are totaled when the Run ends. Do not automatically repeat a paid request whose outcome is uncertain.',
   );
   return command;
 }

@@ -19,8 +19,7 @@ const wechatToolsGuidance = Object.freeze([
 ]);
 
 const dataSearchToolsGuidance = Object.freeze([
-  "- External data capabilities: use `okou data --help` for the unified research namespace and `okou data tools --family data-search` to discover reviewed search and enrichment operations. All managed data consumption is displayed as Data Search, with operation-specific prices. Discover quote and saved-job tools with `okou data tools`; inspect their schemas before execution; enrichment is explicit and must not silently follow discovery. Never send private context to a public data source. Use only legitimate professional contacts; no private-email or phone enrichment. Data Router owns provider credentials and pricing; use the credits returned by its quote and result.",
-  "- Saved Data Search jobs: use `okou data tools --family data-search` to find tools for inspecting existing results and billing without starting another paid request. An uncertain create is not a failed create: inspect saved jobs when available and do not resubmit automatically. Reusing a client request ID does not guarantee replay recovery. Data Search jobs execute one bounded request with no automatic pagination or vendor waterfall. Use the discovered status tool with the returned job ID.",
+  "- External data capabilities: use `okou data --help` for the unified research namespace and `okou data tools --family data-search` to discover reviewed search and enrichment operations. All managed data consumption is displayed as Data Search, with operation-specific prices. Inspect each tool's schema and instructions before execution; enrichment is explicit and must not silently follow discovery. Never send private context to a public data source. Use only legitimate professional contacts; no private-email or phone enrichment. Data Router owns provider credentials and pricing; use the pricing and credits reported by the tool.",
 ]);
 
 const instructionsAndMemoryGuidance = Object.freeze([
@@ -232,7 +231,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Okou Browser is currently off for this chat thread. When the task needs a user-viewable cloud browser, run `okou connector permission-request browser --permission browser:write`, give the authorization link to the user, and stop this run. Existing run tokens cannot be upgraded; continue in a new run after the user enables it.",
         ]
       : []),
-    "- Data Router tools are self-describing: run `okou data tools` to discover enabled tools, `okou data describe <tool>` for current input schemas and instructions, then `okou data call <tool> --input '{...}'`. Pass JSON arguments exactly as described. Results are JSON; preserve their content. Tool names, parameters, quotes and job operations are owned by Router and may change independently of the CLI.",
+    "- Data Router tools are self-describing: run `okou data tools` to discover enabled tools, `okou data describe <tool>` for current input schemas and instructions, then `okou data call <tool> --input '{...}'`. Each call sends a request and returns the response as JSON; preserve its content. Tool names, parameters and response schemas belong to Router and may change independently of the CLI. Request costs are totaled once when the Run ends using Router's reported credits. An incomplete response does not establish whether a paid request executed; do not repeat it automatically.",
     ...buildManagedResearchToolPrompt("web-search", args.disabledPaidTools),
     ...buildManagedResearchToolPrompt("social", args.disabledPaidTools),
     ...buildManagedResearchToolPrompt("seo", args.disabledPaidTools),

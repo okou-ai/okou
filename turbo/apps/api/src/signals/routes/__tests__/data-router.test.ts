@@ -97,7 +97,7 @@ async function finish(run: Awaited<ReturnType<typeof createRun>>) {
   await flushWaitUntilForTest();
 }
 
-describe("Data Router completion accounting", () => {
+describe("Data Router accounting when a run ends", () => {
   it("charges returned credits once at completion and keeps the service token out of the sandbox environment", async () => {
     const run = await createRun();
     expect(run.claim.platformEnvironment.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
@@ -105,9 +105,9 @@ describe("Data Router completion accounting", () => {
       JSON.stringify([run.claim.environment, run.claim.platformEnvironment]),
     ).not.toContain("router-test-service-token");
     const requestId = randomUUID();
-    const unfinished = randomUUID();
+    const unreportedRequestId = randomUUID();
     await accept(register(run, requestId), [200]);
-    await accept(register(run, unfinished), [200]);
+    await accept(register(run, unreportedRequestId), [200]);
     const before = await credits(run.actor);
     server.use(
       http.post(ROUTER, async ({ request }) => {

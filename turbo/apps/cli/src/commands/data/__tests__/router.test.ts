@@ -166,7 +166,7 @@ describe("Data Router discovery and JSON calls", () => {
         tools: [
           {
             ...futureTool,
-            name: "new_job_listing",
+            name: "request_history",
             _meta: {
               "ai.okou/data": { family: "data-search", requestHistory: true },
             },
@@ -182,14 +182,14 @@ describe("Data Router discovery and JSON calls", () => {
     );
     await run([
       "call",
-      "new_job_listing",
+      "request_history",
       "--input",
       '{"requestIds":["caller-supplied"],"limit":2}',
       "--json",
     ]);
     expect(calls).toEqual([
       {
-        name: "new_job_listing",
+        name: "request_history",
         arguments: { requestIds: [ownedId], limit: 2 },
       },
     ]);
