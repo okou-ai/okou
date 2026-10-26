@@ -42,6 +42,15 @@ use self::runtime::run_snapshot_workflow;
 /// contract documented on [`FirecrackerSnapshotProvider`]. Invalid IDs are
 /// rejected as [`SnapshotError::Setup`] before snapshot-output cleanup.
 ///
+/// The caller must hold exclusive output-directory access throughout this call,
+/// as documented on [`SnapshotCreateConfig::output_dir`]. This helper acquires no
+/// snapshot lock or equivalent coordination and removes existing snapshot-specific
+/// output before rebuilding; callers must not rely on an old complete snapshot
+/// surviving a failed rebuild. It does not shield publication from caller
+/// cancellation. Callers managing publication separately through
+/// [`sandbox::SnapshotProvider`] must retain their coordination through commit
+/// or explicit discard.
+///
 /// The current Rust workflow spans orchestration in this module, live VM execution in
 /// `snapshot/runtime.rs`, resource ownership and cleanup in `snapshot/attempt/`, and stable
 /// artifact publication in `snapshot/publish.rs`:
