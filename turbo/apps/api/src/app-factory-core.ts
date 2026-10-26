@@ -695,13 +695,11 @@ export function createAppWithRoutes({
     );
   });
 
-  app.use("*", previewAutomationBypassMiddleware);
-
   // Browser cross-origin requests (e.g. https://app.okou.ai -> api.okou.ai). Must
-  // run before the route handlers so OPTIONS preflight short-circuits without
-  // matching a registered method, and so registered route responses receive
-  // Access-Control-Allow-Origin without relying on the legacy web proxy.
+  // wrap access checks as well as route handlers so preview denials remain
+  // readable and OPTIONS preflight short-circuits before authentication.
   app.use("*", corsMiddleware);
+  app.use("*", previewAutomationBypassMiddleware);
   app.use("/mcp", bodyLimit({ maxSize: 64 * 1024 }));
 
   // Native Worker logs are exported by the platform. Node and Workers without
