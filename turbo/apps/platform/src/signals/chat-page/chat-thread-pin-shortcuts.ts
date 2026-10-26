@@ -64,12 +64,14 @@ export const setupChatThreadPinShortcuts$ = command(
     setupGlobalShortcut(
       {
         [GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinUp.binding]: {
+          allowInEditableTarget: true,
           shouldHandle,
           run: (event) => {
             return move(event, -1);
           },
         },
         [GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinDown.binding]: {
+          allowInEditableTarget: true,
           shouldHandle,
           run: (event) => {
             return move(event, 1);

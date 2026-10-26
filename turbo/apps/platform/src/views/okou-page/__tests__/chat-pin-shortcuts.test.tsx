@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadPinOrderContract } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
@@ -120,6 +120,40 @@ function dispatchMove(
   return event;
 }
 
+test.each(["", "Unsent draft"])(
+  "Reorder immediately after selecting a chat with draft %j",
+  async (draft) => {
+    const { threads } = await prepare(null);
+    const user = userEvent.setup();
+    await user.click(threadLink("Middle pin"));
+    await waitFor(() => {
+      expect(threadLink("Middle pin")).toHaveAttribute("aria-current", "page");
+    });
+    const composer = await within(threadPane(threads[1]!.id)).findByRole(
+      "textbox",
+      { name: "Message" },
+    );
+    await waitFor(() => {
+      expect(composer).toHaveFocus();
+    });
+    if (draft) {
+      await fill(composer, draft);
+    }
+
+    await user.keyboard("{Alt>}{Shift>}{ArrowUp}{/Shift}{/Alt}");
+    await expectOrder(MOVED_UP_ORDER);
+    expect(pathname()).toBe(`/chats/${threads[1]!.id}`);
+    expect(composer.textContent).toBe(draft);
+    expect(composer).toHaveFocus();
+
+    await user.keyboard("{Alt>}{Shift>}{ArrowDown}{/Shift}{/Alt}");
+    await expectOrder(INITIAL_ORDER);
+    expect(pathname()).toBe(`/chats/${threads[1]!.id}`);
+    expect(composer.textContent).toBe(draft);
+    expect(composer).toHaveFocus();
+  },
+);
+
 test("Move the current pin one position in either direction without navigating", async () => {
   const { path } = await prepare();
   const user = userEvent.setup();
@@ -175,40 +209,41 @@ test.each(["row", "menu trigger", "menu item"])(
   },
 );
 
-test("Reorder the focused side pane while keeping the main chat selected", async () => {
+test("Reorder from the side composer while keeping its draft and main chat selected", async () => {
   const { threads } = await prepare(1, true);
-  const pane = threadPane(threads[2]!.id);
-  pane.focus();
+  const composer = within(threadPane(threads[2]!.id)).getByRole("textbox", {
+    name: "Message",
+  });
+  await fill(composer, "Side pane draft");
   const user = userEvent.setup();
   await user.keyboard("{Alt>}{Shift>}{ArrowUp}{/Shift}{/Alt}");
   await expectOrder(["First pin", "Last pin", "Middle pin", "Regular chat"]);
   expect(pathname()).toBe(`/chats/${threads[1]!.id}`);
   expect(threadLink("Middle pin")).toHaveAttribute("aria-current", "page");
-  expect(pane).toHaveFocus();
+  expect(composer).toHaveTextContent("Side pane draft");
+  expect(composer).toHaveFocus();
 });
 
-test("Keep composer editing and inline rename input in control of their keys", async () => {
+test("Reorder from inline rename while keeping its edit and focus", async () => {
   await prepare();
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  composer.focus();
-  expect(dispatchMove(composer).defaultPrevented).toBeFalsy();
-  expect(sidebarThreadTitles()).toStrictEqual(INITIAL_ORDER);
-
   const user = userEvent.setup();
   await user.dblClick(threadLink("Middle pin"));
   const input = await screen.findByRole("textbox", { name: "Rename chat" });
   expect(input).toHaveFocus();
-  expect(dispatchMove(input).defaultPrevented).toBeFalsy();
-  expect(input).toHaveValue("Middle pin");
+  await fill(input, "Uncommitted title");
+  await user.keyboard("{Alt>}{Shift>}{ArrowUp}{/Shift}{/Alt}");
+  await expectOrder(MOVED_UP_ORDER);
+  expect(input).toHaveValue("Uncommitted title");
+  expect(input).toHaveFocus();
   await user.keyboard("{Escape}");
   expect(threadLink("Middle pin")).toHaveFocus();
-  await user.keyboard("{Alt>}{Shift>}{ArrowUp}{/Shift}{/Alt}");
   await expectOrder(MOVED_UP_ORDER);
 });
 
-test("Leave composition, held keys, and different modifiers unhandled", async () => {
+test("Leave composition, held keys, and different modifiers to the composer", async () => {
   await prepare();
-  document.body.focus();
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Keep this draft");
   for (const options of [
     { isComposing: true },
     { keyCode: 229 },
@@ -218,12 +253,14 @@ test("Leave composition, held keys, and different modifiers unhandled", async ()
     { ctrlKey: true },
     { metaKey: true },
   ]) {
-    expect(dispatchMove(document.body, options).defaultPrevented).toBeFalsy();
+    expect(dispatchMove(composer, options).defaultPrevented).toBeFalsy();
   }
   expect(sidebarThreadTitles()).toStrictEqual(INITIAL_ORDER);
   const user = userEvent.setup();
   await user.keyboard("{Alt>}{Shift>}{ArrowUp}{/Shift}{/Alt}");
   await expectOrder(MOVED_UP_ORDER);
+  expect(composer).toHaveTextContent("Keep this draft");
+  expect(composer).toHaveFocus();
 });
 
 test("Do not reorder an unpinned chat or the main chat from another menu", async () => {
