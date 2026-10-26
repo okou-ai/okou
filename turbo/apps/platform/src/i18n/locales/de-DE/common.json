@@ -399,7 +399,6 @@
       "manage": "Verwalten",
       "mobile": {
         "invite": "Einladen",
-        "openArtifacts": "Artefakte auf dem Mobilgerät öffnen",
         "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen",
         "openMenu": "Menü öffnen"
       },
@@ -2962,7 +2961,6 @@
       },
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
-      "openArtifacts": "Artefakte öffnen",
       "openBrowser": "Browser öffnen",
       "openNamedAgent": "Agent {{name}} öffnen",
       "openNamedChat": "Chat {{title}} öffnen",

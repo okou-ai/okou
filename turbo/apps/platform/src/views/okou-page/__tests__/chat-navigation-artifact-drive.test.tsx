@@ -30,7 +30,7 @@ import { expect, test, describe, it } from "vitest";
 import {
   click,
   queryAllByRoleFast,
-  setupPage as setupPlatformPage,
+  setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
   findNamedLink,
@@ -49,6 +49,7 @@ import {
   googleDriveCatalogItem,
   googleDriveConnector,
   mockArtifactConversation,
+  openResourceArtifact,
   NAVIGATION_ARTIFACT_AGENT_ID,
   NAVIGATION_ARTIFACT_RUN_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
@@ -56,16 +57,6 @@ import {
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
-
-function setupPage(options: Parameters<typeof setupPlatformPage>[0]) {
-  return setupPlatformPage({
-    ...options,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatResourcePanel]: false,
-      ...options.featureSwitches,
-    },
-  });
-}
 
 const DRIVE_ARTIFACT_ID = "a0000000-0000-4000-a000-000000000940";
 const DRIVE_FILE_ID = "f0000000-0000-4000-a000-000000000940";
@@ -427,10 +418,6 @@ function mockWideScreen(): void {
   });
 }
 
-function artifactList(): HTMLElement {
-  return screen.getByTestId("thread-sidebar-artifacts");
-}
-
 function artifactPreview(): HTMLElement {
   return screen.getByTestId("artifact-sidebar");
 }
@@ -438,14 +425,7 @@ function artifactPreview(): HTMLElement {
 async function openDriveArtifactDownloadMenu(
   filename = "Drive report.pdf",
 ): Promise<void> {
-  await waitFor(() => {
-    expect(buttonNamed("Open artifacts")).toBeEnabled();
-  });
-  click(buttonNamed("Open artifacts"));
-  await waitFor(() => {
-    expect(buttonNamed(`Preview ${filename}`, artifactList())).toBeEnabled();
-  });
-  click(buttonNamed(`Preview ${filename}`, artifactList()));
+  await openResourceArtifact(filename);
   await waitFor(() => {
     expect(buttonNamed("Download artifact", artifactPreview())).toBeEnabled();
   });

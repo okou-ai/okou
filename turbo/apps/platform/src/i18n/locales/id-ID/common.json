@@ -399,7 +399,6 @@
       "manage": "Kelola",
       "mobile": {
         "invite": "Undang",
-        "openArtifacts": "Buka artifact mobile",
         "openAutomations": "Buka otomatisasi mobile",
         "openMenu": "Buka menu"
       },
@@ -2951,7 +2950,6 @@
       },
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
-      "openArtifacts": "Buka artefak",
       "openBrowser": "Buka browser",
       "openNamedAgent": "Buka agen {{name}}",
       "openNamedChat": "Buka chat {{title}}",

@@ -49,10 +49,9 @@ import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts
 const ARTIFACT_AUTO_LOAD_THRESHOLD_PX = 800;
 
 /**
- * Open the thread's artifacts list and refresh its first page. Entry buttons
- * and the detail's Back action share this hook so the list is current on open.
+ * Return from an artifact detail to the thread's gallery and refresh its first page.
  */
-export function useOpenThreadArtifacts(thread: ChatPanelSignals): () => void {
+function useOpenThreadArtifacts(thread: ChatPanelSignals): () => void {
   const open = useSet(openThreadArtifacts$);
   const reloadArtifacts = useSet(thread.sidebar.artifactCatalog.reload$);
   return () => {
@@ -152,15 +151,9 @@ function ThreadArtifactsPanel({
   readonly thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  const resourcesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  const title = resourcesEnabled
-    ? t(($) => {
-        return $.chat.resources.title;
-      })
-    : t(($) => {
-        return $.artifacts.sidebar.panelTitle;
-      });
+  const title = t(($) => {
+    return $.chat.resources.title;
+  });
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
   const fullscreen = useGet(sidebar.fullscreen$);
@@ -196,20 +189,19 @@ function ThreadArtifactsPanel({
     );
   };
 
-  const appearance = resourcesEnabled ? "gallery" : "card";
   const artifactsContent =
     artifacts === null ? (
       catalogLoadable.state === "hasError" ? (
         <ArtifactCatalogError />
       ) : (
-        <ArtifactCatalogSkeleton appearance={appearance} />
+        <ArtifactCatalogSkeleton appearance="gallery" />
       )
     ) : artifacts.length === 0 ? (
       <ArtifactCatalogEmpty />
     ) : (
       <ArtifactCatalogGrid
         artifacts={artifacts}
-        appearance={appearance}
+        appearance="gallery"
         onOpen={(artifactId) => {
           detach(
             openCatalogArtifact(artifactId, pageSignal),
@@ -235,29 +227,24 @@ function ThreadArtifactsPanel({
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
         onClose={close}
-        separated={!resourcesEnabled}
+        separated={false}
       />
-      {resourcesEnabled && (
-        <div className="shrink-0 border-b border-border/60 px-4 pb-4">
-          <h3 className="flex items-center gap-2 text-sm font-medium">
-            {t(($) => {
-              return $.artifacts.sidebar.panelTitle;
-            })}
-            {artifacts !== null && (
-              <span className="text-xs font-normal tabular-nums text-muted-foreground">
-                {formatLocalizedNumber(artifacts.length)}
-                {hasMore ? "+" : ""}
-              </span>
-            )}
-          </h3>
-        </div>
-      )}
+      <div className="shrink-0 border-b border-border/60 px-4 pb-4">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
+          {t(($) => {
+            return $.artifacts.sidebar.panelTitle;
+          })}
+          {artifacts !== null && (
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">
+              {formatLocalizedNumber(artifacts.length)}
+              {hasMore ? "+" : ""}
+            </span>
+          )}
+        </h3>
+      </div>
       <div
         onScroll={handleScroll}
-        className={cn(
-          "min-h-0 flex-1 overflow-y-auto",
-          resourcesEnabled ? "p-4 sm:p-6" : "px-4 py-4",
-        )}
+        className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6"
       >
         {artifactsContent}
       </div>

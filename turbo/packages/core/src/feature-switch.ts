@@ -109,14 +109,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // Preserve the maintainer's access outside the staff organization.
     enabledUserHashes: ["032a75d8", "35679123"],
   },
-  [FeatureSwitchKey.ChatResourcePanel]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat resources",
-    description:
-      "Show a responsive panel of outputs and links from the current chat.",
-    enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ThreadEmailManager]: {
     maintainer: "yuma@okou.ai",
     displayName: "Thread email manager",

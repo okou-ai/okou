@@ -108,7 +108,6 @@ export interface MessageListSignals {
   >;
   readonly resetRenderedChatGroupsIfAtBottom$: Command<void, []>;
   readonly artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
-  readonly reloadArtifacts$: Command<void, []>;
 }
 
 export interface SendMessageOptions {
@@ -233,5 +232,4 @@ export interface ChatPanelSignals {
   readonly donePhrase$: Computed<Promise<string>>;
   // -- Artifacts ------------------------------------------------------------
   readonly artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
-  readonly reloadArtifacts$: Command<void, []>;
 }

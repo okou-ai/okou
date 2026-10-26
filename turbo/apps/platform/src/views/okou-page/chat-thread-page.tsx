@@ -3,7 +3,6 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
-import { chatResourcePanelEnabled$ } from "../../signals/chat-page/chat-resources.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -233,10 +232,7 @@ import {
   openThreadBrowserSession$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ThreadSidebarSignals } from "../../signals/chat-page/thread-sidebar.ts";
-import {
-  ThreadSidebarSlot,
-  useOpenThreadArtifacts,
-} from "./thread-sidebar.tsx";
+import { ThreadSidebarSlot } from "./thread-sidebar.tsx";
 import { openQueueDrawer$ } from "../../signals/queue-page/queue-drawer-state.ts";
 import {
   closeChatThreadEmojiMenu$,
@@ -593,30 +589,6 @@ function ChatThreadHeaderIconButton({
   );
 }
 
-function ArtifactsButton({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
-  const resourcesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  const sidebarTarget = useGet(thread.sidebar.target$);
-  const reloadArtifacts = useSet(thread.reloadArtifacts$);
-  const openThreadArtifacts = useOpenThreadArtifacts(thread);
-  if (resourcesEnabled) {
-    return <ChatResourcesButton thread={thread} />;
-  }
-  return (
-    <ChatThreadHeaderIconButton
-      icon={<Package size={18} />}
-      label={t(($) => {
-        return $.chat.thread.openArtifacts;
-      })}
-      open={sidebarTarget?.type === "artifacts"}
-      onClick={() => {
-        reloadArtifacts();
-        openThreadArtifacts();
-      }}
-    />
-  );
-}
 // Loads automations and only renders once this thread has at least one linked
 // automation.
 export function AutomationMenuButton({
@@ -833,7 +805,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
           <AutomationMenuButton thread={thread} />
           <ThreadMailButton thread={thread} />
           <BrowserMenuButton thread={thread} />
-          <ArtifactsButton thread={thread} />
+          <ChatResourcesButton thread={thread} />
         </div>
       </SettledChatThreadActions>
     </header>
@@ -3857,13 +3829,9 @@ function ChatThreadResourceLayout({
   thread: ChatPanelSignals;
   children: ReactNode;
 }) {
-  const resourcesEnabled = useGet(chatResourcePanelEnabled$);
   const resourceLayoutRef = useSet(thread.resources.layoutOnRef$);
   return (
-    <div
-      className="relative min-h-0 flex-1"
-      ref={resourcesEnabled ? resourceLayoutRef : undefined}
-    >
+    <div className="relative min-h-0 flex-1" ref={resourceLayoutRef}>
       {children}
     </div>
   );

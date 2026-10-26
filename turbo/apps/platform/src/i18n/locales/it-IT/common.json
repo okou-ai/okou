@@ -413,7 +413,6 @@
       "manage": "Gestisci",
       "mobile": {
         "invite": "Invita",
-        "openArtifacts": "Apri gli artefatti su mobile",
         "openAutomations": "Apri le automazioni su mobile",
         "openMenu": "Apri il menu"
       },
@@ -3008,7 +3007,6 @@
       },
       "noEmojiFound": "Nessuna emoji trovata",
       "notFound": "Conversazione non trovata",
-      "openArtifacts": "Artefatti aperti",
       "openBrowser": "Apri il browser",
       "openNamedAgent": "Apri agente {{name}}",
       "openNamedChat": "Apri la chat {{title}}",

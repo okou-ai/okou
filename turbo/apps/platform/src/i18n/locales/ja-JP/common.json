@@ -399,7 +399,6 @@
       "manage": "管理",
       "mobile": {
         "invite": "招待する",
-        "openArtifacts": "モバイルでアーティファクトを開く",
         "openAutomations": "モバイルでオートメーションを開く",
         "openMenu": "メニューを開く"
       },
@@ -2951,7 +2950,6 @@
       },
       "noEmojiFound": "絵文字が見つかりませんでした",
       "notFound": "チャットスレッドが見つかりません",
-      "openArtifacts": "オープンアーティファクト",
       "openBrowser": "ブラウザを開く",
       "openNamedAgent": "エージェント {{name}} を開く",
       "openNamedChat": "チャットを開く {{title}}",
