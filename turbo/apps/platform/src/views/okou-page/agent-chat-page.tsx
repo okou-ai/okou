@@ -429,7 +429,14 @@ function AgentComposerPage() {
 
       <main
         className={cn(
-          "flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6",
+          "isolate flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6",
+          // Everything that scrolls paints under the corner controls. The
+          // composer card carries `z-10` of its own (the queued-messages
+          // strip tucks behind it), which tied with the corner's `z-10`
+          // and, being later in the DOM, drew the card over the credits pill
+          // once the page scrolled. Isolating the scroller keeps every
+          // z-index inside it beneath the corner; menus are portaled, so none
+          // of them needs to escape.
           // From `md` the corner controls sit over the scroller's top 56px
           // (16px gutter, 32px control, 8px below). The distance is padding
           // inside the scroller rather than a band above it, so at rest the
