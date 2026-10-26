@@ -40,7 +40,6 @@ import {
   checkInGetStarted$,
   getStartedQuests$,
   getStartedSummary$,
-  setCheckinClaimedOpen$,
   rewardsNoteOpen$,
   setQuestIntroKey$,
   setRewardsNoteOpen$,
@@ -823,7 +822,6 @@ function useQuestHandoffs(
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const setShareDialogOpen = useSet(setShareDialogOpen$);
-  const setCheckinClaimedOpen = useSet(setCheckinClaimedOpen$);
   return {
     imessage: connectPhone,
     invite: () => {
@@ -833,13 +831,7 @@ function useQuestHandoffs(
       setShareDialogOpen(true);
     },
     checkin: () => {
-      detach(
-        (async () => {
-          await checkIn(pageSignal);
-          setCheckinClaimedOpen(true);
-        })(),
-        Reason.DomCallback,
-      );
+      detach(checkIn(pageSignal), Reason.DomCallback);
     },
   };
 }
