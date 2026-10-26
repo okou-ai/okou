@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object, string, enum as zEnum } from "zod";
 
 const STEAM_OPENID_ENDPOINT = "https://steamcommunity.com/openid/login";
 const STEAM_OPENID_NS = "http://specs.openid.net/auth/2.0";
@@ -15,9 +15,9 @@ const REQUIRED_SIGNED_OPENID_FIELDS = [
   "identity",
 ] as const;
 
-const steamOpenIdVerificationResponseSchema = z.object({
-  ns: z.string().optional(),
-  is_valid: z.enum(["true", "false"]).optional(),
+const steamOpenIdVerificationResponseSchema = object({
+  ns: string().optional(),
+  is_valid: zEnum(["true", "false"]).optional(),
 });
 
 interface SteamOpenIdVerificationResult {

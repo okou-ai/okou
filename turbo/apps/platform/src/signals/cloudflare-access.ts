@@ -14,7 +14,7 @@ import {
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { command, computed, state } from "ccstate";
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
@@ -34,9 +34,9 @@ import {
   closeRemoteNetworkEditor$,
 } from "./remote-network-location.ts";
 
-const cloudflareAccessChangedPayloadSchema = z
-  .object({ orgId: z.string().min(1) })
-  .strict();
+const cloudflareAccessChangedPayloadSchema = object({
+  orgId: string().min(1),
+}).strict();
 
 export const cloudflareAccessIdentity$ = computed(async (get) => {
   const [user, identity] = await Promise.all([

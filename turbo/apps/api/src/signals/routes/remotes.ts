@@ -1,6 +1,4 @@
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -10,7 +8,6 @@ import { clerk$ } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import { listRemoteHostDefaults$ } from "../services/chat-remote-access.service";
 import { listComputerUseHosts$ } from "../services/computer-use.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   cappedBaseConcurrencyLimit,
   loadActivePaidConcurrencySlots$,
@@ -28,20 +25,16 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
   const owner = { orgId: auth.orgId, userId: auth.userId };
-  const [hosts, enabledByDefault, capabilities, paidSlots, featureContext] =
-    await Promise.all([
-      set(listComputerUseHosts$, owner, signal),
-      get(cloudBrowserDefault$),
-      set(loadOrgPlanCapabilities$, owner.orgId),
-      set(loadActivePaidConcurrencySlots$, owner.orgId),
-      get(userFeatureSwitchContext(owner.orgId, owner.userId)),
-    ]);
+  const [hosts, enabledByDefault, capabilities, paidSlots] = await Promise.all([
+    set(listComputerUseHosts$, owner, signal),
+    get(cloudBrowserDefault$),
+    set(loadOrgPlanCapabilities$, owner.orgId),
+    set(loadActivePaidConcurrencySlots$, owner.orgId),
+  ]);
   signal.throwIfAborted();
 
-  // Match the owner inventory's VNC feature and current-membership admission.
-  const includeVnc =
-    isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext) &&
-    (await hasCurrentVncMembership(get(clerk$), owner, signal));
+  // Match the owner inventory's current-membership admission.
+  const includeVnc = await hasCurrentVncMembership(get(clerk$), owner, signal);
   signal.throwIfAborted();
   const remoteHosts = await set(listRemoteHostDefaults$, owner, includeVnc);
   signal.throwIfAborted();

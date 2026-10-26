@@ -233,7 +233,13 @@ function mockChatChannelInstalls(): void {
 async function openSkillsStep(
   provider: "Codex" | "Claude Code" = CODEX_CARD,
   fromStart = false,
+  mobile = false,
 ): Promise<void> {
+  if (mobile) {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(width < 640px)";
+    });
+  }
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -267,19 +273,48 @@ async function openSkillsStep(
   }
 
   await expect(
-    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
+    screen.findByRole("heading", {
+      name: mobile ? "Choose how to start" : EXPERIENCE_QUESTION,
+    }),
   ).resolves.toBeInTheDocument();
 
-  click(answerRadio(provider));
+  click(answerRadio(mobile ? `Use my ${provider} plan` : provider));
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
   });
   click(getButtonByName("Continue"));
 
   await expect(
-    screen.findByRole("heading", { name: SKILLS_QUESTION }),
+    screen.findByRole("heading", {
+      name: mobile ? "Import your skills" : SKILLS_QUESTION,
+    }),
   ).resolves.toBeInTheDocument();
 }
+
+test("Mobile import copies the session prompt and continues when a skill arrives", async () => {
+  mockSessions();
+  const workflows = mockAgentWorkflows();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await openSkillsStep("Codex", false, true);
+  await waitFor(() => {
+    return expect(getButtonByName("Copy import prompt")).toBeEnabled();
+  });
+  click(getButtonByName("Copy import prompt"));
+  await waitFor(() => {
+    return expect(getButtonByName("Copied")).toBeInTheDocument();
+  });
+  expect(clipboard.writes).toHaveLength(1);
+  expect(clipboard.writes[0]).toContain(SESSION_TOKEN);
+  workflows.write([importedSkill()]);
+  await expect(
+    screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE }),
+  ).resolves.toBeInTheDocument();
+  await waitForContinueEnabled();
+  click(getButtonByName("Continue"));
+  await expect(
+    screen.findByRole("heading", { name: "Choose a chat app" }),
+  ).resolves.toBeInTheDocument();
+});
 
 test("The skills step requires a selected tool", async () => {
   context.mocks.data.onboardingStatus({

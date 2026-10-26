@@ -17,7 +17,16 @@ import {
   sql,
   type InferColumnsDataTypes,
 } from "drizzle-orm";
-import { z } from "zod";
+import {
+  array,
+  custom,
+  literal,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+} from "zod";
+
 import { logger } from "../../lib/log";
 import {
   enrichMessageContent,
@@ -95,39 +104,39 @@ function isRetryableSystemErrorCode(code: string): boolean {
   );
 }
 
-const slackAgentEventSchema = z.union([
-  z.object({
-    type: z.literal("app_mention"),
-    user: z.string(),
-    text: z.string(),
-    ts: z.string(),
-    channel: z.string(),
-    channel_type: z.string().optional(),
-    thread_ts: z.string().optional(),
-    files: z.array(z.custom<SlackFile>()).optional(),
+const slackAgentEventSchema = union([
+  object({
+    type: literal("app_mention"),
+    user: string(),
+    text: string(),
+    ts: string(),
+    channel: string(),
+    channel_type: string().optional(),
+    thread_ts: string().optional(),
+    files: array(custom<SlackFile>()).optional(),
   }),
-  z.object({
-    type: z.literal("message"),
-    channel_type: z.literal("im"),
-    user: z.string(),
-    text: z.string(),
-    ts: z.string(),
-    channel: z.string(),
-    thread_ts: z.string().optional(),
-    subtype: z.string().optional(),
-    bot_id: z.string().optional(),
-    files: z.array(z.custom<SlackFile>()).optional(),
+  object({
+    type: literal("message"),
+    channel_type: literal("im"),
+    user: string(),
+    text: string(),
+    ts: string(),
+    channel: string(),
+    thread_ts: string().optional(),
+    subtype: string().optional(),
+    bot_id: string().optional(),
+    files: array(custom<SlackFile>()).optional(),
   }),
 ]);
 
-const slackEventCallbackSchema = z.object({
-  type: z.literal("event_callback"),
-  team_id: z.string(),
-  event_id: z.string(),
+const slackEventCallbackSchema = object({
+  type: literal("event_callback"),
+  team_id: string(),
+  event_id: string(),
   event: slackAgentEventSchema,
 });
 
-type SlackAgentEvent = z.infer<typeof slackAgentEventSchema>;
+type SlackAgentEvent = zInfer<typeof slackAgentEventSchema>;
 
 function slackChannelType(
   event: SlackAgentEvent,

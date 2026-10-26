@@ -4202,46 +4202,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching & Training",
           "name": "Coaching & Training",
           "summary": "Coaching, Kurse & Training"
         },
         "consulting": {
+          "mobileName": "Selbstständige Beratung",
           "name": "Selbstständige Beratung",
           "summary": "Beratung zu Business, HR & IT"
         },
         "design": {
+          "mobileName": "Design & Kreation",
           "name": "Design & Kreation",
           "summary": "Grafik, Websites & kreative Arbeit"
         },
         "finance": {
+          "mobileName": "Buchhaltung & Rechnungswesen",
           "name": "Buchhaltung & Rechnungswesen",
           "summary": "Bücher, Berichte & Abstimmung"
         },
         "investing": {
+          "mobileName": "Investment & Marktrecherche",
           "name": "Investment & Marktrecherche",
           "summary": "Investments, Märkte & Portfolios"
         },
         "marketing": {
+          "mobileName": "Marketing & Content",
           "name": "Marketing & Content",
           "summary": "Social Media, Content & Marke"
         },
         "operations": {
+          "mobileName": "Business & Operations",
           "name": "Business & Operations",
           "summary": "Inhaberinnen, Assistenz & Operations"
         },
         "other": {
+          "mobileName": "Anderes / noch am Sondieren",
           "name": "Anderes / noch am Sondieren",
           "summary": "Ein anderer Bereich oder noch am Sondieren"
         },
         "research": {
+          "mobileName": "Recherche & Lernen",
           "name": "Recherche & Lernen",
           "summary": "Recherche, Studium & Lernen"
         },
         "sales": {
+          "mobileName": "Vertrieb & Kundenaufbau",
           "name": "Vertrieb & Kundenaufbau",
           "summary": "Akquise, Vertrieb & Kundenwachstum"
         },
         "software": {
+          "mobileName": "Software & Apps",
           "name": "Software & Apps",
           "summary": "Apps, Games & Entwicklung"
         }
@@ -4249,6 +4260,30 @@
       "industry": {
         "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
+      },
+      "mobile": {
+        "channelsCopy": "Schreibe Okou dort, wo du schon arbeitest.",
+        "channelsTitle": "Chat-App wählen",
+        "connect": "Verbinden",
+        "copyImportPrompt": "Import-Prompt kopieren",
+        "existingPlan": "Meinen {{provider}}-Tarif nutzen",
+        "experienceTitle": "Start auswählen",
+        "industryCopy": "Wir schlagen eine passende erste Aufgabe vor.",
+        "industryTitle": "Arbeitsbereich wählen",
+        "instructions": "Anleitung",
+        "newCopy": "Hilfe bei deiner ersten Aufgabe.",
+        "newTitle": "Mit Okou starten",
+        "pasteIntoProvider": "In {{provider}} einfügen und senden.",
+        "permissionsLabel": "Berechtigungen und Datenschutz",
+        "planCopy": "Aufgaben mit deinem Abo ausführen.",
+        "promptTitle": "Was möchtest du erledigen?",
+        "readyTitle": "Erste Aufgabe starten",
+        "skillsCopy": "Nutze {{provider}} auf deinem Computer.",
+        "skillsTitle": "Skills importieren",
+        "sourcesCopy": "Verbinde ein Tool für die erste Aufgabe.",
+        "startTask": "Aufgabe starten",
+        "teamCopy": "Arbeitet im selben Workspace.",
+        "teamTitle": "Teammitglied einladen"
       },
       "prompt": {
         "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."

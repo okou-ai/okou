@@ -1,14 +1,15 @@
-import { z } from "zod";
+import { boolean, object, enum as zEnum, type infer as zInfer } from "zod";
 
 export type ProactiveWorkflowKind =
   "suggestions" | "jobs" | "learning" | "planning";
 
-export const proactivePreferenceSchema = z.object({
-  enabled: z.boolean(),
-  status: z.enum(["preparing", "enabled", "paused", "error"]),
-  unavailableReason: z
-    .enum(["missing-default-agent", "missing-timezone"])
-    .nullable(),
+export const proactivePreferenceSchema = object({
+  enabled: boolean(),
+  status: zEnum(["preparing", "enabled", "paused", "error"]),
+  unavailableReason: zEnum([
+    "missing-default-agent",
+    "missing-timezone",
+  ]).nullable(),
 });
 
-export type ProactivePreference = z.infer<typeof proactivePreferenceSchema>;
+export type ProactivePreference = zInfer<typeof proactivePreferenceSchema>;

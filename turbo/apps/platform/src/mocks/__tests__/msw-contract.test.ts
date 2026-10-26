@@ -1,6 +1,6 @@
 import { initContract } from "@okouai/api-contracts/contracts/base";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import { coerce, literal, number, object, string } from "zod";
 
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 
@@ -10,54 +10,54 @@ const contracts = c.router({
   read: {
     method: "GET",
     path: "/api/mock-contracts/:id",
-    pathParams: z.object({ id: z.string() }),
-    query: z.object({ limit: z.coerce.number().int() }),
-    responses: { 200: z.object({ id: z.string(), limit: z.number() }) },
+    pathParams: object({ id: string() }),
+    query: object({ limit: coerce.number().int() }),
+    responses: { 200: object({ id: string(), limit: number() }) },
   },
   update: {
     method: "PATCH",
     path: "/api/mock-contracts/:id",
-    pathParams: z.object({ id: z.string() }),
-    body: z.object({ title: z.string() }),
-    responses: { 200: z.object({ id: z.string(), title: z.string() }) },
+    pathParams: object({ id: string() }),
+    body: object({ title: string() }),
+    responses: { 200: object({ id: string(), title: string() }) },
   },
   cookie: {
     method: "GET",
     path: "/api/mock-cookies",
-    responses: { 200: z.object({ cookies: z.string().nullable() }) },
+    responses: { 200: object({ cookies: string().nullable() }) },
   },
   optional: {
     method: "GET",
     path: "/api/mock-optional/:id?",
-    pathParams: z.object({ id: z.string().optional() }),
-    responses: { 200: z.object({ id: z.string().nullable() }) },
+    pathParams: object({ id: string().optional() }),
+    responses: { 200: object({ id: string().nullable() }) },
   },
   thread: {
     method: "GET",
     path: "/api/chat-threads/:id",
-    pathParams: z.object({ id: z.string() }),
-    responses: { 200: z.object({ id: z.string() }) },
+    pathParams: object({ id: string() }),
+    responses: { 200: object({ id: string() }) },
   },
   snapshot: {
     method: "GET",
     path: "/api/chat-threads/snapshot",
-    responses: { 200: z.object({ source: z.literal("snapshot") }) },
+    responses: { 200: object({ source: literal("snapshot") }) },
   },
   account: {
     method: "GET",
     path: "/api/connector-accounts/:connectionId",
-    pathParams: z.object({ connectionId: z.string() }),
-    responses: { 200: z.object({ connectionId: z.string() }) },
+    pathParams: object({ connectionId: string() }),
+    responses: { 200: object({ connectionId: string() }) },
   },
   accounts: {
     method: "GET",
     path: "/api/connector-accounts/connections",
-    responses: { 200: z.object({ source: z.literal("accounts") }) },
+    responses: { 200: object({ source: literal("accounts") }) },
   },
   events: {
     method: "GET",
     path: "/api/chat-threads/events",
-    responses: { 200: z.object({ source: z.literal("events") }) },
+    responses: { 200: object({ source: literal("events") }) },
   },
 });
 

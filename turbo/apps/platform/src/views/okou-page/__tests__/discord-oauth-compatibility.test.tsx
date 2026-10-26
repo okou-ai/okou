@@ -3,7 +3,6 @@ import {
   integrationsDiscordContract,
   type DiscordOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-discord";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -83,7 +82,6 @@ test.each(["closed after approval", "ready"] as const)(
     await setupPage({
       context,
       path: "/works",
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     const card = getIntegrationCard("Discord");
     click(getAction("button", "Connect", card));
@@ -168,7 +166,6 @@ test.each(["/works", "/settings/discord"])(
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     const container =
       path === "/works" ? getIntegrationCard("Discord") : document.body;
@@ -220,7 +217,6 @@ test.each(["missing", "closed", "closes after approval"] as const)(
     await setupPage({
       context,
       path: callback,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     if (kind === "closes after approval") {
       opener.close();
@@ -249,7 +245,6 @@ test("The first completion result wins over a duplicate result", async () => {
   await setupPage({
     context,
     path: callback,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   await act(() => {
     context.mocks.browser.message(
@@ -278,7 +273,6 @@ test.each(["connected", "error"] as const)(
     await setupPage({
       context,
       path: `/settings/discord?status=${result}&workspace=Forged`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(screen.queryByText("Forged")).toBeNull();
     expect(
@@ -303,7 +297,6 @@ test.each(["/works?discord=error", "/settings/discord?status=error"])(
     await setupPage({
       context,
       path: `${entry}&status=connected&discord_error=cancelled&guild_id=${guildId}&state=private-proof&code=private-proof&approval_proof=private-proof&completionToken=private-proof&return=https://evil.example`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(window.location.pathname).toBe("/settings/discord");
     expect(
@@ -382,7 +375,6 @@ test("A failed attempt keeps its consent popup until route abort closes it", asy
   await setupPage({
     context,
     path: "/settings/discord/install",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   click(getAction("button", "Join new server"));
   await pending.promise;
@@ -418,7 +410,6 @@ test("An install route cannot consume a consent proof or claim installation from
   await setupPage({
     context,
     path: `/settings/discord/install?status=connected#discord_oauth=approve&state=${state}&approval_proof=${proof}`,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   expect(
     screen.getByRole("heading", { name: "Add Okou to a server" }),
@@ -466,7 +457,6 @@ test("Restarting an orphaned callback keeps only the public server hint and clea
   await setupPage({
     context,
     path: `/settings/discord?status=pending&guild_id=${guildId}&state=old&completionToken=old#discord_oauth=approve&state=${"o".repeat(43)}&approval_proof=${proof}`,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   click(getAction("button", "Restart authorization"));
   await waitFor(() => {

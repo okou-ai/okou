@@ -2,7 +2,6 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
@@ -17,7 +16,6 @@ import {
   createChatEventsFixture,
   userMessageWithTemplate,
 } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 
 /**
@@ -189,7 +187,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     },
   );
 
-  it("keeps disabled Document input queued and steers it only after enablement", async () => {
+  it("steers Document input with its pinned source before the next queued prompt", async () => {
     const {
       actor: owner,
       agentId,
@@ -205,9 +203,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     const userMessage = userMessageWithTemplate("Prepare an invoice", {
       type: "document",
       selection: { documentTemplateId: "document-template:simple-invoice" },
-    });
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
     });
     await chat.requestSendEvent(
       actor,
@@ -226,16 +221,10 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       active.threadId,
       "Then summarize the invoice",
     );
-    await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
-    ).resolves.toStrictEqual({ input: null });
     const queued = await chat.listThreadEvents(actor, active.threadId);
     expect(queued.events).toContainEqual(
       expect.objectContaining({ id: eventId, userMessage }),
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
-    });
     const next = await api.nextSteerableInput(
       claimed.claim.sandboxToken,
       active.runId,

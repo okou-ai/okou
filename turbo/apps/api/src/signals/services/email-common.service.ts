@@ -31,7 +31,22 @@ import {
 import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
-import { z } from "zod";
+import {
+  array,
+  date,
+  discriminatedUnion,
+  int,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  union,
+  unknown as zUnknown,
+  url as zUrl,
+  type output,
+} from "zod";
+
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
@@ -92,88 +107,78 @@ const OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR =
 export const CREDIT_LOW_BALANCE_EMAIL_SUBJECT =
   "Your credit balance is running low";
 
-const emailTemplateSchema = z.discriminatedUnion("template", [
+const emailTemplateSchema = discriminatedUnion("template", [
   debugMorningBriefEmailTemplateSchema,
-  z
-    .object({
-      template: z.literal("agent-morning-brief"),
-      props: z
-        .object({
-          subject: notifyMailSubjectSchema,
-          text: notifyMailTextSchema,
-          runUrl: z.url().max(1024),
-          manageUrl: z.url().max(1024),
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      template: z.literal("agent-notification"),
-      props: z
-        .object({
-          subject: notifyMailSubjectSchema,
-          text: notifyMailTextSchema,
-          runUrl: z.url().max(1024),
-        })
-        .strict(),
-    })
-    .strict(),
-  z.object({
-    template: z.literal("data-export-ready"),
-    props: z.object({
-      downloadUrl: z.string(),
-      expiresAt: z.string(),
-      artifactCount: z.number(),
-      unsubscribeUrl: z.string().optional(),
+  object({
+    template: literal("agent-morning-brief"),
+    props: object({
+      subject: notifyMailSubjectSchema,
+      text: notifyMailTextSchema,
+      runUrl: zUrl().max(1024),
+      manageUrl: zUrl().max(1024),
+    }).strict(),
+  }).strict(),
+  object({
+    template: literal("agent-notification"),
+    props: object({
+      subject: notifyMailSubjectSchema,
+      text: notifyMailTextSchema,
+      runUrl: zUrl().max(1024),
+    }).strict(),
+  }).strict(),
+  object({
+    template: literal("data-export-ready"),
+    props: object({
+      downloadUrl: string(),
+      expiresAt: string(),
+      artifactCount: number(),
+      unsubscribeUrl: string().optional(),
     }),
   }),
-  z.object({
-    template: z.literal("credit-low-balance"),
-    props: z.object({
-      orgName: z.string(),
-      remainingCredits: z.number(),
-      thresholdCredits: z.number(),
-      billingUrl: z.string(),
-      unsubscribeUrl: z.string().optional(),
+  object({
+    template: literal("credit-low-balance"),
+    props: object({
+      orgName: string(),
+      remainingCredits: number(),
+      thresholdCredits: number(),
+      billingUrl: string(),
+      unsubscribeUrl: string().optional(),
     }),
   }),
 ]);
 
-export type EmailTemplate = z.output<typeof emailTemplateSchema>;
+export type EmailTemplate = output<typeof emailTemplateSchema>;
 
-const emailAddressesSchema = z.union([z.string(), z.array(z.string())]);
-const outboxRowSchema = z.object({
-  id: z.string(),
+const emailAddressesSchema = union([string(), array(string())]);
+const outboxRowSchema = object({
+  id: string(),
   to_addresses: emailAddressesSchema,
   cc_addresses: emailAddressesSchema.nullable(),
-  subject: z.string(),
-  reply_to: z.string().nullable(),
-  headers: z.record(z.string(), z.string()).nullable(),
+  subject: string(),
+  reply_to: string().nullable(),
+  headers: record(string(), string()).nullable(),
   template: emailTemplateSchema,
-  attempts: z.int(),
-  created_at: z.date(),
-  provider_idempotency_key: z.string().nullable(),
-  provider_request: z.unknown(),
+  attempts: int(),
+  created_at: date(),
+  provider_idempotency_key: string().nullable(),
+  provider_request: zUnknown(),
 });
-type OutboxRow = z.output<typeof outboxRowSchema>;
+type OutboxRow = output<typeof outboxRowSchema>;
 
 // The exact provider request replayed by every attempt of one outbox row. It is
 // stored verbatim, so an added optional field must stay optional here for rows
 // committed by an older deployment.
-const providerRequestSchema = z
-  .object({
-    from: z.string(),
-    to: emailAddressesSchema,
-    cc: emailAddressesSchema.optional(),
-    subject: z.string(),
-    replyTo: z.string().optional(),
-    headers: z.record(z.string(), z.string()).optional(),
-    html: z.string(),
-    text: z.string().optional(),
-  })
-  .strict();
-type ProviderRequest = z.output<typeof providerRequestSchema>;
+const providerRequestSchema = object({
+  from: string(),
+  to: emailAddressesSchema,
+  cc: emailAddressesSchema.optional(),
+  subject: string(),
+  replyTo: string().optional(),
+  headers: record(string(), string()).optional(),
+  html: string(),
+  text: string().optional(),
+}).strict();
+type ProviderRequest = output<typeof providerRequestSchema>;
 
 function outboxRowSelection() {
   return {
@@ -880,7 +885,7 @@ export const cleanupExpiredEmailOutbox$ = command(
       .select({
         cleaned: count().mapWith(
           zodDriverValueDecoder(
-            pgInt8ToSafeIntegerSchema.pipe(z.number().nonnegative()),
+            pgInt8ToSafeIntegerSchema.pipe(number().nonnegative()),
           ),
         ),
       })

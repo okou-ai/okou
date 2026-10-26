@@ -1,19 +1,25 @@
-import { z } from "zod";
+import {
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const emailSubscriptionUpdateSchema = z.object({ subscribed: z.boolean() });
+const emailSubscriptionUpdateSchema = object({ subscribed: boolean() });
 
-export const emailSubscriptionResponseSchema = z.object({
-  subscribed: z.boolean(),
-  email: z.string().nullable(),
-  deliveryStatus: z.enum(["available", "suppressed", "no-email"]),
+export const emailSubscriptionResponseSchema = object({
+  subscribed: boolean(),
+  email: string().nullable(),
+  deliveryStatus: zEnum(["available", "suppressed", "no-email"]),
 });
 
-export type EmailSubscriptionResponse = z.infer<
+export type EmailSubscriptionResponse = zInfer<
   typeof emailSubscriptionResponseSchema
 >;
 

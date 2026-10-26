@@ -10,7 +10,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { publishRemoteRunnerInvalidation$ } from "./remote-runtime-wakeup.service";
 import {
   ORG_SCOPED_FEATURE_SWITCH_KEYS,
   ORG_SENTINEL_USER_ID,
@@ -192,18 +191,6 @@ export const updateUserFeatureSwitches$ = command(
         });
       signal.throwIfAborted();
     }
-    if (Object.hasOwn(userSwitches, FeatureSwitchKey.VncAccess)) {
-      await set(
-        publishRemoteRunnerInvalidation$,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          connectionId: null,
-        },
-        "vnc",
-      );
-      signal.throwIfAborted();
-    }
     if (args.switches[FeatureSwitchKey.DesktopShell] === false) {
       await set(retireQueuedShellCommands$, args, signal);
     }
@@ -251,11 +238,5 @@ export const deleteUserFeatureSwitches$ = command(
       .where(and(orgCondition, eq(userFeatureSwitches.switches, {})));
     signal.throwIfAborted();
     await set(retireQueuedShellCommands$, args, signal);
-    await set(
-      publishRemoteRunnerInvalidation$,
-      { ...args, connectionId: null },
-      "vnc",
-    );
-    signal.throwIfAborted();
   },
 );

@@ -1,36 +1,41 @@
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { readBoundedResponseText, safeJsonParse } from "../utils";
 
-const gmailErrorDetailSchema = z.object({
-  domain: z.string().optional(),
-  reason: z.string().optional(),
-  location: z.string().optional(),
-  locationType: z.string().optional(),
+const gmailErrorDetailSchema = object({
+  domain: string().optional(),
+  reason: string().optional(),
+  location: string().optional(),
+  locationType: string().optional(),
 });
-const gmailErrorResponseSchema = z.object({
-  error: z.object({
-    code: z.number().optional(),
-    status: z.string().optional(),
-    errors: z.array(gmailErrorDetailSchema).optional(),
-    details: z.array(gmailErrorDetailSchema).optional(),
+const gmailErrorResponseSchema = object({
+  error: object({
+    code: number().optional(),
+    status: string().optional(),
+    errors: array(gmailErrorDetailSchema).optional(),
+    details: array(gmailErrorDetailSchema).optional(),
   }),
 });
-type GmailError = z.infer<typeof gmailErrorResponseSchema>["error"];
-const gmailReconnectResponseSchema = z.object({
-  error: z.object({
-    details: z
-      .array(
-        z.object({
-          domain: z.string().optional(),
-          reason: z.string().optional(),
-        }),
-      )
-      .optional(),
+type GmailError = zInfer<typeof gmailErrorResponseSchema>["error"];
+const gmailReconnectResponseSchema = object({
+  error: object({
+    details: array(
+      object({
+        domain: string().optional(),
+        reason: string().optional(),
+      }),
+    ).optional(),
   }),
 });
 
-const gmailReasonSchema = z.enum([
+const gmailReasonSchema = zEnum([
   "badRequest",
   "authError",
   "dailyLimitExceeded",

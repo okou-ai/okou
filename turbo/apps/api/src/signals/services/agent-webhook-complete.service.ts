@@ -9,7 +9,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -35,7 +35,7 @@ import {
   type AgentRunOutputInput,
 } from "./agent-run-output.service";
 import {
-  releaseRunSlots,
+  runSlotReleasePlan,
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
@@ -43,9 +43,7 @@ import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { settleDataRouterRun$ } from "./data-router-billing.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 
-type WebhookCompleteBody = z.infer<
-  typeof webhookCompleteContract.complete.body
->;
+type WebhookCompleteBody = zInfer<typeof webhookCompleteContract.complete.body>;
 type TerminalStatus = "completed" | "failed";
 
 interface CompleteAgentRunInput {
@@ -795,7 +793,17 @@ export function createAgentRunCompletion(runId: string, userId: string) {
           }
           // The runner reported completion, so the active row is released
           // whether or not the run ever started. Must stay last in the tx.
-          const releasedSlots = await releaseRunSlots(tx, [input.body.runId]);
+          const releaseRunIds = [input.body.runId];
+          const releasedSlots = await (async () => {
+            const plan = runSlotReleasePlan(releaseRunIds);
+            if (plan === null) {
+              return [];
+            }
+            return await tx
+              .delete(plan.from)
+              .where(plan.where)
+              .returning(plan.returning);
+          })();
           return {
             kind: transition.kind,
             commit: { ...transition.commit, releasedSlots },

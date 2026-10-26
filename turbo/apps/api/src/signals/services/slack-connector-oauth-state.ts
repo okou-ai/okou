@@ -1,6 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { z } from "zod";
+import {
+  boolean,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -9,28 +16,28 @@ import { safeJsonParse } from "../utils";
 const START_MAX_AGE_SECONDS = 15 * 60;
 export const SLACK_CONNECTOR_OAUTH_STATE_PREFIX = "slack-connector.";
 
-export const slackConnectorOAuthContextSchema = z.object({
+export const slackConnectorOAuthContextSchema = object({
   // Keep switch distinct so pre-switch API instances reject the signed context
   // instead of dropping the replacement intent during a rolling deployment.
-  flow: z.enum(["install", "connect", "switch"]),
-  orgId: z.string().min(1),
-  userId: z.string().min(1),
-  workspaceId: z.string().min(1).optional(),
-  sourceWorkspaceId: z.string().min(1).optional(),
-  accountConnection: z.boolean().optional(),
-  slackUserId: z.string().min(1).optional(),
-  channelId: z.string().optional(),
-  threadTs: z.string().optional(),
-  prompt: z.string().max(500).optional(),
-  reinstall: z.boolean().optional(),
+  flow: zEnum(["install", "connect", "switch"]),
+  orgId: string().min(1),
+  userId: string().min(1),
+  workspaceId: string().min(1).optional(),
+  sourceWorkspaceId: string().min(1).optional(),
+  accountConnection: boolean().optional(),
+  slackUserId: string().min(1).optional(),
+  channelId: string().optional(),
+  threadTs: string().optional(),
+  prompt: string().max(500).optional(),
+  reinstall: boolean().optional(),
 });
 
-export type SlackConnectorOAuthContext = z.infer<
+export type SlackConnectorOAuthContext = zInfer<
   typeof slackConnectorOAuthContextSchema
 >;
 
 const startSchema = slackConnectorOAuthContextSchema.extend({
-  issuedAt: z.number().int(),
+  issuedAt: number().int(),
 });
 
 function sign(payload: string): string {

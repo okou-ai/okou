@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { z } from "zod";
+import { uuid } from "zod";
 import { and, eq, isNull } from "drizzle-orm";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { hostedLinkOrigin } from "../../lib/link-layout";
@@ -29,11 +29,9 @@ export const resolveHostedSitePreview$ = command(
     if (expected.hostname !== args.hostname.toLowerCase()) {
       return null;
     }
-    const parsedDeployment = z
-      .uuid()
-      .safeParse(
-        args.publicSlug.startsWith("dpl-") ? args.publicSlug.slice(4) : null,
-      );
+    const parsedDeployment = uuid().safeParse(
+      args.publicSlug.startsWith("dpl-") ? args.publicSlug.slice(4) : null,
+    );
     const deploymentId = parsedDeployment.success
       ? parsedDeployment.data
       : undefined;

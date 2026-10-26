@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.13.3](https://github.com/okou-ai/okou/compare/api-v2.13.2...api-v2.13.3) (2026-10-26)
+
+
+### Refactoring
+
+* remove built-in document templates feature switch ([#43158](https://github.com/okou-ai/okou/issues/43158)) ([af5a4ce](https://github.com/okou-ai/okou/commit/af5a4ce2a1a33fb1d706ec262617eeda0316642a))
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.2
+    * @okouai/connectors bumped to 3.16.14
+    * @okouai/core bumped to 8.791.3
+    * @okouai/db bumped to 2.6.5
+    * @okouai/pi-agent-runtime bumped to 1.50.80
+
 ## [2.13.2](https://github.com/okou-ai/okou/compare/api-v2.13.1...api-v2.13.2) (2026-10-26)
 
 

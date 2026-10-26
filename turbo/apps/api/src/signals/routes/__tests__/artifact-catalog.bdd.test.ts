@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
-import { featureSwitchesRoutes } from "../feature-switches";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -512,7 +509,7 @@ describe("GET /api/artifacts/catalog", () => {
     });
   });
 
-  it("gates site title editing and denies other owners without changing the title", async () => {
+  it("denies other owners site title edits without changing the title", async () => {
     const owner = await catalogActor("Site title access owner");
     const published = await publishHostedSite({
       owner,
@@ -525,41 +522,8 @@ describe("GET /api/artifacts/catalog", () => {
       params: { publicSlug: published.publicSlug },
       body: { title: "Renamed report" },
     };
-    routeMocks.clerk.session(
-      owner.actor.userId,
-      owner.actor.orgId,
-      owner.actor.orgRole,
-    );
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.HostedSiteTitleEditing]: false },
-        },
-      }),
-      [200],
-    );
-    await accept(
-      setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle(
-        rename,
-      ),
-      [403],
-    );
     for (const actor of [bdd.user({ orgId: owner.actor.orgId }), bdd.user()]) {
       routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      await accept(
-        setupApp({ context, routes: featureSwitchesRoutes })(
-          featureSwitchesContract,
-        ).update({
-          headers,
-          body: {
-            switches: { [FeatureSwitchKey.HostedSiteTitleEditing]: true },
-          },
-        }),
-        [200],
-      );
       await accept(
         setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle(
           rename,

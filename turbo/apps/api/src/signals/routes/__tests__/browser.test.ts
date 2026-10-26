@@ -30,7 +30,17 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { HttpResponse, http } from "msw";
 import { aroundEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  object,
+  strictObject,
+  string,
+  uuid,
+  null as zNull,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { createApp } from "../../../app-factory";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
@@ -288,9 +298,7 @@ async function createNativePasswordActionForPreflightTest(
   mockNativeInputTarget();
   server.use(
     http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-      const body = z
-        .strictObject({ name: z.string() })
-        .parse(await request.json());
+      const body = strictObject({ name: string() }).parse(await request.json());
       return HttpResponse.json(providerProfile(randomUUID(), body.name), {
         status: 201,
       });
@@ -814,9 +822,7 @@ async function setupNativeMixedVerificationScenario(
   });
   server.use(
     http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-      const body = z
-        .strictObject({ name: z.string() })
-        .parse(await request.json());
+      const body = strictObject({ name: string() }).parse(await request.json());
       return HttpResponse.json(providerProfile(randomUUID(), body.name), {
         status: 201,
       });
@@ -876,7 +882,7 @@ async function setupNativeMixedVerificationScenario(
       }),
       [200],
     );
-    const values: z.infer<
+    const values: zInfer<
       typeof browserUserActionsContract.apply.body
     >["values"] = [];
     if (control === "checkbox") {
@@ -1074,21 +1080,17 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
         };
       }
       case "Runtime.callFunctionOn": {
-        const declaration = z
-          .string()
-          .parse(command.params.functionDeclaration);
-        const control = controls.get(z.string().parse(command.params.objectId));
+        const declaration = string().parse(command.params.functionDeclaration);
+        const control = controls.get(string().parse(command.params.objectId));
         if (!control) {
           throw new Error("Unknown provider control identity");
         }
-        const wireArgs = z
-          .array(
-            z.object({
-              objectId: z.string().optional(),
-              value: z.unknown().optional(),
-            }),
-          )
-          .parse(command.params.arguments ?? []);
+        const wireArgs = array(
+          object({
+            objectId: string().optional(),
+            value: zUnknown().optional(),
+          }),
+        ).parse(command.params.arguments ?? []);
         const args = wireArgs.map((argument) => {
           if (!argument.objectId) {
             return argument.value;
@@ -1154,9 +1156,7 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
   });
   server.use(
     http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-      const body = z
-        .strictObject({ name: z.string() })
-        .parse(await request.json());
+      const body = strictObject({ name: string() }).parse(await request.json());
       return HttpResponse.json(providerProfile(randomUUID(), body.name), {
         status: 201,
       });
@@ -1601,9 +1601,7 @@ async function setupNativeFileScenario(
   });
   server.use(
     http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-      const body = z
-        .strictObject({ name: z.string() })
-        .parse(await request.json());
+      const body = strictObject({ name: string() }).parse(await request.json());
       return HttpResponse.json(providerProfile(randomUUID(), body.name), {
         status: 201,
       });
@@ -3284,9 +3282,9 @@ describe("Browser user-action route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -3523,9 +3521,9 @@ describe("Browser user-action route", () => {
     mockNativeRadioTarget(group);
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -3958,9 +3956,9 @@ describe("Browser user-action route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -4279,9 +4277,9 @@ describe("Browser user-action route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -4526,9 +4524,9 @@ describe("Browser user-action route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -4838,9 +4836,9 @@ describe("Browser user-action route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -5076,9 +5074,9 @@ describe("Browser user-action route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -5712,9 +5710,9 @@ describe("Browser user-action route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -8238,9 +8236,9 @@ describe("okou browser route", () => {
     let providerIndex = 0;
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -8395,9 +8393,9 @@ describe("okou browser route", () => {
     );
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -8472,9 +8470,9 @@ describe("okou browser route", () => {
     const stoppedProviderIds: string[] = [];
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -8562,9 +8560,9 @@ describe("okou browser route", () => {
         expect(request.headers.get("x-browser-use-api-key")).toBe(
           "test-browser-use-key",
         );
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         expect(body.name).toMatch(/^okou-browser-profile-[0-9a-f-]{36}$/u);
         const profileId = profileIds[profileCreates];
         profileCreates += 1;
@@ -8712,17 +8710,15 @@ describe("okou browser route", () => {
 
     expect(
       providerCreateBodies.map((body) => {
-        return z
-          .strictObject({
-            profileId: z.uuid(),
-            proxyCountryCode: z.null(),
-            timeout: z.literal(240),
-            browserScreenWidth: z.literal(1440),
-            browserScreenHeight: z.literal(900),
-            allowResizing: z.literal(true),
-            enableRecording: z.literal(false),
-          })
-          .parse(body).profileId;
+        return strictObject({
+          profileId: uuid(),
+          proxyCountryCode: zNull(),
+          timeout: literal(240),
+          browserScreenWidth: literal(1440),
+          browserScreenHeight: literal(900),
+          allowResizing: literal(true),
+          enableRecording: literal(false),
+        }).parse(body).profileId;
       }),
     ).toStrictEqual(expect.arrayContaining([...profileIds]));
     expect(deletedProfiles).toStrictEqual([]);
@@ -8966,9 +8962,9 @@ describe("okou browser route", () => {
       let providerStops = 0;
       server.use(
         http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-          const body = z
-            .strictObject({ name: z.string() })
-            .parse(await request.json());
+          const body = strictObject({ name: string() }).parse(
+            await request.json(),
+          );
           return HttpResponse.json(providerProfile(randomUUID(), body.name), {
             status: 201,
           });
@@ -9066,9 +9062,9 @@ describe("okou browser route", () => {
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -9200,9 +9196,9 @@ describe("okou browser route", () => {
     const providerStopAttempts: string[] = [];
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -9327,9 +9323,9 @@ describe("okou browser route", () => {
     let providerIndex = 0;
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -9521,9 +9517,9 @@ describe("okou browser route", () => {
     let firstStopFailures = 0;
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -9663,9 +9659,9 @@ describe("okou browser route", () => {
     let providerIndex = 0;
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });
@@ -9808,9 +9804,9 @@ describe("okou browser route", () => {
     let providerStops = 0;
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         return HttpResponse.json(providerProfile(randomUUID(), body.name), {
           status: 201,
         });

@@ -1,28 +1,33 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
-export const feishuOrgCallbackFileSchema = z.object({
-  fileId: z.string().min(1),
-  messageId: z.string().min(1),
-  fileKey: z.string().min(1),
-  type: z.enum(["file", "image"]),
+export const feishuOrgCallbackFileSchema = object({
+  fileId: string().min(1),
+  messageId: string().min(1),
+  fileKey: string().min(1),
+  type: zEnum(["file", "image"]),
 });
 
-export const feishuOrgCallbackPayloadSchema = z
-  .object({
-    installationId: z.string().uuid(),
-    chatId: z.string(),
-    messageId: z.string(),
-    connectionId: z.string(),
-    sessionKey: z.string().optional(),
-    agentId: z.string().uuid().optional(),
-    existingSessionId: z.string().uuid().optional(),
-    reactionId: z.string().optional(),
-    replyInThread: z.boolean().optional(),
-    files: z.array(feishuOrgCallbackFileSchema).optional(),
-    canonicalChatDelivery: z.boolean().optional(),
-  })
-  .passthrough();
+export const feishuOrgCallbackPayloadSchema = object({
+  installationId: string().uuid(),
+  chatId: string(),
+  messageId: string(),
+  connectionId: string(),
+  sessionKey: string().optional(),
+  agentId: string().uuid().optional(),
+  existingSessionId: string().uuid().optional(),
+  reactionId: string().optional(),
+  replyInThread: boolean().optional(),
+  files: array(feishuOrgCallbackFileSchema).optional(),
+  canonicalChatDelivery: boolean().optional(),
+}).passthrough();
 
-export type FeishuOrgCallbackPayload = z.infer<
+export type FeishuOrgCallbackPayload = zInfer<
   typeof feishuOrgCallbackPayloadSchema
 >;

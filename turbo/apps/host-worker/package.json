@@ -1,6 +1,6 @@
 {
   "name": "@okouai/host-worker",
-  "version": "1.8.20",
+  "version": "1.8.21",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,22 +14,23 @@
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
+    "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^24.13.4",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
     "@typescript/native": "npm:typescript@7.0.2",
+    "esbuild": "0.28.2",
     "eslint": "^9.34.0",
     "fflate": "^0.8.3",
     "happy-dom": "^21.0.4",
     "msw": "^2.13.2",
     "oxlint": "^1.75.0",
-    "typescript": "npm:@typescript/typescript6@6.0.2",
-    "wrangler": "^4.129.0",
-    "@tailwindcss/postcss": "^4.3.3",
     "postcss": "8.5.25",
-    "@types/react": "^19.1.12",
-    "@types/react-dom": "^19.1.9",
-    "esbuild": "0.28.2",
     "tsx": "^4.21.0",
-    "@types/node": "^24.13.4"
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "wrangler": "^4.129.0"
   },
   "dependencies": {
     "entities": "7.0.1",

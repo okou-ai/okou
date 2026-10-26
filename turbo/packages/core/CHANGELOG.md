@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.791.3](https://github.com/okou-ai/okou/compare/core-v8.791.2...core-v8.791.3) (2026-10-26)
+
+
+### Refactoring
+
+* remove built-in document templates feature switch ([#43158](https://github.com/okou-ai/okou/issues/43158)) ([af5a4ce](https://github.com/okou-ai/okou/commit/af5a4ce2a1a33fb1d706ec262617eeda0316642a))
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.2
+
 ## [8.791.2](https://github.com/okou-ai/okou/compare/core-v8.791.1...core-v8.791.2) (2026-10-26)
 
 

@@ -2,7 +2,14 @@
 // next to a real registry entry: the old shape is an explicit JSON Schema, so
 // the assertion does not depend on the contract that the change replaced.
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  fromJSONSchema,
+  object,
+  string,
+  enum as zEnum,
+  type core,
+  type infer as zInfer,
+} from "zod";
 
 import { CLIENT_TYPE_DESKTOP } from "../../contracts/client-headers";
 import { selectClientResponseTransforms } from "../select";
@@ -10,17 +17,17 @@ import type { ClientResponseTransform } from "../types";
 
 // The current contract's 200 body: `name` was renamed to `displayName` and
 // `platform` was added.
-const currentHostSchema = z.object({
-  hostId: z.string(),
-  displayName: z.string(),
-  platform: z.enum(["darwin"]),
+const currentHostSchema = object({
+  hostId: string(),
+  displayName: string(),
+  platform: zEnum(["darwin"]),
 });
 
 // The 200 body that Desktop builds up to maxVersion decode. For a real route,
 // copy `responses["200"].schema` for the route from the production runtime API
 // schema snapshot (`current.json` in the `runtime-api-schema-prod` release),
 // which is what installed Desktop builds were generated against.
-const previousHostJsonSchema: z.core.JSONSchema.JSONSchema = {
+const previousHostJsonSchema: core.JSONSchema.JSONSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   type: "object",
   properties: {
@@ -30,7 +37,7 @@ const previousHostJsonSchema: z.core.JSONSchema.JSONSchema = {
   required: ["hostId", "name"],
   additionalProperties: false,
 };
-const previousHostSchema = z.fromJSONSchema(previousHostJsonSchema);
+const previousHostSchema = fromJSONSchema(previousHostJsonSchema);
 
 const renameDisplayName: ClientResponseTransform = {
   client: "desktop",
@@ -49,7 +56,7 @@ const currentBody = {
   hostId: "host_1",
   displayName: "Studio Mac",
   platform: "darwin",
-} satisfies z.infer<typeof currentHostSchema>;
+} satisfies zInfer<typeof currentHostSchema>;
 
 describe("Desktop response transform template", () => {
   it("documents that the current body breaks the old shape", () => {

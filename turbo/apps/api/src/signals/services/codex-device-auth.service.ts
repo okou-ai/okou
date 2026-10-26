@@ -4,7 +4,15 @@ import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/mode
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
+import {
+  coerce,
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
 import { nowDate } from "../../lib/time";
@@ -41,48 +49,48 @@ const CODEX_DEVICE_AUTH_POLL_INTERVAL_SECONDS = 5;
 const CODEX_DEVICE_AUTH_CONNECTOR_TYPE = "codex-oauth-token";
 const CODEX_DEVICE_AUTH_SOURCE = "codex-device-auth";
 
-const codexDeviceAuthSessionTokenSchema = z.object({
-  version: z.literal(1),
-  sessionId: z.string().uuid(),
+const codexDeviceAuthSessionTokenSchema = object({
+  version: literal(1),
+  sessionId: string().uuid(),
 });
 
-const codexDeviceAuthProviderStateSchema = z.object({
-  version: z.literal(1),
-  type: z.literal("codex"),
-  scope: z.literal("personal"),
-  mode: z.enum(["add", "reconnect"]).optional(),
-  modelProviderId: z.string().uuid().optional(),
-  deviceAuthId: z.string().min(1),
-  userCode: z.string().min(1),
+const codexDeviceAuthProviderStateSchema = object({
+  version: literal(1),
+  type: literal("codex"),
+  scope: literal("personal"),
+  mode: zEnum(["add", "reconnect"]).optional(),
+  modelProviderId: string().uuid().optional(),
+  deviceAuthId: string().min(1),
+  userCode: string().min(1),
 });
 
-const codexDeviceUserCodeResponseSchema = z.object({
-  device_auth_id: z.string().min(1),
-  user_code: z.string().min(1).optional(),
-  usercode: z.string().min(1).optional(),
-  interval: z.coerce
+const codexDeviceUserCodeResponseSchema = object({
+  device_auth_id: string().min(1),
+  user_code: string().min(1).optional(),
+  usercode: string().min(1).optional(),
+  interval: coerce
     .number()
     .int()
     .positive()
     .default(CODEX_DEVICE_AUTH_POLL_INTERVAL_SECONDS),
 });
 
-const codexDeviceTokenResponseSchema = z.object({
-  authorization_code: z.string().min(1),
-  code_challenge: z.string().min(1),
-  code_verifier: z.string().min(1),
+const codexDeviceTokenResponseSchema = object({
+  authorization_code: string().min(1),
+  code_challenge: string().min(1),
+  code_verifier: string().min(1),
 });
 
-const codexOAuthTokenResponseSchema = z.object({
-  id_token: z.string().min(1),
-  access_token: z.string().min(1),
-  refresh_token: z.string().min(1),
+const codexOAuthTokenResponseSchema = object({
+  id_token: string().min(1),
+  access_token: string().min(1),
+  refresh_token: string().min(1),
 });
 
-type CodexDeviceAuthSessionToken = z.infer<
+type CodexDeviceAuthSessionToken = zInfer<
   typeof codexDeviceAuthSessionTokenSchema
 >;
-type CodexDeviceAuthProviderState = z.infer<
+type CodexDeviceAuthProviderState = zInfer<
   typeof codexDeviceAuthProviderStateSchema
 >;
 type ModelProviderAuthSession = typeof modelProviderAuthSessions.$inferSelect;

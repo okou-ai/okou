@@ -7,14 +7,9 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
 
-test.each([
-  { diagnostics: true, vnc: true },
-  { diagnostics: true, vnc: false },
-  { diagnostics: false, vnc: true },
-  { diagnostics: false, vnc: false },
-])(
-  "claims exact-attempt guidance with diagnostics=$diagnostics and vnc=$vnc",
-  async ({ diagnostics, vnc }) => {
+test.each([true, false])(
+  "claims exact-attempt guidance with diagnostics=%s",
+  async (diagnostics) => {
     const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
@@ -24,7 +19,6 @@ test.each([
         { ...actor, orgId: requireOrgId(actor) },
         {
           [FeatureSwitchKey.RemoteConnectionDiagnostics]: diagnostics,
-          [FeatureSwitchKey.VncAccess]: vnc,
         },
       );
       const run = await owned.sendChatRun(actor, {
@@ -33,14 +27,14 @@ test.each([
       });
       const { claim } = await owned.claimChatRun(runnerGroup, run.runId);
       const prompt = claim.appendSystemPrompt ?? "";
-      expect(prompt.includes("- VNC: use")).toBe(vnc);
+      expect(prompt).toContain("- VNC: use");
 
       for (const protocol of ["ssh", "vnc"] as const) {
         const prefix = `- Remote ${protocol.toUpperCase()} failures:`;
         const guidance = prompt.split("\n").find((line) => {
           return line.startsWith(prefix);
         });
-        if (!diagnostics || (protocol === "vnc" && !vnc)) {
+        if (!diagnostics) {
           expect(guidance).toBeUndefined();
           continue;
         }

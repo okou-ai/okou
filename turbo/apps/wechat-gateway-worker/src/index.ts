@@ -5,7 +5,7 @@ import {
   type WorkflowStep,
 } from "cloudflare:workers";
 import { receiveWechatBlock } from "./workflow";
-import { z } from "zod";
+import { boolean, object, string, uuid } from "zod";
 import { controlAuthorized } from "./auth";
 import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { saveReceiver, readPendingBatch } from "./pending";
@@ -17,10 +17,10 @@ import {
   type ReceiverParams,
 } from "./types";
 
-const stopSchema = z.object({
-  connectionId: z.uuid(),
+const stopSchema = object({
+  connectionId: uuid(),
 });
-const startSchema = stopSchema.extend({ generation: z.uuid() });
+const startSchema = stopSchema.extend({ generation: uuid() });
 export class WechatReceiver extends DurableObject<Env> {
   async fetch(request: Request) {
     const raw: unknown = await request.json();
@@ -109,16 +109,14 @@ export class WechatReceiver extends DurableObject<Env> {
   }
   async renew(ownerId: string, stream: ReadableStream | null) {
     const session = stream
-      ? z
-          .object({
-            generation: z.uuid(),
-            baseUrl: z.string(),
-            token: z.string(),
-            cursor: z.string(),
-            preserveCursor: z.boolean(),
-            pending: wechatUpdatesSchema.nullable(),
-          })
-          .parse(await new Response(stream).json())
+      ? object({
+          generation: uuid(),
+          baseUrl: string(),
+          token: string(),
+          cursor: string(),
+          preserveCursor: boolean(),
+          pending: wechatUpdatesSchema.nullable(),
+        }).parse(await new Response(stream).json())
       : undefined;
     return this.ctx.blockConcurrencyWhile(async () => {
       const state = await this.ctx.storage.get<ReceiverState>("receiver");

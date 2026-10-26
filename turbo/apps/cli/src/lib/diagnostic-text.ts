@@ -1,8 +1,7 @@
-import { z } from "zod";
+import { unknown as zUnknown } from "zod";
 
 /** Runner owns the explanation; consumers validate only size and terminal safety. */
-export const diagnosticTextSchema = z
-  .unknown()
+export const diagnosticTextSchema = zUnknown()
   .transform((value) => {
     if (
       typeof value === "string" &&

@@ -1,6 +1,13 @@
 import { command, computed } from "ccstate";
 import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  uuid,
+  enum as zEnum,
+  unknown as zUnknown,
+} from "zod";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 
@@ -77,27 +84,27 @@ export const openAiImageOrchestrationPricing$ = computed(async (get) => {
   return rows;
 });
 
-const settlementSchema = z.object({
-  usageKeys: z.array(z.uuid()).length(6),
-  billing: z.array(
-    z.object({
-      category: z.enum([
+const settlementSchema = object({
+  usageKeys: array(uuid()).length(6),
+  billing: array(
+    object({
+      category: zEnum([
         "tokens.input.text",
         "tokens.input.image",
         "tokens.output.image",
       ]),
-      quantity: z.number().nonnegative(),
+      quantity: number().nonnegative(),
     }),
   ),
-  mainModelUsage: z.object({
-    inputTokens: z.number().int().nonnegative(),
-    cachedInputTokens: z.number().int().nonnegative(),
-    outputTokens: z.number().int().nonnegative(),
+  mainModelUsage: object({
+    inputTokens: number().int().nonnegative(),
+    cachedInputTokens: number().int().nonnegative(),
+    outputTokens: number().int().nonnegative(),
   }),
 });
-const storedImageSchema = z
-  .object({ creditsCharged: z.number() })
-  .catchall(z.unknown());
+const storedImageSchema = object({ creditsCharged: number() }).catchall(
+  zUnknown(),
+);
 
 const finishAdmission$ = command(
   async (

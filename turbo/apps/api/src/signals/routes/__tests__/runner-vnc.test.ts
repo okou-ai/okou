@@ -9,7 +9,6 @@ import {
   type RunnerVncObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -23,7 +22,6 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { requireVncCredentialId } from "./helpers/vnc-response";
 import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
@@ -173,9 +171,6 @@ describe("private Runner VNC authority", () => {
     if (!agentId) {
       throw new Error("Expected onboarding to provide the default Agent");
     }
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     api.authenticate(owner);
     const connection = await accept(
       api.connections().create({
@@ -1046,9 +1041,6 @@ describe("private Runner VNC authority", () => {
       throw new Error("Missing fixture chat thread");
     }
     const threadId = f.threadId;
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     api.authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
       chatRemoteAccessContract,
@@ -2769,9 +2761,6 @@ describe("private Runner VNC authority", () => {
       orgId: `org_vnc_public_${randomUUID()}`,
       userId: `user_vnc_public_${randomUUID()}`,
     };
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     const run = await selectedRuns.start(owner);
     const claimed = await selectedRuns.claim(run, vncRunnerHeaders);
     api.authenticate(owner);
@@ -2812,22 +2801,10 @@ describe("private Runner VNC authority", () => {
     }
   });
 
-  it("rechecks feature and current membership on private calls", async () => {
+  it("rechecks current membership on private calls", async () => {
     const f = await claimedFixture();
     const { generation } = await api.resolved(f);
     const kms = useSecretKmsProbe();
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: false,
-    });
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect((await check(f, generation)).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       { data: [], totalCount: 0 },
     );

@@ -212,6 +212,34 @@ describe("POST /api/me/model-provider-accounts/:id/activate", () => {
     ]);
   });
 
+  it.each(["codex", "claude"] as const)(
+    "promotes the oldest connected %s sibling when the active account is disconnected",
+    async (type) => {
+      const actor = bdd.user();
+      const connect = type === "codex" ? connectCodex : connectClaude;
+      const first = await connect(actor);
+      const second = await connect(actor);
+      const third = await connect(actor);
+
+      await support.deletePersonalModelProviderAccount(actor, first.id);
+      await expect(list(actor)).resolves.toStrictEqual([
+        expect.objectContaining({ id: second.id, isActive: true }),
+        expect.objectContaining({ id: third.id, isActive: false }),
+      ]);
+      await activate(actor, first.id, [404]);
+
+      await support.deletePersonalModelProviderAccount(actor, third.id);
+      await expect(list(actor)).resolves.toStrictEqual([
+        expect.objectContaining({ id: second.id, isActive: true }),
+      ]);
+      await support.deletePersonalModelProviderAccount(actor, second.id);
+      await expect(list(actor)).resolves.toStrictEqual([]);
+      const reconnected = await connect(actor);
+      expect(reconnected.isActive).toBeTruthy();
+      expect(reconnected.modelProviderId).not.toBe(first.modelProviderId);
+    },
+  );
+
   it("keeps one active account after competing switches and permits a subsequent save", async () => {
     const actor = bdd.user();
     await connectCodex(actor);

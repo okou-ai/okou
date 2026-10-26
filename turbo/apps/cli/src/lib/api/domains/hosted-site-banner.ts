@@ -1,7 +1,7 @@
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteBannerStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import {
   ApiRequestError,
   getClientConfig,
@@ -32,7 +32,7 @@ export async function getHostedSiteBanner(publicSlug: string) {
 }
 
 export async function updateHostedSiteBanner(
-  current: z.infer<typeof hostedSiteBannerStatusSchema>,
+  current: zInfer<typeof hostedSiteBannerStatusSchema>,
   showBanner: boolean,
 ) {
   const client = initClient(hostContract, await getClientConfig());

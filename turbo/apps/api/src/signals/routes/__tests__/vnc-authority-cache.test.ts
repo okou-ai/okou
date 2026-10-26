@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -7,10 +6,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
-import {
-  updateFeatureSwitchesForUser,
-  deleteFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -72,9 +67,6 @@ describe("VNC authority and revocation", () => {
         agentId: agent.agentId,
       });
       const member = { orgId: owner.orgId, userId: `user-${randomUUID()}` };
-      await updateFeatureSwitchesForUser(context, member, {
-        [FeatureSwitchKey.VncAccess]: true,
-      });
       await runs.ensurePersonalSubscriptionModel(bdd.user(member), {
         model: "claude-fable-5-1",
       });
@@ -263,39 +255,6 @@ describe("VNC authority and revocation", () => {
     expect((await check(f, 2)).body).toStrictEqual({
       outcome: "valid",
     });
-  });
-
-  it("feature changes and reset revoke only that owner's VNC snapshots without cancelling Runs", async () => {
-    const f = await claimed.fixture();
-    const another = await claimed.fixture();
-    for (const change of [
-      () => {
-        return updateFeatureSwitchesForUser(context, f, {
-          [FeatureSwitchKey.VncAccess]: false,
-        });
-      },
-      () => {
-        return deleteFeatureSwitchesForUser(context, f);
-      },
-    ]) {
-      context.mocks.ably.publish.mockClear();
-      await change();
-      expect(notifications()).toStrictEqual([
-        ["vnc-authority-invalidated", { runId: f.runId, connectionId: null }],
-      ]);
-      expect((await check(f)).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect((await check(another)).body).toStrictEqual({
-        outcome: "valid",
-      });
-      expect(
-        channelsPublishedTo(context.mocks, "ssh-authority-invalidated"),
-      ).toStrictEqual([]);
-      await expect(runs.readRun(bdd.user(f), f.runId)).resolves.toMatchObject({
-        status: "running",
-      });
-    }
   });
 
   it("a publication failure preserves the committed host change and current admission refusal", async () => {

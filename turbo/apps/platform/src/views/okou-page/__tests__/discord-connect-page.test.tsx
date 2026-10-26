@@ -3,7 +3,6 @@ import {
   type DiscordOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -82,7 +81,6 @@ test.each([true, false])(
     await setupPage({
       context,
       path: `/settings/discord/install?guild_id=${guildId}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(
       screen.getByRole("heading", { name: "Add Okou to a server" }),
@@ -176,7 +174,6 @@ test.each(["install", "connect"] as const)(
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(
       screen.getByRole("heading", { name: "Connect to Discord" }),
@@ -265,7 +262,6 @@ test.each(["connected", "disconnected", "error"] as const)(
     const page = await startPage({
       context,
       path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${approvalProof}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     await page.content;
     await approving.promise;
@@ -329,7 +325,6 @@ test.each(["connected", "error"] as const)(
     await setupPage({
       context,
       path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${"p".repeat(43)}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(
       screen.getByRole("heading", { name: "Checking account status..." }),
@@ -406,7 +401,6 @@ test.each([
     const page = await startPage({
       context,
       path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${"p".repeat(43)}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     await page.content;
     await approving.promise;
@@ -458,7 +452,6 @@ test.each([false, true])(
     await setupPage({
       context,
       path: `${path}&status=connected&workspace=Unverified+server`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(screen.queryByText(/Unverified server/u)).not.toBeInTheDocument();
     expect(
@@ -484,7 +477,6 @@ test("A blocked Discord popup shows a retry action on the connection page", asyn
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   click(getAction("button", "Connect"));
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
@@ -539,7 +531,6 @@ test("Closing Discord consent shows cancellation without failure capture and can
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   click(getAction("button", "Connect"));
   await waitFor(() => {
@@ -630,7 +621,6 @@ test.each([
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     click(getAction("button", "Connect"));
     await completing.promise;
@@ -663,7 +653,6 @@ test("A Discord DM link can connect without a server hint", async () => {
   await setupPage({
     context,
     path: "/settings/discord",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   expect(getAction("button", "Connect")).toBeEnabled();
 });
@@ -678,7 +667,6 @@ test("A failed Discord status request exposes the error page and its back link",
     setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     }),
   ).rejects.toThrow("Discord access denied");
   await expect(
@@ -701,7 +689,6 @@ test("A server link is independent of the workspace's previous server", async ()
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   expect(getAction("button", "Connect")).toBeEnabled();
 });
@@ -713,7 +700,6 @@ test("A malformed server link cannot start consent", async () => {
   await setupPage({
     context,
     path: "/settings/discord?guild_id=invalid",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   expect(
     screen.getByText(
@@ -722,31 +708,6 @@ test("A malformed server link cannot start consent", async () => {
   ).toBeInTheDocument();
   expect(queryAction("button", "Connect")).not.toBeInTheDocument();
 });
-
-test.each([
-  path,
-  `/settings/discord?status=pending#discord_oauth=approve&state=${"s".repeat(43)}&approval_proof=${"p".repeat(43)}`,
-])(
-  "A disabled Discord integration at %s offers no authorization action",
-  async (disabledPath) => {
-    const approvals: unknown[] = [];
-    context.mocks.api(discordOauthContract.approve, ({ body, respond }) => {
-      approvals.push(body);
-      return respond(200, { approved: true });
-    });
-    await setupPage({
-      context,
-      path: disabledPath,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: false },
-    });
-    expect(
-      screen.getByText("Discord is not configured for this organization yet."),
-    ).toBeInTheDocument();
-    expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-    expect(approvals).toStrictEqual([]);
-    expect(window.location.hash).toBe("");
-  },
-);
 
 test("A Discord connection link requires sign-in and preserves its server", async () => {
   await startPage({ context, path, host: "app.okou.ai", auth: null });

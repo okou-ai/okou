@@ -1,4 +1,17 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -9,7 +22,7 @@ const c = initContract();
  * Two levels only. A template compiled from a file the organization already
  * has is never published beyond it.
  */
-const userTemplateVisibilitySchema = z.enum(["private", "organization"]);
+const userTemplateVisibilitySchema = zEnum(["private", "organization"]);
 
 /**
  * What the template produces, as the reverse run concluded it. Carried rather
@@ -26,13 +39,13 @@ export const USER_TEMPLATE_KINDS = [
   "illustration",
 ] as const;
 
-const userTemplateKindSchema = z.enum(USER_TEMPLATE_KINDS);
+const userTemplateKindSchema = zEnum(USER_TEMPLATE_KINDS);
 
-const userTemplatePreviewAssetIdSchema = z.string().min(1).max(128);
-const userTemplatePreviewAssetSchema = z.object({
+const userTemplatePreviewAssetIdSchema = string().min(1).max(128);
+const userTemplatePreviewAssetSchema = object({
   previewAssetId: userTemplatePreviewAssetIdSchema,
-  url: z.url(),
-  expiresAt: z.iso.datetime(),
+  url: url(),
+  expiresAt: iso.datetime(),
 });
 
 export const MAX_USER_TEMPLATE_PAGES = 100;
@@ -123,12 +136,12 @@ export const REQUIRED_USER_TEMPLATE_PACKAGE_FILES: Readonly<
   illustration: ["SKILL.md"],
 };
 
-const userTemplateSummarySchema = z.object({
-  id: z.uuid(),
-  title: z.string(),
-  sourceFilename: z.string(),
+const userTemplateSummarySchema = object({
+  id: uuid(),
+  title: string(),
+  sourceFilename: string(),
   kind: userTemplateKindSchema,
-  coverUrl: z.url().nullable(),
+  coverUrl: url().nullable(),
   /**
    * Whether the file this cover was rendered from has pages after it.
    *
@@ -142,7 +155,7 @@ const userTemplateSummarySchema = z.object({
    * template renders, which for a document is none, while this is how long the
    * file it was compiled from was.
    */
-  coverHasMorePages: z.boolean(),
+  coverHasMorePages: boolean(),
   /**
    * Null for a kind that has no pages. A document template is its styles and
    * an illustration template is one picture, not a sequence of rendered pages,
@@ -150,14 +163,14 @@ const userTemplateSummarySchema = z.object({
    * "not applicable". An illustration still has a `coverUrl`: that is its
    * source file, which is not a page.
    */
-  pageCount: z.number().int().positive().nullable(),
+  pageCount: number().int().positive().nullable(),
   visibility: userTemplateVisibilitySchema,
   /**
    * Who uploaded it. The catalog lists the caller's own rows alongside every
    * member's organization-visible ones, so a row the caller cannot manage still
    * has to say whose it is.
    */
-  ownerUserId: z.string(),
+  ownerUserId: string(),
   /**
    * That owner's name, as a colleague would recognise it.
    *
@@ -172,18 +185,18 @@ const userTemplateSummarySchema = z.object({
    * may read it, so a surface words the missing name instead of hiding the
    * template behind it.
    */
-  ownerDisplayName: z.string().nullable(),
-  canManage: z.boolean(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  ownerDisplayName: string().nullable(),
+  canManage: boolean(),
+  createdAt: string(),
+  updatedAt: string(),
 });
 
 const userTemplateCatalogEntrySchema = userTemplateSummarySchema.extend({
-  previewAssets: z.array(userTemplatePreviewAssetSchema),
+  previewAssets: array(userTemplatePreviewAssetSchema),
 });
 
 const userTemplateDetailSchema = userTemplateSummarySchema.extend({
-  pageUrls: z.array(z.url()),
+  pageUrls: array(url()),
   /**
    * An expiring URL for the file this template was compiled from.
    *
@@ -192,33 +205,30 @@ const userTemplateDetailSchema = userTemplateSummarySchema.extend({
    * is the only thing there is to show, and signing one per row for a grid
    * nobody has opened yet would pay for URLs that expire unread.
    */
-  sourceUrl: z.url(),
-  previewAssets: z.array(userTemplatePreviewAssetSchema),
+  sourceUrl: url(),
+  previewAssets: array(userTemplatePreviewAssetSchema),
 });
 
-const resolveUserTemplatePreviewUrlsBodySchema = z.object({
-  previewAssetIds: z
-    .array(userTemplatePreviewAssetIdSchema)
+const resolveUserTemplatePreviewUrlsBodySchema = object({
+  previewAssetIds: array(userTemplatePreviewAssetIdSchema)
     .min(1)
     .max(MAX_USER_TEMPLATE_PAGES),
 });
 
-const resolveUserTemplatePreviewUrlsResponseSchema = z.object({
-  assets: z.array(userTemplatePreviewAssetSchema),
+const resolveUserTemplatePreviewUrlsResponseSchema = object({
+  assets: array(userTemplatePreviewAssetSchema),
 });
 
-const userTemplateIdParamsSchema = z.object({
-  templateId: z.uuid(),
+const userTemplateIdParamsSchema = object({
+  templateId: uuid(),
 });
 
-const updateUserTemplateBodySchema = z
-  .object({
-    title: z.string().trim().min(1).max(255).optional(),
-    visibility: userTemplateVisibilitySchema.optional(),
-  })
-  .refine((body) => {
-    return body.title !== undefined || body.visibility !== undefined;
-  }, "A title or visibility change is required");
+const updateUserTemplateBodySchema = object({
+  title: string().trim().min(1).max(255).optional(),
+  visibility: userTemplateVisibilitySchema.optional(),
+}).refine((body) => {
+  return body.title !== undefined || body.visibility !== undefined;
+}, "A title or visibility change is required");
 
 /**
  * Everything a finished reverse run hands back, in one call.
@@ -231,10 +241,10 @@ const updateUserTemplateBodySchema = z
  * There is no create-then-fill pair. A row exists only once this call validates
  * a package, so an abandoned run leaves nothing behind.
  */
-const publishUserTemplateBaseSchema = z.object({
-  title: z.string().trim().min(1).max(255),
-  sourceFileId: z.uuid(),
-  packageFileId: z.uuid(),
+const publishUserTemplateBaseSchema = object({
+  title: string().trim().min(1).max(255),
+  sourceFileId: uuid(),
+  packageFileId: uuid(),
 });
 
 /**
@@ -266,23 +276,23 @@ const publishUserTemplateBaseSchema = z.object({
  * from — a screenshot or a page can look nothing like the pictures the style
  * draws. They arrive in display order, and the first is the cover.
  */
-const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
+const publishUserTemplateBodySchema = discriminatedUnion("kind", [
   publishUserTemplateBaseSchema.extend({
-    kind: z.literal("presentation"),
-    pageFileIds: z.array(z.uuid()).min(1).max(MAX_USER_TEMPLATE_PAGES),
+    kind: literal("presentation"),
+    pageFileIds: array(uuid()).min(1).max(MAX_USER_TEMPLATE_PAGES),
   }),
   publishUserTemplateBaseSchema.extend({
-    kind: z.literal("document"),
-    coverFileId: z.uuid().optional(),
+    kind: literal("document"),
+    coverFileId: uuid().optional(),
     // No ceiling: the number is only ever compared against one, and a source
     // file's length has no bound that `MAX_USER_TEMPLATE_PAGES` — a limit on
     // how many images may be uploaded — could stand in for. Capping it there
     // would refuse a three-hundred-page manual that uploads one picture.
-    pageCount: z.number().int().positive().optional(),
+    pageCount: number().int().positive().optional(),
   }),
   publishUserTemplateBaseSchema.extend({
-    kind: z.literal("illustration"),
-    exampleFileIds: z.array(z.uuid()).min(1).max(MAX_USER_TEMPLATE_EXAMPLES),
+    kind: literal("illustration"),
+    exampleFileIds: array(uuid()).min(1).max(MAX_USER_TEMPLATE_EXAMPLES),
   }),
 ]);
 
@@ -300,8 +310,8 @@ const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
  * reverse run concluded. A template that should be a different kind is a
  * different template.
  */
-const replaceUserTemplatePackageBodySchema = z.object({
-  packageFileId: z.uuid(),
+const replaceUserTemplatePackageBodySchema = object({
+  packageFileId: uuid(),
 });
 
 export const userTemplatesContract = c.router({
@@ -325,7 +335,7 @@ export const userTemplatesContract = c.router({
     path: "/api/user-templates",
     headers: authHeadersSchema,
     responses: {
-      200: z.array(userTemplateCatalogEntrySchema),
+      200: array(userTemplateCatalogEntrySchema),
       401: apiErrorSchema,
       403: apiErrorSchema,
       500: apiErrorSchema,
@@ -408,25 +418,25 @@ export const userTemplatesContract = c.router({
   },
 });
 
-export type UserTemplateSummary = z.infer<typeof userTemplateSummarySchema>;
-export type UserTemplateCatalogEntry = z.infer<
+export type UserTemplateSummary = zInfer<typeof userTemplateSummarySchema>;
+export type UserTemplateCatalogEntry = zInfer<
   typeof userTemplateCatalogEntrySchema
 >;
-export type UserTemplateDetail = z.infer<typeof userTemplateDetailSchema>;
-export type UserTemplatePreviewAsset = z.infer<
+export type UserTemplateDetail = zInfer<typeof userTemplateDetailSchema>;
+export type UserTemplatePreviewAsset = zInfer<
   typeof userTemplatePreviewAssetSchema
 >;
-export type UserTemplateKind = z.infer<typeof userTemplateKindSchema>;
-export type UserTemplateVisibility = z.infer<
+export type UserTemplateKind = zInfer<typeof userTemplateKindSchema>;
+export type UserTemplateVisibility = zInfer<
   typeof userTemplateVisibilitySchema
 >;
-export type PublishUserTemplateBody = z.infer<
+export type PublishUserTemplateBody = zInfer<
   typeof publishUserTemplateBodySchema
 >;
-export type UpdateUserTemplateBody = z.infer<
+export type UpdateUserTemplateBody = zInfer<
   typeof updateUserTemplateBodySchema
 >;
-export type ReplaceUserTemplatePackageBody = z.infer<
+export type ReplaceUserTemplatePackageBody = zInfer<
   typeof replaceUserTemplatePackageBodySchema
 >;
 export type UserTemplatesContract = typeof userTemplatesContract;

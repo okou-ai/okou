@@ -1,4 +1,16 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  record,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
 
@@ -185,61 +197,56 @@ function hostPolicyHostHasFixedOwnership(
 }
 
 /** Firewall permission schema — a named permission group with matching rules. */
-export const firewallPermissionSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  rules: z.array(z.string()),
+export const firewallPermissionSchema = object({
+  name: string(),
+  description: string().optional(),
+  rules: array(string()),
 });
 
-export const firewallAwsSigv4AuthSchema = z
-  .object({
-    accessKeyId: z.string().min(1),
-    secretAccessKey: z.string().min(1),
-    sessionToken: z.string().min(1).optional(),
-  })
-  .strict();
+export const firewallAwsSigv4AuthSchema = object({
+  accessKeyId: string().min(1),
+  secretAccessKey: string().min(1),
+  sessionToken: string().min(1).optional(),
+}).strict();
 
-const firewallAuthSchema = z
-  .object({
-    headers: z.record(z.string(), z.string()).optional(),
-    base: z.string().min(1).optional(),
-    query: z.record(z.string(), z.string()).optional(),
-    awsSigv4: firewallAwsSigv4AuthSchema.optional(),
-  })
-  .superRefine((auth, ctx) => {
-    if (!auth.awsSigv4) {
-      return;
-    }
-    if (auth.headers && Object.keys(auth.headers).length > 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["headers"],
-        message: "auth.headers cannot be combined with auth.awsSigv4",
-      });
-    }
-    if (auth.query && Object.keys(auth.query).length > 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["query"],
-        message: "auth.query cannot be combined with auth.awsSigv4",
-      });
-    }
-    if (auth.base !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["base"],
-        message: "auth.base cannot be combined with auth.awsSigv4",
-      });
-    }
-  });
+const firewallAuthSchema = object({
+  headers: record(string(), string()).optional(),
+  base: string().min(1).optional(),
+  query: record(string(), string()).optional(),
+  awsSigv4: firewallAwsSigv4AuthSchema.optional(),
+}).superRefine((auth, ctx) => {
+  if (!auth.awsSigv4) {
+    return;
+  }
+  if (auth.headers && Object.keys(auth.headers).length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["headers"],
+      message: "auth.headers cannot be combined with auth.awsSigv4",
+    });
+  }
+  if (auth.query && Object.keys(auth.query).length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["query"],
+      message: "auth.query cannot be combined with auth.awsSigv4",
+    });
+  }
+  if (auth.base !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["base"],
+      message: "auth.base cannot be combined with auth.awsSigv4",
+    });
+  }
+});
 
-const firewallProviderOwnedHostPolicySchema = z
-  .object({
-    kind: z.literal("providerOwned"),
-    exactHosts: z.array(z.string().min(1)).optional(),
-    suffixes: z.array(z.string().min(1)).optional(),
-    allowNonDefaultPort: z.boolean().optional(),
-  })
+const firewallProviderOwnedHostPolicySchema = object({
+  kind: literal("providerOwned"),
+  exactHosts: array(string().min(1)).optional(),
+  suffixes: array(string().min(1)).optional(),
+  allowNonDefaultPort: boolean().optional(),
+})
   .strict()
   .superRefine((policy, ctx) => {
     if (
@@ -275,102 +282,98 @@ const firewallProviderOwnedHostPolicySchema = z
     }
   });
 
-const firewallPublicDestinationHostPolicySchema = z
-  .object({
-    kind: z.literal("publicDestination"),
-  })
-  .strict();
+const firewallPublicDestinationHostPolicySchema = object({
+  kind: literal("publicDestination"),
+}).strict();
 
-export const firewallBaseHostPolicySchema = z.union([
+export const firewallBaseHostPolicySchema = union([
   firewallProviderOwnedHostPolicySchema,
   firewallPublicDestinationHostPolicySchema,
 ]);
 
-export const firewallApiSchema = z.object({
-  base: z.string(),
+export const firewallApiSchema = object({
+  base: string(),
   hostPolicy: firewallBaseHostPolicySchema.optional(),
   auth: firewallAuthSchema,
-  permissions: z.array(firewallPermissionSchema).optional(),
+  permissions: array(firewallPermissionSchema).optional(),
 });
 
-export const firewallSchema = z.object({
-  name: z.string(),
-  apis: z.array(firewallApiSchema),
+export const firewallSchema = object({
+  name: string(),
+  apis: array(firewallApiSchema),
 });
 
-export const firewallsSchema = z.array(firewallSchema);
+export const firewallsSchema = array(firewallSchema);
 
-export const executionFirewallBuiltinEntrySchema = z.object({
-  kind: z.literal("builtin"),
-  name: z.string().min(1),
-  baseUrlVars: z.record(z.string(), z.string()).optional(),
-  sourceId: z.uuid().optional(),
+export const executionFirewallBuiltinEntrySchema = object({
+  kind: literal("builtin"),
+  name: string().min(1),
+  baseUrlVars: record(string(), string()).optional(),
+  sourceId: uuid().optional(),
 });
 
 const executionFirewallSchema = firewallSchema.extend({
-  apis: z.array(
+  apis: array(
     firewallApiSchema.extend({
-      id: z.string().min(1).optional(),
+      id: string().min(1).optional(),
     }),
   ),
 });
 
-export const executionFirewallInlineEntrySchema = z.object({
-  kind: z.literal("inline"),
+export const executionFirewallInlineEntrySchema = object({
+  kind: literal("inline"),
   firewall: executionFirewallSchema,
-  customConnectorId: z.uuid().optional(),
-  sourceId: z.uuid().optional(),
+  customConnectorId: uuid().optional(),
+  sourceId: uuid().optional(),
 });
 
-export const executionFirewallEntrySchema = z.discriminatedUnion("kind", [
+export const executionFirewallEntrySchema = discriminatedUnion("kind", [
   executionFirewallBuiltinEntrySchema,
   executionFirewallInlineEntrySchema,
 ]);
 
-export const executionFirewallsSchema = z.array(executionFirewallEntrySchema);
+export const executionFirewallsSchema = array(executionFirewallEntrySchema);
 
 export const UNKNOWN_PERMISSION_GRANT = "__unknown__";
 
-export const firewallConfigSchema = z.object({
-  name: z.string().min(1, "Firewall name is required"),
-  description: z.string().optional(),
-  apis: z
-    .array(firewallApiSchema)
-    .min(1, "Firewall must have at least one API entry"),
-  placeholders: z.record(z.string(), z.string()).optional(),
+export const firewallConfigSchema = object({
+  name: string().min(1, "Firewall name is required"),
+  description: string().optional(),
+  apis: array(firewallApiSchema).min(
+    1,
+    "Firewall must have at least one API entry",
+  ),
+  placeholders: record(string(), string()).optional(),
 });
 
-export const firewallPolicyValueSchema = z.enum(["allow", "deny", "ask"]);
-export type FirewallPolicyValue = z.infer<typeof firewallPolicyValueSchema>;
+export const firewallPolicyValueSchema = zEnum(["allow", "deny", "ask"]);
+export type FirewallPolicyValue = zInfer<typeof firewallPolicyValueSchema>;
 
-export const firewallPolicySchema = z.object({
-  policies: z.record(z.string(), firewallPolicyValueSchema),
+export const firewallPolicySchema = object({
+  policies: record(string(), firewallPolicyValueSchema),
   unknownPolicy: firewallPolicyValueSchema.optional(),
 });
-export type FirewallPolicy = z.infer<typeof firewallPolicySchema>;
+export type FirewallPolicy = zInfer<typeof firewallPolicySchema>;
 
-export const firewallPoliciesSchema = z.record(
-  z.string(),
-  firewallPolicySchema,
-);
-export type FirewallPolicies = z.infer<typeof firewallPoliciesSchema>;
+export const firewallPoliciesSchema = record(string(), firewallPolicySchema);
+export type FirewallPolicies = zInfer<typeof firewallPoliciesSchema>;
 
-export const networkPolicySchema = z.object({
-  allow: z.array(z.string()),
-  deny: z.array(z.string()),
-  ask: z.array(z.string()),
+export const networkPolicySchema = object({
+  allow: array(string()),
+  deny: array(string()),
+  ask: array(string()),
   unknownPolicy: firewallPolicyValueSchema,
 });
-export type NetworkPolicy = z.infer<typeof networkPolicySchema>;
+export type NetworkPolicy = zInfer<typeof networkPolicySchema>;
 
-export const networkPoliciesSchema = z.record(z.string(), networkPolicySchema);
-export type NetworkPolicies = z.infer<typeof networkPoliciesSchema>;
+export const networkPoliciesSchema = record(string(), networkPolicySchema);
+export type NetworkPolicies = zInfer<typeof networkPoliciesSchema>;
 
-export type FirewallApi = z.infer<typeof firewallApiSchema>;
-export type FirewallBaseHostPolicy = z.infer<
+export type FirewallApi = zInfer<typeof firewallApiSchema>;
+export type FirewallBaseHostPolicy = zInfer<
   typeof firewallBaseHostPolicySchema
 >;
-export type FirewallConfig = z.infer<typeof firewallConfigSchema>;
+export type FirewallConfig = zInfer<typeof firewallConfigSchema>;
 
 export type PermissionNamesOf<T extends FirewallConfig> =
   T["apis"][number] extends infer Api
@@ -383,15 +386,15 @@ export type PermissionNamesOf<T extends FirewallConfig> =
       : never
     : never;
 
-export type Firewall = z.infer<typeof firewallSchema>;
-export type Firewalls = z.infer<typeof firewallsSchema>;
-export type ExecutionFirewallBuiltinEntry = z.infer<
+export type Firewall = zInfer<typeof firewallSchema>;
+export type Firewalls = zInfer<typeof firewallsSchema>;
+export type ExecutionFirewallBuiltinEntry = zInfer<
   typeof executionFirewallBuiltinEntrySchema
 >;
-export type ExecutionFirewallInlineEntry = z.infer<
+export type ExecutionFirewallInlineEntry = zInfer<
   typeof executionFirewallInlineEntrySchema
 >;
-export type ExecutionFirewallEntry = z.infer<
+export type ExecutionFirewallEntry = zInfer<
   typeof executionFirewallEntrySchema
 >;
-export type ExecutionFirewalls = z.infer<typeof executionFirewallsSchema>;
+export type ExecutionFirewalls = zInfer<typeof executionFirewallsSchema>;

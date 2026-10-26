@@ -1,5 +1,5 @@
 import { setTimeout } from "node:timers/promises";
-import { z } from "zod";
+import { object, string, uuid } from "zod";
 import { wechatReceiverContract as contract } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 import {
@@ -15,10 +15,10 @@ import {
   type ReceiverParams,
   type ReceiverState,
 } from "./types";
-const sessionSchema = z.object({
-  generation: z.uuid(),
-  baseUrl: z.string(),
-  token: z.string(),
+const sessionSchema = object({
+  generation: uuid(),
+  baseUrl: string(),
+  token: string(),
 });
 async function api(
   env: Env,

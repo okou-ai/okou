@@ -1,7 +1,14 @@
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  string,
+  unknown as zUnknown,
+} from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import {
   setupApp,
@@ -138,17 +145,13 @@ export function createMcpWebApi(context: TestContext) {
     name: string,
     args: Record<string, unknown> = {},
   ) {
-    return z
-      .object({
-        result: z.object({
-          isError: z.boolean().optional(),
-          structuredContent: z.unknown().optional(),
-          content: z.array(
-            z.object({ type: z.literal("text"), text: z.string() }),
-          ),
-        }),
-      })
-      .parse(await rpc(token, "tools/call", { name, arguments: args })).result;
+    return object({
+      result: object({
+        isError: boolean().optional(),
+        structuredContent: zUnknown().optional(),
+        content: array(object({ type: literal("text"), text: string() })),
+      }),
+    }).parse(await rpc(token, "tools/call", { name, arguments: args })).result;
   }
   const raw = setupRawAppRequest({
     context,

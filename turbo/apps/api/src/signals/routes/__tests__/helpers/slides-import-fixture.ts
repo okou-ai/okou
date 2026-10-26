@@ -2,7 +2,16 @@ import { readFileSync } from "node:fs";
 import AdmZip from "adm-zip";
 import { http, HttpResponse } from "msw";
 import { SaxesParser } from "saxes";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  string,
+  number as zNumber,
+  type infer as zInfer,
+} from "zod";
+
 import { server } from "../../../../mocks/server";
 
 const font = readFileSync(
@@ -523,31 +532,31 @@ function importedText(file: Uint8Array): ImportedText[] {
   return result;
 }
 
-const styleRequestSchema = z.object({
-  requests: z.array(
-    z.object({
-      updateTextStyle: z.object({
-        objectId: z.string(),
-        textRange: z.object({ startIndex: z.number(), endIndex: z.number() }),
-        style: z.object({
-          weightedFontFamily: z.object({
-            fontFamily: z.string(),
-            weight: z.number(),
+const styleRequestSchema = object({
+  requests: array(
+    object({
+      updateTextStyle: object({
+        objectId: string(),
+        textRange: object({ startIndex: zNumber(), endIndex: zNumber() }),
+        style: object({
+          weightedFontFamily: object({
+            fontFamily: string(),
+            weight: zNumber(),
           }),
-          bold: z.boolean(),
-          italic: z.boolean(),
+          bold: boolean(),
+          italic: boolean(),
         }),
       }),
     }),
   ),
-  writeControl: z.object({ requiredRevisionId: z.literal("import-revision") }),
+  writeControl: object({ requiredRevisionId: literal("import-revision") }),
 });
 
 export function mockSlidesFontRestoration(
   uploaded: { readonly bodies: readonly Uint8Array[] },
   failure?: "write" | "ambiguous" | "readback" | "complete",
 ) {
-  const writes: z.infer<typeof styleRequestSchema>["requests"] = [];
+  const writes: zInfer<typeof styleRequestSchema>["requests"] = [];
   const completions: unknown[] = [];
   server.use(
     http.get("https://slides.googleapis.com/v1/presentations/:id", () => {

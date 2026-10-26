@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { coerce, object, string, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -12,20 +12,20 @@ export {
 
 const c = initContract();
 
-const jsonErrorSchema = z.object({ error: z.string() });
+const jsonErrorSchema = object({ error: string() });
 
-export const githubOauthInstallQuerySchema = z.object({
-  userId: z.string().optional(),
-  orgId: z.string().optional(),
-  composeId: z.string().optional(),
+export const githubOauthInstallQuerySchema = object({
+  userId: string().optional(),
+  orgId: string().optional(),
+  composeId: string().optional(),
 });
 
-export const githubOauthConnectQuerySchema = z.object({
-  installation: z.string().optional(),
-  ghUser: z.string().optional(),
-  ghLogin: z.string().optional(),
-  ts: z.coerce.number().optional(),
-  sig: z.string().optional(),
+export const githubOauthConnectQuerySchema = object({
+  installation: string().optional(),
+  ghUser: string().optional(),
+  ghLogin: string().optional(),
+  ts: coerce.number().optional(),
+  sig: string().optional(),
 });
 
 export const githubOauthContract = c.router({
@@ -54,9 +54,9 @@ export const githubOauthContract = c.router({
 });
 
 export type GithubOauthContract = typeof githubOauthContract;
-export type GithubOauthInstallQuery = z.infer<
+export type GithubOauthInstallQuery = zInfer<
   typeof githubOauthInstallQuerySchema
 >;
-export type GithubOauthConnectQuery = z.infer<
+export type GithubOauthConnectQuery = zInfer<
   typeof githubOauthConnectQuerySchema
 >;

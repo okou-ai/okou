@@ -9,7 +9,14 @@ import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
 import { and, asc, eq, gt, gte, ilike, lte, or } from "drizzle-orm";
-import { z } from "zod";
+import {
+  iso,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -84,11 +91,11 @@ const connectBody$ = bodyResultOf(
   integrationsAgentPhoneContract.connectAgentPhone,
 );
 
-const webhookBodySchema = z.record(z.string(), z.unknown());
-const groupHistoryCursorSchema = z.object({
-  groupId: z.string(),
-  receivedAt: z.iso.datetime(),
-  id: z.string().uuid(),
+const webhookBodySchema = record(string(), zUnknown());
+const groupHistoryCursorSchema = object({
+  groupId: string(),
+  receivedAt: iso.datetime(),
+  id: string().uuid(),
 });
 
 type VerificationSendCooldownScope = "phone" | "user_org";
@@ -783,7 +790,7 @@ function arrayValue(source: Record<string, unknown>, keys: readonly string[]) {
 }
 
 function parseDate(value: unknown): Date | null {
-  const parsed = z.iso.datetime().safeParse(value);
+  const parsed = iso.datetime().safeParse(value);
   return parsed.success ? new Date(parsed.data) : null;
 }
 
@@ -1502,7 +1509,7 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
     eq(agentphoneMessageVisibility.orgId, auth.orgId),
     eq(agentphoneMessageVisibility.userId, auth.userId),
   ];
-  let cursor: z.infer<typeof groupHistoryCursorSchema> | undefined;
+  let cursor: zInfer<typeof groupHistoryCursorSchema> | undefined;
   if (query.cursor) {
     const parsed = groupHistoryCursorSchema.safeParse(
       safeJsonParse(Buffer.from(query.cursor, "base64url").toString("utf8")),

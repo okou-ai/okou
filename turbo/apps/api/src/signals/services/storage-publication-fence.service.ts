@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object } from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 
 import {
@@ -50,7 +50,7 @@ export function publicationScopeCondition(fence: StoragePublicationFence): SQL {
   return sql`${publicationKeyCondition(fence.scope, fence.publicationKey)} AND ${eq(storagePublicationTokens.generation, fence.generation)} AND ${eq(storagePublicationTokens.token, fence.token)}`;
 }
 
-export const publicationGenerationReceiptSchema = z.object({
+export const publicationGenerationReceiptSchema = object({
   generation: pgInt8ToSafeIntegerSchema,
 });
 

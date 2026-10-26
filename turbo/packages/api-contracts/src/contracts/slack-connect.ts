@@ -1,41 +1,49 @@
-import { z } from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const slackConnectLinkStatusSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("connect") }),
-  z.object({ kind: z.literal("connected") }),
-  z.object({ kind: z.literal("slack_account_in_use") }),
-  z.object({
-    kind: z.literal("workspace_mismatch"),
-    currentWorkspaceName: z.string().nullable().optional(),
+const slackConnectLinkStatusSchema = discriminatedUnion("kind", [
+  object({ kind: literal("connect") }),
+  object({ kind: literal("connected") }),
+  object({ kind: literal("slack_account_in_use") }),
+  object({
+    kind: literal("workspace_mismatch"),
+    currentWorkspaceName: string().nullable().optional(),
   }),
-  z.object({
-    kind: z.literal("slack_account_mismatch"),
-    currentSlackUserId: z.string().min(1),
-    requestedSlackUserId: z.string().min(1),
+  object({
+    kind: literal("slack_account_mismatch"),
+    currentSlackUserId: string().min(1),
+    requestedSlackUserId: string().min(1),
   }),
 ]);
 
-const slackConnectStatusSchema = z.object({
-  isConnected: z.boolean(),
-  isAdmin: z.boolean(),
-  workspaceName: z.string().nullable().optional(),
-  defaultAgentName: z.string().nullable().optional(),
+const slackConnectStatusSchema = object({
+  isConnected: boolean(),
+  isAdmin: boolean(),
+  workspaceName: string().nullable().optional(),
+  defaultAgentName: string().nullable().optional(),
 });
 
 const slackConnectLinkStatusResponseSchema = slackConnectStatusSchema.extend({
   linkStatus: slackConnectLinkStatusSchema,
 });
 
-const slackConnectOAuthBodySchema = z.object({
-  workspaceId: z.string().min(1),
-  slackUserId: z.string().min(1),
-  channelId: z.string().optional(),
-  threadTs: z.string().optional(),
-  requestUserScopes: z.literal(true),
+const slackConnectOAuthBodySchema = object({
+  workspaceId: string().min(1),
+  slackUserId: string().min(1),
+  channelId: string().optional(),
+  threadTs: string().optional(),
+  requestUserScopes: literal(true),
 });
 
 /**
@@ -56,9 +64,9 @@ export const slackConnectContract = c.router({
     method: "GET",
     path: "/api/integrations/slack/connect/link-status",
     headers: authHeadersSchema,
-    query: z.object({
-      workspaceId: z.string().min(1),
-      slackUserId: z.string().min(1),
+    query: object({
+      workspaceId: string().min(1),
+      slackUserId: string().min(1),
     }),
     responses: {
       200: slackConnectLinkStatusResponseSchema,
@@ -72,7 +80,7 @@ export const slackConnectContract = c.router({
     headers: authHeadersSchema,
     body: slackConnectOAuthBodySchema,
     responses: {
-      202: z.object({ authorizationUrl: z.string().url() }),
+      202: object({ authorizationUrl: string().url() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -86,7 +94,7 @@ export const slackConnectContract = c.router({
     headers: authHeadersSchema,
     body: slackConnectOAuthBodySchema,
     responses: {
-      202: z.object({ authorizationUrl: z.string().url() }),
+      202: object({ authorizationUrl: string().url() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -97,6 +105,6 @@ export const slackConnectContract = c.router({
 });
 
 export type SlackConnectContract = typeof slackConnectContract;
-export type SlackConnectLinkStatus = z.infer<
+export type SlackConnectLinkStatus = zInfer<
   typeof slackConnectLinkStatusSchema
 >;

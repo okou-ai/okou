@@ -1,6 +1,6 @@
 # RFB/GSSAPI protocol tests and optional QEMU interoperability
 
-This is engine/protocol interoperability, not Owner→Agent→Runner product acceptance, compatibility with every VNC server, merge permission or production activation. #37612 leaves #37613 and `VncAccess.enabled: false` unchanged. SCRAM remains a separate profile; rsasl's ambient GSS backend is not enabled.
+This is engine/protocol interoperability, not Owner→Agent→Runner product acceptance, compatibility with every VNC server, merge permission or production activation. Product acceptance is tracked separately in #37613. SCRAM remains a separate profile; rsasl's ambient GSS backend is not enabled.
 
 ## Protocol scope and routine CI
 

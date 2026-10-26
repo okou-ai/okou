@@ -1,5 +1,22 @@
 # Changelog
 
+## [10.3.4](https://github.com/okou-ai/okou/compare/cli-v10.3.3...cli-v10.3.4) (2026-10-26)
+
+
+### Refactoring
+
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.8.2
+    * @okouai/connectors bumped to 3.16.14
+    * @okouai/core bumped to 8.791.3
+    * @okouai/pi-agent-runtime bumped to 1.50.80
+
 ## [10.3.3](https://github.com/okou-ai/okou/compare/cli-v10.3.2...cli-v10.3.3) (2026-10-26)
 
 

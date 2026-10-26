@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from mitmproxy import http
 
+import content_encoding
 import content_length
 import http_header_syntax
 import managed_upload
@@ -195,8 +196,12 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
         'application/json;charset="utf-8"',
     ):
         raise RequestRejectedError("content_type")
-    encodings = flow.request.headers.get_all("Content-Encoding")
-    if encodings and (len(encodings) != 1 or encodings[0].lower().strip() != "identity"):
+    # New managed admission limit: 8 KiB of raw values, including folded separators.
+    # Reject oversized padding before conversion; native head buffering is separate.
+    encodings = content_encoding.read_values(flow.request.headers)
+    if encodings is None or (
+        encodings and (len(encodings) != 1 or encodings[0].lower().strip() != "identity")
+    ):
         raise RequestRejectedError("content_encoding")
     if flow.request.headers.get_all("Transfer-Encoding"):
         raise RequestRejectedError("transfer_encoding")

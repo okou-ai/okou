@@ -3,7 +3,7 @@ import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
-import { z } from "zod";
+import { array, string } from "zod";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import {
@@ -16,15 +16,14 @@ const chatEventUserMessageDecoder = zodDriverValueDecoder(
   userMessageDocumentSchema,
 );
 const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
-  z
-    .array(z.string().uuid())
+  array(string().uuid())
     .min(1)
     .refine((workflowIds) => {
       return new Set(workflowIds).size === workflowIds.length;
     }, "Official Workflow source IDs must be unique"),
 );
 const visibleChatEventTextDecoder = zodDriverValueDecoder(
-  z.string().transform(visiblePiMemoryCitationText),
+  string().transform(visiblePiMemoryCitationText),
 );
 
 /** Canonical payload leaves projected from chat_events.payload. */

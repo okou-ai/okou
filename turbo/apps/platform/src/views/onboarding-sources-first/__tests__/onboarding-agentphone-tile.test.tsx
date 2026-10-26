@@ -33,7 +33,12 @@ function getButton(name: string): HTMLElement {
   return button;
 }
 
-async function openChatStep(): Promise<void> {
+async function openChatStep(mobile = false): Promise<void> {
+  if (mobile) {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(width < 640px)";
+    });
+  }
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -61,7 +66,9 @@ async function openChatStep(): Promise<void> {
   });
   await setupPage({ context, locale: "en-US", path: ROUTES.onboardingSlack });
   await expect(
-    screen.findByRole("heading", { name: "Text Okou in iMessage" }),
+    screen.findByRole("heading", {
+      name: mobile ? "Choose a chat app" : "Text Okou in iMessage",
+    }),
   ).resolves.toBeInTheDocument();
 }
 
@@ -131,6 +138,45 @@ test("Linking iMessage replaces the QR and enables Continue without Slack", asyn
   await waitFor(() => {
     return expect(pathname()).toBe(ROUTES.onboardingReady);
   });
+});
+
+test("Mobile shows the iMessage connection inline and advances only after linking", async () => {
+  mockCode();
+  context.mocks.data.agentPhoneIntegration({
+    linked: false,
+    agentPhoneNumber: "+13144386568",
+    configured: true,
+  });
+  await openChatStep(true);
+  expect(getButton("Continue")).toBeDisabled();
+  expect(getButton("Add to Slack")).toBeEnabled();
+  expect(getButton("Telegram")).toBeEnabled();
+  expect(getButton("Teams")).toBeEnabled();
+  await expect(
+    screen.findByTestId("agentphone-open-messages"),
+  ).resolves.toHaveAttribute(
+    "href",
+    `sms:+13144386568?body=${CONNECTION_CODE}`,
+  );
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: "+15555550123",
+    agentPhoneNumber: "+13144386568",
+    configured: true,
+  });
+  act(() => {
+    return context.mocks.ably.trigger("agentphone:changed");
+  });
+  await expect(
+    screen.findByText("iMessage is connected"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    return expect(getButton("Continue")).toBeEnabled();
+  });
+  click(getButton("Continue"));
+  await expect(
+    screen.findByRole("heading", { name: "Start your first task" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("A pending connection code does not prevent skipping the step", async () => {

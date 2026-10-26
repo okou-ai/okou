@@ -15,7 +15,7 @@ import {
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import { object, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 
 import {
@@ -303,7 +303,7 @@ export function workflowThreadInsertFromBindingSql(
     RETURNING id, agent_id`;
 }
 
-const createdWorkflowThreadRowSchema = z.object({ id: z.uuid() });
+const createdWorkflowThreadRowSchema = object({ id: uuid() });
 
 /** Lazy trigger repair owns its complete binding, thread and event publication. */
 export const ensureWorkflowUserAutomationThread$ = command(

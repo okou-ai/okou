@@ -1,8 +1,8 @@
 import svgpath from "svgpath";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 
-export const svgPathInputsSchema = z.array(
-  z.object({ id: z.number().int().nonnegative(), path: z.string() }),
+export const svgPathInputsSchema = array(
+  object({ id: number().int().nonnegative(), path: string() }),
 );
 
 type Point = { x: number; y: number };

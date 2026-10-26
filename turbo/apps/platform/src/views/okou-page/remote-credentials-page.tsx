@@ -13,17 +13,13 @@ import { SshCredentials, SshDialog } from "./ssh-management.tsx";
 import { VncCredentials } from "./vnc-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
 
-export function RemoteCredentialsPage({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+export function RemoteCredentialsPage() {
   const { t } = useTranslation();
   const close = useSet(closeRemoteCredentialsPage$);
   const type = useGet(remoteControlType$);
   const setType = useSet(setRemoteControlType$);
   const mount = useSet(mountRemoteControlPanel$);
-  const showVnc = vncEnabled && type === "vnc";
+  const showVnc = type === "vnc";
   const title = t(($) => {
     return $.connectors.catalog.remoteControl.credentials;
   });
@@ -44,31 +40,29 @@ export function RemoteCredentialsPage({
             })}
           </p>
         </header>
-        {vncEnabled && (
-          <SegmentControl
-            className="justify-self-start"
-            value={showVnc ? "vnc" : "ssh"}
-            onValueChange={(value) => {
-              if (value === "ssh" || value === "vnc") {
-                setType(value);
-              }
-            }}
-            aria-label={t(($) => {
-              return $.connectors.catalog.remoteControl.type;
+        <SegmentControl
+          className="justify-self-start"
+          value={showVnc ? "vnc" : "ssh"}
+          onValueChange={(value) => {
+            if (value === "ssh" || value === "vnc") {
+              setType(value);
+            }
+          }}
+          aria-label={t(($) => {
+            return $.connectors.catalog.remoteControl.type;
+          })}
+        >
+          <SegmentControlItem value="ssh">
+            {t(($) => {
+              return $.ssh.label;
             })}
-          >
-            <SegmentControlItem value="ssh">
-              {t(($) => {
-                return $.ssh.label;
-              })}
-            </SegmentControlItem>
-            <SegmentControlItem value="vnc">
-              {t(($) => {
-                return $.vnc.label;
-              })}
-            </SegmentControlItem>
-          </SegmentControl>
-        )}
+          </SegmentControlItem>
+          <SegmentControlItem value="vnc">
+            {t(($) => {
+              return $.vnc.label;
+            })}
+          </SegmentControlItem>
+        </SegmentControl>
         <section
           aria-label={t(($) => {
             return showVnc ? $.vnc.label : $.ssh.label;
@@ -77,7 +71,7 @@ export function RemoteCredentialsPage({
           {showVnc ? <VncCredentials /> : <SshCredentials />}
         </section>
         <SshDialog />
-        {vncEnabled && <VncDialog />}
+        <VncDialog />
       </div>
     </RemoteDetailPage>
   );

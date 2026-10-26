@@ -1,10 +1,11 @@
-import { z } from "zod";
-import { initContract } from "./base";
+import { literal, object, type infer as zInfer } from "zod";
+
+import { initContract } from "./trpc-contract";
 
 const c = initContract();
 
-export const healthResponseSchema = z.object({
-  status: z.literal("ok"),
+export const healthResponseSchema = object({
+  status: literal("ok"),
 });
 
 export const healthContract = c.router({
@@ -18,7 +19,7 @@ export const healthContract = c.router({
   },
 });
 
-export type HealthResponse = z.infer<typeof healthResponseSchema>;
+export type HealthResponse = zInfer<typeof healthResponseSchema>;
 export type HealthRouteResponse = {
   readonly status: 200;
   readonly body: HealthResponse;

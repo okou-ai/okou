@@ -4,7 +4,8 @@ import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contra
 import { integrationsDiscordReadContract } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, boolean, object, string, type infer as zInfer } from "zod";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
@@ -28,7 +29,6 @@ import {
   setupConnectedDiscordActor,
   type ConnectedDiscordActor,
 } from "./helpers/discord-fixture";
-import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -40,7 +40,6 @@ const READ = 1n << 16n;
 const THREAD_SEND = 1n << 38n;
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
   await removePublicDiscordBinding(context, actor.fixture);
-  await deleteFeatureSwitchesForUser(context, actor);
 });
 
 afterEach(async () => {
@@ -111,17 +110,15 @@ function botReplyBefore(
   provider.messages.set(reply.id, reply);
 }
 
-const sendBodySchema = z.object({
-  content: z.string(),
-  message_reference: z
-    .object({
-      message_id: z.string(),
-      fail_if_not_exists: z.boolean(),
-    })
-    .optional(),
-  allowed_mentions: z.object({
-    parse: z.array(z.string()),
-    replied_user: z.boolean(),
+const sendBodySchema = object({
+  content: string(),
+  message_reference: object({
+    message_id: string(),
+    fail_if_not_exists: boolean(),
+  }).optional(),
+  allowed_mentions: object({
+    parse: array(string()),
+    replied_user: boolean(),
   }),
 });
 
@@ -134,7 +131,7 @@ async function nativeFixture() {
   const { token } = await runsApi.createCliToken(actor.actor);
   const headers = { authorization: `Bearer ${token}` };
   const messages = new Map<string, DiscordMessage[]>();
-  const sentBodies: z.infer<typeof sendBodySchema>[] = [];
+  const sentBodies: zInfer<typeof sendBodySchema>[] = [];
   const message = (
     id = uniqueDiscordSnowflake(),
     channelId = provider.guildChannelId,

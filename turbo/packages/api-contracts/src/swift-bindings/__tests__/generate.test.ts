@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  union,
+  enum as zEnum,
+  unknown as zUnknown,
+} from "zod";
 import {
   generatedSwiftDirectory,
   renderSwiftConstants,
@@ -99,18 +111,18 @@ describe("renderSwiftTypes", () => {
   it("renders structs with optional, nullable, nested, record, and unknown fields", () => {
     const swift = renderSwiftTypes([
       {
-        schema: z.object({
-          id: z.string().uuid(),
-          count: z.number().int(),
-          ratio: z.number(),
-          label: z.string().nullable(),
-          note: z.string().optional(),
-          tags: z.array(z.string()),
-          flags: z.record(z.string(), z.boolean()),
-          payload: z.record(z.string(), z.unknown()),
-          anything: z.unknown(),
-          nested: z.object({ ok: z.literal(true) }),
-          error: z.object({ message: z.string() }).optional(),
+        schema: object({
+          id: string().uuid(),
+          count: number().int(),
+          ratio: number(),
+          label: string().nullable(),
+          note: string().optional(),
+          tags: array(string()),
+          flags: record(string(), boolean()),
+          payload: record(string(), zUnknown()),
+          anything: zUnknown(),
+          nested: object({ ok: literal(true) }),
+          error: object({ message: string() }).optional(),
         }),
         swiftTypeName: "Sample",
         doc: ["A sample."],
@@ -141,10 +153,10 @@ describe("renderSwiftTypes", () => {
   it("decodes contract-required nullable fields explicitly", () => {
     const swift = renderSwiftTypes([
       {
-        schema: z.object({
-          id: z.string(),
-          orgId: z.string().nullable(),
-          note: z.string().optional(),
+        schema: object({
+          id: string(),
+          orgId: string().nullable(),
+          note: string().optional(),
         }),
         swiftTypeName: "Member",
         doc: [],
@@ -169,7 +181,7 @@ describe("renderSwiftTypes", () => {
     );
     const synthesized = renderSwiftTypes([
       {
-        schema: z.object({ id: z.string(), note: z.string().optional() }),
+        schema: object({ id: string(), note: string().optional() }),
         swiftTypeName: "Plain",
         doc: [],
       },
@@ -180,8 +192,8 @@ describe("renderSwiftTypes", () => {
   it("renders string enums as extensible raw-value structs", () => {
     const swift = renderSwiftTypes([
       {
-        schema: z.object({
-          kind: z.enum(["apps.list", "element.set_value", "default"]),
+        schema: object({
+          kind: zEnum(["apps.list", "element.set_value", "default"]),
         }),
         swiftTypeName: "Command",
         doc: [],
@@ -205,16 +217,16 @@ describe("renderSwiftTypes", () => {
   it("renders discriminated unions as enums with associated values", () => {
     const swift = renderSwiftTypes([
       {
-        schema: z.discriminatedUnion("status", [
-          z.object({ status: z.literal("idle") }),
-          z.object({
-            status: z.literal("command"),
-            command: z.object({ id: z.string() }),
+        schema: discriminatedUnion("status", [
+          object({ status: literal("idle") }),
+          object({
+            status: literal("command"),
+            command: object({ id: string() }),
           }),
-          z.object({
-            status: z.literal("failed"),
-            code: z.string(),
-            retry: z.boolean(),
+          object({
+            status: literal("failed"),
+            code: string(),
+            retry: boolean(),
           }),
         ]),
         swiftTypeName: "Claim",
@@ -250,7 +262,7 @@ describe("renderSwiftTypes", () => {
     expect(() => {
       return renderSwiftTypes([
         {
-          schema: z.object({ value: z.union([z.string(), z.number()]) }),
+          schema: object({ value: union([string(), number()]) }),
           swiftTypeName: "A",
           doc: [],
         },
@@ -259,11 +271,8 @@ describe("renderSwiftTypes", () => {
     expect(() => {
       return renderSwiftTypes([
         {
-          schema: z.object({
-            value: z.union([
-              z.object({ a: z.string() }),
-              z.object({ b: z.number() }),
-            ]),
+          schema: object({
+            value: union([object({ a: string() }), object({ b: number() })]),
           }),
           swiftTypeName: "A",
           doc: [],
@@ -272,13 +281,13 @@ describe("renderSwiftTypes", () => {
     }).toThrow("union has no string discriminator");
     expect(() => {
       return renderSwiftTypes([
-        { schema: z.string(), swiftTypeName: "A", doc: [] },
+        { schema: string(), swiftTypeName: "A", doc: [] },
       ]);
     }).toThrow("must bind an object or discriminated union schema");
     expect(() => {
       return renderSwiftTypes([
-        { schema: z.object({ a: z.string() }), swiftTypeName: "A", doc: [] },
-        { schema: z.object({ b: z.string() }), swiftTypeName: "A", doc: [] },
+        { schema: object({ a: string() }), swiftTypeName: "A", doc: [] },
+        { schema: object({ b: string() }), swiftTypeName: "A", doc: [] },
       ]);
     }).toThrow("duplicate Swift type binding: A");
   });

@@ -85,12 +85,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.HostedSiteTitleEditing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Website title editing",
-    description: "Rename a hosted website without changing its address.",
-    enabled: true,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
@@ -158,14 +152,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Review activity, learn, plan next steps and advance entrusted Tasks.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.BuiltinDocumentTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Built-in document templates",
-    description:
-      "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
-    enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PresentationConvert]: {
@@ -426,21 +412,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.DiscordIntegration]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the verified Discord guild and bot DM integration.",
-    enabled: true,
-  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.VncAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

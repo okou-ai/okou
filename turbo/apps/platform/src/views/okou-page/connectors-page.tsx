@@ -147,7 +147,7 @@ import {
   openBuiltinAccountConnectDialog$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
-import { vncSummary$, vncEnabled$ } from "../../signals/vnc.ts";
+import { vncSummary$ } from "../../signals/vnc.ts";
 import { sshSummary$ } from "../../signals/ssh.ts";
 import {
   PrivateNetworkPanel,
@@ -226,15 +226,13 @@ function CustomScopeCount() {
 }
 
 function RemoteControlScopeCount() {
-  const vncEnabled = useGet(connectorDirectoryPageSignals.vncEnabled$);
   const ssh = useLoadable(sshSummary$);
-  // Keep the existing summary dependency even when VNC is not included in the count.
   const vnc = useLoadable(vncSummary$);
   return (
     <ConnectorsScopeCount
       value={
         configuredRemoteAccessResources(ssh) +
-        (vncEnabled ? configuredRemoteAccessResources(vnc) : 0)
+        configuredRemoteAccessResources(vnc)
       }
     />
   );
@@ -1531,7 +1529,6 @@ function isRemoteSetupDetailPage(
 
 function RemoteSetupDetailPage({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
-  const vncEnabled = useGet(vncEnabled$);
   const leaveSetup = useSet(leaveRemoteSetup$);
   return (
     <RemoteDetailPage
@@ -1546,14 +1543,9 @@ function RemoteSetupDetailPage({ setup }: { readonly setup: RemoteSetup }) {
       })}
       onBack={leaveSetup}
     >
-      <RemoteConnectionSetup vncEnabled={vncEnabled} />
+      <RemoteConnectionSetup />
     </RemoteDetailPage>
   );
-}
-
-function RemoteCredentialsDetailPage() {
-  const vncEnabled = useGet(vncEnabled$);
-  return <RemoteCredentialsPage vncEnabled={vncEnabled} />;
 }
 
 export function ConnectorsPage() {
@@ -1571,7 +1563,7 @@ export function ConnectorsPage() {
     return <RemoteSetupDetailPage setup={remoteSetup} />;
   }
   if (credentialsPage) {
-    return <RemoteCredentialsDetailPage />;
+    return <RemoteCredentialsPage />;
   }
   return <ConnectorsDirectoryPage />;
 }

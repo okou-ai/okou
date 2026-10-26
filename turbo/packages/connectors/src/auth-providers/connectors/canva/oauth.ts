@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -123,16 +123,14 @@ export async function refreshCanvaToken(
     await throwOAuthError("Canva", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -184,16 +182,14 @@ export async function exchangeCanvaCode(
     await throwOAuthError("Canva", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -228,16 +224,12 @@ async function fetchCanvaUserInfo(accessToken: string): Promise<CanvaUserInfo> {
     throw new Error(`Canva user info fetch failed: ${meResponse.status}`);
   }
 
-  const meData = z
-    .object({
-      team_user: z
-        .object({
-          user_id: z.string(),
-          team_id: z.string().optional(),
-        })
-        .optional(),
-    })
-    .parse(await meResponse.json());
+  const meData = object({
+    team_user: object({
+      user_id: string(),
+      team_id: string().optional(),
+    }).optional(),
+  }).parse(await meResponse.json());
 
   const userId = requireConnectorGrantUserId(
     meData.team_user?.user_id,
@@ -253,15 +245,11 @@ async function fetchCanvaUserInfo(accessToken: string): Promise<CanvaUserInfo> {
   });
 
   if (profileResponse.ok) {
-    const profileData = z
-      .object({
-        profile: z
-          .object({
-            display_name: z.string().nullable().optional(),
-          })
-          .optional(),
-      })
-      .parse(await profileResponse.json());
+    const profileData = object({
+      profile: object({
+        display_name: string().nullable().optional(),
+      }).optional(),
+    }).parse(await profileResponse.json());
 
     displayName = profileData.profile?.display_name ?? null;
   }

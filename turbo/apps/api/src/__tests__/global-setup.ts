@@ -8,7 +8,7 @@ import {
   type ApiDatabaseSnapshot,
 } from "../test-fixtures/pglite-database";
 import { Client } from "pg";
-import { z } from "zod";
+import { literal, object } from "zod";
 import { env } from "../lib/env";
 import { API_DATABASE_SEED_FILES } from "../test-fixtures/database-seeds";
 import { onRejection, settleIncludingAbort } from "../signals/utils";
@@ -46,7 +46,7 @@ export async function setup(project: TestProject) {
       await client.connect();
       const timezone = await client.query("SHOW TimeZone");
       if (
-        !z.object({ TimeZone: z.literal("UTC") }).safeParse(timezone.rows[0])
+        !object({ TimeZone: literal("UTC") }).safeParse(timezone.rows[0])
           .success
       ) {
         throw new Error("Native API test database must use UTC before seeding");

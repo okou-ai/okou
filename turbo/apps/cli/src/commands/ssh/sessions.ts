@@ -1,12 +1,12 @@
 import { Command } from "commander";
-import { z } from "zod";
+import { uuid } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { sessionRpc } from "./session-rpc";
 import { printSshDiagnostics } from "../../lib/ssh-diagnostics";
 import { createSessionReadCommand } from "./session-read";
 
 function id(value: string) {
-  if (!z.uuid().safeParse(value).success)
+  if (!uuid().safeParse(value).success)
     throw new Error("Use an exact ID from ssh host list or ssh session list.");
   return value.toLowerCase();
 }

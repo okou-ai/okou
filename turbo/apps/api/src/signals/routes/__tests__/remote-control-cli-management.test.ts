@@ -8,7 +8,6 @@ import {
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -16,7 +15,6 @@ import { cliAuthRoutes } from "../cli-auth";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -206,7 +204,7 @@ describe("remote control CLI management authorization", () => {
     }
   });
 
-  it("accepts a device-approved PAT without bypassing VNC availability", async () => {
+  it("accepts a device-approved PAT for VNC configuration", async () => {
     useSecretKmsProbe();
     const actor = owner();
     const headers = await personalHeaders(actor);
@@ -218,19 +216,6 @@ describe("remote control CLI management authorization", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([created.body]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgRole: "org:member" },
-      { [FeatureSwitchKey.VncAccess]: false },
-    );
-    authenticate(actor);
-    await accept(vncConnections().list({ headers }), [404]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgRole: "org:member" },
-      { [FeatureSwitchKey.VncAccess]: true },
-    );
-    authenticate(actor);
     expect(
       (await accept(vncConnections().list({ headers }), [200])).body,
     ).toStrictEqual({ connections: [] });

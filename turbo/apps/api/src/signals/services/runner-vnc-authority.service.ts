@@ -1,7 +1,5 @@
 import { command } from "ccstate";
 import type { RunnerVncResolveRequest } from "@okouai/api-contracts/contracts/runner-vnc";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -17,7 +15,6 @@ import {
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import {
   vncNetworkAliases,
@@ -118,7 +115,7 @@ const currentVncSelection = Object.freeze({
 
 /** Always read current authorization from the primary database. */
 export const currentRunnerVncAuthority$ = command(
-  async ({ get, set }, input: RunnerVncInput, signal: AbortSignal) => {
+  async ({ get }, input: RunnerVncInput, signal: AbortSignal) => {
     const db = get(db$);
     const [row] = await db
       .select(currentVncSelection)
@@ -199,19 +196,7 @@ export const currentRunnerVncAuthority$ = command(
         ),
       );
     signal.throwIfAborted();
-    if (!row) {
-      return null;
-    }
-    const featureContext = await set(
-      loadUserFeatureSwitchContext$,
-      row.orgId,
-      row.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)
-      ? row
-      : null;
+    return row ?? null;
   },
 );
 

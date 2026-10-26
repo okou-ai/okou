@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { z } from "zod";
+import { object, url, uuid } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import {
   HOSTED_SITE_AUTH_CALLBACK_PATH,
@@ -16,9 +16,9 @@ import { apiClient$ } from "./api-client.ts";
 import { searchParams$ } from "./route.ts";
 import { settle } from "./utils.ts";
 
-const requestSchema = z.object({
-  siteId: z.uuid(),
-  origin: z.url(),
+const requestSchema = object({
+  siteId: uuid(),
+  origin: url(),
   codeChallenge: hostedSiteAuthProofSchema,
   state: hostedSiteAuthProofSchema,
   returnTo: hostedSiteReturnPathSchema.optional(),

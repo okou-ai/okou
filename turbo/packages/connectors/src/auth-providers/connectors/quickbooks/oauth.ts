@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -68,10 +68,9 @@ function parseQuickBooksRealmId(oauthContext: string | undefined): string {
     throw new Error("QuickBooks realmId missing from OAuth callback");
   }
 
-  const parsed = z
-    .object({
-      realmId: z.string().min(1),
-    })
+  const parsed = object({
+    realmId: string().min(1),
+  })
     .passthrough()
     .safeParse(context);
   if (!parsed.success) {
@@ -106,16 +105,14 @@ export async function exchangeQuickBooksCode(
     await throwOAuthError("QuickBooks", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -160,16 +157,14 @@ export async function refreshQuickBooksToken(
     await throwOAuthError("QuickBooks", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -200,15 +195,14 @@ async function fetchQuickBooksUserInfo(
     throw new Error(`QuickBooks user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      sub: z.string().optional(),
-      email: z.string().nullable().optional(),
-      givenName: z.string().nullable().optional(),
-      familyName: z.string().nullable().optional(),
-      given_name: z.string().nullable().optional(),
-      family_name: z.string().nullable().optional(),
-    })
+  const data = object({
+    sub: string().optional(),
+    email: string().nullable().optional(),
+    givenName: string().nullable().optional(),
+    familyName: string().nullable().optional(),
+    given_name: string().nullable().optional(),
+    family_name: string().nullable().optional(),
+  })
     .passthrough()
     .parse(await response.json());
   const givenName = data.givenName ?? data.given_name;

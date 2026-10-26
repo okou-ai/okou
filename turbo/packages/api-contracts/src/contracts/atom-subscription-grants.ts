@@ -1,16 +1,23 @@
-import { z } from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+} from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 
-const credential = z.string().min(1).max(65_536);
-export const atomSubscriptionGrantSchema = z.object({
-  grantId: z.uuid(),
-  orgId: z.string().min(1).max(255),
-  userId: z.string().min(1).max(255),
-  tokens: z.discriminatedUnion("provider", [
-    z.object({ provider: z.literal("claude-code"), accessToken: credential }),
-    z.object({
-      provider: z.literal("codex"),
+const credential = string().min(1).max(65_536);
+export const atomSubscriptionGrantSchema = object({
+  grantId: uuid(),
+  orgId: string().min(1).max(255),
+  userId: string().min(1).max(255),
+  tokens: discriminatedUnion("provider", [
+    object({ provider: literal("claude-code"), accessToken: credential }),
+    object({
+      provider: literal("codex"),
       accessToken: credential,
       refreshToken: credential,
       idToken: credential,
@@ -23,14 +30,14 @@ export const atomSubscriptionGrantsContract = initContract().router({
     method: "POST",
     path: "/api/internal/atom/subscription-grants/:grantId/cancel",
     headers: authHeadersSchema,
-    pathParams: z.object({ grantId: z.uuid() }),
-    body: z.object({
-      orgId: z.string().min(1).max(255),
-      userId: z.string().min(1).max(255),
-      provider: z.enum(["claude-code", "codex"]),
+    pathParams: object({ grantId: uuid() }),
+    body: object({
+      orgId: string().min(1).max(255),
+      userId: string().min(1).max(255),
+      provider: zEnum(["claude-code", "codex"]),
     }),
     responses: {
-      200: z.object({ grantId: z.uuid(), status: z.literal("cancelled") }),
+      200: object({ grantId: uuid(), status: literal("cancelled") }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       409: apiErrorSchema,
@@ -46,7 +53,7 @@ export const atomSubscriptionGrantsContract = initContract().router({
     headers: authHeadersSchema,
     body: atomSubscriptionGrantSchema,
     responses: {
-      200: z.object({ grantId: z.uuid(), status: z.literal("delivered") }),
+      200: object({ grantId: uuid(), status: literal("delivered") }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

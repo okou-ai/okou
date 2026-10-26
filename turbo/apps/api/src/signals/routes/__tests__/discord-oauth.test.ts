@@ -7,11 +7,16 @@ import {
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  instanceof as zInstanceof,
+} from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -19,10 +24,8 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { discordOauthRoutes } from "../discord-oauth";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -90,12 +93,10 @@ function fixture() {
   mockEnv("APP_URL", "https://app.okou.ai");
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
-      const args = z
-        .object({
-          organizationId: z.string(),
-          userId: z.array(z.string()).optional(),
-        })
-        .parse(input);
+      const args = object({
+        organizationId: string(),
+        userId: array(string()).optional(),
+      }).parse(input);
       const found = actors.filter((actor) => {
         return (
           actor.orgId === args.organizationId &&
@@ -229,9 +230,9 @@ function fixture() {
       ]);
     }),
     http.post(`${API}/users/@me/channels`, async ({ request }) => {
-      const body = z
-        .object({ recipient_id: z.string() })
-        .parse(await request.json());
+      const body = object({ recipient_id: string() }).parse(
+        await request.json(),
+      );
       let channelId = dmChannels.get(body.recipient_id);
       if (!channelId) {
         channelId = snowflake();
@@ -259,14 +260,12 @@ function fixture() {
     http.post(
       `${API}/channels/:channelId/messages`,
       async ({ request, params }) => {
-        const body = z
-          .object({
-            content: z.string(),
-            allowed_mentions: z.object({ parse: z.array(z.string()) }),
-            nonce: z.string(),
-            enforce_nonce: z.boolean(),
-          })
-          .parse(await request.json());
+        const body = object({
+          content: string(),
+          allowed_mentions: object({ parse: array(string()) }),
+          nonce: string(),
+          enforce_nonce: boolean(),
+        }).parse(await request.json());
         expect(body.allowed_mentions.parse).toStrictEqual([]);
         expect(body.enforce_nonce).toBeTruthy();
         messages.push(body.content);
@@ -281,16 +280,13 @@ function fixture() {
       },
     ),
   );
-  async function actor(
+  function actor(
     orgId = `org_${randomUUID()}`,
     orgRole: Actor["orgRole"] = "org:admin",
     userId = `user_${randomUUID()}`,
   ) {
     const result = { userId, orgId, orgRole };
     actors.push(result);
-    await updateFeatureSwitchesForUser(context, result, {
-      [FeatureSwitchKey.DiscordIntegration]: true,
-    });
     return result;
   }
   return {
@@ -332,18 +328,16 @@ function actorHeaders(actor: Actor) {
 }
 function authenticate(actor: Actor) {
   context.mocks.clerk.authenticateRequest.mockImplementation((input) => {
-    const request = z.instanceof(Request).parse(input);
+    const request = zInstanceof(Request).parse(input);
     const encoded = request.headers
       .get("authorization")
       ?.split("Bearer oauth-test.")[1];
     const current = encoded
-      ? z
-          .object({
-            userId: z.string(),
-            orgId: z.string(),
-            orgRole: z.enum(["org:admin", "org:member"]),
-          })
-          .parse(JSON.parse(Buffer.from(encoded, "base64url").toString()))
+      ? object({
+          userId: string(),
+          orgId: string(),
+          orgRole: zEnum(["org:admin", "org:member"]),
+        }).parse(JSON.parse(Buffer.from(encoded, "base64url").toString()))
       : actor;
     return Promise.resolve({
       isAuthenticated: true,
@@ -546,17 +540,6 @@ describe("Discord product OAuth", () => {
       admin.orgId,
       admin.orgRole,
     );
-    const featureApp = await setupApp({
-      context,
-      routes: featureSwitchesRoutes,
-    });
-    await accept(
-      featureApp(featureSwitchesContract).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.DiscordIntegration]: true } },
-      }),
-      [200],
-    );
     await expect(status(admin)).resolves.toMatchObject({
       isConnected: false,
       onboarding: "oauth",
@@ -578,7 +561,7 @@ describe("Discord product OAuth", () => {
   });
   it("welcomes a connected user with their workspace agent and usage guidance", async () => {
     const f = fixture();
-    const admin = await f.actor();
+    const admin = f.actor();
     const authOrgApi = createAuthOrgAgentsBddApi(context);
     const actor = authOrgApi.user(admin);
     authOrgApi.acceptAgentStorageWrites();
@@ -594,7 +577,7 @@ describe("Discord product OAuth", () => {
   });
   it("installs when Discord returns only user scopes in the token and authorization", async () => {
     const f = fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     expect(started.url.searchParams.get("scope")).toBe(
       "bot applications.commands identify guilds",
@@ -616,7 +599,7 @@ describe("Discord product OAuth", () => {
   });
   it("retains a completed personal grant when a later attempt reaps expired opener capabilities", async () => {
     const f = fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const initial = now();
     const installed = await start(actor, "install", f.guildId);
     expect((await finish(f, installed)).status).toBe("connected");
@@ -637,7 +620,7 @@ describe("Discord product OAuth", () => {
     );
     expect((await status(actor)).isConnected).toBeFalsy();
     expect((await complete(pending)).status).toBe(400);
-    const member = await f.actor(actor.orgId, "org:member");
+    const member = f.actor(actor.orgId, "org:member");
     expect(
       (await finish(f, await start(member, "connect", f.guildId))).status,
     ).toBe("connected");
@@ -646,7 +629,7 @@ describe("Discord product OAuth", () => {
 
   it("connects from a server link without a workspace installation or server-management permission", async () => {
     const f = fixture();
-    const member = await f.actor(undefined, "org:member");
+    const member = f.actor(undefined, "org:member");
     f.provider.page = [
       { id: f.guildId, name: "Shared server", owner: false, permissions: "0" },
     ];
@@ -665,9 +648,9 @@ describe("Discord product OAuth", () => {
 
   it("lets an ordinary current org member connect only their verified Discord identity", async () => {
     const f = await fixture();
-    const admin = await f.actor();
+    const admin = f.actor();
     await installed(f, admin);
-    const member = await f.actor(admin.orgId, "org:member");
+    const member = f.actor(admin.orgId, "org:member");
     const memberDiscordId = snowflake();
     const started = await start(member, "connect", f.guildId);
     expect(started.url.searchParams.get("scope")).toBe("identify guilds");
@@ -683,7 +666,7 @@ describe("Discord product OAuth", () => {
   });
   it("allows ordinary workspace members to connect and rejects unauthenticated or malformed owner input", async () => {
     const f = await fixture();
-    const member = await f.actor(undefined, "org:member");
+    const member = f.actor(undefined, "org:member");
     authenticate(member);
     await accept(
       clients()(discordOauthContract).start({
@@ -721,7 +704,7 @@ describe("Discord product OAuth", () => {
   });
   it("allows account consent after an Okou admin becomes an ordinary workspace member", async () => {
     const f = fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install");
     actor.orgRole = "org:member";
     await expect(finish(f, started)).resolves.toMatchObject({
@@ -731,7 +714,7 @@ describe("Discord product OAuth", () => {
   });
   it("starts account consent without a workspace installation and reports missing configuration", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     authenticate(actor);
     await accept(
       clients()(discordOauthContract).start({
@@ -753,7 +736,7 @@ describe("Discord product OAuth", () => {
   });
   it("rejects a forged well-formed state without consuming the genuine attempt", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     expect(
       (
@@ -770,7 +753,7 @@ describe("Discord product OAuth", () => {
     "bounds callback %s before handling without consuming genuine state",
     async (variant) => {
       const f = await fixture();
-      const actor = await f.actor();
+      const actor = f.actor();
       const started = await start(actor, "install", f.guildId);
       const query = {
         state: started.state,
@@ -785,7 +768,7 @@ describe("Discord product OAuth", () => {
   );
   it("rejects expired and reused state, and cancellation is one-use with no provider text", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const initial = now();
     mockNow(initial);
     const expired = await start(actor, "install", f.guildId);
@@ -831,7 +814,7 @@ describe("Discord product OAuth", () => {
     "provider-error",
   ])("fails closed for %s and leaves status unchanged", async (variant) => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     const options: Partial<Grant> = { scopes: ["identify", "guilds"] };
     if (variant === "missing-token-identify-scope") {
@@ -877,7 +860,7 @@ describe("Discord product OAuth", () => {
   });
   it("rejects a callback guild hint that disagrees with verified token guild evidence", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     const code = randomUUID();
     f.grants.set(code, {
@@ -892,29 +875,19 @@ describe("Discord product OAuth", () => {
     ).toBe("guild_unverified");
     expect((await status(actor)).isConnected).toBeFalsy();
   });
-  it.each(["revoked-member", "switch-off"])(
-    "revalidates %s while authorization is open",
-    async (variant) => {
-      const f = await fixture();
-      const actor = await f.actor();
-      const started = await start(actor, "install", f.guildId);
-      if (variant === "revoked-member") {
-        f.actors.splice(0);
-      }
-      if (variant === "switch-off") {
-        await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.DiscordIntegration]: false,
-        });
-      }
-      const result = await finish(f, started);
-      expect(result.status).toBe("error");
-      expect((await status(actor)).isConnected).toBeFalsy();
-      expect(f.messages).toStrictEqual([]);
-    },
-  );
+  it("revalidates revoked membership while authorization is open", async () => {
+    const f = await fixture();
+    const actor = f.actor();
+    const started = await start(actor, "install", f.guildId);
+    f.actors.splice(0);
+    const result = await finish(f, started);
+    expect(result.status).toBe("error");
+    expect((await status(actor)).isConnected).toBeFalsy();
+    expect(f.messages).toStrictEqual([]);
+  });
   it("revalidates current membership again after slow provider work before callback writes", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     server.use(
       http.get(`${API}/guilds/:guildId/members/:userId`, ({ params }) => {
@@ -931,7 +904,7 @@ describe("Discord product OAuth", () => {
   });
   it("paginates past 200 eligible guilds rather than silently truncating membership", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     f.provider.page = Array.from({ length: 200 }, (_, index) => {
       return {
         id: String(1000 + index),
@@ -945,10 +918,10 @@ describe("Discord product OAuth", () => {
   });
   it("connects independent workspaces in the same server and preserves a connection when choosing another server", async () => {
     const f = fixture();
-    const owner = await f.actor();
+    const owner = f.actor();
     await installed(f, owner);
     const original = await status(owner);
-    const other = await f.actor();
+    const other = f.actor();
     await expect(
       finish(f, await start(other, "connect", f.guildId), {
         discordUserId: snowflake(),
@@ -968,14 +941,14 @@ describe("Discord product OAuth", () => {
   });
   it("rejects stealing a Discord identity in the same guild and across guilds", async () => {
     const f = await fixture();
-    const owner = await f.actor();
+    const owner = f.actor();
     await installed(f, owner);
-    const member = await f.actor(owner.orgId, "org:member");
+    const member = f.actor(owner.orgId, "org:member");
     expect(
       (await finish(f, await start(member, "connect", f.guildId))).error,
     ).toBe("conflict");
     expect((await status(member)).isConnected).toBeFalsy();
-    const otherOrg = await f.actor();
+    const otherOrg = f.actor();
     const otherGuild = snowflake();
     expect(
       (
@@ -990,7 +963,7 @@ describe("Discord product OAuth", () => {
   });
   it("requires disconnect before changing a user's Discord identity and releases unused ownership", async () => {
     const f = await fixture();
-    const owner = await f.actor();
+    const owner = f.actor();
     await installed(f, owner);
     expect(
       (
@@ -1005,7 +978,7 @@ describe("Discord product OAuth", () => {
       [200],
     );
     expect((await status(owner)).isConnected).toBeFalsy();
-    const member = await f.actor(owner.orgId, "org:member");
+    const member = f.actor(owner.orgId, "org:member");
     expect(
       (await finish(f, await start(member, "connect", f.guildId))).status,
     ).toBe("connected");
@@ -1013,7 +986,7 @@ describe("Discord product OAuth", () => {
   });
   it("does not reserve a replacement Discord identity after an occupied-user binding fails", async () => {
     const f = await fixture();
-    const owner = await f.actor();
+    const owner = f.actor();
     await installed(f, owner);
     const replacement = snowflake();
     const started = await start(owner, "connect", f.guildId);
@@ -1022,7 +995,7 @@ describe("Discord product OAuth", () => {
     expect((await complete(started)).status).toBe(409);
     expect((await complete(started)).status).toBe(400);
     expect((await status(owner)).discordUserId).toBe(f.discordUserId);
-    const otherOwner = await f.actor();
+    const otherOwner = f.actor();
     const otherGuild = snowflake();
     await installed(f, otherOwner, {
       guildId: otherGuild,
@@ -1038,7 +1011,7 @@ describe("Discord product OAuth", () => {
   });
   it("keeps separate attempts correlated to independent consent and completion proofs", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const first = await start(actor, "install", f.guildId);
     const second = await start(actor, "install", f.guildId);
     const firstLanding = await verified(f, first);
@@ -1065,8 +1038,8 @@ describe("Discord product OAuth", () => {
   });
   it("connects different users in different workspaces concurrently through the same server", async () => {
     const f = await fixture();
-    const firstOwner = await f.actor();
-    const secondOwner = await f.actor();
+    const firstOwner = f.actor();
+    const secondOwner = f.actor();
     const first = await start(firstOwner, "install", f.guildId);
     const second = await start(secondOwner, "install", f.guildId);
     const results = await Promise.all([
@@ -1090,7 +1063,7 @@ describe("Discord product OAuth", () => {
   });
   it("keeps one account connection when the same owner connects from two servers concurrently", async () => {
     const f = fixture();
-    const owner = await f.actor();
+    const owner = f.actor();
     const first = await start(owner, "install");
     const second = await start(owner, "install");
     const firstLanding = await verified(f, first);
@@ -1160,7 +1133,7 @@ describe("Discord product OAuth", () => {
   });
   it("installs into an invite's server while preserving the existing account connection", async () => {
     const f = fixture();
-    const owner = await f.actor();
+    const owner = f.actor();
     await installed(f, owner);
     const before = await status(owner);
     const guildId = snowflake();
@@ -1186,7 +1159,7 @@ describe("Discord product OAuth", () => {
   });
   it("rejects a different installed server than the invite target and keeps the old connection", async () => {
     const f = fixture();
-    const owner = await f.actor();
+    const owner = f.actor();
     await installed(f, owner);
     const before = await status(owner);
     const attempt = await start(owner, "install", snowflake(), true);
@@ -1199,8 +1172,8 @@ describe("Discord product OAuth", () => {
     "allows only one account to win concurrent Discord identity claims across guilds in %s",
     async (workspace) => {
       const f = fixture();
-      const firstOwner = await f.actor();
-      const secondOwner = await f.actor(
+      const firstOwner = f.actor();
+      const secondOwner = f.actor(
         workspace === "same workspace" ? firstOwner.orgId : undefined,
       );
       const secondGuild = snowflake();
@@ -1245,9 +1218,9 @@ describe("Discord product OAuth", () => {
   );
   it("does not reserve the losing identity when two verified senders race for one workspace member", async () => {
     const f = await fixture();
-    const admin = await f.actor();
+    const admin = f.actor();
     await installed(f, admin);
-    const member = await f.actor(admin.orgId, "org:member");
+    const member = f.actor(admin.orgId, "org:member");
     const cases = [
       {
         attempt: await start(member, "connect", f.guildId),
@@ -1286,7 +1259,7 @@ describe("Discord product OAuth", () => {
       }),
     ).toContain(bound.discordUserId);
     expect(bound.discordUserId).not.toBe(loser.sender);
-    const otherOwner = await f.actor();
+    const otherOwner = f.actor();
     const otherGuild = snowflake();
     await installed(f, otherOwner, {
       guildId: otherGuild,
@@ -1298,7 +1271,7 @@ describe("Discord product OAuth", () => {
   });
   it("commits one connection and welcome for simultaneous legitimate same-owner attempts", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const first = await start(actor, "install", f.guildId);
     const second = await start(actor, "install", f.guildId);
     const results = await Promise.all([finish(f, first), finish(f, second)]);
@@ -1341,7 +1314,7 @@ describe("Discord product OAuth", () => {
   });
   it("rejects a concurrent replay of the same provider state before a second write or welcome", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     const results = await Promise.all([finish(f, started), finish(f, started)]);
     expect(
@@ -1356,7 +1329,7 @@ describe("Discord product OAuth", () => {
   });
   it("does not reconnect an account from a pending attempt after disconnect", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     await installed(f, actor);
     const started = await start(actor, "connect", f.guildId);
     authenticate(actor);
@@ -1375,7 +1348,7 @@ describe("Discord product OAuth", () => {
   });
   it("authorizes the exact DM recipient independently before a welcome, without undoing connection", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     server.use(
       http.get(`${API}/channels/:channelId`, ({ params }) => {
         return HttpResponse.json({
@@ -1394,7 +1367,7 @@ describe("Discord product OAuth", () => {
 
   it("neither the anonymous callback nor approval binds; only approved owner completion binds once", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     expect((await complete(started)).status).toBe(409);
     const landing = await verified(f, started);
@@ -1422,8 +1395,8 @@ describe("Discord product OAuth", () => {
     "rejects attacker-start/victim-consent %s without granting the attacker access",
     async (variant) => {
       const f = await fixture();
-      const attacker = await f.actor();
-      const victim = await f.actor(
+      const attacker = f.actor();
+      const victim = f.actor(
         variant === "different-account" ? attacker.orgId : undefined,
         "org:admin",
         variant === "different-org" ? attacker.userId : undefined,
@@ -1440,39 +1413,30 @@ describe("Discord product OAuth", () => {
       expect(f.messages).toStrictEqual([]);
     },
   );
-  it.each([
-    "member-before-approve",
-    "switch-before-approve",
-    "member-before-complete",
-    "switch-before-complete",
-  ])("revalidates %s after provider verification", async (variant) => {
-    const f = await fixture();
-    const actor = await f.actor();
-    const started = await start(actor, "install", f.guildId);
-    const landing = await verified(f, started);
-    if (variant.endsWith("before-complete")) {
-      expect((await approve(started, landing)).status).toBe(200);
-    }
-    if (variant.startsWith("member")) {
+  it.each(["member-before-approve", "member-before-complete"])(
+    "revalidates %s after provider verification",
+    async (variant) => {
+      const f = await fixture();
+      const actor = f.actor();
+      const started = await start(actor, "install", f.guildId);
+      const landing = await verified(f, started);
+      if (variant.endsWith("before-complete")) {
+        expect((await approve(started, landing)).status).toBe(200);
+      }
       f.actors.splice(0);
-    }
-    if (variant.startsWith("switch")) {
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.DiscordIntegration]: false,
-      });
-    }
-    const result = variant.endsWith("before-complete")
-      ? await complete(started)
-      : await approve(started, landing);
-    expect(result.status).toBe(403);
-    expect((await status(actor)).isConnected).toBeFalsy();
-    expect(f.messages).toStrictEqual([]);
-  });
+      const result = variant.endsWith("before-complete")
+        ? await complete(started)
+        : await approve(started, landing);
+      expect(result.status).toBe(403);
+      expect((await status(actor)).isConnected).toBeFalsy();
+      expect(f.messages).toStrictEqual([]);
+    },
+  );
   it.each(["bot-gone", "sender-gone", "bot-replaced", "guild-admin-revoked"])(
     "rechecks live %s after approval before any write",
     async (variant) => {
       const f = await fixture();
-      const actor = await f.actor();
+      const actor = f.actor();
       const started = await start(actor, "install", f.guildId);
       const landing = await verified(f, started);
       expect((await approve(started, landing)).status).toBe(200);
@@ -1512,7 +1476,7 @@ describe("Discord product OAuth", () => {
   );
   it("rechecks Clerk authorization after slow native provider work during completion", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     const landing = await verified(f, started);
     expect((await approve(started, landing)).status).toBe(200);
@@ -1537,7 +1501,7 @@ describe("Discord product OAuth", () => {
     "does not extend original expiry for %s evidence",
     async (phase) => {
       const f = await fixture();
-      const actor = await f.actor();
+      const actor = f.actor();
       const initial = now();
       mockNow(initial);
       const started = await start(actor, "install", f.guildId);
@@ -1554,7 +1518,7 @@ describe("Discord product OAuth", () => {
   );
   it("atomically consumes concurrent approvals and concurrent completions once", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     const landing = await verified(f, started);
     const approvals = await Promise.all([
@@ -1581,7 +1545,7 @@ describe("Discord product OAuth", () => {
   });
   it("does not grant access from query markers, lost opener proof or malformed capabilities", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const started = await start(actor, "install", f.guildId);
     const landing = await verified(f, started);
     expect(
@@ -1626,19 +1590,15 @@ describe("Discord product OAuth", () => {
   });
   it("preserves a same-owner new-guild connection during concurrent last-old-guild disconnect using only public OAuth and provider gates", async () => {
     const f = await fixture();
-    const oldOwner = await f.actor();
+    const oldOwner = f.actor();
     await installed(f, oldOwner);
     const secondGuild = snowflake();
-    const secondAdmin = await f.actor();
+    const secondAdmin = f.actor();
     await installed(f, secondAdmin, {
       guildId: secondGuild,
       discordUserId: snowflake(),
     });
-    const sameOwner = await f.actor(
-      secondAdmin.orgId,
-      "org:member",
-      oldOwner.userId,
-    );
+    const sameOwner = f.actor(secondAdmin.orgId, "org:member", oldOwner.userId);
     for (let execution = 0; execution < 4; execution++) {
       const started = await start(sameOwner, "connect", secondGuild);
       const landing = await verified(f, started, { guildId: secondGuild });
@@ -1695,7 +1655,7 @@ describe("Discord product OAuth", () => {
   });
   it("excludes actual callback query and approval Location from real OTel spans while preserving provider query handling and other request tracing", async () => {
     const f = await fixture();
-    const actor = await f.actor();
+    const actor = f.actor();
     const exporter = new InMemorySpanExporter();
     const provider = new BasicTracerProvider({
       spanProcessors: [new SimpleSpanProcessor(exporter)],

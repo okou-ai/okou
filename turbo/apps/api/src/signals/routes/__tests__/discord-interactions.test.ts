@@ -8,7 +8,14 @@ import {
 import { discordInteractionsContract } from "@okouai/api-contracts/contracts/discord-interactions";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -33,26 +40,26 @@ const applicationId = "1464000000000000001";
 const senderId = "1464000000000000002";
 const channelId = "1464000000000000003";
 
-const privateMessageSchema = z.object({
-  content: z.string(),
-  components: z.array(
-    z.object({
-      type: z.literal(1),
-      components: z.array(
-        z.object({
-          type: z.number(),
-          custom_id: z.string().optional(),
-          style: z.number().optional(),
-          url: z.string().optional(),
-          label: z.string().optional(),
-          options: z
-            .array(z.object({ label: z.string(), value: z.string() }))
-            .optional(),
+const privateMessageSchema = object({
+  content: string(),
+  components: array(
+    object({
+      type: literal(1),
+      components: array(
+        object({
+          type: number(),
+          custom_id: string().optional(),
+          style: number().optional(),
+          url: string().optional(),
+          label: string().optional(),
+          options: array(
+            object({ label: string(), value: string() }),
+          ).optional(),
         }),
       ),
     }),
   ),
-  allowed_mentions: z.object({ parse: z.array(z.string()) }),
+  allowed_mentions: object({ parse: array(string()) }),
 });
 
 function command(name: string) {
@@ -102,8 +109,8 @@ function client() {
 function privateResponses() {
   const acknowledged = new Set<string>();
   const callbacks: unknown[] = [];
-  const messages: z.infer<typeof privateMessageSchema>[] = [];
-  const delivered = createDeferredPromise<z.infer<typeof privateMessageSchema>>(
+  const messages: zInfer<typeof privateMessageSchema>[] = [];
+  const delivered = createDeferredPromise<zInfer<typeof privateMessageSchema>>(
     context.signal,
   );
   server.use(

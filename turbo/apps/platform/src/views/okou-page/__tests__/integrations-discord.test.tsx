@@ -43,23 +43,16 @@ function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
   };
 }
 
-function setupDiscordPage(enabled = true) {
+function setupDiscordPage() {
   return setupPage({
     context,
     path: "/works",
     featureSwitches: {
-      [FeatureSwitchKey.DiscordIntegration]: enabled,
       [FeatureSwitchKey.FeishuIntegration]: false,
       [FeatureSwitchKey.LarkIntegration]: false,
     },
   });
 }
-
-test("Discord is hidden while its feature switch is off", async () => {
-  await setupDiscordPage(false);
-  expect(screen.getByText("Slack")).toBeInTheDocument();
-  expect(screen.queryByText("Discord")).not.toBeInTheDocument();
-});
 
 test.each([
   {
@@ -152,23 +145,6 @@ function approvalRequired() {
     },
   };
 }
-
-test("A disabled Discord integration cannot automatically approve a callback proof", async () => {
-  const approvals: unknown[] = [];
-  context.mocks.api(discordOauthContract.approve, ({ body, respond }) => {
-    approvals.push(body);
-    return respond(200, { approved: true });
-  });
-  await setupPage({
-    context,
-    path: `/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: false },
-  });
-  expect(screen.getByText("Slack")).toBeInTheDocument();
-  expect(screen.queryByText("Discord")).not.toBeInTheDocument();
-  expect(window.location.hash).toBe("");
-  expect(approvals).toStrictEqual([]);
-});
 
 test.each([true, false])(
   "Discord updates Works and notifies the separate authorization tab of success (admin: %s)",
@@ -335,7 +311,6 @@ test.each([
       context,
       host,
       path: "/works",
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     await expect(
       screen.findByText(
@@ -589,7 +564,6 @@ test.each(["connected", "pending", "error"])(
     await setupPage({
       context,
       path: `/works?discord=${indicator}&discord_error=private-provider-detail&state=${attemptState}&completionToken=${completionToken}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(window.location.pathname).toBe("/settings/discord");
     expect(new URLSearchParams(window.location.search).get("status")).toBe(
@@ -647,7 +621,6 @@ test.each(["/works?discord=pending", "/settings/discord?status=pending"])(
       context,
       host: "pr-37968-app.omby.ai",
       path: `${callbackPath}#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     await expect(
       screen.findByRole("heading", { name: "Checking account status..." }),
@@ -683,7 +656,6 @@ test.each(["", "invalid-proof"])(
     await setupPage({
       context,
       path: `/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${invalidProof}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     await expect(
       screen.findByText(
@@ -718,7 +690,6 @@ test("A rejected consent-browser owner or proof shows restart guidance without c
   await setupPage({
     context,
     path: `/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   await expect(
     screen.findByRole("heading", { name: "Connection failed" }),
@@ -772,7 +743,6 @@ test("Leaving the consent route cancels automatic verification and destroys its 
   const page = await startPage({
     context,
     path: `/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   await page.content;
   await approving.promise;
@@ -1319,7 +1289,6 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
   const page = await startPage({
     context,
     path: "/works",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   // page.content waits for the startup screen to hide, which is gated here.
   await expect(

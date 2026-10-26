@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { Webhook } from "svix";
 import { expect, test } from "vitest";
@@ -16,7 +15,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   deleteOrgMembership$,
   seedOrgMembership$,
@@ -48,9 +46,6 @@ async function owner(overrides: { orgId?: string; userId?: string } = {}) {
     membershipId: `orgmem_${randomUUID()}`,
   };
   await store.set(seedOrgMembership$, value, context.signal);
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.VncAccess]: true,
-  });
   mocks.clerk.session(value.userId, value.orgId);
   mocks.s3.listObjects([]);
   return value;

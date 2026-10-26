@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  record,
+  strictObject,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -12,31 +23,31 @@ export const DISCORD_GATEWAY_SIGNATURE_HEADER =
 export const DISCORD_GATEWAY_MAX_CLOCK_SKEW_SECONDS = 300;
 
 /** The API resolves Okou identities; transport may supply only Discord data. */
-export const discordGatewayEnvelopeSchema = z.strictObject({
-  version: z.literal(1),
-  applicationId: z.string().regex(/^\d{17,20}$/),
-  eventType: z.enum(["MESSAGE_CREATE", "GUILD_DELETE"]),
-  eventId: z.string().min(1).max(255),
+export const discordGatewayEnvelopeSchema = strictObject({
+  version: literal(1),
+  applicationId: string().regex(/^\d{17,20}$/),
+  eventType: zEnum(["MESSAGE_CREATE", "GUILD_DELETE"]),
+  eventId: string().min(1).max(255),
   // The ingress owner validates the actual Discord event for its eventType.
-  payload: z.record(z.string(), z.unknown()),
+  payload: record(string(), zUnknown()),
 });
 
-export const discordGatewayHeadersSchema = z.object({
+export const discordGatewayHeadersSchema = object({
   // Optional here so the handler classifies absent credentials as 401.
-  [DISCORD_GATEWAY_TIMESTAMP_HEADER]: z.string().optional(),
-  [DISCORD_GATEWAY_SIGNATURE_HEADER]: z.string().optional(),
+  [DISCORD_GATEWAY_TIMESTAMP_HEADER]: string().optional(),
+  [DISCORD_GATEWAY_SIGNATURE_HEADER]: string().optional(),
 });
 
 /** A success receipt is sent only after durable admission or intentional ignore. */
-export const discordGatewayReceiptSchema = z.discriminatedUnion("outcome", [
-  z.object({
-    ok: z.literal(true),
-    outcome: z.enum(["accepted", "duplicate"]),
+export const discordGatewayReceiptSchema = discriminatedUnion("outcome", [
+  object({
+    ok: literal(true),
+    outcome: zEnum(["accepted", "duplicate"]),
   }),
-  z.object({
-    ok: z.literal(true),
-    outcome: z.literal("ignored"),
-    reason: z.string().min(1),
+  object({
+    ok: literal(true),
+    outcome: literal("ignored"),
+    reason: string().min(1),
   }),
 ]);
 
@@ -87,8 +98,8 @@ export const discordGatewayContract = c.router({
   },
 });
 
-export type DiscordGatewayEnvelope = z.infer<
+export type DiscordGatewayEnvelope = zInfer<
   typeof discordGatewayEnvelopeSchema
 >;
-export type DiscordGatewayReceipt = z.infer<typeof discordGatewayReceiptSchema>;
+export type DiscordGatewayReceipt = zInfer<typeof discordGatewayReceiptSchema>;
 export type DiscordGatewayContract = typeof discordGatewayContract;
