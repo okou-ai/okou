@@ -962,9 +962,8 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         _check_data_router_request_body(
             flow, classification=classification, request_end_stream=request_end_stream
         )
-        if flow.error is None:
-            _restore_request_headers_probe_metadata(flow, metadata_snapshot)
-        return None
+        if flow.error is not None:
+            return None
     if isinstance(
         classification,
         request_classification.FirewallAllow | request_classification.FirewallPolicyAllow,

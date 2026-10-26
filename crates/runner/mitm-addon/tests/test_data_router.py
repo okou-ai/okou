@@ -16,25 +16,30 @@ from mitmproxy.test import taddons
 
 import firewall_auth_cache
 import firewall_auth_client
+import flow_metadata_keys as metadata_keys
 import mitm_addon
+import public_destination_body_admission
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http2_request, start_http_layer
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 
-def router_registry(tmp_path):
+def router_registry(tmp_path, *, public_destination: bool = False):
+    api_entry: dict[str, object] = {
+        "base": "https://data.okou.ai/mcp",
+        "auth": {"headers": {"Authorization": "Bearer ${{ secrets.OKOU_DATA_TOKEN }}"}},
+        "permissions": [{"name": "call", "rules": ["ANY /{path*}"]}],
+    }
+    if public_destination:
+        api_entry["hostPolicy"] = {"kind": "publicDestination"}
     return _write_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(
             tmp_path,
             run_id=str(uuid.uuid4()),
             firewall_name="data-router",
-            api_entry={
-                "base": "https://data.okou.ai/mcp",
-                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.OKOU_DATA_TOKEN }}"}},
-                "permissions": [{"name": "call", "rules": ["ANY /{path*}"]}],
-            },
+            api_entry=api_entry,
             network_policy={"allow": ["call"], "deny": [], "ask": [], "unknownPolicy": "deny"},
         ),
     )
@@ -129,6 +134,27 @@ async def test_control_requests_do_not_register_or_keep_forged_identity(
             await mitm_addon.request(flow)
             assert "X-Okou-Data-Request-Id" not in flow.request.headers
     registration.assert_not_awaited()
+
+
+async def test_body_limit_preserves_public_destination_admission(
+    tmp_path: Path, real_flow, mitm_ctx, monkeypatch, fake_firewall_headers
+) -> None:
+    path = router_registry(tmp_path, public_destination=True)
+    flow = router_flow(real_flow)
+    flow.request.raw_content = None
+    flow.request.headers["Content-Length"] = str(128 * 1024)
+    monkeypatch.setattr(public_destination_body_admission, "MAX_ADMITTED_REQUESTS", 0)
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        assert flow.error is not None
+        assert (
+            flow.metadata[metadata_keys.FIREWALL_ERROR]
+            == "public_destination_request_body_admission_saturated"
+        )
+        auth_fetch.assert_not_awaited()
 
 
 def _start_router_request(
