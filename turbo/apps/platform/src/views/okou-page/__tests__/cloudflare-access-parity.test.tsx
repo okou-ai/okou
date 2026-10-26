@@ -112,6 +112,7 @@ test("Reviewing a conflict permits restoring the original name against the new r
   context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
     if (current.revision === 1) {
       current = { ...config, name: "Concurrent rename", revision: 2 };
+      context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
     }
     if (body.expectedRevision !== current.revision) {
       return respond(409, {

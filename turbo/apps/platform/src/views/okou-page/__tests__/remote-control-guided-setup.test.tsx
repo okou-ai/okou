@@ -1467,10 +1467,13 @@ test("Saved network loading failures leave direct access available", async () =>
   await screen.findByRole("heading", { name: "Add remote connection" });
   click(screen.getByText("Run commands on the device."));
   await screen.findByLabelText("SSH username");
-  await screen.findByText("Could not load Tailscale.");
+  await screen.findByText(
+    "Unable to load this step. Your entries are saved in the form.",
+  );
   expect(screen.getByLabelText("Connection method")).toHaveTextContent(
     "Direct connection",
   );
+  expect(screen.getByLabelText("Device address")).toBeEnabled();
   click(screen.getByLabelText("Connection method"));
   await screen.findByRole("option", { name: "Direct connection" });
   expect(screen.queryByRole("option", { name: "Private networks" })).toBeNull();

@@ -609,6 +609,7 @@ test("Rebinding a host after a concurrent update requires review and preserves i
     requests.push(body);
     if (body.expectedGeneration === 1) {
       current = { ...host, displayName: "Updated elsewhere", generation: 2 };
+      context.mocks.ably.trigger("ssh:changed", { orgId });
       return respond(409, {
         error: { code: "SSH_GENERATION_CONFLICT", message: "not user copy" },
       });

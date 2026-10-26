@@ -216,7 +216,7 @@ test("A known credential rejection leaves the retained input editable", async ()
   expect(document.body.textContent).not.toContain("private server detail");
 });
 
-test("Shared credential editing explains its impact and conflicts do not retry or overwrite", async () => {
+test("A concurrent shared-credential edit preserves the draft until the newer revision is reviewed", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [base] });
   });
@@ -244,6 +244,7 @@ test("Shared credential editing explains its impact and conflicts do not retry o
       });
     }
     current = { ...current, revision: 2, name: "Edited elsewhere" };
+    context.mocks.ably.trigger("ssh:changed", { orgId });
     return respond(409, {
       error: {
         code: "SSH_CREDENTIAL_REVISION_CONFLICT",
@@ -484,6 +485,7 @@ test.each([
               }
             : { type: "tailscale", needsRebind: true },
       };
+      context.mocks.ably.trigger("ssh:changed", { orgId });
       return respond(409, {
         error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
       });
@@ -979,7 +981,7 @@ test.each([
   carrier: string;
   connection: SshConnectionResponse;
 }[])(
-  "$name reset requires confirmation and reviews the actual carrier before explicit retry or deletion",
+  "$name reset requires confirmation of the newer generation and actual carrier",
   async ({ carrier, connection }) => {
     // A saved identity can survive a carrier change before native Tailscale delivery.
     const learned = {
@@ -1025,6 +1027,7 @@ test.each([
           return respond(200, hosts[0]!);
         }
         hosts = [{ ...learned, generation: 2 }];
+        context.mocks.ably.trigger("ssh:changed", { orgId });
         return respond(409, {
           error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
         });
