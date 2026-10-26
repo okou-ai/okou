@@ -187,11 +187,6 @@
       "owner": "prepareUsagePackMemberRemoval"
     },
     {
-      "id": "TX-0272",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "fulfillUsagePackSubscriptionChangeInvoice"
-    },
-    {
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
