@@ -1,4 +1,5 @@
 import { command, computed } from "ccstate";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
@@ -9,6 +10,7 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { apiClient$ } from "../../api-client.ts";
+import { i18n } from "../../../i18n/index.ts";
 import { withCleanup } from "../../utils.ts";
 import { accept } from "../../../lib/accept.ts";
 import { agentDetail$ } from "./detail.ts";
@@ -18,7 +20,7 @@ import {
 } from "../settings/custom-connectors.ts";
 import { requireCustomConnectorAccountReady } from "../settings/connector-accounts.ts";
 
-export const prepareJobCustomConnectorAccess$ = command(
+const prepareJobCustomConnectorAccess$ = command(
   async (
     { get },
     connector: CustomConnectorResponse,
@@ -66,10 +68,14 @@ export const agentAddedCustomConnectors$ = computed(
 export const toggleAgentCustomConnector$ = command(
   async (
     { get, set },
-    id: string,
+    connector: CustomConnectorResponse,
     checked: boolean,
     signal: AbortSignal,
   ): Promise<void> => {
+    if (checked) {
+      await set(prepareJobCustomConnectorAccess$, connector, signal);
+      signal.throwIfAborted();
+    }
     const detail = await get(agentDetail$);
     signal.throwIfAborted();
     if (!detail?.agentId) {
@@ -82,7 +88,7 @@ export const toggleAgentCustomConnector$ = command(
         client.update({
           params: { id: detail.agentId },
           body: {
-            grants: [{ customConnectorId: id, permissionNames: [] }],
+            grants: [{ customConnectorId: connector.id, permissionNames: [] }],
             operation: checked ? "add" : "remove",
           },
           fetchOptions: { signal },
@@ -96,5 +102,13 @@ export const toggleAgentCustomConnector$ = command(
     signal.throwIfAborted();
     await get(agentCustomConnectorGrants$);
     signal.throwIfAborted();
+    toast.success(
+      i18n.t(
+        ($) => {
+          return $.authorization.customConnectors.saved;
+        },
+        { ns: "agents" },
+      ),
+    );
   },
 );
