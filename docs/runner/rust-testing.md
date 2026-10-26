@@ -219,8 +219,22 @@ split the test target into smaller compilation units. A narrower local check
 does not replace required CI.
 
 Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
-files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
-use `cargo clippy --profile local --all-targets --all-features`.
+files. Crates CI runs Clippy in two workspace configurations. To run both locally
+from `crates/`:
+
+```bash
+# Default production libraries and binaries
+cargo clippy --profile local --locked --workspace --lib --bins -- -D warnings
+
+# Tests, examples, benchmarks and opt-in features
+cargo clippy --profile local --locked --workspace --all-targets --all-features -- -D warnings
+```
+
+The production pass uses normal dependency features and excludes test targets
+and development-only feature activation. Keep it separate from the full-feature
+pass: `--all-features` can enable fixture lint allowances, while `--all-targets`
+also activates development dependencies. Cargo resolves normal dependency
+features across the selected workspace in each pass.
 
 ### Native terminal saving
 
