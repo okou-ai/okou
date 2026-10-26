@@ -33,7 +33,7 @@ pub(super) struct LocalCancelScanner {
 
 pub(super) struct LocalCancelWatcher {
     shutdown: CancellationToken,
-    handle: Mutex<Option<JoinHandle<()>>>,
+    handle: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     scanner: LocalCancelScanner,
 }
 
@@ -327,7 +327,7 @@ impl LocalCancelWatcher {
 
         Self {
             shutdown,
-            handle: Mutex::new(handle),
+            handle: tokio::sync::Mutex::new(handle),
             scanner,
         }
     }
@@ -337,7 +337,7 @@ impl LocalCancelWatcher {
         shutdown.cancel();
         Self {
             shutdown,
-            handle: Mutex::new(None),
+            handle: tokio::sync::Mutex::new(None),
             scanner,
         }
     }
@@ -345,15 +345,15 @@ impl LocalCancelWatcher {
     pub(super) async fn shutdown(&self) {
         self.scanner.stop_cancel_deliveries();
         self.shutdown.cancel();
-        let handle = self
-            .handle
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
-        let Some(handle) = handle else {
+        // Retain join custody if this waiter is cancelled. Concurrent callers
+        // must wait for the same watcher to retire before returning.
+        let mut slot = self.handle.lock().await;
+        let Some(handle) = slot.as_mut() else {
             return;
         };
-        if let Err(e) = handle.await {
+        let result = handle.await;
+        *slot = None;
+        if let Err(e) = result {
             warn!(error = %e, "local: cancel watcher task failed");
         }
     }
@@ -363,11 +363,7 @@ impl Drop for LocalCancelWatcher {
     fn drop(&mut self) {
         self.scanner.stop_cancel_deliveries();
         self.shutdown.cancel();
-        let handle = self
-            .handle
-            .get_mut()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
+        let handle = self.handle.get_mut().take();
         if let Some(handle) = handle {
             handle.abort();
         }
