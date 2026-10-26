@@ -17,6 +17,7 @@ import { currentChatAgentId$ } from "../agent-chat.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { onRef } from "../utils.ts";
+import { proactiveJobsPreference$ } from "./settings/proactive-jobs.ts";
 
 export const entrustedJobsEnabled$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent]) {
@@ -26,7 +27,10 @@ export const entrustedJobsEnabled$ = computed(async (get) => {
     get(currentChatAgentId$),
     get(defaultAgentId$),
   ]);
-  return primary !== null && primary === current;
+  if (primary === null || primary !== current) {
+    return false;
+  }
+  return (await get(proactiveJobsPreference$)).enabled;
 });
 const revision$ = state(0);
 const filter$ = state<"home" | "history" | "archived">("home");

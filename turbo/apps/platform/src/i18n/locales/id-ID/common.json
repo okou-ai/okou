@@ -5122,8 +5122,8 @@
           "title": "Preferensi"
         },
         "proactiveAgent": {
-          "description": "Pilih cara Okou belajar, merencanakan, mengerjakan Tasks, dan menyarankan langkah berikutnya.",
-          "title": "Proactive Agent"
+          "description": "Pilih cara Okou bekerja secara proaktif.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "Alat"
@@ -5528,16 +5528,6 @@
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
@@ -5548,15 +5538,15 @@
         "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
         "title": "Pembelajaran"
       },
-      "proactivePlanning": {
-        "description": "Rencanakan dalam lingkup pekerjaan yang Anda delegasikan dan perbarui Tasks. Pekerjaan baru dapat dimulai saat Tasks aktif.",
+      "proactivePlanningAction": {
+        "description": "Rencanakan dan kerjakan tugas yang Anda delegasikan, serta beri tahu saat masukan Anda diperlukan.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia. Okou akan mencoba lagi.",
         "preparing": "Menyiapkan alur kerja ini.",
         "retry": "Retry",
         "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
-        "title": "Perencanaan"
+        "title": "Perencanaan & tindakan"
       },
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
@@ -5566,7 +5556,7 @@
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
         "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
-        "title": "Saran proaktif"
+        "title": "Saran"
       },
       "send": {
         "cmdEnter": "⌘ Enter",

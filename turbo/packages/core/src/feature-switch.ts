@@ -163,7 +163,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ProactiveAgent]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Proactive Agent",
+    displayName: "Proactive",
     description:
       "Review activity, learn, plan next steps, advance entrusted Tasks and curate Suggestions.",
     enabled: false,

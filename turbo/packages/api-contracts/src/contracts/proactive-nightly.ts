@@ -34,21 +34,3 @@ export const proactiveLearningContract = c.router({
     summary: "Enable nightly review and consolidation of your personal memory",
   },
 });
-
-export const proactivePlanningContract = c.router({
-  get: {
-    method: "GET",
-    path: "/api/preferences/proactive-planning",
-    headers: authHeadersSchema,
-    responses,
-    summary: "Read your Proactive Planning preference",
-  },
-  update: {
-    method: "PUT",
-    path: "/api/preferences/proactive-planning",
-    headers: authHeadersSchema,
-    body,
-    responses,
-    summary: "Enable nightly planning within your explicitly delegated scope",
-  },
-});

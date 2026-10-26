@@ -13,7 +13,7 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-test("hides Proactive Agent while retaining the released Morning Brief", async () => {
+test("hides Proactive while retaining the released Morning Brief", async () => {
   await setupPage({
     context,
     path: "/agents?settings=preference",
@@ -23,7 +23,7 @@ test("hides Proactive Agent while retaining the released Morning Brief", async (
     screen.findByRole("switch", { name: "Morning brief" }),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.queryByRole("switch", { name: "Proactive Suggestions" }),
+    screen.queryByRole("switch", { name: "Suggestions" }),
   ).not.toBeInTheDocument();
 });
 
@@ -53,7 +53,7 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
     featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
   });
   const toggle = await screen.findByRole("switch", {
-    name: "Proactive Suggestions",
+    name: "Suggestions",
   });
   await waitFor(() => {
     return expect(toggle).toBeEnabled();
@@ -107,7 +107,7 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
     ),
   ).resolves.toBeInTheDocument();
   const toggle = within(card).getByRole("switch", {
-    name: "Proactive Suggestions",
+    name: "Suggestions",
   });
   expect(toggle).toBeChecked();
   expect(toggle).toBeEnabled();
@@ -155,7 +155,7 @@ test("retries a failed opt-out without enabling proactive suggestions", async ()
     return expect(choices).toStrictEqual([false]);
   });
   expect(
-    within(card).getByRole("switch", { name: "Proactive Suggestions" }),
+    within(card).getByRole("switch", { name: "Suggestions" }),
   ).not.toBeChecked();
 });
 
@@ -187,7 +187,7 @@ test("keeps suggestions opted in during platform recovery without asking the use
     ),
   ).resolves.toBeInTheDocument();
   const toggle = within(card).getByRole("switch", {
-    name: "Proactive Suggestions",
+    name: "Suggestions",
   });
   expect(toggle).toBeChecked();
   expect(
