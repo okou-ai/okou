@@ -77,6 +77,12 @@ function useColorThemeOptions(): readonly ColorThemeOption[] {
         return $.settings.preferences.appearance.colorTheme.options.deepLagoon;
       }),
     },
+    {
+      value: "halloween",
+      label: t(($) => {
+        return $.settings.preferences.appearance.colorTheme.options.halloween;
+      }),
+    },
   ];
 }
 
