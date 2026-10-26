@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { now } from "../../../lib/time.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { AGENT_ID, setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
@@ -84,6 +85,12 @@ function assistantGroupFor(element: Element): HTMLElement {
     throw new Error("Expected content inside one assistant response");
   }
   return group;
+}
+
+function viewAgentProfileLinks(): HTMLElement[] {
+  return queryAllByRoleFast("link").filter((link) => {
+    return link.getAttribute("aria-label") === "View agent profile";
+  });
 }
 
 function agentNameLines(): HTMLElement[] {
@@ -445,10 +452,10 @@ test("Count one output.message once when Markdown renders multiple child blocks"
   await expect(screen.findByTestId("plan-upgrade-card")).resolves.toBeVisible();
   expect(queryWorkHistoryToggles("collapsed")).toHaveLength(0);
   expect(screen.queryAllByText(/^Working(?: for)? /u)).toHaveLength(1);
-  expect(agentNameLines()).toHaveLength(1);
+  expect(viewAgentProfileLinks()).toHaveLength(1);
 });
 
-test("A reply opens with its agent's name, linked to the agent's profile", async () => {
+test("With Agent name on replies, a reply opens with its agent's name, linked to the agent's profile", async () => {
   installRunChat({
     chatEvents: [
       promptEvent({
@@ -470,6 +477,7 @@ test("A reply opens with its agent's name, linked to the agent's profile", async
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ChatReplyNameLine]: true },
   });
 
   await readyChat();
@@ -483,6 +491,7 @@ test("A reply opens with its agent's name, linked to the agent's profile", async
   expect(nameLine?.closest('[data-role="assistant"]')).toHaveTextContent(
     "The launch notes are summarized.",
   );
+  expect(viewAgentProfileLinks()).toHaveLength(0);
 });
 
 test.each([
@@ -572,7 +581,7 @@ test.each(finalOutputDocuments)(
     await readyChat();
     const main = await find();
     expect(main).toBeVisible();
-    expect(agentNameLines()).toHaveLength(1);
+    expect(viewAgentProfileLinks()).toHaveLength(1);
     expect(screen.queryByText("Earlier output belongs in history")).toBeNull();
     expect(queryWorkHistoryToggles("collapsed")).toHaveLength(1);
     const thinking = document.querySelector<HTMLElement>(

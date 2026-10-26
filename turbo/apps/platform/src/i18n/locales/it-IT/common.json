@@ -1583,7 +1583,8 @@
         "whatsCooking": "Cosa bolle in pentola, {{userName}}?",
         "whatsOnYourMind": "Cos'hai in mente, {{userName}}?",
         "whatsTheMove": "Qual è la mossa, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "Visualizza il profilo dell'agente"
     },
     "agentSuggestions": {
       "dismiss": "Ignora",

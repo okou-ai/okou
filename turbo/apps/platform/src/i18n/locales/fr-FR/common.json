@@ -1583,7 +1583,8 @@
         "whatsCooking": "Qu'est-ce qui se prépare, {{userName}} ?",
         "whatsOnYourMind": "À quoi penses-tu, {{userName}} ?",
         "whatsTheMove": "Quel est le plan, {{userName}} ?"
-      }
+      },
+      "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
       "dismiss": "Ignorer",

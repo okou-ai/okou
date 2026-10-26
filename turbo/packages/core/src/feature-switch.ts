@@ -138,6 +138,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatReplyNameLine]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Agent name on replies",
+    description:
+      "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:

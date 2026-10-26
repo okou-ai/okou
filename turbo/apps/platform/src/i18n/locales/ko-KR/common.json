@@ -1558,7 +1558,8 @@
         "whatsCooking": "무슨 일이 있나요, {{userName}}?",
         "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
         "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
       "dismiss": "무시",
