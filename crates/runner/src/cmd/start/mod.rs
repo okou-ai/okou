@@ -58,7 +58,7 @@ use crate::network_log_manager::NetworkLogManager;
 use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::resource_budget::ResourceBudget;
 use crate::status::{StatusTracker, remove_stale_status_file};
-use crate::{deps, dns, kmsg_log, prefetch, proxy};
+use crate::{deps, dns, kmsg_log, proxy};
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use runner_host::runner_process_identity::load_runner_process_identity;
 use runner_host::{host, lock};
@@ -310,8 +310,8 @@ async fn run_start_with_observer(
     load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
     signals: EarlySignals,
 ) -> RunnerResult<()> {
-    // This passive owner surrounds every fallible startup/reactor return. It starts
-    // before optional warming and never depends on heartbeat, pool or status locks.
+    // This passive owner surrounds every fallible startup/reactor return and
+    // never depends on heartbeat, pool or status locks.
     let observer = runner_supervisor::host_memory::HostMemoryObserver::spawn();
     // Construct startup inside this boundary to retain a single startup await slot.
     let result = run_start_observed(args, runtime_provider, load_home, signals).await;
@@ -545,22 +545,6 @@ async fn run_start_observed(
             );
         }
     }
-
-    let memory_prefetch_candidates = resource_locks
-        .profile_paths()
-        .map(|(name, profile_paths)| {
-            let profile = runner_config.profiles.get(name).ok_or_else(|| {
-                RunnerError::Internal(format!(
-                    "missing runner profile for locked image artifacts {name}"
-                ))
-            })?;
-            Ok(prefetch::MemoryPrefetchCandidate {
-                path: profile_paths.snapshot_paths().memory(),
-                memory_mb: profile.memory_mb,
-            })
-        })
-        .collect::<RunnerResult<Vec<_>>>()?;
-    let memory_prefetch_budget_mb = u64::from(budget.effective_memory_mb().min(host_memory_mb));
 
     // Compute the smallest profile resources for budget pre-check.
     // When budget is exhausted for all profiles, we wait instead of polling.
@@ -798,12 +782,6 @@ async fn run_start_observed(
 
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
-    // Accept optional reads only after fallible root setup has completed. The
-    // concrete reactor handoff below gives its startup owner custody before
-    // another await; startup rollback and normal teardown both join real IO
-    // while the root's image and base-directory locks remain held.
-    let memory_prefetch =
-        prefetch::MemoryPrefetchTasks::spawn(memory_prefetch_candidates, memory_prefetch_budget_mb);
     let config = RunConfig {
         sandbox_op_reporter: host_telemetry
             .as_ref()
@@ -851,7 +829,6 @@ async fn run_start_observed(
         shutdown: ShutdownHandles {
             kmsg_handle,
             dns_handle,
-            memory_prefetch,
         },
         usage_flush_tx,
         usage_flush_rx,

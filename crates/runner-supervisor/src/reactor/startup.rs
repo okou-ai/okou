@@ -128,11 +128,8 @@ impl StartupOwner {
                 ShutdownHandles {
                     kmsg_handle,
                     dns_handle,
-                    mut memory_prefetch,
                 },
         } = self.resources;
-        memory_prefetch.cancel();
-        memory_prefetch.drain().await;
         ctx.provider.provider.shutdown().await;
         if let Err(error) = dns_handle.stop().await {
             warn!(%error, "failed to clean up network-log helper after startup failure");

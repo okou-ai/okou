@@ -368,13 +368,6 @@ async fn validate_profile_snapshot_artifacts(
 pub(crate) struct LockedProfileImageArtifacts {
     _rootfs_locks: Vec<Flock<File>>,
     _snapshot_locks: Vec<Flock<File>>,
-    snapshot_paths: SnapshotPaths,
-}
-
-impl LockedProfileImageArtifacts {
-    pub(crate) fn snapshot_paths(&self) -> &SnapshotPaths {
-        &self.snapshot_paths
-    }
 }
 
 pub(crate) struct LockedProfileImageArtifactPaths {
@@ -472,17 +465,11 @@ pub(crate) async fn lock_and_validate_profile_image_artifacts(
 ) -> RunnerResult<LockedProfileImageArtifacts> {
     let mut profiles = BTreeMap::new();
     profiles.insert(name.to_string(), profile.clone());
-    let mut locked = lock_and_validate_runner_image_artifacts(&profiles, home).await?;
-    let paths = locked.profile_paths.remove(name).ok_or_else(|| {
-        RunnerError::Internal(format!(
-            "missing locked image artifact paths for profile {name}"
-        ))
-    })?;
+    let locked = lock_and_validate_runner_image_artifacts(&profiles, home).await?;
 
     Ok(LockedProfileImageArtifacts {
         _rootfs_locks: locked._rootfs_locks,
         _snapshot_locks: locked._snapshot_locks,
-        snapshot_paths: paths.snapshot_paths,
     })
 }
 

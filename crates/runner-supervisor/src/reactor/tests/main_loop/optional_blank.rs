@@ -1,11 +1,33 @@
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
+
+use futures_util::future::BoxFuture;
+use runner_host::host_memory::HostMemoryObservation;
+use runner_lifecycle::host_memory_operations::{
+    HostMemoryOperations, MemoryObservationSource, MemoryOperationPolicy,
+};
+use runner_lifecycle::host_memory_policy::HostMemoryBounds;
+use runner_lifecycle::host_memory_pressure::HostPressurePolicy;
+use runner_lifecycle::idle_pool::IdleRetirementEnvelope;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile, OptionalBlankPoolRequest};
+use crate::idle_pressure::{IdlePressureConfig, IdlePressureOwner};
 use sandbox_mock::{
     MockBackingProcess, MockLifecycleGate, MockSandboxFactory, MockSandboxOverrides,
 };
 
-use super::*;
+use super::super::super::*;
+use super::super::support::{
+    context_with_session, mock_run_config, push_job, shutdown, test_profiles, wait_discover_entered,
+};
+
+struct Source(PathBuf);
+
+impl MemoryObservationSource for Source {
+    fn observe(&self) -> BoxFuture<'_, HostMemoryObservation> {
+        Box::pin(HostMemoryObservation::read_at(&self.0))
+    }
+}
 
 #[tokio::test]
 async fn fitting_job_in_real_reactor_preempts_optional_cpu_while_guest_io_remains_owned() {

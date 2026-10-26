@@ -8,11 +8,11 @@ import pathlib
 import re
 
 import create_cancellation_report as create
-import foreground_report as foreground
+import progress_report as foreground
 import pressure_report as pressure
-import read_cancellation_report as reads
+import observation_report as reads
 import report
-import startup_report as startup
+import snapshot_report as startup
 
 PREFIX = "NATIVE_RETURNED_GUEST_WITNESS "
 STAGES = ("start", "mount", "park")
@@ -54,7 +54,7 @@ def result(value, stage=None, retained=False):
 def validate(directory):
     directory = pathlib.Path(directory)
     output, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
-    policy, inputs, raw = startup.original_inputs(collector["metadata"], output["artifacts"], "native_returned_guest")
+    policy, raw = startup.original_inputs(collector["metadata"], output["artifacts"], "native_returned_guest")
     witnesses = {case: [] for case in CASES}
     for line in (directory/"stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):
@@ -81,7 +81,7 @@ def validate(directory):
         growth = startup.BYTES+policy["replacement_preparation_bytes"]
         startup.exact(initial, {"policy": policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
             "snapshot_sha256": output["artifacts"]["snapshot_files"]["memory.bin"], "snapshot_bytes": startup.BYTES,
-            "prefetch_overhead_bytes": inputs["prefetch_overhead_bytes"], "stage": stage,
+            "stage": stage,
             "allocated": [2,4096,1], "checkpoint_models_stalled_io": False}, "returned Guest original inputs changed")
         create.ordered([events[0]["monotonic_ns"], *(unaccepted.get(k) for k in ("pool_pending_ns", "foreground_acquired_ns", "joined_ns")),
                         unaccepted.get("observer", {}).get("completed_ns"), unaccepted.get("pool_released_ns"), events[1]["monotonic_ns"]])
