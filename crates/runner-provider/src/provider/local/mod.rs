@@ -5,6 +5,11 @@
 //! to claim discovered jobs via group-wide `{job_id}.claim` files (O_EXCL).
 //! The winning runner executes the job and writes a group-wide
 //! `{job_id}.result` file that `submit` polls for.
+//!
+//! If an invalid job's failure result cannot be published, queue clones defer
+//! that run for five seconds while allowing other jobs to progress. Discovery's
+//! reconciliation retries retained jobs after storage recovers. This transient
+//! backoff is per queue instance and does not survive a Runner restart.
 
 mod cancel;
 mod watch;

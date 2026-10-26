@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   ColorTheme,
   ThemePreference,
@@ -15,8 +14,6 @@ import {
   encodeOkouThemePreference,
 } from "../lib/okou-theme-cookie.ts";
 import { onRef } from "./utils.ts";
-import { featureSwitchState$ } from "./external/feature-switch-state.ts";
-import { setPwaKeyboardViewportEnabled } from "../lib/visual-viewport-keyboard.ts";
 
 export type { ColorTheme, ThemePreference };
 
@@ -164,7 +161,7 @@ function applyColorThemeDocumentAttributes(colorTheme: ColorTheme | undefined) {
 }
 
 /**
- * Project the current shell theme and viewport rollout onto the document.
+ * Project the current shell color theme onto the document.
  * Mount state is owned by the shell ref; semantic setters call this command
  * again when their source state changes without replacing the shell element.
  */
@@ -177,10 +174,6 @@ export const syncShellDocumentAttributes$ = command(
     const shellMounted = get(shellDocumentAttributesMounted$);
     applyColorThemeDocumentAttributes(
       shellMounted ? get(paletteColorTheme$) : undefined,
-    );
-    setPwaKeyboardViewportEnabled(
-      shellMounted &&
-        get(featureSwitchState$)[FeatureSwitchKey.PwaKeyboardViewport],
     );
   },
 );

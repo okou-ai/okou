@@ -23,6 +23,9 @@ readonly FINALIZING_SOURCE_RUNNER_READER_COMMIT=b610ff61043274157618e3925b13a66d
 # #41808 stopped naming runner_state.wss_ingress_service_active in ORM statements.
 # Migration drop_runner_state_wss_ingress drops it, so earlier APIs fail Runner state SQL.
 readonly RUNNER_STATE_WSS_INGRESS_FREE_COMMIT=430cb92b5431e1554d0a1dceed6d9cfb27762921
+# #42935 removed retired Data job mappings and pricing columns from API SQL.
+# The later storage contraction must not restore an API that still names them.
+readonly MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT=b220a504c5e633de162791f1216c4458188ffe72
 # #42572 removed invoice-paid automation SQL before its dedicated tables retire.
 # Preserve the shared Stripe Connect deauthorization receiver from that release.
 readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447d707b81
@@ -102,6 +105,7 @@ readonly CONNECTOR_DIAGNOSTIC_TARGETS_PATH=.github/rollback-floors/connector-dia
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
 readonly DECODED_STORAGE_CAPACITY_READER_PATH=.github/rollback-floors/decoded-storage-capacity-reader
+readonly DESKTOP_MANIFEST_R2_READER_PATH=.github/rollback-floors/desktop-manifest-r2-reader
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
 readonly PI_MEMORY_RETIRED_PATH=.github/rollback-floors/pi-memory-retired
 # Completion now accepts only storageOutputs. The selected Runner must embed
@@ -177,6 +181,10 @@ fi
 
 if ! git merge-base --is-ancestor "$RUNNER_STATE_WSS_INGRESS_FREE_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the wss_ingress_service_active-free Runner state mapping: ${RUNNER_STATE_WSS_INGRESS_FREE_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired Data storage-independent runtime: ${MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$STRIPE_INVOICE_PAID_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
@@ -781,6 +789,21 @@ if [[ ! "$decoded_storage_capacity_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$decoded_storage_capacity_reader_commit" origin/main; then
   fail "Decoded storage capacity reader rollback floor is not on main."
+fi
+
+# The GitHub manifest mirror is retired. Every supported API must read the
+# authoritative R2 manifest introduced by #43047, including after a rollback.
+if ! desktop_manifest_r2_reader_commit=$(git show "origin/main:${DESKTOP_MANIFEST_R2_READER_PATH}"); then
+  fail "Cannot read the Desktop manifest R2 reader rollback floor from main."
+fi
+if [[ ! "$desktop_manifest_r2_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Desktop manifest R2 reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$desktop_manifest_r2_reader_commit" origin/main; then
+  fail "Desktop manifest R2 reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$desktop_manifest_r2_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Desktop manifest R2 reader: ${desktop_manifest_r2_reader_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

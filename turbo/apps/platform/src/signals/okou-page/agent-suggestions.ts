@@ -3,6 +3,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   suggestionsContract,
   type Suggestion,
+  type SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -96,7 +97,12 @@ export const subscribeAgentSuggestions$ = command(
  * elsewhere.
  */
 const consumeAgentSuggestion$ = command(
-  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+  async (
+    { get, set },
+    item: Suggestion,
+    optionId: string | null,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     if (get(consumedIds$).includes(item.id)) {
       return null;
@@ -104,7 +110,7 @@ const consumeAgentSuggestion$ = command(
     const result = await accept(
       get(apiClient$)(suggestionsContract).consume({
         params: { id: item.id },
-        body: {},
+        body: { optionId },
         fetchOptions: { signal },
       }),
       [200, 409],
@@ -119,19 +125,24 @@ const consumeAgentSuggestion$ = command(
   },
 );
 const applyAgentSuggestionDraft$ = command(
-  async ({ set }, item: Suggestion, agentId: string, signal: AbortSignal) => {
+  async (
+    { set },
+    option: SuggestionOption,
+    agentId: string,
+    signal: AbortSignal,
+  ) => {
     const target =
-      item.threadId === null ? set(ensureAgentDraft$, agentId) : null;
+      option.threadId === null ? set(ensureAgentDraft$, agentId) : null;
     const draft =
-      item.threadId !== null
-        ? set(ensureDraft$, item.threadId)
+      option.threadId !== null
+        ? set(ensureDraft$, option.threadId)
         : set(ensureAgentDraft$, agentId).draft;
-    await set(draft.prependComposerDraft$, item.draft, signal);
-    if (item.threadId !== null) {
-      await set(resumeThreadDraftHandoff$, item.threadId, signal);
+    await set(draft.prependComposerDraft$, option.draft, signal);
+    if (option.threadId !== null) {
+      await set(resumeThreadDraftHandoff$, option.threadId, signal);
       signal.throwIfAborted();
       set(detachedNavigateTo$, ROUTES.chat, {
-        pathParams: { threadId: item.threadId },
+        pathParams: { threadId: option.threadId },
       });
       return;
     }
@@ -150,9 +161,17 @@ export const startAgentSuggestion$ = command(
   async (
     { get, set },
     item: Suggestion,
+    optionId: string,
     pageSignal: AbortSignal,
   ): Promise<void> => {
     pageSignal.throwIfAborted();
+    if (
+      !item.options.some((option) => {
+        return option.id === optionId;
+      })
+    ) {
+      throw new Error("Suggestion option is unavailable");
+    }
     const signal = get(rootSignal$);
     // Resolve the new-thread destination before consuming. The accepted result
     // can change the target, so both new and existing cards need this identity.
@@ -161,14 +180,26 @@ export const startAgentSuggestion$ = command(
     if (!agentId) {
       throw new Error("Suggestion target is unavailable");
     }
-    const selected = await set(consumeAgentSuggestion$, item, signal);
+    const selected = await set(consumeAgentSuggestion$, item, optionId, signal);
     if (!selected) {
       return;
     }
+    const option = selected.options.find((entry) => {
+      return entry.id === selected.selectedOptionId;
+    });
+    if (!option || option.id !== optionId) {
+      throw new Error(
+        "Consumed suggestion does not contain the selected option",
+      );
+    }
     // Existing threads already have an authoritative ID. Install their draft
     // before any destination metadata or saved-draft request can fail.
-    await set(applyAgentSuggestionDraft$, selected, agentId, signal);
+    await set(applyAgentSuggestionDraft$, option, agentId, signal);
   },
 );
 
-export const dismissAgentSuggestion$ = consumeAgentSuggestion$;
+export const dismissAgentSuggestion$ = command(
+  async ({ set }, item: Suggestion, signal: AbortSignal) => {
+    await set(consumeAgentSuggestion$, item, null, signal);
+  },
+);

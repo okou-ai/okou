@@ -1590,7 +1590,6 @@
       "next": "Suggestion suivante",
       "position": "{{current}} sur {{total}}",
       "previous": "Suggestion précédente",
-      "starting": "Démarrage…",
       "useSuggestion": "Utiliser la suggestion"
     },
     "attachments": {

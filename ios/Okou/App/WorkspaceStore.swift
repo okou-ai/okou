@@ -84,7 +84,7 @@ final class WorkspaceStore {
 
   init(
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
-    draftStorage: ChatDraftStorage? = nil,
+    sharedSync: ChatSync? = nil, draftStorage: ChatDraftStorage? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -97,7 +97,7 @@ final class WorkspaceStore {
     self.historyWarmingSleep = historyWarmingSleep
     self.draftStorage = draftStorage
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
-    let sync = ChatSync(client: client, cache: cache)
+    let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync
     let commands = ChatCommands(client: client, sync: sync)
     self.commands = commands
@@ -139,6 +139,7 @@ final class WorkspaceStore {
       onChange: { [weak self] in self?.requestRefresh($0) },
       onConnection: { [weak self] in self?.connectionStatus = $0 })
     self.realtime = realtime
+    realtime.setForeground(isForeground)
     realtime.start()
     await refresh()
   }
@@ -211,6 +212,7 @@ final class WorkspaceStore {
     let suspended = !active
     guard isForeground != active || refreshSuspended != suspended else { return }
     isForeground = active
+    realtime?.setForeground(active)
     refreshSuspended = suspended
     if suspended {
       refreshGeneration = UUID()
@@ -278,6 +280,9 @@ final class WorkspaceStore {
     guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled else { return }
     let generation = refreshGeneration
     let full = batch.contains(.reconnected)
+    let selectedBeforeRefresh = selectedThreadID
+    let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
+    async let historyRefresh: Void = refreshConversations(batch, generation: generation)
     if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
     {
       await modelStore.refresh()
@@ -294,6 +299,19 @@ final class WorkspaceStore {
       await list.refreshIndicators()
     }
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
+    await historyRefresh
+    if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
+      await selectedConversation?.refresh()
+    }
+    guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+    if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
+      await selectedConversation?.modelSelection?.refresh()
+    }
+    await trimConversations(limit: conversationLimit)
+    requestHistoryWarming()
+  }
+
+  private func refreshConversations(_ batch: Set<ChatInvalidation>, generation: UUID) async {
     var ids = Set<String>()
     for invalidation in batch {
       switch invalidation {
@@ -301,8 +319,16 @@ final class WorkspaceStore {
       default: break
       }
     }
-    if full || batch.contains(.readCursor), let selectedThreadID { ids.insert(selectedThreadID) }
-    for id in ids.sorted() {
+    if batch.contains(.reconnected) || batch.contains(.readCursor), let selectedThreadID {
+      ids.insert(selectedThreadID)
+    }
+    let ordered = ids.sorted { lhs, rhs in
+      if lhs == rhs { return false }
+      if lhs == selectedThreadID { return true }
+      if rhs == selectedThreadID { return false }
+      return lhs < rhs
+    }
+    for id in ordered {
       guard !Task.isCancelled, refreshGeneration == generation else { return }
       // Dormant conversations read their durable state when opened.
       if let conversation = conversations[id] {
@@ -311,12 +337,6 @@ final class WorkspaceStore {
         await conversation(for: id)?.refresh()
       }
     }
-    guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-    if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
-      await selectedConversation?.modelSelection?.refresh()
-    }
-    await trimConversations(limit: conversationLimit)
-    requestHistoryWarming()
   }
 
   private func requestHistoryWarming() {

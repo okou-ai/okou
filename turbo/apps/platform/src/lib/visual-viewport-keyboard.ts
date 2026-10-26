@@ -11,37 +11,9 @@ const CHAT_COMPOSER_SELECTOR =
   "[data-chat-composer] [data-slot='chat-composer-card']";
 const KEYBOARD_SCROLL_RESERVE_PROPERTY = "--okou-keyboard-scroll-reserve";
 const COMPOSER_KEYBOARD_GAP_PX = 16;
-const KEYBOARD_VIEWPORT_HEIGHT_PROPERTY = "--okou-keyboard-viewport-height";
-const KEYBOARD_VIEWPORT_TOP_PROPERTY = "--okou-keyboard-viewport-top";
-const KEYBOARD_VIEWPORT_CHANGE_EVENT = "okou:keyboard-viewport-change";
 const STANDALONE_DISPLAY_MODE_QUERY = "(display-mode: standalone)";
 const COARSE_POINTER_QUERY = "(pointer: coarse)";
 const FINE_POINTER_QUERY = "(any-pointer: fine)";
-
-// Consumers restore their reading anchors after the shell has adopted the
-// measured viewport, including the trailing sample after keyboard animation.
-export const VIEWPORT_LAYOUT_EVENT = "okou:viewport-layout";
-
-export function isPwaKeyboardViewportEnabled(): boolean {
-  return (
-    document.documentElement.dataset.pwaKeyboardViewport === "true" &&
-    window.matchMedia(STANDALONE_DISPLAY_MODE_QUERY).matches
-  );
-}
-
-/** The mounted shell projects its resolved feature switch onto the document. */
-export function setPwaKeyboardViewportEnabled(enabled: boolean): void {
-  const root = document.documentElement;
-  if ((root.dataset.pwaKeyboardViewport === "true") === enabled) {
-    return;
-  }
-  if (enabled) {
-    root.dataset.pwaKeyboardViewport = "true";
-  } else {
-    delete root.dataset.pwaKeyboardViewport;
-  }
-  document.dispatchEvent(new Event(KEYBOARD_VIEWPORT_CHANGE_EVENT));
-}
 
 const TEXT_ENTRY_SELECTOR = `textarea, select, ${CONTENTEDITABLE_SELECTOR}`;
 
@@ -163,35 +135,12 @@ export function isMobileTextInputDevice(): boolean {
   );
 }
 
-function setKeyboardOpen(
-  viewport: VisualViewport,
-  keyboardOcclusion: number,
-  viewportLayoutEnabled: boolean,
-): void {
+function setKeyboardOpen(keyboardOcclusion: number): void {
   const root = document.documentElement;
   root.dataset.keyboardOpen = "true";
-  if (!viewportLayoutEnabled) {
-    root.style.setProperty(
-      KEYBOARD_SCROLL_RESERVE_PROPERTY,
-      `${keyboardOcclusion + COMPOSER_KEYBOARD_GAP_PX}px`,
-    );
-    return;
-  }
-  if (Math.abs(viewport.scale - 1) > 0.01) {
-    // Pinch zoom changes the visible region without changing the layout.
-    // Keep the last unzoomed keyboard geometry so magnification can pan it.
-    return;
-  }
   root.style.setProperty(
-    KEYBOARD_VIEWPORT_HEIGHT_PROPERTY,
-    `${viewport.height}px`,
-  );
-  root.style.setProperty(
-    KEYBOARD_VIEWPORT_TOP_PROPERTY,
-    // Match the absolute shell's document coordinate system directly.
-    // WebKit can include visual panning in scrollY, so adding offsetTop
-    // would count the keyboard's focus pan twice.
-    `${Math.max(0, viewport.pageTop)}px`,
+    KEYBOARD_SCROLL_RESERVE_PROPERTY,
+    `${keyboardOcclusion + COMPOSER_KEYBOARD_GAP_PX}px`,
   );
 }
 
@@ -199,8 +148,6 @@ function setKeyboardClosed(): void {
   const root = document.documentElement;
   delete root.dataset.keyboardOpen;
   root.style.removeProperty(KEYBOARD_SCROLL_RESERVE_PROPERTY);
-  root.style.removeProperty(KEYBOARD_VIEWPORT_HEIGHT_PROPERTY);
-  root.style.removeProperty(KEYBOARD_VIEWPORT_TOP_PROPERTY);
 }
 
 function revealFocusedComposer(): void {
@@ -215,7 +162,9 @@ function revealFocusedComposer(): void {
   if (!(target instanceof HTMLElement)) {
     return;
   }
-  // Retain the existing real-scroll caret workaround outside the rollout.
+  // Keep the editor's document geometry stable and reveal the whole composer
+  // through a real scroll. WebKit synchronizes its native caret layer on the
+  // scrolling path, unlike CSS reflow of a focused fixed-position descendant.
   target.scrollIntoView({
     behavior: "auto",
     block: "end",
@@ -234,7 +183,6 @@ function updateKeyboardViewportState(
   state: KeyboardViewportState,
   viewport: VisualViewport,
   commitOpening: boolean,
-  viewportLayoutEnabled: boolean,
 ): void {
   if (state.resetBaselineOnSettle) {
     if (!commitOpening) {
@@ -243,13 +191,6 @@ function updateKeyboardViewportState(
     state.baselineHeight = readLayoutViewportHeight(viewport);
     state.keyboardOpen = false;
     state.resetBaselineOnSettle = false;
-  }
-
-  if (commitOpening && viewportLayoutEnabled) {
-    // The document retains its layout height while only the PWA shell is
-    // resized. A changed layout viewport is a window/orientation resize (or a
-    // browser already resizing content), not additional keyboard occlusion.
-    state.baselineHeight = readLayoutViewportHeight(viewport);
   }
 
   if (!isTextEntryElement(document.activeElement)) {
@@ -276,11 +217,7 @@ function updateKeyboardViewportState(
   }
 
   state.keyboardOpen = true;
-  setKeyboardOpen(
-    viewport,
-    readKeyboardOcclusion(state.baselineHeight, viewport),
-    viewportLayoutEnabled,
-  );
+  setKeyboardOpen(readKeyboardOcclusion(state.baselineHeight, viewport));
 }
 
 function updateKeyboardLayout(
@@ -288,32 +225,21 @@ function updateKeyboardLayout(
   viewport: VisualViewport,
   commitOpening: boolean,
 ): void {
-  const viewportLayoutEnabled = isPwaKeyboardViewportEnabled();
   const keyboardWasOpen = state.keyboardOpen;
-  updateKeyboardViewportState(
-    state,
-    viewport,
-    commitOpening,
-    viewportLayoutEnabled,
-  );
-  if (viewportLayoutEnabled) {
-    document.dispatchEvent(new Event(VIEWPORT_LAYOUT_EVENT));
-  } else if (!keyboardWasOpen && state.keyboardOpen) {
+  updateKeyboardViewportState(state, viewport, commitOpening);
+  if (!keyboardWasOpen && state.keyboardOpen) {
     if (state.revealFrameId !== null) {
       window.cancelAnimationFrame(state.revealFrameId);
     }
-    // Allow the legacy scroll reserve to participate in layout first.
+    // Allow the scroll reserve to participate in layout first.
     state.revealFrameId = window.requestAnimationFrame(() => {
       state.revealFrameId = null;
-      if (state.keyboardOpen && !isPwaKeyboardViewportEnabled()) {
+      if (state.keyboardOpen) {
         revealFocusedComposer();
       }
     });
   }
-  if (
-    (!state.keyboardOpen || viewportLayoutEnabled) &&
-    state.revealFrameId !== null
-  ) {
+  if (!state.keyboardOpen && state.revealFrameId !== null) {
     window.cancelAnimationFrame(state.revealFrameId);
     state.revealFrameId = null;
   }
@@ -361,22 +287,6 @@ export function setupVisualViewportKeyboardState(
     updateKeyboardLayout(state, viewport, true);
   };
 
-  const scheduleWindowUpdate = () => {
-    if (isPwaKeyboardViewportEnabled()) {
-      scheduleUpdate();
-    }
-  };
-
-  const updateViewportMode = () => {
-    cancelSettledUpdate();
-    state.keyboardOpen = false;
-    setKeyboardClosed();
-    updateKeyboardLayout(state, viewport, true);
-    if (!isPwaKeyboardViewportEnabled()) {
-      document.dispatchEvent(new Event(VIEWPORT_LAYOUT_EVENT));
-    }
-  };
-
   const scheduleUpdate = () => {
     // Keep committed keyboard geometry live during animation and caret-driven
     // viewport panning.
@@ -405,9 +315,6 @@ export function setupVisualViewportKeyboardState(
     state.keyboardOpen = false;
     cancelSettledUpdate();
     setKeyboardClosed();
-    if (isPwaKeyboardViewportEnabled()) {
-      document.dispatchEvent(new Event(VIEWPORT_LAYOUT_EVENT));
-    }
 
     // Some WebKit versions emit orientationchange before the new viewport
     // metrics and others emit it afterwards. Commit immediately only for the
@@ -422,9 +329,6 @@ export function setupVisualViewportKeyboardState(
 
   viewport.addEventListener("resize", scheduleUpdate);
   viewport.addEventListener("scroll", scheduleUpdate);
-  window.addEventListener("scroll", scheduleWindowUpdate);
-  window.addEventListener("resize", scheduleWindowUpdate);
-  document.addEventListener(KEYBOARD_VIEWPORT_CHANGE_EVENT, updateViewportMode);
   window.addEventListener("orientationchange", scheduleBaselineReset);
   document.addEventListener("focusin", scheduleUpdate);
   document.addEventListener("focusout", scheduleUpdate);
@@ -439,12 +343,6 @@ export function setupVisualViewportKeyboardState(
     signal.removeEventListener("abort", cleanup);
     viewport.removeEventListener("resize", scheduleUpdate);
     viewport.removeEventListener("scroll", scheduleUpdate);
-    window.removeEventListener("scroll", scheduleWindowUpdate);
-    window.removeEventListener("resize", scheduleWindowUpdate);
-    document.removeEventListener(
-      KEYBOARD_VIEWPORT_CHANGE_EVENT,
-      updateViewportMode,
-    );
     window.removeEventListener("orientationchange", scheduleBaselineReset);
     document.removeEventListener("focusin", scheduleUpdate);
     document.removeEventListener("focusout", scheduleUpdate);

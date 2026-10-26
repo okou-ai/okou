@@ -1,8 +1,16 @@
 import { escapeUTF8 } from "entities/escape";
 import { Parser } from "htmlparser2";
+import {
+  HOSTED_SITE_FILES_PATH,
+  HOSTED_SITE_FILE_DOWNLOAD_PATH,
+} from "@okouai/api-contracts/contracts/hosted-site-download";
 
-/** Permit only the platform's nonce-bearing chrome alongside the original policy. */
-export function hostedSiteBannerCsp(policy: string, nonce: string) {
+/** Permit platform chrome and its download endpoints alongside the original policy. */
+export function hostedSiteBannerCsp(
+  policy: string,
+  nonce: string,
+  siteOrigin: string,
+) {
   return policy
     .split(",")
     .map((part) => {
@@ -47,6 +55,17 @@ export function hostedSiteBannerCsp(policy: string, nonce: string) {
           }),
           "https://static.okou.io",
         ]);
+      const connections =
+        directives.get("connect-src") ?? directives.get("default-src");
+      if (connections) {
+        directives.set("connect-src", [
+          ...connections.filter((source) => {
+            return source !== "'none'";
+          }),
+          `${siteOrigin}${HOSTED_SITE_FILES_PATH}`,
+          `${siteOrigin}${HOSTED_SITE_FILE_DOWNLOAD_PATH}`,
+        ]);
+      }
       return [...directives]
         .map(([key, values]) => {
           return `${key} ${values.join(" ")}`;
@@ -61,6 +80,7 @@ export function injectHostedSiteBanner(
   html: string,
   banner: string,
   nonce: string,
+  siteOrigin: string,
 ) {
   let body: number | undefined;
   let headEnd: number | undefined;
@@ -85,7 +105,7 @@ export function injectHostedSiteBanner(
       ) {
         const updated = {
           ...attributes,
-          content: hostedSiteBannerCsp(attributes.content, nonce),
+          content: hostedSiteBannerCsp(attributes.content, nonce, siteOrigin),
         };
         changes.push({
           start: parser.startIndex,

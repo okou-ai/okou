@@ -21,7 +21,7 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 env:
   npm_config_audit: "false"
@@ -120,12 +120,3 @@ jobs:
             "$PUBLICATION_SHA" \
             "$DESKTOP_VERSION" \
             "$zip_url"
-
-      - name: Mirror Desktop update manifest for previous API releases
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload ai-okou-desktop-updates \
-            "$RUNNER_TEMP/desktop-update-manifest/ai-okou-desktop-update-manifest.json" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber

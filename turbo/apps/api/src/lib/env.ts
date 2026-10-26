@@ -18,6 +18,24 @@ const priceIdsSchema = z
   });
 
 const SCHEMA = {
+  APNS_PRIVATE_KEY_BASE64: z.string().min(1).optional(),
+  APNS_KEY_ID: z
+    .string()
+    .regex(/^[A-Z0-9]{10}$/u)
+    .optional(),
+  APNS_TEAM_ID: z
+    .string()
+    .regex(/^[A-Z0-9]{10}$/u)
+    .optional(),
+  APNS_SANDBOX_PRIVATE_KEY_BASE64: z.string().min(1).optional(),
+  APNS_SANDBOX_KEY_ID: z
+    .string()
+    .regex(/^[A-Z0-9]{10}$/u)
+    .optional(),
+  APNS_SANDBOX_TEAM_ID: z
+    .string()
+    .regex(/^[A-Z0-9]{10}$/u)
+    .optional(),
   DATABASE_URL: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_PUBLISHABLE_KEY: z.string().min(1),

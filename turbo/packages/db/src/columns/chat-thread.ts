@@ -37,7 +37,8 @@ export function chatThreadColumns() {
     /**
      * Latest started Run, without a Run FK. Framework/session remain null until
      * that Run confirms native identity; together they identify its native files.
-     * Historical readers remain authoritative until older Threads are backfilled.
+     * Continuation and resource discovery use this identity even after its
+     * settled Run is deleted; a non-null ID alone does not certify native files.
      */
     frameworkSessionRunId: uuid("framework_session_run_id"),
     /**

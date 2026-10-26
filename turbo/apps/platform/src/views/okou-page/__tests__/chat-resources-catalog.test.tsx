@@ -22,7 +22,12 @@ const { setupOverflowResources, setupResources } =
   createChatResourcesHelpers(context);
 
 function artifactEntryNamed(title: string, container: HTMLElement) {
-  const button = within(container).getByText(title).closest("button");
+  const titleElement = Array.from(
+    container.querySelectorAll<HTMLElement>('[data-slot="hover-scroll-title"]'),
+  ).find((element) => {
+    return element.textContent === title;
+  });
+  const button = titleElement?.closest("button");
   if (!button) {
     throw new Error(`Artifact entry not found: ${title}`);
   }
@@ -251,7 +256,9 @@ test("Show more resources until the last page, then collapse with the same contr
   expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(3);
   const more = buttonNamed("Show more", artifacts);
   click(more);
-  await within(artifacts).findByText("report-60.pdf");
+  await waitFor(() => {
+    expect(artifactEntryNamed("report-60.pdf", artifacts)).toBeInTheDocument();
+  });
   expect(more).toHaveAttribute("aria-expanded", "true");
   expect(more).toHaveTextContent("Show more");
   expect(within(artifacts).queryByText("Collapse")).not.toBeInTheDocument();
@@ -262,7 +269,9 @@ test("Show more resources until the last page, then collapse with the same contr
   ).not.toBeInTheDocument();
 
   click(more);
-  await within(artifacts).findByText("report-120.pdf");
+  await waitFor(() => {
+    expect(artifactEntryNamed("report-120.pdf", artifacts)).toBeInTheDocument();
+  });
   expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(120);
   expect(more).toHaveTextContent("Show more");
   expect(
@@ -270,7 +279,9 @@ test("Show more resources until the last page, then collapse with the same contr
   ).not.toBeInTheDocument();
 
   click(more);
-  await within(artifacts).findByText("report-125.pdf");
+  await waitFor(() => {
+    expect(artifactEntryNamed("report-125.pdf", artifacts)).toBeInTheDocument();
+  });
   expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(125);
   expect(more).toHaveTextContent("Collapse");
   expect(within(artifacts).queryByText("Show more")).not.toBeInTheDocument();
@@ -278,7 +289,9 @@ test("Show more resources until the last page, then collapse with the same contr
   expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(3);
   expect(more).toHaveTextContent("Show more");
   click(more);
-  await within(artifacts).findByText("report-125.pdf");
+  await waitFor(() => {
+    expect(artifactEntryNamed("report-125.pdf", artifacts)).toBeInTheDocument();
+  });
   expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(125);
   expect(more).toHaveTextContent("Collapse");
 });

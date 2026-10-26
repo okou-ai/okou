@@ -1565,7 +1565,6 @@
       "next": "下一則建議",
       "position": "{{current}} / {{total}}",
       "previous": "上一則建議",
-      "starting": "正在啟動…",
       "useSuggestion": "使用建議"
     },
     "attachments": {

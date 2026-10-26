@@ -195,7 +195,7 @@ private struct LinkActivationButton: UIViewRepresentable {
   }
 }
 
-private final class ChatLinkFixture: Sendable {
+final class ChatLinkFixture: Sendable {
   static let homeID = "74000000-0000-4000-8000-000000000001"
   static let sourceID = "74000000-0000-4000-8000-000000000002"
   static let agentID = "74000000-0000-4000-8000-000000000003"

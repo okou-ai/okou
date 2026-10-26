@@ -1,11 +1,4 @@
-import {
-  pgTable,
-  check,
-  uuid,
-  bigint,
-  index,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { pgTable, check, uuid, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usageEventColumns } from "../columns/usage-event";
 import { agentRuns } from "./agent-run";
@@ -65,22 +58,9 @@ export const usageEvent = pgTable(
       },
       { onDelete: "set null" },
     ),
-    // Keep physical storage until this runtime is deployed, preceding API SQL
-    // has drained and incompatible rollback targets are excluded.
-    pricingUnitPrice: bigint("pricing_unit_price", { mode: "number" }),
-    pricingUnitSize: bigint("pricing_unit_size", { mode: "number" }),
-    pricingCreditsLimit: bigint("pricing_credits_limit", { mode: "number" }),
   },
   (table) => {
     return [
-      check(
-        "usage_event_pricing_snapshot_check",
-        sql`(
-          (${table.pricingUnitPrice} IS NULL AND ${table.pricingUnitSize} IS NULL AND ${table.pricingCreditsLimit} IS NULL)
-          OR (${table.pricingUnitPrice} IS NOT NULL AND ${table.pricingUnitSize} IS NOT NULL AND ${table.pricingCreditsLimit} IS NOT NULL
-            AND ${table.pricingUnitPrice} >= 0 AND ${table.pricingUnitSize} > 0 AND ${table.pricingCreditsLimit} >= 0)
-        )`,
-      ),
       index("idx_usage_event_billing_run").on(table.billingRunId),
       check(
         "usage_event_billing_context_check",

@@ -59,16 +59,17 @@ Data commands call the MCP endpoint in `OKOU_DATA_ROUTER_URL` (default:
 `https://data.okou.ai/mcp`). The privileged sandbox proxy supplies Router
 service authentication; the CLI never sends `OKOU_TOKEN` to that endpoint.
 The token remains required for local authentication and for the main API's
-user-owned Data request history, which scopes saved-job lists.
+user-owned Data request history, which supplies owned request IDs to tools that
+declare that context.
 
 Mock the external MCP endpoint with MSW and inspect the actual tool name and
 arguments, as in `src/commands/data/__tests__/router.test.ts`. Keep command
 registration, argument validation and MCP transport real. Data commands print
 the complete Router JSON body without validating, projecting, or formatting
-provider result fields. A submission
-returns its receipt; subsequent job reads are explicit commands. Test arbitrary
-JSON results and transport failures without automatically resubmitting a
-potentially paid tool call.
+provider result fields. Each call returns the Router response; billing totals
+the reported request costs when the Run ends. Test arbitrary JSON results and
+transport failures without automatically resubmitting a potentially paid tool
+call.
 
 ## Command integration pattern
 

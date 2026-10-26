@@ -1565,7 +1565,6 @@
       "next": "다음 제안",
       "position": "{{current}} / {{total}}",
       "previous": "이전 제안",
-      "starting": "시작 중…",
       "useSuggestion": "제안 사용"
     },
     "attachments": {

@@ -68,21 +68,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.PwaKeyboardViewport]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "PWA keyboard viewport",
-    description:
-      "Fit the standalone app to the visible keyboard viewport and coordinate chat scrolling.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
   // Gate visibility settings; access and preview delivery always enforce Site policy.
   [FeatureSwitchKey.HostedSiteVisibility]: {
     maintainer: "yuma@okou.ai",
     displayName: "Website visibility",
     description: "Control who can visit a published website.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   // Enable only after canonical Host Worker delivery authority and compatible
   // serving/rollback API writers support public address changes.

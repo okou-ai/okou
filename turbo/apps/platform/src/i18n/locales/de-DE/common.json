@@ -1567,7 +1567,6 @@
       "next": "Nächster Vorschlag",
       "position": "{{current}} von {{total}}",
       "previous": "Vorheriger Vorschlag",
-      "starting": "Wird gestartet…",
       "useSuggestion": "Vorschlag verwenden"
     },
     "attachments": {
