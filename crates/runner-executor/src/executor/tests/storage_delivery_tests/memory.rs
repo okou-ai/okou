@@ -1,4 +1,4 @@
-//! Allocation requests are observed only in the exact guarded child process.
+//! Allocator requests and live buffers are observed only in the exact guarded child.
 use super::*;
 use guest_contracts::storage_manifest::ArtifactEntry;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -11,6 +11,7 @@ const CHILD_TEST: &str =
 static MEASURING: AtomicBool = AtomicBool::new(false);
 static LARGEST: AtomicUsize = AtomicUsize::new(0);
 static RELEASED_PAYLOAD_BYTES: AtomicUsize = AtomicUsize::new(0);
+static LIVE_PAYLOAD_BYTES: AtomicUsize = AtomicUsize::new(0);
 const PAYLOAD_THRESHOLD: usize = 128 * 1024;
 
 struct AllocationObserver;
@@ -21,26 +22,50 @@ fn observe(size: usize) {
     }
 }
 
+fn large_payload_bytes(size: usize) -> usize {
+    if size >= PAYLOAD_THRESHOLD { size } else { 0 }
+}
+
+fn observe_live_allocation(size: usize) {
+    if size >= PAYLOAD_THRESHOLD && MEASURING.load(Ordering::Relaxed) {
+        LIVE_PAYLOAD_BYTES.fetch_add(size, Ordering::Relaxed);
+    }
+}
+
 // Transparent test-only System delegation; observation does not allocate.
 unsafe impl GlobalAlloc for AllocationObserver {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         observe(layout.size());
-        unsafe { System.alloc(layout) }
+        let pointer = unsafe { System.alloc(layout) };
+        if !pointer.is_null() {
+            observe_live_allocation(layout.size());
+        }
+        pointer
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         observe(layout.size());
-        unsafe { System.alloc_zeroed(layout) }
+        let pointer = unsafe { System.alloc_zeroed(layout) };
+        if !pointer.is_null() {
+            observe_live_allocation(layout.size());
+        }
+        pointer
     }
 
     unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
         observe(size);
-        unsafe { System.realloc(pointer, layout, size) }
+        let pointer = unsafe { System.realloc(pointer, layout, size) };
+        if !pointer.is_null() && MEASURING.load(Ordering::Relaxed) {
+            LIVE_PAYLOAD_BYTES.fetch_sub(large_payload_bytes(layout.size()), Ordering::Relaxed);
+            LIVE_PAYLOAD_BYTES.fetch_add(large_payload_bytes(size), Ordering::Relaxed);
+        }
+        pointer
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
         if MEASURING.load(Ordering::Relaxed) && layout.size() >= PAYLOAD_THRESHOLD {
             RELEASED_PAYLOAD_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+            LIVE_PAYLOAD_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
         }
         unsafe { System.dealloc(pointer, layout) }
     }
@@ -55,6 +80,7 @@ impl Measurement {
     fn start() -> Self {
         LARGEST.store(0, Ordering::Relaxed);
         RELEASED_PAYLOAD_BYTES.store(0, Ordering::Relaxed);
+        LIVE_PAYLOAD_BYTES.store(0, Ordering::Relaxed);
         MEASURING.store(true, Ordering::Relaxed);
         Self
     }
@@ -150,10 +176,10 @@ async fn decoded_storage_batch_memory_child() {
         largest <= 1024 * 1024,
         "input-sized sizing allocation: {largest}"
     );
-    completed_payloads_are_released_before_later_guest_io().await;
+    encoded_payloads_follow_the_current_guest_operation().await;
 }
 
-async fn completed_payloads_are_released_before_later_guest_io() {
+async fn encoded_payloads_follow_the_current_guest_operation() {
     let content = (0..storage_files::MAX_FILE_BYTES)
         .map(|index| index as u8)
         .collect::<Vec<_>>();
@@ -167,6 +193,7 @@ async fn completed_payloads_are_released_before_later_guest_io() {
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
     let mut released_before_apply = Vec::with_capacity(3);
+    let mut live_before_apply = Vec::with_capacity(3);
     let measurement = Measurement::start();
     let result = {
         let delivery =
@@ -180,6 +207,7 @@ async fn completed_payloads_are_released_before_later_guest_io() {
             // The source files and both mock transport records remain owned.
             // Inspect records only after measurement to avoid counting copies.
             released_before_apply.push(RELEASED_PAYLOAD_BYTES.load(Ordering::Relaxed));
+            live_before_apply.push(LIVE_PAYLOAD_BYTES.load(Ordering::Relaxed));
             gate.release_one();
         }
         tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, delivery)
@@ -207,12 +235,20 @@ async fn completed_payloads_are_released_before_later_guest_io() {
         assert_eq!(metadata.mtime(), 1234);
     }
     let mut completed_bytes = 0;
+    let mut retained_record_bytes = 0;
     for (index, call) in calls.iter().enumerate() {
+        // Each entered operation is retained by both independent mock owners.
+        retained_record_bytes += 2 * call.manifest_json.len();
+        let expected_live = retained_record_bytes + call.manifest_json.len();
         eprintln!(
-            "before batch {index}: released={}, completed payload bytes={completed_bytes}",
-            released_before_apply[index],
+            "before batch {index}: released={}, completed payload bytes={completed_bytes}, live={}, current input plus records={expected_live}",
+            released_before_apply[index], live_before_apply[index],
         );
         assert_eq!(released_before_apply[index], completed_bytes);
+        assert_eq!(
+            live_before_apply[index], expected_live,
+            "future encoded payloads must not remain live during Guest IO"
+        );
         completed_bytes += call.manifest_json.len();
     }
 }
