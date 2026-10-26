@@ -412,6 +412,7 @@
         "workflows": "Alur kerja",
         "works": "Bekerja"
       },
+      "resizeChatList": "Ubah ukuran daftar chat",
       "searchWorkspace": "Cari ruang kerja",
       "showChatList": "Tampilkan daftar chat",
       "workspaceSwitcher": {

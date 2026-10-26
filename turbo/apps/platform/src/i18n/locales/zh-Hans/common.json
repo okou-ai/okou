@@ -412,6 +412,7 @@
         "workflows": "工作流",
         "works": "渠道"
       },
+      "resizeChatList": "调整聊天列表宽度",
       "searchWorkspace": "搜索工作区",
       "showChatList": "显示聊天列表",
       "workspaceSwitcher": {

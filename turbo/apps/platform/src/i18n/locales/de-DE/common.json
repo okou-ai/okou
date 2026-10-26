@@ -412,6 +412,7 @@
         "workflows": "Workflows",
         "works": "Kanäle"
       },
+      "resizeChatList": "Größe der Chatliste ändern",
       "searchWorkspace": "Arbeitsbereich durchsuchen",
       "showChatList": "Chatliste anzeigen",
       "workspaceSwitcher": {

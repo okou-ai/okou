@@ -412,6 +412,7 @@
         "workflows": "Workflows",
         "works": "Channels"
       },
+      "resizeChatList": "Resize chat list",
       "searchWorkspace": "Search workspace",
       "showChatList": "Show chat list",
       "workspaceSwitcher": {

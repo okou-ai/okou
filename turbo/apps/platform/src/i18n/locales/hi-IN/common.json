@@ -412,6 +412,7 @@
         "workflows": "वर्कफ़्लो",
         "works": "काम करता है"
       },
+      "resizeChatList": "चैट सूची का आकार बदलें",
       "searchWorkspace": "वर्कस्पेस खोजें",
       "showChatList": "चैट सूची दिखाएं",
       "workspaceSwitcher": {

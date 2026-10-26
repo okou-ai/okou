@@ -124,6 +124,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
+  [FeatureSwitchKey.UnifiedChatWorkspace]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Unified chat workspace",
+    description:
+      "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:

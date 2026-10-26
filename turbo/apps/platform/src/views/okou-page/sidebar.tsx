@@ -59,6 +59,15 @@ import {
 } from "./sidebar-pinned.tsx";
 import { ThreeColumnSearchDialog } from "./sidebar-dialogs.tsx";
 import { SidebarUpgradeCard } from "./sidebar-upgrade.tsx";
+import { ResizeSeam } from "./resize-seam.tsx";
+import {
+  CHAT_LIST_MAX_WIDTH,
+  CHAT_LIST_MIN_WIDTH,
+  chatListResizeHandleRef$,
+  chatListResizing$,
+  chatListWidth$,
+  unifiedChatWorkspace$,
+} from "../../signals/okou-page/unified-chat-workspace.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
@@ -509,7 +518,8 @@ function ExpandedFooter() {
    what puts the workspace logo and the account mark the same distance from
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
-  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail py-[18px]";
+  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center py-[18px]";
+const RAIL_CHROME = "border-r border-nav-border bg-nav-rail";
 
 function LabeledRailLink({
   id,
@@ -720,9 +730,15 @@ function LabeledNavRailFrame({
   readonly accountMenu: ReactNode;
 }) {
   const chatListHidden = useGet(sidebarOff$);
+  const unified = useGet(unifiedChatWorkspace$);
   const { t } = useTranslation();
   return (
-    <aside data-testid="labeled-nav-rail" className={RAIL_FRAME}>
+    <aside
+      data-testid="labeled-nav-rail"
+      // In the unified workspace the rail is part of the page ground the
+      // sheet floats on, so it takes no fill or edge of its own.
+      className={cn(RAIL_FRAME, !unified && RAIL_CHROME)}
+    >
       <div className="mb-3 shrink-0">{workspaceSwitcher}</div>
       {chatListHidden && (
         <div className="mb-3 shrink-0">
@@ -897,11 +913,43 @@ function ChatListHeader() {
   );
 }
 
+function ChatListResizeSeam() {
+  const { t } = useTranslation();
+  const width = useGet(chatListWidth$);
+  const resizing = useGet(chatListResizing$);
+  const ref = useSet(chatListResizeHandleRef$);
+  return (
+    <ResizeSeam
+      ref={ref}
+      label={t(($) => {
+        return $.appShell.sidebar.resizeChatList;
+      })}
+      valueMin={CHAT_LIST_MIN_WIDTH}
+      valueMax={CHAT_LIST_MAX_WIDTH}
+      valueNow={width}
+      resizing={resizing}
+      // The sheet's own border already draws the resting line.
+      restLine={false}
+      className="absolute inset-y-0 right-0 translate-x-1/2"
+    />
+  );
+}
+
 function ChatListColumn() {
+  const unified = useGet(unifiedChatWorkspace$);
+  const width = useGet(chatListWidth$);
   return (
     <aside
       data-testid="chat-list-column"
-      className="hidden md:flex h-full w-[300px] shrink-0 flex-col bg-sidebar"
+      className={cn(
+        "hidden md:flex shrink-0 flex-col",
+        // Unified: the list is the left part of the workspace sheet, which
+        // continues it from the divider rightwards.
+        unified
+          ? "relative z-10 my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas"
+          : "h-full w-[300px] bg-sidebar",
+      )}
+      style={unified ? { width } : undefined}
     >
       <ChatListHeader />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
@@ -921,6 +969,7 @@ function ChatListColumn() {
       <div className={cn("pb-3 empty:hidden", CHAT_LIST_INSET)}>
         <SidebarUpgradeCard />
       </div>
+      {unified && <ChatListResizeSeam />}
     </aside>
   );
 }

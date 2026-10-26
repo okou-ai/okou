@@ -1,0 +1,63 @@
+import type { Ref } from "react";
+import { cn } from "@okouai/ui";
+
+/**
+ * A focusable divider between two resizable panes. The seam takes 1px of
+ * layout; its 12px pointer target overlaps the panes on either side. At rest it
+ * draws at most a hairline. Hover waits 150ms before showing a 2px line, so a
+ * pointer passing over the seam does not flash it; a drag darkens the line and
+ * keyboard focus paints it in the ring colour.
+ */
+export function ResizeSeam({
+  ref,
+  label,
+  valueMin,
+  valueMax,
+  valueNow,
+  resizing,
+  restLine,
+  widthKey,
+  className,
+}: {
+  readonly ref: Ref<HTMLDivElement>;
+  readonly label: string;
+  readonly valueMin: number;
+  readonly valueMax?: number;
+  readonly valueNow: number | null;
+  readonly resizing: boolean;
+  /** Draw the resting hairline; omit it where a border already draws one. */
+  readonly restLine: boolean;
+  readonly widthKey?: string;
+  readonly className?: string;
+}) {
+  return (
+    <div
+      ref={ref}
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuemin={valueMin}
+      aria-valuemax={valueMax}
+      aria-valuenow={valueNow ?? undefined}
+      data-width-key={widthKey}
+      data-resizing={resizing ? "" : undefined}
+      className={cn(
+        "group relative z-10 w-px shrink-0 cursor-col-resize touch-none outline-none",
+        "before:absolute before:inset-y-0 before:-left-[5.5px] before:-right-[5.5px] before:content-['']",
+        className,
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-[width,background-color] delay-0 duration-150",
+          restLine ? "bg-divider" : "bg-transparent",
+          "group-hover:w-0.5 group-hover:bg-gray-500 group-hover:delay-150",
+          "group-focus-visible:w-0.5 group-focus-visible:bg-ring group-focus-visible:delay-0",
+          "group-data-[resizing]:w-0.5 group-data-[resizing]:bg-gray-700 group-data-[resizing]:delay-0",
+        )}
+      />
+    </div>
+  );
+}

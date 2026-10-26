@@ -412,6 +412,7 @@
         "workflows": "워크플로",
         "works": "작업"
       },
+      "resizeChatList": "채팅 목록 크기 조절",
       "searchWorkspace": "워크스페이스 검색",
       "showChatList": "채팅 목록 표시",
       "workspaceSwitcher": {
