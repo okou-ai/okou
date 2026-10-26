@@ -4186,46 +4186,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching & pelatihan",
           "name": "Coaching & pelatihan",
           "summary": "Coaching, kursus & pelatihan"
         },
         "consulting": {
+          "mobileName": "Konsultan independen",
           "name": "Konsultan independen",
           "summary": "Penasihat bisnis, SDM & TI"
         },
         "design": {
+          "mobileName": "Desain & kreatif",
           "name": "Desain & kreatif",
           "summary": "Grafis, situs web & karya kreatif"
         },
         "finance": {
+          "mobileName": "Akuntansi & pembukuan",
           "name": "Akuntansi & pembukuan",
           "summary": "Pembukuan, laporan & rekonsiliasi"
         },
         "investing": {
+          "mobileName": "Investasi & riset pasar",
           "name": "Investasi & riset pasar",
           "summary": "Investasi, pasar & portofolio"
         },
         "marketing": {
+          "mobileName": "Marketing & konten",
           "name": "Marketing & konten",
           "summary": "Media sosial, konten & brand"
         },
         "operations": {
+          "mobileName": "Bisnis & operasional",
           "name": "Bisnis & operasional",
           "summary": "Pemilik bisnis, asisten & operasional"
         },
         "other": {
+          "mobileName": "Lainnya / masih menjajaki",
           "name": "Lainnya / masih menjajaki",
           "summary": "Bidang lain, atau masih menjajaki"
         },
         "research": {
+          "mobileName": "Riset & pembelajaran",
           "name": "Riset & pembelajaran",
           "summary": "Riset, studi & pembelajaran"
         },
         "sales": {
+          "mobileName": "Sales & pengembangan pelanggan",
           "name": "Sales & pengembangan pelanggan",
           "summary": "Prospek, penjualan & pertumbuhan klien"
         },
         "software": {
+          "mobileName": "Software & aplikasi",
           "name": "Software & aplikasi",
           "summary": "Aplikasi, game & pengembangan"
         }
@@ -4233,6 +4244,30 @@
       "industry": {
         "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
         "title": "Pekerjaan Anda seperti apa?"
+      },
+      "mobile": {
+        "channelsCopy": "Hubungi Okou lewat aplikasi yang biasa Anda gunakan.",
+        "channelsTitle": "Pilih aplikasi chat",
+        "connect": "Hubungkan",
+        "copyImportPrompt": "Salin prompt impor",
+        "existingPlan": "Gunakan paket {{provider}} saya",
+        "experienceTitle": "Pilih cara memulai",
+        "industryCopy": "Kami akan menyarankan tugas pertama yang sesuai.",
+        "industryTitle": "Pilih bidang kerja",
+        "instructions": "Petunjuk",
+        "newCopy": "Dapatkan bantuan untuk tugas pertama.",
+        "newTitle": "Mulai dengan Okou",
+        "pasteIntoProvider": "Tempel di {{provider}} lalu kirim.",
+        "permissionsLabel": "Izin dan privasi",
+        "planCopy": "Jalankan tugas dengan langganan Anda.",
+        "promptTitle": "Apa yang ingin diselesaikan?",
+        "readyTitle": "Mulai tugas pertama",
+        "skillsCopy": "Gunakan {{provider}} di komputer.",
+        "skillsTitle": "Impor keterampilan",
+        "sourcesCopy": "Hubungkan satu alat untuk tugas pertama.",
+        "startTask": "Mulai tugas",
+        "teamCopy": "Bekerja bersama di satu ruang kerja.",
+        "teamTitle": "Undang rekan tim"
       },
       "prompt": {
         "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."

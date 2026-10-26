@@ -4,7 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
+import {
+  OnboardingCompliance,
+  OnboardingSecurityLink,
+} from "./onboarding-industry-parts.tsx";
+import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
 import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
@@ -74,6 +78,13 @@ export function OnboardingIndustryPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.industry.copy;
       })}
+      mobileTitle={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.industryTitle;
+      })}
+      mobileDescription={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.industryCopy;
+      })}
+      mobileFooter={<OnboardingSecurityLink />}
       supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
@@ -100,7 +111,7 @@ export function OnboardingIndustryPage() {
           });
           captureIndustrySelected(industry);
         }}
-        className="grid gap-3 sm:grid-cols-2"
+        className="grid grid-cols-2 gap-2 sm:gap-3"
       >
         {ONBOARDING_INDUSTRY_IDS.map((id) => {
           return (
@@ -110,6 +121,9 @@ export function OnboardingIndustryPage() {
               selected={flow.draft.industry === id}
               title={t(($) => {
                 return $.onboarding.sourcesFirst.industries[id].name;
+              })}
+              mobileTitle={t(($) => {
+                return $.onboarding.sourcesFirst.industries[id].mobileName;
               })}
               description={t(($) => {
                 return $.onboarding.sourcesFirst.industries[id].summary;
@@ -151,7 +165,7 @@ function TeamPoints() {
   const { t } = useTranslation();
 
   return (
-    <ul className="flex flex-1 flex-col justify-center gap-3 border-t border-border/60 px-5 py-4">
+    <ul className="flex flex-1 flex-col justify-center gap-3 border-t border-border/60 px-5 py-4 max-sm:hidden">
       {TEAM_POINT_IDS.map((id) => {
         return (
           <li key={id} className="flex items-start gap-2.5">
@@ -241,18 +255,20 @@ function InviteEmailForm({
   sendable,
   sending,
   onInvite,
+  actionInFooter,
 }: {
   readonly malformed: boolean;
   readonly sendable: boolean;
   readonly sending: boolean;
   readonly onInvite: () => void;
+  readonly actionInFooter: boolean;
 }) {
   const { t } = useTranslation();
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
 
   return (
-    <div className="px-5 py-4">
+    <div className="px-5 py-4 max-sm:p-0">
       <label
         htmlFor="onboarding-invite-email"
         className="block text-sm font-medium text-foreground"
@@ -300,21 +316,22 @@ function InviteEmailForm({
             </p>
           ) : null}
         </div>
-        <Button
-          type="button"
-          onClick={onInvite}
-          disabled={!sendable || sending}
-          className="max-sm:h-12 max-sm:text-base"
-        >
-          {sending && (
-            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-          )}
-          {t(($) => {
-            return sending
-              ? $.onboarding.sourcesFirst.team.sending
-              : $.onboarding.sourcesFirst.team.invite;
-          })}
-        </Button>
+        {actionInFooter ? null : (
+          <Button
+            type="button"
+            onClick={onInvite}
+            disabled={!sendable || sending}
+          >
+            {sending && (
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+            )}
+            {t(($) => {
+              return sending
+                ? $.onboarding.sourcesFirst.team.sending
+                : $.onboarding.sourcesFirst.team.invite;
+            })}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -322,6 +339,7 @@ function InviteEmailForm({
 
 export function OnboardingTeamPage() {
   const { t } = useTranslation();
+  const mobile = useMobileOnboarding();
   const captureInviteAdded = useSet(captureSourceOnboardingInviteAdded$);
   const flow = useSourcesFirstFlow("team");
   const ui = useGet(sourcesFirstUi$);
@@ -338,6 +356,7 @@ export function OnboardingTeamPage() {
   const invited = flow.draft.invites.some((entry) => {
     return entry.status === "invited";
   });
+  const sendFromFooter = mobile && (!invited || address !== "");
 
   const invite = (): void => {
     if (!sendable || invitation.state === "loading") {
@@ -365,12 +384,21 @@ export function OnboardingTeamPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.team.copy;
       })}
+      mobileTitle={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.teamTitle;
+      })}
+      mobileDescription={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.teamCopy;
+      })}
       primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.continue;
+        return sendFromFooter
+          ? $.onboarding.sourcesFirst.team.invite
+          : $.onboarding.sourcesFirst.common.continue;
       })}
       // Continue waits for an accepted invite; Not now leaves without one.
-      onPrimary={flow.goNext}
-      primaryDisabled={!invited}
+      onPrimary={sendFromFooter ? invite : flow.goNext}
+      primaryDisabled={sendFromFooter ? !sendable : !invited}
+      primaryBusy={mobile && invitation.state === "loading"}
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.notNow;
       })}
@@ -390,6 +418,7 @@ export function OnboardingTeamPage() {
           sendable={sendable}
           sending={invitation.state === "loading"}
           onInvite={invite}
+          actionInFooter={mobile}
         />
         {flow.draft.invites.length > 0 ? (
           <InviteList invites={flow.draft.invites} />
@@ -534,7 +563,8 @@ function SubscriptionConnect({
       <Button
         type="button"
         variant={connected ? "outline" : "neutral"}
-        className="w-full gap-2 max-sm:h-12 max-sm:text-base"
+        size="lg"
+        className="w-full"
         disabled={connected || connecting}
         aria-busy={connecting}
         onClick={() => {
@@ -555,6 +585,44 @@ function SubscriptionConnect({
       </Button>
       <SubscriptionConnectNote status={status} providerName={providerName} />
     </div>
+  );
+}
+
+function SubscriptionPlanCard({
+  provider,
+  selected,
+}: {
+  readonly provider: SubscriptionProvider;
+  readonly selected: boolean;
+}) {
+  const { t } = useTranslation();
+  const providerName = useProviderName(provider);
+  return (
+    <OnboardingPosterCard
+      value={provider}
+      selected={selected}
+      mark={
+        <ProductMark
+          name={provider === "codex" ? "openai" : "anthropic"}
+          alt=""
+          size="choice"
+          invertInDarkMode={provider === "codex"}
+        />
+      }
+      title={providerName}
+      description={t(($) => {
+        return $.onboarding.sourcesFirst.subscription.rowCopy;
+      })}
+      mobileTitle={t(
+        ($) => {
+          return $.onboarding.sourcesFirst.mobile.existingPlan;
+        },
+        { provider: providerName },
+      )}
+      mobileDescription={t(($) => {
+        return $.onboarding.sourcesFirst.mobile.planCopy;
+      })}
+    />
   );
 }
 
@@ -591,6 +659,10 @@ export function OnboardingExperiencePage() {
         description={t(($) => {
           return $.onboarding.sourcesFirst.experience.copy;
         })}
+        mobileTitle={t(($) => {
+          return $.onboarding.sourcesFirst.mobile.experienceTitle;
+        })}
+        mobileDescription=""
         trustPoints={[
           t(($) => {
             return $.onboarding.sourcesFirst.experience.trust;
@@ -634,35 +706,20 @@ export function OnboardingExperiencePage() {
               description={t(($) => {
                 return $.onboarding.sourcesFirst.experience.noCopy;
               })}
+              mobileTitle={t(($) => {
+                return $.onboarding.sourcesFirst.mobile.newTitle;
+              })}
+              mobileDescription={t(($) => {
+                return $.onboarding.sourcesFirst.mobile.newCopy;
+              })}
             />
-            <OnboardingPosterCard
-              value="codex"
+            <SubscriptionPlanCard
+              provider="codex"
               selected={experienced === true && provider === "codex"}
-              mark={
-                <ProductMark
-                  name="openai"
-                  alt=""
-                  size="choice"
-                  invertInDarkMode
-                />
-              }
-              title={t(($) => {
-                return $.onboarding.sourcesFirst.subscription.codex;
-              })}
-              description={t(($) => {
-                return $.onboarding.sourcesFirst.subscription.rowCopy;
-              })}
             />
-            <OnboardingPosterCard
-              value="claudeCode"
+            <SubscriptionPlanCard
+              provider="claudeCode"
               selected={experienced === true && provider === "claudeCode"}
-              mark={<ProductMark name="anthropic" alt="" size="choice" />}
-              title={t(($) => {
-                return $.onboarding.sourcesFirst.subscription.claudeCode;
-              })}
-              description={t(($) => {
-                return $.onboarding.sourcesFirst.subscription.rowCopy;
-              })}
             />
           </RadioGroup>
           {provider === null ? null : (

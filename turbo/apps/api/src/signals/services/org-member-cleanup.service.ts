@@ -17,7 +17,8 @@ import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
 import {
-  releaseNeverStartedRunSlots,
+  neverStartedRunIds,
+  runSlotReleasePlan,
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
@@ -295,7 +296,19 @@ async function revokeOrgMemberRunAuthority(
           eq(secrets.type, "model-provider"),
         ),
       );
-    const released = await releaseNeverStartedRunSlots(tx, rows);
+    const released = await (async () => {
+      const runIds = neverStartedRunIds(rows);
+      return await (async () => {
+        const plan = runSlotReleasePlan(runIds);
+        if (plan === null) {
+          return [];
+        }
+        return await tx
+          .delete(plan.from)
+          .where(plan.where)
+          .returning(plan.returning);
+      })();
+    })();
     return { cancelled: rows, releasedSlots: released };
   });
   onSlotsReleased(releasedSlots);
