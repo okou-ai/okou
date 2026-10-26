@@ -22,11 +22,6 @@
       "owner": "sendAgentPhoneVerificationText$"
     },
     {
-      "id": "TX-0022",
-      "file": "turbo/apps/api/src/signals/routes/runners.ts",
-      "owner": "failPoisonQueuedJob"
-    },
-    {
       "id": "TX-0044",
       "file": "turbo/apps/api/src/signals/routes/workflow-copy-publication.ts",
       "owner": "commitWorkflowCopy$"
