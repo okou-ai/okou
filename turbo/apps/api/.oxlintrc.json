@@ -13,7 +13,7 @@
       }
     },
     {
-      "files": ["src/lib/log.ts", "src/worker-domains/processor.ts"],
+      "files": ["src/lib/log.ts"],
       "rules": {
         "no-console": "allow"
       }
@@ -27,13 +27,10 @@
         "src/worker-unsupported-pg-native.ts",
         "vite.config.ts",
         "vitest.config.ts",
-        "src/worker-domains/gateway.ts",
-        "src/worker-domains/ingress.ts",
         "src/worker-domains/core.ts",
         "src/worker-domains/execution.ts",
         "src/worker-domains/integrations.ts",
-        "src/worker-domains/data.ts",
-        "src/worker-domains/processor.ts"
+        "src/worker-domains/data.ts"
       ],
       "rules": {
         "import/no-default-export": "off"
@@ -110,7 +107,7 @@
       }
     },
     {
-      "files": ["src/app-factory-base.ts", "src/worker-domains/gateway.ts"],
+      "files": ["src/app-factory-base.ts"],
       "rules": {
         "no-restricted-imports": [
           "deny",

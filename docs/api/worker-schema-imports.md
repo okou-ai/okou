@@ -58,7 +58,9 @@ construction, registry construction and provider factories run as JavaScript.
 Even when an unwanted export is eliminated, its module-level initialization may
 remain if the bundler cannot prove that discarding it preserves behavior.
 
-Other concrete coupling remains:
+The original audit also found the following coupling. The shared API-error and
+Desktop transform edges have since been extracted; the figures describe the
+frozen audit reference, not the refreshed candidate:
 
 - `errors.ts` links the common HTTP error schema to run-balance errors, model
   providers and model metadata. Importing `apiErrorSchema` retains 156,899 B.
@@ -109,9 +111,9 @@ already uses `NodePgDatabase<Record<string, never>>`, avoiding the broad
 `DatabaseSchema` type. Type-only fanout cannot explain Worker startup time.
 
 The original full API intentionally imports all handlers through its route
-table. The split build statically assigns all 703 registrations to four business
-Workers. A build-time manifest gives the Gateway only method/path/owner data;
-its runtime contains no API handlers or contract schemas. Core, Execution and
+table. The refreshed build statically assigns 671 registrations to four business
+Workers (205 / 250 / 212 / 4 at main `327e72f4`). The build-time manifest is
+only metadata; requests enter the domain Workers directly. Core, Execution and
 Integrations still share substantial execution dependencies, so splitting route
 lists is only a first dependency boundary.
 
