@@ -23,10 +23,9 @@ import {
   updateProactiveJobsPreference$,
 } from "../../../../signals/okou-page/settings/proactive-jobs.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
-import {
-  proactiveLearningSignals,
-  proactivePlanningSignals,
-} from "../../../../signals/okou-page/settings/proactive-nightly.ts";
+import { proactiveLearningSignals } from "../../../../signals/okou-page/settings/proactive-nightly.ts";
+
+type ProactivePreferenceKind = Exclude<ProactiveWorkflowKind, "planning">;
 
 function preferenceStatusKey(
   value: ProactivePreferenceValue | undefined,
@@ -57,17 +56,15 @@ const PREFERENCE_SIGNALS = {
     reload$: reloadProactiveSuggestionsPreference$,
   },
   learning: proactiveLearningSignals,
-  planning: proactivePlanningSignals,
 } as const;
 
 const PREFERENCE_KEYS = {
-  jobs: "proactiveJobs",
+  jobs: "proactivePlanningAction",
   suggestions: "proactiveSuggestions",
   learning: "proactiveLearning",
-  planning: "proactivePlanning",
 } as const;
 
-function ProactivePreference({ kind }: { kind: ProactiveWorkflowKind }) {
+function ProactivePreference({ kind }: { kind: ProactivePreferenceKind }) {
   const { t } = useTranslation();
   const key = PREFERENCE_KEYS[kind];
   const { preference$, update$, reload$ } = PREFERENCE_SIGNALS[kind];
@@ -155,7 +152,7 @@ export function ProactiveSuggestionsSettings() {
   ) : null;
 }
 
-export function ProactiveJobsSettings() {
+export function ProactivePlanningActionSettings() {
   const flags = useLoadable(featureSwitch$);
   return flags.state === "hasData" &&
     flags.data[FeatureSwitchKey.ProactiveAgent] ? (
@@ -165,8 +162,4 @@ export function ProactiveJobsSettings() {
 
 export function ProactiveLearningSettings() {
   return <ProactivePreference kind="learning" />;
-}
-
-export function ProactivePlanningSettings() {
-  return <ProactivePreference kind="planning" />;
 }

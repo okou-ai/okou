@@ -5198,8 +5198,8 @@
           "title": "Preferência"
         },
         "proactiveAgent": {
-          "description": "Escolha como o Okou aprende, planeja, avança Tasks e sugere próximos passos.",
-          "title": "Proactive Agent"
+          "description": "Escolha como o Okou trabalha de forma proativa.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "Ferramentas"
@@ -5608,16 +5608,6 @@
         "retryMessage": "Não foi possível carregar ou atualizar as configurações do Morning Brief. Tente novamente para continuar.",
         "title": "Resumo matinal"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "Defina seu fuso horário nas Preferências.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "Revise sua atividade à noite e melhore a memória pessoal.",
         "missingDefaultAgent": "Escolha um Agent padrão disponível.",
@@ -5628,15 +5618,15 @@
         "retryMessage": "Não foi possível carregar ou atualizar esta configuração. Tente novamente.",
         "title": "Aprendizado"
       },
-      "proactivePlanning": {
-        "description": "Planeje dentro do trabalho que você delegou e atualize Tasks. Novos trabalhos podem começar quando Tasks estiver ativado.",
+      "proactivePlanningAction": {
+        "description": "Planeje e execute o trabalho que você delega e receba avisos quando sua participação for necessária.",
         "missingDefaultAgent": "Escolha um Agent padrão disponível.",
         "missingTimezone": "Defina seu fuso horário nas Preferências.",
         "preparationFailed": "Este fluxo está temporariamente indisponível. O Okou tentará novamente.",
         "preparing": "Preparando este fluxo de trabalho.",
         "retry": "Retry",
         "retryMessage": "Não foi possível carregar ou atualizar esta configuração. Tente novamente.",
-        "title": "Planejamento"
+        "title": "Planejamento e ação"
       },
       "proactiveSuggestions": {
         "description": "O Okou verifica suas fontes conectadas a cada hora e sugere próximos passos úteis na página inicial.",
@@ -5646,7 +5636,7 @@
         "preparing": "Preparando sugestões por hora. Você pode desativá-las a qualquer momento.",
         "retry": "Tentar novamente",
         "retryMessage": "Não foi possível carregar ou atualizar as configurações. Tente novamente.",
-        "title": "Sugestões proativas"
+        "title": "Sugestões"
       },
       "send": {
         "cmdEnter": "⌘ Enter",

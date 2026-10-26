@@ -5122,8 +5122,8 @@
           "title": "환경설정"
         },
         "proactiveAgent": {
-          "description": "Okou의 학습, 계획, Tasks 실행과 제안을 설정합니다.",
-          "title": "Proactive Agent"
+          "description": "Okou가 능동적으로 일하는 방식을 선택하세요.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "도구"
@@ -5528,16 +5528,6 @@
         "retryMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다. 계속하려면 다시 시도하세요.",
         "title": "모닝 브리프"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "밤에 활동을 검토하고 개인 기억과 이해를 갱신합니다.",
         "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
@@ -5548,15 +5538,15 @@
         "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
         "title": "학습"
       },
-      "proactivePlanning": {
-        "description": "명확히 위임한 범위에서 계획하고 Tasks를 관리합니다. Tasks가 켜져 있으면 새 작업을 시작할 수 있습니다.",
+      "proactivePlanningAction": {
+        "description": "위임한 업무를 계획하고 실행하며, 입력이 필요할 때 알려드립니다.",
         "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다. Okou가 다시 시도합니다.",
         "preparing": "워크플로를 준비하고 있습니다.",
         "retry": "Retry",
         "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
-        "title": "계획"
+        "title": "계획 및 실행"
       },
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
@@ -5566,7 +5556,7 @@
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
         "retry": "다시 시도",
         "retryMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
-        "title": "선제적 제안"
+        "title": "제안"
       },
       "send": {
         "cmdEnter": "⌘ Enter",

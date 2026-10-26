@@ -22,7 +22,6 @@ export const loadProactiveWorkflowsEligibility$ = command(
           suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
           jobsEnabled: orgMembersMetadata.proactiveJobsEnabled,
           learningEnabled: orgMembersMetadata.proactiveLearningEnabled,
-          planningEnabled: orgMembersMetadata.proactivePlanningEnabled,
           timezone: orgMembersMetadata.timezone,
         })
         .from(orgMembersMetadata)
@@ -59,7 +58,6 @@ export const loadProactiveWorkflowsEligibility$ = command(
     const jobsEnabled = preference?.jobsEnabled ?? false;
     const suggestionsEnabled = preference?.suggestionsEnabled ?? false;
     const learningEnabled = preference?.learningEnabled ?? false;
-    const planningEnabled = preference?.planningEnabled ?? false;
     const timezone = preference?.timezone ?? null;
     return {
       jobs: {
@@ -79,8 +77,8 @@ export const loadProactiveWorkflowsEligibility$ = command(
       },
       planning: {
         available,
-        enabled: planningEnabled,
-        active: available && planningEnabled && timezone !== null,
+        enabled: jobsEnabled,
+        active: available && jobsEnabled && timezone !== null,
       },
       timezone,
       agentId: agent?.id ?? null,

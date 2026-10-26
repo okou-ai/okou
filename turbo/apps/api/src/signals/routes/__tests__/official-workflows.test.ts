@@ -22,6 +22,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -33,6 +34,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import {
   proactiveLearningRoutes,
+  proactiveJobsRoutes,
   proactiveSuggestionsRoutes,
 } from "../proactive-preferences";
 
@@ -309,6 +311,115 @@ describe("Workflow schedules", () => {
       (await accept(learning().get({ headers: authHeaders(actor) }), [200]))
         .body.enabled,
     ).toBeFalsy();
+  });
+});
+
+describe("Planning and action preference", () => {
+  it("preserves the combined choice independently of Learning and Suggestions", async () => {
+    const app = await setupApp({
+      context,
+      routes: [
+        ...proactiveJobsRoutes,
+        ...proactiveLearningRoutes,
+        ...proactiveSuggestionsRoutes,
+      ],
+      isolatePg: true,
+    });
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.ProactiveAgent]: true },
+    );
+    const client = app(proactiveJobsContract);
+    for (const independent of [
+      app(proactiveLearningContract),
+      app(proactiveSuggestionsContract),
+    ]) {
+      await accept(
+        independent.update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+    }
+    const initial = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({ enabled: false, status: "paused" });
+    await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const saved = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(saved.body.enabled).toBeTruthy();
+    const paused = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
+    for (const independent of [
+      app(proactiveLearningContract),
+      app(proactiveSuggestionsContract),
+    ]) {
+      const preference = await accept(
+        independent.get({ headers: authHeaders(actor) }),
+        [200],
+      );
+      expect(preference.body.enabled).toBeTruthy();
+    }
+  });
+
+  it("keeps an opt-in cancellable while the planning time zone is unavailable", async () => {
+    const app = await setupApp({
+      context,
+      routes: proactiveJobsRoutes,
+      isolatePg: true,
+    });
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.ProactiveAgent]: true },
+    );
+    const client = app(proactiveJobsContract);
+    const pending = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    expect(pending.body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-timezone",
+    });
+    const cancelled = await accept(
+      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    expect(cancelled.body).toMatchObject({ enabled: false, status: "paused" });
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    const saved = await accept(
+      client.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(saved.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      unavailableReason: null,
+    });
   });
 });
 

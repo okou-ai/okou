@@ -1,17 +1,15 @@
 import { surfaceVariants } from "@okouai/ui";
 import {
-  ProactiveJobsSettings,
+  ProactivePlanningActionSettings,
   ProactiveSuggestionsSettings,
   ProactiveLearningSettings,
-  ProactivePlanningSettings,
 } from "../proactive-settings.tsx";
 
 export function ProactiveAgentSection() {
   return (
     <div className={surfaceVariants({ className: "overflow-hidden" })}>
       <ProactiveLearningSettings />
-      <ProactivePlanningSettings />
-      <ProactiveJobsSettings />
+      <ProactivePlanningActionSettings />
       <ProactiveSuggestionsSettings />
     </div>
   );
