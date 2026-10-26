@@ -149,6 +149,7 @@ import {
 } from "./feature-switches.service";
 import { reconcileGmailWatchesForUser$ } from "./gmail-automation-watch.service";
 import {
+  notionAutomationPendingEventsScope,
   notionPendingEventsReconnectScope,
   notionPendingEventsSkipWrite as pendingEventsSkipWrite,
 } from "./notion-automation-account.service";
@@ -173,7 +174,20 @@ import {
   type PendingGoogleMeetSubscriptionDelete,
 } from "./google-meet-automation-watch.service";
 
-import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+import {
+  reprojectWorkflowAutomationsForOwner,
+  workflowAutomationReprojectionColumns as ownerAutomationColumns,
+  workflowAutomationReprojectionCondition as ownerAutomationCondition,
+  workflowAutomationProjectionValues,
+  type ProjectedAutomation,
+} from "./workflow-automation-account-projection.service";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
+import {
+  workflowAutomationSelectedAccountReadPlan,
+  workflowAutomationDefaultAccountReadPlan,
+} from "./workflow-automation-account.service";
+import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 
 const log = logger("api:connector-data");
 const oauthScopesSchema = z.array(z.string());
@@ -2372,15 +2386,109 @@ async function reprojectConnectedWorkflowAutomations(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  await reprojectWorkflowAutomationsForOwner(
-    args.db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug: args.connectorSlug },
-    },
-    signal,
-  );
+  const reprojectionDb = args.db;
+  const reprojectionArgs = {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "builtin", connectorSlug: args.connectorSlug } as const,
+  };
+  const reprojectionSignal = signal;
+  await (async () => {
+    if (
+      reprojectionArgs.target.kind !== "builtin" ||
+      !isWorkflowAutomationAccountConnectorSlug(
+        reprojectionArgs.target.connectorSlug,
+      )
+    ) {
+      return;
+    }
+    const connectorSlug = reprojectionArgs.target.connectorSlug;
+    switch (connectorSlug) {
+      case "gmail":
+      case "google-calendar":
+      case "google-meet":
+      case "notion": {
+        const projectionDb = reprojectionDb;
+        const projectionArgs = reprojectionArgs;
+        await (async () => {
+          const automations: ProjectedAutomation[] = await projectionDb
+            .select(ownerAutomationColumns(connectorSlug))
+            .from(workflowAutomations)
+            .where(ownerAutomationCondition(projectionArgs, connectorSlug));
+
+          for (const automation of automations) {
+            const workflowScope = {
+              ...projectionArgs,
+              workflowId: automation.workflowId,
+            };
+            const eventConnectorId = await (async () => {
+              const accountScope = {
+                ...workflowScope,
+                connectorSlug,
+              };
+              return await (async () => {
+                const selected =
+                  workflowAutomationSelectedAccountReadPlan(accountScope);
+                const [selection] = await projectionDb
+                  .select(selected.columns)
+                  .from(selected.from)
+                  .innerJoin(selected.join.table, selected.join.on)
+                  .where(selected.where)
+                  .limit(selected.limit);
+                if (selection) {
+                  return selection.connectorId;
+                }
+                const fallback =
+                  workflowAutomationDefaultAccountReadPlan(accountScope);
+                const [defaultAccount] = await projectionDb
+                  .select(fallback.columns)
+                  .from(fallback.from)
+                  .where(fallback.where)
+                  .limit(fallback.limit);
+                return defaultAccount?.connectorId ?? null;
+              })();
+            })();
+            const values = workflowAutomationProjectionValues(
+              automation,
+              eventConnectorId,
+              connectorSlug,
+            );
+            if (values === null) {
+              continue;
+            }
+            await projectionDb
+              .update(workflowAutomations)
+              .set(values)
+              .where(eq(workflowAutomations.id, automation.id));
+            if (connectorSlug === "notion") {
+              const pendingEventDb = projectionDb;
+              const scope = notionAutomationPendingEventsScope(automation.id);
+              await (async () => {
+                const write = pendingEventsSkipWrite(
+                  scope.condition,
+                  scope.reason,
+                );
+                await pendingEventDb
+                  .update(write.table)
+                  .set(write.values)
+                  .where(write.where);
+              })();
+            }
+          }
+        })();
+        reprojectionSignal.throwIfAborted();
+        return;
+      }
+      case "google-forms": {
+        await reprojectionDb.execute(
+          googleFormsAccountProjectionStatement(reprojectionArgs),
+        );
+        reprojectionSignal.throwIfAborted();
+        return;
+      }
+    }
+    return connectorSlug satisfies never;
+  })();
 }
 
 function tokenRevokeValues(
