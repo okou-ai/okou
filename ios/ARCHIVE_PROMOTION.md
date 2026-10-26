@@ -150,12 +150,15 @@ The same record is retained as a private workflow artifact for 90 days.
 
 The existing App Store Connect preparation obtains the next build number and
 internal group. `release-testflight.sh --archive <Original.xcarchive>` copies the
-archive and changes only its application/archive Info.plist build numbers. It
-imports production distribution material into a disposable keychain and calls
+archive and changes only its application/archive Info.plist build numbers before
+signing. It expands the source entitlements for production, embeds the validated
+distribution profile in that private copy, and signs it with a disposable
+keychain so export retains the requested capabilities. It then calls
 `xcodebuild -exportArchive`, never `archive`, `test`, or package resolution.
 Before uploading, it verifies compiled Mach-O sections against the original,
 release version/build number, `codesign --verify --deep --strict`, and the expected
-team/application distribution entitlements with `get-task-allow` disabled.
+team/application distribution entitlements, production APNs, and disabled
+`get-task-allow`.
 
 Internal-only upload, processing/group availability checks, and private symbol
 retention remain unchanged. Signing material and temporary IPA files are deleted
