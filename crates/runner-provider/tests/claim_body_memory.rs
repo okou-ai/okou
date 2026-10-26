@@ -1,4 +1,4 @@
-//! One isolated public-provider test counts aggregate allocation requests.
+//! One isolated public-provider test observes aggregate and fragmented allocations.
 //! Fixture setup and complete provider/HTTP-peer cleanup are not measured.
 use raw_http_test_support::raw_http::{RawHttpAction, RawHttpTestServer};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
@@ -19,13 +19,17 @@ static MEASURING: AtomicBool = AtomicBool::new(false);
 static AGGREGATE_THRESHOLD: AtomicUsize = AtomicUsize::new(usize::MAX);
 static AGGREGATE_REQUESTS: AtomicUsize = AtomicUsize::new(0);
 static AGGREGATE_BYTES: AtomicUsize = AtomicUsize::new(0);
+static LARGEST: AtomicUsize = AtomicUsize::new(0);
 
 struct AllocationObserver;
 
 fn observe(size: usize) {
-    if MEASURING.load(Ordering::Relaxed) && size >= AGGREGATE_THRESHOLD.load(Ordering::Relaxed) {
-        AGGREGATE_REQUESTS.fetch_add(1, Ordering::Relaxed);
-        AGGREGATE_BYTES.fetch_add(size, Ordering::Relaxed);
+    if MEASURING.load(Ordering::Relaxed) {
+        LARGEST.fetch_max(size, Ordering::Relaxed);
+        if size >= AGGREGATE_THRESHOLD.load(Ordering::Relaxed) {
+            AGGREGATE_REQUESTS.fetch_add(1, Ordering::Relaxed);
+            AGGREGATE_BYTES.fetch_add(size, Ordering::Relaxed);
+        }
     }
 }
 
@@ -61,6 +65,7 @@ impl Measurement {
         AGGREGATE_THRESHOLD.store(source_bytes / 2, Ordering::Relaxed);
         AGGREGATE_REQUESTS.store(0, Ordering::Relaxed);
         AGGREGATE_BYTES.store(0, Ordering::Relaxed);
+        LARGEST.store(0, Ordering::Relaxed);
         MEASURING.store(true, Ordering::Relaxed);
         Self
     }
@@ -72,7 +77,7 @@ impl Drop for Measurement {
     }
 }
 
-fn claim_body() -> TestResult<(Vec<u8>, ExecutionContext)> {
+fn claim_body(value_bytes: usize) -> TestResult<(Vec<u8>, ExecutionContext)> {
     let mut context: serde_json::Value = serde_json::from_str(include_str!(
         "../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-claim-response.json"
     ))?;
@@ -83,7 +88,7 @@ fn claim_body() -> TestResult<(Vec<u8>, ExecutionContext)> {
     for index in 0..512 {
         environment.insert(
             format!("CLAIM_VALUE_{index:04}"),
-            format!("value-{index}-\"-\\-界-{}", "x".repeat(8192)).into(),
+            format!("value-{index}-\"-\\-界-{}", "x".repeat(value_bytes)).into(),
         );
     }
     let bytes = serde_json::to_vec(&context)?;
@@ -145,11 +150,12 @@ fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContex
 #[tokio::test]
 async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult {
     let mut measurements = Vec::new();
-    for chunked in [false, true] {
-        let (body, expected) = claim_body()?;
+    let mut fragmented_largest = None;
+    for (chunked, fragmented) in [(false, false), (true, false), (true, true)] {
+        let (body, expected) = claim_body(if fragmented { 128 } else { 8192 })?;
         let source_bytes = body.len();
         let framing = if chunked {
-            format!("Transfer-Encoding: chunked\r\n\r\n{source_bytes:x}\r\n")
+            "Transfer-Encoding: chunked\r\n\r\n".to_owned()
         } else {
             format!("Content-Length: {source_bytes}\r\n\r\n")
         };
@@ -157,9 +163,30 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: identity\r\nConnection: close\r\n{framing}"
         )
         .into_bytes();
-        response.extend_from_slice(&body);
         if chunked {
-            response.extend_from_slice(b"\r\n0\r\n\r\n");
+            if fragmented {
+                // Tiny/large/tiny ordering also exercises partial-group flushing.
+                let mut offset = 0;
+                while offset < body.len() {
+                    let length = if offset == 512 { 8 * 1024 } else { 1 };
+                    let chunk = &body[offset..offset + length];
+                    if length == 1 {
+                        response.extend_from_slice(b"1\r\n");
+                    } else {
+                        response.extend_from_slice(format!("{length:x}\r\n").as_bytes());
+                    }
+                    response.extend_from_slice(chunk);
+                    response.extend_from_slice(b"\r\n");
+                    offset += length;
+                }
+            } else {
+                response.extend_from_slice(format!("{source_bytes:x}\r\n").as_bytes());
+                response.extend_from_slice(&body);
+                response.extend_from_slice(b"\r\n");
+            }
+            response.extend_from_slice(b"0\r\n\r\n");
+        } else {
+            response.extend_from_slice(&body);
         }
         let peer = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(response)]).await;
         let directory = tempfile::tempdir()?;
@@ -194,6 +221,7 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
         drop(measurement);
         let requests = AGGREGATE_REQUESTS.load(Ordering::Relaxed);
         let allocated_bytes = AGGREGATE_BYTES.load(Ordering::Relaxed);
+        let largest = LARGEST.load(Ordering::Relaxed);
         provider.shutdown().await;
         let captured = peer.assert_finished_with_requests().await;
 
@@ -202,7 +230,10 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
         let timing = claimed
             .api_claim_timing()
             .ok_or_else(|| io::Error::other("API claim timing missing"))?;
-        assert_eq!(timing.response_attribution().body_size_bucket(), "ge_1_mib");
+        assert_eq!(
+            timing.response_attribution().body_size_bucket(),
+            if fragmented { "64_256_kib" } else { "ge_1_mib" },
+        );
         assert_eq!(timing.response_attribution().content_encoding(), "identity");
         assert_eq!(captured.len(), 1);
         assert_eq!(
@@ -210,9 +241,13 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
             Some(format!("POST /api/runners/jobs/{}/claim HTTP/1.1", expected.run_id).as_str()),
         );
         eprintln!(
-            "chunked={chunked}: source={source_bytes}, aggregate requests={requests}, aggregate requested bytes={allocated_bytes}"
+            "chunked={chunked}, fragmented={fragmented}: source={source_bytes}, aggregate requests={requests}, aggregate requested bytes={allocated_bytes}, largest={largest}"
         );
-        measurements.push((chunked, source_bytes, requests, allocated_bytes));
+        if fragmented {
+            fragmented_largest = Some(largest);
+        } else {
+            measurements.push((chunked, source_bytes, requests, allocated_bytes));
+        }
     }
     // Individual requests only: this does not bound RSS, retained chunks,
     // decoded context or concurrent successful claims.
@@ -220,5 +255,9 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
         assert_eq!(requests, 1, "duplicate coalescing: chunked={chunked}");
         assert_eq!(allocated_bytes, source_bytes);
     }
+    assert!(
+        fragmented_largest.unwrap() <= 1024 * 1024,
+        "tiny HTTP chunks must not create an input-amplifying retained container: {fragmented_largest:?}",
+    );
     Ok(())
 }

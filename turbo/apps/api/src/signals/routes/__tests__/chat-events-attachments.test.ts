@@ -16,7 +16,6 @@ import {
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
 import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   formatUserPresentationTemplateId,
   userPresentationTemplateDirectory,
@@ -46,7 +45,6 @@ import {
   userMessages,
   type PromptMessage,
 } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -1293,13 +1291,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       throw new Error("Expected a chat organization");
     }
     const owner = bdd.user({ orgId });
-    for (const user of [actor, owner]) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: user.userId, orgId },
-        { [FeatureSwitchKey.CustomTemplates]: true },
-      );
-    }
     const { presentations, customs, presentationId, customId } =
       await publishPrivateChatTemplates(owner);
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];

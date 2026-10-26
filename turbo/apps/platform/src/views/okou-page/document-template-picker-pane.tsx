@@ -1,4 +1,4 @@
-import type { ReactNode, UIEvent } from "react";
+import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, FileText } from "lucide-react";
@@ -31,7 +31,7 @@ type Props = {
   readonly signals: ComposerSignals;
   readonly value?: GenerationTemplateRequest;
   readonly onSelect: (item: DocumentTemplateItem) => void;
-  readonly customTemplates?: ReactNode;
+  readonly customTemplates: ReactNode;
 };
 
 export function DocumentTemplatePickerPane({
@@ -43,19 +43,13 @@ export function DocumentTemplatePickerPane({
   const category = useGet(signals.template.documentCategory$);
   const items = useGet(signals.template.documentItems$);
   const search = useGet(signals.template.templatePickerSearch$);
-  const filteredItems = customTemplates
-    ? items.filter((item) => {
-        return item.title.toLowerCase().includes(search.trim().toLowerCase());
-      })
-    : items;
+  const filteredItems = items.filter((item) => {
+    return item.title.toLowerCase().includes(search.trim().toLowerCase());
+  });
   const saveScroll = useSet(signals.template.saveDocumentScroll$);
   const restoreScroll = useSet(signals.template.restoreDocumentScroll$);
   const filters = (
-    <DocumentTemplatePickerFilters
-      signals={signals}
-      category={category}
-      withCustom={customTemplates !== undefined}
-    />
+    <DocumentTemplatePickerFilters signals={signals} category={category} />
   );
   const cards = (
     <div className={TEMPLATE_CARD_GRID}>
@@ -75,9 +69,7 @@ export function DocumentTemplatePickerPane({
       })}
     </div>
   );
-  const showCustom =
-    customTemplates !== undefined &&
-    (category === "all" || category === "custom");
+  const showCustom = category === "all" || category === "custom";
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {filters}
@@ -92,7 +84,7 @@ export function DocumentTemplatePickerPane({
       >
         {showCustom ? customTemplates : null}
         {category !== "custom" ? (
-          customTemplates && category === "all" ? (
+          category === "all" ? (
             <TemplateSourceSection source="builtIn">
               {cards}
             </TemplateSourceSection>
@@ -114,11 +106,9 @@ export function DocumentTemplatePickerPane({
 function DocumentTemplatePickerFilters({
   signals,
   category,
-  withCustom,
 }: {
   readonly signals: ComposerSignals;
   readonly category: DocumentTemplatePickerCategory;
-  readonly withCustom: boolean;
 }) {
   const { t } = useTranslation();
   const setCategory = useSet(signals.template.setDocumentCategory$);
@@ -129,25 +119,16 @@ function DocumentTemplatePickerFilters({
   const bindRail = useSet(signals.taskChips.bindRail$);
   const filterRow = (
     <TemplateFilterPillRow
-      className={
-        withCustom
-          ? cn("px-6 py-0.5", composerRailFade(filterTravel))
-          : "shrink-0 px-6 py-5 pr-14"
-      }
+      className={cn("px-6 py-0.5", composerRailFade(filterTravel))}
       // Under the header band the row holds ten pills, one more than fits on
       // a line, so it travels like the composer shelf's filters rather than
-      // wrapping a lone pill onto a second line. Without the band the row
-      // shares its line with the close button and keeps wrapping.
-      layout={withCustom ? "scroll" : "wrap"}
-      {...(withCustom
-        ? {
-            rail: PICKER_FILTER_RAIL,
-            scrollerRef: bindRail,
-            onScroll: (event: UIEvent<HTMLDivElement>) => {
-              setTravel(PICKER_FILTER_RAIL, measureRail(event.currentTarget));
-            },
-          }
-        : {})}
+      // wrapping a lone pill onto a second line.
+      layout="scroll"
+      rail={PICKER_FILTER_RAIL}
+      scrollerRef={bindRail}
+      onScroll={(event) => {
+        setTravel(PICKER_FILTER_RAIL, measureRail(event.currentTarget));
+      }}
       active={category}
       label={t(($) => {
         return $.documentTemplates.filter;
@@ -159,7 +140,7 @@ function DocumentTemplatePickerFilters({
             return $.documentTemplates.categories[id];
           }),
         };
-        return id === "all" && withCustom
+        return id === "all"
           ? [
               pill,
               {
@@ -172,7 +153,7 @@ function DocumentTemplatePickerFilters({
           : [pill];
       })}
       onSelect={(id) => {
-        if (id === "custom" && withCustom) {
+        if (id === "custom") {
           setCategory("custom");
           return;
         }
@@ -185,7 +166,7 @@ function DocumentTemplatePickerFilters({
       }}
     />
   );
-  return withCustom ? (
+  return (
     // A pager centres on its positioning root, so the row's spacing below
     // sits outside that root, as in the connector directory's category row.
     <div className="shrink-0 pb-3.5">
@@ -197,8 +178,6 @@ function DocumentTemplatePickerFilters({
         ) : null}
       </div>
     </div>
-  ) : (
-    filterRow
   );
 }
 
@@ -230,7 +209,7 @@ function DocumentTemplateCard({
   item,
   selected,
   onSelect,
-}: Omit<Props, "value"> & {
+}: Omit<Props, "value" | "customTemplates"> & {
   readonly item: DocumentTemplateItem;
   readonly selected: boolean;
 }) {

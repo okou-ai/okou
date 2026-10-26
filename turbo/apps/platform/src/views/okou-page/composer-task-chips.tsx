@@ -22,7 +22,6 @@ import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { EntrustedJobs } from "./entrusted-jobs.tsx";
 import { entrustedJobsEnabled$ } from "../../signals/okou-page/entrusted-jobs.ts";
 import { cn } from "@okouai/ui/lib/utils";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import {
   DOCUMENT_TEMPLATE_CATEGORIES,
@@ -31,7 +30,6 @@ import {
   type DocumentTemplateItem,
 } from "@okouai/core/document-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
   ComposerPromptRowTask,
@@ -291,8 +289,6 @@ function ComposerTemplateShelf({
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
   const previews = slashTemplatePreviews(category);
   const custom = useCustomTemplateRecommendations(signals, "illustration");
-  const customTemplatesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
@@ -338,7 +334,7 @@ function ComposerTemplateShelf({
         rail={`templates:${task}`}
         gap="gap-3"
         items={[
-          ...(task === "image" && customTemplatesEnabled
+          ...(task === "image"
             ? [
                 <TemplateImportCard
                   key="import"
@@ -565,9 +561,6 @@ function ComposerDocumentRecommendations({
   const categoryResult = useLastLoadable(signals.taskChips.documentCategory$);
   const category =
     categoryResult.state === "hasData" ? categoryResult.data : undefined;
-  const switches = useGet(featureSwitch$);
-  const customTemplatesEnabled =
-    switches[FeatureSwitchKey.CustomTemplates] === true;
   const custom = useCustomTemplateRecommendations(signals, "document");
   const items = DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
     return item.category === category;
@@ -625,16 +618,12 @@ function ComposerDocumentRecommendations({
             return $.documentTemplates.filter;
           })}
           pills={[
-            ...(customTemplatesEnabled
-              ? [
-                  {
-                    id: "custom",
-                    label: t(($) => {
-                      return $.templates.custom;
-                    }),
-                  },
-                ]
-              : []),
+            {
+              id: "custom",
+              label: t(($) => {
+                return $.templates.custom;
+              }),
+            },
             ...DOCUMENT_CATEGORIES.map((id) => {
               return {
                 id,
@@ -645,7 +634,7 @@ function ComposerDocumentRecommendations({
             }),
           ]}
           onSelect={(id) => {
-            if (id === "custom" && customTemplatesEnabled) {
+            if (id === "custom") {
               setCategory("custom");
               return;
             }

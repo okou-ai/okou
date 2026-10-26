@@ -494,11 +494,7 @@ test("Template counts include the custom templates listed beside the built-in on
       customTemplate("document", 3),
     ]);
   });
-  const { menu } = await openSlashActions({
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: true,
-    },
-  });
+  const { menu } = await openSlashActions();
   const counts = {
     Presentation: PRESENTATION_TEMPLATE_PICKER_ITEMS.length + 2,
     Document: DOCUMENT_TEMPLATE_ITEMS.length + 1,

@@ -1,5 +1,4 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -45,9 +44,6 @@ async function setup() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: false,
-    },
   });
   return { user, capture };
 }
@@ -61,13 +57,7 @@ test("Document category and scroll survive preview", async () => {
     tabs.map((tab) => {
       return tab.textContent;
     }),
-  ).toStrictEqual([
-    "Presentation",
-    "Document",
-    "Website",
-    "Illustration",
-    "Workflow",
-  ]);
+  ).toStrictEqual(["Presentation", "Document", "Website", "Image", "Workflow"]);
   click(control(dialog, "tab", "Document"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(46);
   click(control(dialog, "button", "Invoice"));
@@ -160,7 +150,7 @@ test("Document purposes are directly selectable without losing the draft or sele
     "aria-pressed",
     "true",
   );
-  expect(within(categories).queryByText("Custom")).not.toBeInTheDocument();
+  expect(control(categories, "button", "Custom")).toBeVisible();
   expect(
     within(shelf).queryByLabelText("Import your own document"),
   ).not.toBeInTheDocument();

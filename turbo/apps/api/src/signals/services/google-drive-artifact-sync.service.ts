@@ -1900,17 +1900,16 @@ function resolveGoogleConversionTarget(
       "This file cannot be converted to a Google editor format",
     );
   }
-  const flag =
-    target === "presentation"
-      ? FeatureSwitchKey.GoogleSlidesConversion
-      : FeatureSwitchKey.GoogleDocsSheetsConversion;
-  return isFeatureEnabled(flag, featureSwitchContext)
-    ? target
-    : badRequestMessage(
-        target === "presentation"
-          ? "Google Slides conversion is not enabled"
-          : "Google Docs and Sheets conversion is not enabled",
-      );
+  if (
+    target === "presentation" &&
+    !isFeatureEnabled(
+      FeatureSwitchKey.GoogleSlidesConversion,
+      featureSwitchContext,
+    )
+  ) {
+    return badRequestMessage("Google Slides conversion is not enabled");
+  }
+  return target;
 }
 
 function prepareDriveUpload(

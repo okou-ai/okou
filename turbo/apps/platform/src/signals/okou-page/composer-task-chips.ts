@@ -1,6 +1,5 @@
 import { command, computed, state } from "ccstate";
 import type { DocumentTemplateCategory } from "@okouai/core/document-template-items";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
 import {
@@ -15,7 +14,6 @@ import { createComposerVisualizationSignals } from "./composer-visualization.ts"
 import { onRef, settle } from "../utils.ts";
 import { observeRail, type RailTravel } from "./rail-travel.ts";
 import { customTemplateCatalog$ } from "./custom-template-library.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { homeJobSummaries$ } from "./entrusted-jobs.ts";
 
 export type ComposerTask =
@@ -74,13 +72,6 @@ function createDocumentCategorySignals() {
     },
   );
   const documentCategory$ = computed((get) => {
-    const switches = get(featureSwitch$);
-    if (switches[FeatureSwitchKey.CustomTemplates] !== true) {
-      const selected = get(internalDocumentCategory$);
-      return selected === "custom"
-        ? "creative-brief"
-        : (selected ?? "creative-brief");
-    }
     const selected = get(internalDocumentCategory$);
     if (selected !== null) {
       return selected;

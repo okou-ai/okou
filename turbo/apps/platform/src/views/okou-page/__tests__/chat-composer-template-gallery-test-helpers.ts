@@ -4,12 +4,6 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import {
-  presentationTemplatesContract,
-  type PresentationTemplateCatalogEntry,
-  type PresentationTemplatePreviewAsset,
-  type PresentationTemplateSummary,
-} from "@okouai/api-contracts/contracts/presentation-templates";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -38,7 +32,7 @@ interface TemplateChatCapture {
 
 export async function openTemplatePicker(
   _user: ReturnType<typeof userEvent.setup>,
-  category?: "Presentation" | "Website" | "Illustration" | "Image",
+  category?: "Presentation" | "Website" | "Image",
 ): Promise<HTMLElement> {
   await clickComposerAddMenuItem("Template");
   const dialog = await waitFor(() => {
@@ -90,58 +84,6 @@ export async function sendComposerMessage(
   await user.click(editor);
   await user.paste(text);
   await user.keyboard("{Enter}");
-}
-
-export function createUploadedTemplate(options: {
-  readonly id: string;
-  readonly title: string;
-  readonly pageCount?: number;
-  readonly visibility?: "private" | "public";
-  readonly canManage?: boolean;
-  readonly updatedAt?: string;
-}): PresentationTemplateCatalogEntry {
-  const pageCount = options.pageCount ?? 3;
-  const previewAssets = Array.from(
-    { length: pageCount },
-    (_, index): PresentationTemplatePreviewAsset => {
-      return {
-        previewAssetId: `${options.id}-page-${index + 1}`,
-        url: `https://cdn.example.test/${options.id}/slide-${index + 1}.png`,
-        expiresAt: "2026-08-01T00:15:00.000Z",
-      };
-    },
-  );
-  return {
-    id: options.id,
-    title: options.title,
-    sourceFilename: `${options.title}.pptx`,
-    coverUrl: previewAssets[0]?.url ?? null,
-    pageCount,
-    visibility: options.visibility ?? "public",
-    canManage: options.canManage ?? false,
-    createdAt: "2026-08-01T00:00:00.000Z",
-    updatedAt: options.updatedAt ?? "2026-08-01T00:00:00.000Z",
-    previewAssets,
-  };
-}
-
-function summaryOf(
-  template: PresentationTemplateCatalogEntry,
-): PresentationTemplateSummary {
-  const { previewAssets: _previewAssets, ...summary } = template;
-  return summary;
-}
-
-interface PresentationLibraryControl {
-  readonly requests: {
-    readonly listCount: number;
-    readonly updates: {
-      readonly templateId: string;
-      readonly body: { title?: string; visibility?: "private" | "public" };
-    }[];
-    readonly deletes: string[];
-  };
-  replace(templates: readonly PresentationTemplateCatalogEntry[]): void;
 }
 
 export async function expectInlineTemplate(
@@ -207,7 +149,6 @@ export function createTemplateGalleryHelpers(context: TestContext) {
         }
       },
     });
-    mockPresentationTemplateLibrary([]);
 
     return {
       sentMessages,
@@ -230,107 +171,8 @@ export function createTemplateGalleryHelpers(context: TestContext) {
     });
   }
 
-  function mockPresentationTemplateLibrary(
-    initialTemplates: readonly PresentationTemplateCatalogEntry[],
-  ): PresentationLibraryControl {
-    let templates = [...initialTemplates];
-    let listCount = 0;
-    const updates: PresentationLibraryControl["requests"]["updates"] = [];
-    const deletes: string[] = [];
-
-    context.mocks.api(presentationTemplatesContract.list, ({ respond }) => {
-      listCount += 1;
-      return respond(200, templates);
-    });
-    context.mocks.api(
-      presentationTemplatesContract.resolvePreviewUrls,
-      ({ body, respond }) => {
-        const requestedIds = new Set(body.previewAssetIds);
-        return respond(200, {
-          assets: templates.flatMap((template) => {
-            return template.previewAssets.filter((asset) => {
-              return requestedIds.has(asset.previewAssetId);
-            });
-          }),
-        });
-      },
-    );
-    context.mocks.api(
-      presentationTemplatesContract.get,
-      ({ params, respond }) => {
-        const template = templates.find((candidate) => {
-          return candidate.id === params.templateId;
-        });
-        if (!template) {
-          return respond(404, {
-            error: {
-              code: "NOT_FOUND",
-              message: "Presentation template not found",
-            },
-          });
-        }
-        return respond(200, {
-          ...template,
-          pageUrls: template.previewAssets.map((asset) => {
-            return asset.url;
-          }),
-        });
-      },
-    );
-    context.mocks.api(
-      presentationTemplatesContract.update,
-      ({ params, body, respond }) => {
-        updates.push({ templateId: params.templateId, body });
-        const previous = templates.find((candidate) => {
-          return candidate.id === params.templateId;
-        });
-        if (!previous) {
-          return respond(404, {
-            error: {
-              code: "NOT_FOUND",
-              message: "Presentation template not found",
-            },
-          });
-        }
-        const updated = {
-          ...previous,
-          ...body,
-          updatedAt: "2026-08-01T00:01:00.000Z",
-        };
-        templates = templates.map((candidate) => {
-          return candidate.id === updated.id ? updated : candidate;
-        });
-        return respond(200, summaryOf(updated));
-      },
-    );
-    context.mocks.api(
-      presentationTemplatesContract.delete,
-      ({ params, respond }) => {
-        deletes.push(params.templateId);
-        templates = templates.filter((candidate) => {
-          return candidate.id !== params.templateId;
-        });
-        return respond(204);
-      },
-    );
-
-    return {
-      requests: {
-        get listCount() {
-          return listCount;
-        },
-        updates,
-        deletes,
-      },
-      replace(nextTemplates) {
-        templates = [...nextTemplates];
-      },
-    };
-  }
-
   return {
     mockTemplateChat,
     mockPresentationHtml,
-    mockPresentationTemplateLibrary,
   };
 }

@@ -679,7 +679,6 @@
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
@@ -718,9 +717,7 @@
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
-        "changeLabel": "टेम्पलेट की दृश्यता बदलें",
-        "privateState": "केवल आप इसे देख और उपयोग कर सकते हैं",
-        "workspaceState": "इस वर्कस्पेस में कोई भी इसका उपयोग कर सकता है"
+        "changeLabel": "टेम्पलेट की दृश्यता बदलें"
       },
       "website": "वेबसाइट",
       "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
@@ -2929,15 +2926,12 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
-      "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
-      "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "removeTemplate": "टेम्प्लेट {{title}} हटाएँ",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
-      "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ",
-      "retry": "फिर से कोशिश करें"
+      "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ"
     },
     "thread": {
       "ariaLabel": "चैट थ्रेड",

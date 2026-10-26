@@ -169,9 +169,8 @@ function VisibilityOptionList({
 }
 
 /**
- * Visibility the way the imported deck panel states it: the level, and under
- * it the sentence that says what the level does. The whole block opens the
- * picker.
+ * Visibility states the access level, with a sentence below explaining what
+ * the level allows. The whole block opens the picker.
  */
 function CustomTemplateVisibilityControl({
   detail,

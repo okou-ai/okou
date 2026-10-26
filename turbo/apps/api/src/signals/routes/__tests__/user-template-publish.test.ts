@@ -3,7 +3,6 @@ import {
   type PublishUserTemplateBody,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
@@ -20,7 +19,6 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { extractFilesFromTarGz } from "../../../lib/tar";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installS3Fixture,
@@ -101,17 +99,12 @@ function clerkProfile(userId: string, firstName: string, lastName: string) {
   };
 }
 
-/** Signs a member in and turns the switch on for them. */
-async function enableFor(actor: ApiTestUser) {
+/** Signs in a workspace member. */
+function signIn(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("User template tests require an organization");
   }
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.CustomTemplates]: true },
-  );
 }
 
 async function publishBody(
@@ -223,7 +216,7 @@ describe("POST /api/user-templates", () => {
   it("publishes a compiled reverse run as a private template", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const response = await accept(
@@ -257,7 +250,7 @@ describe("POST /api/user-templates", () => {
   it("renames a private template and preserves its cover and ownership", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     mockClerkUsers(context, [clerkProfile(owner.userId, "Mina", "Okafor")]);
     const published = await accept(
@@ -308,7 +301,7 @@ describe("POST /api/user-templates", () => {
   it("retracts a shared template and its preview handles from colleagues", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -326,7 +319,7 @@ describe("POST /api/user-templates", () => {
       [200],
     );
     const colleague = bdd.user({ orgId: owner.orgId });
-    await enableFor(colleague);
+    signIn(colleague);
     const shared = await accept(client.list({ headers: webHeaders() }), [200]);
     const previewAssetIds = shared.body.flatMap((entry) => {
       return entry.previewAssets.map((asset) => {
@@ -392,10 +385,10 @@ describe("POST /api/user-templates", () => {
     expect(previews.body.assets).toStrictEqual([]);
   });
 
-  it("rejects disabled and cross-organization edits without changing the template", async () => {
+  it("rejects cross-organization edits without changing the template", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -404,28 +397,8 @@ describe("POST /api/user-templates", () => {
       }),
       [200],
     );
-    if (!owner.orgId) {
-      throw new Error("User template tests require an organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
-      { [FeatureSwitchKey.CustomTemplates]: false },
-    );
-    const disabled = await accept(
-      client.update({
-        headers: webHeaders(),
-        params: { templateId: published.body.id },
-        body: { title: "Disabled edit", visibility: "organization" },
-      }),
-      [403],
-    );
-    expect(disabled.body.error).toMatchObject({
-      code: "FORBIDDEN",
-      message: "Custom templates are not enabled",
-    });
     const outsider = bdd.user();
-    await enableFor(outsider);
+    signIn(outsider);
     const hidden = await accept(
       client.update({
         headers: webHeaders(),
@@ -438,7 +411,7 @@ describe("POST /api/user-templates", () => {
       code: "NOT_FOUND",
       message: `User template not found: ${published.body.id}`,
     });
-    await enableFor(owner);
+    signIn(owner);
     const preserved = await accept(
       client.get({
         headers: webHeaders(),
@@ -452,7 +425,7 @@ describe("POST /api/user-templates", () => {
   it("notifies the readers on both sides of overlapping visibility edits", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -518,7 +491,7 @@ describe("POST /api/user-templates", () => {
   it("accepts a pdf source, which the import picker already offers", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const body = await publishBody(actor, fixture);
@@ -545,7 +518,7 @@ describe("POST /api/user-templates", () => {
   it("publishes a document template without page images", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const docxSourceId = await uploadTemplateFile(
@@ -621,7 +594,7 @@ describe("POST /api/user-templates", () => {
   it("covers a document with its first page without calling it a page", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const response = await accept(
@@ -663,7 +636,7 @@ describe("POST /api/user-templates", () => {
   it("leaves a one-page document nothing to stack behind its cover", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const response = await accept(
@@ -687,7 +660,7 @@ describe("POST /api/user-templates", () => {
   it("keeps a page count that arrived without a cover from claiming one", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const response = await accept(
@@ -709,7 +682,7 @@ describe("POST /api/user-templates", () => {
   it("refuses a cover the catalog could not paint", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const response = await accept(
@@ -728,7 +701,7 @@ describe("POST /api/user-templates", () => {
   it("covers an illustration with its approved examples, not its source", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const upload = async (
@@ -825,7 +798,7 @@ describe("POST /api/user-templates", () => {
   it("refuses an example the catalog could not paint", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const referenceId = await uploadTemplateFile(
@@ -871,7 +844,7 @@ describe("POST /api/user-templates", () => {
   it("refuses a source the kind it was published as cannot be shown as", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const docxSourceId = await uploadTemplateFile(
@@ -922,7 +895,7 @@ describe("POST /api/user-templates", () => {
   it("takes a document package that carries its skill and nothing else", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const docxSourceId = await uploadTemplateFile(
@@ -967,7 +940,7 @@ describe("POST /api/user-templates", () => {
   it("replaces a template's package without touching anything else", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const published = await accept(
@@ -1048,7 +1021,7 @@ describe("POST /api/user-templates", () => {
       }
       await bdd.deleteAgent(actor, agent.agentId);
     });
-    await enableFor(actor);
+    signIn(actor);
 
     const threeFiles = await uploadTemplateFile(
       context,
@@ -1142,7 +1115,7 @@ describe("POST /api/user-templates", () => {
   it("applies the row's kind to the replacement, not the caller's", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const published = await accept(
@@ -1176,7 +1149,7 @@ describe("POST /api/user-templates", () => {
   it("hides a colleague's template from a package replacement", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -1199,7 +1172,7 @@ describe("POST /api/user-templates", () => {
     );
 
     const colleague = bdd.user({ orgId: owner.orgId });
-    await enableFor(colleague);
+    signIn(colleague);
     const rebuilt = await uploadTemplateFile(
       context,
       colleague,
@@ -1227,7 +1200,7 @@ describe("POST /api/user-templates", () => {
   it("leaves every change to the owner, not to everyone who can see it", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -1248,7 +1221,7 @@ describe("POST /api/user-templates", () => {
     );
 
     const colleague = bdd.user({ orgId: owner.orgId });
-    await enableFor(colleague);
+    signIn(colleague);
     await accept(
       client.get({
         headers: webHeaders(),
@@ -1300,7 +1273,7 @@ describe("POST /api/user-templates", () => {
   it("rejects a package that is missing its required guidance", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
-    await enableFor(actor);
+    signIn(actor);
     const client = templateClient();
 
     const response = await accept(
@@ -1320,7 +1293,7 @@ describe("POST /api/user-templates", () => {
   it("keeps a private template out of a colleague's catalog", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -1332,7 +1305,7 @@ describe("POST /api/user-templates", () => {
 
     // A second member of the same organization.
     const colleague = bdd.user({ orgId: owner.orgId });
-    await enableFor(colleague);
+    signIn(colleague);
 
     const listed = await accept(client.list({ headers: webHeaders() }), [200]);
     expect(listed.body).toStrictEqual([]);
@@ -1348,7 +1321,7 @@ describe("POST /api/user-templates", () => {
   it("shows an organization template to a colleague without letting them manage it", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -1367,7 +1340,7 @@ describe("POST /api/user-templates", () => {
     );
 
     const colleague = bdd.user({ orgId: owner.orgId });
-    await enableFor(colleague);
+    signIn(colleague);
 
     const listed = await accept(client.list({ headers: webHeaders() }), [200]);
     expect(listed.body).toHaveLength(1);
@@ -1400,7 +1373,7 @@ describe("POST /api/user-templates", () => {
   it("names a colleague's template after the person, not the account id", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -1419,7 +1392,7 @@ describe("POST /api/user-templates", () => {
     );
 
     const colleague = bdd.user({ orgId: owner.orgId });
-    await enableFor(colleague);
+    signIn(colleague);
     // Two members with different names, so the answer has to be the owner's
     // rather than whichever profile the directory happened to return.
     mockClerkUsers(context, [
@@ -1445,7 +1418,7 @@ describe("POST /api/user-templates", () => {
   it("still lists a template whose owner the provider cannot name", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
-    await enableFor(owner);
+    signIn(owner);
     const client = templateClient();
     const published = await accept(
       client.publish({
@@ -1464,7 +1437,7 @@ describe("POST /api/user-templates", () => {
     );
 
     const colleague = bdd.user({ orgId: owner.orgId });
-    await enableFor(colleague);
+    signIn(colleague);
     // Who owns a template decides nothing about who may read it, so a provider
     // that cannot answer costs the name and not the row.
     context.mocks.clerk.users.getUserList.mockRejectedValue(

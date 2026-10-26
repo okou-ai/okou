@@ -5,15 +5,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@okouai/ui";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@okouai/ui/components/ui/tooltip";
 import { cn } from "@okouai/ui/lib/utils";
 import {
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -30,8 +23,7 @@ import { TEMPLATE_TILE_MEDIA } from "./template-tile.ts";
 /**
  * The template detail page every template kind opens into: a stage or viewer,
  * a filmstrip where there are pages, a side column, and a footer holding the
- * action. Built-in decks, imported decks and custom templates all compose these
- * pieces, so the three read as one surface rather than three similar ones.
+ * action. Built-in and custom templates compose these pieces as one surface.
  */
 
 // The template detail page: one body under the header, whose height the dialog
@@ -250,115 +242,6 @@ export const TEMPLATE_DETAIL_TITLE_TEXTAREA =
 
 export function normalizeTemplateTitle(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
-}
-
-/**
- * The breadcrumb's last step for a template the member may rename, confirmed
- * with Enter or the check beside it.
- *
- * Closed while its own rename is in flight. Disabling the submit control is not
- * enough on its own: Enter reaches the form through `requestSubmit()`, which
- * does not consult a submit button's disabled state, so a second rename could
- * still leave before the first came back, and nothing orders the two.
- */
-export function TemplateDetailTitle({
-  title,
-  label,
-  canEdit,
-  updating,
-  onRename,
-}: {
-  readonly title: string;
-  readonly label: string;
-  readonly canEdit: boolean;
-  readonly updating: boolean;
-  readonly onRename: (title: string) => void;
-}) {
-  if (!canEdit) {
-    return <span className="block min-w-0 truncate leading-none">{title}</span>;
-  }
-  return (
-    <form
-      className="group flex min-w-0 items-center gap-1"
-      data-rename-dirty="false"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (updating) {
-          return;
-        }
-        const nextTitle = new FormData(event.currentTarget).get("title");
-        if (typeof nextTitle !== "string") {
-          return;
-        }
-        const normalized = normalizeTemplateTitle(nextTitle);
-        if (normalized.length > 0 && normalized !== title) {
-          // Confirming ends this edit. Keeping the submit control focused pins
-          // the check visible through the form's focus-within affordance.
-          event.currentTarget.querySelector<HTMLElement>(":focus")?.blur();
-          onRename(normalized);
-        }
-      }}
-    >
-      <div className={TEMPLATE_DETAIL_TITLE_FIELD} data-value={title}>
-        <textarea
-          name="title"
-          aria-label={label}
-          defaultValue={title}
-          required
-          rows={1}
-          maxLength={255}
-          disabled={updating}
-          className={TEMPLATE_DETAIL_TITLE_TEXTAREA}
-          onChange={(event) => {
-            const field = event.currentTarget;
-            const mirror = field.parentElement;
-            const form = field.form;
-            if (!mirror || !form) {
-              return;
-            }
-            const normalized = normalizeTemplateTitle(field.value);
-            mirror.dataset.value = field.value;
-            form.dataset.renameDirty = String(
-              normalized.length > 0 && normalized !== title,
-            );
-          }}
-          onKeyDown={(event) => {
-            // Safari can end composition before the confirming Enter, while
-            // keyCode remains 229 for that IME-owned keystroke.
-            if (
-              event.key !== "Enter" ||
-              event.shiftKey ||
-              event.nativeEvent.isComposing ||
-              event.nativeEvent.keyCode === 229
-            ) {
-              return;
-            }
-            event.preventDefault();
-            event.currentTarget.form?.requestSubmit();
-          }}
-        />
-      </div>
-      <TooltipProvider delay={300}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="submit"
-                variant="quiet"
-                size="icon-sm"
-                disabled={updating}
-                aria-label={label}
-                className="invisible -my-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
-              >
-                {updating ? <Loader2 className="animate-spin" /> : <Check />}
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">{label}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </form>
-  );
 }
 
 /**

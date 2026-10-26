@@ -1,8 +1,6 @@
 import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
 import { command } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
 /**
@@ -56,22 +54,7 @@ export const IMAGE_TEMPLATE_IMPORT_ACCEPT = acceptList(["illustration"]);
 export const DOCUMENT_TEMPLATE_IMPORT_ACCEPT = acceptList(["document"]);
 
 /**
- * The message the deck is sent with.
- *
- * One plain sentence on purpose: importing a template is not a special
- * protocol, it is a chat message with a file attached, and the user should be
- * able to read what was asked on their behalf in the thread they land in.
- *
- * How to reach the guide is deliberately absent. The agent tools prompt
- * already carries it for every run, so repeating it here only spends the
- * user's own message on instructions addressed to the run.
- */
-function presentationTemplateImportPrompt(): string {
-  return "Analyse this deck and save its visual language as a reusable presentation template.";
-}
-
-/**
- * The same request, aimed at the custom template catalog.
+ * The request sent to the custom template catalog.
  *
  * One sentence for every kind, because the guide already sorts them: the
  * `extract-template` skill reads the file and follows the branch that matches.
@@ -79,8 +62,8 @@ function presentationTemplateImportPrompt(): string {
  * disagree, and the one in the guide is the one that read the file.
  *
  * Which skill reads the file and which command publishes it are absent for the
- * same reason the deck's message leaves out the guide: they describe how the
- * run works, not what the member asked for, and a message reciting them reads
+ * same reason: they describe how the run works, not what the member asked for,
+ * and a message reciting them reads
  * as a script written for someone else in the member's own thread.
  * `customTemplateImportGuidance` carries them where only the run sees them.
  */
@@ -115,35 +98,6 @@ function customTemplateImportGuidance(): string {
   return "Analyse this file with the `extract-template` dispatcher in `okou-ai/okou-skills`: read `extract-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 }
 
-/** One import's message: what the member reads, and what only the run reads. */
-interface TemplateImportMessage {
-  readonly prompt: string;
-  readonly additionalInfo: string | undefined;
-}
-
-/**
- * Which message an import is sent with.
- *
- * Neither answer reads the file. Which formats can become a template is what
- * the input's `accept` states and the file chooser applies, so re-reading the
- * extension here could only refuse a file the chooser already handed over,
- * and what to make of the one that arrives is the selected guide's decision
- * rather than this function's.
- */
-function templateImportMessage(
-  customTemplates: boolean,
-): TemplateImportMessage {
-  return customTemplates
-    ? {
-        prompt: customTemplateImportPrompt(),
-        additionalInfo: customTemplateImportGuidance(),
-      }
-    : {
-        prompt: presentationTemplateImportPrompt(),
-        additionalInfo: undefined,
-      };
-}
-
 /**
  * Attach the file to the composer and send it.
  *
@@ -163,28 +117,19 @@ export const importPresentationTemplateDeck$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const { signals, file } = args;
-    // Which catalog the file lands in follows the switch that decides which
-    // catalog the user can see. Sending every import to the custom catalog
-    // while the switch is off would publish templates into a pane that member
-    // cannot open, and take them out of the Presentation grid where they
-    // currently appear.
-    const message = templateImportMessage(
-      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true,
-    );
-
     await set(signals.draft.uploadAttachment$, file, signal);
     signal.throwIfAborted();
     // Import analyses the source, regardless of which creation task opened
     // the picker. Do not append that task's generation instructions.
     set(signals.create.setMode$, null, false);
-    set(signals.draft.setDraftInput$, message.prompt);
+    set(signals.draft.setDraftInput$, customTemplateImportPrompt());
 
     const action = await get(signals.submission.primaryAction$);
     signal.throwIfAborted();
     return await set(
       signals.submission.submitCurrentInput$,
       action,
-      message.additionalInfo,
+      customTemplateImportGuidance(),
       signal,
     );
   },

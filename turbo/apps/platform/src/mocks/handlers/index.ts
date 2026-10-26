@@ -70,10 +70,7 @@ import {
   apiPersonalModelProvidersHandlers,
   resetMockPersonalModelProviders,
 } from "./api-personal-model-providers.ts";
-import {
-  apiPresentationTemplatesHandlers,
-  resetMockPresentationTemplates,
-} from "./api-presentation-templates.ts";
+import { apiPresentationTemplatesHandlers } from "./api-presentation-templates.ts";
 import { apiRealtimeHandlers } from "./api-realtime.ts";
 import {
   apiAvailableRunModelsHandlers,
@@ -177,7 +174,6 @@ export function resetAllMockHandlers(): void {
   resetMockUserModelPreference();
   resetMockAvailableRunModels();
   resetMockPersonalModelProviders();
-  resetMockPresentationTemplates();
   resetMockUserTemplates();
   resetMockBilling();
   resetMockSlackConnect();

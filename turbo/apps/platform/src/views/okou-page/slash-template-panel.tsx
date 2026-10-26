@@ -21,7 +21,6 @@ import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-temp
 import {
   customTemplateCatalog$,
   projectCustomTemplate$,
-  slashCustomTemplatesEnabled$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import { SlashWorkflowName, slashWorkflowOptionId } from "./slash-workflow.tsx";
 import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
@@ -321,7 +320,6 @@ export function SlashTemplateCovers({
     category: SlashTemplateCategory,
   ) => void;
 }) {
-  const customTemplatesEnabled = useGet(slashCustomTemplatesEnabled$);
   const previews = slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
@@ -373,7 +371,7 @@ export function SlashTemplateCovers({
                 : "grid grid-cols-2 gap-2.5 pb-4",
             )}
           >
-            {customTemplatesEnabled && category !== "website" && (
+            {category !== "website" && (
               <SlashCustomTemplateCovers
                 category={category}
                 onSelectTemplate={onSelectTemplate}

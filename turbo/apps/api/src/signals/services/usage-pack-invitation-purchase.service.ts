@@ -18,6 +18,7 @@ import {
   count,
   desc,
   eq,
+  exists,
   gt,
   gte,
   getTableColumns,
@@ -27,8 +28,10 @@ import {
   lte,
   ne,
   notInArray,
+  notExists,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 
 import { command } from "ccstate";
@@ -46,7 +49,7 @@ import {
   type ClerkClient,
   type ClerkReadContext,
 } from "../external/clerk";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   type StripeClient,
@@ -2609,118 +2612,223 @@ const markLateAcceptanceForRefund$ = command(
   },
 );
 
+function recoveredAcceptedAllocationSource(
+  purchase: UsagePackInvitationPurchaseRow,
+  userId: string,
+  allocationId: SQL,
+  assignedAt: Date,
+) {
+  return {
+    id: allocationId.mapWith(usagePackAllocations.id).as("id"),
+    usagePackSubscriptionId:
+      sql`${sql.param(purchase.usagePackSubscriptionId, usagePackAllocations.usagePackSubscriptionId)}`
+        .mapWith(usagePackAllocations.usagePackSubscriptionId)
+        .as("usagePackSubscriptionId"),
+    orgId: sql`${sql.param(purchase.orgId, usagePackAllocations.orgId)}`
+      .mapWith(usagePackAllocations.orgId)
+      .as("orgId"),
+    userId: sql`${sql.param(userId, usagePackAllocations.userId)}`
+      .mapWith(usagePackAllocations.userId)
+      .as("userId"),
+    invitationId: sql`NULL`
+      .mapWith(nullableDriverValueDecoder(usagePackAllocations.invitationId))
+      .as("invitationId"),
+    usagePackUsd:
+      sql`${sql.param(purchase.usagePackUsd, usagePackAllocations.usagePackUsd)}`
+        .mapWith(usagePackAllocations.usagePackUsd)
+        .as("usagePackUsd"),
+    stripePriceId:
+      sql`${sql.param(purchase.stripePriceId, usagePackAllocations.stripePriceId)}`
+        .mapWith(usagePackAllocations.stripePriceId)
+        .as("stripePriceId"),
+    status:
+      sql`${sql.param("paid_pending_invitation", usagePackAllocations.status)}`
+        .mapWith(usagePackAllocations.status)
+        .as("status"),
+    currentPeriodStart:
+      sql`${sql.param(purchase.currentPeriodStart, usagePackAllocations.currentPeriodStart)}`
+        .mapWith(
+          nullableDriverValueDecoder(usagePackAllocations.currentPeriodStart),
+        )
+        .as("currentPeriodStart"),
+    currentPeriodEnd:
+      sql`${sql.param(purchase.currentPeriodEnd, usagePackAllocations.currentPeriodEnd)}`
+        .mapWith(
+          nullableDriverValueDecoder(usagePackAllocations.currentPeriodEnd),
+        )
+        .as("currentPeriodEnd"),
+    createdAt: sql`now()`
+      .mapWith(usagePackAllocations.createdAt)
+      .as("createdAt"),
+    updatedAt: sql`${sql.param(assignedAt, usagePackAllocations.updatedAt)}`
+      .mapWith(usagePackAllocations.updatedAt)
+      .as("updatedAt"),
+  };
+}
+
+function acceptedPurchaseForAssignment(
+  purchase: UsagePackInvitationPurchaseRow | undefined,
+  args: UsagePackInvitationAcceptanceArgs,
+): UsagePackInvitationPurchaseRow | null {
+  if (!purchase || purchase.status === "accepted") {
+    return null;
+  }
+  if (ACCEPTANCE_IN_PROGRESS_STATUSES.has(purchase.status)) {
+    if (purchase.acceptedUserId !== args.userId) {
+      throw new Error("Invitation acceptance resolved a different user");
+    }
+    return null;
+  }
+  if (!ACCEPTABLE_INVITATION_PURCHASE_STATUSES.has(purchase.status)) {
+    return null;
+  }
+  if (
+    args.invitationId &&
+    purchase.clerkInvitationId &&
+    purchase.clerkInvitationId !== args.invitationId
+  ) {
+    throw new Error("Accepted Clerk invitation does not match its purchase");
+  }
+  return purchase;
+}
+
+function invitationAllocationAssignmentValues(userId: string) {
+  return {
+    userId,
+    invitationId: null,
+    status: "paid_pending_invitation" as const,
+    updatedAt: nowDate(),
+  };
+}
+
 const recordInvitationAcceptance$ = command(
   async (
-    { set },
+    { get, set },
     candidate: UsagePackInvitationPurchaseRow,
     args: UsagePackInvitationAcceptanceArgs,
     signal?: AbortSignal,
   ): Promise<void> => {
     signal?.throwIfAborted();
+    const [current] = await get(db$)
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, candidate.id))
+      .limit(1);
+    signal?.throwIfAborted();
+    const purchase = acceptedPurchaseForAssignment(current, args);
+    if (!purchase) {
+      return;
+    }
+    const assignment = invitationAllocationAssignmentValues(args.userId);
+    const recording = {
+      allocationId: purchase.allocationId ?? sql`gen_random_uuid()`,
+      ...(args.invitationId ? { clerkInvitationId: args.invitationId } : {}),
+      acceptedUserId: args.userId,
+      acceptedAt: args.acceptedAt,
+      status: "accepted_pending_activation" as const,
+      updatedAt: nowDate(),
+    };
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0283; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // Assignment and the status-conditional purchase publication share one
-      // transaction. A lost publication rolls back the assignment.
-      const [purchase] = await tx
-        .select()
-        .from(usagePackInvitationPurchases)
-        .where(eq(usagePackInvitationPurchases.id, candidate.id))
-        .limit(1);
-      if (!purchase || purchase.status === "accepted") {
-        return;
-      }
-      if (ACCEPTANCE_IN_PROGRESS_STATUSES.has(purchase.status)) {
-        if (purchase.acceptedUserId !== args.userId) {
-          throw new Error("Invitation acceptance resolved a different user");
-        }
-        return;
-      }
-      if (!ACCEPTABLE_INVITATION_PURCHASE_STATUSES.has(purchase.status)) {
-        return;
-      }
-      if (
-        args.invitationId &&
-        purchase.clerkInvitationId &&
-        purchase.clerkInvitationId !== args.invitationId
-      ) {
-        throw new Error(
-          "Accepted Clerk invitation does not match its purchase",
-        );
-      }
-      let allocationId = purchase.allocationId;
-      if (!allocationId) {
-        const [inserted] = await tx
-          .insert(usagePackAllocations)
-          .values({
-            usagePackSubscriptionId: purchase.usagePackSubscriptionId,
-            orgId: purchase.orgId,
-            userId: args.invitationId ? null : args.userId,
-            invitationId: args.invitationId ?? null,
-            usagePackUsd: purchase.usagePackUsd,
-            stripePriceId: purchase.stripePriceId,
-            status: "paid_pending_invitation",
-            currentPeriodStart: purchase.currentPeriodStart,
-            currentPeriodEnd: purchase.currentPeriodEnd,
-          })
-          .returning({ id: usagePackAllocations.id });
-        if (!inserted) {
-          throw new Error("Failed to recover accepted invitation allocation");
-        }
-        allocationId = inserted.id;
-      }
-      const [assigned] = await tx
-        .update(usagePackAllocations)
-        .set({
-          userId: args.userId,
-          invitationId: null,
-          status: "paid_pending_invitation",
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(usagePackAllocations.id, allocationId),
-            inArray(usagePackAllocations.status, [
-              "paid_pending_invitation",
-              "pending_invitation",
-              "active",
-            ]),
-            or(
-              isNull(usagePackAllocations.userId),
-              eq(usagePackAllocations.userId, args.userId),
-            ),
-          ),
-        )
-        .returning({ id: usagePackAllocations.id });
-      if (!assigned) {
-        throw new Error(
-          "Invitation allocation was retired or reassigned before acceptance",
-        );
-      }
-      const [recorded] = await tx
+    // The original purchase id/status transition owns the allocation write.
+    // A root loser writes neither an assignment nor a recovered allocation.
+    const recorded = db.$with("recorded_invitation_acceptance").as(
+      db
         .update(usagePackInvitationPurchases)
-        .set({
-          allocationId,
-          ...(args.invitationId
-            ? { clerkInvitationId: args.invitationId }
-            : {}),
-          acceptedUserId: args.userId,
-          acceptedAt: args.acceptedAt,
-          status: "accepted_pending_activation",
-          updatedAt: nowDate(),
-        })
+        .set(recording)
         .where(
           and(
             eq(usagePackInvitationPurchases.id, purchase.id),
             eq(usagePackInvitationPurchases.status, purchase.status),
           ),
         )
-        .returning({ id: usagePackInvitationPurchases.id });
-      if (!recorded) {
-        // Roll back the allocation assignment; the purchase moved on.
-        throw new Error("Invitation purchase changed during acceptance");
+        .returning({
+          id: usagePackInvitationPurchases.id,
+          allocationId: usagePackInvitationPurchases.allocationId,
+        }),
+    );
+    const assigned = db.$with("assigned_invitation_allocation").as(
+      purchase.allocationId
+        ? db
+            .update(usagePackAllocations)
+            .set(assignment)
+            .from(recorded)
+            .where(
+              and(
+                eq(usagePackAllocations.id, recorded.allocationId),
+                inArray(usagePackAllocations.status, [
+                  "paid_pending_invitation",
+                  "pending_invitation",
+                  "active",
+                ]),
+                or(
+                  isNull(usagePackAllocations.userId),
+                  eq(usagePackAllocations.userId, args.userId),
+                ),
+              ),
+            )
+            .returning({ id: usagePackAllocations.id })
+        : db
+            .insert(usagePackAllocations)
+            .select(
+              db
+                .select(
+                  recoveredAcceptedAllocationSource(
+                    purchase,
+                    args.userId,
+                    sql`${recorded.allocationId}`,
+                    assignment.updatedAt,
+                  ),
+                )
+                .from(recorded)
+                .where(
+                  args.invitationId
+                    ? notExists(
+                        db
+                          .select({ id: usagePackAllocations.id })
+                          .from(usagePackAllocations)
+                          .where(
+                            and(
+                              eq(usagePackAllocations.orgId, purchase.orgId),
+                              eq(
+                                usagePackAllocations.invitationId,
+                                args.invitationId,
+                              ),
+                              ne(usagePackAllocations.status, "inactive"),
+                            ),
+                          ),
+                      )
+                    : undefined,
+                ),
+            )
+            .returning({ id: usagePackAllocations.id }),
+    );
+    signal?.throwIfAborted();
+    const result = await settle(
+      db
+        .with(recorded, assigned)
+        .select({
+          id: recorded.id,
+          // An assignment loser must abort the entire statement, including the
+          // purchase update. Checking only after commit would leave partial state.
+          assigned:
+            sql`1 / CASE WHEN ${exists(db.select({ id: assigned.id }).from(assigned))} THEN 1 ELSE 0 END`
+              .mapWith(pgIntegerDecoder)
+              .as("assigned"),
+        })
+        .from(recorded),
+    );
+    signal?.throwIfAborted();
+    if (!result.ok) {
+      if (safeSqlStateCode(result.error) === "22012") {
+        throw new Error(
+          "Invitation allocation was retired or reassigned before acceptance",
+        );
       }
-    });
+      throw result.error;
+    }
+    if (result.value.length !== 1) {
+      throw new Error("Invitation purchase changed during acceptance");
+    }
   },
 );
 

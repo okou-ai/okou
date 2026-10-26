@@ -345,7 +345,6 @@ function createTemplateCardSignals() {
 function createTemplatePickerFocusSignals(
   dialog: ReturnType<typeof createTemplatePickerDialogSignals>,
   previews: ReturnType<typeof createPresentationTemplatePreviewSignals>,
-  imported: ReturnType<typeof createImportedPresentationTemplateSignals>,
 ) {
   const pendingPreviewTriggerId$ = state<string | null>(null);
   const closeOpenedTemplate$ = command(({ get, set }) => {
@@ -355,14 +354,6 @@ function createTemplatePickerFocusSignals(
       templateId === null ? null : `built-in:${templateId}`,
     );
     set(previews.closeOpenedTemplate$);
-  });
-  const closeImportedPresentationTemplatePreview$ = command(({ get, set }) => {
-    const templateId = get(imported.importedPresentationTemplatePreviewId$);
-    set(
-      pendingPreviewTriggerId$,
-      templateId === null ? null : `imported:${templateId}`,
-    );
-    set(imported.closeImportedPresentationTemplatePreview$);
   });
   const restoreTemplatePreviewTriggerRef$ = onRef<HTMLButtonElement>(
     command(({ get, set }, element: HTMLButtonElement) => {
@@ -386,7 +377,6 @@ function createTemplatePickerFocusSignals(
   });
   return {
     closeOpenedTemplate$,
-    closeImportedPresentationTemplatePreview$,
     restoreTemplatePreviewTriggerRef$,
     focusTemplatePreviewRef$,
     completeTemplatePickerClose$,
@@ -401,19 +391,6 @@ export function createComposerUiSignals() {
   const previews = createPresentationTemplatePreviewSignals();
   const importedPresentationTemplates =
     createImportedPresentationTemplateSignals();
-  const importedPresentationTemplatePickerItems$ = computed((get) => {
-    if (
-      get(list.signals.selectedTemplatePickerCategory$) !== "slides" &&
-      get(
-        importedPresentationTemplates.importedPresentationTemplatePreviewId$,
-      ) === null
-    ) {
-      return [];
-    }
-    return get(
-      importedPresentationTemplates.importedPresentationTemplatePickerItems$,
-    );
-  });
 
   return {
     model: basic.model,
@@ -429,12 +406,7 @@ export function createComposerUiSignals() {
       ...cards.signals,
       ...previews,
       ...importedPresentationTemplates,
-      importedPresentationTemplatePickerItems$,
-      ...createTemplatePickerFocusSignals(
-        dialog,
-        previews,
-        importedPresentationTemplates,
-      ),
+      ...createTemplatePickerFocusSignals(dialog, previews),
     },
   };
 }

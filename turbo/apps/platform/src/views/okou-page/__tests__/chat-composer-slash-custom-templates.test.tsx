@@ -4,7 +4,6 @@ import {
   type UserTemplateCatalogEntry,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
@@ -70,17 +69,10 @@ function button(name: string, container: ParentNode = document.body) {
   return result;
 }
 
-async function openSlashMenu(
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-  path = `/agents/${AGENT_ID}/chat`,
-) {
+async function openSlashMenu(path = `/agents/${AGENT_ID}/chat`) {
   await setupPage({
     context,
     path,
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: true,
-      ...featureSwitches,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Keep my brief /");
@@ -130,7 +122,7 @@ test.each(CATEGORIES)(
         shared,
       ]);
     });
-    const { menu, editor } = await openSlashMenu({}, path);
+    const { menu, editor } = await openSlashMenu(path);
     await userEvent.setup().hover(button(category, menu));
     const pane = await within(menu).findByRole("region", { name: category });
     await within(pane).findByText(own.title);
@@ -160,24 +152,6 @@ test.each(CATEGORIES)(
     });
   },
 );
-
-test("Disabling custom templates preserves the built-in slash catalog", async () => {
-  mockTemplateChat();
-  context.mocks.api(userTemplatesContract.list, () => {
-    throw new Error("A disabled slash custom catalog must not be requested");
-  });
-  const { menu } = await openSlashMenu({
-    [FeatureSwitchKey.CustomTemplates]: false,
-  });
-  await userEvent.setup().hover(button("Presentation", menu));
-  const pane = await within(menu).findByRole("region", {
-    name: "Presentation",
-  });
-  expect(
-    within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),
-  ).toBeInTheDocument();
-  expect(button("Document", menu)).toBeInTheDocument();
-});
 
 test("The Document row opens the document template picker", async () => {
   mockTemplateChat();

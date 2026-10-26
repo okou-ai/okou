@@ -29,6 +29,10 @@ export function HostedSiteAccessCard({
   const pageSignal = useGet(pageSignal$);
   const [switching, switchAccount] = useLoadableSet(openClerkAddAccount$);
   const title = hostedSiteAccessTitle(reason);
+  const showAuthorizationLink =
+    reason === "authenticate" ||
+    reason === "expired" ||
+    (reason === "denied" && !user);
   const description =
     reason === "authenticate"
       ? user
@@ -74,33 +78,21 @@ export function HostedSiteAccessCard({
             : undefined
         }
       >
-        {target && (
+        {target && showAuthorizationLink && (
           <a
-            href={
-              reason === "unavailable"
-                ? target.href
-                : hostedSiteSignInUrl(target)
-            }
+            href={hostedSiteSignInUrl(target)}
             className={buttonVariants({
               variant: user ? "outline" : "default",
             })}
           >
-            {!user && reason !== "unavailable" && <LogIn aria-hidden />}
-            {reason === "unavailable"
+            {!user && <LogIn aria-hidden />}
+            {user
               ? t(($) => {
-                  return $.artifacts.access.tryAgain;
+                  return $.artifacts.access.continue;
                 })
-              : !user
-                ? t(($) => {
-                    return $.artifacts.access.signIn;
-                  })
-                : reason === "denied"
-                  ? t(($) => {
-                      return $.artifacts.access.tryAgain;
-                    })
-                  : t(($) => {
-                      return $.artifacts.access.continue;
-                    })}
+              : t(($) => {
+                  return $.artifacts.access.signIn;
+                })}
           </a>
         )}
         {user && reason !== "unavailable" && (

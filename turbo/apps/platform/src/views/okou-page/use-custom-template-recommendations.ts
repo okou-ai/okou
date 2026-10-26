@@ -1,7 +1,5 @@
 import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable } from "ccstate-react";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { projectCustomTemplate$ } from "../../signals/okou-page/custom-template-library.ts";
 
@@ -12,8 +10,7 @@ export function useCustomTemplateRecommendations(
 ) {
   const catalog = useLastLoadable(signals.taskChips.customTemplates$);
   const project = useGet(projectCustomTemplate$);
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates];
-  if (!enabled || catalog.state !== "hasData") {
+  if (catalog.state !== "hasData") {
     return [];
   }
   return catalog.data.flatMap((template) => {

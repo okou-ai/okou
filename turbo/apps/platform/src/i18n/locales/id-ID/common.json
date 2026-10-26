@@ -678,7 +678,6 @@
       "previewSlide": "Pratinjau slide {{slideNumber}}",
       "previewWebsite": "Pratinjau template website {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
-      "renameImportedTemplate": "Ganti nama templat",
       "searchConnector": "Cari templat",
       "searchConnectors": "Cari templat",
       "selectStyle": "Pilih gaya {{style}}",
@@ -717,9 +716,7 @@
       "use": "Gunakan",
       "useThisTemplate": "Gunakan template ini",
       "visibility": {
-        "changeLabel": "Ubah visibilitas templat",
-        "privateState": "Hanya Anda yang dapat melihat dan menggunakannya",
-        "workspaceState": "Siapa pun di ruang kerja ini dapat menggunakannya"
+        "changeLabel": "Ubah visibilitas templat"
       },
       "website": "Website",
       "websitePreview": "pratinjau template website {{title}}",
@@ -2918,15 +2915,12 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
-      "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
-      "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",
       "previewWorkflow": "Pratinjau template alur kerja {{title}}",
       "removeTemplate": "Hapus template {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
-      "removeWorkflow": "Hapus template alur kerja {{title}}",
-      "retry": "Coba lagi"
+      "removeWorkflow": "Hapus template alur kerja {{title}}"
     },
     "thread": {
       "ariaLabel": "Thread chat",

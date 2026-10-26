@@ -168,19 +168,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.CustomTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Custom templates",
-    description:
-      "Templates compiled from uploaded files, available in their own catalog and the composer slash menu.",
-    enabled: true,
-    // Retain the staff and maintainer rollout for a global-default rollback.
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    // Kept beside the org so the maintainer keeps the feature while signed
-    // into a customer workspace, where the org hash does not apply.
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
     description:
@@ -479,12 +466,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.GoogleDocsSheetsConversion]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Create editable Google Docs and Sheets from document and spreadsheet previews, preserving CSV and TSV fields as text.",
-    enabled: true,
   },
 };
 
