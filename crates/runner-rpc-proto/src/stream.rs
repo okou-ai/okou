@@ -18,6 +18,8 @@ pub const MAX_STREAM_BYTES: u64 = 1024 * 1024 * 1024;
 pub const MAX_STREAM_FRAMES: u32 = 65_536;
 pub const MAX_DURATION_MS: u64 = 15 * 60 * 1000;
 
+pub mod messages;
+
 pub enum Frame {
     Data(Vec<u8>),
     End,

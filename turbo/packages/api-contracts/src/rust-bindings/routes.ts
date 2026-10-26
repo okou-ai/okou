@@ -1,6 +1,7 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
+import { runnerBrowserContract } from "../contracts/runner-browser";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
 import {
   runnersCancellationContract,
@@ -34,6 +35,13 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
+  ...(["control", "connection"] as const).map((action) => {
+    return {
+      route: runnerBrowserContract[action],
+      rustModulePath: ["runners", "runs", "by_run_id", "browser", action],
+      rustConstName: action.toUpperCase(),
+    };
+  }),
   {
     route: runnersRunStartupContract.setStartup,
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],

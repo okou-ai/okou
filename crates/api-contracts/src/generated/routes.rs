@@ -97,6 +97,75 @@ pub mod runners {
     pub mod runs {
         /// Generated route bindings under `runners::runs::by_run_id`.
         pub mod by_run_id {
+            /// Generated route bindings under `runners::runs::by_run_id::browser`.
+            pub mod browser {
+                /// Generated route bindings under `runners::runs::by_run_id::browser::connection`.
+                pub mod connection {
+                    /// Resolve an exact live Browser connection for the official Runner.
+                    /// Route contract: `POST /api/runners/runs/:runId/browser/connection`.
+                    pub const CONNECTION: crate::RouteTemplate = crate::RouteTemplate {
+                        method: crate::Method::Post,
+                        path: "/api/runners/runs/:runId/browser/connection",
+                    };
+
+                    /// Path parameters for `POST /api/runners/runs/:runId/browser/connection`.
+                    #[derive(Debug, Clone, Copy)]
+                    pub struct Params<'a> {
+                        /// Value for the `:runId` path parameter.
+                        pub run_id: &'a str,
+                    }
+
+                    /// Build the concrete path for `POST /api/runners/runs/:runId/browser/connection`.
+                    /// Percent-encodes each path parameter as a URL path segment.
+                    #[must_use]
+                    pub fn path(params: Params<'_>) -> String {
+                        format!(
+                            "/api/runners/runs/{}/browser/connection",
+                            crate::route::encode_path_segment(params.run_id),
+                        )
+                    }
+
+                    /// Build a resolved route for `POST /api/runners/runs/:runId/browser/connection`.
+                    #[must_use]
+                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                        crate::ResolvedRoute::new(CONNECTION.method, path(params))
+                    }
+                }
+
+                /// Generated route bindings under `runners::runs::by_run_id::browser::control`.
+                pub mod control {
+                    /// Control exact Browser lifetimes from the current official Runner.
+                    /// Route contract: `POST /api/runners/runs/:runId/browser/control`.
+                    pub const CONTROL: crate::RouteTemplate = crate::RouteTemplate {
+                        method: crate::Method::Post,
+                        path: "/api/runners/runs/:runId/browser/control",
+                    };
+
+                    /// Path parameters for `POST /api/runners/runs/:runId/browser/control`.
+                    #[derive(Debug, Clone, Copy)]
+                    pub struct Params<'a> {
+                        /// Value for the `:runId` path parameter.
+                        pub run_id: &'a str,
+                    }
+
+                    /// Build the concrete path for `POST /api/runners/runs/:runId/browser/control`.
+                    /// Percent-encodes each path parameter as a URL path segment.
+                    #[must_use]
+                    pub fn path(params: Params<'_>) -> String {
+                        format!(
+                            "/api/runners/runs/{}/browser/control",
+                            crate::route::encode_path_segment(params.run_id),
+                        )
+                    }
+
+                    /// Build a resolved route for `POST /api/runners/runs/:runId/browser/control`.
+                    #[must_use]
+                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                        crate::ResolvedRoute::new(CONTROL.method, path(params))
+                    }
+                }
+            }
+
             /// Generated route bindings under `runners::runs::by_run_id::cancellation`.
             pub mod cancellation {
                 /// Read the stop intent or confirmed absence of a claimed Run.

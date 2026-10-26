@@ -168,14 +168,14 @@ after any event. Once transmission is attempted, missing replies or transport
 failures are conservatively `unknown`: absence of events proves nothing about
 effects. The helper never reconnects or retries.
 
-The total helper budget is 60 seconds over stdin, connect, request/response I/O
+The ordinary helper budget is 60 seconds over stdin, connect, request/response I/O
 and stdout, with the last 100 ms reserved for terminal reporting. Failed or
 cancelled partial stdout writes exit unsuccessfully without appending a corrupt
 replacement terminal. A broken pipe cannot guarantee terminal delivery.
 
 After stdin and connect, the bundled helper adds internal `remaining_ms` metadata
 to the wire envelope. Callers cannot supply that field, including null. The host
-clamps it to 60 seconds, includes request reading in that budget, and reserves
+clamps ordinary methods to 60 seconds, includes request reading in that budget, and reserves
 the final second for its terminal response. The metadata is an untrusted deadline
 hint, never authority. It contains no method-specific data. Helper and official
 Runner ship together; no fallback or protocol negotiation is added.
@@ -192,7 +192,7 @@ SSH handlers return `unavailable` with `not_dispatched`.
 
 The shared owner admits at most eight requests per Run and moves each stream and
 capacity permit into its consumer. Request reading has the existing 60-second
-setup budget; validated SSH file methods retain their longer method-owned budget.
+setup budget; validated long-running methods retain their method-owned budget.
 SSH authorization, session pruning, retained host-work capacity, and diagnostic
 reporting remain with SSH. Run cancellation/Drop synchronously closes its consumers;
 normal shutdown joins dispatched requests before session cleanup. A common native
@@ -289,7 +289,7 @@ Runner's assignment-bound usage handler and its protocol tests.
 `/usr/local/bin/runner-rpc-client --stream` provides bounded binary transport.
 The `ssh.file.upload` / `ssh.file.download` consumers own Runner-side SFTP and
 CLI file semantics.
-Only validated file methods extend the Runner request lifetime; unknown methods
+Validated file methods and the Browser stream own their longer request lifetimes; unknown methods
 are rejected before resolving authority. Existing exec, session and no-argument
 helper contracts are unchanged.
 
@@ -341,12 +341,26 @@ must therefore verify its own input End, expected size and completion before
 reporting success; the helper cannot establish those business facts.
 
 All input, connect, socket and stdout work belongs to the helper's one deadline.
-The streaming budget does not extend existing methods: current handlers still
-clamp their deadline to 60 seconds. New long-running handlers must clamp the
+The streaming hint does not extend an ordinary method: its handler still
+clamps its deadline to 60 seconds. Long-running handlers must clamp the
 untrusted hint, enforce their own admission limits, and observe exact current
 Run/lifecycle cancellation throughout. Splitting I/O does not release the owned
 GuestRpcStream or its park reservation; retain it through live guest I/O, and
 retain separate host-work permits until cleanup actually completes.
+
+An explicitly validated continuous consumer may select a longer method-owned
+budget without increasing ordinary RPC or file-transfer defaults. The Browser
+adapter uses one `browser.cdp` operation for each Guest-loopback WebSocket and
+the existing Browser maximum lifetime as its transport ceiling. Current Run,
+Guest and Browser cancellation/expiry can end it earlier; an idle socket does
+not renew the Browser lease. The adapter and handler retain the same byte,
+frame-count, backpressure and unique-terminal/EOF bounds. Complete messages
+inside Data use bounded length prefixes, so one message can span Data frames.
+This stream retains its normal-operation reservation while attached; executor
+teardown joins RPC before post-Run collection and parking. It adds no public
+listener or authentication protocol. Existing `--stream` remains fifteen minutes;
+the dedicated `--browser-cdp` mode selects only the Browser operation and fixed
+host destination.
 
 Failed/cancelled partial frame I/O poisons the reader/writer. Never resume it or
 append a replacement terminal to partially written stdout. Locally rejected

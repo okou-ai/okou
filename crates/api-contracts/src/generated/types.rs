@@ -25,6 +25,320 @@ pub mod runners {
         Cold,
     }
 
+    /// Existing private Runner Browser ownership and connection DTOs.
+    pub mod browser {
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ConnectionRequestRunnerIdentity {
+            /// Existing runnerId field.
+            pub runner_id: String,
+            /// Existing heartbeatGeneration field.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ConnectionRequest {
+            /// Existing runnerIdentity field.
+            pub runner_identity: ConnectionRequestRunnerIdentity,
+            /// Existing instanceId field.
+            pub instance_id: String,
+            /// Existing primaryWindowId field.
+            pub primary_window_id: u64,
+            /// Existing providerSessionId field.
+            pub provider_session_id: String,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ConnectionResponseAcceptedConnection {
+            /// Existing instanceId field.
+            pub instance_id: String,
+            /// Existing primaryWindowId field.
+            pub primary_window_id: u64,
+            /// Existing providerSessionId field.
+            pub provider_session_id: String,
+            /// Existing chatThreadId field.
+            pub chat_thread_id: String,
+            /// Existing cdpUrl field.
+            pub cdp_url: String,
+            /// Existing expiresAt field.
+            pub expires_at: u64,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        pub enum ConnectionResponse {
+            /// Existing accepted outcome.
+            Accepted {
+                /// Existing connection field.
+                connection: ConnectionResponseAcceptedConnection,
+            },
+            /// Existing unavailable outcome.
+            Unavailable,
+        }
+
+        impl<'de> serde::Deserialize<'de> for ConnectionResponse {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "accepted")]
+                    Accepted,
+                    #[serde(rename = "unavailable")]
+                    Unavailable,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "outcome")]
+                    Outcome,
+                    #[serde(rename = "connection")]
+                    Connection,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ConnectionResponse;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut connection = None::<ConnectionResponseAcceptedConnection>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::Connection => {
+                                    if connection.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    connection = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, connection) {
+                            (Some(Kind::Accepted), Some(connection)) => {
+                                Ok(ConnectionResponse::Accepted { connection })
+                            }
+                            (Some(Kind::Unavailable), None) => Ok(ConnectionResponse::Unavailable),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ControlRequestRunnerIdentity {
+            /// Existing runnerId field.
+            pub runner_id: String,
+            /// Existing heartbeatGeneration field.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ControlRequestActionRetireReason {
+            /// Existing expired outcome.
+            #[serde(rename = "expired")]
+            Expired,
+            /// Existing closed outcome.
+            #[serde(rename = "closed")]
+            Closed,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "kind", rename_all_fields = "camelCase")]
+        pub enum ControlRequestAction {
+            /// Existing inspect outcome.
+            #[serde(rename = "inspect")]
+            Inspect {
+                /// Existing instanceId field.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                instance_id: Option<String>,
+            },
+            /// Existing authorize outcome.
+            #[serde(rename = "authorize")]
+            Authorize {
+                /// Existing instanceId field.
+                instance_id: String,
+                /// Existing primaryWindowId field.
+                primary_window_id: u64,
+                /// Existing providerSessionId field.
+                provider_session_id: String,
+            },
+            /// Existing allocate outcome.
+            #[serde(rename = "allocate")]
+            Allocate,
+            /// Existing publish outcome.
+            #[serde(rename = "publish")]
+            Publish {
+                /// Existing instanceId field.
+                instance_id: String,
+                /// Existing providerSessionId field.
+                provider_session_id: String,
+                /// Existing timeoutAt field.
+                timeout_at: String,
+            },
+            /// Existing admit outcome.
+            #[serde(rename = "admit")]
+            Admit {
+                /// Existing instanceId field.
+                instance_id: String,
+                /// Existing primaryWindowId field.
+                primary_window_id: u64,
+            },
+            /// Existing renew outcome.
+            #[serde(rename = "renew")]
+            Renew {
+                /// Existing instanceId field.
+                instance_id: String,
+                /// Existing primaryWindowId field.
+                primary_window_id: u64,
+            },
+            /// Existing retire outcome.
+            #[serde(rename = "retire")]
+            Retire {
+                /// Existing instanceId field.
+                instance_id: String,
+                /// Existing primaryWindowId field.
+                primary_window_id: u64,
+                /// Existing reason field.
+                reason: ControlRequestActionRetireReason,
+            },
+            /// Existing completeWindowClose outcome.
+            #[serde(rename = "completeWindowClose")]
+            CompleteWindowClose {
+                /// Existing instanceId field.
+                instance_id: String,
+                /// Existing primaryWindowId field.
+                primary_window_id: u64,
+            },
+            /// Existing beginStop outcome.
+            #[serde(rename = "beginStop")]
+            BeginStop {
+                /// Existing instanceId field.
+                instance_id: String,
+            },
+            /// Existing completeStop outcome.
+            #[serde(rename = "completeStop")]
+            CompleteStop {
+                /// Existing instanceId field.
+                instance_id: String,
+            },
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ControlRequest {
+            /// Existing runnerIdentity field.
+            pub runner_identity: ControlRequestRunnerIdentity,
+            /// Existing action field.
+            pub action: ControlRequestAction,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ControlResponseAcceptedInstanceStatus {
+            /// Existing creating outcome.
+            #[serde(rename = "creating")]
+            Creating,
+            /// Existing active outcome.
+            #[serde(rename = "active")]
+            Active,
+            /// Existing stopping outcome.
+            #[serde(rename = "stopping")]
+            Stopping,
+            /// Existing stopped outcome.
+            #[serde(rename = "stopped")]
+            Stopped,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ControlResponseAcceptedInstanceWindowState {
+            /// Existing active outcome.
+            #[serde(rename = "active")]
+            Active,
+            /// Existing closing outcome.
+            #[serde(rename = "closing")]
+            Closing,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ControlResponseAcceptedInstanceWindow {
+            /// Existing chatThreadId field.
+            pub chat_thread_id: String,
+            /// Existing state field.
+            pub state: ControlResponseAcceptedInstanceWindowState,
+            /// Existing expiresAt field.
+            pub expires_at: u64,
+            /// Existing primaryWindowId field.
+            pub primary_window_id: u64,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ControlResponseAcceptedInstance {
+            /// Existing id field.
+            pub id: String,
+            /// Existing ownerProfileId field.
+            pub owner_profile_id: String,
+            /// Existing providerProfileId field.
+            pub provider_profile_id: String,
+            /// Existing providerSessionId field.
+            pub provider_session_id: Option<String>,
+            /// Existing status field.
+            pub status: ControlResponseAcceptedInstanceStatus,
+            /// Existing creationExpiresAt field.
+            pub creation_expires_at: String,
+            /// Existing timeoutAt field.
+            pub timeout_at: String,
+            /// Existing window field.
+            pub window: Option<ControlResponseAcceptedInstanceWindow>,
+        }
+
+        /// Existing Browser contract; identities and deadlines are API-owned.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
+        pub enum ControlResponse {
+            /// Existing accepted outcome.
+            #[serde(rename = "accepted")]
+            Accepted {
+                /// Existing instance field.
+                instance: ControlResponseAcceptedInstance,
+            },
+            /// Existing unavailable outcome.
+            #[serde(rename = "unavailable")]
+            Unavailable,
+        }
+    }
+
     /// Run-scoped DTOs exchanged between runners, guests, and the API.
     pub mod runs {
         /// API-owned provider configuration forwarded to Codex in the sandbox.

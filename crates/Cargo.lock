@@ -4373,11 +4373,14 @@ dependencies = [
 name = "runner-rpc-client"
 version = "0.5.2"
 dependencies = [
+ "api-contracts",
+ "futures-util",
  "libc",
  "runner-rpc-proto",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

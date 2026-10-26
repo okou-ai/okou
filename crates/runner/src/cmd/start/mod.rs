@@ -695,7 +695,13 @@ async fn run_start_observed(
         None
     };
     let (usage_flush_tx, usage_flush_rx) = mpsc::channel(1);
-    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| {
+    let browser = if local_group_dir.is_none() {
+        crate::browser::BrowserRuntime::official(http.clone(), &server.token, runner_identity)
+            .map_err(|error| crate::error::RunnerError::Internal(error.to_string()))?
+    } else {
+        None
+    };
+    let guest_rpc = (ssh.is_some() || vnc.is_some() || browser.is_some()).then(|| {
         crate::guest_rpc::Runtime::new(
             ssh,
             vnc,
@@ -703,6 +709,7 @@ async fn run_start_observed(
                 crate::MitmUsageHandle::from(&mitm),
             )),
         )
+        .with_browser(browser)
     });
     let host_telemetry = if args.local {
         None

@@ -5,7 +5,7 @@ edition.workspace = true
 description = "Runner guest RPC, remote usage, SSH, Tailscale, and VNC services"
 
 [features]
-test-support = ["dep:http-body-util"]
+test-support = []
 
 [dependencies]
 ts_bart = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
@@ -27,7 +27,9 @@ ts_transport = { git = "https://github.com/tailscale/tailscale-rs", rev = "d3465
 ts_tunnel = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
 ipnet = { version = "2", default-features = false, features = ["std"] }
 ts_http_util = { git = "https://github.com/tailscale/tailscale-rs", rev = "d34658bbb2eb4593ae6df959aa93e9ee1e0457c6" }
-http-body-util = { version = "0.1", optional = true }
+http-body-util = "0.1"
+hyper = { workspace = true, features = ["client", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
 ably-subscriber.workspace = true
 api-contracts.workspace = true
 runner-host.workspace = true

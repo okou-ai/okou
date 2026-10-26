@@ -3,6 +3,12 @@
 //! These constants are shared TypeScript/Rust contract values.
 //! Token-shaped placeholder values in this module are fake marker bytes, not secrets.
 
+/// Existing Browser lifetime policy shared with the native bridge.
+pub mod browser {
+    /// Existing maximum provider lifetime, not a new CDP lease.
+    pub const BROWSER_PROVIDER_TIMEOUT_MINUTES: u64 = 240;
+}
+
 /// Client request contract constants shared by TypeScript and Rust.
 pub mod client {
     /// HTTP header names used to identify platform clients in API request logs.

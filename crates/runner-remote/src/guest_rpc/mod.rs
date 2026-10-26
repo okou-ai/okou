@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use runner_types::{ids::RunId, types::ExecutionContext};
 
-use crate::{native, run_usage, ssh, vnc};
+use crate::{browser, native, run_usage, ssh, vnc};
 
 const RUN_REQUEST_CAPACITY: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -36,6 +36,7 @@ pub struct Runtime {
     pub ssh: Option<Arc<ssh::SshRuntime>>,
     pub vnc: Option<Arc<vnc::VncRuntime>>,
     pub usage: Option<run_usage::Runtime>,
+    browser: Option<Arc<browser::BrowserRuntime>>,
 }
 
 impl runner_provider::AblySideMessageHandler for Runtime {
@@ -71,6 +72,7 @@ struct Consumers {
     ssh: Option<Arc<ssh::Run>>,
     vnc: Option<Arc<vnc::Run>>,
     usage: Option<Arc<run_usage::Run>>,
+    browser: Option<Arc<browser::BrowserRuntime>>,
     diagnostics: crate::diagnostics::Handle,
     authority: Option<Arc<crate::diagnostics::Authority>>,
 }
@@ -86,7 +88,13 @@ impl Runtime {
             ssh,
             vnc,
             usage,
+            browser: None,
         }
+    }
+
+    pub fn with_browser(mut self, browser: Option<Arc<browser::BrowserRuntime>>) -> Self {
+        self.browser = browser;
+        self
     }
 
     pub fn install(
@@ -183,6 +191,7 @@ impl Runtime {
                 ssh: task_ssh,
                 vnc: task_vnc,
                 usage,
+                browser: self.browser.clone(),
                 diagnostics: native.diagnostics.clone(),
                 authority,
             },
@@ -282,6 +291,7 @@ async fn dispatch(
         ssh,
         vnc,
         usage,
+        browser,
         diagnostics,
         authority,
     } = consumers;
@@ -394,6 +404,23 @@ async fn dispatch(
                 request,
             })
             .await;
+        } else {
+            scope.error(input, ErrorCode::Unavailable).await;
+        }
+    } else if request.method == "browser.cdp" {
+        if let Some(browser) = browser {
+            browser
+                .dispatch(Request {
+                    input,
+                    lease,
+                    run,
+                    started,
+                    deadline: scope.deadline,
+                    cancelled: scope.cancelled,
+                    sandbox_cancelled: scope.sandbox_cancelled,
+                    request,
+                })
+                .await;
         } else {
             scope.error(input, ErrorCode::Unavailable).await;
         }

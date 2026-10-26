@@ -32,7 +32,7 @@ use runner_lifecycle::home_mount;
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
-use runner_remote::{guest_rpc, run_usage, ssh, tailscale, vnc};
+use runner_remote::{browser, guest_rpc, run_usage, ssh, tailscale, vnc};
 use runner_storage::{r2_cache, storage_cache};
 
 #[cfg(test)]

@@ -2,11 +2,12 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
-    let streaming = match (args.next(), args.next()) {
-        (None, None) => false,
-        (Some(arg), None) if arg == "--stream" => true,
+    let mode = match (args.next(), args.next()) {
+        (None, None) => 0,
+        (Some(arg), None) if arg == "--stream" => 1,
+        (Some(arg), None) if arg == "--browser-cdp" => 2,
         _ => {
-            eprintln!("usage: runner-rpc-client [--stream]; provide one request on stdin");
+            eprintln!("usage: runner-rpc-client [--stream | --browser-cdp]");
             return ExitCode::FAILURE;
         }
     };
@@ -19,10 +20,10 @@ fn main() -> ExitCode {
     };
     let succeeded = runtime
         .block_on(async {
-            if streaming {
-                runner_rpc_client::stream::run().await
-            } else {
-                runner_rpc_client::run().await
+            match mode {
+                1 => runner_rpc_client::stream::run().await,
+                2 => runner_rpc_client::browser::run().await,
+                _ => runner_rpc_client::run().await,
             }
         })
         .unwrap_or(false);

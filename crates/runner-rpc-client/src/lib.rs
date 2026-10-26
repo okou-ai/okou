@@ -1,5 +1,6 @@
 //! One-shot guest helper. No shell, files, payload logs, or request replay.
 
+pub mod browser;
 pub mod stream;
 
 use std::future::Future;

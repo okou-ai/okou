@@ -22,6 +22,7 @@ import {
 } from "../contracts/webhooks";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
+import { browserTypeBindings } from "./browser-types";
 
 export interface RustTypeBinding {
   readonly schema: z.ZodType;
@@ -53,6 +54,10 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["runners", "browser"],
+    rustDoc: ["Existing private Runner Browser ownership and connection DTOs."],
+  },
   {
     rustModulePath: ["runners", "runs", "startup"],
     rustDoc: ["Run-authenticated actual sandbox startup reporting DTOs."],
@@ -213,6 +218,7 @@ export const rustTypeBindings = [
   },
   ...sshTypeBindings,
   ...vncTypeBindings,
+  ...browserTypeBindings,
   {
     schema: modelProviderCodexRuntimeConfigSchema,
     rustModulePath: ["runners", "runs"],
