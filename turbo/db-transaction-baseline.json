@@ -207,11 +207,6 @@
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
     },
     {
-      "id": "TX-0283",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "recordInvitationAcceptance$"
-    },
-    {
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
