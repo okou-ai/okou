@@ -231,10 +231,10 @@ impl HomeImageCache {
         }
         let tmp = paths.tmp_metadata(run_id);
         // Creation establishes custody before a write can fail partially.
-        if retained.is_none() {
-            *retained = Some(StagingFile::create(&tmp)?);
-        }
-        let pin = retained.as_ref().unwrap();
+        let pin = match retained {
+            Some(pin) => pin,
+            slot @ None => slot.insert(StagingFile::create(&tmp)?),
+        };
         #[cfg(test)]
         if self
             .inner

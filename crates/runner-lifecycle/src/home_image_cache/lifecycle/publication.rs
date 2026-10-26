@@ -229,25 +229,27 @@ impl HomeImageCache {
             );
             return Ok(HomeImagePromotionOutcome::PreservedExisting);
         }
-        if progress.source.is_none() {
-            progress.previous = current.clone();
-            let source = match PinnedImage::open(input.active_image, input.image_size_bytes) {
-                Ok(source) => source,
-                Err(error) => {
-                    info!(%error, "home publication source unavailable");
-                    self.observe_publication(
-                        &input,
-                        HomeObservationOutcome::Skipped,
-                        "source_unavailable",
-                        None,
-                        None,
-                    );
-                    return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                }
-            };
-            progress.source = Some(Arc::new(source));
-        }
-        let source = progress.source.as_ref().unwrap().clone();
+        let source = match &mut progress.source {
+            Some(source) => Arc::clone(source),
+            slot @ None => {
+                progress.previous = current.clone();
+                let source = match PinnedImage::open(input.active_image, input.image_size_bytes) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        info!(%error, "home publication source unavailable");
+                        self.observe_publication(
+                            &input,
+                            HomeObservationOutcome::Skipped,
+                            "source_unavailable",
+                            None,
+                            None,
+                        );
+                        return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+                    }
+                };
+                Arc::clone(slot.insert(Arc::new(source)))
+            }
+        };
         let destination = self.home_image_cache_fs_stats_path();
         let device = fs::metadata(&destination).await?.dev();
         // A retained Copy destination is an established transfer phase. A later
@@ -386,67 +388,73 @@ impl HomeImageCache {
                     .validate_path(&paths.metadata())?;
                 sync_directory(paths.entry_dir()).await?;
             } else {
-                if progress.image.is_none() {
-                    source.validate_path(input.active_image)?;
-                    self.ensure_home_cache_entry_dir(input.cache_key).await?;
-                    sync_directory(self.home_image_cache_dir()).await?;
-                    if let Some(parent) = self.home_image_cache_dir().parent() {
-                        sync_directory(parent).await?;
-                    }
-                    if fs::symlink_metadata(&candidate).await.is_ok()
-                        || (progress.copy_target.is_none()
-                            && fs::symlink_metadata(&staging).await.is_ok())
-                    {
-                        return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                    }
-                    let (pin, copied) = if copy_required {
-                        #[cfg(test)]
-                        if let Some(gate) = &self.publication_copy_test_gate {
-                            gate.enter_and_wait().await;
-                        }
-                        let pin = sparse_copy_pinned(
-                            &source,
-                            &staging,
-                            input.image_size_bytes,
-                            &mut progress.copy_target,
-                            || {
-                                #[cfg(test)]
-                                self.publication_fault(super::super::PublicationFault::BeforeCopy)?;
-                                Ok(())
-                            },
-                        )
-                        .await?;
+                let image = match &mut progress.image {
+                    Some(image) => image,
+                    slot @ None => {
                         source.validate_path(input.active_image)?;
-                        progress.copy_target = None;
-                        (Arc::new(pin), true)
-                    } else {
-                        match self.move_publication_source(input.active_image, &staging) {
-                            Ok(()) => (source.clone(), false),
-                            Err(error) if error.kind() == std::io::ErrorKind::CrossesDevices => {
-                                // The failed rename leaves the pinned source unmoved.
-                                drop(admission);
-                                source.validate_path(input.active_image)?;
-                                copy_required = true;
-                                continue;
-                            }
-                            Err(error) => {
-                                return Err(super::super::io_context::with_paths(
-                                    error,
-                                    "renameat2(RENAME_NOREPLACE)",
-                                    input.active_image,
-                                    &staging,
-                                )
-                                .into());
-                            }
+                        self.ensure_home_cache_entry_dir(input.cache_key).await?;
+                        sync_directory(self.home_image_cache_dir()).await?;
+                        if let Some(parent) = self.home_image_cache_dir().parent() {
+                            sync_directory(parent).await?;
                         }
-                    };
-                    progress.image = Some(PublicationImage {
-                        pin,
-                        copied,
-                        location: ImageLocation::Staging,
-                    });
-                }
-                let image = progress.image.as_mut().unwrap();
+                        if fs::symlink_metadata(&candidate).await.is_ok()
+                            || (progress.copy_target.is_none()
+                                && fs::symlink_metadata(&staging).await.is_ok())
+                        {
+                            return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+                        }
+                        let (pin, copied) = if copy_required {
+                            #[cfg(test)]
+                            if let Some(gate) = &self.publication_copy_test_gate {
+                                gate.enter_and_wait().await;
+                            }
+                            let pin = sparse_copy_pinned(
+                                &source,
+                                &staging,
+                                input.image_size_bytes,
+                                &mut progress.copy_target,
+                                || {
+                                    #[cfg(test)]
+                                    self.publication_fault(
+                                        super::super::PublicationFault::BeforeCopy,
+                                    )?;
+                                    Ok(())
+                                },
+                            )
+                            .await?;
+                            source.validate_path(input.active_image)?;
+                            progress.copy_target = None;
+                            (Arc::new(pin), true)
+                        } else {
+                            match self.move_publication_source(input.active_image, &staging) {
+                                Ok(()) => (source.clone(), false),
+                                Err(error)
+                                    if error.kind() == std::io::ErrorKind::CrossesDevices =>
+                                {
+                                    // The failed rename leaves the pinned source unmoved.
+                                    drop(admission);
+                                    source.validate_path(input.active_image)?;
+                                    copy_required = true;
+                                    continue;
+                                }
+                                Err(error) => {
+                                    return Err(super::super::io_context::with_paths(
+                                        error,
+                                        "renameat2(RENAME_NOREPLACE)",
+                                        input.active_image,
+                                        &staging,
+                                    )
+                                    .into());
+                                }
+                            }
+                        };
+                        slot.insert(PublicationImage {
+                            pin,
+                            copied,
+                            location: ImageLocation::Staging,
+                        })
+                    }
+                };
                 if image.location == ImageLocation::Staging {
                     image.pin.validate_path(&staging)?;
                     #[cfg(test)]

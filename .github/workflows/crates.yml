@@ -400,6 +400,11 @@ jobs:
           cd crates
           cargo fmt --all -- --check
 
+      - name: Lint runner-lifecycle production library
+        run: |
+          cd crates
+          cargo clippy --locked -p runner-lifecycle --lib -- -D warnings
+
       - name: Run clippy
         run: |
           cd crates
