@@ -64,7 +64,7 @@ fn drain_restart_override_path_at(root: &Path, unit: &RunnerServiceUnit) -> Path
     drain_restart_override_dir_at(root, unit).join(DRAIN_DROP_IN_FILE_NAME)
 }
 
-fn write_drain_restart_override_at(
+pub(super) fn write_drain_restart_override_at(
     root: &Path,
     unit: &RunnerServiceUnit,
 ) -> RunnerResult<DrainRestartOverrideWrite> {
@@ -91,7 +91,7 @@ fn write_drain_restart_override_at(
     Ok(outcome)
 }
 
-fn remove_drain_restart_override_at(
+pub(super) fn remove_drain_restart_override_at(
     root: &Path,
     unit: &RunnerServiceUnit,
 ) -> RunnerResult<DrainRestartOverrideRemoval> {
