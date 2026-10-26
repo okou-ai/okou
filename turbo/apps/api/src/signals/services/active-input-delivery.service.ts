@@ -22,7 +22,12 @@ import {
 } from "./active-input-prompt.service";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
 import { chatEventReplacementInsertSql } from "./chat-event.service";
-import { listPendingChatInputs } from "./chat-event-queue.service";
+import {
+  pendingChatInputsReadPlan,
+  pendingChatInputsFromRows,
+  revokedChatEventReadPlan,
+  revokedChatEventIdsFromRows,
+} from "./chat-event-queue.service";
 
 /*
  * Steering a pending input into a running sandbox run.
@@ -216,12 +221,34 @@ export const loadNextSteerableInput$ = command(
     }
     const afterSeqId = await set(steeringAnchorSeqId$, scope);
     signal.throwIfAborted();
-    const [next] = await listPendingChatInputs(db, {
+    const pendingInputArgs: Parameters<typeof pendingChatInputsReadPlan>[0] = {
       chatThreadId: scope.chatThreadId,
       eventTypes: ["input.prompt"],
       budgetForRunId: scope.runId,
       afterSeqId,
-    });
+    };
+    const [next] = await (async () => {
+      const read = pendingChatInputsReadPlan(pendingInputArgs);
+      const candidates = await db
+        .select(read.columns)
+        .from(read.from)
+        .where(read.where);
+      const eventIds = candidates.map(({ id }) => {
+        return id;
+      });
+      const revoked = await (async (): Promise<ReadonlySet<string>> => {
+        const read = revokedChatEventReadPlan(eventIds);
+        if (read === null) {
+          return new Set();
+        }
+        const rows = await db
+          .select(read.columns)
+          .from(read.from)
+          .where(read.where);
+        return revokedChatEventIdsFromRows(rows);
+      })();
+      return pendingChatInputsFromRows(candidates, revoked);
+    })();
     signal.throwIfAborted();
     if (!next) {
       return { outcome: "found", input: null };

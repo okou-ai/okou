@@ -134,13 +134,28 @@ export async function revokedChatEventIds(
   db: ChatQueueReadDb,
   eventIds: readonly string[],
 ): Promise<ReadonlySet<string>> {
-  if (eventIds.length === 0) {
+  const read = revokedChatEventReadPlan(eventIds);
+  if (read === null) {
     return new Set();
   }
-  const rows = await db
-    .select({ eventId: chatEvents.revokesEventId })
-    .from(chatEvents)
-    .where(inArray(chatEvents.revokesEventId, [...eventIds]));
+  const rows = await db.select(read.columns).from(read.from).where(read.where);
+  return revokedChatEventIdsFromRows(rows);
+}
+
+export function revokedChatEventReadPlan(eventIds: readonly string[]) {
+  if (eventIds.length === 0) {
+    return null;
+  }
+  return {
+    columns: { eventId: chatEvents.revokesEventId },
+    from: chatEvents,
+    where: inArray(chatEvents.revokesEventId, [...eventIds]),
+  };
+}
+
+export function revokedChatEventIdsFromRows(
+  rows: readonly { readonly eventId: string | null }[],
+): ReadonlySet<string> {
   return new Set(
     rows.flatMap(({ eventId }) => {
       return eventId === null ? [] : [eventId];
@@ -195,51 +210,50 @@ export interface PendingChatInput {
  * budget input that targets that run; `afterSeqId` keeps only queue input
  * positioned after that sequence, without excluding the run-targeted budget.
  */
-export async function listPendingChatInputs(
-  db: ChatQueueReadDb,
-  args: {
-    readonly chatThreadId: string;
-    readonly eventTypes: readonly ("input.prompt" | "input.automation")[];
-    readonly budgetForRunId?: string;
-    readonly afterSeqId?: number;
-  },
-): Promise<readonly PendingChatInput[]> {
-  const candidates = await db
-    .select({
+export function pendingChatInputsReadPlan(args: {
+  readonly chatThreadId: string;
+  readonly eventTypes: readonly ("input.prompt" | "input.automation")[];
+  readonly budgetForRunId?: string;
+  readonly afterSeqId?: number;
+}) {
+  return {
+    columns: {
       id: chatEvents.id,
       chatThreadId: chatEvents.chatThreadId,
       eventType: chatEvents.eventType,
       seqId: chatEvents.seqId,
       createdAt: chatEvents.createdAt,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        chatEventRunlessInputPredicate(chatEvents.runId, chatEvents.eventType),
-        or(
-          and(
-            inArray(chatEvents.eventType, [...args.eventTypes]),
-            args.afterSeqId === undefined
-              ? undefined
-              : gt(chatEvents.seqId, args.afterSeqId),
-          ),
-          args.budgetForRunId === undefined
+    },
+    from: chatEvents,
+    where: and(
+      eq(chatEvents.chatThreadId, args.chatThreadId),
+      chatEventRunlessInputPredicate(chatEvents.runId, chatEvents.eventType),
+      or(
+        and(
+          inArray(chatEvents.eventType, [...args.eventTypes]),
+          args.afterSeqId === undefined
             ? undefined
-            : and(
-                eq(chatEvents.eventType, "input.budget"),
-                eq(chatEvents.contextType, "agent_run"),
-                eq(chatEvents.contextId, args.budgetForRunId),
-              ),
+            : gt(chatEvents.seqId, args.afterSeqId),
         ),
+        args.budgetForRunId === undefined
+          ? undefined
+          : and(
+              eq(chatEvents.eventType, "input.budget"),
+              eq(chatEvents.contextType, "agent_run"),
+              eq(chatEvents.contextId, args.budgetForRunId),
+            ),
       ),
-    );
-  const revoked = await revokedChatEventIds(
-    db,
-    candidates.map(({ id }) => {
-      return id;
-    }),
-  );
+    ),
+  };
+}
+
+export function pendingChatInputsFromRows(
+  candidates: readonly Pick<
+    typeof chatEvents.$inferSelect,
+    "id" | "chatThreadId" | "eventType" | "seqId" | "createdAt"
+  >[],
+  revoked: ReadonlySet<string>,
+): readonly PendingChatInput[] {
   return candidates
     .flatMap((event): PendingChatInput[] => {
       if (
