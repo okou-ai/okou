@@ -179,6 +179,13 @@ class BuildCacheTests(unittest.TestCase):
             source["jobs"]["build-test"].get("name", "build-test"), "build-test"
         )
         for role, job in workflow["jobs"].items():
+            cache_writer = any(
+                step.get("uses", "").startswith(("actions/cache/save@", "actions/cache@"))
+                for step in job["steps"]
+            )
+            can_dispatch = job.get("permissions", {}).get("actions") == "write"
+            if role != "detect" and not cache_writer and not can_dispatch:
+                continue
             for ref in (
                 "refs/heads/main",
                 "refs/pull/1/merge",

@@ -18,6 +18,10 @@ on:
         description: Inspect native SwiftPM compiler cache support
         type: boolean
         default: false
+      package_cache_feasibility:
+        description: Exercise fresh package builds with native compiler caching
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,6 +37,25 @@ env:
   GIT_CONFIG_VALUE_0: HTTP/1.1
 
 jobs:
+  package-cache-feasibility:
+    if: github.event_name == 'workflow_dispatch' && inputs.package_cache_feasibility
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Qualify compiler replay with fresh build directories
+        run: python3 ops/ios-ci/package-cache-feasibility.py
+      - name: Retain package cache feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-cache-feasibility-${{ github.run_id }}
+          path: ${{ runner.temp }}/package-cache-feasibility
+          if-no-files-found: error
+          retention-days: 1
+
   package-compiler-probe:
     if: github.event_name == 'workflow_dispatch' && inputs.package_compiler_probe
     runs-on: xcode-27
