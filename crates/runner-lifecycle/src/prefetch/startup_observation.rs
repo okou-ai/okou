@@ -1,4 +1,4 @@
-//! Non-default test observation of the actual startup reader, not cache residency.
+//! Non-default observation of the unadmitted baseline reader, not cache residency.
 
 use std::io;
 use std::sync::{Arc, Mutex};
@@ -42,7 +42,7 @@ impl Observer {
 }
 
 impl MemoryPrefetchTasks {
-    /// Test-only evidence from `spawn`'s actual reader; never a physical-memory credit.
+    /// Evidence from `spawn`'s baseline reader; never a physical-memory credit.
     pub fn startup_snapshot(&self) -> io::Result<StartupPrefetchSnapshot> {
         self.startup_observer
             .as_ref()

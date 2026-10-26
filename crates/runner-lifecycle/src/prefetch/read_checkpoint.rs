@@ -16,7 +16,7 @@ impl MemoryPrefetchTasks {
         self.cancel.clone()
     }
 
-    /// The production startup coordinator and File loop, with a fixture checkpoint.
+    /// The unadmitted baseline coordinator and File loop, with a fixture checkpoint.
     pub fn spawn_with_read_checkpoint_for_test(
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,

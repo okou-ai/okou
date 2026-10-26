@@ -1,5 +1,9 @@
 # Guarded idle terminal fixture
 
+Unguarded startup-reader cases below retain a test-support-only experimental
+baseline. The admitting production startup performs no eager snapshot warming;
+guarded runtime installation and measured policy remain P4 acceptance gates.
+
 ## Original-file open-permission controls
 
 [The owned Linux permission gate](FILE_OPEN_PERMISSION.md) holds actual original
@@ -838,7 +842,7 @@ python3 crates/runner/tests/guarded_idle_native/read_revocation_report.py <p1-di
 ```
 
 This separate `native-read-revocation-report-v1` format does not change the prior
-paired-reader report. Production startup remains unguarded and P4 owns its
+paired-reader report. Production startup omits eager warming and P4 owns its
 installation/calibration/full-runtime/overlap gates. This witnessed stale window
 does not prove every transient/coalesced notification race, stalled storage,
 complete cold residency, useful memory relief or production OOM protection.
@@ -871,14 +875,14 @@ python3 crates/runner/tests/guarded_idle_native/shared_reads_report.py <p1-direc
 
 Ordinary Cargo runs the shared-headroom and independent-cancellation real-file
 regressions and the report's real-file/CLI refusal checks. This is component
-composition evidence: production startup still uses unguarded `spawn`.
+composition evidence; unguarded `spawn` is an experimental test-support baseline.
 Production startup/P2 installation, full/cold residency, calibration, unknown
 bootstrap provenance, broader failure/race coverage, useful memory savings and
 OOM protection retain their existing parent/P4 gates.
 
 ## Accepted actual snapshot-read cancellation
 
-`native_read_cancellation_retains_actual_io_through_drain` runs the production
+`native_read_cancellation_retains_actual_io_through_drain` runs the baseline
 startup and guarded runtime readers on the immutable original 4 GiB `memory.bin`,
 in fresh and matching-snapshot Guest factories. A non-default test-support
 checkpoint runs after the actual File reader returns its first 1 MiB. It holds
@@ -1114,10 +1118,10 @@ cancellation/late results and final parent reconciliation remain #40355. Startup
 stays unguarded; cold/full residency, calibrated envelopes, numerical relief,
 unknown template producer and production OOM protection remain unverified.
 
-## Production startup reader completion
+## Experimental startup reader completion
 
 `native_startup_records_complete_snapshot_reads_and_joined_owners` invokes the
-actual production `MemoryPrefetchTasks::spawn` entry on the original immutable
+test-support baseline `MemoryPrefetchTasks::spawn` entry on the original immutable
 4 GiB `memory.bin`, in fresh and matching-snapshot factories. A non-default
 Lifecycle test-support observer records the concrete reader outcomes. Exactly
 one complete read, all original bytes and a positive physical producer drain are
@@ -1141,8 +1145,8 @@ python3 crates/runner/tests/guarded_idle_native/startup_report.py "$P1_OUTPUT_DI
 
 Ordinary Cargo/default Crates CI runs the real-file/CLI refusal regressions through
 `native_startup_report_requires_complete_bytes_and_joined_producers`. The KVM/NBD
-entry remains explicitly ignored. Startup retains its existing unguarded
-production behavior; no startup P2 admission or production policy is installed.
+entry remains explicitly ignored. Its unguarded startup is a test-only baseline;
+production omits eager warming pending shared P2 admission and measured policy.
 Foreground/heartbeat/contention remains #40353, and accepted cancellation/late
 results and final parent reconciliation remain #40355 under delivery group #40297.
 Full cache residency, cold-cache behavior, numerical relief, calibrated envelopes,

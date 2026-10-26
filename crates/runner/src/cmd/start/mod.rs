@@ -546,22 +546,6 @@ async fn run_start_observed(
         }
     }
 
-    let memory_prefetch_candidates = resource_locks
-        .profile_paths()
-        .map(|(name, profile_paths)| {
-            let profile = runner_config.profiles.get(name).ok_or_else(|| {
-                RunnerError::Internal(format!(
-                    "missing runner profile for locked image artifacts {name}"
-                ))
-            })?;
-            Ok(prefetch::MemoryPrefetchCandidate {
-                path: profile_paths.snapshot_paths().memory(),
-                memory_mb: profile.memory_mb,
-            })
-        })
-        .collect::<RunnerResult<Vec<_>>>()?;
-    let memory_prefetch_budget_mb = u64::from(budget.effective_memory_mb().min(host_memory_mb));
-
     // Compute the smallest profile resources for budget pre-check.
     // When budget is exhausted for all profiles, we wait instead of polling.
     let min_vcpu = runner_config
@@ -798,12 +782,10 @@ async fn run_start_observed(
 
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
-    // Accept optional reads only after fallible root setup has completed. The
-    // concrete reactor handoff below gives its startup owner custody before
-    // another await; startup rollback and normal teardown both join real IO
-    // while the root's image and base-directory locks remain held.
-    let memory_prefetch =
-        prefetch::MemoryPrefetchTasks::spawn(memory_prefetch_candidates, memory_prefetch_budget_mb);
+    // Eager snapshot warming needs the shared physical-memory authority before
+    // it can start optional IO. Keep startup empty until that policy is installed;
+    // snapshot restore still demand-pages the same locked memory file.
+    let memory_prefetch = prefetch::MemoryPrefetchTasks::empty();
     let config = RunConfig {
         sandbox_op_reporter: host_telemetry
             .as_ref()

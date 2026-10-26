@@ -1,4 +1,4 @@
-//! Actual production startup reading beside a suppressed guarded runtime reader.
+//! Experimental unadmitted startup reading beside a suppressed guarded reader.
 
 use std::time::Duration;
 
@@ -157,7 +157,7 @@ pub async fn exercise(
         let tasks = startup.insert(MemoryPrefetchTasks::spawn(
             [MemoryPrefetchCandidate { path: original.clone(), memory_mb: 4096 }], 4096,
         ));
-        // This is the real unguarded production startup entry. Neither spawning
+        // This is the retained unadmitted startup baseline. Neither spawning
         // nor draining alone can establish a complete physical read.
         tasks.drain().await;
         let read = tasks.startup_snapshot()?;

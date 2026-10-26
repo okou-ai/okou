@@ -2,9 +2,12 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::Arc;
 
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinHandle;
+#[cfg(any(test, feature = "test-support"))]
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -48,58 +51,44 @@ pub struct MemoryPrefetchTasks {
 }
 
 impl MemoryPrefetchTasks {
+    /// Unadmitted reader retained only as an experimental baseline.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn spawn(
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,
     ) -> Self {
-        Self::spawn_startup(
-            candidates,
-            budget_mb,
-            #[cfg(any(test, feature = "test-support"))]
-            None,
-        )
+        Self::spawn_startup(candidates, budget_mb, None)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn spawn_startup(
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,
-        #[cfg(any(test, feature = "test-support"))] checkpoint: Option<PrefetchReadCheckpoint>,
+        checkpoint: Option<PrefetchReadCheckpoint>,
     ) -> Self {
-        #[cfg(any(test, feature = "test-support"))]
         let observer = startup_observation::Observer::default();
-        #[cfg(any(test, feature = "test-support"))]
         let worker_observer = observer.clone();
-        let tasks = Self::spawn_with(
+        let mut tasks = Self::spawn_with(
             candidates,
             budget_mb,
             MEMORY_PREFETCH_CONCURRENCY,
             move |path, max_bytes, cancel| {
-                #[cfg(any(test, feature = "test-support"))]
                 worker_observer.started();
                 let outcome = bounded::read(
                     path,
                     max_bytes,
                     || cancel.is_cancelled(),
-                    #[cfg(any(test, feature = "test-support"))]
                     checkpoint.as_ref(),
                 );
                 log_prefetch_outcome(path, &outcome);
-                #[cfg(any(test, feature = "test-support"))]
                 worker_observer.finished(&outcome);
-                #[cfg(not(any(test, feature = "test-support")))]
-                let _ = outcome;
             },
         );
-        #[cfg(any(test, feature = "test-support"))]
-        {
-            let mut tasks = tasks;
-            tasks.startup_observer = Some(observer);
-            tasks
-        }
-        #[cfg(not(any(test, feature = "test-support")))]
+        tasks.startup_observer = Some(observer);
         tasks
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn spawn_with<F>(
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,
@@ -141,12 +130,13 @@ impl MemoryPrefetchTasks {
         }
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// No optional reads have been accepted; shutdown uses the same owner.
     pub fn empty() -> Self {
         Self {
             cancel: CancellationToken::new(),
             handles: Vec::new(),
             physical_io: TaskTracker::new(),
+            #[cfg(any(test, feature = "test-support"))]
             startup_observer: None,
         }
     }
@@ -239,6 +229,7 @@ fn select_candidates(
     selected
 }
 
+#[cfg(any(test, feature = "test-support"))]
 async fn run_prefetches<F>(
     candidates: Vec<MemoryPrefetchCandidate>,
     cancel: CancellationToken,
