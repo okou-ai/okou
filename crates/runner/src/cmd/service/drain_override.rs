@@ -8,7 +8,7 @@ use crate::error::{RunnerError, RunnerResult};
 use super::unit_file::{cleanup_unit_staging_files, write_unit_file};
 use runner_host::service::RunnerServiceUnit;
 
-const RUNTIME_SYSTEMD_SYSTEM_DIR: &str = "/run/systemd/system";
+pub(super) const RUNTIME_SYSTEMD_SYSTEM_DIR: &str = "/run/systemd/system";
 const DRAIN_DROP_IN_FILE_NAME: &str = "50-vm0-drain.conf";
 const DRAIN_DROP_IN_CONTENT: &str = "[Service]\nRestart=no\n";
 
@@ -30,7 +30,7 @@ impl DrainRestartOverrideRemoval {
         matches!(self, Self::OverrideRemoved)
     }
 
-    const fn reload_required(self) -> bool {
+    pub(super) const fn reload_required(self) -> bool {
         !matches!(self, Self::AlreadyAbsent)
     }
 }
