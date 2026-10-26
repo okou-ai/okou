@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.6.1](https://github.com/okou-ai/okou/compare/api-v2.6.0...api-v2.6.1) (2026-10-26)
+
+
+### Refactoring
+
+* **api:** localize custom connector credential publication ([#42979](https://github.com/okou-ai/okou/issues/42979)) ([a14f41d](https://github.com/okou-ai/okou/commit/a14f41d174f00d7298057d59f9878d6efa5ba5c8))
+
 ## [2.6.0](https://github.com/okou-ai/okou/compare/api-v2.5.0...api-v2.6.0) (2026-10-26)
 
 
