@@ -2,7 +2,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
-import { cn, Button } from "@okouai/ui";
+import { cn, Button, Card, surfaceVariants } from "@okouai/ui";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
@@ -77,13 +77,7 @@ function parseConnectorSlugs(values: readonly string[]): ConnectorSlug[] {
  * catalog description until the source is connected and an account status strip
  * after that. Without `onActivate` the card only reports its status.
  */
-function SourceConnectorCard({
-  connectorSlug,
-  connector,
-  connected,
-  busy,
-  onActivate,
-}: {
+interface SourceConnectorCardProps {
   readonly connectorSlug: ConnectorSlug;
   readonly connector: Pick<
     PlatformConnectorCatalogConnectItem,
@@ -92,54 +86,73 @@ function SourceConnectorCard({
   readonly connected: boolean;
   readonly busy: boolean;
   readonly onActivate?: () => void;
-}) {
+}
+
+function MobileSourceConnectorCard({
+  connectorSlug,
+  connector,
+  connected,
+  busy,
+  onActivate,
+}: SourceConnectorCardProps) {
+  const { t } = useTranslation();
+  return (
+    <Card
+      data-slot="connector-card"
+      className={surfaceVariants({
+        className: "flex min-h-16 items-center gap-3 p-3 text-left",
+      })}
+    >
+      <ConnectorIcon icon={connector.icon} size={20} />
+      <span className="min-w-0 flex-1 whitespace-normal text-sm font-medium">
+        {connector.label}
+      </span>
+      <Button
+        type="button"
+        variant={connected ? "quiet" : "outline"}
+        size="sm"
+        className="shrink-0"
+        disabled={onActivate === undefined}
+        pending={busy}
+        aria-label={t(
+          ($) => {
+            return connected
+              ? $.connectors.catalog.access.manage
+              : $.connectors.card.connectAria;
+          },
+          { connector: connector.label },
+        )}
+        data-connector-slug={connectorSlug}
+        onClick={onActivate}
+      >
+        {connected ? (
+          <>
+            <ConnectorEntryStatus
+              tone="success"
+              label={t(($) => {
+                return $.connectors.card.connected;
+              })}
+            />
+            <ChevronRight size={16} aria-hidden="true" />
+          </>
+        ) : (
+          t(($) => {
+            return $.onboarding.sourcesFirst.mobile.connect;
+          })
+        )}
+      </Button>
+    </Card>
+  );
+}
+
+function SourceConnectorCard(props: SourceConnectorCardProps) {
+  const { connectorSlug, connector, connected, busy, onActivate } = props;
   const { t } = useTranslation();
   const interactive = !busy && onActivate !== undefined;
   const mobile = useMobileOnboarding();
 
   if (mobile) {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        className="w-full justify-start gap-3 px-4 text-left"
-        disabled={busy || onActivate === undefined}
-        aria-busy={busy}
-        aria-label={t(
-          ($) => {
-            return $.connectors.card.connectAria;
-          },
-          {
-            connector: connector.label,
-          },
-        )}
-        data-connector-slug={connectorSlug}
-        onClick={onActivate}
-      >
-        <ConnectorIcon icon={connector.icon} size={20} />
-        <span className="min-w-0 flex-1 whitespace-normal text-sm font-medium">
-          {connector.label}
-        </span>
-        {busy ? (
-          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-        ) : connected ? (
-          <ConnectorEntryStatus
-            tone="success"
-            label={t(($) => {
-              return $.connectors.card.connected;
-            })}
-            className="shrink-0 text-xs"
-          />
-        ) : (
-          <span className="text-sm">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.mobile.connect;
-            })}
-          </span>
-        )}
-      </Button>
-    );
+    return <MobileSourceConnectorCard {...props} />;
   }
 
   return (
