@@ -106,10 +106,12 @@ test("The mobile footer sends the invite, waits for acceptance, then continues",
       return button.textContent?.trim() === "Send invite";
     }),
   ).toHaveLength(1);
-  click(getButtonByName("Send invite"));
+  const inviteButton = getButtonByName("Send invite");
+  await userEvent.click(inviteButton);
   await waitFor(() => {
-    expect(getButtonByName("Send invite")).toBeDisabled();
-    expect(getButtonByName("Send invite")).toHaveAttribute("aria-busy", "true");
+    expect(inviteButton).toHaveAttribute("aria-disabled", "true");
+    expect(inviteButton).toHaveAttribute("aria-busy", "true");
+    expect(inviteButton).toHaveFocus();
   });
   sent.resolve();
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();

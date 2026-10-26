@@ -102,7 +102,8 @@ function SourceConnectorCard({
       <Button
         type="button"
         variant="outline"
-        className="h-16 w-full justify-start gap-3 rounded-surface px-4 text-left"
+        size="lg"
+        className="w-full justify-start gap-3 px-4 text-left"
         disabled={busy || onActivate === undefined}
         aria-busy={busy}
         aria-label={t(

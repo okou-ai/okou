@@ -87,10 +87,11 @@ export function OnboardingSkillsPage() {
             copyPrompt$={signals.copyPrompt$}
             disabled={session.state !== "hasData"}
             primary
+            size="lg"
             label={t(($) => {
               return $.onboarding.sourcesFirst.mobile.copyImportPrompt;
             })}
-            className="h-auto min-h-12 w-full whitespace-normal bg-foreground py-3 text-base text-background hover:bg-foreground-hover active:bg-foreground-pressed"
+            className="w-full"
           />
         ) : undefined
       }

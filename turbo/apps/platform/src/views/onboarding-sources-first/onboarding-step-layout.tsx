@@ -1,9 +1,9 @@
 import { PersonalSubscriptionDialogs } from "../okou-page/subscription-linking.tsx";
 import type { ReactNode } from "react";
-import { Button } from "@okouai/ui";
+import { Button, IconButton } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
@@ -148,19 +148,15 @@ function OnboardingStepTopBar({
   return (
     <div className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 bg-background px-2 sm:hidden">
       {onBack ? (
-        <Button
+        <IconButton
           type="button"
-          size="icon-lg"
-          variant="ghost"
-          className="text-foreground"
-          iconSize="lg"
           aria-label={t(($) => {
             return $.onboarding.sourcesFirst.common.back;
           })}
           onClick={onBack}
         >
-          <ChevronLeft aria-hidden="true" />
-        </Button>
+          <ChevronLeft size={20} aria-hidden="true" />
+        </IconButton>
       ) : (
         <span className="size-10 shrink-0" />
       )}
@@ -252,13 +248,10 @@ function OnboardingStepActions({
             type="button"
             size="lg"
             onClick={onPrimary}
-            disabled={primaryDisabled || primaryBusy}
-            aria-busy={primaryBusy}
-            className="w-[132px] gap-2 sm:disabled:bg-[hsl(var(--primary-100))] max-sm:h-12 max-sm:w-full max-sm:bg-foreground max-sm:text-base max-sm:text-background max-sm:hover:bg-foreground-hover max-sm:active:bg-foreground-pressed"
+            disabled={primaryDisabled}
+            pending={primaryBusy}
+            className="w-[132px] max-sm:w-full"
           >
-            {primaryBusy ? (
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-            ) : null}
             {primaryLabel}
           </Button>
         )}

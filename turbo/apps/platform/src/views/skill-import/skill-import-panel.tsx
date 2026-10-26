@@ -6,7 +6,7 @@ import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, type ButtonProps } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -103,6 +103,7 @@ function SkillImportPromptFailed({
 export function SkillImportCopyButton({
   copyPrompt$,
   primary = false,
+  size = "sm",
   className,
   label,
   disabled = false,
@@ -110,6 +111,7 @@ export function SkillImportCopyButton({
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
   /** Where copying is the one thing to do, it is the primary action. */
   readonly primary?: boolean;
+  readonly size?: ButtonProps["size"];
   readonly className?: string;
   readonly label?: string;
   readonly disabled?: boolean;
@@ -123,9 +125,10 @@ export function SkillImportCopyButton({
     <Button
       type="button"
       variant={primary ? "default" : "outline"}
-      size="sm"
+      size={size}
       className={cn("shrink-0 gap-1.5", className)}
-      disabled={disabled || copyResult.state === "loading"}
+      disabled={disabled}
+      pending={copyResult.state === "loading"}
       onClick={() => {
         detach(
           (async () => {
@@ -328,7 +331,7 @@ function SkillImportFullPromptToggle({
       type="button"
       variant="quiet"
       size="xs"
-      className="-ml-2.5 gap-1 text-xs max-sm:min-h-11"
+      className="-ml-2.5 gap-1 text-xs"
       aria-expanded={toggle.shown}
       onClick={() => {
         toggle.setShown(!toggle.shown);

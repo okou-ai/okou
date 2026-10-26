@@ -128,7 +128,6 @@ function ChannelButtonContent({
   readonly connected: boolean;
 }) {
   const { t } = useTranslation();
-  const mobile = useMobileOnboarding();
   const label =
     channel === "slack"
       ? t(($) => {
@@ -143,7 +142,7 @@ function ChannelButtonContent({
           });
   return (
     <>
-      <ProductMark name={channel} alt="" size={mobile ? "header" : "mark"} />
+      <ProductMark name={channel} alt="" size="mark" />
       {label}
       {connected && (
         <>
@@ -178,7 +177,8 @@ function InstalledChannelButton({
     <Button
       type="button"
       variant="outline"
-      className="min-w-0 flex-1 gap-2 px-3 max-sm:h-28 max-sm:flex-col max-sm:whitespace-normal max-sm:rounded-surface"
+      size="lg"
+      className="min-w-0 flex-1 px-3"
       aria-pressed={connected}
       aria-label={
         channel === "slack"
@@ -222,7 +222,8 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
       <Button
         type="button"
         variant="outline"
-        className="min-w-0 flex-1 gap-2 px-3 max-sm:h-28 max-sm:flex-none max-sm:flex-col max-sm:whitespace-normal max-sm:rounded-surface"
+        size="lg"
+        className="min-w-0 px-3"
         aria-pressed={connected}
         disabled={connected || connection.state === "loading"}
         onClick={() => {
@@ -334,7 +335,7 @@ function InlineImessageConnection() {
   );
 }
 
-function MobileImessageTile({ connected }: { readonly connected: boolean }) {
+function MobileImessageButton({ connected }: { readonly connected: boolean }) {
   const { t } = useTranslation();
   const label = t(($) => {
     return $.onboarding.sourcesFirst.slack.otherImessage;
@@ -342,15 +343,9 @@ function MobileImessageTile({ connected }: { readonly connected: boolean }) {
   return (
     <Dialog>
       <DialogTrigger
-        render={
-          <Button
-            type="button"
-            variant="outline"
-            className="h-28 flex-col gap-2 rounded-surface"
-          />
-        }
+        render={<Button type="button" variant="outline" size="lg" />}
       >
-        <ProductMark name="imessage" alt="" />
+        <ProductMark name="imessage" alt="" size="mark" />
         {label}
         {connected ? (
           <Check
@@ -455,7 +450,7 @@ export function OnboardingSlackPage() {
           </p>
           <div className={cn("gap-2", mobile ? "grid grid-cols-2" : "flex")}>
             {mobile ? (
-              <MobileImessageTile
+              <MobileImessageButton
                 connected={phone.state === "hasData" && phone.data.linked}
               />
             ) : null}

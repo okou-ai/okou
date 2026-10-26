@@ -325,7 +325,6 @@ function InviteEmailForm({
             type="button"
             onClick={onInvite}
             disabled={!sendable || sending}
-            className="max-sm:h-12 max-sm:text-base"
           >
             {sending && (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -568,7 +567,8 @@ function SubscriptionConnect({
       <Button
         type="button"
         variant={connected ? "outline" : "neutral"}
-        className="w-full gap-2 max-sm:h-12 max-sm:text-base"
+        size="lg"
+        className="w-full"
         disabled={connected || connecting}
         aria-busy={connecting}
         onClick={() => {
