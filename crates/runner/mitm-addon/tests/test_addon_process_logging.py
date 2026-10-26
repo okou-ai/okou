@@ -59,7 +59,8 @@ def _event_from_record(record: bytes) -> dict[str, object]:
     assert record.endswith(b"\n")
     assert record.count(b"\n") == 1
     assert len(record) <= addon_process_logging.MAX_ADDON_PROCESS_EVENT_BYTES
-    prefix = addon_process_logging.ADDON_PROCESS_EVENT_PREFIX.encode()
+    # Pin Runner's wire contract independently of the producer constant.
+    prefix = b"VM0_ADDON_EVENT "
     assert record.startswith(prefix)
     return json.loads(record[len(prefix) :])
 

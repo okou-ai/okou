@@ -17,7 +17,8 @@ def capture_addon_process_events() -> Iterator[MagicMock]:
 
     def capture(fd: int, record: bytes) -> int:
         assert fd == 42
-        prefix = addon_process_logging.ADDON_PROCESS_EVENT_PREFIX.encode()
+        # Pin Runner's wire contract independently of the producer constant.
+        prefix = b"VM0_ADDON_EVENT "
         assert record.startswith(prefix)
         assert record.endswith(b"\n")
         payload = json.JSONDecoder().decode(record[len(prefix) :].decode())
