@@ -19,13 +19,11 @@ pub(super) struct Authority {
     identity: RunnerProcessIdentity,
 }
 
-#[derive(Clone, PartialEq)]
 pub(super) struct Scope {
     pub instance: String,
     pub provider: String,
     pub chat: String,
     pub window: u64,
-    pub expires: u64,
 }
 
 impl Authority {
@@ -75,21 +73,13 @@ impl Authority {
         serde_json::from_slice(&bytes).map_err(|_| Failure)
     }
 
-    pub(super) async fn current(&self, run: RunId, expected: Option<&Scope>) -> Result<Scope> {
-        let action = expected.map_or(
-            ControlRequestAction::Inspect { instance_id: None },
-            |scope| ControlRequestAction::Authorize {
-                instance_id: scope.instance.clone(),
-                provider_session_id: scope.provider.clone(),
-                primary_window_id: scope.window,
-            },
-        );
+    pub(super) async fn inspect(&self, run: RunId) -> Result<Scope> {
         let body = ControlRequest {
             runner_identity: ControlRequestRunnerIdentity {
                 runner_id: self.identity.runner_id().to_string(),
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
-            action,
+            action: ControlRequestAction::Inspect { instance_id: None },
         };
         let response: ControlResponse = self
             .call(
@@ -114,17 +104,15 @@ impl Authority {
         let expires = window
             .expires_at
             .min(u64::try_from(physical).map_err(|_| Failure)?);
-        let scope = Scope {
+        if expires <= now() {
+            return Err(Failure);
+        }
+        Ok(Scope {
             instance: instance.id,
             provider: instance.provider_session_id.ok_or(Failure)?,
             chat: window.chat_thread_id,
             window: window.primary_window_id,
-            expires,
-        };
-        if expires <= now() || expected.is_some_and(|old| !old.same_resource(&scope)) {
-            return Err(Failure);
-        }
-        Ok(scope)
+        })
     }
 
     pub(super) async fn connection(
@@ -161,15 +149,6 @@ impl Authority {
             return Err(Failure);
         }
         Ok(connection)
-    }
-}
-
-impl Scope {
-    fn same_resource(&self, other: &Self) -> bool {
-        self.instance == other.instance
-            && self.provider == other.provider
-            && self.chat == other.chat
-            && self.window == other.window
     }
 }
 

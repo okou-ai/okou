@@ -4,7 +4,6 @@ version = "0.5.2"
 edition.workspace = true
 
 [dependencies]
-api-contracts.workspace = true
 futures-util = { workspace = true, features = ["sink", "std"] }
 libc = { workspace = true, features = ["std"] }
 runner-rpc-proto.workspace = true

@@ -7,9 +7,7 @@ mod policy;
 #[cfg(test)]
 mod tests;
 
-use api_contracts::generated::constants::{
-    browser::BROWSER_PROVIDER_TIMEOUT_MINUTES, runners::OFFICIAL_RUNNER_TOKEN_PREFIX,
-};
+use api_contracts::generated::constants::runners::OFFICIAL_RUNNER_TOKEN_PREFIX;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::HttpClient;
 use runner_rpc_proto::{
@@ -19,10 +17,7 @@ use runner_rpc_proto::{
 use serde::Deserialize;
 use serde_json::{Value, json, value::RawValue};
 use std::{sync::Arc, time::Duration};
-use tokio::{
-    sync::{Semaphore, mpsc},
-    time::Instant,
-};
+use tokio::sync::{Semaphore, mpsc};
 
 use crate::{
     RemoteInitError,
@@ -34,7 +29,6 @@ use broker::Broker;
 // Match tungstenite's normal complete-message scale, including large captures.
 pub(super) const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const QUEUE_BYTES: usize = 8 * 1024 * 1024;
-const MAX_DURATION_MS: u64 = BROWSER_PROVIDER_TIMEOUT_MINUTES * 60 * 1000;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Failure;
 type Result<T> = std::result::Result<T, Failure>;
@@ -64,28 +58,16 @@ impl BrowserRuntime {
         })))
     }
 
-    async fn refresh(&self, run: runner_types::ids::RunId, broker: &mut Broker) -> Result<()> {
-        let mut current = self.authority.current(run, Some(&broker.scope)).await?;
-        if current.expires > broker.scope.expires {
-            // Re-read the existing provider boundary before accepting a longer
-            // business lease. The original aggregate expiry is not a CDP ticket.
-            let connection = self.authority.connection(run, &current).await?;
-            current.expires = current.expires.min(connection.expires_at);
-        }
-        broker.scope = current;
-        Ok(())
-    }
-
     pub(crate) async fn dispatch(&self, args: guest_rpc::Request) {
         let guest_rpc::Request {
             input,
             lease,
             run,
-            started,
             deadline,
             cancelled,
             sandbox_cancelled,
             request,
+            ..
         } = args;
         let _lease = lease;
         let initial = guest_rpc::Scope {
@@ -96,11 +78,9 @@ impl BrowserRuntime {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Empty {}
-        let Some(remaining) = request.remaining_ms.filter(|ms| *ms > 1000) else {
-            initial.error(input, ErrorCode::InvalidRequest).await;
-            return;
-        };
-        if serde_json::from_str::<Empty>(request.params.get()).is_err() {
+        if !request.remaining_ms.is_some_and(|ms| ms > 1000)
+            || serde_json::from_str::<Empty>(request.params.get()).is_err()
+        {
             initial.error(input, ErrorCode::InvalidRequest).await;
             return;
         }
@@ -110,9 +90,8 @@ impl BrowserRuntime {
         };
         let capacity = Arc::new(capacity);
         let setup = async {
-            let mut scope = self.authority.current(run, None).await?;
+            let scope = self.authority.inspect(run).await?;
             let connection = self.authority.connection(run, &scope).await?;
-            scope.expires = scope.expires.min(connection.expires_at);
             let socket = client::Client::connect(
                 &connection.cdp_url,
                 Arc::clone(&self.network),
@@ -126,7 +105,6 @@ impl BrowserRuntime {
             initial.error(input, ErrorCode::Unavailable).await;
             return;
         };
-        let transport_deadline = started + Duration::from_millis(remaining.min(MAX_DURATION_MS));
         let stream_cancelled = initial.cancelled.child_token();
         let guest_ended = tokio_util::sync::CancellationToken::new();
         let (client, mut events) = client::Client::start(socket, &stream_cancelled);
@@ -169,94 +147,47 @@ impl BrowserRuntime {
                 }
             }
         });
-        let mut check = tokio::time::interval(Duration::from_secs(2));
-        check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let result: Result<()> = async {
+        let forwarding = async {
             loop {
-                let expiry = Instant::now()
-                    + Duration::from_millis(broker.scope.expires.saturating_sub(authority::now()));
-                let mut guard = guest_rpc::Scope {
-                    cancelled: stream_cancelled.clone(),
-                    sandbox_cancelled: initial.sandbox_cancelled.clone(),
-                    deadline: transport_deadline.min(expiry),
-                };
                 let next = tokio::select! {
-                    biased;
-                    () = guest_ended.cancelled() => return Ok(()),
-                    () = upstream_cancelled.cancelled() => return Err(Failure),
-                    next = guard.wait(async {
-                        tokio::select! {
-                            incoming = receive.recv() => (incoming, None, false),
-                            event = events.recv() => (None, event, false),
-                            _ = check.tick() => (None, None, true),
-                        }
-                    }) => next.ok_or(Failure)?,
+                    incoming = receive.recv() => (incoming, None),
+                    event = events.recv() => (None, event),
                 };
-                guard.deadline = guard.deadline.min(Instant::now() + Duration::from_secs(30));
-                if next.2 {
-                    guard
-                        .wait(self.refresh(run, &mut broker))
-                        .await
-                        .ok_or(Failure)??;
-                    guard
-                        .wait(broker.verify_sessions())
-                        .await
-                        .ok_or(Failure)??;
-                    continue;
-                }
                 if let Some((bytes, _permit)) = next.0 {
                     if bytes.is_empty() {
                         return Err(Failure);
                     }
                     let message: Value = serde_json::from_slice(&bytes).map_err(|_| Failure)?;
                     drop(bytes);
-                    guard
-                        .wait(self.refresh(run, &mut broker))
-                        .await
-                        .ok_or(Failure)??;
-                    let result = guard
-                        .wait(broker.dispatch(message))
-                        .await
-                        .ok_or(Failure)??;
-                    guard
-                        .wait(self.refresh(run, &mut broker))
-                        .await
-                        .ok_or(Failure)??;
+                    let result = broker.dispatch(message).await?;
                     let bytes = serde_json::to_vec(&result).map_err(|_| Failure)?;
                     drop(result);
-                    guard
-                        .wait(messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES))
+                    messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES)
                         .await
-                        .ok_or(Failure)?
                         .map_err(|_| Failure)?;
                 } else if let Some(event) = next.1 {
-                    guard
-                        .wait(self.refresh(run, &mut broker))
-                        .await
-                        .ok_or(Failure)??;
-                    if let Some(event) = guard
-                        .wait(broker.event(event.value))
-                        .await
-                        .ok_or(Failure)??
-                    {
-                        guard
-                            .wait(self.refresh(run, &mut broker))
-                            .await
-                            .ok_or(Failure)??;
+                    if let Some(event) = broker.event(event.value).await? {
                         let bytes = serde_json::to_vec(&event).map_err(|_| Failure)?;
                         drop(event);
-                        guard
-                            .wait(messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES))
+                        messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES)
                             .await
-                            .ok_or(Failure)?
                             .map_err(|_| Failure)?;
                     }
                 } else {
                     return Ok(());
                 }
             }
-        }
-        .await;
+        };
+        // Authorization belongs to establishment. Run/Guest cancellation and
+        // native Browser instance closure own the established stream lifetime.
+        let result: Result<()> = tokio::select! {
+            biased;
+            () = guest_ended.cancelled() => Ok(()),
+            () = stream_cancelled.cancelled() => Err(Failure),
+            () = initial.sandbox_cancelled.cancelled() => Err(Failure),
+            () = upstream_cancelled.cancelled() => Err(Failure),
+            result = forwarding => result,
+        };
         reader.abort();
         let _ = reader.await;
         broker.client.shutdown().await;

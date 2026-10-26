@@ -4,6 +4,7 @@ use super::*;
 use fixture::*;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::atomic::Ordering;
+use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::test]
@@ -672,7 +673,7 @@ async fn cancelled_setup_retains_host_capacity_until_its_resolver_finishes() {
 }
 
 #[tokio::test]
-async fn revocation_during_native_event_validation_withholds_the_event() {
+async fn api_changes_do_not_interrupt_established_events_but_reconnect_authorizes_again() {
     let peer = Peer::new().await;
     let mut harness = Harness::new(&peer).await;
     let mut socket = harness.connect().await;
@@ -695,7 +696,8 @@ async fn revocation_during_native_event_validation_withholds_the_event() {
     )
     .await;
     // Only the owned child-attachment event asks for a frame tree after
-    // setAutoAttach has completed. Periodic checks cannot consume this gate.
+    // setAutoAttach has completed. Change the external API while native event
+    // validation is pending; the established stream uses its original scope.
     tokio::time::timeout(
         Duration::from_secs(3),
         peer.state.child_tree_entered.notified(),
@@ -711,8 +713,39 @@ async fn revocation_during_native_event_validation_withholds_the_event() {
             }
             if let Message::Text(text) = message {
                 let value: Value = serde_json::from_str(&text).unwrap();
-                assert_ne!(value["method"], "Target.attachedToTarget");
+                if value["method"] == "Target.attachedToTarget" {
+                    assert_eq!(value["params"]["sessionId"], "session-child");
+                    break;
+                }
             }
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        command(&mut socket, 4, "Browser.getVersion", json!({}), None)
+            .await
+            .get("result")
+            .is_some()
+    );
+    let mut reconnect = harness.connect().await;
+    reconnect
+        .send(Message::Text(
+            json!({"id":1,"method":"Browser.getVersion","params":{}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while let Some(Ok(message)) = reconnect.next().await {
+            if message.is_close() {
+                break;
+            }
+            assert!(
+                !message.is_text(),
+                "Unavailable authority admitted a new stream"
+            );
         }
     })
     .await
@@ -780,7 +813,7 @@ async fn a_new_stream_observes_the_effect_without_replaying_a_lost_acknowledgeme
 }
 
 #[tokio::test]
-async fn browser_stream_outlives_sixty_seconds_then_run_cancellation_joins_it() {
+async fn browser_stream_outlives_initial_idle_expiry_and_sixty_seconds_until_run_cancellation() {
     let peer = Peer::new().await;
     let mut harness = Harness::new(&peer).await;
     harness.expires = authority::now() + 50_000;
@@ -795,9 +828,10 @@ async fn browser_stream_outlives_sixty_seconds_then_run_cancellation_joins_it() 
     harness.expires += 600_000;
     harness.set_api(true).await;
     command(&mut socket, 9, "Browser.getVersion", json!({}), None).await;
+    harness.set_api(false).await;
     // This is a real duration-bound regression, not a readiness delay. The
-    // external HTTP peer and UTC leases do not share Tokio's virtual clock;
-    // jumping it would expire unrelated in-flight HTTP operations spuriously.
+    // external peers do not share Tokio's virtual clock. The socket survives
+    // both its initial idle expiry and the ordinary RPC budget without API I/O.
     tokio::time::sleep_until(Instant::now() + Duration::from_secs(61)).await;
     assert!(
         command(&mut socket, 2, "Browser.getVersion", json!({}), None)
@@ -822,55 +856,49 @@ async fn browser_stream_outlives_sixty_seconds_then_run_cancellation_joins_it() 
 }
 
 #[tokio::test]
-async fn api_revocation_and_native_window_move_close_without_replaying_commands() {
-    for moved in [false, true] {
-        let peer = Peer::new().await;
-        let mut harness = Harness::new(&peer).await;
-        let mut socket = harness.connect().await;
-        command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
-        command(
-            &mut socket,
-            2,
-            "Target.attachToTarget",
-            json!({"targetId":OWNED,"flatten":true}),
-            None,
-        )
-        .await;
-        if moved {
-            peer.state.moved.store(true, Ordering::SeqCst);
-        } else {
-            harness.set_api(false).await;
-        }
-        let before = peer
-            .state
-            .methods
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|m| m.as_str() == "Input.insertText")
-            .count();
-        socket.send(Message::Text(json!({"id":3,"method":"Input.insertText","sessionId":"session-owned","params":{"text":"must not dispatch"}}).to_string().into())).await.unwrap();
-        tokio::time::timeout(Duration::from_secs(3), async {
-            while socket
-                .next()
-                .await
-                .is_some_and(|r| r.is_ok_and(|m| !m.is_close()))
-            {}
-        })
-        .await
-        .unwrap();
-        let after = peer
-            .state
-            .methods
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|m| m.as_str() == "Input.insertText")
-            .count();
-        assert_eq!(before, after);
-        harness.shutdown().await;
-        peer.shutdown().await;
-    }
+async fn native_window_move_closes_without_replaying_commands() {
+    let peer = Peer::new().await;
+    let harness = Harness::new(&peer).await;
+    let mut socket = harness.connect().await;
+    command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut socket,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    peer.state.moved.store(true, Ordering::SeqCst);
+    let before = peer
+        .state
+        .methods
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| m.as_str() == "Input.insertText")
+        .count();
+    socket.send(Message::Text(json!({"id":3,"method":"Input.insertText","sessionId":"session-owned","params":{"text":"must not dispatch"}}).to_string().into())).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while socket
+            .next()
+            .await
+            .is_some_and(|r| r.is_ok_and(|m| !m.is_close()))
+        {}
+    })
+    .await
+    .unwrap();
+    let after = peer
+        .state
+        .methods
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| m.as_str() == "Input.insertText")
+        .count();
+    assert_eq!(before, after);
+    harness.shutdown().await;
+    peer.shutdown().await;
 }
 
 #[tokio::test]
@@ -907,32 +935,14 @@ async fn guest_claims_cannot_select_an_endpoint_and_guest_cancellation_closes_io
 }
 
 #[tokio::test]
-async fn legitimate_existing_renewal_extends_the_stream_but_expired_state_closes_it() {
+async fn native_browser_instance_closure_ends_an_established_stream() {
     let peer = Peer::new().await;
-    let mut harness = Harness::new(&peer).await;
-    harness.expires = authority::now() + 50_000;
-    harness.set_api(true).await;
+    let harness = Harness::new(&peer).await;
     let mut socket = harness.connect().await;
     command(&mut socket, 1, "Browser.getVersion", json!({}), None).await;
-    harness.expires += 600_000;
-    harness.set_api(true).await;
-    command(&mut socket, 2, "Browser.getVersion", json!({}), None).await;
-    assert!(
-        command(&mut socket, 3, "Browser.getVersion", json!({}), None)
-            .await
-            .get("result")
-            .is_some()
-    );
-    harness.expires = authority::now() - 1;
-    harness.set_api(true).await;
-    socket
-        .send(Message::Text(
-            json!({"id":4,"method":"Browser.getVersion","params":{}})
-                .to_string()
-                .into(),
-        ))
-        .await
-        .unwrap();
+    // The provider's physical instance owns expiry/stop. Its native closure,
+    // rather than a copied API deadline, terminates an otherwise idle stream.
+    peer.shutdown().await;
     tokio::time::timeout(Duration::from_secs(3), async {
         while socket
             .next()
@@ -943,8 +953,6 @@ async fn legitimate_existing_renewal_extends_the_stream_but_expired_state_closes
     .await
     .unwrap();
     harness.shutdown().await;
-    peer.wait_closed().await;
-    peer.shutdown().await;
 }
 
 #[tokio::test]

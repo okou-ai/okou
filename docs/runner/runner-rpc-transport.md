@@ -340,9 +340,10 @@ ends pending input work, including a stalled producer. An upload handler
 must therefore verify its own input End, expected size and completion before
 reporting success; the helper cannot establish those business facts.
 
-All input, connect, socket and stdout work belongs to the helper's one deadline.
+All input, connect, socket and stdout work in `--stream` belongs to the helper's
+one deadline.
 The streaming hint does not extend an ordinary method: its handler still
-clamps its deadline to 60 seconds. Long-running handlers must clamp the
+clamps its deadline to 60 seconds. Bounded request handlers must clamp the
 untrusted hint, enforce their own admission limits, and observe exact current
 Run/lifecycle cancellation throughout. Splitting I/O does not release the owned
 GuestRpcStream or its park reservation; retain it through live guest I/O, and
@@ -350,14 +351,17 @@ retain separate host-work permits until cleanup actually completes.
 System resolver work may outlive a cancelled waiter. Retain its host capacity
 until resolution finishes, independently of the Guest stream and park reservation.
 
-An explicitly validated continuous consumer may select a longer method-owned
-budget without increasing ordinary RPC or file-transfer defaults. The Browser
-adapter uses one `browser.cdp` operation for each Guest-loopback WebSocket and
-the existing Browser maximum lifetime as its transport ceiling. Current Run,
-Guest and Browser cancellation/expiry can end it earlier; an idle socket does
-not renew the Browser lease. The adapter and handler retain the same byte,
-frame-count, backpressure and unique-terminal/EOF bounds. Complete messages
-inside Data use bounded length prefixes, so one message can span Data frames.
+An explicitly validated continuous consumer may use its existing owner lifecycle
+without increasing ordinary RPC or file-transfer defaults. The Browser adapter
+uses one `browser.cdp` operation for each Guest-loopback WebSocket. API authority
+is checked during establishment only; established commands/events retain native
+window/resource checks without API polling. Run/Guest termination cancels the
+stream, and native physical Browser instance expiry/stop closes the upstream.
+The stream adds no separate expiry, window-idle timer or renewal observer;
+initial handshake and cleanup waits remain bounded I/O operations. The adapter
+and handler retain the same byte, frame-count, backpressure and unique-terminal/EOF
+bounds. Complete messages inside Data use bounded length prefixes, so one
+message can span Data frames.
 This stream retains its normal-operation reservation while attached; executor
 teardown joins RPC before post-Run collection and parking. It adds no public
 listener or authentication protocol. Existing `--stream` remains fifteen minutes;

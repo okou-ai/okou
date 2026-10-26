@@ -65,16 +65,6 @@ impl Broker {
         }
     }
 
-    pub(super) async fn verify_sessions(&self) -> Result<()> {
-        let mut checked = HashSet::new();
-        for page in self.sessions.values() {
-            if checked.insert(&page.target) {
-                self.window(&page.target).await?;
-            }
-        }
-        Ok(())
-    }
-
     async fn discovery(&mut self) -> Result<Value> {
         let result = self
             .client

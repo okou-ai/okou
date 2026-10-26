@@ -633,7 +633,7 @@ impl Harness {
             .await;
         self.mocks = vec![control_mock.id(), connection_mock.id()];
         // Install replacements before retiring old matchers. A reset would
-        // create a 404 gap racing the real Runner's current-authority checks.
+        // create a 404 gap racing a real Runner's connection setup.
         for id in old_mocks {
             httpmock::Mock::new(id, &self.api).delete_async().await;
         }

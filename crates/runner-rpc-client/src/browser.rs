@@ -2,7 +2,6 @@
 
 use std::{future::Future, io, sync::Arc, time::Duration};
 
-use api_contracts::generated::constants::browser::BROWSER_PROVIDER_TIMEOUT_MINUTES;
 use futures_util::{SinkExt, StreamExt};
 use runner_rpc_proto::{
     Response,
@@ -22,7 +21,6 @@ use tokio_tungstenite::{
 
 // Match the host and tungstenite's normal complete-message scale.
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
-pub const MAX_DURATION_MS: u64 = BROWSER_PROVIDER_TIMEOUT_MINUTES * 60 * 1000;
 
 pub async fn run() -> io::Result<bool> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
@@ -59,7 +57,7 @@ where
                 if !address.ip().is_loopback() || tasks.len() >= 8 { continue; }
                 let connect = connect.clone();
                 tasks.spawn(async move {
-                    let _ = timeout(Duration::from_millis(MAX_DURATION_MS), bridge(stream, connect)).await;
+                    let _ = bridge(stream, connect).await;
                 });
             }
         }
@@ -85,13 +83,15 @@ where
     .await
     .map_err(|_| failed())?
     .map_err(|_| failed())?;
-    let deadline = Instant::now() + Duration::from_millis(MAX_DURATION_MS);
+    // Only setup uses the ordinary RPC budget. The host Run and native Browser
+    // instance own the established connection; the adapter adds no expiry.
+    let deadline = Instant::now() + crate::TIMEOUT;
     let request =
         runner_rpc_proto::parse_request(br#"{"version":1,"method":"browser.cdp","params":{}}"#)?;
     let mut sent = false;
     let rpc = timeout_at(
         deadline,
-        crate::dispatch_request(request, connect, &mut sent, deadline, MAX_DURATION_MS),
+        crate::dispatch_request(request, connect, &mut sent, deadline, 60_000),
     )
     .await
     .map_err(|_| failed())?
