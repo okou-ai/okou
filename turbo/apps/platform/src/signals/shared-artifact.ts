@@ -4,7 +4,7 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { z } from "zod";
+import { uuid } from "zod";
 import { accept } from "../lib/accept.ts";
 import { i18n } from "../i18n/index.ts";
 import { clerk$ } from "./auth.ts";
@@ -74,7 +74,7 @@ const resolveSharedArtifact$ = command(
 export const setupSharedArtifact$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const requestedId = String(get(pathParams$)?.artifactShareId ?? "");
-    const legacyId = z.uuid().safeParse(requestedId);
+    const legacyId = uuid().safeParse(requestedId);
     const id = legacyId.success
       ? artifactReferencePath(legacyId.data).slice("/artifacts/".length)
       : requestedId;

@@ -9,7 +9,15 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
+
 import { eq } from "drizzle-orm";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
@@ -25,107 +33,97 @@ import {
 
 const TOKEN_REFRESH_WINDOW_MS = 3 * 60 * 1000;
 
-const tenantAccessTokenResponseSchema = z.object({
-  code: z.number(),
-  msg: z.string().optional(),
-  tenant_access_token: z.string().optional(),
-  expire: z.number().optional(),
+const tenantAccessTokenResponseSchema = object({
+  code: number(),
+  msg: string().optional(),
+  tenant_access_token: string().optional(),
+  expire: number().optional(),
 });
 
-const feishuBotInfoSchema = z.object({
-  open_id: z.string().optional(),
-  app_name: z.string().optional(),
-  avatar_url: z.string().optional(),
+const feishuBotInfoSchema = object({
+  open_id: string().optional(),
+  app_name: string().optional(),
+  avatar_url: string().optional(),
 });
 
-const feishuBotInfoResponseSchema = z.object({
-  code: z.number(),
-  msg: z.string().optional(),
+const feishuBotInfoResponseSchema = object({
+  code: number(),
+  msg: string().optional(),
   bot: feishuBotInfoSchema.optional(),
-  data: z.object({ bot: feishuBotInfoSchema.optional() }).optional(),
+  data: object({ bot: feishuBotInfoSchema.optional() }).optional(),
 });
 
-const feishuOAuthTokenResponseSchema = z.object({
-  code: z.number(),
-  msg: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-  access_token: z.string().optional(),
-  refresh_token: z.string().optional(),
-  expires_in: z.number().optional(),
+const feishuOAuthTokenResponseSchema = object({
+  code: number(),
+  msg: string().optional(),
+  error: string().optional(),
+  error_description: string().optional(),
+  access_token: string().optional(),
+  refresh_token: string().optional(),
+  expires_in: number().optional(),
 });
 
-const feishuUserInfoResponseSchema = z.object({
-  code: z.number(),
-  msg: z.string().optional(),
-  data: z
-    .object({
-      name: z.string().optional(),
-      open_id: z.string().optional(),
-      tenant_key: z.string().optional(),
-    })
-    .optional(),
+const feishuUserInfoResponseSchema = object({
+  code: number(),
+  msg: string().optional(),
+  data: object({
+    name: string().optional(),
+    open_id: string().optional(),
+    tenant_key: string().optional(),
+  }).optional(),
 });
 
-const feishuResponseSchema = z.object({
-  code: z.number(),
-  msg: z.string().optional(),
+const feishuResponseSchema = object({
+  code: number(),
+  msg: string().optional(),
 });
 
 const feishuMessageResponseSchema = feishuResponseSchema.extend({
-  data: z
-    .object({
-      message_id: z.string().optional(),
-      chat_id: z.string().optional(),
-    })
-    .optional(),
+  data: object({
+    message_id: string().optional(),
+    chat_id: string().optional(),
+  }).optional(),
 });
 
 const feishuFileResponseSchema = feishuResponseSchema.extend({
-  data: z.object({ file_key: z.string().optional() }).optional(),
+  data: object({ file_key: string().optional() }).optional(),
 });
 
 const feishuReactionResponseSchema = feishuResponseSchema.extend({
-  data: z.object({ reaction_id: z.string().optional() }).optional(),
+  data: object({ reaction_id: string().optional() }).optional(),
 });
 
-const feishuHistoryMessageSchema = z.object({
-  message_id: z.string(),
-  root_id: z.string().optional(),
-  parent_id: z.string().optional(),
-  thread_id: z.string().optional(),
-  msg_type: z.string(),
-  create_time: z.string().optional(),
-  deleted: z.boolean().optional(),
-  chat_id: z.string().optional(),
-  sender: z
-    .object({
-      id: z.string().optional(),
-      id_type: z.string().optional(),
-      sender_type: z.string().optional(),
-      sender_name: z.string().optional(),
-    })
-    .optional(),
-  body: z.object({ content: z.string().optional() }).optional(),
-  mentions: z
-    .array(
-      z.object({
-        key: z.string().optional(),
-        id: z.string().optional(),
-        name: z.string().optional(),
-      }),
-    )
-    .optional(),
+const feishuHistoryMessageSchema = object({
+  message_id: string(),
+  root_id: string().optional(),
+  parent_id: string().optional(),
+  thread_id: string().optional(),
+  msg_type: string(),
+  create_time: string().optional(),
+  deleted: boolean().optional(),
+  chat_id: string().optional(),
+  sender: object({
+    id: string().optional(),
+    id_type: string().optional(),
+    sender_type: string().optional(),
+    sender_name: string().optional(),
+  }).optional(),
+  body: object({ content: string().optional() }).optional(),
+  mentions: array(
+    object({
+      key: string().optional(),
+      id: string().optional(),
+      name: string().optional(),
+    }),
+  ).optional(),
 });
 
 const feishuMessageHistoryResponseSchema = feishuResponseSchema.extend({
-  data: z
-    .object({
-      items: z.array(feishuHistoryMessageSchema).optional(),
-      has_more: z.boolean().optional(),
-      page_token: z.string().optional(),
-    })
-    .optional(),
+  data: object({
+    items: array(feishuHistoryMessageSchema).optional(),
+    has_more: boolean().optional(),
+    page_token: string().optional(),
+  }).optional(),
 });
 
 interface FeishuTenantAccessToken {
@@ -149,7 +147,7 @@ export interface FeishuSentMessage {
   readonly chatId: string | null;
 }
 
-export type FeishuHistoryMessage = z.infer<typeof feishuHistoryMessageSchema>;
+export type FeishuHistoryMessage = zInfer<typeof feishuHistoryMessageSchema>;
 
 export interface FeishuUserInfo {
   readonly name: string | null;

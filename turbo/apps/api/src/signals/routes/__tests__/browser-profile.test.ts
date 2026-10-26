@@ -2,7 +2,7 @@ import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { object, strictObject, string, uuid } from "zod";
 
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -60,9 +60,9 @@ describe("Browser thread profiles", () => {
 
     server.use(
       http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-        const { name } = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
+        const { name } = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
         const id = randomUUID();
         profiles.add(id);
         return HttpResponse.json(
@@ -83,9 +83,9 @@ describe("Browser thread profiles", () => {
         return new HttpResponse(null, { status: 204 });
       }),
       http.post(`${PROVIDER_URL}/browsers`, async ({ request }) => {
-        const { profileId } = z
-          .object({ profileId: z.uuid() })
-          .parse(await request.json());
+        const { profileId } = object({ profileId: uuid() }).parse(
+          await request.json(),
+        );
         if (!profiles.has(profileId)) {
           return HttpResponse.json(
             { detail: "profile is unavailable" },

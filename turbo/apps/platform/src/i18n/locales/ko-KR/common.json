@@ -399,7 +399,6 @@
       "manage": "관리",
       "mobile": {
         "invite": "초대",
-        "openArtifacts": "모바일 아티팩트 열기",
         "openAutomations": "모바일 자동화 열기",
         "openMenu": "메뉴 열기"
       },
@@ -678,7 +677,6 @@
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
       "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
       "previousSlide": "이전 슬라이드 미리보기",
-      "renameImportedTemplate": "템플릿 이름 바꾸기",
       "searchConnector": "템플릿 검색",
       "searchConnectors": "템플릿 검색",
       "selectStyle": "스타일 선택 {{style}}",
@@ -717,9 +715,7 @@
       "use": "사용",
       "useThisTemplate": "이 템플릿 사용",
       "visibility": {
-        "changeLabel": "템플릿 공개 범위 변경",
-        "privateState": "나만 보고 사용할 수 있습니다",
-        "workspaceState": "이 워크스페이스의 모든 사람이 사용할 수 있습니다"
+        "changeLabel": "템플릿 공개 범위 변경"
       },
       "website": "웹사이트",
       "websitePreview": "{{title}} 웹사이트 템플릿 미리보기",
@@ -1562,8 +1558,7 @@
         "whatsCooking": "무슨 일이 있나요, {{userName}}?",
         "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
         "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
-      },
-      "viewAgentProfile": "에이전트 프로필 보기"
+      }
     },
     "agentSuggestions": {
       "dismiss": "무시",
@@ -2919,15 +2914,12 @@
         "website": "웹사이트",
         "workflow": "워크플로"
       },
-      "importedLoadFailed": "업로드한 템플릿을 불러오지 못했습니다.",
-      "importedUnavailable": "업로드한 템플릿을 일시적으로 사용할 수 없습니다.",
       "previewTemplate": "템플릿 미리보기 {{title}}",
       "previewWebsite": "웹사이트 템플릿 미리보기 {{title}}",
       "previewWorkflow": "워크플로 템플릿 미리보기 {{title}}",
       "removeTemplate": "템플릿 삭제 {{title}}",
       "removeWebsite": "웹사이트 템플릿 삭제 {{title}}",
-      "removeWorkflow": "워크플로 템플릿 삭제 {{title}}",
-      "retry": "다시 시도"
+      "removeWorkflow": "워크플로 템플릿 삭제 {{title}}"
     },
     "thread": {
       "ariaLabel": "채팅 스레드",
@@ -2952,7 +2944,6 @@
       },
       "noEmojiFound": "이모지가 없습니다",
       "notFound": "채팅 스레드를 찾을 수 없습니다",
-      "openArtifacts": "아티팩트 열기",
       "openBrowser": "브라우저 열기",
       "openNamedAgent": "에이전트 {{name}} 열기",
       "openNamedChat": "채팅 {{title}} 열기",
@@ -3670,7 +3661,6 @@
         "createCodeError": "연결 코드를 만들지 못했습니다. 다시 시도하세요.",
         "creatingCode": "연결 코드 만드는 중…",
         "description": "{{assistantName}}에 문자 메시지 접근",
-        "destination": "iMessage 또는 SMS 수신처",
         "openMessages": "메시지 열기",
         "options": "전화 옵션",
         "phoneLabel": "전화",

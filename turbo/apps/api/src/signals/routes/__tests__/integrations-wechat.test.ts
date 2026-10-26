@@ -41,7 +41,15 @@ import {
   deleteFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  object,
+  string,
+  union,
+  uuid,
+  instanceof as zInstanceof,
+} from "zod";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -120,9 +128,9 @@ async function fixture() {
       return HttpResponse.json(provider.status);
     }),
     http.post("https://wechat-receiver.test/start", async ({ request }) => {
-      const body = z
-        .object({ connectionId: z.uuid(), generation: z.uuid() })
-        .parse(await request.json());
+      const body = object({ connectionId: uuid(), generation: uuid() }).parse(
+        await request.json(),
+      );
       provider.starts.push(body.connectionId);
       return HttpResponse.json({ ok: true });
     }),
@@ -143,13 +151,11 @@ async function fixture() {
       expect(request.headers.get("authorization")).toBe(
         "Bearer test-private-bot-token",
       );
-      const body = z
-        .object({
-          ilink_user_id: z.literal(`scanner-${actor.userId}`),
-          typing_ticket: z.literal("private-typing-ticket"),
-          status: z.union([z.literal(1), z.literal(2)]),
-        })
-        .parse(await request.json());
+      const body = object({
+        ilink_user_id: literal(`scanner-${actor.userId}`),
+        typing_ticket: literal("private-typing-ticket"),
+        status: union([literal(1), literal(2)]),
+      }).parse(await request.json());
       provider.typingStatuses.push(body.status);
       return HttpResponse.json({ ret: 0 });
     }),
@@ -187,7 +193,7 @@ async function connectOwner(owner: Awaited<ReturnType<typeof fixture>>) {
     [200],
   );
   await flushWaitUntilForTest();
-  return z.uuid().parse(owner.provider.starts.at(-1));
+  return uuid().parse(owner.provider.starts.at(-1));
 }
 function ownerMessage(userId: string): WechatMessage {
   return {
@@ -218,15 +224,11 @@ async function responseFixture() {
   const sentTexts: string[] = [];
   server.use(
     http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
-      const body = z
-        .object({
-          msg: z.object({
-            item_list: z.array(
-              z.object({ text_item: z.object({ text: z.string() }) }),
-            ),
-          }),
-        })
-        .parse(await request.json());
+      const body = object({
+        msg: object({
+          item_list: array(object({ text_item: object({ text: string() }) })),
+        }),
+      }).parse(await request.json());
       sentTexts.push(
         ...body.msg.item_list.map((item) => {
           return item.text_item.text;
@@ -241,7 +243,7 @@ async function responseFixture() {
     client().poll({ headers, body: { id: attempt.body.id } }),
     [200],
   );
-  const connectionId = z.uuid().parse(provider.starts[0]);
+  const connectionId = uuid().parse(provider.starts[0]);
   await flushWaitUntilForTest();
   return {
     ...connected,
@@ -280,7 +282,7 @@ async function responseFixture() {
           { timeout: 10_000 },
         )
         .toBeDefined();
-      return await runs.claimRunnerJob(z.uuid().parse(runId));
+      return await runs.claimRunnerJob(uuid().parse(runId));
     },
     async finish(
       run: { readonly runId: string; readonly sandboxToken: string },
@@ -326,15 +328,13 @@ describe("WeChat reply presentation and processing status", () => {
       const text = "🌿".repeat(2050);
       server.use(
         http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
-          const body = z
-            .object({
-              msg: z.object({
-                item_list: z.array(
-                  z.object({ text_item: z.object({ text: z.string() }) }),
-                ),
-              }),
-            })
-            .parse(await request.json());
+          const body = object({
+            msg: object({
+              item_list: array(
+                object({ text_item: object({ text: string() }) }),
+              ),
+            }),
+          }).parse(await request.json());
           fixture.sentTexts.push(
             ...body.msg.item_list.map((item) => {
               return item.text_item.text;
@@ -573,15 +573,13 @@ describe("WeChat reply presentation and processing status", () => {
       });
       server.use(
         http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
-          const body = z
-            .object({
-              msg: z.object({
-                item_list: z.array(
-                  z.object({ text_item: z.object({ text: z.string() }) }),
-                ),
-              }),
-            })
-            .parse(await request.json());
+          const body = object({
+            msg: object({
+              item_list: array(
+                object({ text_item: object({ text: string() }) }),
+              ),
+            }),
+          }).parse(await request.json());
           chunks.push(
             ...body.msg.item_list.map((item) => {
               return item.text_item.text;
@@ -618,7 +616,7 @@ describe("WeChat reply presentation and processing status", () => {
           }),
         );
         mockNow(now() + 31_000);
-        const connectionId = z.uuid().parse(fixture.provider.starts[0]);
+        const connectionId = uuid().parse(fixture.provider.starts[0]);
         const body = { connectionId };
         await accept(
           receiverClient().bootstrap({ body, headers: receiverHeaders(body) }),
@@ -663,17 +661,15 @@ describe("WeChat reply presentation and processing status", () => {
     const replies: string[] = [];
     server.use(
       http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
-        const body = z
-          .object({
-            msg: z.object({
-              item_list: z.array(
-                z.object({
-                  text_item: z.object({ text: z.string() }),
-                }),
-              ),
-            }),
-          })
-          .parse(await request.json());
+        const body = object({
+          msg: object({
+            item_list: array(
+              object({
+                text_item: object({ text: string() }),
+              }),
+            ),
+          }),
+        }).parse(await request.json());
         replies.push(
           ...body.msg.item_list.map((item) => {
             return item.text_item.text;
@@ -694,7 +690,7 @@ describe("WeChat reply presentation and processing status", () => {
         ).history({
           headers,
           query: {
-            channelId: z.uuid().parse(fixture.provider.starts[0]),
+            channelId: uuid().parse(fixture.provider.starts[0]),
             limit: 50,
           },
         }),
@@ -790,7 +786,7 @@ describe("WeChat reply presentation and processing status", () => {
       }),
     );
     mockNow(now() + 31_000);
-    await receiveBatch(z.uuid().parse(fixture.provider.starts[0]));
+    await receiveBatch(uuid().parse(fixture.provider.starts[0]));
     await flushWaitUntilForTest();
     await fixture.webhooks.requestAgentComplete(
       { runId: run.runId, exitCode: 0, lastEventSequence: 0 },
@@ -1189,7 +1185,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
     client().poll({ headers, body: { id: attempt.body.id } }),
     [200],
   );
-  const connectionId = z.uuid().parse(provider.starts[0]);
+  const connectionId = uuid().parse(provider.starts[0]);
   await flushWaitUntilForTest();
   async function receive() {
     return await receiveBatch(connectionId);
@@ -1207,7 +1203,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
         { timeout: 10_000 },
       )
       .toBeDefined();
-    return await runs.claimRunnerJob(z.uuid().parse(runId));
+    return await runs.claimRunnerJob(uuid().parse(runId));
   }
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({
@@ -1223,9 +1219,9 @@ test("receives an owner DM once, resumes its native session and delivers the can
   });
 
   expect(
-    z
-      .object({ msg: z.object({ context_token: z.string().optional() }) })
-      .parse(sends[0]).msg.context_token,
+    object({ msg: object({ context_token: string().optional() }) }).parse(
+      sends[0],
+    ).msg.context_token,
   ).toBeUndefined();
   await receive();
   expect(sends).toHaveLength(1);
@@ -1353,7 +1349,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
     routes: integrationsWechatMessagesRoutes,
   })(integrationsWechatMessagesContract);
   const agentHeaders = {
-    authorization: `Bearer ${z.string().parse(first.platformEnvironment.OKOU_TOKEN)}`,
+    authorization: `Bearer ${string().parse(first.platformEnvironment.OKOU_TOKEN)}`,
   };
   const channels = await accept(
     messages.listChannels({ headers: agentHeaders }),
@@ -1390,7 +1386,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
       query: {
         channelId: connectionId,
         limit: 1,
-        before: z.uuid().parse(history.body.nextBefore),
+        before: uuid().parse(history.body.nextBefore),
       },
     }),
     [200],
@@ -1404,7 +1400,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
       query: {
         channelId: connectionId,
         limit: 1,
-        before: z.uuid().parse(older.body.nextBefore),
+        before: uuid().parse(older.body.nextBefore),
       },
     }),
     [200],
@@ -1418,7 +1414,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
       query: {
         channelId: connectionId,
         limit: 1,
-        before: z.uuid().parse(oldest.body.nextBefore),
+        before: uuid().parse(oldest.body.nextBefore),
       },
     }),
     [200],
@@ -1647,7 +1643,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   const fileApp = setupApp({ context, routes: integrationsWechatFileRoutes });
   const fileQuery = {
     channelId: connectionId,
-    messageId: z.uuid().parse(incomingFile?.id),
+    messageId: uuid().parse(incomingFile?.id),
     attachmentId: "1",
   };
   const downloaded = await accept(
@@ -1658,7 +1654,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
     [200],
   );
   expect(
-    Buffer.from(await z.instanceof(Blob).parse(downloaded.body).arrayBuffer()),
+    Buffer.from(await zInstanceof(Blob).parse(downloaded.body).arrayBuffer()),
   ).toStrictEqual(attachmentBytes);
   await accept(
     fileApp(integrationsWechatDownloadFileContract).download({
@@ -2016,7 +2012,7 @@ test("native WeChat commands isolate users and workspaces and honor live revocat
     client().poll({ headers, body: { id: attempt.body.id } }),
     [200],
   );
-  const channelId = z.uuid().parse(first.provider.starts[0]);
+  const channelId = uuid().parse(first.provider.starts[0]);
   const messages = setupApp({
     context,
     routes: integrationsWechatMessagesRoutes,
@@ -2492,15 +2488,11 @@ describe("WeChat input failure isolation", () => {
         });
       }),
       http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
-        const body = z
-          .object({
-            msg: z.object({
-              item_list: z.array(
-                z.object({ text_item: z.object({ text: z.string() }) }),
-              ),
-            }),
-          })
-          .parse(await request.json());
+        const body = object({
+          msg: object({
+            item_list: array(object({ text_item: object({ text: string() }) })),
+          }),
+        }).parse(await request.json());
         sends.push(
           ...body.msg.item_list.map((item) => {
             return item.text_item.text;
@@ -2523,7 +2515,7 @@ describe("WeChat input failure isolation", () => {
     "isolates an unavailable attachment and persists bounded retries (recovers=%s)",
     async (recovers) => {
       const fixture = await responseFixture();
-      const connectionId = z.uuid().parse(fixture.provider.starts[0]);
+      const connectionId = uuid().parse(fixture.provider.starts[0]);
       const receive = await gatewayReceiver(connectionId);
       const fileMessage = {
         ...ownerMessage(fixture.actor.userId),
@@ -2627,7 +2619,7 @@ describe("WeChat input failure isolation", () => {
 
 test("weChat history keeps time bounds across pages and validates their order", async () => {
   const fixture = await responseFixture();
-  const channelId = z.uuid().parse(fixture.provider.starts[0]);
+  const channelId = uuid().parse(fixture.provider.starts[0]);
   const oldest = "2026-10-19T01:00:00.000Z";
   const latest = "2026-10-19T02:00:00.000Z";
   mockNow(new Date("2026-10-19T00:00:00.000Z"));
@@ -2652,7 +2644,7 @@ test("weChat history keeps time bounds across pages and validates their order", 
   const second = await accept(
     messages.history({
       headers,
-      query: { ...query, before: z.uuid().parse(first.body.nextBefore) },
+      query: { ...query, before: uuid().parse(first.body.nextBefore) },
     }),
     [200],
   );
@@ -2688,17 +2680,13 @@ async function disconnectedLink() {
     }),
   );
   await receiveBatch(connectionId);
-  const notice = z
-    .object({
-      msg: z.object({
-        item_list: z.array(
-          z.object({ text_item: z.object({ text: z.string() }) }),
-        ),
-      }),
-    })
-    .parse(owner.provider.sends.at(-1));
-  const text = z.string().parse(notice.msg.item_list[0]?.text_item.text);
-  const url = new URL(z.string().parse(text.split("\n").at(-1)));
+  const notice = object({
+    msg: object({
+      item_list: array(object({ text_item: object({ text: string() }) })),
+    }),
+  }).parse(owner.provider.sends.at(-1));
+  const text = string().parse(notice.msg.item_list[0]?.text_item.text);
+  const url = new URL(string().parse(text.split("\n").at(-1)));
   expect(url.pathname).toBe("/settings/wechat");
   expect(url.toString()).not.toMatch(
     /test-private-bot-token|private-reply-context|scanner-/,
@@ -2706,7 +2694,7 @@ async function disconnectedLink() {
   return {
     ...owner,
     connectionId,
-    token: z.string().parse(url.searchParams.get("token")),
+    token: string().parse(url.searchParams.get("token")),
   };
 }
 
@@ -2749,16 +2737,12 @@ describe("WeChat reconnect links", () => {
       (await accept(client().status({ headers }), [200])).body.status,
     ).toBe("active");
     expect(owner.provider.sends).toHaveLength(3);
-    const welcome = z
-      .object({
-        msg: z.object({
-          context_token: z.string().optional(),
-          item_list: z.array(
-            z.object({ text_item: z.object({ text: z.string() }) }),
-          ),
-        }),
-      })
-      .parse(owner.provider.sends.at(-1));
+    const welcome = object({
+      msg: object({
+        context_token: string().optional(),
+        item_list: array(object({ text_item: object({ text: string() }) })),
+      }),
+    }).parse(owner.provider.sends.at(-1));
     expect(welcome.msg.context_token).toBeUndefined();
     expect(welcome.msg.item_list[0]?.text_item.text).toContain(
       "You're connected",
@@ -2834,23 +2818,17 @@ describe("WeChat reconnect links", () => {
       }),
     );
     await receiveBatch(owner.connectionId);
-    const notice = z
-      .object({
-        msg: z.object({
-          item_list: z.array(
-            z.object({ text_item: z.object({ text: z.string() }) }),
-          ),
-        }),
-      })
-      .parse(owner.provider.sends.at(-1));
-    const text = z.string().parse(notice.msg.item_list[0]?.text_item.text);
-    query.token = z
-      .string()
-      .parse(
-        new URL(z.string().parse(text.split("\n").at(-1))).searchParams.get(
-          "token",
-        ),
-      );
+    const notice = object({
+      msg: object({
+        item_list: array(object({ text_item: object({ text: string() }) })),
+      }),
+    }).parse(owner.provider.sends.at(-1));
+    const text = string().parse(notice.msg.item_list[0]?.text_item.text);
+    query.token = string().parse(
+      new URL(string().parse(text.split("\n").at(-1))).searchParams.get(
+        "token",
+      ),
+    );
     await accept(client().reconnect({ headers, body: query }), [204]);
     await flushWaitUntilForTest();
   });

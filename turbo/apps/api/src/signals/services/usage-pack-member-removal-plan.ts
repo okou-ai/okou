@@ -17,7 +17,7 @@ import {
   getTableColumns,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { object } from "zod";
 import { usagePackOverdraftTransferSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
 import {
   requireUsagePackOverdraftTransfer,
@@ -126,7 +126,7 @@ function* memberRemovalContextPlan(
       .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
       .limit(1)
       .getSQL(),
-    z.object({
+    object({
       subscription: contextProjectionSchema(rootColumns),
       allocations: allocationSchema.array(),
       changes: changeSchema.array(),

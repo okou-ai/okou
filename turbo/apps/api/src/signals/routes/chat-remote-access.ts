@@ -1,6 +1,4 @@
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { notFound } from "../../lib/error";
@@ -17,7 +15,6 @@ import {
   setThreadRemoteAccessOverride$,
   updateRemoteHostDefault$,
 } from "../services/chat-remote-access.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 
 const ownerAuth = {
@@ -30,25 +27,22 @@ const unavailable = notFound("Remote access is not available");
 const missingHost = notFound("Remote access host not found");
 const missingThread = notFound("Chat thread not found");
 
-const accessContext$ = command(async ({ get, set }, signal: AbortSignal) => {
+const accessContext$ = command(({ get, set }) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
-  const featureContext = await get(
-    userFeatureSwitchContext(auth.orgId, auth.userId),
-  );
-  signal.throwIfAborted();
   return {
     auth,
     owner: { orgId: auth.orgId, userId: auth.userId },
-    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
   };
 });
 
 const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(accessContext$, signal);
-  const includeVnc =
-    context.vncEnabled &&
-    (await hasCurrentVncMembership(get(clerk$), context.auth, signal));
+  const context = set(accessContext$);
+  const includeVnc = await hasCurrentVncMembership(
+    get(clerk$),
+    context.auth,
+    signal,
+  );
   const body = await set(listRemoteHostDefaults$, context.owner, includeVnc);
   signal.throwIfAborted();
   return { status: 200 as const, body };
@@ -56,14 +50,13 @@ const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const updateHostDefault$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const context = await set(accessContext$, signal);
+    const context = set(accessContext$);
     const params = get(
       pathParamsOf(chatRemoteAccessContract.updateHostDefault),
     );
     if (
       params.protocol === "vnc" &&
-      (!context.vncEnabled ||
-        !(await hasCurrentVncMembership(get(clerk$), context.auth, signal)))
+      !(await hasCurrentVncMembership(get(clerk$), context.auth, signal))
     ) {
       return unavailable;
     }
@@ -86,11 +79,13 @@ const updateHostDefault$ = command(
 );
 
 const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(accessContext$, signal);
+  const context = set(accessContext$);
   const params = get(pathParamsOf(chatRemoteAccessContract.listThreadAccess));
-  const includeVnc =
-    context.vncEnabled &&
-    (await hasCurrentVncMembership(get(clerk$), context.auth, signal));
+  const includeVnc = await hasCurrentVncMembership(
+    get(clerk$),
+    context.auth,
+    signal,
+  );
   const result = await set(
     listThreadRemoteAccess$,
     { ...context.owner, chatThreadId: params.threadId },
@@ -102,14 +97,13 @@ const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const setThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const context = await set(accessContext$, signal);
+    const context = set(accessContext$);
     const params = get(
       pathParamsOf(chatRemoteAccessContract.setThreadOverride),
     );
     if (
       params.protocol === "vnc" &&
-      (!context.vncEnabled ||
-        !(await hasCurrentVncMembership(get(clerk$), context.auth, signal)))
+      !(await hasCurrentVncMembership(get(clerk$), context.auth, signal))
     ) {
       return unavailable;
     }
@@ -138,14 +132,13 @@ const setThreadOverride$ = command(
 
 const clearThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const context = await set(accessContext$, signal);
+    const context = set(accessContext$);
     const params = get(
       pathParamsOf(chatRemoteAccessContract.clearThreadOverride),
     );
     if (
       params.protocol === "vnc" &&
-      (!context.vncEnabled ||
-        !(await hasCurrentVncMembership(get(clerk$), context.auth, signal)))
+      !(await hasCurrentVncMembership(get(clerk$), context.auth, signal))
     ) {
       return unavailable;
     }

@@ -1,7 +1,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  record,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { FIREWALL_HOSTNAME_POLICY_VERSION } from "../firewall-hostname-policy";
 import {
@@ -12,28 +20,28 @@ import {
   validateBaseUrl,
 } from "../firewall-types";
 
-const baseUrlTemplateResolutionCaseSchema = z.object({
-  name: z.string(),
-  category: z.string().optional(),
-  base: z.string(),
-  vars: z.record(z.string(), z.string()),
-  expectedResolvedBase: z.string().nullable(),
+const baseUrlTemplateResolutionCaseSchema = object({
+  name: string(),
+  category: string().optional(),
+  base: string(),
+  vars: record(string(), string()),
+  expectedResolvedBase: string().nullable(),
   // Python preserves encoded host text; TypeScript returns its canonical form.
-  expectedCanonicalBase: z.string().optional(),
+  expectedCanonicalBase: string().optional(),
 });
 
-const baseUrlValidationCaseSchema = z.object({
-  name: z.string(),
-  category: z.string().optional(),
-  note: z.string().optional(),
-  base: z.string(),
-  expectedValid: z.boolean(),
-  expectedCanonicalBase: z.string().optional(),
+const baseUrlValidationCaseSchema = object({
+  name: string(),
+  category: string().optional(),
+  note: string().optional(),
+  base: string(),
+  expectedValid: boolean(),
+  expectedCanonicalBase: string().optional(),
 });
 
 const catalogBaseUrlValidationCaseSchema = baseUrlTemplateResolutionCaseSchema
   .extend({
-    expectedValid: z.boolean(),
+    expectedValid: boolean(),
   })
   .superRefine((testCase, ctx) => {
     if (testCase.expectedValid === (testCase.expectedResolvedBase === null)) {
@@ -46,49 +54,44 @@ const catalogBaseUrlValidationCaseSchema = baseUrlTemplateResolutionCaseSchema
     }
   });
 
-const contractSchema = z
-  .object({
-    hostnamePolicy: z.literal(FIREWALL_HOSTNAME_POLICY_VERSION),
-    baseUrlTemplateResolutionCases: z
-      .array(baseUrlTemplateResolutionCaseSchema)
-      .min(1),
-    catalogBaseUrlValidationCases: z
-      .array(catalogBaseUrlValidationCaseSchema)
-      .min(1),
-    baseUrlValidationCases: z.array(baseUrlValidationCaseSchema).min(1),
-  })
-  .superRefine((contract, ctx) => {
-    for (const [collectionName, testCases] of [
-      [
-        "baseUrlTemplateResolutionCases",
-        contract.baseUrlTemplateResolutionCases,
-      ],
-      ["catalogBaseUrlValidationCases", contract.catalogBaseUrlValidationCases],
-      ["baseUrlValidationCases", contract.baseUrlValidationCases],
-    ] as const) {
-      const seenNames = new Set<string>();
-      for (const [index, testCase] of testCases.entries()) {
-        if (seenNames.has(testCase.name)) {
-          ctx.addIssue({
-            code: "custom",
-            path: [collectionName, index, "name"],
-            message: `duplicate case name "${testCase.name}"`,
-          });
-        }
-        seenNames.add(testCase.name);
+const contractSchema = object({
+  hostnamePolicy: literal(FIREWALL_HOSTNAME_POLICY_VERSION),
+  baseUrlTemplateResolutionCases: array(
+    baseUrlTemplateResolutionCaseSchema,
+  ).min(1),
+  catalogBaseUrlValidationCases: array(catalogBaseUrlValidationCaseSchema).min(
+    1,
+  ),
+  baseUrlValidationCases: array(baseUrlValidationCaseSchema).min(1),
+}).superRefine((contract, ctx) => {
+  for (const [collectionName, testCases] of [
+    ["baseUrlTemplateResolutionCases", contract.baseUrlTemplateResolutionCases],
+    ["catalogBaseUrlValidationCases", contract.catalogBaseUrlValidationCases],
+    ["baseUrlValidationCases", contract.baseUrlValidationCases],
+  ] as const) {
+    const seenNames = new Set<string>();
+    for (const [index, testCase] of testCases.entries()) {
+      if (seenNames.has(testCase.name)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [collectionName, index, "name"],
+          message: `duplicate case name "${testCase.name}"`,
+        });
       }
+      seenNames.add(testCase.name);
     }
-  });
+  }
+});
 
-type BaseUrlValidationCase = z.infer<typeof baseUrlValidationCaseSchema>;
-type CatalogBaseUrlValidationCase = z.infer<
+type BaseUrlValidationCase = zInfer<typeof baseUrlValidationCaseSchema>;
+type CatalogBaseUrlValidationCase = zInfer<
   typeof catalogBaseUrlValidationCaseSchema
 >;
-type BaseUrlTemplateResolutionCase = z.infer<
+type BaseUrlTemplateResolutionCase = zInfer<
   typeof baseUrlTemplateResolutionCaseSchema
 >;
 
-function loadContract(): z.infer<typeof contractSchema> {
+function loadContract(): zInfer<typeof contractSchema> {
   const rawContract: unknown = JSON.parse(
     fs.readFileSync(
       path.resolve(

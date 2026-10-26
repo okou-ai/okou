@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
@@ -16,88 +27,75 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const connectorAccountDisplayNameSchema = z
-  .string()
+export const connectorAccountDisplayNameSchema = string()
   .trim()
   .min(1)
   .max(255);
 
-export const connectorAccountTargetSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("builtin"),
-      connectorSlug: connectorSlugSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("custom"),
-      customConnectorId: z.uuid(),
-    })
-    .strict(),
+export const connectorAccountTargetSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("builtin"),
+    connectorSlug: connectorSlugSchema,
+  }).strict(),
+  object({
+    kind: literal("custom"),
+    customConnectorId: uuid(),
+  }).strict(),
 ]);
 
-export const connectorAccountFieldMetadataSchema = z.object({
-  missingRequiredFields: z.array(z.string()),
-  configuredFieldKeys: z.array(z.string()),
+export const connectorAccountFieldMetadataSchema = object({
+  missingRequiredFields: array(string()),
+  configuredFieldKeys: array(string()),
 });
 
-export const connectorAccountConnectionSchema = z
-  .object({
-    ...connectorAccountFieldMetadataSchema.shape,
-    id: z.uuid(),
-    target: connectorAccountTargetSchema,
-    authMethod: connectorAuthMethodIdSchema,
-    displayName: z.string().min(1).max(255).nullable(),
-    isDefault: z.boolean(),
-    externalId: z.string().nullable(),
-    externalUsername: z.string().nullable(),
-    externalEmail: z.string().nullable(),
-    oauthScopes: z.array(z.string()).nullable(),
-    scopeMismatch: z.boolean().optional(),
-    connectionStatus: connectorResponseConnectionStatusSchema,
-    reconnectReason: connectorReconnectReasonSchema.nullable(),
-    tokenExpiresAt: z.string().nullable(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .strict();
+export const connectorAccountConnectionSchema = object({
+  ...connectorAccountFieldMetadataSchema.shape,
+  id: uuid(),
+  target: connectorAccountTargetSchema,
+  authMethod: connectorAuthMethodIdSchema,
+  displayName: string().min(1).max(255).nullable(),
+  isDefault: boolean(),
+  externalId: string().nullable(),
+  externalUsername: string().nullable(),
+  externalEmail: string().nullable(),
+  oauthScopes: array(string()).nullable(),
+  scopeMismatch: boolean().optional(),
+  connectionStatus: connectorResponseConnectionStatusSchema,
+  reconnectReason: connectorReconnectReasonSchema.nullable(),
+  tokenExpiresAt: string().nullable(),
+  createdAt: string(),
+  updatedAt: string(),
+}).strict();
 
-export const connectorAccountSelectionSchema = z
-  .object({
-    connectionId: z.uuid(),
-    target: connectorAccountTargetSchema,
-  })
-  .strict();
+export const connectorAccountSelectionSchema = object({
+  connectionId: uuid(),
+  target: connectorAccountTargetSchema,
+}).strict();
 
 export const CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS = 256;
 export const CONNECTOR_ACCOUNT_LIST_MAX_LIMIT = 100;
 
-const connectorAccountInspectionAvailableSchema = z
-  .object({
-    ...connectorAccountFieldMetadataSchema.shape,
-    kind: z.literal("available"),
-    connectionId: z.uuid(),
-    target: connectorAccountTargetSchema,
-    authMethod: connectorAuthMethodIdSchema,
-    displayName: z.string().min(1).max(255).nullable(),
-    externalId: z.string().nullable(),
-    externalUsername: z.string().nullable(),
-    externalEmail: z.string().nullable(),
-    connectionStatus: connectorResponseConnectionStatusSchema,
-    reconnectReason: connectorReconnectReasonSchema.nullable(),
-  })
-  .strict();
+const connectorAccountInspectionAvailableSchema = object({
+  ...connectorAccountFieldMetadataSchema.shape,
+  kind: literal("available"),
+  connectionId: uuid(),
+  target: connectorAccountTargetSchema,
+  authMethod: connectorAuthMethodIdSchema,
+  displayName: string().min(1).max(255).nullable(),
+  externalId: string().nullable(),
+  externalUsername: string().nullable(),
+  externalEmail: string().nullable(),
+  connectionStatus: connectorResponseConnectionStatusSchema,
+  reconnectReason: connectorReconnectReasonSchema.nullable(),
+}).strict();
 
-const connectorAccountInspectionUnavailableSchema = z
-  .object({
-    kind: z.literal("unavailable"),
-    connectionId: z.uuid(),
-    target: connectorAccountTargetSchema,
-  })
-  .strict();
+const connectorAccountInspectionUnavailableSchema = object({
+  kind: literal("unavailable"),
+  connectionId: uuid(),
+  target: connectorAccountTargetSchema,
+}).strict();
 
-export const connectorAccountInspectionResultSchema = z.discriminatedUnion(
+export const connectorAccountInspectionResultSchema = discriminatedUnion(
   "kind",
   [
     connectorAccountInspectionAvailableSchema,
@@ -105,85 +103,73 @@ export const connectorAccountInspectionResultSchema = z.discriminatedUnion(
   ],
 );
 
-export const connectorAccountMutationIntentSchema = z.discriminatedUnion(
+export const connectorAccountMutationIntentSchema = discriminatedUnion(
   "intent",
   [
-    z
-      .object({
-        intent: z.literal("add"),
-        displayName: connectorAccountDisplayNameSchema.optional(),
-      })
-      .strict(),
-    z
-      .object({
-        intent: z.literal("reconnect"),
-        connectionId: z.uuid(),
-      })
-      .strict(),
+    object({
+      intent: literal("add"),
+      displayName: connectorAccountDisplayNameSchema.optional(),
+    }).strict(),
+    object({
+      intent: literal("reconnect"),
+      connectionId: uuid(),
+    }).strict(),
   ],
 );
 
-export const connectorAccountTargetQuerySchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("builtin"),
-      connectorSlug: connectorSlugSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("custom"),
-      customConnectorId: z.uuid(),
-    })
-    .strict(),
+export const connectorAccountTargetQuerySchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("builtin"),
+    connectorSlug: connectorSlugSchema,
+  }).strict(),
+  object({
+    kind: literal("custom"),
+    customConnectorId: uuid(),
+  }).strict(),
 ]);
 
 const connectorAccountListQueryFields = {
-  cursor: z.string().min(1).optional(),
-  limit: z.coerce
+  cursor: string().min(1).optional(),
+  limit: coerce
     .number()
     .int()
     .min(1)
     .max(CONNECTOR_ACCOUNT_LIST_MAX_LIMIT)
     .default(50),
-  search: z.string().trim().min(1).max(255).optional(),
+  search: string().trim().min(1).max(255).optional(),
 } as const;
 
-export const connectorAccountListQuerySchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("builtin"),
-      connectorSlug: connectorSlugSchema,
-      includeScopeMismatch: z.literal("true").optional(),
-      ...connectorAccountListQueryFields,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("custom"),
-      customConnectorId: z.uuid(),
-      ...connectorAccountListQueryFields,
-    })
-    .strict(),
+export const connectorAccountListQuerySchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("builtin"),
+    connectorSlug: connectorSlugSchema,
+    includeScopeMismatch: literal("true").optional(),
+    ...connectorAccountListQueryFields,
+  }).strict(),
+  object({
+    kind: literal("custom"),
+    customConnectorId: uuid(),
+    ...connectorAccountListQueryFields,
+  }).strict(),
 ]);
 
-const connectorAccountPathParamsSchema = z.object({
-  connectionId: z.uuid(),
+const connectorAccountPathParamsSchema = object({
+  connectionId: uuid(),
 });
 
-const connectorAccountExactTargetBodySchema = z
-  .object({ target: connectorAccountTargetSchema })
-  .strict();
+const connectorAccountExactTargetBodySchema = object({
+  target: connectorAccountTargetSchema,
+}).strict();
 
 export const connectorAccountsContract = c.router({
   oauthCompletion: {
     method: "GET",
     path: "/api/connector-accounts/oauth-completions/:attemptId",
     headers: authHeadersSchema,
-    pathParams: z.object({ attemptId: z.uuid() }),
+    pathParams: object({ attemptId: uuid() }),
     query: connectorAccountTargetQuerySchema,
     responses: {
-      200: z.object({ connectionId: z.uuid() }),
+      200: object({ connectionId: uuid() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -195,19 +181,15 @@ export const connectorAccountsContract = c.router({
     method: "POST",
     path: "/api/connector-accounts/inspect",
     headers: authHeadersSchema,
-    body: z
-      .object({
-        selections: z
-          .array(connectorAccountSelectionSchema)
-          .max(CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS),
-      })
-      .strict(),
+    body: object({
+      selections: array(connectorAccountSelectionSchema).max(
+        CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
+      ),
+    }).strict(),
     responses: {
-      200: z
-        .object({
-          results: z.array(connectorAccountInspectionResultSchema),
-        })
-        .strict(),
+      200: object({
+        results: array(connectorAccountInspectionResultSchema),
+      }).strict(),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -220,9 +202,9 @@ export const connectorAccountsContract = c.router({
     headers: authHeadersSchema,
     query: connectorAccountListQuerySchema,
     responses: {
-      200: z.object({
-        connections: z.array(connectorAccountConnectionSchema),
-        nextCursor: z.string().nullable(),
+      200: object({
+        connections: array(connectorAccountConnectionSchema),
+        nextCursor: string().nullable(),
         defaultConnection: connectorAccountConnectionSchema.nullable(),
       }),
       400: apiErrorSchema,
@@ -252,7 +234,7 @@ export const connectorAccountsContract = c.router({
     path: "/api/connector-accounts/:connectionId/scope-diff",
     headers: authHeadersSchema,
     pathParams: connectorAccountPathParamsSchema,
-    query: z.object({ connectorSlug: connectorSlugSchema }).strict(),
+    query: object({ connectorSlug: connectorSlugSchema }).strict(),
     responses: {
       200: scopeDiffResponseSchema,
       400: apiErrorSchema,
@@ -267,12 +249,10 @@ export const connectorAccountsContract = c.router({
     path: "/api/connector-accounts/:connectionId",
     headers: authHeadersSchema,
     pathParams: connectorAccountPathParamsSchema,
-    body: z
-      .object({
-        target: connectorAccountTargetSchema,
-        displayName: connectorAccountDisplayNameSchema.nullable(),
-      })
-      .strict(),
+    body: object({
+      target: connectorAccountTargetSchema,
+      displayName: connectorAccountDisplayNameSchema.nullable(),
+    }).strict(),
     responses: {
       200: connectorAccountConnectionSchema,
       400: apiErrorSchema,
@@ -304,10 +284,10 @@ export const connectorAccountsContract = c.router({
     pathParams: connectorAccountPathParamsSchema,
     query: connectorAccountTargetQuerySchema,
     responses: {
-      200: z.object({
-        connectionId: z.uuid(),
-        explicitSelectionCount: z.number().int().nonnegative(),
-        hasSibling: z.boolean(),
+      200: object({
+        connectionId: uuid(),
+        explicitSelectionCount: number().int().nonnegative(),
+        hasSibling: boolean(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -323,10 +303,10 @@ export const connectorAccountsContract = c.router({
     pathParams: connectorAccountPathParamsSchema,
     body: connectorAccountExactTargetBodySchema,
     responses: {
-      200: z.object({
-        deletedConnectionId: z.uuid(),
-        resolvedSelectionCount: z.number().int().nonnegative(),
-        promotedDefaultConnectionId: z.uuid().nullable(),
+      200: object({
+        deletedConnectionId: uuid(),
+        resolvedSelectionCount: number().int().nonnegative(),
+        promotedDefaultConnectionId: uuid().nullable(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -337,7 +317,7 @@ export const connectorAccountsContract = c.router({
   },
 });
 
-export type ConnectorAccountTarget = z.infer<
+export type ConnectorAccountTarget = zInfer<
   typeof connectorAccountTargetSchema
 >;
 export function connectorAccountTargetKey(
@@ -347,7 +327,7 @@ export function connectorAccountTargetKey(
     ? `builtin:${target.connectorSlug}`
     : `custom:${target.customConnectorId}`;
 }
-export type ConnectorAccountConnection = z.infer<
+export type ConnectorAccountConnection = zInfer<
   typeof connectorAccountConnectionSchema
 >;
 export type ConnectorAccountIdentityFields = Pick<
@@ -374,13 +354,13 @@ export function connectorAccountEffectiveLabel(
     fallbackLabel
   );
 }
-export type ConnectorAccountSelection = z.infer<
+export type ConnectorAccountSelection = zInfer<
   typeof connectorAccountSelectionSchema
 >;
-export type ConnectorAccountInspectionResult = z.infer<
+export type ConnectorAccountInspectionResult = zInfer<
   typeof connectorAccountInspectionResultSchema
 >;
-export type ConnectorAccountMutationIntent = z.infer<
+export type ConnectorAccountMutationIntent = zInfer<
   typeof connectorAccountMutationIntentSchema
 >;
 /** Canonical saved-account facts; connect-method visibility does not identify accounts. */

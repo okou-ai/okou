@@ -10,7 +10,7 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { runCompletionMetadataSchema } from "@okouai/api-contracts/contracts/webhooks";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 
@@ -23,7 +23,7 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 
-export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
+export type AgentRunOutputBody = zInfer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
 

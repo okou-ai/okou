@@ -22,7 +22,17 @@ import {
   sql,
 } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -125,64 +135,58 @@ interface GoogleCalendarFetchError {
 type GoogleCalendarFetchResult<T> =
   GoogleCalendarFetchOk<T> | GoogleCalendarFetchError;
 
-const calendarWatchResponseSchema = z.object({
-  id: z.string(),
-  resourceId: z.string(),
-  resourceUri: z.string(),
-  expiration: z.union([z.string(), z.number()]).optional(),
+const calendarWatchResponseSchema = object({
+  id: string(),
+  resourceId: string(),
+  resourceUri: string(),
+  expiration: union([string(), number()]).optional(),
 });
 
-const calendarResourceSchema = z.object({ id: z.string() });
+const calendarResourceSchema = object({ id: string() });
 
-const calendarEventDateTimeSchema = z
-  .object({
-    date: z.string().optional(),
-    dateTime: z.string().optional(),
-    timeZone: z.string().optional(),
-  })
-  .passthrough();
+const calendarEventDateTimeSchema = object({
+  date: string().optional(),
+  dateTime: string().optional(),
+  timeZone: string().optional(),
+}).passthrough();
 
-const calendarEventPersonSchema = z
-  .object({
-    email: z.string().optional(),
-    displayName: z.string().optional(),
-    self: z.boolean().optional(),
-  })
-  .passthrough();
+const calendarEventPersonSchema = object({
+  email: string().optional(),
+  displayName: string().optional(),
+  self: boolean().optional(),
+}).passthrough();
 
 export const calendarEventAttendeeSchema = calendarEventPersonSchema.extend({
-  responseStatus: z.string().optional(),
+  responseStatus: string().optional(),
 });
 
-const calendarEventSchema = z
-  .object({
-    id: z.string(),
-    etag: z.string().optional(),
-    status: z.string().optional(),
-    htmlLink: z.string().optional(),
-    created: z.string().optional(),
-    updated: z.string().optional(),
-    summary: z.string().optional(),
-    description: z.string().optional(),
-    location: z.string().optional(),
-    eventType: z.string().optional(),
-    start: calendarEventDateTimeSchema.optional(),
-    end: calendarEventDateTimeSchema.optional(),
-    organizer: calendarEventPersonSchema.optional(),
-    creator: calendarEventPersonSchema.optional(),
-    attendees: z.array(calendarEventAttendeeSchema).optional(),
-    recurringEventId: z.string().optional(),
-    originalStartTime: calendarEventDateTimeSchema.optional(),
-  })
-  .passthrough();
+const calendarEventSchema = object({
+  id: string(),
+  etag: string().optional(),
+  status: string().optional(),
+  htmlLink: string().optional(),
+  created: string().optional(),
+  updated: string().optional(),
+  summary: string().optional(),
+  description: string().optional(),
+  location: string().optional(),
+  eventType: string().optional(),
+  start: calendarEventDateTimeSchema.optional(),
+  end: calendarEventDateTimeSchema.optional(),
+  organizer: calendarEventPersonSchema.optional(),
+  creator: calendarEventPersonSchema.optional(),
+  attendees: array(calendarEventAttendeeSchema).optional(),
+  recurringEventId: string().optional(),
+  originalStartTime: calendarEventDateTimeSchema.optional(),
+}).passthrough();
 
-const calendarEventsListResponseSchema = z.object({
-  items: z.array(calendarEventSchema).optional(),
-  nextPageToken: z.string().optional(),
-  nextSyncToken: z.string().optional(),
+const calendarEventsListResponseSchema = object({
+  items: array(calendarEventSchema).optional(),
+  nextPageToken: string().optional(),
+  nextSyncToken: string().optional(),
 });
 
-export type GoogleCalendarEvent = z.infer<typeof calendarEventSchema>;
+export type GoogleCalendarEvent = zInfer<typeof calendarEventSchema>;
 
 export type GoogleCalendarWatchStateRow =
   typeof googleCalendarWatchStates.$inferSelect;
@@ -388,7 +392,7 @@ function logCalendarWatchProviderFailure(
 }
 
 async function googleCalendarFetchJson<T>(
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   accessToken: string,
   url: string,
   init: RequestInit,
@@ -510,7 +514,7 @@ async function watchCalendarEvents(
   },
   signal: AbortSignal,
 ): Promise<
-  GoogleCalendarFetchResult<z.infer<typeof calendarWatchResponseSchema>>
+  GoogleCalendarFetchResult<zInfer<typeof calendarWatchResponseSchema>>
 > {
   return await googleCalendarFetchJson(
     calendarWatchResponseSchema,
@@ -1078,7 +1082,7 @@ const publishGoogleCalendarWatch$ = command(
       readonly calendarId: string;
       readonly channelId: string;
       readonly channelToken: string;
-      readonly watch: z.infer<typeof calendarWatchResponseSchema>;
+      readonly watch: zInfer<typeof calendarWatchResponseSchema>;
       readonly resetBaseline: boolean;
     },
     signal: AbortSignal,
@@ -1191,7 +1195,7 @@ async function prepareCalendarWatchCandidate(
   | {
       readonly kind: "ok";
       readonly baseline: CalendarEventsListOk | null;
-      readonly watch: z.infer<typeof calendarWatchResponseSchema>;
+      readonly watch: zInfer<typeof calendarWatchResponseSchema>;
       readonly channelId: string;
       readonly channelToken: string;
     }

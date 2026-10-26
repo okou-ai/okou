@@ -51,7 +51,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import type StripeSDK from "stripe";
-import type { z } from "zod";
+import type { input, infer as zInfer } from "zod";
 
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
@@ -81,7 +81,7 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-type RunnerJobClaimRequestBody = z.infer<
+type RunnerJobClaimRequestBody = zInfer<
   (typeof runnersJobClaimContract.claim)["body"]
 >;
 /** Test claims advertise every current Pi model-config generation unless a scenario narrows them. */
@@ -91,20 +91,20 @@ function defaultClaimCapabilities(): RunnerJobClaimRequestBody["capabilities"] {
 type RunnerJobClaimRequest = Omit<RunnerJobClaimRequestBody, "capabilities"> & {
   readonly capabilities?: RunnerJobClaimRequestBody["capabilities"];
 };
-type RunnerConnectorRuntimeSyncRequest = z.input<
+type RunnerConnectorRuntimeSyncRequest = input<
   (typeof runnersConnectorRuntimeSyncContract.sync)["body"]
 >;
 type RunnerConnectorRuntimeSyncStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type RunnerNextSteerableInputStatus = 200 | 400 | 401 | 403 | 500;
 type RunnerSteeredInputStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
-export type RunModel = z.infer<
+export type RunModel = zInfer<
   (typeof runModelsMainContract.list)["responses"][200]
 >["models"][number]["model"];
-type RunnerHeartbeatBody = z.infer<
+type RunnerHeartbeatBody = zInfer<
   (typeof runnersHeartbeatContract.heartbeat)["body"]
 >;
-type RunnerPollBody = z.infer<(typeof runnersPollContract.poll)["body"]>;
-type RunnerRealtimeTokenBody = z.infer<
+type RunnerPollBody = zInfer<(typeof runnersPollContract.poll)["body"]>;
+type RunnerRealtimeTokenBody = zInfer<
   (typeof runnerRealtimeTokenContract.create)["body"]
 >;
 

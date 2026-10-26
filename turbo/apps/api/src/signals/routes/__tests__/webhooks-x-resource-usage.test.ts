@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -13,7 +13,7 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-healt
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
-type UsageEvent = z.infer<
+type UsageEvent = zInfer<
   (typeof webhookUsageEventContract.send)["body"]
 >["events"][number];
 type ResourceEvent = Extract<UsageEvent, { protocol: "x-resource-v1" }>;

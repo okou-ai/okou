@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -74,20 +74,16 @@ export async function exchangeMetaAdsCode(
     await throwOAuthError("Meta Ads", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      token_type: z.string().optional(),
-      expires_in: z.number().optional(),
-      error: z
-        .object({
-          message: z.string().optional(),
-          type: z.string().optional(),
-          code: z.number().optional(),
-        })
-        .optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    token_type: string().optional(),
+    expires_in: number().optional(),
+    error: object({
+      message: string().optional(),
+      type: string().optional(),
+      code: number().optional(),
+    }).optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error.message ?? "Meta Ads OAuth error");
@@ -141,18 +137,14 @@ async function exchangeForLongLivedToken(
     await throwOAuthError("Meta Ads", "long-lived token exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      token_type: z.string().optional(),
-      expires_in: z.number().optional(),
-      error: z
-        .object({
-          message: z.string().optional(),
-        })
-        .optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    token_type: string().optional(),
+    expires_in: number().optional(),
+    error: object({
+      message: string().optional(),
+    }).optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(
@@ -196,13 +188,11 @@ async function fetchMetaAdsUserInfo(
     throw new Error(`Meta Ads user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      id: z.string().optional(),
-      name: z.string().nullable().optional(),
-      email: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: string().optional(),
+    name: string().nullable().optional(),
+    email: string().nullable().optional(),
+  }).parse(await response.json());
 
   if (!data.id) {
     throw new Error("No user id in Meta Ads user info response");

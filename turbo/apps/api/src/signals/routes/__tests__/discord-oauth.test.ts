@@ -7,7 +7,14 @@ import {
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  enum as zEnum,
+  instanceof as zInstanceof,
+} from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
@@ -90,12 +97,10 @@ function fixture() {
   mockEnv("APP_URL", "https://app.okou.ai");
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
-      const args = z
-        .object({
-          organizationId: z.string(),
-          userId: z.array(z.string()).optional(),
-        })
-        .parse(input);
+      const args = object({
+        organizationId: string(),
+        userId: array(string()).optional(),
+      }).parse(input);
       const found = actors.filter((actor) => {
         return (
           actor.orgId === args.organizationId &&
@@ -229,9 +234,9 @@ function fixture() {
       ]);
     }),
     http.post(`${API}/users/@me/channels`, async ({ request }) => {
-      const body = z
-        .object({ recipient_id: z.string() })
-        .parse(await request.json());
+      const body = object({ recipient_id: string() }).parse(
+        await request.json(),
+      );
       let channelId = dmChannels.get(body.recipient_id);
       if (!channelId) {
         channelId = snowflake();
@@ -259,14 +264,12 @@ function fixture() {
     http.post(
       `${API}/channels/:channelId/messages`,
       async ({ request, params }) => {
-        const body = z
-          .object({
-            content: z.string(),
-            allowed_mentions: z.object({ parse: z.array(z.string()) }),
-            nonce: z.string(),
-            enforce_nonce: z.boolean(),
-          })
-          .parse(await request.json());
+        const body = object({
+          content: string(),
+          allowed_mentions: object({ parse: array(string()) }),
+          nonce: string(),
+          enforce_nonce: boolean(),
+        }).parse(await request.json());
         expect(body.allowed_mentions.parse).toStrictEqual([]);
         expect(body.enforce_nonce).toBeTruthy();
         messages.push(body.content);
@@ -332,18 +335,16 @@ function actorHeaders(actor: Actor) {
 }
 function authenticate(actor: Actor) {
   context.mocks.clerk.authenticateRequest.mockImplementation((input) => {
-    const request = z.instanceof(Request).parse(input);
+    const request = zInstanceof(Request).parse(input);
     const encoded = request.headers
       .get("authorization")
       ?.split("Bearer oauth-test.")[1];
     const current = encoded
-      ? z
-          .object({
-            userId: z.string(),
-            orgId: z.string(),
-            orgRole: z.enum(["org:admin", "org:member"]),
-          })
-          .parse(JSON.parse(Buffer.from(encoded, "base64url").toString()))
+      ? object({
+          userId: string(),
+          orgId: string(),
+          orgRole: zEnum(["org:admin", "org:member"]),
+        }).parse(JSON.parse(Buffer.from(encoded, "base64url").toString()))
       : actor;
     return Promise.resolve({
       isAuthenticated: true,

@@ -12,7 +12,7 @@ import {
   ListObjectsV2Command,
   CopyObjectCommand,
 } from "@aws-sdk/client-s3";
-import { z } from "zod";
+import { array, literal, number, object, string } from "zod";
 import { describe, expect, it, test } from "vitest";
 import {
   artifactSharePolicySchema,
@@ -127,13 +127,11 @@ function fixture() {
   );
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
-      const params = z
-        .object({
-          organizationId: z.string(),
-          userId: z.array(z.string()),
-          limit: z.literal(1),
-        })
-        .parse(input);
+      const params = object({
+        organizationId: string(),
+        userId: array(string()),
+        limit: literal(1),
+      }).parse(input);
       expect(params.organizationId).toBe(org);
       return Promise.resolve({
         data: params.userId
@@ -153,7 +151,7 @@ function fixture() {
   );
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
     (input) => {
-      const { userId } = z.object({ userId: z.string() }).parse(input);
+      const { userId } = object({ userId: string() }).parse(input);
       return Promise.resolve({
         data: members.has(userId)
           ? [
@@ -2027,10 +2025,10 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
       if (!(command instanceof GetObjectCommand)) {
         return baseSign(client, command, options);
       }
-      const { Bucket, Key } = z
-        .object({ Bucket: z.string(), Key: z.string() })
-        .parse(command.input);
-      const { expiresIn } = z.object({ expiresIn: z.number() }).parse(options);
+      const { Bucket, Key } = object({ Bucket: string(), Key: string() }).parse(
+        command.input,
+      );
+      const { expiresIn } = object({ expiresIn: number() }).parse(options);
       const url = new URL(
         `https://private-r2.example/${encodeURIComponent(Bucket)}/${Key.split("/").map(encodeURIComponent).join("/")}`,
       );

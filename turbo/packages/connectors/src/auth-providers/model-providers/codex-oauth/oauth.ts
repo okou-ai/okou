@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 import { throwOAuthError } from "../../oauth/error";
 import { reportedOAuthScopes } from "../../oauth/scope";
 
@@ -50,21 +50,19 @@ interface ChatgptRefreshResult {
   scopes: string[] | null;
 }
 
-const refreshResponseSchema = z.object({
-  id_token: z.string().optional(),
-  access_token: z.string().optional(),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().optional(),
-  scope: z.string().optional(),
+const refreshResponseSchema = object({
+  id_token: string().optional(),
+  access_token: string().optional(),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().optional(),
+  scope: string().optional(),
 });
 
-const refreshErrorBodySchema = z.object({
-  error: z
-    .object({
-      code: z.string().optional(),
-      message: z.string().optional(),
-    })
-    .optional(),
+const refreshErrorBodySchema = object({
+  error: object({
+    code: string().optional(),
+    message: string().optional(),
+  }).optional(),
 });
 
 /**

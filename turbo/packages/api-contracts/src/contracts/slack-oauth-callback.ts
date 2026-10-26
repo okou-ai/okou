@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 import {
@@ -21,6 +21,6 @@ export const slackOauthCallbackContract = c.router({
   },
 });
 
-export type SlackOauthCallbackQuery = z.infer<
+export type SlackOauthCallbackQuery = zInfer<
   typeof slackOauthCallbackQuerySchema
 >;

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { array, number, object, string, union } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -80,16 +80,14 @@ export async function exchangeMondayCode(
     await throwOAuthError("Monday.com", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -138,16 +136,14 @@ export async function refreshMondayToken(
     await throwOAuthError("Monday.com", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -187,22 +183,16 @@ async function fetchMondayUserInfo(
     throw new Error(`Monday.com user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      data: z
-        .object({
-          me: z
-            .object({
-              id: z.union([z.string(), z.number()]).optional(),
-              name: z.string().nullable().optional(),
-              email: z.string().nullable().optional(),
-            })
-            .optional(),
-        })
-        .optional(),
-      errors: z.array(z.object({ message: z.string() })).optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    data: object({
+      me: object({
+        id: union([string(), number()]).optional(),
+        name: string().nullable().optional(),
+        email: string().nullable().optional(),
+      }).optional(),
+    }).optional(),
+    errors: array(object({ message: string() })).optional(),
+  }).parse(await response.json());
 
   if (data.errors?.length) {
     throw new Error(data.errors[0]?.message ?? "Unknown GraphQL error");

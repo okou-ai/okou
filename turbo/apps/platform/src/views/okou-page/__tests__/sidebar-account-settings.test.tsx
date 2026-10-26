@@ -66,7 +66,7 @@ test("Open personal Settings and manage account security", async () => {
     ).toBeInTheDocument();
     const morningBrief = within(dialog).getByTestId("morning-brief-preference");
     expect(
-      within(dialog).getByRole("region", { name: "Email subscriptions" }),
+      within(dialog).getByRole("region", { name: "Proactive" }),
     ).toContainElement(morningBrief);
   });
 

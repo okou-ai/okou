@@ -160,7 +160,6 @@ export function createThreadContext(
   const templates$ = createRunTemplates(
     pickedEvent$,
     orgId,
-    sourceFeatureSwitches$,
     disabledPaidTools$,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);

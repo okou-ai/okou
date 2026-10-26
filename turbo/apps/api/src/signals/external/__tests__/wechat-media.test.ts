@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import {
@@ -140,14 +140,12 @@ describe("WeChat media wire boundary", () => {
       let key: Buffer | undefined;
       server.use(
         http.post(`${origin}/ilink/bot/getuploadurl`, async ({ request }) => {
-          const body = z
-            .object({
-              aeskey: z.string(),
-              rawsize: z.number(),
-              filesize: z.number(),
-              media_type: z.number(),
-            })
-            .parse(await request.json());
+          const body = object({
+            aeskey: string(),
+            rawsize: number(),
+            filesize: number(),
+            media_type: number(),
+          }).parse(await request.json());
           expect(body).toMatchObject({
             rawsize: bytes.length,
             filesize: 16,
@@ -176,14 +174,12 @@ describe("WeChat media wire boundary", () => {
           expect(request.headers.get("authorization")).toBe(
             "Bearer provider-test-token",
           );
-          const body = z
-            .object({
-              msg: z.object({
-                context_token: z.string(),
-                item_list: z.array(z.object({ type: z.number() })),
-              }),
-            })
-            .parse(await request.json());
+          const body = object({
+            msg: object({
+              context_token: string(),
+              item_list: array(object({ type: number() })),
+            }),
+          }).parse(await request.json());
           expect(body.msg.context_token).toBe("private-context");
           expect(body.msg.item_list).toStrictEqual([{ type: itemType }]);
           return new HttpResponse(

@@ -18,12 +18,9 @@ import { cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
 import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   customTemplateCatalog$,
   projectCustomTemplate$,
-  slashCustomTemplatesEnabled$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import { SlashWorkflowName, slashWorkflowOptionId } from "./slash-workflow.tsx";
 import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
@@ -252,19 +249,6 @@ function customTemplateKind(
   return category === "slides" ? "presentation" : category;
 }
 
-/** The built-in covers a category shows; Document's wait for their switch. */
-function useBuiltInSlashTemplates(): (
-  category: SlashTemplateCategory,
-) => readonly SlashTemplatePreview[] {
-  const documentTemplatesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
-  return (category) => {
-    return category === "document" && !documentTemplatesEnabled
-      ? []
-      : slashTemplatePreviews(category);
-  };
-}
-
 /**
  * How many covers a category shows: its built-in templates plus the custom
  * ones listed beside them, so a count matches the covers it opens.
@@ -272,14 +256,13 @@ function useBuiltInSlashTemplates(): (
 export function useSlashTemplateCount(): (
   category: SlashTemplateCategory,
 ) => number {
-  const builtIn = useBuiltInSlashTemplates();
   const customCounts = useLastResolved(slashCustomTemplateCounts$);
   return (category) => {
     const custom =
       category === "website"
         ? 0
         : (customCounts?.get(customTemplateKind(category)) ?? 0);
-    return builtIn(category).length + custom;
+    return slashTemplatePreviews(category).length + custom;
   };
 }
 
@@ -337,8 +320,7 @@ export function SlashTemplateCovers({
     category: SlashTemplateCategory,
   ) => void;
 }) {
-  const customTemplatesEnabled = useGet(slashCustomTemplatesEnabled$);
-  const previews = useBuiltInSlashTemplates()(category);
+  const previews = slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <>
@@ -389,7 +371,7 @@ export function SlashTemplateCovers({
                 : "grid grid-cols-2 gap-2.5 pb-4",
             )}
           >
-            {customTemplatesEnabled && category !== "website" && (
+            {category !== "website" && (
               <SlashCustomTemplateCovers
                 category={category}
                 onSelectTemplate={onSelectTemplate}

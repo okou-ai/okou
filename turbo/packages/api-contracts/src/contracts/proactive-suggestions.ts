@@ -1,4 +1,5 @@
-import { z } from "zod";
+import { boolean, object, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { proactivePreferenceSchema } from "./proactive";
@@ -7,7 +8,7 @@ export const PROACTIVE_SUGGESTIONS_DEFINITION_NAME = "agent-suggestions";
 export const PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY = "hourly-check";
 
 const preferenceSchema = proactivePreferenceSchema;
-export type ProactiveSuggestionsPreference = z.infer<typeof preferenceSchema>;
+export type ProactiveSuggestionsPreference = zInfer<typeof preferenceSchema>;
 
 const c = initContract();
 const errors = {
@@ -27,7 +28,7 @@ export const proactiveSuggestionsContract = c.router({
     method: "PUT",
     path: "/api/preferences/proactive-suggestions",
     headers: authHeadersSchema,
-    body: z.object({ enabled: z.boolean() }),
+    body: object({ enabled: boolean() }),
     responses: { 200: preferenceSchema, ...errors },
     summary: "Update your Proactive Suggestions preference",
   },

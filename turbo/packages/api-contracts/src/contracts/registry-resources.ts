@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { literal, number, object, string, url } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -10,12 +10,12 @@ export const registryResourceDownloadContract = c.router({
     method: "GET",
     path: "/api/registry/presentation-templates/download",
     headers: authHeadersSchema,
-    query: z.object({
-      id: z.string().min(1, "Resource id is required"),
+    query: object({
+      id: string().min(1, "Resource id is required"),
     }),
     responses: {
-      200: z.object({
-        url: z.url(),
+      200: object({
+        url: url(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -29,20 +29,20 @@ export const registryResourceDownloadContract = c.router({
     method: "GET",
     path: "/api/registry/resources/download",
     headers: authHeadersSchema,
-    query: z.object({
-      id: z.string().min(1, "Resource id is required"),
-      expectedSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    query: object({
+      id: string().min(1, "Resource id is required"),
+      expectedSha256: string().regex(/^[a-f0-9]{64}$/),
     }),
     responses: {
-      200: z.object({
-        url: z.url(),
-        id: z.string(),
-        type: z.literal("tar.gz"),
-        sha256: z.string().regex(/^[a-f0-9]{64}$/),
-        expiresInSeconds: z.number().int().positive(),
-        versionId: z.string(),
-        fileCount: z.number().int().nonnegative(),
-        size: z.number().nonnegative(),
+      200: object({
+        url: url(),
+        id: string(),
+        type: literal("tar.gz"),
+        sha256: string().regex(/^[a-f0-9]{64}$/),
+        expiresInSeconds: number().int().positive(),
+        versionId: string(),
+        fileCount: number().int().nonnegative(),
+        size: number().nonnegative(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,

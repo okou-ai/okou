@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Command, Option } from "commander";
-import { z } from "zod";
+import { array, int, object, string, uuid, enum as zEnum } from "zod";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import {
@@ -11,21 +11,20 @@ import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { readManagementInput } from "../../lib/management-input";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
-const scopeSchema = z.enum(["personal", "organization"]);
-const referenceSchema = z.object({ id: z.uuid(), displayName: z.string() });
+const scopeSchema = zEnum(["personal", "organization"]);
+const referenceSchema = object({ id: uuid(), displayName: string() });
 // Strip unknown keys at every object boundary, including nested references.
-const metadataSchema = z.object({
-  id: z.uuid(),
-  name: z.string().optional(),
+const metadataSchema = object({
+  id: uuid(),
+  name: string().optional(),
   scope: scopeSchema.optional(),
-  tags: z.array(z.string()).optional(),
-  revision: z.int().positive().optional(),
-  generation: z.int().positive().optional(),
-  sshHosts: z.array(referenceSchema).optional(),
-  vncHosts: z.array(
+  tags: array(string()).optional(),
+  revision: int().positive().optional(),
+  generation: int().positive().optional(),
+  sshHosts: array(referenceSchema).optional(),
+  vncHosts: array(
     referenceSchema.extend({
-      roles: z
-        .array(z.enum(["rfb", "kdc"]))
+      roles: array(zEnum(["rfb", "kdc"]))
         .min(1)
         .max(2)
         .refine((roles) => {
@@ -34,17 +33,17 @@ const metadataSchema = z.object({
     }),
   ),
 });
-const impactSchema = z.object({
-  expectedRevision: z.int().positive(),
-  ownHostCount: z.int().nonnegative(),
-  otherHostCount: z.int().nonnegative(),
-  affectedOwners: z.array(
-    z.object({
-      userId: z.string(),
-      displayName: z.string().nullable(),
+const impactSchema = object({
+  expectedRevision: int().positive(),
+  ownHostCount: int().nonnegative(),
+  otherHostCount: int().nonnegative(),
+  affectedOwners: array(
+    object({
+      userId: string(),
+      displayName: string().nullable(),
     }),
   ),
-  impactSnapshot: z.string().regex(/^[a-f0-9]{64}$/u),
+  impactSnapshot: string().regex(/^[a-f0-9]{64}$/u),
 });
 
 interface OutputOptions {
@@ -68,7 +67,7 @@ function requireCapability(write = false): void {
 }
 
 function exactId(value: string): string {
-  if (!z.uuid().safeParse(value).success) {
+  if (!uuid().safeParse(value).success) {
     throw new Error(
       "Invalid configuration ID. Use an exact ID from the configuration list.",
     );
@@ -193,7 +192,7 @@ Feature availability and organization administrator checks are enforced by the b
                 await readManagementInput(
                   options.input,
                   cloudflareAccessContract.create.body.extend({
-                    id: z.uuid().default(() => {
+                    id: uuid().default(() => {
                       return randomUUID();
                     }),
                   }),
@@ -203,7 +202,7 @@ Feature availability and organization administrator checks are enforced by the b
                 await readManagementInput(
                   options.input,
                   tailscaleContract.create.body.extend({
-                    id: z.uuid().default(() => {
+                    id: uuid().default(() => {
                       return randomUUID();
                     }),
                   }),

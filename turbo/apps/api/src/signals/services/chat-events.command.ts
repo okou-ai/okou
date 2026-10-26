@@ -40,7 +40,7 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { now, nowDate } from "../../lib/time";
@@ -149,7 +149,7 @@ import {
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
-type SendBody = z.infer<typeof chatEventsContract.send.body>;
+type SendBody = zInfer<typeof chatEventsContract.send.body>;
 interface NormalSendBody {
   readonly agentId: string;
   readonly prompt: string;

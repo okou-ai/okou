@@ -1,7 +1,7 @@
 import { gunzipSync } from "node:zlib";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import { array, boolean, number, object, string } from "zod";
 import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { accept, testContext } from "../../__tests__/test-context";
@@ -28,26 +28,26 @@ const FAILURE_MESSAGE =
 // Logger-owned telemetry contract: exercise the production health route rather
 // than constructing a handler or mounting a test-only route.
 describe("request lifecycle Axiom transport", () => {
-  const requestEvent = z.object({
-    _time: z.string(),
-    method: z.string(),
-    status: z.number(),
-    path_template: z.string(),
-    request_time_ms: z.number(),
-    type: z.string().optional(),
-    x_client_request_id: z.string().optional(),
-    lifecycle_time_ms: z.number().optional(),
-    background_time_ms: z.number().optional(),
-    wait_until_task_count: z.number().optional(),
-    wait_until_failure_count: z.number().optional(),
-    lifecycle_error: z.boolean().optional(),
+  const requestEvent = object({
+    _time: string(),
+    method: string(),
+    status: number(),
+    path_template: string(),
+    request_time_ms: number(),
+    type: string().optional(),
+    x_client_request_id: string().optional(),
+    lifecycle_time_ms: number().optional(),
+    background_time_ms: number().optional(),
+    wait_until_task_count: number().optional(),
+    wait_until_failure_count: number().optional(),
+    lifecycle_error: boolean().optional(),
   });
 
   function eventsIn(dataset: string) {
     return context.mocks.axiom.ingest.mock.calls.flatMap(
       ([ingestedDataset, events]) => {
         return ingestedDataset === dataset
-          ? z.array(requestEvent).parse(events)
+          ? array(requestEvent).parse(events)
           : [];
       },
     );
@@ -193,7 +193,7 @@ describe("request lifecycle Axiom transport", () => {
       });
     context.mocks.axiom.ingest.mockImplementation((dataset, events) => {
       if (dataset === "web-logs") {
-        for (const event of z.array(requestEvent).parse(events)) {
+        for (const event of array(requestEvent).parse(events)) {
           if (
             event.type === "request_lifecycle" &&
             event.x_client_request_id === "health-second"
@@ -381,18 +381,16 @@ describe("Axiom ingest HTTP error diagnostics", () => {
             }),
           }),
         );
-        const fields = z
-          .object({
-            error: z.object({ responseBodySummary: z.string().max(512) }),
-          })
-          .parse(
-            context.mocks.axiomLogging.error.mock.calls.find(([logMessage]) => {
-              return (
-                logMessage ===
-                "Unhandled request error: Axiom ingest failed with status 503"
-              );
-            })?.[1],
-          );
+        const fields = object({
+          error: object({ responseBodySummary: string().max(512) }),
+        }).parse(
+          context.mocks.axiomLogging.error.mock.calls.find(([logMessage]) => {
+            return (
+              logMessage ===
+              "Unhandled request error: Axiom ingest failed with status 503"
+            );
+          })?.[1],
+        );
         expect(fields.error.responseBodySummary).toContain(
           "[redacted authorization]",
         );
@@ -561,18 +559,18 @@ describe("selected eager Axiom operation payload", () => {
           : {}),
       });
       expect(actualDecrypts).toBe(expectedCount);
-      const eventSchema = z.object({
-        run_id: z.string().optional(),
-        op_type: z.string().optional(),
-        connector_context_schema: z.string().optional(),
-        connector_context_builtin_decrypt_count: z.number().optional(),
-        connector_context_builtin_decrypt_count_bucket: z.string().optional(),
-        duration_ms: z.number().optional(),
-        _time: z.string().optional(),
+      const eventSchema = object({
+        run_id: string().optional(),
+        op_type: string().optional(),
+        connector_context_schema: string().optional(),
+        connector_context_builtin_decrypt_count: number().optional(),
+        connector_context_builtin_decrypt_count_bucket: string().optional(),
+        duration_ms: number().optional(),
+        _time: string().optional(),
       });
       const events = context.mocks.axiom.sdkIngest.mock.calls
         .flatMap(([, payload]) => {
-          return z.array(eventSchema).parse(payload);
+          return array(eventSchema).parse(payload);
         })
         .filter((event) => {
           return event.run_id === run.runId;
@@ -705,17 +703,15 @@ describe("Axiom logging transport", () => {
             "xaat-private-transport-test-token",
           );
           expect(diagnostics).not.toContain("private-failed-log-payload");
-          const failure = z
-            .object({
-              error: z.object({
-                request: z.object({ elapsedMs: z.number() }),
-              }),
-            })
-            .parse(
-              context.mocks.console.error.mock.calls.find(([message]) => {
-                return message === "Axiom application log delivery failed";
-              })?.[1],
-            );
+          const failure = object({
+            error: object({
+              request: object({ elapsedMs: number() }),
+            }),
+          }).parse(
+            context.mocks.console.error.mock.calls.find(([message]) => {
+              return message === "Axiom application log delivery failed";
+            })?.[1],
+          );
           expect(failedRequestCount).toBe(2);
           expect(failure.error.request.elapsedMs).toBeGreaterThanOrEqual(
             failedRequestSpanMs,

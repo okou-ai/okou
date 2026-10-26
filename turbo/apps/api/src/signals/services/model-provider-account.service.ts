@@ -19,10 +19,13 @@ import {
   count,
   desc,
   eq,
+  exists,
+  gte,
   inArray,
   isNull,
   ne,
   not,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -472,13 +475,6 @@ function accountSecretsPublicationStatement(
     WHERE ${owner} AND ${not(inArray(modelProviderAccountSecrets.name, names))}`;
 }
 
-function connectedAccountCondition(providerId: string) {
-  return and(
-    eq(modelProviderAccounts.modelProviderId, providerId),
-    isNull(modelProviderAccounts.disconnectedAt),
-  );
-}
-
 async function writePersonalAccount(
   db: Db,
   args: Omit<UpsertPersonalAccountArgs, "metadata"> & {
@@ -855,7 +851,183 @@ interface PersonalAccountDisconnection {
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
-/** Profile/KMS preparation precedes the local disconnection transaction. */
+function disconnectionIdentityValues(
+  accounts: readonly AccountRow[],
+  identities: ReadonlyMap<string, PersonalProviderAccountMetadata> | null,
+) {
+  const hydrated = accounts.flatMap((account) => {
+    const metadata = claudeAccountIdentityToApply(account, identities);
+    return metadata
+      ? [{ id: account.id, values: claudeAccountIdentityValues(metadata) }]
+      : [];
+  });
+  if (hydrated.length === 0) {
+    return {};
+  }
+  return {
+    externalAccountId: sql`CASE ${sql.join(
+      hydrated.map(({ id, values }) => {
+        return sql`WHEN ${eq(modelProviderAccounts.id, id)} THEN ${values.externalAccountId}`;
+      }),
+      sql` `,
+    )} ELSE ${modelProviderAccounts.externalAccountId} END`,
+    accountEmail: sql`CASE ${sql.join(
+      hydrated.map(({ id, values }) => {
+        return sql`WHEN ${eq(modelProviderAccounts.id, id)} THEN ${values.accountEmail}`;
+      }),
+      sql` `,
+    )} ELSE ${modelProviderAccounts.accountEmail} END`,
+    workspaceName: sql`CASE ${sql.join(
+      hydrated.map(({ id, values }) => {
+        return sql`WHEN ${eq(modelProviderAccounts.id, id)} THEN ${values.workspaceName}`;
+      }),
+      sql` `,
+    )} ELSE ${modelProviderAccounts.workspaceName} END`,
+  };
+}
+
+interface PreparedPersonalAccountDisconnection {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly providerId: string;
+  readonly accounts: readonly AccountRow[];
+  readonly identities: ReadonlyMap<
+    string,
+    PersonalProviderAccountMetadata
+  > | null;
+  readonly promoteReplacement: boolean;
+}
+
+const commitPersonalAccountDisconnection$ = command(
+  async (
+    { set },
+    input: PreparedPersonalAccountDisconnection,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { accounts, identities, providerId } = input;
+    const ids = accounts.map((account) => {
+      return account.id;
+    });
+    const disconnectedAt = nowDate();
+    const retained = db.$with("retained_accounts").as(
+      db
+        .update(modelProviderAccounts)
+        .set({
+          ...disconnectionIdentityValues(accounts, identities),
+          isActive: false,
+          disconnectedAt,
+          updatedAt: disconnectedAt,
+        })
+        .where(
+          and(
+            inArray(modelProviderAccounts.id, ids),
+            isNull(modelProviderAccounts.disconnectedAt),
+            exists(
+              db
+                .select({ id: agentRuns.id })
+                .from(agentRuns)
+                .where(
+                  and(
+                    eq(agentRuns.modelProviderId, modelProviderAccounts.id),
+                    eq(agentRuns.orgId, input.orgId),
+                    eq(agentRuns.userId, input.userId),
+                    inArray(agentRuns.status, ["pending", "running"]),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ id: modelProviderAccounts.id }),
+    );
+    const deleted = db.$with("deleted_accounts").as(
+      db
+        .delete(modelProviderAccounts)
+        .where(
+          and(
+            inArray(modelProviderAccounts.id, ids),
+            isNull(modelProviderAccounts.disconnectedAt),
+            notInArray(
+              modelProviderAccounts.id,
+              db.select({ id: retained.id }).from(retained),
+            ),
+          ),
+        )
+        .returning({ id: modelProviderAccounts.id }),
+    );
+    const replacement = db.$with("replacement_account").as(
+      db
+        .select({ id: modelProviderAccounts.id })
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.modelProviderId, providerId),
+            isNull(modelProviderAccounts.disconnectedAt),
+            notInArray(modelProviderAccounts.id, ids),
+            // Consume both writes before acquiring the active-account index entry.
+            gte(
+              sql`${db.select({ count: count() }).from(retained)} + ${db.select({ count: count() }).from(deleted)}`,
+              0,
+            ),
+          ),
+        )
+        .orderBy(
+          asc(modelProviderAccounts.needsReconnect),
+          asc(modelProviderAccounts.createdAt),
+          asc(modelProviderAccounts.id),
+        )
+        .limit(1),
+    );
+    const promoted = db.$with("promoted_account").as(
+      db
+        .update(modelProviderAccounts)
+        .set({ isActive: true, updatedAt: disconnectedAt })
+        .where(
+          and(
+            input.promoteReplacement
+              ? inArray(
+                  modelProviderAccounts.id,
+                  db.select({ id: replacement.id }).from(replacement),
+                )
+              : sql`false`,
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        )
+        .returning({ id: modelProviderAccounts.id }),
+    );
+    const result = await withAccountConflict(
+      (async () => {
+        await db
+          .with(retained, deleted, replacement, promoted)
+          .delete(modelProviders)
+          .where(
+            and(
+              eq(modelProviders.id, providerId),
+              notExists(
+                db
+                  .select({ id: modelProviderAccounts.id })
+                  .from(modelProviderAccounts)
+                  .where(
+                    and(
+                      eq(modelProviderAccounts.modelProviderId, providerId),
+                      notInArray(
+                        modelProviderAccounts.id,
+                        db.select({ id: deleted.id }).from(deleted),
+                      ),
+                    ),
+                  ),
+              ),
+            ),
+          );
+        return undefined;
+      })(),
+    );
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+/** Profile/KMS preparation precedes the atomic local disconnection. */
 export const disconnectPersonalModelProviderAccounts$ = command(
   async (
     { set },
@@ -890,70 +1062,17 @@ export const disconnectPersonalModelProviderAccounts$ = command(
         ? await set(prepareClaudeAccountIdentities$, args, signal)
         : null;
     signal.throwIfAborted();
-    const result = await withAccountConflict(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0187; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const identityDb = tx;
-        const identityAccounts = accounts;
-        const identityMetadata = identities;
-        const hydratedAccounts = await (async (): Promise<AccountRow[]> => {
-          const hydrated: AccountRow[] = [];
-          for (const account of identityAccounts) {
-            const metadata = claudeAccountIdentityToApply(
-              account,
-              identityMetadata,
-            );
-            if (!metadata) {
-              hydrated.push(account);
-              continue;
-            }
-            const [updated] = await identityDb
-              .update(modelProviderAccounts)
-              .set(claudeAccountIdentityValues(metadata))
-              .where(eq(modelProviderAccounts.id, account.id))
-              .returning();
-            hydrated.push(updated ?? account);
-          }
-          return hydrated;
-        })();
-        for (const account of hydratedAccounts) {
-          await tx.execute(retiringAccountStatement(account));
-        }
-        if (args.selection.kind === "account" && first.isActive) {
-          const [replacement] = await tx
-            .select({ id: modelProviderAccounts.id })
-            .from(modelProviderAccounts)
-            .where(connectedAccountCondition(providerId))
-            .orderBy(
-              asc(modelProviderAccounts.needsReconnect),
-              asc(modelProviderAccounts.createdAt),
-              asc(modelProviderAccounts.id),
-            )
-            .limit(1);
-          if (replacement) {
-            await tx
-              .update(modelProviderAccounts)
-              .set({ isActive: true, updatedAt: nowDate() })
-              .where(eq(modelProviderAccounts.id, replacement.id));
-          }
-        }
-        // Remove the logical provider once no account row, including a
-        // retained one, still references it.
-        await tx
-          .delete(modelProviders)
-          .where(
-            and(
-              eq(modelProviders.id, providerId),
-              notExists(
-                tx
-                  .select({ id: modelProviderAccounts.id })
-                  .from(modelProviderAccounts)
-                  .where(eq(modelProviderAccounts.modelProviderId, providerId)),
-              ),
-            ),
-          );
-        return undefined;
-      }),
+    const result = await set(
+      commitPersonalAccountDisconnection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        accounts,
+        identities,
+        providerId,
+        promoteReplacement: args.selection.kind === "account" && first.isActive,
+      },
+      signal,
     );
     signal.throwIfAborted();
     if (result === undefined) {

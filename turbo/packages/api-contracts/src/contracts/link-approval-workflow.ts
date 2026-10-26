@@ -1,16 +1,17 @@
-import { z } from "zod";
+import { iso, object, uuid, enum as zEnum, type infer as zInfer } from "zod";
+
 import { initContract } from "./base";
 
 // Only purchase identity and its original deadline cross the Workflow boundary.
-export const linkApprovalWorkflowParamsSchema = z.object({
-  spendId: z.uuid(),
-  deadline: z.iso.datetime(),
+export const linkApprovalWorkflowParamsSchema = object({
+  spendId: uuid(),
+  deadline: iso.datetime(),
 });
-export type LinkApprovalWorkflowParams = z.infer<
+export type LinkApprovalWorkflowParams = zInfer<
   typeof linkApprovalWorkflowParamsSchema
 >;
-export const linkApprovalPollResultSchema = z.object({
-  state: z.enum(["waiting", "done"]),
+export const linkApprovalPollResultSchema = object({
+  state: zEnum(["waiting", "done"]),
 });
 
 const c = initContract();
@@ -18,7 +19,7 @@ export const linkApprovalWorkflowContract = c.router({
   poll: {
     method: "POST",
     path: "/api/internal/link-approval/poll",
-    body: z.object({ spendId: z.uuid() }),
+    body: object({ spendId: uuid() }),
     responses: { 200: linkApprovalPollResultSchema },
   },
 });

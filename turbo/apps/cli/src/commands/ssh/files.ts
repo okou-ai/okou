@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { printSshDiagnostics } from "../../lib/ssh-diagnostics";
-import { z } from "zod";
+import { uuid } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   DownloadDestination,
@@ -118,7 +118,7 @@ Success reports streamed-byte SHA-256, not a filesystem snapshot. On failure, in
           options: { overwrite?: boolean; json?: boolean },
         ) => {
           requireCapability();
-          if (!z.uuid().safeParse(connectionId).success)
+          if (!uuid().safeParse(connectionId).success)
             throw new Error(
               "Invalid SSH connection ID. Use an exact ID from okou ssh host list.",
             );

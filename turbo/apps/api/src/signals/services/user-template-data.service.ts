@@ -8,7 +8,7 @@ import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type { userTemplates } from "@okouai/db/schema/user-template";
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import { uuid } from "zod";
 import type { PresentationTemplateVolume } from "./presentation-template-data.service";
 
 export type UserTemplateRow = typeof userTemplates.$inferSelect;
@@ -60,7 +60,7 @@ export function parseUserTemplatePreviewAssetId(
   const storageVersionId = identity.slice(separator + 1);
   if (
     separator === -1 ||
-    !z.uuid().safeParse(templateId).success ||
+    !uuid().safeParse(templateId).success ||
     !/^[\w-]{43}$/.test(storageVersionId)
   ) {
     return null;

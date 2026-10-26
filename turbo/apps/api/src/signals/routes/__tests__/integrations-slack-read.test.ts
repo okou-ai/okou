@@ -187,7 +187,7 @@ describe("Slack bot channel discovery and history", () => {
       error: {
         code: "NOT_FOUND",
         message:
-          "No Slack installation found for this organization. Install Okou from Settings > Slack first.",
+          "Your Slack account is not connected to this organization. Connect it from Settings > Slack before reading conversations.",
       },
     });
     expect(requests).toHaveLength(3);
@@ -542,7 +542,7 @@ describe("Slack bot channel discovery and history", () => {
       [404],
     );
     expect(response.body.error.message).toContain(
-      "No Slack installation found for this organization",
+      "Your Slack account is not connected to this organization",
     );
   });
 });
@@ -769,7 +769,7 @@ describe("Slack bot thread replies", () => {
     {
       options: { installed: false },
       status: 404,
-      message: "No Slack installation found for this organization",
+      message: "Your Slack account is not connected to this organization",
     },
     {
       options: { connected: false },

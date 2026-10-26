@@ -1,4 +1,4 @@
-import { requestValidationError } from "@okouai/api-contracts/contracts/errors";
+import { requestValidationError } from "@okouai/api-contracts/contracts/request-validation-error";
 
 function httpError<STATUS extends number, CODE extends string>(
   status: STATUS,

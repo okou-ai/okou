@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -17,11 +17,11 @@ const DATADOG_DOMAINS = new Set([
   "us2.ddog-gov.com",
 ]);
 
-const tokenSchema = z.object({
-  access_token: z.string().min(1),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().positive().optional(),
-  scope: z.string().optional(),
+const tokenSchema = object({
+  access_token: string().min(1),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().positive().optional(),
+  scope: string().optional(),
 });
 
 function base64Url(bytes: Uint8Array): string {
@@ -55,10 +55,7 @@ function parseDatadogDomain(oauthContext: string | undefined): string {
   } catch {
     throw new Error("Datadog domain missing from OAuth callback");
   }
-  const parsed = z
-    .object({ domain: z.string() })
-    .passthrough()
-    .safeParse(context);
+  const parsed = object({ domain: string() }).passthrough().safeParse(context);
   if (!parsed.success || !DATADOG_DOMAINS.has(parsed.data.domain)) {
     throw new Error("Unsupported Datadog domain in OAuth callback");
   }

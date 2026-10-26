@@ -12,7 +12,15 @@ import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
-import { z } from "zod";
+import {
+  int,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  null as zNull,
+} from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   integrationChatThreadInsertFromRouteSql,
@@ -71,13 +79,13 @@ const ROUTE_COLUMNS = {
   chatThreadId: feishuChatThreadRoutes.chatThreadId,
 } as const;
 
-const routeResultSchema = z.object({
-  id: z.uuid(),
-  connectionId: z.uuid(),
-  chatId: z.string(),
-  threadId: z.string(),
-  userId: z.string(),
-  chatThreadId: z.uuid(),
+const routeResultSchema = object({
+  id: uuid(),
+  connectionId: uuid(),
+  chatId: string(),
+  threadId: string(),
+  userId: string(),
+  chatThreadId: uuid(),
 });
 
 /**
@@ -201,13 +209,13 @@ interface FeishuChatIngressAdmission {
   readonly retryCount: number;
 }
 
-const ingressInsertResultSchema = z.union([
-  z.object({
-    id: z.uuid(),
-    status: z.enum(["pending", "processing", "processed", "failed"]),
-    retryCount: z.int().nonnegative(),
+const ingressInsertResultSchema = union([
+  object({
+    id: uuid(),
+    status: zEnum(["pending", "processing", "processed", "failed"]),
+    retryCount: int().nonnegative(),
   }),
-  z.object({ id: z.null(), status: z.null(), retryCount: z.null() }),
+  object({ id: zNull(), status: zNull(), retryCount: zNull() }),
 ]);
 
 export const admitFeishuChatEvent$ = command(

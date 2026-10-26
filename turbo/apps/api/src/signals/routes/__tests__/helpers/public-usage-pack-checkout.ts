@@ -3,7 +3,8 @@ import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks"
 import { randomUUID } from "node:crypto";
 import type StripeSDK from "stripe";
 import { expect } from "vitest";
-import { z } from "zod";
+import { object, string, type infer as zInfer } from "zod";
+
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
@@ -13,10 +14,8 @@ import { billingCheckoutRoutes } from "../../billing-checkout";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { createRouteMocks } from "./route-test";
 
-const selectionSchema = z.object({
-  metadata: z
-    .object({ usagePackSubscriptionId: z.string() })
-    .catchall(z.string()),
+const selectionSchema = object({
+  metadata: object({ usagePackSubscriptionId: string() }).catchall(string()),
 });
 const PRICE_PLAN = "price_public_usage_plan";
 const PRICE_20 = "price_public_usage_20";
@@ -84,7 +83,7 @@ export async function purchaseUsagePacks(
   context.mocks.stripe.customers.create.mockResolvedValueOnce({
     id: customerId,
   });
-  let checkoutMetadata: z.infer<typeof selectionSchema>["metadata"] | undefined;
+  let checkoutMetadata: zInfer<typeof selectionSchema>["metadata"] | undefined;
   context.mocks.stripe.checkout.sessions.create.mockImplementationOnce(
     (input) => {
       checkoutMetadata = selectionSchema.parse(input).metadata;

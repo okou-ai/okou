@@ -53,7 +53,7 @@ export const selectedMorningBriefDefinition$ = command(
     );
     return proactive.suggestions.active &&
       org?.defaultAgentId === owner.agentId &&
-      isFeatureEnabled(FeatureSwitchKey.ProactiveAgent, features)
+      isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)
       ? INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME
       : MORNING_BRIEF_OFFICIAL_DEFINITION_NAME;
   },

@@ -1,10 +1,10 @@
-import type { z } from "zod";
+import type { ZodType } from "zod";
 
 import { ProviderResponseError } from "./provider-error";
 
 export async function parseProviderTokenResponse<T>(
   response: Response,
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   failureMessage: string,
 ): Promise<T> {
   let payload: unknown;

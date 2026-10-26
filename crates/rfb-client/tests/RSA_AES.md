@@ -1,6 +1,6 @@
 # RSA-AES engine interoperability (opt-in)
 
-This is **engine-only** evidence for #37499 under #35045. It does not expose a saved Owner/API/Runner profile, enable VncAccess, or prove an Owner→Agent→Runner PNG. No RealVNC SystemAuth/SSO/MFA, RA2r or unspecified server compatibility is claimed.
+This is **engine-only** evidence for #37499 under #35045. It does not expose a saved Owner/API/Runner profile or prove an Owner→Agent→Runner PNG. No RealVNC SystemAuth/SSO/MFA, RA2r or unspecified server compatibility is claimed.
 
 ## Exact policy and wire
 

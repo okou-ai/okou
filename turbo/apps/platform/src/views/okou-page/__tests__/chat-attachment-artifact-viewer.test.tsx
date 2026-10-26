@@ -738,11 +738,14 @@ test.each([false, true])(
       "src",
       `${THUMBNAIL_PREFIX.replace("https://cdn.vm7.io/", "https://a.okou.io/")}${cover}`,
     );
-    fireEvent.error(image);
-    expect(
-      within(card).getByTestId("attachment-preview-site-placeholder"),
-    ).toBeInTheDocument();
+    fireEvent.load(image);
     expect(card.querySelector("iframe")).toBeNull();
+    fireEvent.error(image);
+    await within(card).findByTestId("attachment-preview-html-viewport");
+    const frame = card.querySelector("iframe");
+    expect(frame).toHaveAttribute("src", enabled ? previewUrl : site);
+    expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
+    expect(frame).toHaveAttribute("tabindex", "-1");
     click(card);
     await waitFor(() => {
       expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
@@ -750,6 +753,37 @@ test.each([false, true])(
         enabled ? previewUrl : site,
       );
     });
+  },
+);
+
+test.each([false, true])(
+  "a hosted website without a cover uses its resolved iframe with visibility settings %s",
+  async (enabled) => {
+    const path = "/report?period=quarterly#summary";
+    const site = `https://report.okou.app${path}`;
+    const previewUrl = `https://pv-${"d".repeat(48)}.okou.app/`;
+    mockAttachmentChat(context, {
+      chatEvents: [assistantMessage(`![Website report](${site})`)],
+    });
+    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+      return respond(200, {
+        url: enabled ? previewUrl : site,
+        expiresAt: enabled ? "2099-01-01T00:00:00.000Z" : null,
+      });
+    });
+    await setupPage({
+      context,
+      host: "app.okou.ai",
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      featureSwitches: { [FeatureSwitchKey.HostedSiteVisibility]: enabled },
+    });
+
+    const card = await screen.findByTestId("attachment-preview-html");
+    await within(card).findByTestId("attachment-preview-html-viewport");
+    expect(card.querySelector("iframe")).toHaveAttribute(
+      "src",
+      enabled ? new URL(path, previewUrl).href : site,
+    );
   },
 );
 
@@ -792,7 +826,9 @@ test.each([
             : "This website is temporarily unavailable",
       }),
     ).resolves.toBeInTheDocument();
-    expect(getNamedLink("Try again", viewer)).toBeInTheDocument();
+    expect(
+      screen.getByTestId("attachment-preview-html").querySelector("iframe"),
+    ).toBeNull();
   },
 );
 

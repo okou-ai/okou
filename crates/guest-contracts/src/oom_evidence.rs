@@ -526,6 +526,37 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_evidence_enforces_the_48_kib_byte_boundary() {
+        let evidence: OomEvidence = serde_json::from_str(FIXTURE).unwrap();
+        assert!(evidence.incidents.len() <= MAX_INCIDENTS);
+        assert!(
+            evidence
+                .incidents
+                .iter()
+                .all(|incident| incident.kernel_events.len() <= MAX_KERNEL_EVENTS)
+        );
+        let json = serde_json::to_string(&evidence).unwrap();
+
+        // Fixed byte sizes keep the oracle independent of the production limit.
+        // JSON spaces preserve the evidence and keep it on one diagnostic line.
+        for (bytes, accepted) in [(49_152, true), (49_153, false)] {
+            let payload = format!("{json}{}", " ".repeat(bytes - json.len()));
+            assert_eq!(payload.len(), bytes);
+            assert_eq!(
+                serde_json::from_str::<OomEvidence>(&payload).unwrap(),
+                evidence
+            );
+
+            let split = split_diagnostic(&format!("{EVIDENCE_PREFIX}{payload}"));
+            assert_eq!(split.evidence.as_ref(), accepted.then_some(&evidence));
+            assert_eq!(split.malformed_lines, u32::from(!accepted));
+            assert_eq!(split.residual, "");
+            assert!(!split.is_actionable());
+            assert_eq!(split.has_proof(), accepted);
+        }
+    }
+
+    #[test]
     fn malformed_metadata_is_counted_and_never_reported_as_a_diagnostic() {
         let evidence: OomEvidence = serde_json::from_str(FIXTURE).unwrap();
         let mut over_count = evidence.clone();
@@ -536,7 +567,6 @@ mod tests {
 
         for line in [
             format!("{EVIDENCE_PREFIX}not json"),
-            format!("{EVIDENCE_PREFIX}{}", "x".repeat(MAX_EVIDENCE_BYTES + 1)),
             evidence_line(&over_count),
             evidence_line(&over_events),
         ] {

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { string, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -11,11 +11,11 @@ const c = initContract();
 
 export const githubAppSetupCallbackQuerySchema =
   integrationOAuthCallbackQuerySchema.extend({
-    error_description: z.string().optional(),
-    installation_id: z.string().optional(),
-    setup_action: z.string().optional(),
-    target_id: z.string().optional(),
-    target_type: z.string().optional(),
+    error_description: string().optional(),
+    installation_id: string().optional(),
+    setup_action: string().optional(),
+    target_id: string().optional(),
+    target_type: string().optional(),
   });
 
 export const githubAppSetupCallbackContract = c.router({
@@ -35,6 +35,6 @@ export const githubAppSetupCallbackContract = c.router({
   },
 });
 
-export type GithubAppSetupCallbackQuery = z.infer<
+export type GithubAppSetupCallbackQuery = zInfer<
   typeof githubAppSetupCallbackQuerySchema
 >;

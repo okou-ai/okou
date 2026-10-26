@@ -1,5 +1,14 @@
 import { Command, Option } from "commander";
-import { z } from "zod";
+import {
+  literal,
+  strictObject,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { decodeSandboxTokenPayload } from "./api/sandbox-token";
 import { withErrorHandler } from "./command/with-error-handler";
 import { diagnosticTextSchema } from "./diagnostic-text";
@@ -11,14 +20,14 @@ import {
   type RunnerRpcResponseReader,
 } from "./runner-rpc";
 
-const checkSchema = z.strictObject({
-  type: z.literal("active_check"),
-  status: z.enum(["passed", "failed", "blocked"]),
-  message: diagnosticTextSchema.pipe(z.string()),
+const checkSchema = strictObject({
+  type: literal("active_check"),
+  status: zEnum(["passed", "failed", "blocked"]),
+  message: diagnosticTextSchema.pipe(string()),
 });
-type Check = z.infer<typeof checkSchema>;
-const envelope = z.union([
-  z.strictObject({ type: z.literal("result"), data: checkSchema }),
+type Check = zInfer<typeof checkSchema>;
+const envelope = union([
+  strictObject({ type: literal("result"), data: checkSchema }),
   rpcErrorSchema,
 ]);
 
@@ -129,7 +138,7 @@ export function createCheckCommand(protocol: "ssh" | "vnc") {
           throw new Error(
             `Active ${protocol.toUpperCase()} checks require a Run token with ${protocol}:write. Passive read access cannot authorize a login.`,
           );
-        if (!z.uuid().safeParse(connectionId).success)
+        if (!uuid().safeParse(connectionId).success)
           throw new Error(`Use an exact UUID from ${protocol} host list.`);
         const params =
           protocol === "vnc"

@@ -1,7 +1,10 @@
-"""Data Router correlation through the production request hooks."""
+"""Data Router billing identity through production request and terminal hooks."""
 
+import asyncio
 import json
+import time
 import uuid
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Literal
 from unittest.mock import AsyncMock, patch
@@ -10,6 +13,7 @@ import pytest
 from hyperframe.frame import DataFrame
 from mitmproxy import connection, http
 from mitmproxy.addons.proxyserver import Proxyserver
+from mitmproxy.flow import Error
 from mitmproxy.proxy import commands, events
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
 from mitmproxy.test import taddons
@@ -19,13 +23,15 @@ import firewall_auth_client
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import public_destination_body_admission
+from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http2_request, start_http_layer
+from tests.pending_helpers import assert_pending
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 
-def router_registry(tmp_path, *, public_destination: bool = False):
+def router_registry(tmp_path, *, owner="data-router", public_destination: bool = False):
     api_entry: dict[str, object] = {
         "base": "https://data.okou.ai/mcp",
         "auth": {"headers": {"Authorization": "Bearer ${{ secrets.OKOU_DATA_TOKEN }}"}},
@@ -38,7 +44,8 @@ def router_registry(tmp_path, *, public_destination: bool = False):
         sandbox_info=_single_firewall_sandbox(
             tmp_path,
             run_id=str(uuid.uuid4()),
-            firewall_name="data-router",
+            firewall_name=owner,
+            billable_firewalls=[owner],
             api_entry=api_entry,
             network_policy={"allow": ["call"], "deny": [], "ask": [], "unknownPolicy": "deny"},
         ),
@@ -60,11 +67,21 @@ def router_flow(real_flow, *, method="tools/call", name="web_search"):
     return flow
 
 
-async def test_cached_credentials_still_register_each_request_before_upstream(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+def finish_router_flow(
+    flow: http.HTTPFlow, terminal: Literal["response", "error"]
+) -> Awaitable[None] | None:
+    if terminal == "error":
+        flow.error = Error("connection reset by peer")
+        return mitm_addon.error(flow)
+    return mitm_addon.response(flow)
+
+
+async def test_each_router_response_registers_its_own_id_after_upstream(
+    tmp_path, real_flow, mitm_ctx
 ):
     path = router_registry(tmp_path)
     flows = [router_flow(real_flow), router_flow(real_flow)]
+    ids = [str(uuid.uuid4()), str(uuid.uuid4())]
     registration = AsyncMock()
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
@@ -75,64 +92,238 @@ async def test_cached_credentials_still_register_each_request_before_upstream(
                 return_value=firewall_auth_client.FirewallAuthSuccess(
                     payload=firewall_auth_client.FirewallAuthPayload(
                         headers={"Authorization": "Bearer service-token"}
-                    )
+                    ),
+                    expires_at=time.time() + 3600,
                 )
             ),
         ) as auth_fetch,
         patch.object(firewall_auth_client, "post_platform_json", registration),
     ):
-        for flow in flows:
+        for flow, request_id in zip(flows, ids, strict=True):
             assert mitm_addon.requestheaders(flow) is None
-            assert not callable(flow.request.stream)
-            assert registration.await_count == flows.index(flow)
             await mitm_addon.request(flow)
             assert flow.response is None
             assert flow.request.headers["Authorization"] == "Bearer service-token"
+            assert "X-Okou-Data-Request-Id" not in flow.request.headers
+            assert registration.await_count == flows.index(flow)
+            flow.response = http.Response.make(
+                200, b"unparsed vendor result", {"X-Okou-Data-Request-Id": request_id}
+            )
+            completion = mitm_addon.response(flow)
+            assert completion is not None
+            await completion
+            assert flow.response.content == b"unparsed vendor result"
     assert auth_fetch.await_count == 1
     assert registration.await_count == 2
-    ids = [flow.request.headers["X-Okou-Data-Request-Id"] for flow in flows]
-    assert len(set(ids)) == 2
     for request_id, call in zip(ids, registration.await_args_list, strict=True):
-        assert str(uuid.UUID(request_id)) == request_id
-        assert json.loads(call.args[1])["requestId"] == request_id
+        assert call.args[0] == "https://api.okou.ai/api/webhooks/agent/data-request"
+        assert json.loads(call.args[1]) == {
+            "runId": json.loads(path.read_text())["sandboxes"]["10.200.0.5"]["runId"],
+            "requestId": request_id,
+        }
 
 
-async def test_failed_registration_blocks_paid_execution(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+@pytest.mark.parametrize("status", [200, 502])
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_terminal_completion_waits_for_registration_including_provider_errors(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, status, terminal
 ):
     path = router_registry(tmp_path)
     flow = router_flow(real_flow)
+    started = asyncio.Event()
+    released = asyncio.Event()
+
+    async def register(*_args):
+        started.set()
+        await released.wait()
+
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(
-            firewall_auth_client, "post_platform_json", AsyncMock(side_effect=TimeoutError)
-        ),
-        pytest.raises(TimeoutError),
+        patch.object(firewall_auth_client, "post_platform_json", register),
     ):
         await mitm_addon.request(flow)
-    assert flow.response is not None
-    assert flow.response.status_code == 500
-    assert "X-Okou-Data-Request-Id" not in flow.request.headers
+        flow.response = http.Response.make(
+            status, b"provider response", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
+        )
+        mitm_addon.responseheaders(flow)
+        pending = finish_router_flow(flow, terminal)
+        assert pending is not None
+
+        async def complete_response():
+            await pending
+
+        async with asyncio.TaskGroup() as group:
+            completion = group.create_task(complete_response())
+            try:
+                await started.wait()
+                assert not completion.done()
+                assert_pending(tmp_path / "delivery-control", flows=1, buffered=0, reports=0)
+            finally:
+                released.set()
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+        assert flow.response.status_code == status
+        assert flow.response.content == b"provider response"
 
 
-async def test_control_requests_do_not_register_or_keep_forged_identity(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_failed_terminal_registration_is_reported_without_retrying(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, terminal
 ):
     path = router_registry(tmp_path)
-    flows = [
-        router_flow(real_flow, method="tools/list"),
-        router_flow(real_flow, name="billing_get"),
-    ]
+    flow = router_flow(real_flow)
+    registration = AsyncMock(side_effect=TimeoutError)
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        registration.assert_not_awaited()
+        flow.response = http.Response.make(
+            200, b"already executed", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
+        )
+        mitm_addon.responseheaders(flow)
+        pending = finish_router_flow(flow, terminal)
+        assert pending is not None
+        with pytest.raises(TimeoutError):
+            await pending
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+        if terminal == "error":
+            [entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
+            assert entry["error"] == "connection reset by peer"
+        later_error = finish_router_flow(flow, "error")
+        assert later_error is not None
+        await later_error
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+    registration.assert_awaited_once()
+    assert flow.response.content == b"already executed"
+
+
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_connection_error_does_not_repeat_successful_terminal_registration(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, terminal
+):
+    path = router_registry(tmp_path)
+    flow = router_flow(real_flow)
     registration = AsyncMock()
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
         patch.object(firewall_auth_client, "post_platform_json", registration),
     ):
-        for flow in flows:
-            await mitm_addon.request(flow)
-            assert "X-Okou-Data-Request-Id" not in flow.request.headers
+        await mitm_addon.request(flow)
+        flow.response = http.Response.make(
+            200, b"already executed", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
+        )
+        mitm_addon.responseheaders(flow)
+        completion = finish_router_flow(flow, terminal)
+        assert completion is not None
+        await completion
+        later_error = finish_router_flow(flow, "error")
+        assert later_error is not None
+        await later_error
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+    registration.assert_awaited_once()
+
+
+async def test_connection_error_after_response_headers_registers_router_identity(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+):
+    path = router_registry(tmp_path)
+    flow = router_flow(real_flow)
+    request_id = str(uuid.uuid4())
+    registration = AsyncMock()
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        flow.response = http.Response.make(200, b"", {"X-Okou-Data-Request-Id": request_id})
+        flow.response.raw_content = None
+        mitm_addon.responseheaders(flow)
+        response_stream(flow)(b"partial provider response")
+        flow.error = Error("connection reset by peer")
+        completion = mitm_addon.error(flow)
+        if completion is not None:
+            await completion
+        registration.assert_awaited_once()
+        [registered] = registration.await_args_list
+        sandbox = json.loads(path.read_text())["sandboxes"]["10.200.0.5"]
+        assert registered.args[0] == "https://api.okou.ai/api/webhooks/agent/data-request"
+        assert json.loads(registered.args[1]) == {
+            "runId": sandbox["runId"],
+            "requestId": request_id,
+        }
+        assert registered.args[2] == sandbox["sandboxToken"]
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+
+
+@pytest.mark.parametrize("with_response", [False, True])
+async def test_connection_error_without_router_identity_does_not_register(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, with_response
+):
+    path = router_registry(tmp_path)
+    flow = router_flow(real_flow)
+    registration = AsyncMock()
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        if with_response:
+            flow.response = http.Response.make(200, b"no execution identity")
+            mitm_addon.responseheaders(flow)
+        completion = finish_router_flow(flow, "error")
+        assert completion is not None
+        await completion
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+    registration.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("method", "name"),
+    [("tools/list", ""), ("tools/call", "billing_get"), ("tools/call", "pricing_list")],
+)
+async def test_control_responses_without_identity_are_not_registered(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, method, name
+):
+    path = router_registry(tmp_path)
+    flow = router_flow(real_flow, method=method, name=name)
+    registration = AsyncMock()
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        assert "X-Okou-Data-Request-Id" not in flow.request.headers
+        flow.response = http.Response.make(200, b"control response")
+        pending = mitm_addon.response(flow)
+        assert pending is not None
+        await pending
+    registration.assert_not_awaited()
+
+
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_another_provider_cannot_register_a_router_response_id(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, terminal
+):
+    path = router_registry(tmp_path, owner="github")
+    flow = router_flow(real_flow)
+    registration = AsyncMock()
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        flow.response = http.Response.make(
+            200, b"another provider", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
+        )
+        assert finish_router_flow(flow, terminal) is None
     registration.assert_not_awaited()
 
 
@@ -274,7 +465,7 @@ async def test_body_limit_rejects_before_native_buffering_or_registration(
 
 @pytest.mark.parametrize("protocol", ["http1", "http2"])
 @pytest.mark.parametrize("body_size", [256, 1024 * 1024], ids=["small", "limit"])
-async def test_native_body_at_inclusive_limit_registers_before_upstream(
+async def test_native_body_at_inclusive_limit_registers_router_response(
     tmp_path: Path, fake_firewall_headers, protocol: str, body_size: int
 ) -> None:
     registry_path = router_registry(tmp_path)
@@ -318,14 +509,16 @@ async def test_native_body_at_inclusive_limit_registers_before_upstream(
         assert flow.response is None
         assert flow.request.headers["Authorization"] == "Bearer service-token"
         auth_fetch.assert_awaited_once()
+        assert "X-Okou-Data-Request-Id" not in flow.request.headers
+        registration.assert_not_awaited()
+        request_id = str(uuid.uuid4())
+        flow.response = http.Response.make(200, b"", {"X-Okou-Data-Request-Id": request_id})
+        completion = mitm_addon.response(flow)
+        assert completion is not None
+        await completion
         registration.assert_awaited_once()
         [registered] = registration.await_args_list
-        assert (
-            json.loads(registered.args[1])["requestId"]
-            == flow.request.headers["X-Okou-Data-Request-Id"]
-        )
-        flow.response = http.Response.make(200)
-        mitm_addon.response(flow)
+        assert json.loads(registered.args[1])["requestId"] == request_id
 
 
 @pytest.mark.parametrize("protocol", ["http1", "http2"])
@@ -362,4 +555,7 @@ async def test_native_headers_only_requests_do_not_need_a_body_length(
         assert flow.request.raw_content == b""
         registration.assert_not_awaited()
         flow.response = http.Response.make(200)
-        mitm_addon.response(flow)
+        completion = mitm_addon.response(flow)
+        assert completion is not None
+        await completion
+        registration.assert_not_awaited()

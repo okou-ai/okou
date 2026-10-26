@@ -35,7 +35,7 @@ import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/sch
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import { object, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -81,7 +81,7 @@ import {
 } from "./connected-connector-authorization.service";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
 
-const createdDeviceAuthSessionSchema = z.object({ id: z.uuid() });
+const createdDeviceAuthSessionSchema = object({ id: uuid() });
 
 const DEFAULT_POLL_INTERVAL_SECONDS = 5;
 const SLOW_DOWN_INCREMENT_SECONDS = 5;

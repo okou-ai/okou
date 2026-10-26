@@ -1,11 +1,19 @@
 import { automationEventTypeSchema } from "@okouai/api-contracts/contracts/workflows";
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 export const workflowAutomationEventTypeSchema = automationEventTypeSchema.or(
-  z.enum(["schedule", "manual", "morning-brief-debug"]),
+  zEnum(["schedule", "manual", "morning-brief-debug"]),
 );
 
-export type WorkflowAutomationEventType = z.infer<
+export type WorkflowAutomationEventType = zInfer<
   typeof workflowAutomationEventTypeSchema
 >;
 
@@ -26,10 +34,10 @@ const EVENT_PAYLOAD_OBJECT_KEY_ORDER = "__vm0EventPayloadObjectKeyOrderV1";
 // field. Keep stripping it until those persisted payloads have drained.
 const LEGACY_AUTOMATION_MESSAGE_VARIANT_FIELD =
   "__vm0UserFriendlyAutomationMessageV1";
-const eventPayloadObjectKeyOrderSchema = z.array(
-  z.object({
-    path: z.array(z.union([z.string(), z.number()])),
-    keys: z.array(z.string()),
+const eventPayloadObjectKeyOrderSchema = array(
+  object({
+    path: array(union([string(), number()])),
+    keys: array(string()),
   }),
 );
 

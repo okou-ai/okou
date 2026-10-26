@@ -2,9 +2,9 @@ import {
   INTEGRATION_SETTINGS_PATHS,
   INTEGRATION_OAUTH_CALLBACK_PATHS,
 } from "@okouai/core/integration-routes";
-import { z } from "zod";
+import { url as zUrl } from "zod";
 
-const diagnosticUrlSchema = z.url();
+const diagnosticUrlSchema = zUrl();
 const oauthCallbackPaths = [
   ...Object.values(INTEGRATION_OAUTH_CALLBACK_PATHS),
   "/api/integrations/slack/oauth/callback",

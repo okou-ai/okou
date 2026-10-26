@@ -2013,17 +2013,34 @@ async fn read_claim_response_body(
     if !first_chunk.is_empty() {
         first_chunk_observed();
     }
-    // Retain received chunks until EOF instead of coalescing the tail before
-    // copying it again into the complete body. Never reserve an advertised size.
+    // Group tiny fragments so retained descriptors and backing allocations do
+    // not scale with HTTP chunk count. Large chunks still avoid an extra copy.
+    // This is allocation organization, not a response-size or fragment limit.
+    const CHUNK_GROUP_BYTES: usize = 4 * 1024;
     let mut tail = Vec::new();
+    let mut pending = Vec::new();
     while let Some(chunk) = resp
         .chunk()
         .await
         .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
     {
-        if !chunk.is_empty() {
+        if chunk.is_empty() {
+            continue;
+        }
+        if chunk.len() < CHUNK_GROUP_BYTES {
+            pending.extend_from_slice(&chunk);
+            if pending.len() >= CHUNK_GROUP_BYTES {
+                tail.push(Bytes::from(std::mem::take(&mut pending)));
+            }
+        } else {
+            if !pending.is_empty() {
+                tail.push(Bytes::from(std::mem::take(&mut pending)));
+            }
             tail.push(chunk);
         }
+    }
+    if !pending.is_empty() {
+        tail.push(Bytes::from(pending));
     }
     // The common one-chunk case stays zero-copy; split input is coalesced once.
     let body = if tail.is_empty() {

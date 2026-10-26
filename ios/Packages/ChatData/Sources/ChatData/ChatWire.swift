@@ -167,18 +167,22 @@ struct ChatEventRow: Decodable, Sendable {
   }
 }
 
-public struct AgentRecord: Decodable, Equatable, Sendable {
+public struct AgentRecord: Codable, Equatable, Sendable {
   public let agentId: String
   public let isDefaultAgent: Bool
   public let displayName: String?
   public let avatarUrl: String?
 }
 
-public struct SidebarPreferences: Decodable, Sendable {
+public struct SidebarPreferences: Codable, Sendable {
   public let pinnedAgentIds: [String]
+
+  public init(pinnedAgentIds: [String]) {
+    self.pinnedAgentIds = pinnedAgentIds
+  }
 }
 
-public struct SidebarFeatureSwitches: Decodable, Sendable {
+public struct SidebarFeatureSwitches: Codable, Sendable {
   public let effectiveSwitches: [String: Bool]
 }
 

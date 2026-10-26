@@ -2,7 +2,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -54,7 +53,7 @@ test("A claimed queued message restores as the active run after refresh", async 
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 });
 
-test("A chat with no artifacts shows an empty artifact inbox", async () => {
+test("A chat with no artifacts shows an empty resources panel", async () => {
   const runId = "d0000000-0000-4000-a000-000000000072";
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query.chatThreadId).toBe(context.resourceId);
@@ -84,14 +83,17 @@ test("A chat with no artifacts shows an empty artifact inbox", async () => {
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: false },
   });
 
   await expect(
     screen.findByText("The launch brief is complete."),
   ).resolves.toBeVisible();
-  click(await findFastControl("button", "Open artifacts"));
-  await expect(screen.findByText("No artifacts found")).resolves.toBeVisible();
+  click(await findFastControl("button", "Resources"));
+  await expect(
+    screen.findByText(
+      "Artifacts and related chats from this chat appear here.",
+    ),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Show a migrated brief as ordinary chat history", async () => {

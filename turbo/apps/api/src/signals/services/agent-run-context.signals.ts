@@ -12,7 +12,7 @@ import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-co
 import { secrets } from "@okouai/db/schema/secret";
 import { command, computed, type Computed } from "ccstate";
 import { performance } from "node:perf_hooks";
-import { z } from "zod";
+import { array, object, record, string } from "zod";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,
@@ -726,24 +726,24 @@ export function createEagerConnectorCredentialContext(
 }
 
 const bootstrapVariablesDecoder = zodDriverValueDecoder(
-  z.array(
-    z.object({
-      name: z.string(),
-      value: z.string(),
-      userId: z.string(),
-      connectorId: z.string().nullable(),
+  array(
+    object({
+      name: string(),
+      value: string(),
+      userId: string(),
+      connectorId: string().nullable(),
     }),
   ),
 );
 const bootstrapConnectorVariablesDecoder = zodDriverValueDecoder(
-  z.record(z.string(), z.string()),
+  record(string(), string()),
 );
 const bootstrapCredentialsDecoder = zodDriverValueDecoder(
-  z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      encryptedValue: z.string(),
+  array(
+    object({
+      id: string(),
+      name: string(),
+      encryptedValue: string(),
     }),
   ),
 );

@@ -1,33 +1,31 @@
-import { z } from "zod";
+import { array, object, string, type infer as zInfer } from "zod";
+
 import {
   runContextResponseSchema,
   runContextStorageMountSchema,
   type RunContextStorageMount,
 } from "./run-routes";
 
-const retainedStorageSchema = z.object({
-  storageMounts: z.array(runContextStorageMountSchema).optional(),
-  volumes: z
-    .array(
-      z.object({
-        name: z.string(),
-        mountPath: z.string(),
-        vasStorageName: z.string(),
-        vasVersionId: z.string(),
-      }),
-    )
-    .optional(),
-  artifact: z
-    .object({
-      mountPath: z.string(),
-      vasStorageName: z.string(),
-      vasVersionId: z.string(),
-    })
+const retainedStorageSchema = object({
+  storageMounts: array(runContextStorageMountSchema).optional(),
+  volumes: array(
+    object({
+      name: string(),
+      mountPath: string(),
+      vasStorageName: string(),
+      vasVersionId: string(),
+    }),
+  ).optional(),
+  artifact: object({
+    mountPath: string(),
+    vasStorageName: string(),
+    vasVersionId: string(),
+  })
     .nullable()
     .optional(),
 });
 
-export type RetainedRunContextStorage = z.infer<typeof retainedStorageSchema>;
+export type RetainedRunContextStorage = zInfer<typeof retainedStorageSchema>;
 
 // Earlier Axiom snapshots and downloaded logs retain these captured fields.
 // Keep this persisted-format conversion while those records/files remain

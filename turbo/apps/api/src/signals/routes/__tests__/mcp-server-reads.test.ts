@@ -22,7 +22,7 @@ import {
   mcpSendChatMessageOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-tools";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { now, withMockNowForTest } from "../../../lib/time";
@@ -399,22 +399,18 @@ describe("thin MCP Web adapters", () => {
       ["okou:chat:manage", "rename_chat_thread", "cancel_run"],
     ]) {
       const token = f.token({ scope: `user:org:read okou:chat:read ${scope}` });
-      const listed = z
-        .object({
-          result: z.object({ tools: z.array(z.object({ name: z.string() })) }),
-        })
-        .parse(await mcp.rpc(token, "tools/list"));
+      const listed = object({
+        result: object({ tools: array(object({ name: string() })) }),
+      }).parse(await mcp.rpc(token, "tools/list"));
       const names = listed.result.tools.map((tool) => {
         return tool.name;
       });
       expect(names).toContain(present);
       expect(names).not.toContain(absent);
       expect(
-        z
-          .object({ error: z.object({ code: z.number() }) })
-          .safeParse(
-            await mcp.rpc(token, "tools/call", { name: absent, arguments: {} }),
-          ).success,
+        object({ error: object({ code: number() }) }).safeParse(
+          await mcp.rpc(token, "tools/call", { name: absent, arguments: {} }),
+        ).success,
       ).toBeTruthy();
     }
     const sent = await send(f, "operation-scoped Web events");

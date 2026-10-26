@@ -2,7 +2,6 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -76,7 +75,6 @@ test("Remote control lists each connection and filters credentials by type", asy
   await setupPage({
     context,
     path: "/connectors?scope=remote-control",
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
   await screen.findByRole("heading", { name: "Deployment" });
   expect(screen.getByRole("heading", { name: "Analytics" })).toBeVisible();

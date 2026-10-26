@@ -1,5 +1,65 @@
 # Changelog
 
+## [1.8.21](https://github.com/okou-ai/okou/compare/host-worker-v1.8.20...host-worker-v1.8.21) (2026-10-26)
+
+
+### Refactoring
+
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.2
+    * @okouai/core bumped to 8.791.3
+    * @okouai/ui bumped to 1.18.3
+
+## [1.8.20](https://github.com/okou-ai/okou/compare/host-worker-v1.8.19...host-worker-v1.8.20) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.2
+
+## [1.8.19](https://github.com/okou-ai/okou/compare/host-worker-v1.8.18...host-worker-v1.8.19) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.1
+    * @okouai/core bumped to 8.791.1
+
+## [1.8.18](https://github.com/okou-ai/okou/compare/host-worker-v1.8.17...host-worker-v1.8.18) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.0
+
+## [1.8.17](https://github.com/okou-ai/okou/compare/host-worker-v1.8.16...host-worker-v1.8.17) (2026-10-26)
+
+
+### Bug Fixes
+
+* download hosted sites in place and enable staff rollout ([#43111](https://github.com/okou-ai/okou/issues/43111)) ([ef21e30](https://github.com/okou-ai/okou/commit/ef21e303274787f2cfff446e747505b5849e9b18))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+    * @okouai/ui bumped to 1.18.2
+
 ## [1.8.16](https://github.com/okou-ai/okou/compare/host-worker-v1.8.15...host-worker-v1.8.16) (2026-10-26)
 
 

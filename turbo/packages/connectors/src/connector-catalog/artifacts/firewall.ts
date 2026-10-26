@@ -7,7 +7,17 @@ import {
   validateBaseUrlHostPolicy,
 } from "../../firewall-types";
 import { collectAndValidatePermissions } from "../../firewall-expander";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { connectorSlugSchema, privateNameSchema } from "./common";
 import { ConnectorCatalogRelationshipError } from "./relationship-error";
@@ -24,31 +34,26 @@ const BASE_SECRET_PATTERN = /\$\{\{\s*secrets\.[A-Z][A-Z0-9_]*\s*\}\}/u;
 const HOST_FORBIDDEN_CHARACTERS = String.raw`%*[]\/?:#@{}`;
 const HOST_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
 
-export const firewallPolicyValueSchema = z.enum(["allow", "deny", "ask"]);
+export const firewallPolicyValueSchema = zEnum(["allow", "deny", "ask"]);
 
-const firewallPermissionSchema = z
-  .object({
-    name: z.string().min(1),
-    description: z.string().min(1).optional(),
-    rules: z.array(z.string().min(1)),
-  })
-  .strict();
+const firewallPermissionSchema = object({
+  name: string().min(1),
+  description: string().min(1).optional(),
+  rules: array(string().min(1)),
+}).strict();
 
-const firewallAwsSigv4AuthSchema = z
-  .object({
-    accessKeyId: z.string().min(1),
-    secretAccessKey: z.string().min(1),
-    sessionToken: z.string().min(1).optional(),
-  })
-  .strict();
+const firewallAwsSigv4AuthSchema = object({
+  accessKeyId: string().min(1),
+  secretAccessKey: string().min(1),
+  sessionToken: string().min(1).optional(),
+}).strict();
 
-const firewallAuthSchema = z
-  .object({
-    headers: z.record(z.string().min(1), z.string()).optional(),
-    base: z.string().min(1).optional(),
-    query: z.record(z.string().min(1), z.string()).optional(),
-    awsSigv4: firewallAwsSigv4AuthSchema.optional(),
-  })
+const firewallAuthSchema = object({
+  headers: record(string().min(1), string()).optional(),
+  base: string().min(1).optional(),
+  query: record(string().min(1), string()).optional(),
+  awsSigv4: firewallAwsSigv4AuthSchema.optional(),
+})
   .strict()
   .superRefine((auth, context) => {
     if (auth.awsSigv4 === undefined) {
@@ -110,13 +115,12 @@ function hostHasFixedOwnership(
   );
 }
 
-const providerOwnedHostPolicySchema = z
-  .object({
-    kind: z.literal("providerOwned"),
-    exactHosts: z.array(z.string().min(1)).optional(),
-    suffixes: z.array(z.string().min(1)).optional(),
-    allowNonDefaultPort: z.boolean().optional(),
-  })
+const providerOwnedHostPolicySchema = object({
+  kind: literal("providerOwned"),
+  exactHosts: array(string().min(1)).optional(),
+  suffixes: array(string().min(1)).optional(),
+  allowNonDefaultPort: boolean().optional(),
+})
   .strict()
   .superRefine((policy, context) => {
     if (
@@ -150,47 +154,41 @@ const providerOwnedHostPolicySchema = z
     }
   });
 
-const publicDestinationHostPolicySchema = z
-  .object({ kind: z.literal("publicDestination") })
-  .strict();
+const publicDestinationHostPolicySchema = object({
+  kind: literal("publicDestination"),
+}).strict();
 
-const firewallHostPolicySchema = z.discriminatedUnion("kind", [
+const firewallHostPolicySchema = discriminatedUnion("kind", [
   providerOwnedHostPolicySchema,
   publicDestinationHostPolicySchema,
 ]);
 
-const firewallApiSchema = z
-  .object({
-    base: z.string().min(1),
-    hostPolicy: firewallHostPolicySchema.optional(),
-    auth: firewallAuthSchema,
-    permissions: z.array(firewallPermissionSchema).optional(),
-  })
-  .strict();
+const firewallApiSchema = object({
+  base: string().min(1),
+  hostPolicy: firewallHostPolicySchema.optional(),
+  auth: firewallAuthSchema,
+  permissions: array(firewallPermissionSchema).optional(),
+}).strict();
 
-export const firewallConfigSchema = z
-  .object({
-    name: connectorSlugSchema,
-    description: z.string().min(1).optional(),
-    placeholders: z.record(privateNameSchema, z.string()).optional(),
-    apis: z.array(firewallApiSchema).min(1),
-  })
-  .strict();
+export const firewallConfigSchema = object({
+  name: connectorSlugSchema,
+  description: string().min(1).optional(),
+  placeholders: record(privateNameSchema, string()).optional(),
+  apis: array(firewallApiSchema).min(1),
+}).strict();
 
-export const firewallCategoriesSchema = z
-  .object({
-    byPermission: z.record(z.string().min(1), z.string().min(1)),
-    displayOrder: z.array(z.string().min(1)).min(1),
-  })
-  .strict();
+export const firewallCategoriesSchema = object({
+  byPermission: record(string().min(1), string().min(1)),
+  displayOrder: array(string().min(1)).min(1),
+}).strict();
 
-type FirewallApi = z.infer<typeof firewallApiSchema>;
-type FirewallConfig = z.infer<typeof firewallConfigSchema>;
+type FirewallApi = zInfer<typeof firewallApiSchema>;
+type FirewallConfig = zInfer<typeof firewallConfigSchema>;
 interface FirewallGeneratorResult {
   readonly firewall: FirewallConfig;
-  readonly categories: z.infer<typeof firewallCategoriesSchema> | null;
+  readonly categories: zInfer<typeof firewallCategoriesSchema> | null;
   readonly defaultAllowed: readonly string[] | null;
-  readonly defaultUnknownPolicy: z.infer<typeof firewallPolicyValueSchema>;
+  readonly defaultUnknownPolicy: zInfer<typeof firewallPolicyValueSchema>;
 }
 
 function duplicateStrings(values: readonly string[]): string[] {

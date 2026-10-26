@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { array, object, string, type infer as zInfer } from "zod";
 
 import type { ConnectorExternalCodeGrantConfig } from "@okouai/connectors/connector-config";
 import type { ConnectorAuthProviderGrantUserInfo } from "../../grant-result";
@@ -55,30 +55,22 @@ interface NintendoSwitchParentalControlsDeviceCatalog {
   readonly devices: readonly NintendoSwitchParentalControlsDeviceCatalogEntry[];
 }
 
-const ownedDeviceSchema = z
-  .object({
-    deviceId: z.string().min(1).max(128),
-    label: z.string().max(256),
-  })
-  .passthrough();
+const ownedDeviceSchema = object({
+  deviceId: string().min(1).max(128),
+  label: string().max(256),
+}).passthrough();
 
-const ownedDevicesSchema = z.array(ownedDeviceSchema).max(100);
+const ownedDevicesSchema = array(ownedDeviceSchema).max(100);
 
-const federationResponseSchema = z
-  .object({
-    loginInfo: z
-      .object({
-        ownedDevices: ownedDevicesSchema,
-      })
-      .passthrough(),
-  })
-  .passthrough();
-
-const fetchOwnedDevicesResponseSchema = z
-  .object({
+const federationResponseSchema = object({
+  loginInfo: object({
     ownedDevices: ownedDevicesSchema,
-  })
-  .passthrough();
+  }).passthrough(),
+}).passthrough();
+
+const fetchOwnedDevicesResponseSchema = object({
+  ownedDevices: ownedDevicesSchema,
+}).passthrough();
 
 export function createNintendoSwitchParentalControlsProviderState(): NintendoSwitchParentalControlsProviderState {
   return createNintendoAccountProviderState();
@@ -204,7 +196,7 @@ function actionHeaders(args: {
 }
 
 function serializeDeviceCatalog(
-  ownedDevices: z.infer<typeof ownedDevicesSchema>,
+  ownedDevices: zInfer<typeof ownedDevicesSchema>,
 ): string {
   const catalog: NintendoSwitchParentalControlsDeviceCatalog = {
     version: 1,

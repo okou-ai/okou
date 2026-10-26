@@ -1,7 +1,7 @@
-import type { z } from "zod";
+import type { core } from "zod";
 
 // Exact published runtime-api-schema-prod 200 response, retrieved 2026-10-15.
-export const previousCommandClaimJsonSchema: z.core.JSONSchema.JSONSchema = {
+export const previousCommandClaimJsonSchema: core.JSONSchema.JSONSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   oneOf: [
     {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { billingCheckoutContract } from "@okouai/api-contracts/contracts/billing";
 import StripeSDK from "stripe";
 import { onTestFinished } from "vitest";
-import { z } from "zod";
+import { object, string } from "zod";
 import { accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -214,7 +214,7 @@ describe("POST /api/billing/checkout", () => {
         .mockResolvedValueOnce({ id: `cus_${randomUUID()}` });
       context.mocks.stripe.checkout.sessions.create.mockImplementation(
         (params) => {
-          const { customer } = z.object({ customer: z.string() }).parse(params);
+          const { customer } = object({ customer: string() }).parse(params);
           return Promise.resolve({
             url: `https://checkout.stripe.com/session/${customer}`,
           });
@@ -270,9 +270,9 @@ describe("POST /api/billing/checkout", () => {
     let loseFirstResponse = true;
     context.mocks.stripe.customers.create.mockImplementation(
       (_params, options) => {
-        const { idempotencyKey } = z
-          .object({ idempotencyKey: z.string() })
-          .parse(options);
+        const { idempotencyKey } = object({ idempotencyKey: string() }).parse(
+          options,
+        );
         const id = customers.get(idempotencyKey) ?? `cus_${randomUUID()}`;
         customers.set(idempotencyKey, id);
         if (loseFirstResponse) {
@@ -284,7 +284,7 @@ describe("POST /api/billing/checkout", () => {
     );
     context.mocks.stripe.checkout.sessions.create.mockImplementation(
       (params) => {
-        const { customer } = z.object({ customer: z.string() }).parse(params);
+        const { customer } = object({ customer: string() }).parse(params);
         return Promise.resolve({
           url: `https://checkout.stripe.com/session/${customer}`,
         });
@@ -610,7 +610,7 @@ describe("POST /api/billing/checkout", () => {
           creationFailed = true;
           return Promise.reject(new Error("Stripe subscription create failed"));
         }
-        const { customer } = z.object({ customer: z.string() }).parse(params);
+        const { customer } = object({ customer: string() }).parse(params);
         context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
           id: subscriptionId,
           customer,

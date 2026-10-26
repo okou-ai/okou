@@ -11,19 +11,29 @@ import {
   type CreateSshCredentialRequest,
   type UpdateSshCredentialRequest,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  object,
+  string,
+  union,
+  uuid,
+  type output,
+  type ZodType,
+} from "zod";
+
 import { getClientConfig } from "../core/client-factory";
 import { handleManagementError } from "../../management-input";
 
 // Parse into a whitelist, including nested objects. Never serialize API bodies.
-const transportSchema = z.union([
-  z.object({ type: z.literal("cloudflare_access"), configId: z.uuid() }),
-  z.object({ type: z.literal("tailscale"), configId: z.uuid() }),
-  z.object({
-    type: z.literal("cloudflare_access"),
-    needsRebind: z.literal(true),
+const transportSchema = union([
+  object({ type: literal("cloudflare_access"), configId: uuid() }),
+  object({ type: literal("tailscale"), configId: uuid() }),
+  object({
+    type: literal("cloudflare_access"),
+    needsRebind: literal(true),
   }),
-  z.object({ type: z.literal("tailscale"), needsRebind: z.literal(true) }),
+  object({ type: literal("tailscale"), needsRebind: literal(true) }),
 ]);
 const credentialHostMetadataSchema = sshConnectionMetadataSchema
   .pick({
@@ -38,23 +48,24 @@ const credentialHostMetadataSchema = sshConnectionMetadataSchema
     updatedAt: true,
   })
   .extend({
-    learnedHostKey: z
-      .object({ algorithm: z.string(), fingerprint: z.string() })
-      .nullable(),
+    learnedHostKey: object({
+      algorithm: string(),
+      fingerprint: string(),
+    }).nullable(),
     transport: transportSchema.optional(),
   })
   .strip();
-const hostMetadataSchema = z.union([
+const hostMetadataSchema = union([
   credentialHostMetadataSchema,
   credentialHostMetadataSchema
     .omit({ credentialId: true, credentialName: true })
     .extend({
-      username: z.string(),
-      transport: z.union([
-        z.object({ type: z.literal("tailscale_ssh"), configId: z.uuid() }),
-        z.object({
-          type: z.literal("tailscale_ssh"),
-          needsRebind: z.literal(true),
+      username: string(),
+      transport: union([
+        object({ type: literal("tailscale_ssh"), configId: uuid() }),
+        object({
+          type: literal("tailscale_ssh"),
+          needsRebind: literal(true),
         }),
       ]),
     }),
@@ -69,11 +80,11 @@ const credentialMetadataSchema = sshCredentialResponseSchema
     updatedAt: true,
   })
   .extend({
-    hosts: z.array(z.object({ id: z.uuid(), displayName: z.string() })),
+    hosts: array(object({ id: uuid(), displayName: string() })),
   })
   .strip();
 
-function metadata<T extends z.ZodType>(schema: T, body: unknown): z.output<T> {
+function metadata<T extends ZodType>(schema: T, body: unknown): output<T> {
   const result = schema.safeParse(body);
   if (!result.success)
     throw new Error("Invalid SSH management metadata response.");
@@ -99,7 +110,7 @@ export async function listConfiguredSshHosts() {
   if (result.status !== 200)
     handleManagementError(result, "Cannot list configured SSH hosts");
   return metadata(
-    z.object({ connections: z.array(hostMetadataSchema) }),
+    object({ connections: array(hostMetadataSchema) }),
     result.body,
   );
 }
@@ -180,7 +191,7 @@ export async function listSshCredentials() {
   if (result.status !== 200)
     handleManagementError(result, "Cannot list SSH credentials");
   return metadata(
-    z.object({ credentials: z.array(credentialMetadataSchema) }),
+    object({ credentials: array(credentialMetadataSchema) }),
     result.body,
   );
 }

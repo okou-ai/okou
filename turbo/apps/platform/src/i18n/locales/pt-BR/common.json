@@ -413,7 +413,6 @@
       "manage": "Gerenciar",
       "mobile": {
         "invite": "Convidar",
-        "openArtifacts": "Abrir artefatos no celular",
         "openAutomations": "Abrir automações no celular",
         "openMenu": "Abrir menu"
       },
@@ -696,7 +695,6 @@
       "previewSlide": "Visualizar slide {{slideNumber}}",
       "previewWebsite": "Visualizar o modelo de site {{title}}",
       "previousSlide": "Visualizar slide anterior",
-      "renameImportedTemplate": "Renomear modelo",
       "searchConnector": "Buscar modelos",
       "searchConnectors": "Buscar modelos",
       "selectStyle": "Selecionar estilo {{style}}",
@@ -735,9 +733,7 @@
       "use": "Usar",
       "useThisTemplate": "Usar este modelo",
       "visibility": {
-        "changeLabel": "Alterar a visibilidade do modelo",
-        "privateState": "Somente você pode vê-lo e usá-lo",
-        "workspaceState": "Qualquer pessoa neste espaço de trabalho pode usá-lo"
+        "changeLabel": "Alterar a visibilidade do modelo"
       },
       "website": "Site",
       "websitePreview": "Visualização do modelo de site {{title}}",
@@ -1587,8 +1583,7 @@
         "whatsCooking": "O que está rolando, {{userName}}?",
         "whatsOnYourMind": "O que você tem em mente, {{userName}}?",
         "whatsTheMove": "Qual é o plano, {{userName}}?"
-      },
-      "viewAgentProfile": "Ver perfil do agente"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Dispensar",
@@ -2976,15 +2971,12 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
-      "importedLoadFailed": "Não foi possível carregar os modelos enviados.",
-      "importedUnavailable": "Os modelos enviados estão temporariamente indisponíveis.",
       "previewTemplate": "Visualizar template {{title}}",
       "previewWebsite": "Visualizar template de site {{title}}",
       "previewWorkflow": "Visualizar template de fluxo de trabalho {{title}}",
       "removeTemplate": "Remover template {{title}}",
       "removeWebsite": "Remover template de site {{title}}",
-      "removeWorkflow": "Remover template de fluxo de trabalho {{title}}",
-      "retry": "Tentar novamente"
+      "removeWorkflow": "Remover template de fluxo de trabalho {{title}}"
     },
     "thread": {
       "ariaLabel": "Conversa",
@@ -3009,7 +3001,6 @@
       },
       "noEmojiFound": "Nenhum emoji encontrado",
       "notFound": "Conversa não encontrada",
-      "openArtifacts": "Abrir artefatos",
       "openBrowser": "Abrir navegador",
       "openNamedAgent": "Abrir agente {{name}}",
       "openNamedChat": "Abrir conversa {{title}}",
@@ -3739,7 +3730,6 @@
         "createCodeError": "Não foi possível criar um código de conexão. Tente novamente.",
         "creatingCode": "Criando código de conexão…",
         "description": "Acesso ao {{assistantName}} por mensagens de texto",
-        "destination": "iMessage ou SMS para",
         "openMessages": "Abrir Mensagens",
         "options": "Opções do telefone",
         "phoneLabel": "Telefone",

@@ -210,6 +210,13 @@ and violet, while Cotton sky uses pastel pink and blue. Each preset's hue and
 ring values keep semantic surfaces, selected states, and focus indicators
 aligned with that palette in Light/Dark.
 
+A preset lends its hue to the neutral ramp but never moves a stop's lightness:
+each gray stop keeps the OKLab lightness of the product's own stop and takes the
+preset hue at a capped chroma, about 0.003 OKLCH on surfaces and 0.008 on lines
+and copy. `--border`, `--divider`, `--border-on-fill` and `--muted` are not
+overridden, so they point at the same stops the product's own palette uses and
+switching palettes recolours a line without making it heavier.
+
 The picker's first option, `default`, is the product's own palette rather than
 another preset. `signals/theme.ts` writes no palette attribute while it is
 selected, so every token keeps the shared Amber-on-Linen values and none of the
@@ -222,36 +229,39 @@ swatch shows the state it selects rather than a palette invented to represent
 it. Repeating the stop is also what removes the gradient — the shared preview
 gradient interpolates between two identical colours and resolves to one flat
 brand fill, which is correct, because the default state has no second colour and
-no gradient to show. For the same reason `--okou-color-theme-selected`, the wash
-behind the selected option, is owned at `:root` and refined by the preset rules
-rather than existing only under them: one option's selected card must not read
-heavier than another's.
+no gradient to show. The picker marks the selected option with its ring border
+and a check only, so no option's selected card reads heavier than another's.
 
 When a preset carries the palette attributes on the document, each preset's HSL primary
 value supplies both its anchor color and the shared `--primary` token. Primary
 actions, including portaled dialog buttons, immediately use that fill and the
-preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and
-pressed fills blend the anchor toward its companion using the existing
-filled-state alpha tokens. Disabled buttons retain the shared opacity treatment.
-Removing the document's color-theme attributes restores the shared Amber primary
-tokens.
+preset's `--primary-foreground`. The label colour is chosen per fill by APCA,
+not inherited from the Amber brand: Amber is too light for white, so it takes
+Ink, but a mid-tone red or blue reads white even where the WCAG 2 ratio would
+pick black. Labels clear Lc 60, and a dark label is Ink, never pure black. A
+fill under 3:1 against the dark card supplies a lifted
+`--okou-color-theme-primary-dark` stop with its own re-chosen label; the other
+presets repeat their light values. Hover and pressed fills follow the shared
+rule, mixing the fill toward `--black`, so a hover never changes hue. Disabled
+buttons retain the shared opacity treatment. Removing the document's
+color-theme attributes restores the shared Amber primary tokens.
 
-The preset also supplies `--primary-400`, because one filled control reads that ramp stop rather than `--primary`. The checked `Switch` track takes 400 so it sits one step darker than the brand stop, which is what keeps a 44x24 fill reading as a fill on a near-white card; `Checkbox` and `Radio` are small enough to take `--primary` directly. A preset has a single anchor and no ramp, so pointing the stop at that anchor puts the checked toggle on the same fill as every other filled control instead of leaving it Amber under every palette. This is the same move the presets already make on the gray ramp, and it is confined to the one stop with a consumer: `--brand-subtle`, `--brand-text`, and `--brand-text-hover` keep reading the Amber ramp, because the brand mark is not palette-driven.
+The preset also supplies `--primary-400`, because one filled control reads that ramp stop rather than `--primary`. The checked `Switch` track takes 400 so it sits one step darker than the brand stop, which is what keeps a 44x24 fill reading as a fill on a near-white card; `Checkbox` and `Radio` are small enough to take `--primary` directly. A preset has a single anchor and no ramp, so pointing the stop at that anchor puts the checked toggle on the same fill as every other filled control instead of leaving it Amber under every palette. This is the same move the presets already make on the gray ramp, and it is confined to the one stop with a consumer.
 
-The label of a selected or pressed control is the one piece of brand-coloured
-text that is palette-driven, so it has its own token, `--selected-foreground`.
-It defaults to `--brand-text` in both themes, which leaves the product's own
-palette byte-identical, and a preset repoints it at that preset's hue. The
-reason it cannot stay on the brand stop is the surface it sits on: that label is
-painted on the `primary/10` wash inside a `primary/40` border, both of which the
-preset already repaints, so an Amber label on a blue wash read as a second
-colour system rather than as the selected state. A preset has a single anchor
-and no ramp, so the stop is built the way `--nav-copy` is — the preset's hue at
-a fixed saturation, and a lightness chosen to clear 4.5:1 on that wash in Light
-and on the dark card in Dark. Reach for `text-selected-foreground` for the label
-of a control that carries `aria-pressed` or a selected state on the primary
-wash; keep `text-brand-text` for accent text that is the brand speaking, such as
-link and ghost button labels.
+`--brand-text`, `--brand-text-hover` and `--brand-subtle` are the interface's
+accent text and its wash: links, ghost and link button labels, highlighted
+icons, the slash marker, quest counters and the text selection. A preset
+repoints all three at its own hue, because an Amber accent under a blue or pink
+palette read as a second colour system. A preset has a single anchor and no
+ramp, so the stops are built the way `--nav-copy` is — the preset's hue at a
+fixed saturation, and a lightness chosen to clear 4.5:1 on the card and on the
+wash in Light and Dark. The brand mark and the brand neutrals below are artwork
+and stay fixed. The label of a selected or pressed control has its own token,
+`--selected-foreground`, which reads `--brand-text` in both themes and so
+follows the preset without an override of its own. Reach for
+`text-selected-foreground` for the label of a control that carries
+`aria-pressed` or a selected state on the primary wash, and for
+`text-brand-text` for other accent text.
 
 The brand neutrals — `brand-charcoal`, `brand-dark-gray`, `brand-gray`,
 `brand-silver`, `brand-light-gray` and `brand-off-white` — are the neutral
@@ -1251,8 +1261,8 @@ token that falls back to what it already had:
 
 ```css
 :root[data-gradient-color-themes][data-color-theme] {
-  --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
-  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
+  --nav-copy: hsl(var(--okou-color-theme-hue) 10% 14.2%);
+  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 5% 30.6%);
   --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
   --nav-border: hsl(var(--border) / 0.5);
 }
@@ -1313,7 +1323,15 @@ palette attributes decide at use time.
 
 The four variants — default and gradient palette, each in Light and Dark —
 differ only in a fill color and a gradient, so they are two runtime values
-keyed at `:root` rather than four selectors. `signals/theme.ts` writes
+keyed at `:root` rather than four selectors. Under a palette the gradient is an
+ambient light from the top edge: the anchor falls from the left and the
+companion from the right, each fading on an eased six-stop curve so no ellipse
+edge shows, and both are gone by about half the pane's height so the composer
+and transcript sit on the plain card fill. Each preset supplies the alphas at
+which its two colours reach one shared OKLab distance from the canvas fill
+(`--okou-color-theme-ambient-*`, with `-dark` counterparts), so the light is
+equally visible under every palette rather than scaling with the anchor's
+darkness. `signals/theme.ts` writes
 `data-theme` and `data-gradient-color-themes` onto the document element; each
 theme test wraps in `:where()` so it stays at the specificity of the rule it
 refines and source order decides between them. Do not add the paired `.dark`
@@ -1330,7 +1348,7 @@ composer's footer, the sharing bar and the shared thread's handoff bar all stay
 transparent; only the cards inside them carry a fill. A pane-width surface that
 paints `--background` instead assumes the canvas is a flat fill of that colour,
 which holds in the neutral themes and does not under a gradient palette, where
-the canvas is `--card` plus two corner gradients. An opaque `--background`
+the canvas is `--card` plus an ambient light falling from its top edge. An opaque `--background`
 footer creates a visible band across that canvas. The transcript's loading
 placeholder stays transparent too: painting even the canvas's own fill over it
 erases its gradient. While initial events

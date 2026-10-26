@@ -1,5 +1,20 @@
 import { desktopUpgradeRequiredSchema } from "./desktop-updates";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  discriminatedUnion,
+  intersection,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { fileDownloadUrlSchema } from "./file-download";
 import { authHeadersSchema, initContract } from "./base";
 import { ApiError, apiErrorSchema } from "./errors";
@@ -10,14 +25,14 @@ import {
 
 const c = initContract();
 
-export const computerUseHostStatusSchema = z.enum(["online", "offline"]);
+export const computerUseHostStatusSchema = zEnum(["online", "offline"]);
 
-export const computerUseReadCommandKindSchema = z.enum([
+export const computerUseReadCommandKindSchema = zEnum([
   "apps.list",
   "app.state",
 ]);
 
-export const computerUseWriteCommandKindSchema = z.enum([
+export const computerUseWriteCommandKindSchema = zEnum([
   "app.open",
   "element.click",
   "element.scroll",
@@ -27,27 +42,27 @@ export const computerUseWriteCommandKindSchema = z.enum([
   "keyboard.press_key",
 ]);
 
-export const desktopShellKindSchema = z.enum([
+export const desktopShellKindSchema = zEnum([
   "shell.cmd",
   "shell.list",
   "shell.status",
   "shell.close",
 ]);
 
-export const computerUseCommandKindSchema = z.enum([
+export const computerUseCommandKindSchema = zEnum([
   ...computerUseReadCommandKindSchema.options,
   ...computerUseWriteCommandKindSchema.options,
   ...desktopShellKindSchema.options,
 ]);
 
-export const computerUseCommandStatusSchema = z.enum([
+export const computerUseCommandStatusSchema = zEnum([
   "queued",
   "running",
   "succeeded",
   "failed",
 ]);
 
-export const computerUseCommandErrorCodeSchema = z.enum([
+export const computerUseCommandErrorCodeSchema = zEnum([
   "no_host",
   "permission_denied",
   "accessibility_unavailable",
@@ -67,63 +82,57 @@ export const computerUseCommandErrorCodeSchema = z.enum([
   "shell_busy",
 ]);
 
-const hostNameSchema = z.string().trim().min(1).max(253);
-const hostInstallationIdSchema = z.string().trim().uuid();
-const hostVersionSchema = z.string().trim().min(1).max(64);
-const hostOsVersionSchema = z.string().trim().min(1).max(128);
-const authorizationRequestTokenPathParamsSchema = z.object({
-  requestToken: z.string().min(1),
+const hostNameSchema = string().trim().min(1).max(253);
+const hostInstallationIdSchema = string().trim().uuid();
+const hostVersionSchema = string().trim().min(1).max(64);
+const hostOsVersionSchema = string().trim().min(1).max(128);
+const authorizationRequestTokenPathParamsSchema = object({
+  requestToken: string().min(1),
 });
-const commandIdPathParamsSchema = z.object({
-  commandId: z.string().min(1),
+const commandIdPathParamsSchema = object({
+  commandId: string().min(1),
 });
-const supportedCapabilitiesSchema = z
-  .array(z.string().trim().min(1).max(128))
-  .max(50);
-const appNameSchema = z.string().trim().min(1).max(256);
-const snapshotIdSchema = z.string().trim().min(1).max(256);
-const elementIdSchema = z.string().trim().min(1).max(256);
-const elementIndexSchema = z.number().int().min(0);
+const supportedCapabilitiesSchema = array(string().trim().min(1).max(128)).max(
+  50,
+);
+const appNameSchema = string().trim().min(1).max(256);
+const snapshotIdSchema = string().trim().min(1).max(256);
+const elementIdSchema = string().trim().min(1).max(256);
+const elementIndexSchema = number().int().min(0);
 
-const computerUsePermissionsSchema = z.object({
-  accessibility: z.boolean(),
-  screenRecording: z.boolean(),
-  automation: z
-    .object({
-      chrome: z
-        .object({
-          status: z.enum([
-            "unknown",
-            "granted",
-            "denied",
-            "not_installed",
-            "not_running",
-          ]),
-          updatedAt: z.string().nullable().default(null),
-          reason: z.string().nullable().default(null),
-        })
-        .default({ status: "unknown", updatedAt: null, reason: null }),
-      safari: z
-        .object({
-          status: z.enum([
-            "unknown",
-            "granted",
-            "denied",
-            "not_installed",
-            "not_running",
-          ]),
-          updatedAt: z.string().nullable().default(null),
-          reason: z.string().nullable().default(null),
-        })
-        .default({ status: "unknown", updatedAt: null, reason: null }),
-    })
-    .default({
-      chrome: { status: "unknown", updatedAt: null, reason: null },
-      safari: { status: "unknown", updatedAt: null, reason: null },
-    }),
+const computerUsePermissionsSchema = object({
+  accessibility: boolean(),
+  screenRecording: boolean(),
+  automation: object({
+    chrome: object({
+      status: zEnum([
+        "unknown",
+        "granted",
+        "denied",
+        "not_installed",
+        "not_running",
+      ]),
+      updatedAt: string().nullable().default(null),
+      reason: string().nullable().default(null),
+    }).default({ status: "unknown", updatedAt: null, reason: null }),
+    safari: object({
+      status: zEnum([
+        "unknown",
+        "granted",
+        "denied",
+        "not_installed",
+        "not_running",
+      ]),
+      updatedAt: string().nullable().default(null),
+      reason: string().nullable().default(null),
+    }).default({ status: "unknown", updatedAt: null, reason: null }),
+  }).default({
+    chrome: { status: "unknown", updatedAt: null, reason: null },
+    safari: { status: "unknown", updatedAt: null, reason: null },
+  }),
 });
 
-const computerUseRuntimeBodySchema = z.object({
+const computerUseRuntimeBodySchema = object({
   installationId: hostInstallationIdSchema.optional(),
   hostName: hostNameSchema,
   appVersion: hostVersionSchema,
@@ -137,8 +146,8 @@ const computerUseHostStartBodySchema = computerUseRuntimeBodySchema.extend({
 });
 
 const computerUseCommandTargetShape = {
-  timeoutMs: z.number().int().min(1_000).max(120_000).default(60_000),
-  realtime: z.boolean().optional(),
+  timeoutMs: number().int().min(1_000).max(120_000).default(60_000),
+  realtime: boolean().optional(),
 } as const;
 
 const computerUseCommandPayloadShape = {
@@ -146,41 +155,39 @@ const computerUseCommandPayloadShape = {
   snapshotId: snapshotIdSchema.optional(),
   elementId: elementIdSchema.optional(),
   elementIndex: elementIndexSchema.optional(),
-  x: z.number().int().min(0).optional(),
-  y: z.number().int().min(0).optional(),
-  button: z.enum(["left", "right", "middle"]).optional(),
-  clickCount: z.number().int().min(1).max(3).optional(),
-  direction: z.enum(["up", "down", "left", "right"]).optional(),
-  pages: z.number().positive().max(25).optional(),
-  value: z.string().min(1).max(64_000).optional(),
-  text: z.string().min(1).max(64_000).optional(),
-  key: z.string().trim().min(1).max(256).optional(),
-  action: z.string().trim().min(1).max(256).optional(),
+  x: number().int().min(0).optional(),
+  y: number().int().min(0).optional(),
+  button: zEnum(["left", "right", "middle"]).optional(),
+  clickCount: number().int().min(1).max(3).optional(),
+  direction: zEnum(["up", "down", "left", "right"]).optional(),
+  pages: number().positive().max(25).optional(),
+  value: string().min(1).max(64_000).optional(),
+  text: string().min(1).max(64_000).optional(),
+  key: string().trim().min(1).max(256).optional(),
+  action: string().trim().min(1).max(256).optional(),
 } as const;
 
-const computerUseCommandCreateBodySchema = z
-  .object({
-    kind: computerUseReadCommandKindSchema,
-    ...computerUseCommandTargetShape,
-    ...computerUseCommandPayloadShape,
-  })
-  .superRefine((body, ctx) => {
-    if (body.kind === "app.state" && !body.app) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["app"],
-        message: "app.state requires app",
-      });
-    }
-  });
+const computerUseCommandCreateBodySchema = object({
+  kind: computerUseReadCommandKindSchema,
+  ...computerUseCommandTargetShape,
+  ...computerUseCommandPayloadShape,
+}).superRefine((body, ctx) => {
+  if (body.kind === "app.state" && !body.app) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["app"],
+      message: "app.state requires app",
+    });
+  }
+});
 
-const computerUseWriteCommandCreateBaseSchema = z.object({
+const computerUseWriteCommandCreateBaseSchema = object({
   kind: computerUseWriteCommandKindSchema,
   ...computerUseCommandTargetShape,
   ...computerUseCommandPayloadShape,
 });
 
-type ComputerUseWriteCommandCreateBody = z.infer<
+type ComputerUseWriteCommandCreateBody = zInfer<
   typeof computerUseWriteCommandCreateBaseSchema
 >;
 
@@ -322,12 +329,12 @@ const computerUseWriteCommandCreateBodySchema =
     validateComputerUseWriteCommand,
   );
 
-const computerUseCommandErrorSchema = z.object({
+const computerUseCommandErrorSchema = object({
   code: computerUseCommandErrorCodeSchema,
-  message: z.string(),
+  message: string(),
 });
 
-const computerUseCommandResultSchema = z.record(z.string(), z.unknown());
+const computerUseCommandResultSchema = record(string(), zUnknown());
 
 /**
  * Screenshot pointer shapes for `computer_use_commands.result.screenshot`.
@@ -379,134 +386,134 @@ export function isExpiredScreenshotPointer(
   );
 }
 
-export const computerUseHostSchema = z.object({
-  id: z.string(),
-  hostName: z.string().optional(),
-  displayName: z.string(),
-  appVersion: z.string(),
-  osVersion: z.string(),
-  supportedCapabilities: z.array(z.string()),
+export const computerUseHostSchema = object({
+  id: string(),
+  hostName: string().optional(),
+  displayName: string(),
+  appVersion: string(),
+  osVersion: string(),
+  supportedCapabilities: array(string()),
   permissions: computerUsePermissionsSchema,
   status: computerUseHostStatusSchema,
-  lastSeenAt: z.string(),
-  createdAt: z.string(),
+  lastSeenAt: string(),
+  createdAt: string(),
 });
 
-export const computerUseHeartbeatResponseSchema = z.object({
-  ok: z.literal(true),
-  hostId: z.string(),
+export const computerUseHeartbeatResponseSchema = object({
+  ok: literal(true),
+  hostId: string(),
 });
 
-export const computerUseHostStopResponseSchema = z.object({
-  ok: z.literal(true),
-  hostId: z.string(),
+export const computerUseHostStopResponseSchema = object({
+  ok: literal(true),
+  hostId: string(),
 });
 
-export const computerUseHostListResponseSchema = z.object({
-  hosts: z.array(computerUseHostSchema),
+export const computerUseHostListResponseSchema = object({
+  hosts: array(computerUseHostSchema),
 });
 
-export const computerUseAuthorizationSourceSchema = z.enum([
+export const computerUseAuthorizationSourceSchema = zEnum([
   "chat",
   "slack",
   "teams",
 ]);
 
-const computerUseAuthorizationRequestCreateBodySchema = z.object({});
+const computerUseAuthorizationRequestCreateBodySchema = object({});
 
-export const computerUseAuthorizationRequestCreateResponseSchema = z.object({
-  authorizationUrl: z.string().url(),
+export const computerUseAuthorizationRequestCreateResponseSchema = object({
+  authorizationUrl: string().url(),
   source: computerUseAuthorizationSourceSchema,
-  expiresAt: z.string(),
+  expiresAt: string(),
 });
 
-export const computerUseAuthorizationRequestResponseSchema = z.object({
+export const computerUseAuthorizationRequestResponseSchema = object({
   source: computerUseAuthorizationSourceSchema,
-  expiresAt: z.string(),
-  completedAt: z.string().nullable(),
-  computerUseHostId: z.string().uuid().nullable(),
-  hosts: z.array(computerUseHostSchema),
+  expiresAt: string(),
+  completedAt: string().nullable(),
+  computerUseHostId: string().uuid().nullable(),
+  hosts: array(computerUseHostSchema),
 });
 
-const computerUseAuthorizationRequestApplyBodySchema = z.object({
-  computerUseHostId: z.string().uuid(),
+const computerUseAuthorizationRequestApplyBodySchema = object({
+  computerUseHostId: string().uuid(),
 });
 
-export const computerUseAuthorizationRequestApplyResponseSchema = z.object({
-  ok: z.literal(true),
+export const computerUseAuthorizationRequestApplyResponseSchema = object({
+  ok: literal(true),
   source: computerUseAuthorizationSourceSchema,
-  computerUseHostId: z.string().uuid(),
+  computerUseHostId: string().uuid(),
 });
 
-export const computerUseCommandCreateResponseSchema = z.object({
-  commandId: z.string(),
-  status: z.literal("queued"),
+export const computerUseCommandCreateResponseSchema = object({
+  commandId: string(),
+  status: literal("queued"),
   realtime: realtimeSubscriptionSchema.optional(),
 });
 
-export const computerUseCommandResponseSchema = z.object({
-  id: z.string(),
+export const computerUseCommandResponseSchema = object({
+  id: string(),
   kind: computerUseCommandKindSchema,
   status: computerUseCommandStatusSchema,
-  hostId: z.string().nullable(),
-  hostName: z.string().nullable(),
-  payload: z.record(z.string(), z.unknown()),
+  hostId: string().nullable(),
+  hostName: string().nullable(),
+  payload: record(string(), zUnknown()),
   result: computerUseCommandResultSchema.optional(),
   error: computerUseCommandErrorSchema.optional(),
-  timeoutMs: z.number().int().nullable(),
-  createdAt: z.string(),
-  claimedAt: z.string().nullable(),
-  completedAt: z.string().nullable(),
+  timeoutMs: number().int().nullable(),
+  createdAt: string(),
+  claimedAt: string().nullable(),
+  completedAt: string().nullable(),
 });
 
-export const computerUseHostCommandNextBodySchema = z.object({
+export const computerUseHostCommandNextBodySchema = object({
   supportedCapabilities: supportedCapabilitiesSchema.default([]),
 });
 
-export const computerUseHostCommandNextResponseSchema = z.discriminatedUnion(
+export const computerUseHostCommandNextResponseSchema = discriminatedUnion(
   "status",
   [
-    z.object({ status: z.literal("idle") }),
-    z.object({
-      status: z.literal("command"),
+    object({ status: literal("idle") }),
+    object({
+      status: literal("command"),
       command: computerUseCommandResponseSchema,
     }),
   ],
 );
 
-export const computerUseHostCommandCompleteBodySchema = z.discriminatedUnion(
+export const computerUseHostCommandCompleteBodySchema = discriminatedUnion(
   "status",
   [
-    z.object({
-      status: z.literal("succeeded"),
+    object({
+      status: literal("succeeded"),
       result: computerUseCommandResultSchema,
     }),
-    z.object({
-      status: z.literal("failed"),
+    object({
+      status: literal("failed"),
       error: computerUseCommandErrorSchema,
     }),
   ],
 );
 
-export const computerUseCommandCompleteResponseSchema = z.object({
-  ok: z.literal(true),
+export const computerUseCommandCompleteResponseSchema = object({
+  ok: literal(true),
 });
 
-export const computerUseAuditEventSchema = z.object({
-  id: z.string(),
-  commandId: z.string(),
-  runId: z.string().nullable(),
-  hostId: z.string().nullable(),
+export const computerUseAuditEventSchema = object({
+  id: string(),
+  commandId: string(),
+  runId: string().nullable(),
+  hostId: string().nullable(),
   kind: computerUseCommandKindSchema,
-  app: z.string().nullable(),
-  event: z.literal("completed"),
-  redactedResult: z.record(z.string(), z.unknown()).nullable(),
-  error: z.record(z.string(), z.unknown()).nullable(),
-  createdAt: z.string(),
+  app: string().nullable(),
+  event: literal("completed"),
+  redactedResult: record(string(), zUnknown()).nullable(),
+  error: record(string(), zUnknown()).nullable(),
+  createdAt: string(),
 });
 
-export const computerUseAuditEventListResponseSchema = z.object({
-  auditEvents: z.array(computerUseAuditEventSchema),
+export const computerUseAuditEventListResponseSchema = object({
+  auditEvents: array(computerUseAuditEventSchema),
 });
 
 export const computerUseHostsContract = c.router({
@@ -639,11 +646,11 @@ export const computerUseAuditEventsContract = c.router({
     method: "GET",
     path: "/api/computer-use/audit-events",
     headers: authHeadersSchema,
-    query: z.object({
-      limit: z.coerce.number().int().positive().max(200).default(50),
-      commandId: z.string().optional(),
-      hostId: z.string().optional(),
-      runId: z.string().optional(),
+    query: object({
+      limit: coerce.number().int().positive().max(200).default(50),
+      commandId: string().optional(),
+      hostId: string().optional(),
+      runId: string().optional(),
     }),
     responses: {
       200: computerUseAuditEventListResponseSchema,
@@ -654,48 +661,48 @@ export const computerUseAuditEventsContract = c.router({
   },
 });
 
-export type ComputerUseAuditEvent = z.infer<typeof computerUseAuditEventSchema>;
-export type ComputerUseAuditEventListResponse = z.infer<
+export type ComputerUseAuditEvent = zInfer<typeof computerUseAuditEventSchema>;
+export type ComputerUseAuditEventListResponse = zInfer<
   typeof computerUseAuditEventListResponseSchema
 >;
-export type ComputerUseCommandCreateResponse = z.infer<
+export type ComputerUseCommandCreateResponse = zInfer<
   typeof computerUseCommandCreateResponseSchema
 >;
-export type ComputerUseCommandError = z.infer<
+export type ComputerUseCommandError = zInfer<
   typeof computerUseCommandErrorSchema
 >;
-export type ComputerUseCommandKind = z.infer<
+export type ComputerUseCommandKind = zInfer<
   typeof computerUseCommandKindSchema
 >;
-export type ComputerUseCommandResponse = z.infer<
+export type ComputerUseCommandResponse = zInfer<
   typeof computerUseCommandResponseSchema
 >;
-export type ComputerUseCommandResult = z.infer<
+export type ComputerUseCommandResult = zInfer<
   typeof computerUseCommandResultSchema
 >;
-export type ComputerUseCommandStatus = z.infer<
+export type ComputerUseCommandStatus = zInfer<
   typeof computerUseCommandStatusSchema
 >;
-export type ComputerUseHost = z.infer<typeof computerUseHostSchema>;
-export type ComputerUseHostListResponse = z.infer<
+export type ComputerUseHost = zInfer<typeof computerUseHostSchema>;
+export type ComputerUseHostListResponse = zInfer<
   typeof computerUseHostListResponseSchema
 >;
-export type ComputerUseAuthorizationRequestCreateResponse = z.infer<
+export type ComputerUseAuthorizationRequestCreateResponse = zInfer<
   typeof computerUseAuthorizationRequestCreateResponseSchema
 >;
-export type ComputerUseAuthorizationRequestResponse = z.infer<
+export type ComputerUseAuthorizationRequestResponse = zInfer<
   typeof computerUseAuthorizationRequestResponseSchema
 >;
-export type ComputerUseAuthorizationRequestApplyResponse = z.infer<
+export type ComputerUseAuthorizationRequestApplyResponse = zInfer<
   typeof computerUseAuthorizationRequestApplyResponseSchema
 >;
-export type ComputerUseAuthorizationSource = z.infer<
+export type ComputerUseAuthorizationSource = zInfer<
   typeof computerUseAuthorizationSourceSchema
 >;
-export type ComputerUseReadCommandKind = z.infer<
+export type ComputerUseReadCommandKind = zInfer<
   typeof computerUseReadCommandKindSchema
 >;
-export type ComputerUseWriteCommandKind = z.infer<
+export type ComputerUseWriteCommandKind = zInfer<
   typeof computerUseWriteCommandKindSchema
 >;
 export type ComputerUseAuditEventsContract =
@@ -708,9 +715,9 @@ export type ComputerUseWriteCommandContract =
   typeof computerUseWriteCommandContract;
 
 // Native Desktop hosts authenticate with their Clerk session and connection generation.
-const sessionHostPathParamsSchema = z.object({ hostId: z.string().uuid() });
-const sessionHostGenerationSchema = z.object({
-  connectionGeneration: z.number().int().positive(),
+const sessionHostPathParamsSchema = object({ hostId: string().uuid() });
+const sessionHostGenerationSchema = object({
+  connectionGeneration: number().int().positive(),
 });
 const sessionHostResponses = {
   401: apiErrorSchema,
@@ -721,10 +728,10 @@ const sessionHostResponses = {
 };
 // Desktop treats a completion 409 with CONFLICT as already recorded, so its
 // codes are declared for the Desktop contract gate.
-const sessionHostCompleteConflictSchema = z.object({
-  error: z.object({
-    message: z.string(),
-    code: z.enum([
+const sessionHostCompleteConflictSchema = object({
+  error: object({
+    message: string(),
+    code: zEnum([
       ApiError.CONFLICT.code,
       ApiError.HOST_CONNECTION_INVALID.code,
     ]),
@@ -738,7 +745,7 @@ export const computerUseSessionHostsContract = c.router({
     body: computerUseHostStartBodySchema,
     responses: {
       200: sessionHostGenerationSchema.extend({
-        hostId: z.string().uuid(),
+        hostId: string().uuid(),
         commandNotifications: computerUseCommandNotificationsSchema,
       }),
       426: desktopUpgradeRequiredSchema,
@@ -756,7 +763,7 @@ export const computerUseSessionHostsContract = c.router({
     ),
     responses: {
       200: computerUseHeartbeatResponseSchema.extend({
-        hasPendingCommands: z.boolean(),
+        hasPendingCommands: boolean(),
       }),
       ...sessionHostResponses,
     },
@@ -796,7 +803,7 @@ export const computerUseSessionHostsContract = c.router({
     pathParams: sessionHostPathParamsSchema.extend(
       commandIdPathParamsSchema.shape,
     ),
-    body: z.intersection(
+    body: intersection(
       computerUseHostCommandCompleteBodySchema,
       sessionHostGenerationSchema,
     ),

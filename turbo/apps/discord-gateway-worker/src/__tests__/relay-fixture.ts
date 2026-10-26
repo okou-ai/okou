@@ -11,7 +11,7 @@ import {
   type Request,
 } from "miniflare";
 import { expect, onTestFinished } from "vitest";
-import { z } from "zod";
+import { number, object, unknown as zUnknown, type infer as zInfer } from "zod";
 
 export const APPLICATION_ID = "100000000000000001";
 // Older applications have a bot user ID distinct from the application ID.
@@ -23,8 +23,8 @@ export const CONTROL_SECRET = "test-gateway-control-secret-32-characters";
 export const GATEWAY_SECRET = "test-api-hmac-secret-32-characters";
 export const BOT_TOKEN = "test-discord-bot-token";
 
-const packetSchema = z.object({ op: z.number(), d: z.unknown() });
-type Packet = z.infer<typeof packetSchema>;
+const packetSchema = object({ op: number(), d: zUnknown() });
+type Packet = zInfer<typeof packetSchema>;
 
 class Events<T> {
   private readonly buffered: T[] = [];

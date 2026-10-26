@@ -21,7 +21,8 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
-import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { screen, within } from "@testing-library/react";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
@@ -34,6 +35,20 @@ const GOOGLE_DRIVE_CONNECTION_ID = "d0000000-0000-4000-a000-000000000921";
 
 const CREATED_AT = "2026-09-01T12:00:00.000Z";
 const UPDATED_AT = "2026-09-01T12:01:00.000Z";
+
+export async function openResourceArtifact(
+  title: string,
+  container: ParentNode = document.body,
+) {
+  click(buttonNamed("Resources", container));
+  const resources = await screen.findByRole("region", { name: "Resources" });
+  const label = await within(resources).findByText(title);
+  const artifact = label.closest("button");
+  if (!artifact) {
+    throw new Error(`Expected an artifact button for ${title}`);
+  }
+  click(artifact);
+}
 
 export function artifactSummary(
   id: string,

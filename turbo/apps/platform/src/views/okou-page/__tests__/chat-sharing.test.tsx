@@ -138,23 +138,31 @@ function selectableGroupForText(text: string): HTMLElement {
   return group;
 }
 
-// The row under a user bubble holds the space the next bubble in a burst is
-// pulled into, so it is part of that message's frame rather than part of the
-// copy button it usually carries. jsdom computes no layout, so the overlap this
-// guards against has no page-observable form: the reserved row is the only
-// evidence available for it, and the case is still worth covering because
-// losing that row is exactly what put two bubbles on top of each other.
-function actionRowFor(text: string): HTMLElement {
+function userMessageFor(text: string): HTMLElement {
   const message = screen
     .getByText(text)
     .closest<HTMLElement>('[data-role="user"]');
-  const actions = message?.querySelector<HTMLElement>(
+  if (!message) {
+    throw new Error(`User message not found: ${text}`);
+  }
+  return message;
+}
+
+// The row under a user bubble holds the space the next bubble in a burst is
+// pulled into, so it is part of that message's frame rather than part of the
+// copy button it usually carries. jsdom computes no layout, so the overlap this
+// guards against has no page-observable form: the reserved row and the stacked
+// marker are the only evidence available for it, and the case is still worth
+// covering because a pull without its row is exactly what put two bubbles on
+// top of each other.
+function actionRowFor(text: string): HTMLElement | null {
+  return userMessageFor(text).querySelector<HTMLElement>(
     "[data-chat-user-message-actions]",
   );
-  if (!actions) {
-    throw new Error(`User message action row not found: ${text}`);
-  }
-  return actions;
+}
+
+function isStackedOnPrevious(text: string): boolean {
+  return userMessageFor(text).dataset.chatUserMessageStacked !== undefined;
 }
 
 async function setupMessageSharing(
@@ -226,6 +234,17 @@ test("The row label toggles a message group once", async () => {
   await expectOneSelectedGroup(selection);
   click(within(promptGroup).getByText("Deselect message group"));
   await expectNoSelectedGroups(selection);
+});
+
+test("A selected message group is marked as a whole, not only by its checkbox", async () => {
+  const { promptGroup, selection } = await prepareGroupSelection();
+  expect(promptGroup).not.toHaveAttribute("data-selected");
+  click(within(promptGroup).getByText("Select message group"));
+  await expectOneSelectedGroup(selection);
+  expect(promptGroup).toHaveAttribute("data-selected");
+  click(selection);
+  await expectNoSelectedGroups(selection);
+  expect(promptGroup).not.toHaveAttribute("data-selected");
 });
 
 test("The checkbox toggles a message group once", async () => {
@@ -439,10 +458,11 @@ test("Hide passage actions throughout sharing and restore them afterward", async
 });
 
 // Back-to-back user messages are pulled together by a negative margin sized
-// against the row that sits under every bubble. Share selection hides the copy
-// button in that row; when it took the row with it, the second bubble climbed
-// into the first one and the two rendered on top of each other.
-test("Back-to-back user messages keep their frame apart while sharing", async () => {
+// against the row that sits under every bubble. Sharing drops that row so a
+// selected group's tint ends at its last bubble, which is only safe because the
+// pull goes with it: a pull without its row put the second bubble on top of the
+// first.
+test("Back-to-back user messages drop their pull with the copy row while sharing", async () => {
   mockConversation([
     {
       id: PROMPT_EVENT_ID,
@@ -475,6 +495,7 @@ test("Back-to-back user messages keep their frame apart while sharing", async ()
   await screen.findByText(FOLLOW_UP_PROMPT);
   expect(actionRowFor(PROMPT)).toBeInTheDocument();
   expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
+  expect(isStackedOnPrevious(FOLLOW_UP_PROMPT)).toBeTruthy();
   await waitFor(() => {
     expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
   });
@@ -484,8 +505,9 @@ test("Back-to-back user messages keep their frame apart while sharing", async ()
   await waitFor(() => {
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
   });
-  expect(actionRowFor(PROMPT)).toBeInTheDocument();
-  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
+  expect(actionRowFor(PROMPT)).toBeNull();
+  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeNull();
+  expect(isStackedOnPrevious(FOLLOW_UP_PROMPT)).toBeFalsy();
   expect(buttonsNamed("Copy message")).toHaveLength(0);
 });
 

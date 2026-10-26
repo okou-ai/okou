@@ -210,7 +210,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   });
 
   it("rejects bytes, NUL, malformed Unicode, CA alias and direct-ne without encrypting", async () => {
-    const f = await claimed.owner();
+    const f = claimed.owner();
     api.authenticate(f);
     const kms = useSecretKmsProbe();
     const before = kms.generateDataKeyCalls;
@@ -253,7 +253,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   it.each([3072, 4096] as const)(
     "preserves the independently computed fixed-width pin for %s-bit public keys",
     async (modulusBits) => {
-      const f = await claimed.owner();
+      const f = claimed.owner();
       api.authenticate(f);
       // Public-only deterministic material avoids unrelated private-key generation.
       const modulus = Buffer.alloc(modulusBits / 8, 0xa5);
@@ -290,7 +290,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   );
 
   it("rejects unsupported RSA sizes and exponents and non-RSA public keys without parser diagnostics", async () => {
-    const f = await claimed.owner();
+    const f = claimed.owner();
     api.authenticate(f);
     const unsupportedRsa = [
       { bytes: 128, exponent: "AQAB" },
@@ -325,7 +325,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   });
 
   it("converts public PEM to a fixed-width wire hash and rejects private or extra material", async () => {
-    const f = await claimed.owner();
+    const f = claimed.owner();
     api.authenticate(f);
     const pair = generateKeyPairSync("rsa", {
       modulusLength: 2048,

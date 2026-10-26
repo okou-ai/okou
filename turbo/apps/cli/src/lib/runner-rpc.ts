@@ -1,21 +1,19 @@
 import { spawn } from "node:child_process";
-import { z } from "zod";
+import { literal, object, enum as zEnum } from "zod";
 
-export const rpcErrorSchema = z
-  .object({
-    type: z.literal("error"),
-    code: z.enum([
-      "invalid_request",
-      "unknown_method",
-      "unavailable",
-      "protocol",
-      "transport",
-      "timed_out",
-      "resource_exhausted",
-    ]),
-    delivery: z.enum(["not_dispatched", "unknown"]),
-  })
-  .strict();
+export const rpcErrorSchema = object({
+  type: literal("error"),
+  code: zEnum([
+    "invalid_request",
+    "unknown_method",
+    "unavailable",
+    "protocol",
+    "transport",
+    "timed_out",
+    "resource_exhausted",
+  ]),
+  delivery: zEnum(["not_dispatched", "unknown"]),
+}).strict();
 
 const STDERR_LIMIT = 24 * 1024;
 

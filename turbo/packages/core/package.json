@@ -1,6 +1,6 @@
 {
   "name": "@okouai/core",
-  "version": "8.790.2",
+  "version": "8.791.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
+    "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "@types/node": "^24.3.0",
     "@typescript/native": "npm:typescript@7.0.2",

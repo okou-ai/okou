@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
@@ -23,7 +23,7 @@ export const deleteWechatOwnerData$ = command(
           ? sql`org_id=${owner.orgId}`
           : sql`user_id=${owner.userId}`;
     const deleted = parseRawRows(
-      z.object({ id: z.uuid() }),
+      object({ id: uuid() }),
       await set(writeDb$).execute(sql`WITH cancelled AS (
       DELETE FROM wechat_connect_attempts WHERE ${scope}
     ) DELETE FROM wechat_connections WHERE ${scope} RETURNING id`),

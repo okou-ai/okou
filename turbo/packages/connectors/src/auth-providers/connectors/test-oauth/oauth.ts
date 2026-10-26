@@ -9,7 +9,7 @@
  * deployed API routes implement these provider URLs.
  */
 
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -158,12 +158,12 @@ export function buildTestOAuthAuthorizationUrl(
   return `${getAuthorizationUrl()}?${params.toString()}`;
 }
 
-const tokenResponseSchema = z.object({
-  access_token: z.string(),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().optional(),
-  token_type: z.string().optional(),
-  scope: z.string().optional(),
+const tokenResponseSchema = object({
+  access_token: string(),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().optional(),
+  token_type: string().optional(),
+  scope: string().optional(),
 });
 
 async function postToken(
@@ -256,13 +256,11 @@ export async function fetchTestOAuthUserInfo(
     throw new Error(`Test OAuth userinfo failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      id: z.string(),
-      username: z.string().nullable().optional(),
-      email: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: string(),
+    username: string().nullable().optional(),
+    email: string().nullable().optional(),
+  }).parse(await response.json());
 
   return {
     id: data.id,

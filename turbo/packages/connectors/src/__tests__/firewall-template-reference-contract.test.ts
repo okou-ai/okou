@@ -1,56 +1,60 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { extractFirewallTemplateReferences } from "../firewall-types";
 
-const templateReferenceSchema = z.object({
-  namespace: z.enum(["secrets", "vars"]),
-  name: z.string(),
-  source: z.string().min(1),
+const templateReferenceSchema = object({
+  namespace: zEnum(["secrets", "vars"]),
+  name: string(),
+  source: string().min(1),
 });
-const templateReferencesSchema = z.object({
-  secrets: z.array(z.string()),
-  vars: z.array(z.string()),
+const templateReferencesSchema = object({
+  secrets: array(string()),
+  vars: array(string()),
 });
-const simpleReferenceCaseSchema = z.object({
-  name: z.string(),
-  template: z.string(),
-  expectedReferences: z.array(templateReferenceSchema),
+const simpleReferenceCaseSchema = object({
+  name: string(),
+  template: string(),
+  expectedReferences: array(templateReferenceSchema),
 });
-const basicTemplateCaseSchema = z.object({
-  name: z.string(),
-  template: z.string(),
+const basicTemplateCaseSchema = object({
+  name: string(),
+  template: string(),
   expectedTemplateReferences: templateReferencesSchema,
-  expectedDiagnosticNames: z.array(z.string()),
+  expectedDiagnosticNames: array(string()),
 });
-const contractSchema = z
-  .object({
-    simpleReferenceCases: z.array(simpleReferenceCaseSchema).min(1),
-    basicTemplateCases: z.array(basicTemplateCaseSchema).min(1),
-  })
-  .superRefine((contract, ctx) => {
-    const seenNames = new Set<string>();
-    const cases = [
-      ...contract.simpleReferenceCases,
-      ...contract.basicTemplateCases,
-    ];
-    for (const [index, testCase] of cases.entries()) {
-      if (seenNames.has(testCase.name)) {
-        ctx.addIssue({
-          code: "custom",
-          path: [index, "name"],
-          message: `duplicate case name "${testCase.name}"`,
-        });
-      }
-      seenNames.add(testCase.name);
+const contractSchema = object({
+  simpleReferenceCases: array(simpleReferenceCaseSchema).min(1),
+  basicTemplateCases: array(basicTemplateCaseSchema).min(1),
+}).superRefine((contract, ctx) => {
+  const seenNames = new Set<string>();
+  const cases = [
+    ...contract.simpleReferenceCases,
+    ...contract.basicTemplateCases,
+  ];
+  for (const [index, testCase] of cases.entries()) {
+    if (seenNames.has(testCase.name)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [index, "name"],
+        message: `duplicate case name "${testCase.name}"`,
+      });
     }
-  });
+    seenNames.add(testCase.name);
+  }
+});
 
-type SimpleReferenceCase = z.infer<typeof simpleReferenceCaseSchema>;
+type SimpleReferenceCase = zInfer<typeof simpleReferenceCaseSchema>;
 
-function loadContract(): z.infer<typeof contractSchema> {
+function loadContract(): zInfer<typeof contractSchema> {
   const rawContract: unknown = JSON.parse(
     fs.readFileSync(
       path.resolve(

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import { number, object, string } from "zod";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -31,7 +31,7 @@ beforeEach(async () => {
   const client = sdk.createClerkClient({
     secretKey: "sk_test_membership_transport",
   });
-  const params = z.object({ userId: z.string(), limit: z.number().optional() });
+  const params = object({ userId: string(), limit: number().optional() });
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
     (input: unknown) => {
       return client.users.getOrganizationMembershipList(params.parse(input));

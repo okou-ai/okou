@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { MsgPack } from "ably/modular";
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
-import { z } from "zod";
+import { array, literal, object } from "zod";
 
 import type { TestContext } from "../../../../__tests__/test-context";
 import { env, mockEnv } from "../../../../lib/env";
@@ -17,11 +17,11 @@ const connectorChanged = Object.freeze({
   data: JSON.stringify({ connectorSlug: "aws" }),
   encoding: "json",
 });
-const wireMessages = z.array(
-  z.object({
-    name: z.literal(connectorChanged.name),
-    data: z.literal(connectorChanged.data),
-    encoding: z.literal(connectorChanged.encoding),
+const wireMessages = array(
+  object({
+    name: literal(connectorChanged.name),
+    data: literal(connectorChanged.data),
+    encoding: literal(connectorChanged.encoding),
   }),
 );
 

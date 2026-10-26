@@ -1457,13 +1457,21 @@ fn exec_operation_diagnostic_preserves_a_real_diagnostic_carried_beside_metadata
 
 #[test]
 fn exec_operation_diagnostic_warns_for_a_broken_metadata_envelope() {
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+
+    let diagnostic = oom_evidence_diagnostic(true);
+    let json = diagnostic.strip_prefix(EVIDENCE_PREFIX).unwrap();
+    let evidence: OomEvidence = serde_json::from_str(json).unwrap();
+    // Valid JSON isolates the byte guard from deserialization failures.
+    let oversized = format!("{json}{}", " ".repeat(49_153 - json.len()));
+    assert_eq!(oversized.len(), 49_153);
+    assert_eq!(
+        serde_json::from_str::<OomEvidence>(&oversized).unwrap(),
+        evidence
+    );
     for diagnostic in [
-        format!("{}not json", guest_contracts::oom_evidence::EVIDENCE_PREFIX),
-        format!(
-            "{}{}",
-            guest_contracts::oom_evidence::EVIDENCE_PREFIX,
-            "x".repeat(guest_contracts::oom_evidence::MAX_EVIDENCE_BYTES + 1)
-        ),
+        format!("{EVIDENCE_PREFIX}not json"),
+        format!("{EVIDENCE_PREFIX}{oversized}"),
     ] {
         let result = guest_control_proto::DecodedExecResult {
             diagnostic: diagnostic.as_str(),

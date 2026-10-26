@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { array, number, object, string, url } from "zod";
 
 /**
  * Maximum file size per file in bytes (100MB).
@@ -18,11 +18,10 @@ export const STORAGE_MANIFEST_MAX_PATH_BYTES = 8 * 1024 * 1024;
 /**
  * File entry with hash for content-addressable storage.
  */
-export const fileEntryWithHashSchema = z.object({
-  path: z.string().min(1, "File path is required"),
-  hash: z.string().length(64, "Hash must be SHA-256 (64 hex chars)"),
-  size: z
-    .number()
+export const fileEntryWithHashSchema = object({
+  path: string().min(1, "File path is required"),
+  hash: string().length(64, "Hash must be SHA-256 (64 hex chars)"),
+  size: number()
     .int()
     .min(0, "Size must be non-negative")
     .max(MAX_FILE_SIZE_BYTES, "File size exceeds 100MB limit"),
@@ -33,8 +32,7 @@ const storageManifestPathEncoder = new TextEncoder();
 /**
  * Bounded file entries for storage prepare and commit manifests.
  */
-export const storageManifestFilesSchema = z
-  .array(fileEntryWithHashSchema)
+export const storageManifestFilesSchema = array(fileEntryWithHashSchema)
   .max(
     STORAGE_MANIFEST_MAX_FILES,
     `Storage manifest exceeds ${STORAGE_MANIFEST_MAX_FILES} files`,
@@ -63,16 +61,16 @@ export const storageManifestFilesSchema = z
 /**
  * Incremental changes for partial uploads.
  */
-export const storageChangesSchema = z.object({
-  added: z.array(z.string()),
-  modified: z.array(z.string()),
-  deleted: z.array(z.string()),
+export const storageChangesSchema = object({
+  added: array(string()),
+  modified: array(string()),
+  deleted: array(string()),
 });
 
 /**
  * Presigned upload URL.
  */
-export const presignedUploadSchema = z.object({
-  key: z.string(),
-  presignedUrl: z.url(),
+export const presignedUploadSchema = object({
+  key: string(),
+  presignedUrl: url(),
 });

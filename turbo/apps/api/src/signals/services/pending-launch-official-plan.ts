@@ -1,4 +1,12 @@
-import { z } from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  union,
+  type output,
+} from "zod";
+
 import { asc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -32,43 +40,43 @@ import {
 } from "./pending-launch-admission-plan";
 import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
 
-const officialRowSchema = z.discriminatedUnion("phase", [
-  z.object({
-    phase: z.literal("catalog-lock"),
-    authority: z.string(),
-    releaseId: z.string(),
+const officialRowSchema = discriminatedUnion("phase", [
+  object({
+    phase: literal("catalog-lock"),
+    authority: string(),
+    releaseId: string(),
   }),
-  z.object({
-    phase: z.literal("installation"),
-    id: z.string(),
-    orgId: z.string(),
-    agentId: z.string(),
-    name: z.string(),
-    visibility: z.string(),
-    ownerUserId: z.string(),
-    officialDefinitionName: z.string().nullable(),
-    officialInstallationState: z.string().nullable(),
+  object({
+    phase: literal("installation"),
+    id: string(),
+    orgId: string(),
+    agentId: string(),
+    name: string(),
+    visibility: string(),
+    ownerUserId: string(),
+    officialDefinitionName: string().nullable(),
+    officialInstallationState: string().nullable(),
   }),
-  z.object({
-    phase: z.literal("automation"),
-    id: z.string(),
-    orgId: z.string(),
-    workflowId: z.string(),
-    ownerUserId: z.string(),
-    blueprintKey: z.string().nullable(),
-    appliedFingerprint: z.string().nullable(),
-    reconciliationStatus: z.string().nullable(),
-    definitionName: z.string().nullable(),
+  object({
+    phase: literal("automation"),
+    id: string(),
+    orgId: string(),
+    workflowId: string(),
+    ownerUserId: string(),
+    blueprintKey: string().nullable(),
+    appliedFingerprint: string().nullable(),
+    reconciliationStatus: string().nullable(),
+    definitionName: string().nullable(),
   }),
 ]);
-export const pendingLaunchAdmissionRowSchema = z.union([
+export const pendingLaunchAdmissionRowSchema = union([
   officialRowSchema,
   pendingCreditPlanRowSchema,
   pendingAdmissionRecordSchema,
 ]);
-type Record = z.output<typeof pendingLaunchAdmissionRowSchema>;
-type OfficialRecord = z.output<typeof officialRowSchema>;
-type OrdinaryRecord = z.output<typeof pendingAdmissionRecordSchema>;
+type Record = output<typeof pendingLaunchAdmissionRowSchema>;
+type OfficialRecord = output<typeof officialRowSchema>;
+type OrdinaryRecord = output<typeof pendingAdmissionRecordSchema>;
 interface OfficialStatement {
   readonly kind: "statement";
   readonly phase:

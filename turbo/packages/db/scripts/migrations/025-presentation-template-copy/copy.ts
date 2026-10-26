@@ -7,41 +7,50 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import postgres from "postgres";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  string,
+  uuid,
+  object as zObject,
+  type infer as zInfer,
+} from "zod";
+
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 
-const packageSchema = z.object({
-  storageId: z.uuid(),
-  versionId: z.string(),
-  s3Key: z.string(),
-  size: z.number().int().nonnegative(),
-  archiveSize: z.number().int().nonnegative(),
-  fileCount: z.number().int().nonnegative(),
+const packageSchema = zObject({
+  storageId: uuid(),
+  versionId: string(),
+  s3Key: string(),
+  size: number().int().nonnegative(),
+  archiveSize: number().int().nonnegative(),
+  fileCount: number().int().nonnegative(),
 });
-const sourceSchema = z.object({
-  id: z.uuid(),
-  orgId: z.string(),
-  ownerUserId: z.string(),
-  fingerprint: z.string(),
+const sourceSchema = zObject({
+  id: uuid(),
+  orgId: string(),
+  ownerUserId: string(),
+  fingerprint: string(),
   package: packageSchema.nullable(),
 });
-const destinationSchema = z.object({
-  orgId: z.string(),
-  ownerUserId: z.string(),
-  kind: z.string().nullable(),
-  copied: z.boolean(),
+const destinationSchema = zObject({
+  orgId: string(),
+  ownerUserId: string(),
+  kind: string().nullable(),
+  copied: boolean(),
   package: packageSchema.nullable(),
 });
-const manifestSchema = z.object({
-  version: z.string(),
-  createdAt: z.string(),
-  totalSize: z.number().int().nonnegative(),
-  fileCount: z.number().int().nonnegative(),
-  files: z.array(
-    z.object({
-      path: z.string(),
-      hash: z.string().regex(/^[a-f0-9]{64}$/u),
-      size: z.number().int().nonnegative(),
+const manifestSchema = zObject({
+  version: string(),
+  createdAt: string(),
+  totalSize: number().int().nonnegative(),
+  fileCount: number().int().nonnegative(),
+  files: array(
+    zObject({
+      path: string(),
+      hash: string().regex(/^[a-f0-9]{64}$/u),
+      size: number().int().nonnegative(),
     }),
   ),
 });
@@ -64,10 +73,9 @@ function readOptions() {
   const templateId =
     values["template-id"] === undefined
       ? null
-      : z.uuid().parse(values["template-id"]);
-  const after =
-    values.after === undefined ? null : z.uuid().parse(values.after);
-  const limit = z.number().int().min(1).max(100).parse(Number(values.limit));
+      : uuid().parse(values["template-id"]);
+  const after = values.after === undefined ? null : uuid().parse(values.after);
+  const limit = number().int().min(1).max(100).parse(Number(values.limit));
   return { templateId, after, limit, migrate: values.migrate };
 }
 
@@ -79,15 +87,13 @@ async function main(): Promise<void> {
     R2_USER_STORAGES_BUCKET_NAME: bucket,
     R2_ACCESS_KEY_ID: accessKeyId,
     R2_SECRET_ACCESS_KEY: secretAccessKey,
-  } = z
-    .object({
-      DATABASE_URL_FILE: z.string().min(1),
-      R2_ENDPOINT: z.string().min(1),
-      R2_USER_STORAGES_BUCKET_NAME: z.string().min(1),
-      R2_ACCESS_KEY_ID: z.string().min(1),
-      R2_SECRET_ACCESS_KEY: z.string().min(1),
-    })
-    .parse(process.env);
+  } = zObject({
+    DATABASE_URL_FILE: string().min(1),
+    R2_ENDPOINT: string().min(1),
+    R2_USER_STORAGES_BUCKET_NAME: string().min(1),
+    R2_ACCESS_KEY_ID: string().min(1),
+    R2_SECRET_ACCESS_KEY: string().min(1),
+  }).parse(process.env);
   const db = postgres((await readFile(credential, "utf8")).trim(), {
     max: 1,
     onnotice() {},
@@ -114,7 +120,7 @@ async function main(): Promise<void> {
       throw new CopyError("IncompleteObject");
     return bytes;
   };
-  const readPackage = async (pkg: z.infer<typeof packageSchema>) => {
+  const readPackage = async (pkg: zInfer<typeof packageSchema>) => {
     const manifest = manifestSchema.parse(
       JSON.parse(
         (
@@ -143,7 +149,7 @@ async function main(): Promise<void> {
     return { manifest, archive };
   };
   try {
-    const sources = z.array(sourceSchema).parse(
+    const sources = array(sourceSchema).parse(
       await db`
       SELECT p.id, p.org_id AS "orgId", p.owner_user_id AS "ownerUserId",
         md5(to_jsonb(p)::text) AS fingerprint,
@@ -164,7 +170,7 @@ async function main(): Promise<void> {
     for (const source of sources) {
       try {
         const marker = `Copied presentation-template@${source.id}`;
-        const destinations = z.array(destinationSchema).parse(
+        const destinations = array(destinationSchema).parse(
           await db`
           SELECT t.org_id AS "orgId", t.owner_user_id AS "ownerUserId", t.manifest->>'kind' AS kind,
             EXISTS (SELECT 1 FROM storage_versions origin WHERE origin.storage_id = s.id AND origin.message = ${marker}) AS copied,

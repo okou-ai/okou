@@ -12,6 +12,105 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1066.4](https://github.com/okou-ai/okou/compare/app-v0.1066.3...app-v0.1066.4) (2026-10-26)
+
+
+### Refactoring
+
+* remove built-in document templates feature switch ([#43158](https://github.com/okou-ai/okou/issues/43158)) ([af5a4ce](https://github.com/okou-ai/okou/commit/af5a4ce2a1a33fb1d706ec262617eeda0316642a))
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.2
+    * @okouai/connectors bumped to 3.16.14
+    * @okouai/core bumped to 8.791.3
+    * @okouai/ui bumped to 1.18.3
+
+## [0.1066.3](https://github.com/okou-ai/okou/compare/app-v0.1066.2...app-v0.1066.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** enable pin shortcuts in editable controls ([#43153](https://github.com/okou-ai/okou/issues/43153)) ([bccc5dd](https://github.com/okou-ai/okou/commit/bccc5dd3c4cb0f9be3fe36ea31db956238fbe91d))
+* **app:** let the chat home scroll under the corner controls ([#43144](https://github.com/okou-ai/okou/issues/43144)) ([8b7b8b1](https://github.com/okou-ai/okou/commit/8b7b8b1a67ddd257bf7544562717e174193785fd))
+
+
+### Refactoring
+
+* remove chat resource panel feature switch ([#43157](https://github.com/okou-ai/okou/issues/43157)) ([4b47789](https://github.com/okou-ai/okou/commit/4b477894060640e8ea0a5ef50a23a56f8f83fe2a))
+* remove custom templates feature switch ([#43162](https://github.com/okou-ai/okou/issues/43162)) ([6909a01](https://github.com/okou-ai/okou/commit/6909a011d4b2d60d5afc3fe6f5f0698d269aad28))
+* remove google docs and sheets conversion switch ([#43154](https://github.com/okou-ai/okou/issues/43154)) ([be0a3ca](https://github.com/okou-ai/okou/commit/be0a3ca522cd5edd2748912bcbecf4c07d76ff38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.2
+
+## [0.1066.2](https://github.com/okou-ai/okou/compare/app-v0.1066.1...app-v0.1066.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** remove retry links from website access errors ([#43149](https://github.com/okou-ai/okou/issues/43149)) ([be4d917](https://github.com/okou-ai/okou/commit/be4d9177193837325b15d315967bc5254dd3054d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.1
+    * @okouai/core bumped to 8.791.1
+
+## [0.1066.1](https://github.com/okou-ai/okou/compare/app-v0.1066.0...app-v0.1066.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** align chat replies and share selection on one reading edge ([#43141](https://github.com/okou-ai/okou/issues/43141)) ([d2f4c35](https://github.com/okou-ai/okou/commit/d2f4c35aea564157e85b2a8f90e161a7e2587807))
+* **app:** fall back to iframes for missing site covers ([#43140](https://github.com/okou-ai/okou/issues/43140)) ([faa802e](https://github.com/okou-ai/okou/commit/faa802e4e8fe7ae3276e5223b3d69e03304a4504))
+* **app:** let the model panel list scroll out at its edges ([#43146](https://github.com/okou-ai/okou/issues/43146)) ([4d7a4cf](https://github.com/okou-ai/okou/commit/4d7a4cfaadec83f9cf9d3e154dbee1530b03246d))
+* **app:** rebalance color themes for contrast, ambience and neutrals ([#43137](https://github.com/okou-ai/okou/issues/43137)) ([fc129c2](https://github.com/okou-ai/okou/commit/fc129c2c83043e1fdc565fc2987c8b3396714f47))
+* **app:** replace the works phone number with a description ([#43139](https://github.com/okou-ai/okou/issues/43139)) ([5087825](https://github.com/okou-ai/okou/commit/5087825c874cbad399da321657cd16f2bffd384a))
+
+
+### Refactoring
+
+* decouple suggestions from proactive agent ([#43143](https://github.com/okou-ai/okou/issues/43143)) ([dc2aa55](https://github.com/okou-ai/okou/commit/dc2aa5555eb6930828b7dd4ddf47d8e3b8379da2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.0
+
+## [0.1066.0](https://github.com/okou-ai/okou/compare/app-v0.1065.0...app-v0.1066.0) (2026-10-26)
+
+
+### Features
+
+* add expanded action options to homepage suggestions ([#43104](https://github.com/okou-ai/okou/issues/43104)) ([fdf92c5](https://github.com/okou-ai/okou/commit/fdf92c5beea97015267ae6dbb74e7db58ce0a344))
+
+
+### Bug Fixes
+
+* download hosted sites in place and enable staff rollout ([#43111](https://github.com/okou-ai/okou/issues/43111)) ([ef21e30](https://github.com/okou-ai/okou/commit/ef21e303274787f2cfff446e747505b5849e9b18))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+    * @okouai/ui bumped to 1.18.2
+
 ## [0.1065.0](https://github.com/okou-ai/okou/compare/app-v0.1064.2...app-v0.1065.0) (2026-10-26)
 
 

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type {
   OAuthDeviceAuthIncompleteResult,
@@ -16,26 +16,26 @@ const TEST_OAUTH_DEVICE_AUTH_URL = "/api/test/oauth-provider/device/code";
 const TEST_OAUTH_DEVICE_TOKEN_URL = "/api/test/oauth-provider/token";
 const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 
-const deviceAuthResponseSchema = z.object({
-  device_code: z.string(),
-  user_code: z.string(),
-  verification_uri: z.string(),
-  verification_uri_complete: z.string().optional(),
-  expires_in: z.number(),
-  interval: z.number().optional(),
+const deviceAuthResponseSchema = object({
+  device_code: string(),
+  user_code: string(),
+  verification_uri: string(),
+  verification_uri_complete: string().optional(),
+  expires_in: number(),
+  interval: number().optional(),
 });
 
-const tokenResponseSchema = z.object({
-  access_token: z.string(),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().optional(),
-  token_type: z.string().optional(),
-  scope: z.string().optional(),
+const tokenResponseSchema = object({
+  access_token: string(),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().optional(),
+  token_type: string().optional(),
+  scope: string().optional(),
 });
 
-const tokenErrorResponseSchema = z.object({
-  error: z.string(),
-  error_description: z.string().optional(),
+const tokenErrorResponseSchema = object({
+  error: string(),
+  error_description: string().optional(),
 });
 
 type TestOAuthDeviceTokenResult = ConnectorAuthProviderGrantResult<{

@@ -1,6 +1,6 @@
 import { computed } from "ccstate";
 import { sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
+import { array, object, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
@@ -19,16 +19,16 @@ import {
 } from "./execution-org-context.service";
 import { memberModelSourcesAggregate } from "./model-source-context.service";
 
-const rawDecoder = zodDriverValueDecoder(z.unknown());
-const orgRowSchema = z.object({
-  metadata: z.unknown(),
-  plan: z.unknown(),
-  slots: z.unknown(),
-  expired: z.unknown(),
-  attached: z.unknown(),
+const rawDecoder = zodDriverValueDecoder(zUnknown());
+const orgRowSchema = object({
+  metadata: zUnknown(),
+  plan: zUnknown(),
+  slots: zUnknown(),
+  expired: zUnknown(),
+  attached: zUnknown(),
 });
 const memberRowsDecoder = zodDriverValueDecoder(
-  z.array(z.object({ kind: z.unknown(), payload: z.unknown() })),
+  array(object({ kind: zUnknown(), payload: zUnknown() })),
 );
 
 /**

@@ -12,7 +12,7 @@ import {
   test,
   vi,
 } from "vitest";
-import { z } from "zod";
+import { array, object, record, string } from "zod";
 
 import { server } from "../mocks/server";
 import { configureGlobalProxyFromEnv } from "../lib/network/proxy";
@@ -62,13 +62,13 @@ const envelopes: {
   url: string;
   headers: Record<string, string>;
 }[] = [];
-const eventSchema = z.object({
-  event_id: z.string(),
-  tags: z.record(z.string(), z.string()),
-  exception: z.object({
-    values: z.array(z.object({ type: z.string(), value: z.string() })),
+const eventSchema = object({
+  event_id: string(),
+  tags: record(string(), string()),
+  exception: object({
+    values: array(object({ type: string(), value: string() })),
   }),
-  fingerprint: z.array(z.string()),
+  fingerprint: array(string()),
 });
 
 beforeAll(async () => {

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import { ProviderHttpError } from "../../provider-error";
 import { parseProviderTokenResponse } from "../../token-response";
@@ -29,9 +29,9 @@ export async function fetchPayPalAccessToken(
   }
   const data = await parseProviderTokenResponse(
     response,
-    z.object({
-      access_token: z.string().min(1),
-      expires_in: z.number().positive(),
+    object({
+      access_token: string().min(1),
+      expires_in: number().positive(),
     }),
     "Invalid PayPal access token response",
   );

@@ -1,4 +1,10 @@
-import { z } from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import {
   invokeRunnerRpc,
@@ -13,39 +19,35 @@ import {
 } from "./protocol";
 
 const LINE_LIMIT = 24 * 1024;
-const rpcErrorSchema = z
-  .object({
-    type: z.literal("error"),
-    code: z.enum([
-      "invalid_request",
-      "unknown_method",
-      "unavailable",
-      "protocol",
-      "transport",
-      "timed_out",
-      "resource_exhausted",
-    ]),
-    delivery: z.enum(["not_dispatched", "unknown"]),
-  })
-  .strict();
-const envelopeSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      type: z.literal("result"),
-      data: runUsageResultSchema,
-    })
-    .strict(),
+const rpcErrorSchema = object({
+  type: literal("error"),
+  code: zEnum([
+    "invalid_request",
+    "unknown_method",
+    "unavailable",
+    "protocol",
+    "transport",
+    "timed_out",
+    "resource_exhausted",
+  ]),
+  delivery: zEnum(["not_dispatched", "unknown"]),
+}).strict();
+const envelopeSchema = discriminatedUnion("type", [
+  object({
+    type: literal("result"),
+    data: runUsageResultSchema,
+  }).strict(),
   rpcErrorSchema,
 ]);
 
-type Terminal = z.infer<typeof envelopeSchema>;
+type Terminal = zInfer<typeof envelopeSchema>;
 
 function invalid(): never {
   throw new RunnerRpcProtocolError("Invalid run usage helper response");
 }
 
 function rpcKind(
-  code: z.infer<typeof rpcErrorSchema>["code"],
+  code: zInfer<typeof rpcErrorSchema>["code"],
 ): RunUsageErrorKind {
   switch (code) {
     case "unknown_method":

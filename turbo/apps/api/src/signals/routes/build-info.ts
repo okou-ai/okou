@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import {
   buildInfoContract,
   type BuildInfoRouteResponse,
-} from "@okouai/api-contracts/contracts";
+} from "@okouai/api-contracts/contracts/build-info";
 
 import { getBuildVersion, normalizeBuildCommitSha } from "../../lib/build-info";
 import { env } from "../../lib/env";

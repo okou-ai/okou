@@ -1,5 +1,16 @@
 import { accept } from "@okouai/connectors/accept";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { logger } from "../../lib/log";
 import { discordSnowflakeSchema, discordUserSchema } from "./discord-client";
 import { safeJsonParse, settle } from "../utils";
@@ -13,33 +24,34 @@ export const DISCORD_INSTALL_SCOPES = Object.freeze([
   ...DISCORD_CONNECT_SCOPES,
 ]);
 
-export const discordOauthTokenSchema = z.object({
-  access_token: z.string().min(1).max(4096).regex(/^\S+$/u),
-  token_type: z.literal("Bearer"),
-  expires_in: z.number().int().positive(),
-  scope: z.string().max(2048),
-  guild: z
-    .object({ id: discordSnowflakeSchema, name: z.string().max(255) })
-    .optional(),
+export const discordOauthTokenSchema = object({
+  access_token: string().min(1).max(4096).regex(/^\S+$/u),
+  token_type: literal("Bearer"),
+  expires_in: number().int().positive(),
+  scope: string().max(2048),
+  guild: object({
+    id: discordSnowflakeSchema,
+    name: string().max(255),
+  }).optional(),
 });
-export const discordOauthAuthorizationSchema = z.object({
-  application: z.object({ id: discordSnowflakeSchema }),
-  scopes: z.array(z.string().max(128)).max(32),
-  expires: z.iso.datetime({ offset: true }),
+export const discordOauthAuthorizationSchema = object({
+  application: object({ id: discordSnowflakeSchema }),
+  scopes: array(string().max(128)).max(32),
+  expires: iso.datetime({ offset: true }),
   user: discordUserSchema,
 });
-export const discordOauthGuildSchema = z.object({
+export const discordOauthGuildSchema = object({
   id: discordSnowflakeSchema,
-  name: z.string().max(255),
-  owner: z.boolean(),
-  permissions: z.string().regex(/^\d+$/u),
+  name: string().max(255),
+  owner: boolean(),
+  permissions: string().regex(/^\d+$/u),
 });
-export const discordOauthBotApplicationSchema = z.object({
+export const discordOauthBotApplicationSchema = object({
   id: discordSnowflakeSchema,
   // Discord's Application structure explicitly makes this partial user optional.
-  bot: z.object({ id: discordSnowflakeSchema }).optional(),
+  bot: object({ id: discordSnowflakeSchema }).optional(),
 });
-export type DiscordOauthGuild = z.infer<typeof discordOauthGuildSchema>;
+export type DiscordOauthGuild = zInfer<typeof discordOauthGuildSchema>;
 export type DiscordOauthResult<T> =
   | { readonly ok: true; readonly data: T }
   | {
@@ -49,7 +61,7 @@ export type DiscordOauthResult<T> =
 
 async function request<T>(
   path: string,
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   init: {
     readonly method?: "POST";
     readonly headers: Readonly<Record<string, string>>;
@@ -166,7 +178,7 @@ export async function findDiscordOauthGuild(
   for (;;) {
     const page = await request(
       `/users/@me/guilds?limit=200&after=${after}`,
-      z.array(discordOauthGuildSchema).max(200),
+      array(discordOauthGuildSchema).max(200),
       { headers: { authorization: `Bearer ${token}` } },
       signal,
     );

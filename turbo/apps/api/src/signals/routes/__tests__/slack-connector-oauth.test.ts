@@ -297,12 +297,15 @@ beforeEach(() => {
   );
 });
 
-async function enableWorkspaceIdentity(current: Actor): Promise<void> {
+async function enableWorkspaceIdentity(
+  current: Actor,
+  enabled = true,
+): Promise<void> {
   authenticate(current);
   await accept(
     clients()(featureSwitchesContract).update({
       headers,
-      body: { switches: { slackWorkspaceIdentity: true } },
+      body: { switches: { slackWorkspaceIdentity: enabled } },
     }),
     [200],
   );
@@ -764,7 +767,9 @@ test("connect reuses the same OAuth account and both disconnect operations stay 
   }
   const authorization = await start(status.connectUrl);
   expect(authorization.searchParams.has("scope")).toBeFalsy();
-  expect(authorization.searchParams.get("team")).toBe(current.workspaceId);
+  expect(parameter(authorization, "user_scope").split(",")).toContain(
+    "users:read",
+  );
   expect(
     (await complete(authorization, current)).searchParams.get("status"),
   ).toBe("connected");
@@ -819,6 +824,14 @@ test("a Slack-origin connect requests OAuth before binding and rejects another S
     expect.objectContaining({ externalId: current.slackUserId }),
   ]);
 
+  context.mocks.slack.users.info.mockResolvedValue({
+    ok: true,
+    user: {
+      id: current.slackUserId,
+      team_id: current.workspaceId,
+      profile: { email: current.email },
+    },
+  });
   const retry = await accept(
     clients()(slackConnectContract).connect({
       headers,
@@ -839,6 +852,7 @@ test("a Slack-origin connect requests OAuth before binding and rejects another S
 
 test("a different workspace cannot replace the installed workspace or add its user account", async () => {
   const current = actor();
+  await enableWorkspaceIdentity(current, false);
   await complete(await startInstall(), current);
   await disconnectChat();
   const status = await integrationStatus();
@@ -873,7 +887,7 @@ test("a Slack identity already linked to another user cannot create a partial co
   }
   const rejected = await complete(await start(status.connectUrl), second);
   expect(rejected.searchParams.get("error")).toContain("another user");
-  await expect(accounts()).resolves.toHaveLength(0);
+  await expect(accounts()).resolves.toStrictEqual([]);
   await expect(integrationStatus()).resolves.toMatchObject({
     isConnected: false,
   });
@@ -985,7 +999,7 @@ test("a Slack-origin OAuth callback confirms connection in the originating threa
       channel: "C_ORIGIN",
       user: current.slackUserId,
       thread_ts: "42.0",
-      text: "You're connected!",
+      text: "Your Slack account is connected. Bot tools use your own workspace's Okou installation.",
     }),
   );
   expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
@@ -993,6 +1007,7 @@ test("a Slack-origin OAuth callback confirms connection in the originating threa
 
 test("a Slack connect OAuth callback sends a DM welcome without channel context", async () => {
   const current = actor();
+  await enableWorkspaceIdentity(current, false);
   await complete(await startInstall(), current);
   await disconnectChat();
   await flushWaitUntilForTest();
@@ -1026,6 +1041,14 @@ test("an explicit Slack account switch replaces the previous identity after OAut
 
   const nextSlackUserId = `U_${randomUUID()}`;
   const nextIdentity = { ...current, slackUserId: nextSlackUserId };
+  context.mocks.slack.users.info.mockResolvedValue({
+    ok: true,
+    user: {
+      id: nextSlackUserId,
+      team_id: current.workspaceId,
+      profile: { email: current.email },
+    },
+  });
   const switched = await complete(
     await startConnect(nextIdentity, { intent: "switch" }),
     nextIdentity,
@@ -1079,6 +1102,7 @@ test("an explicit Slack account switch replaces the previous identity after OAut
 
 test("a Slack connect OAuth callback recovers a failed channel confirmation by DM", async () => {
   const current = actor();
+  await enableWorkspaceIdentity(current, false);
   await complete(await startInstall(), current);
   await disconnectChat();
   await flushWaitUntilForTest();
@@ -1108,6 +1132,7 @@ test("a Slack connect OAuth callback recovers a failed channel confirmation by D
 
 test("an admin binds an anonymously installed workspace through user OAuth", async () => {
   const current = actor();
+  await enableWorkspaceIdentity(current, false);
   await installAnonymous(current);
   await expect(integrationStatus()).resolves.toMatchObject({
     isInstalled: false,
@@ -1150,7 +1175,7 @@ test("an anonymous reinstall preserves the organization's connected Slack accoun
   await expect(integrationStatus()).resolves.toMatchObject({
     isInstalled: true,
     isConnected: true,
-    workspaceName: "Anonymous workspace",
+    workspaceName: "Connected workspace",
   });
   await expect(accounts()).resolves.toStrictEqual(connectedAccounts);
 });

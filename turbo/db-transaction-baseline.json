@@ -147,11 +147,6 @@
       "owner": "writePersonalAccount"
     },
     {
-      "id": "TX-0187",
-      "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
-      "owner": "disconnectPersonalModelProviderAccounts$"
-    },
-    {
       "id": "TX-0189",
       "file": "turbo/apps/api/src/signals/services/morning-brief-schedule-claim.service.ts",
       "owner": "commitMorningBriefScheduleSettlement$"
@@ -205,11 +200,6 @@
       "id": "TX-0272",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
-    },
-    {
-      "id": "TX-0283",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "recordInvitationAcceptance$"
     },
     {
       "id": "TX-0284",

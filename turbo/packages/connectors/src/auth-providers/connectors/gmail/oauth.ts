@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -79,16 +79,14 @@ export async function exchangeGmailCode(
     await throwOAuthError("Gmail", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -123,13 +121,11 @@ async function fetchGmailUserInfo(accessToken: string): Promise<GmailUserInfo> {
     throw new Error(`Gmail user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      sub: z.string().optional(),
-      email: z.string().nullable().optional(),
-      name: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    sub: string().optional(),
+    email: string().nullable().optional(),
+    name: string().nullable().optional(),
+  }).parse(await response.json());
 
   // Google defines OIDC `sub` as immutable while email can change, so persist the subject and request identity scopes for compatibility. Ref: https://developers.google.com/identity/openid-connect/openid-connect
   return {

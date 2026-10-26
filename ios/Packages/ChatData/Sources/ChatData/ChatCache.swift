@@ -112,6 +112,24 @@ public actor ChatCache {
       .appendingPathComponent(filename)
   }
 
+  public func loadNavigation() throws -> SidebarNavigationSnapshot? {
+    try withDatabase { database in
+      let query = try database.prepare("SELECT snapshot FROM sidebar_navigation WHERE id = 1")
+      guard try query.step() else { return nil }
+      return try JSONDecoder().decode(SidebarNavigationSnapshot.self, from: query.blob(at: 0))
+    }
+  }
+
+  public func saveNavigation(_ snapshot: SidebarNavigationSnapshot) throws {
+    let data = try JSONEncoder().encode(snapshot)
+    try withDatabase { database in
+      let write = try database.prepare(
+        "INSERT OR REPLACE INTO sidebar_navigation (id, snapshot) VALUES (1, ?)")
+      try write.bind(data, at: 1)
+      try write.run()
+    }
+  }
+
   public func loadThreadList() throws -> CachedThreadList? {
     try withDatabase { database in
       let snapshot = try database.prepare(
@@ -484,6 +502,15 @@ private final class CacheDatabase {
     guard currentVersion == 0 || currentVersion == version else {
       throw ChatCacheError.unsupportedVersion
     }
+    // This additive table also works with caches written by the preceding build;
+    // earlier readers keep using the unchanged thread and history tables.
+    try execute(
+      """
+      CREATE TABLE IF NOT EXISTS sidebar_navigation (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        snapshot BLOB NOT NULL
+      )
+      """)
     if currentVersion == version { return }
     try transaction {
       try execute(

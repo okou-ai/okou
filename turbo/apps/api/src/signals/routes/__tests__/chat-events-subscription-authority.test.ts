@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { string } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
@@ -171,7 +171,7 @@ describe("CHAT-02: run-level model overrides", () => {
         const rejected = await firewall.requestFirewallAuth(
           f.sandboxHeaders,
           {
-            encryptedSecrets: z.string().parse(f.claim.encryptedSecrets),
+            encryptedSecrets: string().parse(f.claim.encryptedSecrets),
             authHeaders: {
               Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
               "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
@@ -231,7 +231,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const rejected = await firewall.requestFirewallAuth(
       sandboxHeaders,
       {
-        encryptedSecrets: z.string().parse(claim.encryptedSecrets),
+        encryptedSecrets: string().parse(claim.encryptedSecrets),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
           "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { boolean, object } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { proactivePreferenceSchema } from "./proactive";
@@ -15,7 +15,7 @@ const responses = {
   401: apiErrorSchema,
   403: apiErrorSchema,
 };
-const body = z.object({ enabled: z.boolean() });
+const body = object({ enabled: boolean() });
 
 export const proactiveLearningContract = c.router({
   get: {

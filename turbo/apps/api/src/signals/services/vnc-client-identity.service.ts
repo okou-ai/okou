@@ -3,7 +3,8 @@ import {
   createPublicKey,
   X509Certificate,
 } from "node:crypto";
-import { z } from "zod";
+import { array, base64, object, type infer as zInfer } from "zod";
+
 import { now } from "../../lib/time";
 import { safeSync, safeJsonParse } from "../utils";
 import {
@@ -12,13 +13,11 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 
 // Both the owner and private Runner handoff carry encoded DER, not PEM paths.
-const wireIdentitySchema = z
-  .object({
-    certificateChainDer: z.array(z.base64()).min(1).max(8),
-    privateKeyPkcs8Der: z.base64(),
-  })
-  .strict();
-export type VncClientIdentityWire = z.infer<typeof wireIdentitySchema>;
+const wireIdentitySchema = object({
+  certificateChainDer: array(base64()).min(1).max(8),
+  privateKeyPkcs8Der: base64(),
+}).strict();
+export type VncClientIdentityWire = zInfer<typeof wireIdentitySchema>;
 
 function parsePemBlocks(
   value: string,

@@ -10,7 +10,7 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { z } from "zod";
+import { literal, object, string } from "zod";
 import {
   hostedSitePreviewSchema,
   MAX_HOSTED_PREVIEW_BYTES,
@@ -104,13 +104,11 @@ export async function readHostedPreview(
     // User-selected cover images have no screenshot receipt.
   }
   if (receipt !== undefined) {
-    const recorded = z
-      .object({
-        version: z.literal(1),
-        bundleSha256: z.string(),
-        imageSha256: z.string(),
-      })
-      .parse(JSON.parse(receipt));
+    const recorded = object({
+      version: literal(1),
+      bundleSha256: string(),
+      imageSha256: string(),
+    }).parse(JSON.parse(receipt));
     if (
       recorded.bundleSha256 !== fingerprint ||
       recorded.imageSha256 !== metadata.sha256

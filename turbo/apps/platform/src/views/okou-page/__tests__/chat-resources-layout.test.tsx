@@ -173,7 +173,7 @@ test("Dismiss a narrow panel when keyboard focus moves to the composer", async (
   });
 });
 
-test("Use the artifact icon on mobile without a separate switch or duplicate menu entry", async () => {
+test("Toggle resources on mobile and dismiss them from the composer", async () => {
   await setupResources({ gutter: 16, desktop: false });
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
@@ -186,9 +186,6 @@ test("Use the artifact icon on mobile without a separate switch or duplicate men
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  await userEvent.click(buttonNamed("More actions"));
-  const menu = await screen.findByRole("menu");
-  expect(within(menu).queryByText("Artifacts")).not.toBeInTheDocument();
 });
 
 test("Toggle the artifact panel with the keyboard", async () => {

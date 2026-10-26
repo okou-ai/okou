@@ -1,4 +1,11 @@
-import { z } from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  enum as zEnum,
+} from "zod";
 
 import { initContract } from "../../contracts/base";
 import { swiftRouteBindings } from "../../swift-bindings/routes";
@@ -12,9 +19,9 @@ function binding(id: string, path: string): RuntimeApiRouteBinding {
     get: {
       method: "GET",
       path,
-      query: z.object({ cursor: z.string().optional() }),
+      query: object({ cursor: string().optional() }),
       responses: {
-        200: z.object({ ok: z.boolean() }),
+        200: object({ ok: boolean() }),
       },
     },
   });
@@ -26,17 +33,15 @@ function strictUnionBinding(id: string, path: string): RuntimeApiRouteBinding {
     report: {
       method: "POST",
       path,
-      body: z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("plain") }).strict(),
-        z
-          .object({
-            kind: z.literal("sourced"),
-            source: z.enum(["provider_response", "upstream_transport"]),
-          })
-          .strict(),
+      body: discriminatedUnion("kind", [
+        object({ kind: literal("plain") }).strict(),
+        object({
+          kind: literal("sourced"),
+          source: zEnum(["provider_response", "upstream_transport"]),
+        }).strict(),
       ]),
       responses: {
-        200: z.object({ ok: z.boolean() }),
+        200: object({ ok: boolean() }),
       },
     },
   });

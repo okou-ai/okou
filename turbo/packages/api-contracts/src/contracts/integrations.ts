@@ -1,4 +1,18 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  union,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -7,7 +21,7 @@ import { fileDownloadUrlSchema } from "./file-download";
 const c = initContract();
 
 const directUploadResponseShape = {
-  uploadHeaders: z.record(z.string(), z.string()),
+  uploadHeaders: record(string(), string()),
 };
 
 /**
@@ -17,30 +31,28 @@ const directUploadResponseShape = {
  * Sends a Slack message via the org's installed bot token.
  * Requires `slack:write` capability (via OKOU_TOKEN).
  */
-const sendSlackMessageBodySchema = z
-  .object({
-    channel: z.string().min(1, "Channel ID is required").optional(),
-    user: z.string().min(1, "User ID is required").optional(),
-    text: z.string().optional(),
-    threadTs: z.string().optional(),
-    blocks: z.array(z.object({ type: z.string() }).passthrough()).optional(),
-  })
-  .refine(
-    (data) => {
-      return Boolean(data.channel) !== Boolean(data.user);
-    },
-    { message: "Exactly one of 'channel' or 'user' must be provided" },
-  );
+const sendSlackMessageBodySchema = object({
+  channel: string().min(1, "Channel ID is required").optional(),
+  user: string().min(1, "User ID is required").optional(),
+  text: string().optional(),
+  threadTs: string().optional(),
+  blocks: array(object({ type: string() }).passthrough()).optional(),
+}).refine(
+  (data) => {
+    return Boolean(data.channel) !== Boolean(data.user);
+  },
+  { message: "Exactly one of 'channel' or 'user' must be provided" },
+);
 
-export type SendSlackMessageBody = z.infer<typeof sendSlackMessageBodySchema>;
+export type SendSlackMessageBody = zInfer<typeof sendSlackMessageBodySchema>;
 
-const sendSlackMessageResponseSchema = z.object({
-  ok: z.literal(true),
-  ts: z.string().optional(),
-  channel: z.string().optional(),
+const sendSlackMessageResponseSchema = object({
+  ok: literal(true),
+  ts: string().optional(),
+  channel: string().optional(),
 });
 
-export type SendSlackMessageResponse = z.infer<
+export type SendSlackMessageResponse = zInfer<
   typeof sendSlackMessageResponseSchema
 >;
 
@@ -71,18 +83,17 @@ export type IntegrationsSlackMessageContract =
  * Sends a Feishu message via an org-owned custom app.
  * Requires `feishu:write` capability (via OKOU_TOKEN).
  */
-const feishuCardSchema = z.record(z.string(), z.unknown());
+const feishuCardSchema = record(string(), zUnknown());
 
-const sendFeishuMessageBodySchema = z
-  .object({
-    installationId: z.string().uuid().optional(),
-    chat: z.string().min(1, "Chat ID is required").optional(),
-    user: z.string().min(1, "Feishu open ID is required").optional(),
-    replyToMessageId: z.string().min(1, "Message ID is required").optional(),
-    replyInThread: z.boolean().optional(),
-    text: z.string().min(1, "Message text is required").optional(),
-    card: feishuCardSchema.optional(),
-  })
+const sendFeishuMessageBodySchema = object({
+  installationId: string().uuid().optional(),
+  chat: string().min(1, "Chat ID is required").optional(),
+  user: string().min(1, "Feishu open ID is required").optional(),
+  replyToMessageId: string().min(1, "Message ID is required").optional(),
+  replyInThread: boolean().optional(),
+  text: string().min(1, "Message text is required").optional(),
+  card: feishuCardSchema.optional(),
+})
   .refine(
     (body) => {
       return (
@@ -114,15 +125,15 @@ const sendFeishuMessageBodySchema = z
     },
   );
 
-export type SendFeishuMessageBody = z.infer<typeof sendFeishuMessageBodySchema>;
+export type SendFeishuMessageBody = zInfer<typeof sendFeishuMessageBodySchema>;
 
-const sendFeishuMessageResponseSchema = z.object({
-  ok: z.literal(true),
-  messageId: z.string(),
-  chatId: z.string().nullable(),
+const sendFeishuMessageResponseSchema = object({
+  ok: literal(true),
+  messageId: string(),
+  chatId: string().nullable(),
 });
 
-export type SendFeishuMessageResponse = z.infer<
+export type SendFeishuMessageResponse = zInfer<
   typeof sendFeishuMessageResponseSchema
 >;
 
@@ -154,25 +165,25 @@ export const FEISHU_FILE_UPLOAD_MAX_BYTES = 30 * 1024 * 1024;
  * Requires `feishu:write` because Feishu currently uses one capability for
  * bot-backed messaging and file access.
  */
-const feishuResourceTypeSchema = z.enum(["file", "image"]);
+const feishuResourceTypeSchema = zEnum(["file", "image"]);
 
-export type FeishuResourceType = z.infer<typeof feishuResourceTypeSchema>;
+export type FeishuResourceType = zInfer<typeof feishuResourceTypeSchema>;
 
 export const integrationsFeishuDownloadFileContract = c.router({
   download: {
     method: "GET",
     path: "/api/integrations/feishu/download-file",
     headers: authHeadersSchema,
-    query: z.object({
-      installation_id: z.string().uuid().optional(),
-      message_id: z.string().min(1, "Message ID is required"),
-      file_key: z.string().min(1, "File key is required"),
+    query: object({
+      installation_id: string().uuid().optional(),
+      message_id: string().min(1, "Message ID is required"),
+      file_key: string().min(1, "File key is required"),
       type: feishuResourceTypeSchema,
     }),
     responses: {
       200: c.otherResponse({
         contentType: "application/octet-stream",
-        body: z.unknown(),
+        body: zUnknown(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -194,11 +205,10 @@ export type IntegrationsFeishuDownloadFileContract =
  * The CLI uploads to temporary storage before the API forwards the bytes
  * to Feishu with the organization bot's tenant token.
  */
-const feishuUploadInitBodySchema = z.object({
-  filename: z.string().min(1, "Filename is required").max(255),
-  contentType: z.string().min(1, "Content type is required").max(200),
-  length: z
-    .number()
+const feishuUploadInitBodySchema = object({
+  filename: string().min(1, "Filename is required").max(255),
+  contentType: string().min(1, "Content type is required").max(200),
+  length: number()
     .int()
     .positive("File length must be a positive integer")
     .max(
@@ -207,19 +217,19 @@ const feishuUploadInitBodySchema = z.object({
     ),
 });
 
-export type FeishuUploadInitBody = z.infer<typeof feishuUploadInitBodySchema>;
+export type FeishuUploadInitBody = zInfer<typeof feishuUploadInitBodySchema>;
 
-const feishuUploadInitResponseSchema = z.object({
-  uploadId: z.string().uuid(),
-  uploadUrl: z.string(),
-  fileUrl: z.string(),
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number().int().nonnegative(),
+const feishuUploadInitResponseSchema = object({
+  uploadId: string().uuid(),
+  uploadUrl: string(),
+  fileUrl: string(),
+  filename: string(),
+  contentType: string(),
+  size: number().int().nonnegative(),
   ...directUploadResponseShape,
 });
 
-export type FeishuUploadInitResponse = z.infer<
+export type FeishuUploadInitResponse = zInfer<
   typeof feishuUploadInitResponseSchema
 >;
 
@@ -245,16 +255,15 @@ export const integrationsFeishuUploadInitContract = c.router({
  * Uploads the stored bytes to Feishu and sends the resulting file key to one
  * chat, user, or reply target.
  */
-const feishuUploadCompleteBodySchema = z
-  .object({
-    uploadId: z.string().uuid("Upload ID must be a UUID"),
-    installationId: z.string().uuid().optional(),
-    chat: z.string().min(1, "Chat ID is required").optional(),
-    user: z.string().min(1, "Feishu open ID is required").optional(),
-    replyToMessageId: z.string().min(1, "Message ID is required").optional(),
-    replyInThread: z.boolean().optional(),
-    contentType: z.string().min(1).max(200).optional(),
-  })
+const feishuUploadCompleteBodySchema = object({
+  uploadId: string().uuid("Upload ID must be a UUID"),
+  installationId: string().uuid().optional(),
+  chat: string().min(1, "Chat ID is required").optional(),
+  user: string().min(1, "Feishu open ID is required").optional(),
+  replyToMessageId: string().min(1, "Message ID is required").optional(),
+  replyInThread: boolean().optional(),
+  contentType: string().min(1).max(200).optional(),
+})
   .refine(
     (body) => {
       return (
@@ -277,21 +286,21 @@ const feishuUploadCompleteBodySchema = z
     },
   );
 
-export type FeishuUploadCompleteBody = z.infer<
+export type FeishuUploadCompleteBody = zInfer<
   typeof feishuUploadCompleteBodySchema
 >;
 
-const feishuUploadCompleteResponseSchema = z.object({
-  messageId: z.string(),
-  chatId: z.string().nullable(),
-  fileKey: z.string(),
-  filename: z.string(),
-  mimetype: z.string(),
-  size: z.number().int().nonnegative(),
-  url: z.string(),
+const feishuUploadCompleteResponseSchema = object({
+  messageId: string(),
+  chatId: string().nullable(),
+  fileKey: string(),
+  filename: string(),
+  mimetype: string(),
+  size: number().int().nonnegative(),
+  url: string(),
 });
 
-export type FeishuUploadCompleteResponse = z.infer<
+export type FeishuUploadCompleteResponse = zInfer<
   typeof feishuUploadCompleteResponseSchema
 >;
 
@@ -324,26 +333,26 @@ export const integrationsFeishuUploadCompleteContract = c.router({
  * `chatId` is the resolved chat.
  * Requires `telegram:write` capability (via OKOU_TOKEN).
  */
-const sendTelegramMessageBodySchema = z.object({
-  botId: z.string().min(1, "Bot ID is required"),
+const sendTelegramMessageBodySchema = object({
+  botId: string().min(1, "Bot ID is required"),
   /** Telegram chat ID, or `"me"` for the caller's private chat with the bot. */
-  chatId: z.string().min(1, "Chat ID is required"),
-  text: z.string().min(1, "Message text is required"),
-  replyToMessageId: z.number().int().positive().optional(),
-  messageThreadId: z.number().int().positive().optional(),
+  chatId: string().min(1, "Chat ID is required"),
+  text: string().min(1, "Message text is required"),
+  replyToMessageId: number().int().positive().optional(),
+  messageThreadId: number().int().positive().optional(),
 });
 
-export type SendTelegramMessageBody = z.infer<
+export type SendTelegramMessageBody = zInfer<
   typeof sendTelegramMessageBodySchema
 >;
 
-const sendTelegramMessageResponseSchema = z.object({
-  ok: z.literal(true),
-  messageId: z.number().int(),
-  chatId: z.string(),
+const sendTelegramMessageResponseSchema = object({
+  ok: literal(true),
+  messageId: number().int(),
+  chatId: string(),
 });
 
-export type SendTelegramMessageResponse = z.infer<
+export type SendTelegramMessageResponse = zInfer<
   typeof sendTelegramMessageResponseSchema
 >;
 
@@ -375,23 +384,20 @@ export type IntegrationsTelegramMessageContract =
  * Sends a Microsoft Teams message via the org's installed Teams bot.
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
-const teamsAdaptiveCardSchema = z
-  .object({
-    type: z.literal("AdaptiveCard"),
-    version: z.string().min(1),
-    body: z.array(z.record(z.string(), z.unknown())).optional(),
-    actions: z.array(z.record(z.string(), z.unknown())).optional(),
-  })
-  .passthrough();
+const teamsAdaptiveCardSchema = object({
+  type: literal("AdaptiveCard"),
+  version: string().min(1),
+  body: array(record(string(), zUnknown())).optional(),
+  actions: array(record(string(), zUnknown())).optional(),
+}).passthrough();
 
-const sendTeamsMessageBodySchema = z
-  .object({
-    conversationId: z.string().min(1, "Conversation ID is required").optional(),
-    user: z.string().min(1, "Teams user ID is required").optional(),
-    text: z.string().min(1, "Message text is required").optional(),
-    activityId: z.string().min(1, "Activity ID is required").optional(),
-    card: teamsAdaptiveCardSchema.optional(),
-  })
+const sendTeamsMessageBodySchema = object({
+  conversationId: string().min(1, "Conversation ID is required").optional(),
+  user: string().min(1, "Teams user ID is required").optional(),
+  text: string().min(1, "Message text is required").optional(),
+  activityId: string().min(1, "Activity ID is required").optional(),
+  card: teamsAdaptiveCardSchema.optional(),
+})
   .refine(
     (body) => {
       return Boolean(body.conversationId) !== Boolean(body.user);
@@ -420,15 +426,15 @@ const sendTeamsMessageBodySchema = z
     },
   );
 
-export type SendTeamsMessageBody = z.infer<typeof sendTeamsMessageBodySchema>;
+export type SendTeamsMessageBody = zInfer<typeof sendTeamsMessageBodySchema>;
 
-const sendTeamsMessageResponseSchema = z.object({
-  ok: z.literal(true),
-  activityId: z.string().optional(),
-  conversationId: z.string(),
+const sendTeamsMessageResponseSchema = object({
+  ok: literal(true),
+  activityId: string().optional(),
+  conversationId: string(),
 });
 
-export type SendTeamsMessageResponse = z.infer<
+export type SendTeamsMessageResponse = zInfer<
   typeof sendTeamsMessageResponseSchema
 >;
 
@@ -460,21 +466,21 @@ export type IntegrationsTeamsMessageContract =
  * Sends an AgentPhone text message to the caller's own linked phone handle.
  * Requires `phone:write` capability (via OKOU_TOKEN).
  */
-const sendPhoneMessageBodySchema = z.object({
-  agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
-  text: z.string().min(1, "Message text is required"),
+const sendPhoneMessageBodySchema = object({
+  agentphoneAgentId: string().min(1, "Phone agent ID is required").optional(),
+  text: string().min(1, "Message text is required"),
 });
 
-export type SendPhoneMessageBody = z.infer<typeof sendPhoneMessageBodySchema>;
+export type SendPhoneMessageBody = zInfer<typeof sendPhoneMessageBodySchema>;
 
-const sendPhoneMessageResponseSchema = z.object({
-  ok: z.literal(true),
-  messageId: z.string(),
-  channel: z.string().nullable(),
-  toNumber: z.string(),
+const sendPhoneMessageResponseSchema = object({
+  ok: literal(true),
+  messageId: string(),
+  channel: string().nullable(),
+  toNumber: string(),
 });
 
-export type SendPhoneMessageResponse = z.infer<
+export type SendPhoneMessageResponse = zInfer<
   typeof sendPhoneMessageResponseSchema
 >;
 
@@ -499,8 +505,8 @@ export const integrationsPhoneMessageContract = c.router({
 export type IntegrationsPhoneMessageContract =
   typeof integrationsPhoneMessageContract;
 
-const phoneDownloadFileQuerySchema = z.object({
-  file_id: z.string().min(1, "file_id query parameter is required"),
+const phoneDownloadFileQuerySchema = object({
+  file_id: string().min(1, "file_id query parameter is required"),
 });
 
 export const integrationsPhoneDownloadFileContract = c.router({
@@ -533,38 +539,36 @@ export type IntegrationsPhoneDownloadFileContract =
  * Reports the official Telegram bot for older CLI clients.
  * Requires `telegram:read` capability (via OKOU_TOKEN).
  */
-const telegramBotTokenStatusSchema = z.enum(["valid", "invalid", "unknown"]);
+const telegramBotTokenStatusSchema = zEnum(["valid", "invalid", "unknown"]);
 
-const telegramConnectedUserSchema = z.object({
-  telegramUserId: z.string(),
-  telegramUsername: z.string().nullable(),
-  telegramDisplayName: z.string().nullable(),
+const telegramConnectedUserSchema = object({
+  telegramUserId: string(),
+  telegramUsername: string().nullable(),
+  telegramDisplayName: string().nullable(),
 });
 
-const telegramBotListItemSchema = z.object({
-  id: z.string(),
-  kind: z.literal("official").optional(),
-  username: z.string().nullable(),
-  agent: z.object({ id: z.string(), name: z.string() }).nullable(),
-  isOwner: z.boolean(),
-  isConnected: z.boolean(),
+const telegramBotListItemSchema = object({
+  id: string(),
+  kind: literal("official").optional(),
+  username: string().nullable(),
+  agent: object({ id: string(), name: string() }).nullable(),
+  isOwner: boolean(),
+  isConnected: boolean(),
   connectedUser: telegramConnectedUserSchema.nullable().optional(),
   tokenStatus: telegramBotTokenStatusSchema,
-  official: z
-    .object({
-      configured: z.boolean(),
-      usesDefaultAgent: z.boolean(),
-      linkedTelegramUserId: z.string().nullable(),
-    })
-    .optional(),
+  official: object({
+    configured: boolean(),
+    usesDefaultAgent: boolean(),
+    linkedTelegramUserId: string().nullable(),
+  }).optional(),
 });
 
-const listTelegramBotsResponseSchema = z.object({
-  bots: z.array(telegramBotListItemSchema),
+const listTelegramBotsResponseSchema = object({
+  bots: array(telegramBotListItemSchema),
 });
 
-export type TelegramBotListItem = z.infer<typeof telegramBotListItemSchema>;
-export type ListTelegramBotsResponse = z.infer<
+export type TelegramBotListItem = zInfer<typeof telegramBotListItemSchema>;
+export type ListTelegramBotsResponse = zInfer<
   typeof listTelegramBotsResponseSchema
 >;
 
@@ -595,13 +599,13 @@ export const integrationsSlackDownloadFileContract = c.router({
     method: "GET",
     path: "/api/integrations/slack/download-file",
     headers: authHeadersSchema,
-    query: z.object({
-      file_id: z.string().optional(),
+    query: object({
+      file_id: string().optional(),
     }),
     responses: {
       200: c.otherResponse({
         contentType: "application/octet-stream",
-        body: z.unknown(),
+        body: zUnknown(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -627,20 +631,19 @@ export type IntegrationsSlackDownloadFileContract =
  * and returned as `channel`.
  * Requires `slack:write` capability (via OKOU_TOKEN).
  */
-const slackUploadInitBodySchema = z.object({
-  filename: z.string().min(1, "Filename is required"),
-  length: z.number().int().positive("File length must be a positive integer"),
-  canonical: z
-    .object({
-      operationId: z.string().uuid(),
-      contentType: z.string().min(1).max(200),
-      checksumSha256: z.string().regex(/^[a-f0-9]{64}$/),
-      channel: z.string().min(1, "Channel ID is required").optional(),
-      user: z.string().min(1, "User ID is required").optional(),
-      threadTs: z.string().optional(),
-      title: z.string().optional(),
-      initialComment: z.string().optional(),
-    })
+const slackUploadInitBodySchema = object({
+  filename: string().min(1, "Filename is required"),
+  length: number().int().positive("File length must be a positive integer"),
+  canonical: object({
+    operationId: string().uuid(),
+    contentType: string().min(1).max(200),
+    checksumSha256: string().regex(/^[a-f0-9]{64}$/),
+    channel: string().min(1, "Channel ID is required").optional(),
+    user: string().min(1, "User ID is required").optional(),
+    threadTs: string().optional(),
+    title: string().optional(),
+    initialComment: string().optional(),
+  })
     .refine(
       (data) => {
         return Boolean(data.channel) !== Boolean(data.user);
@@ -650,30 +653,30 @@ const slackUploadInitBodySchema = z.object({
     .optional(),
 });
 
-export type SlackUploadInitBody = z.infer<typeof slackUploadInitBodySchema>;
+export type SlackUploadInitBody = zInfer<typeof slackUploadInitBodySchema>;
 
-const directSlackUploadInitResponseSchema = z.object({
-  uploadUrl: z.string(),
-  fileId: z.string(),
+const directSlackUploadInitResponseSchema = object({
+  uploadUrl: string(),
+  fileId: string(),
 });
 
-const canonicalSlackUploadInitResponseSchema = z.object({
-  kind: z.literal("canonical"),
-  assetId: z.string().uuid(),
-  operationId: z.string().uuid(),
+const canonicalSlackUploadInitResponseSchema = object({
+  kind: literal("canonical"),
+  assetId: string().uuid(),
+  operationId: string().uuid(),
   /** Resolved destination channel ID (a DM channel when `user` was sent). */
-  channel: z.string(),
-  uploadUrl: z.string().url().optional(),
-  uploadHeaders: z.record(z.string(), z.string()).optional(),
+  channel: string(),
+  uploadUrl: string().url().optional(),
+  uploadHeaders: record(string(), string()).optional(),
   url: artifactUrlSchema,
 });
 
-const slackUploadInitResponseSchema = z.union([
+const slackUploadInitResponseSchema = union([
   directSlackUploadInitResponseSchema,
   canonicalSlackUploadInitResponseSchema,
 ]);
 
-export type SlackUploadInitResponse = z.infer<
+export type SlackUploadInitResponse = zInfer<
   typeof slackUploadInitResponseSchema
 >;
 
@@ -695,37 +698,37 @@ export const integrationsSlackUploadInitContract = c.router({
   },
 });
 
-const slackUploadMaterializeBodySchema = z.object({
-  assetId: z.string().uuid(),
-  operationId: z.string().uuid(),
+const slackUploadMaterializeBodySchema = object({
+  assetId: string().uuid(),
+  operationId: string().uuid(),
 });
 
-const slackUploadMaterializeResponseSchema = z.object({
-  assetId: z.string().uuid(),
+const slackUploadMaterializeResponseSchema = object({
+  assetId: string().uuid(),
   url: artifactUrlSchema,
-  delivery: z.discriminatedUnion("status", [
-    z.object({
-      status: z.literal("pending"),
-      uploadUrl: z.string(),
-      fileId: z.string(),
+  delivery: discriminatedUnion("status", [
+    object({
+      status: literal("pending"),
+      uploadUrl: string(),
+      fileId: string(),
     }),
-    z.object({
-      status: z.literal("delivered"),
-      fileId: z.string(),
-      permalink: z.string(),
+    object({
+      status: literal("delivered"),
+      fileId: string(),
+      permalink: string(),
     }),
-    z.object({
-      status: z.literal("failed"),
-      message: z.string(),
-      retryable: z.boolean(),
+    object({
+      status: literal("failed"),
+      message: string(),
+      retryable: boolean(),
     }),
   ]),
 });
 
-export type SlackUploadMaterializeBody = z.infer<
+export type SlackUploadMaterializeBody = zInfer<
   typeof slackUploadMaterializeBodySchema
 >;
-export type SlackUploadMaterializeResponse = z.infer<
+export type SlackUploadMaterializeResponse = zInfer<
   typeof slackUploadMaterializeResponseSchema
 >;
 
@@ -756,14 +759,14 @@ export const integrationsTelegramDownloadFileContract = c.router({
     method: "GET",
     path: "/api/integrations/telegram/download-file",
     headers: authHeadersSchema,
-    query: z.object({
-      file_id: z.string().min(1),
-      bot_id: z.string().min(1),
+    query: object({
+      file_id: string().min(1),
+      bot_id: string().min(1),
     }),
     responses: {
       200: c.otherResponse({
         contentType: "application/octet-stream",
-        body: z.unknown(),
+        body: zUnknown(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -788,27 +791,27 @@ export type IntegrationsTelegramDownloadFileContract =
  * to fetch that file URL with the org-owned bot token.
  * Requires `telegram:write` capability (via OKOU_TOKEN).
  */
-const telegramUploadInitBodySchema = z.object({
-  filename: z.string().min(1, "Filename is required").max(255),
-  contentType: z.string().min(1, "Content type is required").max(200),
-  length: z.number().int().positive("File length must be a positive integer"),
+const telegramUploadInitBodySchema = object({
+  filename: string().min(1, "Filename is required").max(255),
+  contentType: string().min(1, "Content type is required").max(200),
+  length: number().int().positive("File length must be a positive integer"),
 });
 
-export type TelegramUploadInitBody = z.infer<
+export type TelegramUploadInitBody = zInfer<
   typeof telegramUploadInitBodySchema
 >;
 
-const telegramUploadInitResponseSchema = z.object({
-  uploadId: z.string().uuid(),
-  uploadUrl: z.string(),
-  fileUrl: z.string(),
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number().int().nonnegative(),
+const telegramUploadInitResponseSchema = object({
+  uploadId: string().uuid(),
+  uploadUrl: string(),
+  fileUrl: string(),
+  filename: string(),
+  contentType: string(),
+  size: number().int().nonnegative(),
   ...directUploadResponseShape,
 });
 
-export type TelegramUploadInitResponse = z.infer<
+export type TelegramUploadInitResponse = zInfer<
   typeof telegramUploadInitResponseSchema
 >;
 
@@ -838,13 +841,13 @@ export const integrationsTeamsDownloadFileContract = c.router({
     method: "GET",
     path: "/api/integrations/teams/download-file",
     headers: authHeadersSchema,
-    query: z.object({
-      file_id: z.string().optional(),
+    query: object({
+      file_id: string().optional(),
     }),
     responses: {
       200: c.otherResponse({
         contentType: "application/octet-stream",
-        body: z.unknown(),
+        body: zUnknown(),
       }),
       302: c.noBody(),
       400: apiErrorSchema,
@@ -870,25 +873,25 @@ export type IntegrationsTeamsDownloadFileContract =
  * message with the file attachment and public file URL.
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
-const teamsUploadInitBodySchema = z.object({
-  filename: z.string().min(1, "Filename is required").max(255),
-  contentType: z.string().min(1, "Content type is required").max(200),
-  length: z.number().int().positive("File length must be a positive integer"),
+const teamsUploadInitBodySchema = object({
+  filename: string().min(1, "Filename is required").max(255),
+  contentType: string().min(1, "Content type is required").max(200),
+  length: number().int().positive("File length must be a positive integer"),
 });
 
-export type TeamsUploadInitBody = z.infer<typeof teamsUploadInitBodySchema>;
+export type TeamsUploadInitBody = zInfer<typeof teamsUploadInitBodySchema>;
 
-const teamsUploadInitResponseSchema = z.object({
-  uploadId: z.string().uuid(),
-  uploadUrl: z.string(),
-  fileUrl: z.string(),
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number().int().nonnegative(),
+const teamsUploadInitResponseSchema = object({
+  uploadId: string().uuid(),
+  uploadUrl: string(),
+  fileUrl: string(),
+  filename: string(),
+  contentType: string(),
+  size: number().int().nonnegative(),
   ...directUploadResponseShape,
 });
 
-export type TeamsUploadInitResponse = z.infer<
+export type TeamsUploadInitResponse = zInfer<
   typeof teamsUploadInitResponseSchema
 >;
 
@@ -918,31 +921,31 @@ export const integrationsTeamsUploadInitContract = c.router({
  * chat.
  * Requires `telegram:write` capability (via OKOU_TOKEN).
  */
-const telegramUploadCompleteBodySchema = z.object({
-  uploadId: z.string().uuid("Upload ID must be a UUID"),
-  botId: z.string().min(1, "Bot ID is required"),
+const telegramUploadCompleteBodySchema = object({
+  uploadId: string().uuid("Upload ID must be a UUID"),
+  botId: string().min(1, "Bot ID is required"),
   /** Telegram chat ID, or `"me"` for the caller's private chat with the bot. */
-  chatId: z.string().min(1, "Chat ID is required"),
-  contentType: z.string().min(1).max(200).optional(),
-  caption: z.string().max(1024).optional(),
-  messageThreadId: z.number().int().positive().optional(),
+  chatId: string().min(1, "Chat ID is required"),
+  contentType: string().min(1).max(200).optional(),
+  caption: string().max(1024).optional(),
+  messageThreadId: number().int().positive().optional(),
 });
 
-export type TelegramUploadCompleteBody = z.infer<
+export type TelegramUploadCompleteBody = zInfer<
   typeof telegramUploadCompleteBodySchema
 >;
 
-const telegramUploadCompleteResponseSchema = z.object({
-  messageId: z.number().int(),
-  chatId: z.string(),
-  fileId: z.string().optional(),
-  filename: z.string(),
-  mimetype: z.string(),
-  size: z.number().int().nonnegative(),
-  url: z.string(),
+const telegramUploadCompleteResponseSchema = object({
+  messageId: number().int(),
+  chatId: string(),
+  fileId: string().optional(),
+  filename: string(),
+  mimetype: string(),
+  size: number().int().nonnegative(),
+  url: string(),
 });
 
-export type TelegramUploadCompleteResponse = z.infer<
+export type TelegramUploadCompleteResponse = zInfer<
   typeof telegramUploadCompleteResponseSchema
 >;
 
@@ -974,15 +977,14 @@ export const integrationsTelegramUploadCompleteContract = c.router({
  * response `conversationId` is the resolved conversation.
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
-const teamsUploadCompleteBodySchema = z
-  .object({
-    uploadId: z.string().uuid("Upload ID must be a UUID"),
-    conversationId: z.string().min(1, "Conversation ID is required").optional(),
-    user: z.string().min(1, "Teams user ID is required").optional(),
-    activityId: z.string().min(1, "Activity ID is required").optional(),
-    contentType: z.string().min(1).max(200).optional(),
-    text: z.string().max(4000).optional(),
-  })
+const teamsUploadCompleteBodySchema = object({
+  uploadId: string().uuid("Upload ID must be a UUID"),
+  conversationId: string().min(1, "Conversation ID is required").optional(),
+  user: string().min(1, "Teams user ID is required").optional(),
+  activityId: string().min(1, "Activity ID is required").optional(),
+  contentType: string().min(1).max(200).optional(),
+  text: string().max(4000).optional(),
+})
   .refine(
     (body) => {
       return Boolean(body.conversationId) !== Boolean(body.user);
@@ -1002,20 +1004,20 @@ const teamsUploadCompleteBodySchema = z
     },
   );
 
-export type TeamsUploadCompleteBody = z.infer<
+export type TeamsUploadCompleteBody = zInfer<
   typeof teamsUploadCompleteBodySchema
 >;
 
-const teamsUploadCompleteResponseSchema = z.object({
-  activityId: z.string().optional(),
-  conversationId: z.string(),
-  filename: z.string(),
-  mimetype: z.string(),
-  size: z.number().int().nonnegative(),
-  url: z.string(),
+const teamsUploadCompleteResponseSchema = object({
+  activityId: string().optional(),
+  conversationId: string(),
+  filename: string(),
+  mimetype: string(),
+  size: number().int().nonnegative(),
+  url: string(),
 });
 
-export type TeamsUploadCompleteResponse = z.infer<
+export type TeamsUploadCompleteResponse = zInfer<
   typeof teamsUploadCompleteResponseSchema
 >;
 
@@ -1048,9 +1050,9 @@ export const integrationsGithubDownloadFileContract = c.router({
     method: "GET",
     path: "/api/integrations/github/download-file/url",
     headers: authHeadersSchema,
-    query: z.object({
-      url: z.string().url("url must be a GitHub file URL"),
-      filename: z.string().min(1).max(255).optional(),
+    query: object({
+      url: string().url("url must be a GitHub file URL"),
+      filename: string().min(1).max(255).optional(),
     }),
     responses: {
       200: fileDownloadUrlSchema,
@@ -1078,25 +1080,25 @@ export type IntegrationsGithubDownloadFileContract =
  * URL back to a GitHub issue or pull request comment.
  * Requires `github:write` capability (via OKOU_TOKEN).
  */
-const githubUploadInitBodySchema = z.object({
-  filename: z.string().min(1, "Filename is required").max(255),
-  contentType: z.string().min(1, "Content type is required").max(200),
-  length: z.number().int().positive("File length must be a positive integer"),
+const githubUploadInitBodySchema = object({
+  filename: string().min(1, "Filename is required").max(255),
+  contentType: string().min(1, "Content type is required").max(200),
+  length: number().int().positive("File length must be a positive integer"),
 });
 
-export type GithubUploadInitBody = z.infer<typeof githubUploadInitBodySchema>;
+export type GithubUploadInitBody = zInfer<typeof githubUploadInitBodySchema>;
 
-const githubUploadInitResponseSchema = z.object({
-  uploadId: z.string().uuid(),
-  uploadUrl: z.string(),
-  fileUrl: z.string(),
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number().int().nonnegative(),
+const githubUploadInitResponseSchema = object({
+  uploadId: string().uuid(),
+  uploadUrl: string(),
+  fileUrl: string(),
+  filename: string(),
+  contentType: string(),
+  size: number().int().nonnegative(),
   ...directUploadResponseShape,
 });
 
-export type GithubUploadInitResponse = z.infer<
+export type GithubUploadInitResponse = zInfer<
   typeof githubUploadInitResponseSchema
 >;
 
@@ -1127,35 +1129,33 @@ export const integrationsGithubUploadInitContract = c.router({
  * the organization GitHub App installation token.
  * Requires `github:write` capability (via OKOU_TOKEN).
  */
-const githubUploadCompleteBodySchema = z.object({
-  uploadId: z.string().uuid("Upload ID must be a UUID"),
-  repo: z
-    .string()
+const githubUploadCompleteBodySchema = object({
+  uploadId: string().uuid("Upload ID must be a UUID"),
+  repo: string()
     .min(1, "Repository is required")
     .regex(/^[^/\s]+\/[^/\s]+$/, "Repository must be owner/name"),
-  issueNumber: z
-    .number()
+  issueNumber: number()
     .int()
     .positive("Issue or pull request number must be positive"),
-  contentType: z.string().min(1).max(200).optional(),
-  caption: z.string().max(65_536).optional(),
+  contentType: string().min(1).max(200).optional(),
+  caption: string().max(65_536).optional(),
 });
 
-export type GithubUploadCompleteBody = z.infer<
+export type GithubUploadCompleteBody = zInfer<
   typeof githubUploadCompleteBodySchema
 >;
 
-const githubUploadCompleteResponseSchema = z.object({
-  commentId: z.string(),
-  repo: z.string(),
-  issueNumber: z.number().int(),
-  filename: z.string(),
-  mimetype: z.string(),
-  size: z.number().int().nonnegative(),
-  url: z.string(),
+const githubUploadCompleteResponseSchema = object({
+  commentId: string(),
+  repo: string(),
+  issueNumber: number().int(),
+  filename: string(),
+  mimetype: string(),
+  size: number().int().nonnegative(),
+  url: string(),
 });
 
-export type GithubUploadCompleteResponse = z.infer<
+export type GithubUploadCompleteResponse = zInfer<
   typeof githubUploadCompleteResponseSchema
 >;
 
@@ -1187,25 +1187,25 @@ export const integrationsGithubUploadCompleteContract = c.router({
  * AgentPhone.
  * Requires `phone:write` capability (via OKOU_TOKEN).
  */
-const phoneUploadInitBodySchema = z.object({
-  filename: z.string().min(1, "Filename is required").max(255),
-  contentType: z.string().min(1, "Content type is required").max(200),
-  length: z.number().int().positive("File length must be a positive integer"),
+const phoneUploadInitBodySchema = object({
+  filename: string().min(1, "Filename is required").max(255),
+  contentType: string().min(1, "Content type is required").max(200),
+  length: number().int().positive("File length must be a positive integer"),
 });
 
-export type PhoneUploadInitBody = z.infer<typeof phoneUploadInitBodySchema>;
+export type PhoneUploadInitBody = zInfer<typeof phoneUploadInitBodySchema>;
 
-const phoneUploadInitResponseSchema = z.object({
-  uploadId: z.string().uuid(),
-  uploadUrl: z.string(),
-  fileUrl: z.string(),
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number().int().nonnegative(),
+const phoneUploadInitResponseSchema = object({
+  uploadId: string().uuid(),
+  uploadUrl: string(),
+  fileUrl: string(),
+  filename: string(),
+  contentType: string(),
+  size: number().int().nonnegative(),
   ...directUploadResponseShape,
 });
 
-export type PhoneUploadInitResponse = z.infer<
+export type PhoneUploadInitResponse = zInfer<
   typeof phoneUploadInitResponseSchema
 >;
 
@@ -1232,28 +1232,28 @@ export const integrationsPhoneUploadInitContract = c.router({
  * Sends an uploaded file URL to the caller's own linked phone handle through
  * AgentPhone. Requires `phone:write` capability (via OKOU_TOKEN).
  */
-const phoneUploadCompleteBodySchema = z.object({
-  uploadId: z.string().uuid("Upload ID must be a UUID"),
-  agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
-  contentType: z.string().min(1).max(200).optional(),
-  caption: z.string().max(1024).optional(),
+const phoneUploadCompleteBodySchema = object({
+  uploadId: string().uuid("Upload ID must be a UUID"),
+  agentphoneAgentId: string().min(1, "Phone agent ID is required").optional(),
+  contentType: string().min(1).max(200).optional(),
+  caption: string().max(1024).optional(),
 });
 
-export type PhoneUploadCompleteBody = z.infer<
+export type PhoneUploadCompleteBody = zInfer<
   typeof phoneUploadCompleteBodySchema
 >;
 
-const phoneUploadCompleteResponseSchema = z.object({
-  messageId: z.string(),
-  channel: z.string().nullable(),
-  toNumber: z.string(),
-  filename: z.string(),
-  mimetype: z.string(),
-  size: z.number().int().nonnegative(),
-  url: z.string(),
+const phoneUploadCompleteResponseSchema = object({
+  messageId: string(),
+  channel: string().nullable(),
+  toNumber: string(),
+  filename: string(),
+  mimetype: string(),
+  size: number().int().nonnegative(),
+  url: string(),
 });
 
-export type PhoneUploadCompleteResponse = z.infer<
+export type PhoneUploadCompleteResponse = zInfer<
   typeof phoneUploadCompleteResponseSchema
 >;
 
@@ -1285,41 +1285,39 @@ export const integrationsPhoneUploadCompleteContract = c.router({
  * destination persisted at init and ignore `channel`/`user`.
  * Requires `slack:write` capability (via OKOU_TOKEN).
  */
-const slackUploadCompleteBodySchema = z
-  .object({
-    fileId: z.string().min(1, "File ID is required"),
-    channel: z.string().min(1, "Channel ID is required").optional(),
-    user: z.string().min(1, "User ID is required").optional(),
-    threadTs: z.string().optional(),
-    title: z.string().optional(),
-    initialComment: z.string().optional(),
-    canonicalAssetId: z.string().uuid().optional(),
-    operationId: z.string().uuid().optional(),
-    uploadError: z.string().max(2000).optional(),
-  })
-  .refine(
-    (data) => {
-      return Boolean(data.channel) !== Boolean(data.user);
-    },
-    { message: "Exactly one of 'channel' or 'user' must be provided" },
-  );
+const slackUploadCompleteBodySchema = object({
+  fileId: string().min(1, "File ID is required"),
+  channel: string().min(1, "Channel ID is required").optional(),
+  user: string().min(1, "User ID is required").optional(),
+  threadTs: string().optional(),
+  title: string().optional(),
+  initialComment: string().optional(),
+  canonicalAssetId: string().uuid().optional(),
+  operationId: string().uuid().optional(),
+  uploadError: string().max(2000).optional(),
+}).refine(
+  (data) => {
+    return Boolean(data.channel) !== Boolean(data.user);
+  },
+  { message: "Exactly one of 'channel' or 'user' must be provided" },
+);
 
-export type SlackUploadCompleteBody = z.infer<
+export type SlackUploadCompleteBody = zInfer<
   typeof slackUploadCompleteBodySchema
 >;
 
-const slackUploadCompleteResponseSchema = z.object({
-  fileId: z.string(),
-  permalink: z.string(),
+const slackUploadCompleteResponseSchema = object({
+  fileId: string(),
+  permalink: string(),
   /** Channel ID the file was shared to (a DM channel when `user` was sent). */
-  channel: z.string(),
-  assetId: z.string().uuid().optional(),
-  assetUrl: z.string().url().optional(),
-  deliveryStatus: z.enum(["delivered", "failed"]).optional(),
-  deliveryError: z.string().optional(),
+  channel: string(),
+  assetId: string().uuid().optional(),
+  assetUrl: string().url().optional(),
+  deliveryStatus: zEnum(["delivered", "failed"]).optional(),
+  deliveryError: string().optional(),
 });
 
-export type SlackUploadCompleteResponse = z.infer<
+export type SlackUploadCompleteResponse = zInfer<
   typeof slackUploadCompleteResponseSchema
 >;
 

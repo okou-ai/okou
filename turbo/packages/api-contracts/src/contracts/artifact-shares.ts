@@ -1,125 +1,133 @@
-import { z } from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { linkLayoutSegmentSchema } from "./link-layout";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
-const audienceSchema = z.enum(["private", "organization", "public"]);
-export const artifactShareTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("file"), id: z.uuid() }),
-  z.object({ kind: z.literal("html"), id: z.uuid() }),
+const audienceSchema = zEnum(["private", "organization", "public"]);
+export const artifactShareTargetSchema = discriminatedUnion("kind", [
+  object({ kind: literal("file"), id: uuid() }),
+  object({ kind: literal("html"), id: uuid() }),
 ]);
-export type ArtifactShareTarget = z.infer<typeof artifactShareTargetSchema>;
+export type ArtifactShareTarget = zInfer<typeof artifactShareTargetSchema>;
 
 // This versioned object is authoritative, not a cache of a database boolean.
 // Keep its schema usable by both the API and the isolated delivery Worker.
-export const artifactSharePolicySchema = z
-  .object({
-    version: z.literal(1),
-    revision: z.uuid(),
-    shareId: z.uuid(),
-    ownerId: z.string().min(1),
-    orgId: z.string().min(1),
-    // Persisted link-layout marker (see link-layout.ts), not product identity.
-    publicBrand: linkLayoutSegmentSchema,
-    // Absent only on persisted shares from before the delivery registry.
-    delivery: z.literal("artifact-registry-v1").optional(),
-    // Existing shared links/policies remain valid until an explicit owner
-    // update allocates aliases. #32492 owns any later durable-link retirement.
-    organizationReference: z
-      .string()
-      .regex(/^[a-z0-9]{10}$/u)
-      .optional(),
-    publicSlug: z
-      .string()
-      .max(63)
-      .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u)
-      .optional(),
-    audience: audienceSchema,
-    status: z.enum(["active", "revoked"]),
-    publicToken: z
-      .string()
-      .regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u)
-      .nullable(),
-    target: z.discriminatedUnion("kind", [
-      z.object({
-        kind: z.literal("file"),
-        id: z.uuid(),
-        key: z.string().startsWith("private-artifacts/"),
-        filename: z.string().min(1),
-        contentType: z.string().min(1),
-      }),
-      z.object({
-        kind: z.literal("html"),
-        id: z.uuid(),
-        siteId: z.uuid(),
-        snapshotId: z.uuid(),
-        deploymentVersion: z.number().int().positive(),
-        manifest: z.object({
-          version: z.literal(1),
-          access: z.literal("owner-private-v1"),
-          publicBrand: linkLayoutSegmentSchema,
-          deploymentId: z.uuid(),
-          siteId: z.uuid(),
-          publicSlug: z.string(),
-          createdAt: z.string(),
-          spaFallback: z.boolean(),
-          files: z.record(
-            z.string(),
-            z.object({
-              path: z.string(),
-              size: z.number().nonnegative(),
-              sha256: z.string(),
-              contentType: z.string(),
-              immutable: z.boolean().optional(),
-            }),
-          ),
-        }),
-      }),
-    ]),
-  })
-  .superRefine((policy, ctx) => {
-    if (
-      (policy.audience === "private") !== (policy.status === "revoked") ||
-      (policy.audience === "public") !== (policy.publicToken !== null)
-    ) {
-      ctx.addIssue({ code: "custom", message: "Inconsistent sharing policy" });
-    }
-    const target = policy.target;
-    if (
-      target.kind === "html" &&
-      (target.id !== target.manifest.deploymentId ||
-        target.siteId !== target.manifest.siteId ||
-        policy.publicBrand !== target.manifest.publicBrand)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Inconsistent shared deployment",
-      });
-    }
-    if (
-      target.kind === "file" &&
-      !target.key.startsWith(`private-artifacts/${target.id}/`)
-    ) {
-      ctx.addIssue({ code: "custom", message: "Inconsistent shared file" });
-    }
-  });
-export type ArtifactSharePolicy = z.infer<typeof artifactSharePolicySchema>;
-
-const statusSchema = z.object({
-  // Stable owner reference for the requested version, independent of sharing.
-  ownerUrl: z.url(),
-  shareId: z.uuid().nullable(),
+export const artifactSharePolicySchema = object({
+  version: literal(1),
+  revision: uuid(),
+  shareId: uuid(),
+  ownerId: string().min(1),
+  orgId: string().min(1),
+  // Persisted link-layout marker (see link-layout.ts), not product identity.
+  publicBrand: linkLayoutSegmentSchema,
+  // Absent only on persisted shares from before the delivery registry.
+  delivery: literal("artifact-registry-v1").optional(),
+  // Existing shared links/policies remain valid until an explicit owner
+  // update allocates aliases. #32492 owns any later durable-link retirement.
+  organizationReference: string()
+    .regex(/^[a-z0-9]{10}$/u)
+    .optional(),
+  publicSlug: string()
+    .max(63)
+    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u)
+    .optional(),
   audience: audienceSchema,
-  organization: z.object({ id: z.string(), name: z.string() }),
-  selectedTarget: artifactShareTargetSchema.nullable(),
-  selectedVersion: z.number().nullable(),
-  candidateVersion: z.number().nullable(),
-  // Organization shares return the same short reference in both URL fields.
-  url: z.url().nullable(),
-  shortUrl: z.url().nullable(),
+  status: zEnum(["active", "revoked"]),
+  publicToken: string()
+    .regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u)
+    .nullable(),
+  target: discriminatedUnion("kind", [
+    object({
+      kind: literal("file"),
+      id: uuid(),
+      key: string().startsWith("private-artifacts/"),
+      filename: string().min(1),
+      contentType: string().min(1),
+    }),
+    object({
+      kind: literal("html"),
+      id: uuid(),
+      siteId: uuid(),
+      snapshotId: uuid(),
+      deploymentVersion: number().int().positive(),
+      manifest: object({
+        version: literal(1),
+        access: literal("owner-private-v1"),
+        publicBrand: linkLayoutSegmentSchema,
+        deploymentId: uuid(),
+        siteId: uuid(),
+        publicSlug: string(),
+        createdAt: string(),
+        spaFallback: boolean(),
+        files: record(
+          string(),
+          object({
+            path: string(),
+            size: number().nonnegative(),
+            sha256: string(),
+            contentType: string(),
+            immutable: boolean().optional(),
+          }),
+        ),
+      }),
+    }),
+  ]),
+}).superRefine((policy, ctx) => {
+  if (
+    (policy.audience === "private") !== (policy.status === "revoked") ||
+    (policy.audience === "public") !== (policy.publicToken !== null)
+  ) {
+    ctx.addIssue({ code: "custom", message: "Inconsistent sharing policy" });
+  }
+  const target = policy.target;
+  if (
+    target.kind === "html" &&
+    (target.id !== target.manifest.deploymentId ||
+      target.siteId !== target.manifest.siteId ||
+      policy.publicBrand !== target.manifest.publicBrand)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Inconsistent shared deployment",
+    });
+  }
+  if (
+    target.kind === "file" &&
+    !target.key.startsWith(`private-artifacts/${target.id}/`)
+  ) {
+    ctx.addIssue({ code: "custom", message: "Inconsistent shared file" });
+  }
 });
-export type ArtifactShareStatus = z.infer<typeof statusSchema>;
+export type ArtifactSharePolicy = zInfer<typeof artifactSharePolicySchema>;
+
+const statusSchema = object({
+  // Stable owner reference for the requested version, independent of sharing.
+  ownerUrl: url(),
+  shareId: uuid().nullable(),
+  audience: audienceSchema,
+  organization: object({ id: string(), name: string() }),
+  selectedTarget: artifactShareTargetSchema.nullable(),
+  selectedVersion: number().nullable(),
+  candidateVersion: number().nullable(),
+  // Organization shares return the same short reference in both URL fields.
+  url: url().nullable(),
+  shortUrl: url().nullable(),
+});
+export type ArtifactShareStatus = zInfer<typeof statusSchema>;
 
 const errors = {
   500: apiErrorSchema,
@@ -133,7 +141,7 @@ export const artifactSharesContract = c.router({
     method: "GET",
     path: "/api/artifact-shares/availability",
     headers: authHeadersSchema,
-    responses: { 200: z.object({ enabled: z.boolean() }), ...errors },
+    responses: { 200: object({ enabled: boolean() }), ...errors },
     summary: "Read whether private artifact creation is currently available",
   },
   status: {
@@ -148,7 +156,7 @@ export const artifactSharesContract = c.router({
     method: "PUT",
     path: "/api/artifact-shares",
     headers: authHeadersSchema,
-    body: z.object({
+    body: object({
       target: artifactShareTargetSchema,
       audience: audienceSchema,
     }),
@@ -159,9 +167,9 @@ export const artifactSharesContract = c.router({
     method: "GET",
     path: "/api/artifact-shares/:id/resolve",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid() }),
+    pathParams: object({ id: uuid() }),
     responses: {
-      200: z.object({ url: z.url(), expiresAt: z.string() }),
+      200: object({ url: url(), expiresAt: string() }),
       ...errors,
     },
     summary:

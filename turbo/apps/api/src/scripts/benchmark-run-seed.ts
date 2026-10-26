@@ -3,7 +3,7 @@ import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution
 import { billingRunLifecycleConflictSet } from "@okouai/db/operations/billing-run-lifecycle";
 import { command } from "ccstate";
 import { count, isNotNull, min, ne, sql } from "drizzle-orm";
-import { z } from "zod";
+import { object, uuid } from "zod";
 import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,
@@ -13,7 +13,7 @@ import { safeSqlStateCode } from "../lib/pg-errors";
 import { writeDb$ } from "../signals/external/db";
 import { settle } from "../signals/utils";
 
-const identitySchema = z.object({ runId: z.uuid() });
+const identitySchema = object({ runId: uuid() });
 
 function throwBenchmarkIdentityError(error: unknown): never {
   if (
