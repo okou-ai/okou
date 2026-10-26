@@ -2689,6 +2689,13 @@
       "when": 1792953672040,
       "tag": "1462_browser_owner_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 1463,
+      "version": "7",
+      "when": 1792988009267,
+      "tag": "1463_repair_historical_thread_predecessor_agent",
+      "breakpoints": true
     }
   ]
 }
