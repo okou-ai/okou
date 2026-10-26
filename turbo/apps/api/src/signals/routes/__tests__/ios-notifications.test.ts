@@ -18,7 +18,6 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const callbacks = createChatCallbacksApi(context);
-const headers = { authorization: "Bearer clerk-session" };
 
 function prepareRuntime() {
   runs.configureRunnerGroup();
@@ -63,7 +62,7 @@ function reconcile(
     setupApp({ context, routes: iosNotificationsRoutes })(
       iosNotificationsContract,
     ).reconcile({
-      headers,
+      headers: { authorization: "Bearer clerk-session" },
       body: { installationId: randomUUID(), notifications },
     }),
     [200],

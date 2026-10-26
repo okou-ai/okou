@@ -22,8 +22,20 @@ const reconciliation$ = computed(async (get) => {
   }
   const { userId } = get(authContext$);
   const receipts = body.data.notifications;
-  const threadIds = [...new Set(receipts.map((receipt) => receipt.threadId))];
-  const runIds = [...new Set(receipts.map((receipt) => receipt.runId))];
+  const threadIds = [
+    ...new Set(
+      receipts.map((receipt) => {
+        return receipt.threadId;
+      }),
+    ),
+  ];
+  const runIds = [
+    ...new Set(
+      receipts.map((receipt) => {
+        return receipt.runId;
+      }),
+    ),
+  ];
   const db = get(db$);
   const [unreadCount, threads, terminals] = await Promise.all([
     db.$count(chatThreads, unreadIosNotificationThreadCondition(userId)),
@@ -63,12 +75,15 @@ const reconciliation$ = computed(async (get) => {
             ),
           ),
   ]);
-  const owned = new Map(threads.map((thread) => [thread.id, thread]));
+  const owned = new Map(
+    threads.map((thread) => {
+      return [thread.id, thread];
+    }),
+  );
   const finished = new Map(
-    terminals.map((terminal) => [
-      `${terminal.threadId}:${terminal.runId}`,
-      terminal.createdAt,
-    ]),
+    terminals.map((terminal) => {
+      return [`${terminal.threadId}:${terminal.runId}`, terminal.createdAt];
+    }),
   );
   const removeIdentifiers = receipts.flatMap((receipt) => {
     const thread = owned.get(receipt.threadId);

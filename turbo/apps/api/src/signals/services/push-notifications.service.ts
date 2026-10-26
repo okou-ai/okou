@@ -147,10 +147,9 @@ export const sendUserPushNotifications$ = command(
       signal,
     );
 
-    const unreadCount = !nativeSubscriptions.some(
-      (subscription) =>
-        subscription.notificationStateRevision === subscription.revision,
-    )
+    const unreadCount = !nativeSubscriptions.some((subscription) => {
+      return subscription.notificationStateRevision === subscription.revision;
+    })
       ? 0
       : await get(db$).$count(
           chatThreads,
@@ -159,11 +158,12 @@ export const sendUserPushNotifications$ = command(
     signal.throwIfAborted();
     await Promise.all([
       ...nativeSubscriptions
-        .filter(
-          (subscription) =>
+        .filter((subscription) => {
+          return (
             !foreground ||
-            subscription.notificationStateRevision === subscription.revision,
-        )
+            subscription.notificationStateRevision === subscription.revision
+          );
+        })
         .map((subscription) => {
           const supportsState =
             subscription.notificationStateRevision === subscription.revision;
@@ -233,9 +233,9 @@ export const synchronizeUserPushBadge$ = command(
       payload: JSON.stringify({ aps: { badge: unreadCount } }),
     };
     await Promise.all(
-      subscriptions.map((subscription) =>
-        set(sendNativeRegistration$, badge, subscription, signal),
-      ),
+      subscriptions.map((subscription) => {
+        return set(sendNativeRegistration$, badge, subscription, signal);
+      }),
     );
   },
 );

@@ -5323,7 +5323,9 @@ describe("CHAT-02: push notification gating", () => {
       await flushWaitUntilForTest();
       if (scenario === "muted" || scenario === "foreground") {
         expect(
-          provider.requests.map((request) => request.payload),
+          provider.requests.map((request) => {
+            return request.payload;
+          }),
         ).toStrictEqual([{ aps: { badge: scenario === "muted" ? 0 : 1 } }]);
       } else {
         expect(provider.requests).toHaveLength(0);
