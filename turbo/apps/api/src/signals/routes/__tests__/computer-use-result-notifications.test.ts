@@ -383,34 +383,6 @@ describe("Computer Use CLI result subscriptions", () => {
     });
   });
 
-  it("returns the created command even if token issuance stalls", async () => {
-    const { api } = await setup();
-    const provider = createDeferredPromise<unknown>(context.signal);
-    context.mocks.ably.createTokenRequest.mockImplementation(() => {
-      return provider.promise;
-    });
-    const created = await accept(
-      api(commands).create({
-        headers,
-        body: { kind: "apps.list", realtime: true },
-      }),
-      [200],
-    );
-    provider.resolve({});
-    expect(created.body).toStrictEqual({
-      commandId: created.body.commandId,
-      status: "queued",
-    });
-    const result = await accept(
-      api(commands).get({
-        headers,
-        params: { commandId: created.body.commandId },
-      }),
-      [200],
-    );
-    expect(result.body.status).toBe("queued");
-  });
-
   it(
     "requires the sandbox Agent's existing bound-host capability before issuing a result grant",
     { timeout: 30_000 },

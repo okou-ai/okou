@@ -18,6 +18,7 @@ import {
   verifyWorkflowAttachmentBundle,
 } from "@okouai/core/workflow-attachment-bundle";
 import { workflowAttachmentsSchema } from "@okouai/api-contracts/contracts/workflow-attachments";
+import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("A disposable DATABASE_URL is required");
@@ -39,6 +40,26 @@ async function handleObjectRequest(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
+  const url = new URL(request.url ?? "/", "http://fixture.test");
+  if (request.method === "GET" && url.searchParams.get("list-type") === "2") {
+    const prefix = url.searchParams.get("prefix") ?? "";
+    const limit = Number(url.searchParams.get("max-keys"));
+    const keys = [...objects.keys()]
+      .filter((key) => {
+        return key.startsWith(prefix);
+      })
+      .sort();
+    const listed = keys.slice(0, limit);
+    response.writeHead(200, { "content-type": "application/xml" });
+    response.end(
+      `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>${keys.length > limit}</IsTruncated><KeyCount>${listed.length}</KeyCount>${listed
+        .map((key) => {
+          return `<Contents><Key>${key}</Key><Size>${objects.get(key)?.length}</Size></Contents>`;
+        })
+        .join("")}</ListBucketResult>`,
+    );
+    return;
+  }
   const key = decodeURIComponent(
     (request.url ?? "").split("?")[0] ?? "",
   ).replace(/^\/test\//u, "");
@@ -73,14 +94,16 @@ if (address === null || typeof address === "string")
   throw new Error("Expected local object-store address");
 const agentId = randomUUID(),
   workflowId = randomUUID(),
-  storageId = randomUUID();
+  storageId = randomUUID(),
+  emptyWorkflowId = randomUUID(),
+  emptyStorageId = randomUUID();
 const orgId = `org_${randomUUID()}`;
 const versionId = workflowAttachmentHash(storageId);
 const s3Key = `legacy/${storageId}/${versionId}`;
 const instruction = "\ufeff  authoritative database body\n\n";
 const credential = join(root, "database-url");
 await writeFile(credential, databaseUrl, { mode: 0o600 });
-const run = async (...args: string[]) => {
+const runFor = async (targetWorkflowId: string, ...args: string[]) => {
   const result = await promisify(execFile)(
     process.execPath,
     [
@@ -88,7 +111,7 @@ const run = async (...args: string[]) => {
       "tsx",
       "scripts/migrations/024-workflow-attachments/backfill.ts",
       "--workflow-id",
-      workflowId,
+      targetWorkflowId,
       ...args,
     ],
     {
@@ -110,6 +133,31 @@ const run = async (...args: string[]) => {
     .map((line) => {
       return JSON.parse(line) as unknown;
     });
+};
+const run = (...args: string[]) => {
+  return runFor(workflowId, ...args);
+};
+const expectBlocked = async (
+  id: string,
+  classification: string,
+  ...args: string[]
+) => {
+  await assert.rejects(runFor(id, ...args), (error: unknown) => {
+    const failed = z
+      .object({ code: z.literal(2), stdout: z.string() })
+      .safeParse(error);
+    if (!failed.success) return false;
+    const receipt = z
+      .object({
+        blocked: z.array(
+          z.object({ workflowId: z.string(), classification: z.string() }),
+        ),
+      })
+      .parse(JSON.parse(failed.data.stdout));
+    return receipt.blocked.some((row) => {
+      return row.workflowId === id && row.classification === classification;
+    });
+  });
 };
 try {
   await db.query(
@@ -473,12 +521,376 @@ try {
         .safeParse(row).success;
     }),
   );
+  // Retained manifests may carry a previous label even though the file list
+  // hashes to the owned Storage's current HEAD. Exercise the actual CLI.
+  const skillFile = {
+    path: "SKILL.md",
+    hash: workflowAttachmentHash("old generated document"),
+    size: Buffer.byteLength("old generated document"),
+  };
+  const retainedFiles = [skillFile, duplicateFile, duplicateFile];
+  const retainedVersion = computeContentHashFromHashes(
+    storageId,
+    retainedFiles,
+  );
+  const retainedKey = `legacy/${storageId}/${retainedVersion}`;
+  const retainedManifest = {
+    version: workflowAttachmentHash("obsolete manifest label"),
+    files: retainedFiles,
+  };
+  objects.set(`${retainedKey}/archive.tar.gz`, duplicateArchive);
+  objects.set(
+    `${retainedKey}/manifest.json`,
+    Buffer.from(JSON.stringify(retainedManifest)),
+  );
+  await db.query(
+    "INSERT INTO storage_versions (id,storage_id,s3_key,archive_size,created_by) VALUES ($1,$2,$3,$4,'owner')",
+    [retainedVersion, storageId, retainedKey, duplicateArchive.length],
+  );
+  await db.query("UPDATE storages SET head_version_id=$2 WHERE id=$1", [
+    storageId,
+    retainedVersion,
+  ]);
+  await run("--audit");
+  const retained = await run();
+  assert.ok(
+    retained.some((row) => {
+      return z
+        .object({
+          ready: z.literal(0),
+          alreadyCurrent: z.literal(1),
+          legacyManifestLabels: z.literal(1),
+        })
+        .safeParse(row).success;
+    }),
+  );
+  // The namespaced digest binds the entire raw manifest file list to HEAD.
+  objects.set(
+    `${retainedKey}/manifest.json`,
+    Buffer.from(
+      JSON.stringify({
+        ...retainedManifest,
+        files: [
+          skillFile,
+          { ...duplicateFile, hash: workflowAttachmentHash("different bytes") },
+          duplicateFile,
+        ],
+      }),
+    ),
+  );
+  await expectBlocked(workflowId, "SourceChanged");
+  objects.set(
+    `${retainedKey}/manifest.json`,
+    Buffer.from(JSON.stringify(retainedManifest)),
+  );
+  objects.set(`${retainedKey}/archive.tar.gz`, archive);
+  await expectBlocked(workflowId, "SourceChanged");
+  objects.set(`${retainedKey}/archive.tar.gz`, duplicateArchive);
+  const foreignVersion = computeContentHashFromHashes(
+    randomUUID(),
+    retainedFiles,
+  );
+  const foreignKey = `legacy/${storageId}/${foreignVersion}`;
+  objects.set(
+    `${foreignKey}/manifest.json`,
+    Buffer.from(JSON.stringify(retainedManifest)),
+  );
+  objects.set(`${foreignKey}/archive.tar.gz`, duplicateArchive);
+  await db.query(
+    "INSERT INTO storage_versions (id,storage_id,s3_key,archive_size,created_by) VALUES ($1,$2,$3,$4,'owner')",
+    [foreignVersion, storageId, foreignKey, duplicateArchive.length],
+  );
+  await db.query("UPDATE storages SET head_version_id=$2 WHERE id=$1", [
+    storageId,
+    foreignVersion,
+  ]);
+  await expectBlocked(workflowId, "SourceChanged");
+  await db.query("UPDATE storages SET head_version_id=$2 WHERE id=$1", [
+    storageId,
+    retainedVersion,
+  ]);
+  await db.query("UPDATE workflows SET attachments=NULL WHERE id=$1", [
+    workflowId,
+  ]);
+  const retainedPlan = join(root, "retained-plan.json");
+  const retainedPreview = await run("--output", retainedPlan);
+  assert.ok(
+    retainedPreview.some((row) => {
+      return z
+        .object({ ready: z.literal(1), legacyManifestLabels: z.literal(1) })
+        .safeParse(row).success;
+    }),
+  );
+  const retainedApply = [
+    "--migrate",
+    "--writers-drained",
+    "--plan-file",
+    retainedPlan,
+    "--expect-plan-sha256",
+    workflowAttachmentHash(await readFile(retainedPlan)),
+  ];
+  // A label-only mutation after review still invalidates the captured manifest.
+  objects.set(
+    `${retainedKey}/manifest.json`,
+    Buffer.from(
+      JSON.stringify({
+        ...retainedManifest,
+        version: workflowAttachmentHash("changed after review"),
+      }),
+    ),
+  );
+  const beforeRejectedApply = objects.size;
+  await assert.rejects(run(...retainedApply), (error: unknown) => {
+    const failed = z
+      .object({ code: z.literal(2), stdout: z.string() })
+      .safeParse(error);
+    return (
+      failed.success &&
+      z
+        .object({
+          result: z.literal("attention"),
+          classification: z.literal("SourceChanged"),
+        })
+        .safeParse(JSON.parse(failed.data.stdout)).success
+    );
+  });
+  assert.equal(objects.size, beforeRejectedApply);
+  assert.equal(
+    (
+      await db.query("SELECT attachments FROM workflows WHERE id=$1", [
+        workflowId,
+      ])
+    ).rows[0].attachments,
+    null,
+  );
+  objects.set(
+    `${retainedKey}/manifest.json`,
+    Buffer.from(JSON.stringify(retainedManifest)),
+  );
+  assert.ok(
+    (await run(...retainedApply)).some((row) => {
+      return z.object({ result: z.literal("converted") }).safeParse(row)
+        .success;
+    }),
+  );
+  assert.equal(
+    (
+      await db.query("SELECT instruction FROM workflows WHERE id=$1", [
+        workflowId,
+      ])
+    ).rows[0].instruction,
+    "user edit",
+  );
+  await run("--audit");
+
+  await db.query(
+    "INSERT INTO workflows (id,org_id,agent_id,owner_user_id,name,instruction,created_by,updated_by) VALUES ($1,$2,$3,'owner','unpublished-attachment-test',$4,'owner','owner')",
+    [emptyWorkflowId, orgId, agentId, instruction],
+  );
+  const emptyPrefix = `legacy/${emptyStorageId}`;
+  const emptyKey = `${emptyPrefix}/${workflowAttachmentHash("unpublished")}/archive.tar.gz`;
+  await db.query(
+    "INSERT INTO storages (id,org_id,user_id,name,s3_prefix) VALUES ($1,$2,'__org__',$3,$4)",
+    [emptyStorageId, orgId, `custom-skill@${emptyWorkflowId}`, emptyPrefix],
+  );
+  await create(
+    { cwd: join(root, "legacy"), file: join(root, "empty.tar.gz"), gzip: true },
+    ["SKILL.md"],
+  );
+  const emptyArchive = await readFile(join(root, "empty.tar.gz"));
+  objects.set(emptyKey, emptyArchive);
+  const approval = {
+    workflowId: emptyWorkflowId,
+    storageId: emptyStorageId,
+    archiveKey: emptyKey,
+    archiveSha256: workflowAttachmentHash(emptyArchive),
+  };
+  const reviewFile = join(root, "reviewed-empty.json");
+  const writeReview = async (source: typeof approval) => {
+    return writeFile(
+      reviewFile,
+      JSON.stringify({ schemaVersion: 1, sources: [source] }),
+    );
+  };
+  const reviewArgs = ["--reviewed-empty-sources", reviewFile];
+  await expectBlocked(emptyWorkflowId, "SourceUnavailable");
+  await writeReview({
+    ...approval,
+    archiveSha256: workflowAttachmentHash("wrong archive"),
+  });
+  await expectBlocked(emptyWorkflowId, "SourceChanged", ...reviewArgs);
+  await writeReview({ ...approval, storageId });
+  await expectBlocked(emptyWorkflowId, "SourceChanged", ...reviewArgs);
+  await writeReview({
+    ...approval,
+    archiveKey: `outside/${workflowAttachmentHash("other")}/archive.tar.gz`,
+  });
+  await expectBlocked(emptyWorkflowId, "SourceChanged", ...reviewArgs);
+  await writeReview(approval);
+  objects.set(`${emptyPrefix}/another-object`, Buffer.from("unreviewed"));
+  await expectBlocked(emptyWorkflowId, "SourceChanged", ...reviewArgs);
+  objects.delete(`${emptyPrefix}/another-object`);
+  objects.set(emptyKey, archive);
+  await writeReview({
+    ...approval,
+    archiveSha256: workflowAttachmentHash(archive),
+  });
+  await expectBlocked(emptyWorkflowId, "SourceChanged", ...reviewArgs);
+  objects.set(emptyKey, emptyArchive);
+  await writeReview(approval);
+  const emptyPlan = join(root, "empty-plan.json");
+  const objectCount = objects.size;
+  const emptyPreview = await runFor(
+    emptyWorkflowId,
+    ...reviewArgs,
+    "--output",
+    emptyPlan,
+  );
+  assert.ok(
+    emptyPreview.some((row) => {
+      return z
+        .object({
+          ready: z.literal(1),
+          empty: z.literal(1),
+          reviewedEmptySources: z.literal(1),
+        })
+        .safeParse(row).success;
+    }),
+  );
+  const emptyPlanBody = z
+    .object({
+      schemaVersion: z.number(),
+      rows: z.array(z.object({ evidence: z.object({ kind: z.string() }) })),
+    })
+    .parse(JSON.parse(await readFile(emptyPlan, "utf8")));
+  assert.equal(emptyPlanBody.schemaVersion, 2);
+  assert.equal(emptyPlanBody.rows[0]?.evidence.kind, "unpublished-empty");
+  assert.equal(
+    objects.size,
+    objectCount,
+    "reviewing an unpublished archive performs no uploads",
+  );
+  const emptyApply = [
+    "--migrate",
+    "--writers-drained",
+    "--plan-file",
+    emptyPlan,
+    "--expect-plan-sha256",
+    workflowAttachmentHash(await readFile(emptyPlan)),
+  ];
+  const oldPlan = join(root, "old-plan.json");
+  const capturedPlan = z
+    .record(z.string(), z.unknown())
+    .parse(JSON.parse(await readFile(emptyPlan, "utf8")));
+  await writeFile(
+    oldPlan,
+    JSON.stringify({ ...capturedPlan, schemaVersion: 1 }),
+  );
+  await assert.rejects(
+    runFor(
+      emptyWorkflowId,
+      "--migrate",
+      "--writers-drained",
+      "--plan-file",
+      oldPlan,
+      "--expect-plan-sha256",
+      workflowAttachmentHash(await readFile(oldPlan)),
+    ),
+    (error: unknown) => {
+      const failed = z
+        .object({ code: z.literal(1), stderr: z.string() })
+        .safeParse(error);
+      return (
+        failed.success &&
+        z
+          .object({ classification: z.literal("ZodError") })
+          .safeParse(JSON.parse(failed.data.stderr)).success
+      );
+    },
+  );
+  assert.equal(
+    objects.size,
+    objectCount,
+    "old plans cannot bypass the new source evidence",
+  );
+  // A version published after review must defeat the final conditional UPDATE,
+  // even when the immutable reviewed archive itself still matches.
+  const newVersion = workflowAttachmentHash("new registered version");
+  await db.query(
+    "INSERT INTO storage_versions (id,storage_id,s3_key,archive_size,created_by) VALUES ($1,$2,$3,$4,'owner')",
+    [
+      newVersion,
+      emptyStorageId,
+      emptyKey.slice(0, -"/archive.tar.gz".length),
+      emptyArchive.length,
+    ],
+  );
+  await expectBlocked(emptyWorkflowId, "SourceUnavailable", ...reviewArgs);
+  const skippedEmpty = await runFor(emptyWorkflowId, ...emptyApply);
+  assert.ok(
+    skippedEmpty.some((row) => {
+      return z.object({ result: z.literal("skipped-changed") }).safeParse(row)
+        .success;
+    }),
+  );
+  assert.equal(
+    (
+      await db.query("SELECT attachments FROM workflows WHERE id=$1", [
+        emptyWorkflowId,
+      ])
+    ).rows[0].attachments,
+    null,
+  );
+  await db.query("DELETE FROM storage_versions WHERE id=$1", [newVersion]);
+  const publicationToken = randomUUID();
+  await db.query(
+    "INSERT INTO storage_publication_tokens (org_id,agent_id,subject,publication_key,generation,token) VALUES ($1,$2,'@agent',$3,1,$4)",
+    [orgId, agentId, `workflow:${emptyWorkflowId}`, publicationToken],
+  );
+  await expectBlocked(emptyWorkflowId, "SourceUnavailable", ...reviewArgs);
+  const pendingEmpty = await runFor(emptyWorkflowId, ...emptyApply);
+  assert.ok(
+    pendingEmpty.some((row) => {
+      return z.object({ result: z.literal("skipped-changed") }).safeParse(row)
+        .success;
+    }),
+  );
+  await db.query("DELETE FROM storage_publication_tokens WHERE token=$1", [
+    publicationToken,
+  ]);
+  await runFor(emptyWorkflowId, ...emptyApply);
+  const convertedEmpty = (
+    await db.query(
+      "SELECT instruction,attachments FROM workflows WHERE id=$1",
+      [emptyWorkflowId],
+    )
+  ).rows[0];
+  assert.equal(convertedEmpty.instruction, instruction);
+  assert.deepEqual(convertedEmpty.attachments, { kind: "empty" });
+  assert.equal(
+    objects.size,
+    objectCount,
+    "empty conversion preserves the legacy source and uploads nothing",
+  );
+  await runFor(emptyWorkflowId, "--audit", ...reviewArgs);
+  assert.ok(
+    (await runFor(emptyWorkflowId, ...reviewArgs)).some((row) => {
+      return z
+        .object({ ready: z.literal(0), alreadyCurrent: z.literal(1) })
+        .safeParse(row).success;
+    }),
+  );
   console.log(
-    "Workflow attachment operator: dry-run, apply, archive audit, instruction preservation, overlap reconciliation, canonical legacy duplicates and stale-plan protection passed",
+    "Workflow attachment operator: dry-run, apply, archive audit, instruction preservation, overlap reconciliation, canonical legacy duplicates, retained manifest identity, reviewed unpublished empty sources and stale-plan protection passed",
   );
 } finally {
+  await db.query("DELETE FROM storage_publication_tokens WHERE org_id=$1", [
+    orgId,
+  ]);
   await db.query("DELETE FROM agents WHERE id=$1", [agentId]);
-  await db.query("DELETE FROM storages WHERE id=$1", [storageId]);
+  await db.query("DELETE FROM storages WHERE id=ANY($1::uuid[])", [
+    [storageId, emptyStorageId],
+  ]);
   await db.end();
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {

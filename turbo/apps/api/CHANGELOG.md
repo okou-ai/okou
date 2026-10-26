@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.10.0](https://github.com/okou-ai/okou/compare/api-v2.9.1...api-v2.10.0) (2026-10-26)
+
+
+### Features
+
+* **browser:** create and reuse owner provider profiles ([#43019](https://github.com/okou-ai/okou/issues/43019)) ([42d685e](https://github.com/okou-ai/okou/commit/42d685e6f3ac2319bedec1a10d90e25df9ae1409))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.6.0
+    * @okouai/core bumped to 8.790.1
+    * @okouai/db bumped to 2.5.2
+    * @okouai/pi-agent-runtime bumped to 1.50.74
+
 ## [2.9.1](https://github.com/okou-ai/okou/compare/api-v2.9.0...api-v2.9.1) (2026-10-26)
 
 

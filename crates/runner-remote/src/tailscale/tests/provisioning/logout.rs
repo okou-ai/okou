@@ -98,9 +98,29 @@ async fn logout_replies_are_bounded_private_and_never_replayed_or_allowed_to_blo
         (hyper::StatusCode::OK, b"[]".to_vec()),
         (hyper::StatusCode::OK, br#"["", ""]"#.to_vec()),
         (hyper::StatusCode::OK, b"{} {}".to_vec()),
-        (hyper::StatusCode::OK, vec![b' '; 64 * 1024 + 1]),
     ];
-    for (status, body) in errors {
+    let boundary_replies = [
+        (65_536, tracing::Level::INFO, "confirmed"),
+        (65_537, tracing::Level::WARN, "unconfirmed"),
+    ]
+    .map(|(bytes, level, reason)| {
+        // Both replies succeed without the byte cap, so JSON parsing cannot
+        // mask a missing limit. Keep the boundary independent of that limit.
+        let mut body = vec![b' '; bytes - 2];
+        body.extend_from_slice(b"{}");
+        assert_eq!(body.len(), bytes);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            serde_json::json!({})
+        );
+        (hyper::StatusCode::OK, body, level, reason)
+    });
+    let replies = errors
+        .into_iter()
+        .map(|(status, body)| (status, body, tracing::Level::WARN, "unconfirmed"))
+        .chain(boundary_replies);
+    for (status, body, level, reason) in replies {
+        let body_bytes = body.len();
         let captured = tracing_test_support::CapturedEvents::default();
         let dispatch =
             tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
@@ -146,8 +166,11 @@ async fn logout_replies_are_bounded_private_and_never_replayed_or_allowed_to_blo
             .filter(|event| event.fields.get("stage").map(String::as_str) == Some("logout"))
             .collect::<Vec<_>>();
         assert_eq!(logout.len(), 1);
-        assert_eq!(logout[0].level, tracing::Level::WARN);
-        assert_eq!(logout[0].fields["reason"], "unconfirmed");
+        assert_eq!(logout[0].level, level, "{body_bytes}-byte response");
+        assert_eq!(
+            logout[0].fields["reason"], reason,
+            "{body_bytes}-byte response"
+        );
         for private in [
             CANARY,
             "synthetic-secret",

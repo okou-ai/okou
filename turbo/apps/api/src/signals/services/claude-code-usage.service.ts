@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { z } from "zod";
 
 import type { SubscriptionUsageMetadata } from "./model-provider-subscription-usage.types";
@@ -295,25 +296,21 @@ async function fetchClaudeCodeJson(
     readonly accessToken: string;
     readonly path: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<unknown> {
-  const response = await fetch(`${CLAUDE_CODE_API_BASE_URL}${args.path}`, {
-    method: "GET",
-    headers: {
-      accept: "application/json, text/plain, */*",
-      authorization: `Bearer ${args.accessToken}`,
-      "anthropic-beta": CLAUDE_CODE_OAUTH_BETA,
-      "content-type": "application/json",
-      "user-agent": CLAUDE_CODE_USER_AGENT,
-    },
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Claude Code metadata request failed with status ${response.status}`,
-    );
-  }
+  const response = await accept(
+    fetch(`${CLAUDE_CODE_API_BASE_URL}${args.path}`, {
+      method: "GET",
+      headers: {
+        accept: "application/json, text/plain, */*",
+        authorization: `Bearer ${args.accessToken}`,
+        "anthropic-beta": CLAUDE_CODE_OAUTH_BETA,
+        "content-type": "application/json",
+        "user-agent": CLAUDE_CODE_USER_AGENT,
+      },
+    }),
+    [200],
+  );
 
   return await response.json();
 }

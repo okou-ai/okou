@@ -320,3 +320,48 @@ hooks; the shared Vitest setup and case context own that lifecycle.
 This is the single detached-work cleanup mechanism. Do not create a separate
 promise registry or call `clearAllDetached()` from test cases or their hooks.
 During the test, await the operation or its observable completion instead.
+
+## Deployed Preview Access
+
+Read the actual App and API URLs from the PR's deployment checks and job output
+in [the Turbo workflow](../../.github/workflows/turbo.yml). Check the deployed
+source revision before testing. App previews can use a `workers.dev` origin
+while their API uses `vm6.ai`; do not infer one service's URL or cookie scope
+from the other.
+
+For a protected preview, obtain its automation bypass value from an authorized
+team credential source. In the same browser profile used for testing, first
+open the **App** URL with these parameters, substituting and URL-encoding the
+secret locally:
+
+```text
+https://<app-preview-host>/<route>?x-vercel-protection-bypass=<BYPASS_SECRET>&x-vercel-set-bypass-cookie=true
+```
+
+Preserve the intended route and existing query parameters. If a query already
+exists, add parameters with `&`; keep them before any URL fragment. Establish
+bypass separately on each protected API or auth origin that the browser visits.
+One host's cookie does not establish another host's access.
+
+The [App bypass capture](../../turbo/apps/platform/src/lib/preview-bypass-cookie.ts)
+reads the App's query or cookie and forwards the value to its matching preview
+API. Visiting only an API bypass URL does not supply that App-side value. The
+App capture lasts one hour; repeat the App entry when it expires. Avoid global
+request headers: they can send the bypass to third-party hosts such as Clerk.
+Keep secret-bearing URLs, cookies and authorization headers out of commits,
+screenshots, PR comments and shared logs.
+
+After signing in with the development Clerk instance, inspect an actual App API
+request, such as `/api/feature-switches`, in the browser network panel. Verify
+the bypass header is present without sharing its value, and check the actual
+response. Clerk login, a successful top-level API visit, and an OPTIONS 204 do
+not establish that the App's GET has access.
+
+- `403` with `Preview automation bypass required`: the preview credential is
+  missing or incorrect. Re-establish App-side access with the current value.
+- `401` after bypass succeeds: inspect the separate Clerk authentication state.
+- `Failed to fetch`: inspect the real response and CORS error before diagnosing
+  connectivity. Older API builds can return the preview-access 403 before CORS,
+  hiding its JSON from browser code even though OPTIONS succeeds. An allowed
+  App origin should receive its exact `Access-Control-Allow-Origin` and
+  `Access-Control-Allow-Credentials: true` on the actual response.

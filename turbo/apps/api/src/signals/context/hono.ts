@@ -54,11 +54,6 @@ export const request$ = computed((get) => {
   return context.req;
 });
 
-export const requestSignal$ = computed((get) => {
-  const context = get(innerHonoContext$);
-  return context.req.raw.signal;
-});
-
 export const route$ = computed((get): AppRoute => {
   const route = get(innerRoute$);
   if (!route) {

@@ -113,7 +113,7 @@ import {
   mintWorkflowWebhookToken,
 } from "../services/workflow-webhook-automation-config.service";
 import { childAutonomyBudget } from "../services/autonomy-budget.service";
-import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
+import { bestEffort, onRejection, settle } from "../utils";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-watch.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
@@ -685,12 +685,13 @@ const cleanupUnpublishedWorkflow$ = command(
       readonly workflowId: string;
     },
   ): Promise<void> => {
-    // Cleanup gets its own bounded lifetime, including when create was aborted.
-    // Its failure (including timeout) must never replace the creation error.
-    const signal = AbortSignal.timeout(5000);
+    // Cleanup must finish even when the creation owner has already stopped.
+    const cleanup = new AbortController();
     const [result] = await Promise.allSettled([
-      awaitWithSignal(set(deleteOrphanedWorkflowVolume$, args, signal), signal),
-    ]);
+      set(deleteOrphanedWorkflowVolume$, args, cleanup.signal),
+    ]).finally(() => {
+      cleanup.abort();
+    });
     if (result.status === "rejected") {
       logger("WorkflowCreate").warn(
         "Failed to clean up unpublished workflow volume",

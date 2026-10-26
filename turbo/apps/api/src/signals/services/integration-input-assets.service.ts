@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import type { CanonicalAssetProvenance } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import {
@@ -15,7 +16,7 @@ import {
 } from "./canonical-asset.service";
 
 import { downloadFeishuMessageResource$ } from "../external/feishu-client";
-import { safeUrlParse, settleIncludingAbort } from "../utils";
+import { settle, safeUrlParse, settleIncludingAbort } from "../utils";
 import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { fetchTeamsFile } from "../external/teams-bot-client";
 import { buildFileDownloadUrl, getFile } from "../external/telegram-client";
@@ -94,10 +95,26 @@ const downloadIntegrationInputResource$ = command(
             "Telegram file exceeds the download limit",
           );
         }
-        const response = await fetch(
-          buildFileDownloadUrl(resource.botToken, metadata.file_path),
-          { signal },
+        const acceptedResponse = await settle(
+          accept(
+            fetch(buildFileDownloadUrl(resource.botToken, metadata.file_path), {
+              signal,
+            }),
+            [200],
+          ),
         );
+        signal.throwIfAborted();
+        let response: Response;
+        if (acceptedResponse.ok) {
+          response = acceptedResponse.value;
+        } else if (
+          acceptedResponse.error instanceof HttpStatusError &&
+          acceptedResponse.error.status >= 300
+        ) {
+          response = acceptedResponse.error.response;
+        } else {
+          throw acceptedResponse.error;
+        }
         signal.throwIfAborted();
         return response;
       }
@@ -126,7 +143,21 @@ const downloadIntegrationInputResource$ = command(
             "Phone media URL must use HTTPS",
           );
         }
-        const response = await fetch(resource.url, { signal });
+        const acceptedResponse2 = await settle(
+          accept(fetch(resource.url, { signal }), [200]),
+        );
+        signal.throwIfAborted();
+        let response: Response;
+        if (acceptedResponse2.ok) {
+          response = acceptedResponse2.value;
+        } else if (
+          acceptedResponse2.error instanceof HttpStatusError &&
+          acceptedResponse2.error.status >= 300
+        ) {
+          response = acceptedResponse2.error.response;
+        } else {
+          throw acceptedResponse2.error;
+        }
         signal.throwIfAborted();
         return response;
       }

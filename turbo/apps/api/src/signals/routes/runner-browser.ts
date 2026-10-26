@@ -12,6 +12,9 @@ import {
   createRunnerBrowserInspection,
 } from "../services/browser-owner.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { createRunnerBrowserAllocation } from "../services/browser-owner-profile.service";
+import { BrowserUseProviderError } from "../services/browser-use.service";
+import { settle } from "../utils";
 
 const cleanupActions = [
   "inspect",
@@ -33,6 +36,7 @@ const inspectAction$ = computed(async (get) => {
   return input?.action.kind === "inspect" ? input.action : null;
 });
 const inspection$ = createRunnerBrowserInspection(owner$, inspectAction$);
+const allocation$ = createRunnerBrowserAllocation(owner$);
 
 const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
@@ -89,6 +93,25 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
     const result = await get(inspection$);
     signal.throwIfAborted();
     return { status: 200 as const, body: result };
+  }
+  if (body.data.action.kind === "allocate") {
+    const result = await settle(set(allocation$, signal));
+    signal.throwIfAborted();
+    if (!result.ok) {
+      if (result.error instanceof BrowserUseProviderError) {
+        return {
+          status: result.error.status,
+          body: {
+            error: {
+              code: result.error.code,
+              message: "Managed browser provider profile is unavailable",
+            },
+          },
+        };
+      }
+      throw result.error;
+    }
+    return { status: 200 as const, body: result.value };
   }
   const result = await set(
     controlBrowserOwner$,

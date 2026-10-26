@@ -9,13 +9,12 @@ import { publishSessionOutputDelta } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { assistantEventIdForRunEvent } from "../services/assistant-event-id";
-import { awaitWithSignal, settleIncludingAbort } from "../utils";
+import { settleIncludingAbort } from "../utils";
 import {
   getSandboxAuthForRun,
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 
-const SESSION_OUTPUT_PUBLISH_TIMEOUT_MS = 2000;
 const sessionOutputBody$ = bodyResultOf(webhookSessionOutputContract.send);
 
 const publishSandboxSessionOutput$ = command(
@@ -33,21 +32,14 @@ const publishSandboxSessionOutput$ = command(
       return unauthorizedRunMismatch;
     }
 
-    const publishSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(SESSION_OUTPUT_PUBLISH_TIMEOUT_MS),
-    ]);
     const result = await settleIncludingAbort(
-      awaitWithSignal(
-        publishSessionOutputDelta(
-          { userId: auth.userId, orgId: auth.orgId },
-          {
-            ...body,
-            eventId: assistantEventIdForRunEvent(body.runId, body.runEventId),
-            createdAt: nowDate().toISOString(),
-          },
-        ),
-        publishSignal,
+      publishSessionOutputDelta(
+        { userId: auth.userId, orgId: auth.orgId },
+        {
+          ...body,
+          eventId: assistantEventIdForRunEvent(body.runId, body.runEventId),
+          createdAt: nowDate().toISOString(),
+        },
       ),
     );
     signal.throwIfAborted();

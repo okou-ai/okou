@@ -1,3 +1,5 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
+import { settle } from "../utils";
 import {
   feishuInstallationAvailabilityReadPlan,
   feishuInstallationEnabledFromRows,
@@ -188,6 +190,44 @@ export class FeishuOAuthTokenError extends FeishuApiError {
   }
 }
 
+async function readFeishuOAuthToken(
+  pending: Promise<Response>,
+  providerName: string,
+  operation: "exchange" | "token refresh",
+): Promise<FeishuOAuthToken> {
+  const result = await settle(accept(pending, [200]));
+  let response: Response;
+  if (result.ok) {
+    response = result.value;
+  } else if (result.error instanceof HttpStatusError) {
+    response = result.error.response;
+  } else {
+    throw result.error;
+  }
+  const parsed = feishuOAuthTokenResponseSchema.parse(await response.json());
+  if (parsed.code !== 0) {
+    throw new FeishuOAuthTokenError(
+      parsed.error_description ??
+        parsed.msg ??
+        `${providerName} OAuth ${operation} failed`,
+      response.status >= 500 ? 502 : 400,
+      parsed.code,
+      parsed.error,
+    );
+  }
+  if (!result.ok || !parsed.access_token || parsed.expires_in === undefined) {
+    throw new FeishuApiError(
+      `${providerName} OAuth token response is incomplete`,
+      502,
+    );
+  }
+  return {
+    accessToken: parsed.access_token,
+    refreshToken: parsed.refresh_token ?? null,
+    expiresInSeconds: parsed.expires_in,
+  };
+}
+
 function tokenIsFresh(expiresAt: Date | null): boolean {
   return (
     expiresAt !== null &&
@@ -196,17 +236,20 @@ function tokenIsFresh(expiresAt: Date | null): boolean {
 }
 
 async function readJson(
-  response: Response,
+  response: Response | Promise<Response>,
   providerName: string,
 ): Promise<unknown> {
-  const body = await response.json();
-  if (!response.ok) {
-    throw new FeishuApiError(
-      `${providerName} API returned HTTP ${response.status}`,
-      response.status >= 500 ? 502 : 400,
-    );
+  const result = await settle(accept(Promise.resolve(response), [200]));
+  if (!result.ok) {
+    if (result.error instanceof HttpStatusError) {
+      throw new FeishuApiError(
+        `${providerName} API returned HTTP ${result.error.status}`,
+        result.error.status >= 500 ? 502 : 400,
+      );
+    }
+    throw result.error;
   }
-  return body;
+  return result.value.json();
 }
 
 export { readJson as readFeishuResponseJson };
@@ -220,7 +263,7 @@ export async function fetchFeishuTenantAccessToken(
   signal: AbortSignal,
 ): Promise<FeishuTenantAccessToken> {
   const providerName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const response = await fetch(
+  const response = fetch(
     `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
     {
       method: "POST",
@@ -260,7 +303,7 @@ export async function fetchFeishuBotInfo(
   signal: AbortSignal,
 ): Promise<FeishuBotInfo> {
   const providerName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const response = await fetch(
+  const response = fetch(
     `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/bot/v3/info`,
     {
       headers: {
@@ -304,7 +347,7 @@ export async function exchangeFeishuOAuthCode(
   signal: AbortSignal,
 ): Promise<FeishuOAuthToken> {
   const providerName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const response = await fetch(
+  const response = fetch(
     `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/authen/v2/oauth/token`,
     {
       method: "POST",
@@ -319,28 +362,7 @@ export async function exchangeFeishuOAuthCode(
       signal,
     },
   );
-  const parsed = feishuOAuthTokenResponseSchema.parse(await response.json());
-  if (parsed.code !== 0) {
-    throw new FeishuOAuthTokenError(
-      parsed.error_description ??
-        parsed.msg ??
-        `${providerName} OAuth exchange failed`,
-      response.status >= 500 ? 502 : 400,
-      parsed.code,
-      parsed.error,
-    );
-  }
-  if (!response.ok || !parsed.access_token || parsed.expires_in === undefined) {
-    throw new FeishuApiError(
-      `${providerName} OAuth token response is incomplete`,
-      502,
-    );
-  }
-  return {
-    accessToken: parsed.access_token,
-    refreshToken: parsed.refresh_token ?? null,
-    expiresInSeconds: parsed.expires_in,
-  };
+  return await readFeishuOAuthToken(response, providerName, "exchange");
 }
 
 export async function refreshFeishuOAuthToken(
@@ -353,7 +375,7 @@ export async function refreshFeishuOAuthToken(
   signal: AbortSignal,
 ): Promise<FeishuOAuthToken> {
   const providerName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const response = await fetch(
+  const response = fetch(
     `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/authen/v2/oauth/token`,
     {
       method: "POST",
@@ -367,28 +389,7 @@ export async function refreshFeishuOAuthToken(
       signal,
     },
   );
-  const parsed = feishuOAuthTokenResponseSchema.parse(await response.json());
-  if (parsed.code !== 0) {
-    throw new FeishuOAuthTokenError(
-      parsed.error_description ??
-        parsed.msg ??
-        `${providerName} OAuth token refresh failed`,
-      response.status >= 500 ? 502 : 400,
-      parsed.code,
-      parsed.error,
-    );
-  }
-  if (!response.ok || !parsed.access_token || parsed.expires_in === undefined) {
-    throw new FeishuApiError(
-      `${providerName} OAuth token response is incomplete`,
-      502,
-    );
-  }
-  return {
-    accessToken: parsed.access_token,
-    refreshToken: parsed.refresh_token ?? null,
-    expiresInSeconds: parsed.expires_in,
-  };
+  return await readFeishuOAuthToken(response, providerName, "token refresh");
 }
 
 export async function fetchFeishuUserInfo(
@@ -399,7 +400,7 @@ export async function fetchFeishuUserInfo(
   signal: AbortSignal,
 ): Promise<FeishuUserInfo> {
   const providerName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
-  const response = await fetch(
+  const response = fetch(
     `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/authen/v1/user_info`,
     {
       headers: {
@@ -553,19 +554,28 @@ export const downloadFeishuMessageResource$ = command(
       `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/resources/${encodeURIComponent(args.fileKey)}`,
     );
     url.searchParams.set("type", args.resourceType);
-    const response = await fetch(url, {
-      headers: { authorization: `Bearer ${token}` },
+    const result = await settle(
+      accept(
+        fetch(url, {
+          headers: { authorization: `Bearer ${token}` },
+          signal,
+        }),
+        [200],
+      ),
       signal,
-    });
+    );
     signal.throwIfAborted();
-    if (!response.ok) {
-      throw new FeishuApiError(
-        `${providerName} file download returned HTTP ${response.status}`,
-        response.status >= 500 ? 502 : 400,
-        response.status,
-      );
+    if (!result.ok) {
+      if (result.error instanceof HttpStatusError) {
+        throw new FeishuApiError(
+          `${providerName} file download returned HTTP ${result.error.status}`,
+          result.error.status >= 500 ? 502 : 400,
+          result.error.status,
+        );
+      }
+      throw result.error;
     }
-    return response;
+    return result.value;
   },
 );
 
@@ -713,7 +723,7 @@ export const replyWithFeishuMessage$ = command(
       return credentials.context;
     })();
     signal.throwIfAborted();
-    const response = await fetch(
+    const response = fetch(
       `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reply`,
       {
         method: "POST",

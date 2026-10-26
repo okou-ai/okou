@@ -208,6 +208,113 @@ async fn claim_handles_poison_job_json() {
     assert!(provider.find_unclaimed_job().is_none());
 }
 
+#[tokio::test(start_paused = true)]
+async fn poison_job_publication_failure_backs_off_without_blocking_other_jobs() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = default_provider(dir.path(), CancellationToken::new(), empty_cancel_tokens());
+    let poison_id: RunId = "00000000-0000-4000-8000-000000000001".parse().unwrap();
+    let valid_id: RunId = "00000000-0000-4000-8000-000000000002".parse().unwrap();
+    let profile = crate::profile::DEFAULT_PROFILE;
+    let poison_path = local_queue::job_path(dir.path(), profile, poison_id).unwrap();
+    let claim_path = local_queue::claim_path(dir.path(), poison_id);
+    let result_path = local_queue::result_path(dir.path(), poison_id);
+    local_queue::ensure_profile_jobs_dir(dir.path(), profile).unwrap();
+    std::fs::write(&poison_path, b"not json").unwrap();
+    write_job(dir.path(), valid_id, "run after poison");
+    // A directory blocks this run's result rename without blocking other results.
+    std::fs::create_dir_all(&result_path).unwrap();
+
+    let candidate = provider.discover().await.unwrap();
+    assert_eq!(candidate.run_id(), poison_id);
+    let cached_candidate = candidate.clone();
+    assert!(provider.claim(candidate).await.is_none());
+    assert!(
+        poison_path.exists(),
+        "unpublished failure must stay recoverable"
+    );
+    assert!(
+        !claim_path.exists(),
+        "failed publication must release ownership"
+    );
+
+    // Serial discovery/claim/settlement models a single available admission slot:
+    // no discovery scan can happen to see the poison claim while it is in flight.
+    let candidate = provider.discover().await.unwrap();
+    assert_eq!(candidate.run_id(), valid_id);
+    assert!(provider.claim(candidate).await.is_some());
+    provider
+        .complete(complete_request(valid_id, 0, None), CompletionAuth::local())
+        .await;
+    assert_eq!(read_result(dir.path(), valid_id).exit_code, 0);
+    for _ in 0..3 {
+        assert!(provider.find_unclaimed_job().is_none());
+    }
+
+    // Expiry permits another attempt, but a second publication failure must
+    // start a fresh backoff before the claim is released again.
+    tokio::time::advance(RECONCILE_INTERVAL).await;
+    let candidate = provider.discover().await.unwrap();
+    assert_eq!(candidate.run_id(), poison_id);
+    assert!(provider.claim(candidate).await.is_none());
+    assert!(poison_path.exists());
+    assert!(!claim_path.exists());
+
+    // Recover storage without publishing a new job event, then arm discovery's
+    // reconciliation wait before advancing the paused clock.
+    std::fs::remove_dir(&result_path).unwrap();
+    let scans = provider.job_scan_count();
+    let discovery = {
+        let provider = Arc::clone(&provider);
+        tokio::spawn(async move { provider.discover().await })
+    };
+    provider.wait_for_job_scan_count(scans + 1).await;
+    tokio::task::yield_now().await;
+    assert!(
+        !discovery.is_finished(),
+        "discovery must wait during backoff"
+    );
+
+    // A cached candidate tried later in the interval must neither publish early
+    // nor reset the deadline and delay the already-waiting discovery.
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert!(provider.claim(cached_candidate).await.is_none());
+    assert!(
+        poison_path.exists(),
+        "cached candidate must not retry publication"
+    );
+    assert!(!result_path.exists());
+    assert!(!claim_path.exists());
+    tokio::time::advance(RECONCILE_INTERVAL - Duration::from_secs(1) - Duration::from_millis(1))
+        .await;
+    assert!(
+        !discovery.is_finished(),
+        "retry must respect the full interval"
+    );
+    tokio::time::advance(Duration::from_millis(1)).await;
+
+    // No job publication event follows storage repair; reconciliation alone
+    // must recover the retained poison job and publish its terminal failure.
+    let candidate = tokio::time::timeout(Duration::from_secs(1), discovery)
+        .await
+        .expect("cached claim must not delay the original reconciliation retry")
+        .unwrap()
+        .unwrap();
+    assert_eq!(candidate.run_id(), poison_id);
+    assert!(provider.claim(candidate).await.is_none());
+    let result = read_result(dir.path(), poison_id);
+    assert_eq!(result.run_id, poison_id);
+    assert_ne!(result.exit_code, 0);
+    assert!(
+        result
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("invalid job JSON"))
+    );
+    assert!(!poison_path.exists());
+    assert!(!claim_path.exists());
+    assert!(provider.find_unclaimed_job().is_none());
+}
+
 #[tokio::test]
 async fn claim_terminally_fails_oversized_sparse_job() {
     let dir = tempfile::tempdir().unwrap();

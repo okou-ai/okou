@@ -19,7 +19,7 @@ const actionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("inspect"),
     instanceId: z.uuid().optional(),
   }),
-  z.strictObject({ kind: z.literal("allocate"), providerProfileId: z.uuid() }),
+  z.strictObject({ kind: z.literal("allocate") }),
   z.strictObject({
     kind: z.literal("publish"),
     ...instanceIdentity,
@@ -77,6 +77,8 @@ export const runnerBrowserContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       500: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
     },
     summary: "Control exact Browser lifetimes from the current official Runner",
   },

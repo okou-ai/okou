@@ -11,9 +11,9 @@ import { isSpanContextValid, trace } from "@opentelemetry/api";
 import { env } from "../../lib/env";
 import { notConfigured } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { request$, requestSignal$, setResHeader$ } from "../context/hono";
+import { request$, setResHeader$ } from "../context/hono";
 import { VOICE_NO_SPEECH, transcribeVoice } from "../external/voice-completion";
-import { onRejection, settle } from "../utils";
+import { settle } from "../utils";
 import { GcpLlmAuthError, gcpLlmConfiguration } from "../external/gcp-llm-auth";
 import {
   VOICE_INPUT_MODEL,
@@ -30,9 +30,6 @@ const L = logger("VoiceSegment");
 // trigger the conservative upper bound for human speech.
 const VOICE_TRANSCRIPT_MAX_CHARACTERS_PER_SECOND = 25;
 const VOICE_TRANSCRIPT_MINIMUM_SUSPICIOUS_CHARACTERS = 100;
-// Provider work ends well before the 100-second edge timeout, so the client
-// receives a classified 503 instead of an edge 524 without CORS headers.
-const VOICE_SEGMENT_DEADLINE_MS = 60_000;
 
 export type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   VoiceIoTranscribeSegmentOptions & {
@@ -132,10 +129,8 @@ function providerError(error: unknown) {
     );
   }
   if (
-    ((error instanceof GcpLlmAuthError || error instanceof VertexVoiceError) &&
-      error.temporary) ||
-    (error instanceof VoiceResponseError &&
-      error.reason === "deadline_exceeded")
+    (error instanceof GcpLlmAuthError || error instanceof VertexVoiceError) &&
+    error.temporary
   ) {
     return transcriptionError(
       503,
@@ -223,8 +218,7 @@ export const transcribeVoiceSegment$ = command(
     input: VoiceDraftTranscriptionInput,
     signal: AbortSignal,
   ) => {
-    const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
-    requestSignal.throwIfAborted();
+    signal.throwIfAborted();
     if (gcpLlmConfiguration() === undefined) {
       return notConfigured("Voice transcription is not configured");
     }
@@ -238,24 +232,11 @@ export const transcribeVoiceSegment$ = command(
       stage: "audio_read",
       modelCall: false,
     };
-    const deadline = AbortSignal.timeout(VOICE_SEGMENT_DEADLINE_MS);
     const generated = await settle(
-      onRejection(
-        transcribeIncrementalVoice(
-          input,
-          attempt,
-          AbortSignal.any([requestSignal, deadline]),
-        ),
-        () => {
-          requestSignal.throwIfAborted();
-          if (deadline.aborted) {
-            throw new VoiceResponseError("deadline_exceeded");
-          }
-        },
-      ),
+      transcribeIncrementalVoice(input, attempt, signal),
       signal,
     );
-    requestSignal.throwIfAborted();
+    signal.throwIfAborted();
     if (!generated.ok) {
       await Promise.allSettled([
         emitVoiceFailure(
@@ -266,7 +247,6 @@ export const transcribeVoiceSegment$ = command(
         ),
       ]);
       signal.throwIfAborted();
-      requestSignal.throwIfAborted();
       return providerError(generated.error);
     }
     const rejected = rejectUnusableVoiceOutput(input, generated.value);
@@ -283,7 +263,6 @@ export const transcribeVoiceSegment$ = command(
         ),
       ]);
       signal.throwIfAborted();
-      requestSignal.throwIfAborted();
       return providerError(rejected);
     }
     if (rejected) {

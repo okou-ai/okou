@@ -272,18 +272,6 @@ describe("Discord private account interactions", () => {
 
   it.each([
     {
-      kind: "timed-out",
-      response: async (request: Request) => {
-        // Discord answers only after the 2 s local deadline aborted the request.
-        const aborted = createDeferredPromise<void>(context.signal);
-        request.signal.addEventListener("abort", () => {
-          aborted.resolve();
-        });
-        await aborted.promise;
-        return new HttpResponse(null, { status: 204 });
-      },
-    },
-    {
       kind: "network failure",
       response: () => {
         return HttpResponse.error();
@@ -304,10 +292,10 @@ describe("Discord private account interactions", () => {
       server.use(
         http.post(
           "https://discord.com/api/v10/interactions/:id/:token/callback",
-          async ({ request }) => {
+          () => {
             // Let Discord's 3-second response window close before the edit.
             mockMonotonicNow(10_000);
-            return await response(request);
+            return response();
           },
         ),
       );

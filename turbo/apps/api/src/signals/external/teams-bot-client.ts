@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { Buffer } from "node:buffer";
 
 import { z } from "zod";
@@ -300,29 +301,33 @@ async function fetchClientCredentialsAccessToken(
   });
 
   const responseResult = await settle(
-    fetch(args.tokenUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body,
-      signal,
-    }),
+    accept(
+      fetch(args.tokenUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body,
+        signal,
+      }),
+      [200],
+    ),
     signal,
   );
   if (!responseResult.ok) {
+    if (responseResult.error instanceof HttpStatusError) {
+      const response = responseResult.error.response;
+      const text = await response.text();
+      signal.throwIfAborted();
+      return teamsApiError(
+        502,
+        text || `OAuth token request failed with HTTP ${response.status}`,
+      );
+    }
     return teamsApiError(502, networkErrorMessage(responseResult.error));
   }
 
   const response = responseResult.value;
-  if (!response.ok) {
-    const text = await response.text();
-    signal.throwIfAborted();
-    return teamsApiError(
-      502,
-      text || `OAuth token request failed with HTTP ${response.status}`,
-    );
-  }
 
   const parsed = teamsTokenResponseSchema.safeParse(
     safeJsonParse(await response.text()),
@@ -519,28 +524,34 @@ async function fetchTeamsGraphJson<T>(
   }
 
   const responseResult = await settle(
-    fetch(args.url, {
-      method: "GET",
-      headers: {
-        authorization: `Bearer ${accessToken.accessToken}`,
-      },
-      signal,
-    }),
+    accept(
+      fetch(args.url, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${accessToken.accessToken}`,
+        },
+        signal,
+      }),
+      [200],
+    ),
     signal,
   );
   if (!responseResult.ok) {
+    if (responseResult.error instanceof HttpStatusError) {
+      const response = responseResult.error.response;
+      const text = await response.text();
+      signal.throwIfAborted();
+      return teamsApiError(
+        response.status,
+        text || `Microsoft Graph API returned HTTP ${response.status}`,
+      );
+    }
     return teamsApiError(502, networkErrorMessage(responseResult.error));
   }
 
   const response = responseResult.value;
   const responseText = await response.text();
   signal.throwIfAborted();
-  if (!response.ok) {
-    return teamsApiError(
-      response.status,
-      responseText || `Microsoft Graph API returned HTTP ${response.status}`,
-    );
-  }
 
   const parsed = args.schema.safeParse(safeJsonParse(responseText));
   if (!parsed.success) {
@@ -580,30 +591,38 @@ async function resolveTeamsGraphFileUrl(
     return accessToken;
   }
   const result = await settle(
-    fetch(teamsGraphShareContentUrl(args.url), {
-      method: "GET",
-      headers: { authorization: `Bearer ${accessToken.accessToken}` },
-      redirect: "manual",
-      signal,
-    }),
+    accept(
+      fetch(teamsGraphShareContentUrl(args.url), {
+        method: "GET",
+        headers: { authorization: `Bearer ${accessToken.accessToken}` },
+        redirect: "manual",
+        signal,
+      }),
+      [302],
+    ),
     signal,
   );
   if (!result.ok) {
+    if (result.error instanceof HttpStatusError) {
+      const response = result.error.response;
+      await response.body?.cancel();
+      signal.throwIfAborted();
+      return teamsApiError(
+        response.status >= 200 && response.status < 300 ? 502 : response.status,
+        `Microsoft Graph returned an invalid file redirect (HTTP ${response.status})`,
+      );
+    }
     return teamsApiError(502, networkErrorMessage(result.error));
   }
   const response = result.value;
   const location = response.headers.get("location");
   await response.body?.cancel();
   signal.throwIfAborted();
-  if (
-    response.status === 302 &&
-    location &&
-    isTeamsPreauthenticatedFileUrl(location)
-  ) {
+  if (location && isTeamsPreauthenticatedFileUrl(location)) {
     return { kind: "ok", downloadUrl: location };
   }
   return teamsApiError(
-    response.ok || response.status === 302 ? 502 : response.status,
+    502,
     `Microsoft Graph returned an invalid file redirect (HTTP ${response.status})`,
   );
 }
@@ -650,14 +669,23 @@ export async function fetchTeamsFile(
   }
 
   const responseResult = await settle(
-    fetch(url, {
-      method: "GET",
-      headers,
-      signal,
-    }),
+    accept(
+      fetch(url, {
+        method: "GET",
+        headers,
+        signal,
+      }),
+      [200, 404],
+    ),
     signal,
   );
   if (!responseResult.ok) {
+    if (responseResult.error instanceof HttpStatusError) {
+      const response = responseResult.error.response;
+      await response.body?.cancel();
+      signal.throwIfAborted();
+      return teamsApiError(response.status, responseResult.error.message);
+    }
     return teamsApiError(502, networkErrorMessage(responseResult.error));
   }
 
@@ -690,16 +718,28 @@ export async function fetchTeamsUsers(
   const users = new Map<string, TeamsGraphUserInfo>();
   for (const userId of [...new Set(args.userIds)].slice(0, 20)) {
     const responseResult = await settle(
-      fetch(teamsGraphUserUrl(userId), {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${accessToken.accessToken}`,
-        },
-        signal,
-      }),
+      accept(
+        fetch(teamsGraphUserUrl(userId), {
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${accessToken.accessToken}`,
+          },
+          signal,
+        }),
+        [200, 404],
+      ),
       signal,
     );
     if (!responseResult.ok) {
+      if (responseResult.error instanceof HttpStatusError) {
+        const response = responseResult.error.response;
+        const text = await response.text();
+        signal.throwIfAborted();
+        return teamsApiError(
+          response.status,
+          text || `Microsoft Graph API returned HTTP ${response.status}`,
+        );
+      }
       return teamsApiError(502, networkErrorMessage(responseResult.error));
     }
 
@@ -708,12 +748,6 @@ export async function fetchTeamsUsers(
     signal.throwIfAborted();
     if (response.status === 404) {
       continue;
-    }
-    if (!response.ok) {
-      return teamsApiError(
-        response.status,
-        responseText || `Microsoft Graph API returned HTTP ${response.status}`,
-      );
     }
 
     const parsed = teamsGraphUserSchema.safeParse(safeJsonParse(responseText));
@@ -756,30 +790,36 @@ async function postTeamsActivity(
   }
 
   const responseResult = await settle(
-    fetch(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken.accessToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(args.activity),
-      signal,
-    }),
+    accept(
+      fetch(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(args.activity),
+        signal,
+      }),
+      [200, 201, 202],
+    ),
     signal,
   );
   if (!responseResult.ok) {
+    if (responseResult.error instanceof HttpStatusError) {
+      const response = responseResult.error.response;
+      const text = await response.text();
+      signal.throwIfAborted();
+      return teamsApiError(
+        response.status,
+        text || `Microsoft Teams API returned HTTP ${response.status}`,
+      );
+    }
     return teamsApiError(502, networkErrorMessage(responseResult.error));
   }
 
   const response = responseResult.value;
   const responseText = await response.text();
   signal.throwIfAborted();
-  if (!response.ok) {
-    return teamsApiError(
-      response.status,
-      responseText || `Microsoft Teams API returned HTTP ${response.status}`,
-    );
-  }
 
   if (!responseText) {
     return { kind: "ok", activityId: undefined };
@@ -813,30 +853,27 @@ export async function checkTeamsConversationMember(
     return teamsApiError(400, "Invalid Microsoft Teams serviceUrl");
   }
   const requested = await settle(
-    fetch(
-      `${base}/${encodeURIComponent(args.conversationId)}/members/${encodeURIComponent(args.teamsUserId)}`,
-      {
-        headers: { authorization: `Bearer ${accessToken.accessToken}` },
-        signal,
-      },
+    accept(
+      fetch(
+        `${base}/${encodeURIComponent(args.conversationId)}/members/${encodeURIComponent(args.teamsUserId)}`,
+        {
+          headers: { authorization: `Bearer ${accessToken.accessToken}` },
+          signal,
+        },
+      ),
+      [200, 403, 404],
     ),
     signal,
   );
   if (!requested.ok) {
     return teamsApiError(
-      502,
+      requested.error instanceof HttpStatusError ? requested.error.status : 502,
       "Microsoft Teams could not verify conversation membership",
     );
   }
   const response = requested.value;
   if (response.status === 403 || response.status === 404) {
     return { kind: "denied" };
-  }
-  if (!response.ok) {
-    return teamsApiError(
-      response.status,
-      "Microsoft Teams could not verify conversation membership",
-    );
   }
   const responseText = await response.text();
   signal.throwIfAborted();
@@ -900,30 +937,36 @@ export async function createTeamsPersonalConversation(
   };
 
   const responseResult = await settle(
-    fetch(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken.accessToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal,
-    }),
+    accept(
+      fetch(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal,
+      }),
+      [200, 201],
+    ),
     signal,
   );
   if (!responseResult.ok) {
+    if (responseResult.error instanceof HttpStatusError) {
+      const response = responseResult.error.response;
+      const text = await response.text();
+      signal.throwIfAborted();
+      return teamsApiError(
+        response.status,
+        text || `Microsoft Teams API returned HTTP ${response.status}`,
+      );
+    }
     return teamsApiError(502, networkErrorMessage(responseResult.error));
   }
 
   const response = responseResult.value;
   const responseText = await response.text();
   signal.throwIfAborted();
-  if (!response.ok) {
-    return teamsApiError(
-      response.status,
-      responseText || `Microsoft Teams API returned HTTP ${response.status}`,
-    );
-  }
 
   const parsed = teamsConversationResponseSchema.safeParse(
     safeJsonParse(responseText),
@@ -962,28 +1005,33 @@ async function requestTeamsReaction(
   }
 
   const responseResult = await settle(
-    fetch(url, {
-      method: args.method,
-      headers: {
-        authorization: `Bearer ${accessToken.accessToken}`,
-      },
-      signal,
-    }),
+    accept(
+      fetch(url, {
+        method: args.method,
+        headers: {
+          authorization: `Bearer ${accessToken.accessToken}`,
+        },
+        signal,
+      }),
+      [200, 204],
+    ),
     signal,
   );
   if (!responseResult.ok) {
+    if (responseResult.error instanceof HttpStatusError) {
+      const response = responseResult.error.response;
+      const text = await response.text();
+      signal.throwIfAborted();
+      return teamsApiError(
+        response.status,
+        text || `Microsoft Teams API returned HTTP ${response.status}`,
+      );
+    }
     return teamsApiError(502, networkErrorMessage(responseResult.error));
   }
 
-  const response = responseResult.value;
-  const responseText = await response.text();
+  await responseResult.value.text();
   signal.throwIfAborted();
-  if (!response.ok) {
-    return teamsApiError(
-      response.status,
-      responseText || `Microsoft Teams API returned HTTP ${response.status}`,
-    );
-  }
 
   return { kind: "ok" };
 }

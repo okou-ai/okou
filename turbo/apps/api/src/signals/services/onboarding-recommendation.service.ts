@@ -70,7 +70,6 @@ const JOB_ATTEMPT_TIMEOUT_MS = 45_000;
 const JOB_RETRY_DELAY_MS = 3000;
 const MAX_JOB_FAILURES = 2;
 const TERMINAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const GENERATION_TIMEOUT_MS = 20_000;
 const GENERATION_MODEL = VERTEX_TEXT_MODEL;
 const ACCESS_TOKEN_REFRESH_BUFFER_MS = 60_000;
 const MAX_MODEL_CONTEXT_CHARACTERS = 30_000;
@@ -466,7 +465,7 @@ async function generateRecommendation(
     generationMessages(args),
     2200,
     { temperature: 0, responseJsonSchema: RECOMMENDATION_JSON_SCHEMA },
-    AbortSignal.any([signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)]),
+    signal,
   );
   signal.throwIfAborted();
   if (content === null) {

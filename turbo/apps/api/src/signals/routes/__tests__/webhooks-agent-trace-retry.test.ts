@@ -1,12 +1,12 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { settleIncludingAbort } from "../../utils";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -114,32 +114,24 @@ describe("optional agent trace recovery", () => {
     });
   });
 
-  it.each([400, 401, 403, 404, 413, 307])(
-    "does not retry permanent HTTP %s or follow its redirect",
+  it.each([400, 401, 403, 404, 413])(
+    "does not retry permanent HTTP %s",
     async (status) => {
       const { owned, headers, body } = await traceRun();
       await owned.run(async () => {
         await enableDebug(owned);
-        const redirect = "https://redirect.example.test/axiom-ingest";
         let attempts = 0;
-        let forwarded = 0;
         server.use(
           http.post(INGEST_URL, () => {
             attempts += 1;
             return new HttpResponse(null, {
               status,
-              headers: { location: redirect },
             });
-          }),
-          http.post(redirect, () => {
-            forwarded += 1;
-            return ingested();
           }),
         );
         await api.requestAgentEvents(body, headers, [200]);
         await flushWaitUntilForTest();
         expect(attempts).toBe(1);
-        expect(forwarded).toBe(0);
       });
     },
   );
@@ -200,57 +192,6 @@ describe("optional agent trace recovery", () => {
     });
   });
 
-  it.each(["seconds", "http-date"] as const)(
-    "does not retry before an out-of-budget Retry-After in %s",
-    async (format) => {
-      const { owned, headers, body } = await traceRun();
-      await owned.run(async () => {
-        await enableDebug(owned);
-        const startedAt = now();
-        mockNow(startedAt);
-        const retryAfter =
-          format === "seconds"
-            ? "20"
-            : new Date(startedAt + 20_000).toUTCString();
-        let attempts = 0;
-        server.use(
-          http.post(INGEST_URL, () => {
-            attempts += 1;
-            return new HttpResponse(null, {
-              status: 503,
-              headers: { "Retry-After": retryAfter },
-            });
-          }),
-        );
-        await api.requestAgentEvents(body, headers, [200]);
-        await flushWaitUntilForTest();
-        expect(attempts).toBe(1);
-      });
-    },
-  );
-
-  it("does not start another attempt after the total budget expires during backoff", async () => {
-    const { owned, headers, body } = await traceRun();
-    await owned.run(async () => {
-      await enableDebug(owned);
-      mockNow(now());
-      context.mocks.signalTimers.delay.mockImplementation(() => {
-        mockNow(now() + 10_000);
-        return Promise.resolve();
-      });
-      let attempts = 0;
-      server.use(
-        http.post(INGEST_URL, () => {
-          attempts += 1;
-          return new HttpResponse(null, { status: 503 });
-        }),
-      );
-      await api.requestAgentEvents(body, headers, [200]);
-      await flushWaitUntilForTest();
-      expect(attempts).toBe(1);
-    });
-  });
-
   it("stops retries on API lifetime cancellation during backoff", async () => {
     const { owned, headers, body } = await traceRun();
     await owned.run(async () => {
@@ -273,182 +214,34 @@ describe("optional agent trace recovery", () => {
     });
   });
 
-  it("retries a timed-out attempt after acknowledging the durable event", async () => {
-    const { owned, headers, body } = await traceRun();
+  it("keeps required telemetry HTTP 503 outside optional trace recovery", async () => {
+    const { owned, headers, run } = await traceRun();
     await owned.run(async () => {
-      await enableDebug(owned);
-      const deadline = new AbortController();
-      let providedDeadline = false;
-      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-        if (milliseconds === 5000 && !providedDeadline) {
-          providedDeadline = true;
-          return deadline.signal;
-        }
-        return undefined;
-      });
-      const started = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve();
-        }
-      });
-      const requests: string[] = [];
-      server.use(
-        http.post(INGEST_URL, async ({ request }) => {
-          requests.push(await request.text());
-          if (requests.length === 1) {
-            started.resolve();
-            await release.promise;
-          }
-          return ingested();
-        }),
-      );
-      await api.requestAgentEvents(body, headers, [200]);
-      await started.promise;
-      deadline.abort(new DOMException("Attempt deadline", "TimeoutError"));
-      release.resolve();
-      await flushWaitUntilForTest();
-      expect(requests).toHaveLength(2);
-      expect(requests[1]).toBe(requests[0]);
-    });
-  });
-
-  it("shares the original total deadline with an in-flight second attempt", async () => {
-    const { owned, headers, body } = await traceRun();
-    await owned.run(async () => {
-      await enableDebug(owned);
-      const deadline = new AbortController();
-      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-        return milliseconds === 10_000 ? deadline.signal : undefined;
-      });
-      const enteredRetry = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve();
-        }
-      });
       let attempts = 0;
       server.use(
-        http.post(INGEST_URL, async () => {
-          attempts += 1;
-          if (attempts === 1) {
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+          () => {
+            attempts += 1;
             return new HttpResponse(null, { status: 503 });
-          }
-          enteredRetry.resolve();
-          await release.promise;
-          return ingested();
-        }),
-      );
-      await api.requestAgentEvents(body, headers, [200]);
-      await enteredRetry.promise;
-      deadline.abort(new DOMException("Total deadline", "TimeoutError"));
-      release.resolve();
-      await flushWaitUntilForTest();
-      expect(attempts).toBe(2);
-    });
-  });
-
-  it("bounds response-body consumption before retrying an ambiguous delivery", async () => {
-    const { owned, headers, body } = await traceRun();
-    await owned.run(async () => {
-      await enableDebug(owned);
-      const deadline = new AbortController();
-      let providedDeadline = false;
-      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-        if (milliseconds === 5000 && !providedDeadline) {
-          providedDeadline = true;
-          return deadline.signal;
-        }
-        return undefined;
-      });
-      const readingBody = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve();
-        }
-      });
-      let attempts = 0;
-      let closed = false;
-      server.use(
-        http.post(INGEST_URL, () => {
-          attempts += 1;
-          if (attempts > 1) {
-            return ingested();
-          }
-          const stream = new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode('{"ingested":'));
-            },
-            async pull(controller) {
-              readingBody.resolve();
-              await release.promise;
-              if (!closed) {
-                closed = true;
-                controller.close();
-              }
-            },
-            cancel() {
-              closed = true;
-            },
-          });
-          return new HttpResponse(stream, {
-            headers: { "Content-Type": "application/json" },
-          });
-        }),
-      );
-      await api.requestAgentEvents(body, headers, [200]);
-      await readingBody.promise;
-      deadline.abort(new DOMException("Body deadline", "TimeoutError"));
-      release.resolve();
-      await flushWaitUntilForTest();
-      expect(attempts).toBe(2);
-    });
-  });
-
-  it.each([503, 307])(
-    "keeps required telemetry HTTP %s outside optional trace recovery",
-    async (status) => {
-      const { owned, headers, run } = await traceRun();
-      await owned.run(async () => {
-        const redirect = "https://redirect.example.test/required-ingest";
-        let attempts = 0;
-        let forwarded = 0;
-        server.use(
-          http.post(
-            "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-            () => {
-              attempts += 1;
-              return new HttpResponse(null, {
-                status,
-                headers: { location: redirect },
-              });
-            },
-          ),
-          http.post(redirect, () => {
-            forwarded += 1;
-            return ingested();
-          }),
-        );
-        const failed = await api.requestAgentTelemetry(
-          {
-            runId: run.runId,
-            networkLogs: [
-              {
-                timestamp: new Date(now()).toISOString(),
-                host: "required-ingest.example.test",
-              },
-            ],
           },
-          headers,
-          [500],
-        );
-        expect(failed.status).toBe(500);
-        expect(attempts).toBe(1);
-        expect(forwarded).toBe(0);
-      });
-    },
-  );
+        ),
+      );
+      const failed = await api.requestAgentTelemetry(
+        {
+          runId: run.runId,
+          networkLogs: [
+            {
+              timestamp: new Date(now()).toISOString(),
+              host: "required-ingest.example.test",
+            },
+          ],
+        },
+        headers,
+        [500],
+      );
+      expect(failed.status).toBe(500);
+      expect(attempts).toBe(1);
+    });
+  });
 });

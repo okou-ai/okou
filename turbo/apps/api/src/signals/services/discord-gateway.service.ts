@@ -150,7 +150,6 @@ const handleDiscordMessage$ = command(
       result.kind === "connected" ? "not-connected" : result.kind;
     signal.throwIfAborted();
     if (!selection) {
-      const noticeSignal = AbortSignal.timeout(30_000);
       waitUntil(
         tapError(
           set(
@@ -161,7 +160,7 @@ const handleDiscordMessage$ = command(
               message,
               kind: noticeKind,
             },
-            noticeSignal,
+            signal,
           ),
           (error) => {
             L.warn("Discord admission notice failed", { error });

@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -477,24 +478,20 @@ async function githubInstallationAdmin(
   // The list endpoint supports GitHub App user tokens without extra permissions.
   // Repository access alone does not authorize attaching an organization's install.
   for (let page = 1; page <= 10; page++) {
-    const response = await fetch(
-      `https://api.github.com/user/memberships/orgs?state=active&per_page=100&page=${page}`,
-      {
-        headers: {
-          Authorization: `Bearer ${args.accessToken}`,
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
+    const response = await accept(
+      fetch(
+        `https://api.github.com/user/memberships/orgs?state=active&per_page=100&page=${page}`,
+        {
+          headers: {
+            Authorization: `Bearer ${args.accessToken}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          signal,
         },
-        signal,
-      },
+      ),
+      [200],
     );
-    if (!response.ok) {
-      await response.body?.cancel();
-      signal.throwIfAborted();
-      throw new Error(
-        `GitHub organization verification failed (${response.status}). Please try again.`,
-      );
-    }
     const memberships = z
       .array(
         z.object({

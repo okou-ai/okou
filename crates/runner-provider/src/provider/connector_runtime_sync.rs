@@ -5029,7 +5029,7 @@ mod tests {
         let initial_firewall = custom_runtime_firewall(custom_connector_id);
         let initial_name = format!("custom_connector_{}", custom_connector_id.replace('-', ""));
         let initial_policies = HashMap::from([(
-            initial_name,
+            initial_name.clone(),
             NetworkPolicy {
                 allow: vec!["custom.read".to_string()],
                 deny: vec![],
@@ -5037,25 +5037,28 @@ mod tests {
                 unknown_policy: "deny".to_string(),
             },
         )]);
-        let invalid_firewall = custom_runtime_firewall("550e8400-e29b-41d4-a716-446655440001");
-        server.mock(|when, then| {
+        let mut response = json!({
+            "results": [{
+                "target": target.clone(),
+                "state": "available",
+                "firewall": initial_firewall,
+                "networkPolicy": {
+                    "allow": ["custom.write"],
+                    "deny": [],
+                    "ask": [],
+                    "unknownPolicy": "allow",
+                },
+                "baseUrlVars": {},
+            }],
+        });
+        response["results"][0]["firewall"]["customConnectorId"] =
+            json!("550e8400-e29b-41d4-a716-446655440001");
+        let invalid_sync = server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
             then.status(200)
                 .header("content-type", "application/json")
-                .json_body(json!({
-                    "results": [{
-                        "target": target.clone(),
-                        "state": "available",
-                        "firewall": invalid_firewall,
-                        "networkPolicy": {
-                            "allow": ["custom.write"],
-                            "deny": [],
-                            "ask": [],
-                            "unknownPolicy": "allow",
-                        },
-                    }],
-                }));
+                .json_body(response.clone());
         });
         let firewalls = vec![initial_firewall];
         let (_dir, registry, registry_path) =
@@ -5075,11 +5078,21 @@ mod tests {
         .await;
         let request = recv_sync_request(&mut requests).await;
 
-        assert!(
-            core.sync_connector_runtime_batch_now(run_id, &request.targets)
-                .await
+        let (keep_run, events) =
+            capture_sync_events(core.sync_connector_runtime_batch_now(run_id, &request.targets))
+                .await;
+        assert!(keep_run);
+        let invalid = captured_event(
+            &events,
+            "invalid connector runtime sync result; retaining last-known-good state",
+        );
+        assert_connector_field(
+            invalid,
+            "error",
+            "custom available result has a mismatched connector id",
         );
 
+        invalid_sync.assert_calls(1);
         assert_eq!(
             tokio::fs::read(&registry_path).await.unwrap(),
             registry_before
@@ -5088,6 +5101,36 @@ mod tests {
         let active = &active_runs[&run_id];
         assert_eq!(active.connectors[&target].consecutive_failures, 1);
         assert!(active.connectors[&target].scheduled_sync.is_some());
+        drop(active_runs);
+
+        invalid_sync.delete_async().await;
+        // Correct only the connector ID; every other response field stays unchanged.
+        response["results"][0]["firewall"]["customConnectorId"] = json!(custom_connector_id);
+        let valid_sync = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(response.clone());
+        });
+        assert!(
+            core.sync_connector_runtime_batch_now(run_id, &request.targets)
+                .await
+        );
+
+        valid_sync.assert_calls(1);
+        let registry_json: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(&registry_path).await.unwrap()).unwrap();
+        let sandbox = &registry_json["sandboxes"]["10.200.0.2"];
+        assert_eq!(sandbox["firewalls"], json!(firewalls));
+        assert_eq!(
+            sandbox["networkPolicies"][initial_name.as_str()],
+            response["results"][0]["networkPolicy"]
+        );
+        let active_runs = core.inner.active_runs.lock().await;
+        let active = &active_runs[&run_id];
+        assert_eq!(active.connectors[&target].consecutive_failures, 0);
+        assert!(active.connectors[&target].scheduled_sync.is_none());
         drop(active_runs);
         core.unregister_run(run_id).await;
     }

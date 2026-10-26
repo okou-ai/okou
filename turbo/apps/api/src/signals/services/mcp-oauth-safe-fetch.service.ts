@@ -5,7 +5,6 @@ import type { FetchLike } from "@modelcontextprotocol/client";
 
 import { createDeferredPromise } from "../utils";
 
-const MCP_OAUTH_FETCH_TIMEOUT_MS = 10_000;
 const MCP_OAUTH_MAX_HEADER_BYTES = 16 * 1024;
 const MCP_OAUTH_MAX_RESPONSE_BYTES = 64 * 1024;
 const MCP_OAUTH_MAX_REDIRECTS = 3;
@@ -272,11 +271,7 @@ function redirectLocation(response: Response): string | null {
 }
 
 export const mcpOAuthSafeFetch: FetchLike = async (input, init) => {
-  const timeoutSignal = AbortSignal.timeout(MCP_OAUTH_FETCH_TIMEOUT_MS);
-  const signal = AbortSignal.any([
-    new Request(input, init).signal,
-    timeoutSignal,
-  ]);
+  const signal = new Request(input, init).signal;
   const requestData = serializedRequest(init);
   let url = allowedUrl(input);
   let redirectCount = 0;

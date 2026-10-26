@@ -1464,3 +1464,5 @@ export {
   desktopShellAuthorizationSchema,
   type DesktopShellAuthorization,
 } from "./desktop-shell-authorization";
+
+export { iosPushRegistrationsContract } from "./ios-push-registrations";

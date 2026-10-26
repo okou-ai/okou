@@ -380,96 +380,46 @@ describe("optional shared-thread titles", () => {
     },
   );
 
-  it("preserves cancellation before request dispatch", async () => {
+  it("preserves API owner cancellation before the provider completes", async () => {
     const fixture = await prepareShare();
     const controller = new AbortController();
-    const reason = new DOMException("Caller cancelled", "AbortError");
-    controller.abort(reason);
+    const reason = new DOMException("API owner cancelled", "AbortError");
+    const entered = createDeferredPromise<AbortSignal>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const returned = createDeferredPromise<void>(context.signal);
     mockGoogleText();
-    const requests: string[] = [];
     server.use(
-      http.post(endpoint, ({ request }) => {
-        requests.push(request.url);
+      http.post(endpoint, async ({ request }) => {
+        entered.resolve(request.signal);
+        await release.promise;
+        returned.resolve(undefined);
         return completion();
       }),
     );
-    await expect(
-      client(true).create({
-        ...requestBody(fixture),
-        fetchOptions: { signal: controller.signal },
-      }),
-    ).rejects.toBe(reason);
+    const request = client(true, controller.signal).create(
+      requestBody(fixture),
+    );
+    const outcome = Promise.allSettled([request]);
+    onTestFinished(async () => {
+      controller.abort(reason);
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await outcome;
+    });
+    const providerSignal = await entered.promise;
+    controller.abort(reason);
+    await expect(outcome).resolves.toStrictEqual([
+      { status: "rejected", reason },
+    ]);
+    expect(providerSignal.aborted).toBeTruthy();
+    expect(providerSignal.reason).toBe(reason);
+    await expectNoShare(fixture);
+    release.resolve(undefined);
+    await returned.promise;
     await flushWaitUntilForTest();
     await expectNoShare(fixture);
-    expect(requests).toStrictEqual([]);
   });
-
-  it.each([
-    { late: "success", cancellation: "request" },
-    { late: "rejection", cancellation: "request" },
-    { late: "success", cancellation: "lifecycle" },
-  ])(
-    "preserves $cancellation cancellation before the provider's late $late",
-    async ({ late, cancellation }) => {
-      const fixture = await prepareShare();
-      const controller = new AbortController();
-      const reason =
-        late === "success"
-          ? new DOMException("Caller deadline", "TimeoutError")
-          : new DOMException("Caller cancelled", "AbortError");
-      const entered = createDeferredPromise<AbortSignal>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const returned = createDeferredPromise<void>(context.signal);
-      mockGoogleText();
-      server.use(
-        http.post(endpoint, async ({ request }) => {
-          entered.resolve(request.signal);
-          await release.promise;
-          returned.resolve(undefined);
-          return late === "success" ? completion() : HttpResponse.error();
-        }),
-      );
-      const request = client(
-        late === "success",
-        cancellation === "lifecycle" ? controller.signal : context.signal,
-      ).create({
-        ...requestBody(fixture),
-        fetchOptions: {
-          signal: cancellation === "request" ? controller.signal : undefined,
-        },
-      });
-      const outcome = Promise.allSettled([request]);
-      onTestFinished(async () => {
-        controller.abort(reason);
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-        await outcome;
-      });
-      const providerSignal = await entered.promise;
-      controller.abort(reason);
-      await expect(outcome).resolves.toStrictEqual([
-        {
-          status: "rejected",
-          reason:
-            late === "success"
-              ? reason
-              : expect.objectContaining({
-                  message: expect.stringContaining(
-                    "Unknown response status 500",
-                  ),
-                }),
-        },
-      ]);
-      expect(providerSignal.aborted).toBeTruthy();
-      expect(providerSignal.reason).toBe(reason);
-      await expectNoShare(fixture);
-      release.resolve(undefined);
-      await returned.promise;
-      await flushWaitUntilForTest();
-      await expectNoShare(fixture);
-    },
-  );
 
   it("keeps authentication, ownership and selection failures outside optional generation", async () => {
     const fixture = await prepareShare();

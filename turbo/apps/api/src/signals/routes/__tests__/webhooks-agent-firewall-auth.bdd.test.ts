@@ -2565,48 +2565,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     expect(attempts).toBe(1);
   });
 
-  it("stops Google Sheets retry backoff at the shared refresh deadline", async () => {
-    const { fw, headers, body } =
-      await publicGoogleRefreshFixture("google-sheets");
-    mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", "25");
-    let attempts = 0;
-    onTestFinished(() => {
-      mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
-    });
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        attempts += 1;
-        return HttpResponse.error();
-      }),
-    );
-
-    const failed = await fw.requestFirewallAuth(headers, body, [502]);
-    if (failed.status !== 502) {
-      throw new Error(
-        "Expected the Google Sheets refresh deadline to stop retries",
-      );
-    }
-    expect(failed.body.error.failureReason).toBe("upstream_provider");
-    expect(attempts).toBe(1);
-
-    mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", () => {
-        return HttpResponse.json({
-          access_token: "after-sheets-timeout",
-          expires_in: 3600,
-        });
-      }),
-    );
-    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-    if (recovered.status !== 200) {
-      throw new Error("Expected the timed-out Google Sheets grant to recover");
-    }
-    expect(recovered.body.headers.Authorization).toBe(
-      "Bearer after-sheets-timeout",
-    );
-  });
-
   it("treats refresh responses without an access token as upstream failures", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await publicConnections.run();
@@ -2687,77 +2645,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       "test-oauth",
     );
     expect(connector.connectionStatus).toBe("reconnect-required");
-  });
-
-  it("classifies refresh timeouts as upstream without marking reconnect", async () => {
-    const fw = createFirewallApi(context);
-    mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", "25");
-    onTestFinished(() => {
-      mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
-    });
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.testOAuth(actor, {
-      accessToken: "stale-access",
-      refreshToken: "refresh-1",
-      expiresIn: -60,
-    });
-    fw.mockTestOauthTokenRefresh(async (request) => {
-      // The provider keeps the response open until the caller cancels its own
-      // request. This exercises the real refresh deadline without a sleep.
-      const aborted = createDeferredPromise<void>(context.signal);
-      if (request.signal.aborted) {
-        aborted.resolve(undefined);
-      } else {
-        request.signal.addEventListener(
-          "abort",
-          () => {
-            aborted.resolve(undefined);
-          },
-          { once: true },
-        );
-      }
-      await aborted.promise;
-      return fw.oauthTokenResponse({
-        accessToken: "too-late",
-        expiresIn: 3600,
-      });
-    });
-
-    const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-      }),
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-      },
-      ...(await exactSecretConnectorSources(actor, {
-        TEST_OAUTH_TOKEN: "test-oauth",
-      })),
-    };
-
-    const timedOut = await fw.requestFirewallAuth(headers, body, [502]);
-    if (timedOut.status !== 502) {
-      throw new Error("Expected the refresh timeout to fail with 502");
-    }
-    expect(timedOut.body.error.code).toBe("TOKEN_REFRESH_FAILED");
-    expect(timedOut.body.error.failureReason).toBe("upstream_provider");
-    expect(timedOut.body.error.connectors).toStrictEqual(["test-oauth"]);
-
-    // The connector was not flagged for reconnect: with the normal timeout
-    // restored and a fast provider, the next call refreshes successfully.
-    mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
-    fw.mockTestOauthTokenRefresh(() => {
-      return fw.oauthTokenResponse({
-        accessToken: "after-timeout",
-        expiresIn: 3600,
-      });
-    });
-    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
-    if (recovered.status !== 200) {
-      throw new Error("Expected the refresh after the timeout to succeed");
-    }
-    expect(recovered.body.headers.Authorization).toBe("Bearer after-timeout");
-    expect(recovered.body.refreshedConnectors).toStrictEqual(["test-oauth"]);
   });
 
   it("classifies network refresh failures as upstream and recovers", async () => {

@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -130,11 +131,8 @@ function parseHeadRef(pktLineText: string, branch: string): string {
   throw new Error(`refs/heads/${branch} not found in git refs`);
 }
 
-async function fetchHeadCommitSha(signal: AbortSignal): Promise<string> {
-  const response = await fetch(REPO_REFS_URL, { signal });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch git refs: ${response.status}`);
-  }
+async function fetchHeadCommitSha(_signal: AbortSignal): Promise<string> {
+  const response = await accept(fetch(REPO_REFS_URL), [200]);
 
   return parseHeadRef(await response.text(), DEFAULT_SKILLS_BRANCH);
 }
@@ -217,10 +215,7 @@ function extractSkillsFromTarball(
 async function downloadAndExtractSkills(
   signal: AbortSignal,
 ): Promise<ExtractedSkill[]> {
-  const response = await fetch(TARBALL_URL, { signal });
-  if (!response.ok) {
-    throw new Error(`Failed to download tarball: ${response.status}`);
-  }
+  const response = await accept(fetch(TARBALL_URL), [200]);
 
   return await extractSkillsFromTarball(
     Buffer.from(await response.arrayBuffer()),

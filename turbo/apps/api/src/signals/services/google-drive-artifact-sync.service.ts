@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   googleWorkspaceTarget,
@@ -94,7 +95,6 @@ const GOOGLE_SLIDES_PRESENTATIONS_URL =
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 /** Drive's documented ceiling for converting an upload into a Slides deck. */
 const GOOGLE_SLIDES_MAX_SOURCE_BYTES = 100 * 1024 * 1024;
-const GOOGLE_DRIVE_STATUS_TIMEOUT_MS = 2000;
 const GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY = "vm0Artifact";
 const GOOGLE_DRIVE_THREAD_APP_PROPERTY = "vm0ThreadId";
 const GOOGLE_DRIVE_RUN_APP_PROPERTY = "vm0RunId";
@@ -388,7 +388,7 @@ async function listArtifactFiles(
     readonly threadId: string;
     readonly source?: DriveArtifactStatusSource;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<DriveListResult> {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set(
@@ -416,10 +416,25 @@ async function listArtifactFiles(
   );
   url.searchParams.set("pageSize", "1000");
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${args.accessToken}` },
-    signal,
-  });
+  const acceptedResponse = await settle(
+    accept(
+      fetch(url, {
+        headers: { Authorization: `Bearer ${args.accessToken}` },
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
   if (response.status === 401) {
     return { type: "unauthorized" };
   }
@@ -703,13 +718,8 @@ export const googleDriveArtifactStatusLookup$ = command(
       };
     }
     const { tokens } = connection;
-    // Schema-parse failure or transient network error — treat as "unknown"
-    // rather than failing the whole artifacts response. Request aborts still
-    // propagate; the status deadline remains an unknown provider outcome.
-    const providerSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(GOOGLE_DRIVE_STATUS_TIMEOUT_MS),
-    ]);
+    // Schema-parse failure or transient network error is an unknown provider
+    // outcome rather than a failure of the whole artifacts response.
     const files = await tapError(
       set(
         listArtifactFilesWithRefresh$,
@@ -721,7 +731,7 @@ export const googleDriveArtifactStatusLookup$ = command(
           source: args.source,
           userId: args.userId,
         },
-        providerSignal,
+        signal,
       ),
     );
     signal.throwIfAborted();
@@ -1120,9 +1130,25 @@ async function findDriveFolder(args: {
   url.searchParams.set("fields", "files(id,name)");
   url.searchParams.set("pageSize", "1");
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${args.accessToken}` },
-  });
+  const acceptedResponse2 = await settle(
+    accept(
+      fetch(url, {
+        headers: { Authorization: `Bearer ${args.accessToken}` },
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse2.ok) {
+    response = acceptedResponse2.value;
+  } else if (
+    acceptedResponse2.error instanceof HttpStatusError &&
+    acceptedResponse2.error.status >= 300
+  ) {
+    response = acceptedResponse2.error.response;
+  } else {
+    throw acceptedResponse2.error;
+  }
   if (response.status === 401) {
     return { type: "unauthorized" };
   }
@@ -1143,18 +1169,34 @@ async function createDriveFolder(args: {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set("fields", "id,name");
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${args.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: args.name,
-      mimeType: GOOGLE_DRIVE_FOLDER_MIME_TYPE,
-      ...(args.parentFolderId ? { parents: [args.parentFolderId] } : {}),
-    }),
-  });
+  const acceptedResponse3 = await settle(
+    accept(
+      fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${args.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: args.name,
+          mimeType: GOOGLE_DRIVE_FOLDER_MIME_TYPE,
+          ...(args.parentFolderId ? { parents: [args.parentFolderId] } : {}),
+        }),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse3.ok) {
+    response = acceptedResponse3.value;
+  } else if (
+    acceptedResponse3.error instanceof HttpStatusError &&
+    acceptedResponse3.error.status >= 300
+  ) {
+    response = acceptedResponse3.error.response;
+  } else {
+    throw acceptedResponse3.error;
+  }
   if (response.status === 401) {
     return { type: "unauthorized" };
   }
@@ -1258,16 +1300,32 @@ async function uploadDriveFile(args: {
   const sessionUrl = new URL(GOOGLE_DRIVE_UPLOAD_URL);
   sessionUrl.searchParams.set("uploadType", "resumable");
   sessionUrl.searchParams.set("fields", "id,name,mimeType,webViewLink");
-  const session = await fetch(sessionUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${args.accessToken}`,
-      "Content-Type": "application/json; charset=UTF-8",
-      "X-Upload-Content-Type": args.contentType,
-      "X-Upload-Content-Length": String(args.file.byteLength),
-    },
-    body: metadata,
-  });
+  const acceptedResponse4 = await settle(
+    accept(
+      fetch(sessionUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${args.accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": args.contentType,
+          "X-Upload-Content-Length": String(args.file.byteLength),
+        },
+        body: metadata,
+      }),
+      [200],
+    ),
+  );
+  let session: Response;
+  if (acceptedResponse4.ok) {
+    session = acceptedResponse4.value;
+  } else if (
+    acceptedResponse4.error instanceof HttpStatusError &&
+    acceptedResponse4.error.status >= 300
+  ) {
+    session = acceptedResponse4.error.response;
+  } else {
+    throw acceptedResponse4.error;
+  }
   if (!session.ok) {
     return session;
   }
@@ -1278,20 +1336,35 @@ async function uploadDriveFile(args: {
 
   const body = new Uint8Array(args.file.byteLength);
   body.set(args.file);
-  return await fetch(location, {
-    method: "PUT",
-    headers: {
-      // Content-Length is forbidden to set explicitly; fetch derives it.
-      "Content-Type": args.contentType,
-      // A zero-length artifact has no byte range to declare, only a total.
-      ...(body.byteLength === 0
-        ? {}
-        : {
-            "Content-Range": `bytes 0-${String(body.byteLength - 1)}/${String(body.byteLength)}`,
-          }),
-    },
-    body,
-  });
+  return await (async () => {
+    const acceptedResponse5 = await settle(
+      accept(
+        fetch(location, {
+          method: "PUT",
+          headers: {
+            // Content-Length is forbidden to set explicitly; fetch derives it.
+            "Content-Type": args.contentType,
+            // A zero-length artifact has no byte range to declare, only a total.
+            ...(body.byteLength === 0
+              ? {}
+              : {
+                  "Content-Range": `bytes 0-${String(body.byteLength - 1)}/${String(body.byteLength)}`,
+                }),
+          },
+          body,
+        }),
+        [200, 201],
+      ),
+    );
+    if (!acceptedResponse5.ok) {
+      const error = acceptedResponse5.error;
+      if (error instanceof HttpStatusError && error.status >= 300) {
+        return error.response;
+      }
+      throw error;
+    }
+    return acceptedResponse5.value;
+  })();
 }
 
 async function uploadArtifactWithToken(args: {
@@ -1384,20 +1457,32 @@ async function trashDriveFile(
     readonly accessToken: string;
     readonly fileId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<boolean> {
-  const response = await fetch(
-    new URL(`${GOOGLE_DRIVE_FILES_URL}/${args.fileId}`),
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${args.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ trashed: true }),
-      signal,
-    },
+  const acceptedResponse6 = await settle(
+    accept(
+      fetch(new URL(`${GOOGLE_DRIVE_FILES_URL}/${args.fileId}`), {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${args.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trashed: true }),
+      }),
+      [200],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse6.ok) {
+    response = acceptedResponse6.value;
+  } else if (
+    acceptedResponse6.error instanceof HttpStatusError &&
+    acceptedResponse6.error.status >= 300
+  ) {
+    response = acceptedResponse6.error.response;
+  } else {
+    throw acceptedResponse6.error;
+  }
   return response.ok;
 }
 
@@ -1417,13 +1502,28 @@ async function rejectEmptyConvertedDeck(
   },
   signal: AbortSignal,
 ): Promise<BadRequestResponse | undefined> {
-  const response = await fetch(
-    new URL(`${GOOGLE_SLIDES_PRESENTATIONS_URL}/${args.presentationId}`),
-    {
-      headers: { Authorization: `Bearer ${args.accessToken}` },
-      signal,
-    },
+  const acceptedResponse7 = await settle(
+    accept(
+      fetch(
+        new URL(`${GOOGLE_SLIDES_PRESENTATIONS_URL}/${args.presentationId}`),
+        {
+          headers: { Authorization: `Bearer ${args.accessToken}` },
+        },
+      ),
+      [200],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse7.ok) {
+    response = acceptedResponse7.value;
+  } else if (
+    acceptedResponse7.error instanceof HttpStatusError &&
+    acceptedResponse7.error.status >= 300
+  ) {
+    response = acceptedResponse7.error.response;
+  } else {
+    throw acceptedResponse7.error;
+  }
   if (!response.ok) {
     // An unreadable check is not evidence of an empty deck; keep the file.
     return undefined;
@@ -1473,7 +1573,7 @@ async function findWorkspaceImport(
     readonly fileId: string;
     readonly target: GoogleWorkspaceTarget;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<
   | DriveTokenResult<z.infer<typeof driveFileSchema> | null>
   | { readonly type: "unavailable" }
@@ -1493,10 +1593,25 @@ async function findWorkspaceImport(
   );
   url.searchParams.set("pageSize", "1");
   url.searchParams.set("orderBy", "createdTime desc");
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${args.accessToken}` },
-    signal,
-  });
+  const acceptedResponse8 = await settle(
+    accept(
+      fetch(url, {
+        headers: { Authorization: `Bearer ${args.accessToken}` },
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse8.ok) {
+    response = acceptedResponse8.value;
+  } else if (
+    acceptedResponse8.error instanceof HttpStatusError &&
+    acceptedResponse8.error.status >= 300
+  ) {
+    response = acceptedResponse8.error.response;
+  } else {
+    throw acceptedResponse8.error;
+  }
   if (response.status === 401) {
     return { type: "unauthorized" };
   }
@@ -1524,10 +1639,25 @@ async function verifyWorkspaceImport(
     `${GOOGLE_DRIVE_FILES_URL}/${encodeURIComponent(args.fileId)}`,
   );
   url.searchParams.set("fields", "id,name,mimeType,webViewLink,trashed");
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${args.accessToken}` },
-    signal,
-  });
+  const acceptedResponse9 = await settle(
+    accept(
+      fetch(url, {
+        headers: { Authorization: `Bearer ${args.accessToken}` },
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse9.ok) {
+    response = acceptedResponse9.value;
+  } else if (
+    acceptedResponse9.error instanceof HttpStatusError &&
+    acceptedResponse9.error.status >= 300
+  ) {
+    response = acceptedResponse9.error.response;
+  } else {
+    throw acceptedResponse9.error;
+  }
   if (!response.ok) {
     return "Google created the file, but its conversion result could not be confirmed. Check Drive before retrying.";
   }
@@ -2002,22 +2132,34 @@ async function finishDriveUpload(
     if (failure) {
       return badRequestMessage(failure);
     }
-    const completed = await fetch(
-      `${GOOGLE_DRIVE_FILES_URL}/${encodeURIComponent(body.id)}`,
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          appProperties: {
-            [GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY]: "complete-v1",
+    const acceptedResponse10 = await settle(
+      accept(
+        fetch(`${GOOGLE_DRIVE_FILES_URL}/${encodeURIComponent(body.id)}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            appProperties: {
+              [GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY]: "complete-v1",
+            },
+          }),
         }),
-        signal,
-      },
+        [200],
+      ),
     );
+    let completed: Response;
+    if (acceptedResponse10.ok) {
+      completed = acceptedResponse10.value;
+    } else if (
+      acceptedResponse10.error instanceof HttpStatusError &&
+      acceptedResponse10.error.status >= 300
+    ) {
+      completed = acceptedResponse10.error.response;
+    } else {
+      throw acceptedResponse10.error;
+    }
     if (!completed.ok) {
       return badRequestMessage(
         "Google Slides fonts were restored, but completion could not be recorded. Check the uploaded copy before retrying.",

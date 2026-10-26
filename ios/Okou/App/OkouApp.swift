@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct OkouApp: App {
+  @UIApplicationDelegateAdaptor(NotificationAppDelegate.self) private var delegate
   @State private var authentication: AuthenticationService?
   private let configuration = Result { try AppConfiguration() }
 
@@ -19,7 +20,9 @@ struct OkouApp: App {
         if let authentication {
           switch configuration {
           case .success(let configuration):
-            AppRootView(authentication: authentication, configuration: configuration)
+            AppRootView(
+              authentication: authentication, configuration: configuration,
+              notifications: delegate.notifications)
           case .failure(let error):
             ContentUnavailableView(
               "Unable to start Okou", systemImage: "exclamationmark.triangle",
@@ -40,17 +43,21 @@ struct AppRootView: View {
   let authentication: AuthenticationService
   let configuration: AppConfiguration
   let session: URLSession
+  let notifications: NotificationService
+  @State private var workspaceData: NotificationWorkspace?
+  @State private var presentedScopeID: String?
   @State private var accountError: String?
   @State private var foregroundRefresh: Task<Void, Never>?
   @Environment(\.scenePhase) private var scenePhase
 
   init(
     authentication: AuthenticationService, configuration: AppConfiguration,
-    session: URLSession = .shared
+    session: URLSession = .shared, notifications: NotificationService
   ) {
     self.authentication = authentication
     self.configuration = configuration
     self.session = session
+    self.notifications = notifications
   }
 
   var body: some View {
@@ -60,21 +67,53 @@ struct AppRootView: View {
         let workspaceID = authentication.activeWorkspaceID,
         let userID = authentication.userID
       {
-        WorkspaceRootView(
-          authentication: authentication, configuration: configuration,
-          workspaceID: workspaceID, userID: userID, scopeID: scopeID,
-          accountError: $accountError, session: session
-        )
-        .id(scopeID)
+        if let workspaceData, workspaceData.scopeID == scopeID,
+          scenePhase == .active || presentedScopeID == scopeID
+        {
+          WorkspaceRootView(
+            authentication: authentication, configuration: configuration,
+            workspaceID: workspaceID, userID: userID, scopeID: scopeID,
+            accountError: $accountError, data: workspaceData, notifications: notifications
+          )
+          .id(scopeID)
+        } else {
+          ProgressView()
+        }
       } else {
         SignInView(authentication: authentication, webURL: configuration.webURL)
       }
     }
+    .task(id: authentication.scopeID) {
+      notifications.prepareWorkspace = {
+        if authentication.isLoading { await authentication.refresh() }
+        return notifications.data(
+          authentication: authentication, configuration: configuration, session: session)
+      }
+      let data = notifications.data(
+        authentication: authentication, configuration: configuration, session: session)
+      workspaceData = data
+      if scenePhase == .active { presentedScopeID = data?.scopeID }
+      await notifications.update(workspace: data)
+    }
+    .task(
+      id: NotificationNavigationIdentity(
+        userID: authentication.userID, isLoading: authentication.isLoading,
+        destination: notifications.pendingDestination)
+    ) {
+      notifications.preparePending(authentication: authentication)
+    }
     .onChange(of: scenePhase) { _, phase in
+      if phase == .active { presentedScopeID = authentication.scopeID }
       foregroundRefresh?.cancel()
-      foregroundRefresh = phase == .active ? Task { await authentication.refresh() } : nil
+      foregroundRefresh =
+        phase == .active
+        ? Task {
+          await authentication.refresh()
+          await notifications.refreshRegistration()
+        } : nil
     }
     .onDisappear { foregroundRefresh?.cancel() }
+    .onChange(of: notifications.error) { _, error in accountError = error }
     .alert(
       "Unable to update account",
       isPresented: Binding(
@@ -92,6 +131,7 @@ private struct WorkspaceRootView: View {
   let authentication: AuthenticationService
   let workspaceID: String
   let userID: String
+  let notifications: NotificationService
   @State private var store: WorkspaceStore
   @State private var sidebar = SidebarInteraction()
   @State private var topContentHeight: CGFloat = 0
@@ -103,24 +143,16 @@ private struct WorkspaceRootView: View {
   init(
     authentication: AuthenticationService, configuration: AppConfiguration,
     workspaceID: String, userID: String, scopeID: String,
-    accountError: Binding<String?>, session: URLSession
+    accountError: Binding<String?>, data: NotificationWorkspace, notifications: NotificationService
   ) {
     self.authentication = authentication
     self.workspaceID = workspaceID
     self.userID = userID
     _accountError = accountError
-    let client = APIClient(
-      baseURL: configuration.apiURL, clientVersion: configuration.appVersion, session: session
-    ) {
-      try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
-    }
+    self.notifications = notifications
     _store = State(
       initialValue: WorkspaceStore(
-        client: client, webURL: configuration.webURL,
-        cache: ChatCache(
-          scope: ChatCacheScope(
-            apiBaseURL: configuration.apiURL,
-            userID: userID, workspaceID: workspaceID)),
+        client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
         draftStorage: ChatDraftStorage(
           scope: ChatCacheScope(
             apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID))))
@@ -140,6 +172,7 @@ private struct WorkspaceRootView: View {
 
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
+          notifications: notifications,
           headerHeight: headerHeight,
           accountError: $accountError,
           close: closeSidebar,
@@ -259,8 +292,16 @@ private struct WorkspaceRootView: View {
       }
     }
     .task {
+      let target = store
+      notifications.didSynchronize = { [weak target] in
+        target?.requestRefresh(.history(threadID: $0))
+      }
       store.setForeground(scenePhase == .active)
       await store.start(userID: userID, workspaceID: workspaceID)
+      await notifications.openPending(authentication: authentication, store: store)
+    }
+    .task(id: notifications.pendingDestination) {
+      await notifications.openPending(authentication: authentication, store: store)
     }
     .onDisappear {
       sidebar.cancelDrag()
@@ -363,4 +404,10 @@ private struct WorkspaceRootView: View {
     store.startNewChat(agentID: agentID)
     closeSidebar()
   }
+}
+
+private struct NotificationNavigationIdentity: Hashable {
+  let userID: String?
+  let isLoading: Bool
+  let destination: NotificationDestination?
 }

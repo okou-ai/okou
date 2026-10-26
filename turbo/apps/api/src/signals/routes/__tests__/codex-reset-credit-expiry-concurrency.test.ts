@@ -128,36 +128,4 @@ describe("Codex expiry concurrent readers and cancellation", () => {
     expectExpiry(await user.list(), remote.expiry);
     expect(remote.detailsCalls).toBe(3);
   });
-
-  it("uses only the local five-second deadline for a timeout cooldown", async () => {
-    mockNow(Date.UTC(2030, 0, 1));
-    const remote = upstream();
-    const user = await fixture();
-    const started = createDeferredPromise<void>(context.signal);
-    const deadline = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<Response>(context.signal);
-    remote.details = () => {
-      started.resolve();
-      return release.promise;
-    };
-    context.mocks.signalTimers.delay.mockImplementation((ms) => {
-      expect(ms).toBe(5000);
-      return deadline.promise;
-    });
-    const attempt = user.list();
-    await started.promise;
-    deadline.resolve();
-    expectExpiry(await attempt, null, 2);
-    release.resolve(expiryResponse(remote.expiry));
-    mockNow(now() + 59_999);
-    expectExpiry(await user.list(), null, 3);
-    expect(remote.detailsCalls).toBe(2);
-    context.mocks.signalTimers.delay.mockReset();
-    remote.details = () => {
-      return expiryResponse(remote.expiry);
-    };
-    mockNow(now() + 1);
-    expectExpiry(await user.list(), remote.expiry, 4);
-    expect(remote.detailsCalls).toBe(3);
-  });
 });

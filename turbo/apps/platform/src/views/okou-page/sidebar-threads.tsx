@@ -40,7 +40,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  getShortcutLabel,
   cn,
 } from "@okouai/ui";
 import {
@@ -106,6 +105,7 @@ import { ThreadNumberShortcutHint } from "./thread-number-shortcut-hint.tsx";
 import { Link } from "../router/link.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
+import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
 import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -125,17 +125,6 @@ function chatThreadMenuContentClassName(touch: boolean) {
   return cn(
     "min-w-56 whitespace-nowrap",
     touch && "[&_[role=menuitem]]:min-h-11",
-  );
-}
-
-function ChatThreadMenuShortcut({ shortcut }: { readonly shortcut: string }) {
-  return (
-    <kbd
-      aria-hidden="true"
-      className="ml-auto shrink-0 whitespace-nowrap pl-4 font-sans text-xs opacity-70"
-    >
-      {getShortcutLabel(shortcut)}
-    </kbd>
   );
 }
 
@@ -743,7 +732,10 @@ export function ChatThreadItem({
   touch?: boolean;
 }) {
   return (
-    <div className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center">
+    <div
+      data-sidebar-chat-thread-row-id={signals.threadId}
+      className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center"
+    >
       <ChatThreadItemLink
         signals={signals}
         shortcutNumber={shortcutNumber}

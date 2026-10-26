@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
 import { command, computed, type Computed } from "ccstate";
@@ -75,26 +76,24 @@ export function stopWechatPoller(connectionId: string, signal: AbortSignal) {
 async function controlWechatPoller(
   path: string,
   body: unknown,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ) {
   const url = env("WECHAT_GATEWAY_URL");
   const secret = env("WECHAT_GATEWAY_CONTROL_SECRET");
   if (!url || !secret) {
     throw new Error("WeChat receiver is not configured");
   }
-  const response = await fetch(new URL(path, url), {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-  });
-  if (!response.ok) {
-    throw new Error("WeChat receiver is unavailable");
-  }
+  await accept(
+    fetch(new URL(path, url), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify(body),
+    }),
+    [200],
+  );
 }
 
 export function createWechatMembership(
