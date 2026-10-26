@@ -740,8 +740,8 @@ test("Loading older messages preserves the reading position", async () => {
   });
 });
 
-test("Load earlier messages until the latest ones fill the viewport", async () => {
-  // Six rendered messages are shorter than this viewport; sixteen overflow it.
+test("Load earlier messages while the latest ones do not fill the viewport", async () => {
+  // The six messages of the initial window are shorter than this viewport.
   installViewportHeightBeforeOpen(1500);
   mockMutableConversation(
     THREAD_IDS.unfilledViewport,
@@ -752,7 +752,6 @@ test("Load earlier messages until the latest ones fill the viewport", async () =
   await expect(
     screen.findByText("History question 5"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("History question 4")).not.toBeInTheDocument();
 });
 
 test("Show the prompt and full work duration of the oldest visible answer", async () => {

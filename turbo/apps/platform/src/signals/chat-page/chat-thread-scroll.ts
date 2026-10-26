@@ -599,19 +599,31 @@ function createRequestScrollAfterRender(
 
 /**
  * Following the tail again commits the larger window, whose commit measures
- * the viewport and repeats until the transcript overflows or history ends.
+ * the viewport and repeats until the transcript overflows or history ends. A
+ * newer scroll request, such as a jump to a linked message, keeps its target
+ * and measures again on its own commit.
  */
 function createFillViewportWithEarlierGroups(
+  runtime: ScrollRuntime,
   loadEarlierGroups$: ChatThreadScrollRenderWindow["loadEarlierGroups$"],
   requestScrollAfterRender$: ReturnType<typeof createRequestScrollAfterRender>,
 ) {
-  return command(async ({ set }, signal: AbortSignal): Promise<void> => {
-    const didPrepend = await set(loadEarlierGroups$, signal);
-    signal.throwIfAborted();
-    if (didPrepend) {
-      await set(requestScrollAfterRender$, null, "instant", signal);
-    }
-  });
+  return command(
+    async (
+      { set },
+      committedRevision: number,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const didPrepend = await set(loadEarlierGroups$, signal);
+      signal.throwIfAborted();
+      if (
+        didPrepend &&
+        runtime.latestRenderRequestRevision === committedRevision
+      ) {
+        await set(requestScrollAfterRender$, null, "instant", signal);
+      }
+    },
+  );
 }
 
 /** Commits scroll only when React acknowledges the matching event batch. */
@@ -639,6 +651,7 @@ function createRenderScrollSignals(
     internalPendingRequest$,
   );
   const fillViewportWithEarlierGroups$ = createFillViewportWithEarlierGroups(
+    runtime,
     loadEarlierGroups$,
     requestScrollAfterRender$,
   );
@@ -711,7 +724,7 @@ function createRenderScrollSignals(
           // Like a scroll-triggered load, this outlives the marker, which
           // unmounts once its request clears.
           detach(
-            set(fillViewportWithEarlierGroups$, get(pageSignal$)),
+            set(fillViewportWithEarlierGroups$, revision, get(pageSignal$)),
             Reason.DomCallback,
             "load earlier chat history into an unfilled viewport",
           );
