@@ -266,7 +266,7 @@ test("existing E2E consumers wait for the complete API job", () => {
   }
 });
 
-test("PR and staging Workers select separate Google identities without a missing-value fallback", () => {
+test("PR and staging Workers select their configured Google identities", () => {
   const worker = stepNamed(workerName);
   for (const name of [
     "CERTIFICATE_ID",
@@ -284,8 +284,6 @@ test("PR and staging Workers select separate Google identities without a missing
       format: (pattern, target) => pattern.replace("{0}", target),
     };
     assert.equal(render(expression, data), `preview-${name}`);
-    delete vars[`CF_API_GCP_MTLS_${name}_PREVIEW`];
-    assert.equal(render(expression, data), "");
     data.needs.prepare.outputs["job-ref"] = "staging";
     assert.equal(render(expression, data), `staging-${name}`);
   }

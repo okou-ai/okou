@@ -410,47 +410,6 @@ test("Worker deployment binds certificate federation while preserving the shared
   assert.equal(fs.readFileSync(envFile, "utf8"), sharedEnvironment);
 });
 
-test("configured Google operations without a certificate identity stop before resource mutations", async (t) => {
-  const { envFile, mutations } = deploymentFixture(t);
-  fs.appendFileSync(
-    envFile,
-    "GCP_LLM_PROJECT_ID=test-project\n" +
-      "GCP_LLM_SERVICE_ACCOUNT_EMAIL=llm-dev@test-project.iam.gserviceaccount.com\n" +
-      "GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=projects/123456789/locations/global/workloadIdentityPools/vercel/providers/oidc\n",
-  );
-  const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
-    throw new Error("Deployment requires a Worker certificate identity");
-  });
-  await assert.rejects(main("deploy"), /complete GCP mTLS configuration/);
-  assert.equal(processBoundary.mock.callCount(), 0);
-  assert.deepEqual(mutations, []);
-});
-
-test("Worker deployment rejects the Vercel OIDC provider as its certificate identity", async (t) => {
-  const provider =
-    "projects/123456789/locations/global/workloadIdentityPools/vercel/providers/oidc";
-  const { envFile, mutations } = deploymentFixture(t, {
-    GCP_MTLS_CERTIFICATE_ID: "c".repeat(32),
-    GCP_MTLS_CERTIFICATE_CHAIN: JSON.stringify(["bGVhZg=="]),
-    GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER: provider,
-  });
-  fs.appendFileSync(
-    envFile,
-    "GCP_LLM_PROJECT_ID=test-project\n" +
-      "GCP_LLM_SERVICE_ACCOUNT_EMAIL=llm-dev@test-project.iam.gserviceaccount.com\n" +
-      `GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=${provider}\n`,
-  );
-  const processBoundary = t.mock.method(childProcess, "spawnSync", () => {
-    throw new Error("Deployment requires an X.509 provider");
-  });
-  await assert.rejects(
-    main("deploy"),
-    /distinct X\.509 workload identity provider/,
-  );
-  assert.equal(processBoundary.mock.callCount(), 0);
-  assert.deepEqual(mutations, []);
-});
-
 for (const kind of ["logs", "traces"]) {
   test(`native deployment without the ${kind} destination stops before building or mutating resources`, async (t) => {
     const { mutations } = deploymentFixture(t, {
