@@ -2924,12 +2924,10 @@ function IllustrationTemplateCard({
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
-  documentTemplatesEnabled,
   onChange,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
-  documentTemplatesEnabled: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -2945,17 +2943,13 @@ function TemplatePickerCategoryNav({
       }),
       Icon: Presentation,
     },
-    ...(documentTemplatesEnabled || customTemplatesEnabled
-      ? [
-          {
-            value: "document",
-            label: t(($) => {
-              return $.documentTemplates.title;
-            }),
-            Icon: FileText,
-          },
-        ]
-      : []),
+    {
+      value: "document",
+      label: t(($) => {
+        return $.documentTemplates.title;
+      }),
+      Icon: FileText,
+    },
     {
       value: "website",
       label: t(($) => {
@@ -4931,9 +4925,6 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
-                documentTemplatesEnabled={
-                  features[FeatureSwitchKey.BuiltinDocumentTemplates] === true
-                }
                 onChange={handleCategoryChange}
               />
               {/* Keep the existing single active content tree and its category
@@ -5258,9 +5249,6 @@ function selectedComposerTemplateAttachment(
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
   const category = useGet(signals.template.templatePickerCategory$);
-  const pickerFeatures = useGet(featureSwitch$);
-  const customTemplatesEnabled =
-    pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
   const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
   const templateMode = createMode === "image" ? "illustration" : createMode;
@@ -5278,8 +5266,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
           });
   const selectedCategory = resolveTemplatePickerCategory(
     templateMode === "presentation" ? "slides" : (templateMode ?? category),
-    customTemplatesEnabled,
-    pickerFeatures[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const open = () => {
     openTemplatePicker({ kind: "insert", category: selectedCategory });

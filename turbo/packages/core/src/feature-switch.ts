@@ -168,14 +168,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.BuiltinDocumentTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Built-in document templates",
-    description:
-      "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
-    enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Custom templates",

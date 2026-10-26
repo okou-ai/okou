@@ -568,8 +568,6 @@ function ComposerDocumentRecommendations({
   const switches = useGet(featureSwitch$);
   const customTemplatesEnabled =
     switches[FeatureSwitchKey.CustomTemplates] === true;
-  const builtinTemplatesEnabled =
-    switches[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
   const custom = useCustomTemplateRecommendations(signals, "document");
   const items = DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
     return item.category === category;
@@ -637,16 +635,14 @@ function ComposerDocumentRecommendations({
                   },
                 ]
               : []),
-            ...(builtinTemplatesEnabled
-              ? DOCUMENT_CATEGORIES.map((id) => {
-                  return {
-                    id,
-                    label: t(($) => {
-                      return $.documentTemplates.categories[id];
-                    }),
-                  };
-                })
-              : []),
+            ...DOCUMENT_CATEGORIES.map((id) => {
+              return {
+                id,
+                label: t(($) => {
+                  return $.documentTemplates.categories[id];
+                }),
+              };
+            }),
           ]}
           onSelect={(id) => {
             if (id === "custom" && customTemplatesEnabled) {
@@ -798,10 +794,6 @@ export function ComposerTaskChips({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const switches = useGet(featureSwitch$);
-  const documentTemplatesEnabled =
-    switches[FeatureSwitchKey.BuiltinDocumentTemplates] === true ||
-    switches[FeatureSwitchKey.CustomTemplates] === true;
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;
@@ -840,9 +832,6 @@ export function ComposerTaskChips({
   ).filter((task) => {
     if (task === "jobs") {
       return jobsEnabled;
-    }
-    if (task === "document") {
-      return documentTemplatesEnabled;
     }
     if (task === "suggestions") {
       return showSuggestions;

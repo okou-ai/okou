@@ -204,7 +204,6 @@ function menuItemByName(name: string): HTMLElement {
 async function openCustomPanel(
   enabled = true,
   category: "Presentation" | "Document" | "Image" = "Presentation",
-  builtInDocuments = false,
 ) {
   const user = userEvent.setup({ delay: null });
   const capture = mockTemplateChat();
@@ -213,7 +212,6 @@ async function openCustomPanel(
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: enabled,
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: builtInDocuments,
     },
   });
   const dialog = await openTemplatePicker(user);
@@ -663,15 +661,16 @@ test("A document template with no cover is tiled by its format", async () => {
 
   const { dialog } = await openCustomPanel(true, "Document");
   click(tabByText("Document"));
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
 
   await expect(
-    within(dialog).findByText("Brand report"),
+    within(custom).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
   // Nothing was rendered for it, so the tile carries the format it was
   // compiled from rather than an empty frame.
-  expect(within(dialog).getByText("DOCX")).toBeInTheDocument();
+  expect(within(custom).getByText("DOCX")).toBeInTheDocument();
   expect(
-    within(dialog).queryByTestId("document-cover-page"),
+    within(custom).queryByTestId("document-cover-page"),
   ).not.toBeInTheDocument();
 });
 
@@ -688,15 +687,16 @@ test("A document template with a cover is tiled by its first page over a stack",
 
   const { dialog } = await openCustomPanel(true, "Document");
   click(tabByText("Document"));
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
 
-  const page = await within(dialog).findByTestId("document-cover-page");
+  const page = await within(custom).findByTestId("document-cover-page");
   expect(page).toHaveAttribute("src", DOCUMENT_COVER_URL);
   // The page was rendered, so the format glyph steps aside for it.
-  expect(within(dialog).queryByText("DOCX")).not.toBeInTheDocument();
+  expect(within(custom).queryByText("DOCX")).not.toBeInTheDocument();
   // Two sheets for a source that continued, whether it continued for one more
   // page or three hundred: they carry no image, so there is nothing for a
   // third to add.
-  expect(within(dialog).getAllByTestId("document-cover-sheet")).toHaveLength(2);
+  expect(within(custom).getAllByTestId("document-cover-sheet")).toHaveLength(2);
 });
 
 test("Opening a Word template hands the source file to the Office viewer", async () => {
@@ -1302,7 +1302,7 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
 
 test("Custom is a document filter beside All and the built-in purposes", async () => {
   mockCustomTemplates([documentTemplate()]);
-  const { dialog } = await openCustomPanel(true, "Document", true);
+  const { dialog } = await openCustomPanel(true, "Document");
   const custom = within(dialog).getByRole("region", { name: "Custom" });
   await within(custom).findByText("Brand report");
   expect(

@@ -81,9 +81,6 @@ function createDocumentCategorySignals() {
         ? "creative-brief"
         : (selected ?? "creative-brief");
     }
-    if (switches[FeatureSwitchKey.BuiltinDocumentTemplates] !== true) {
-      return "custom";
-    }
     const selected = get(internalDocumentCategory$);
     if (selected !== null) {
       return selected;

@@ -79,7 +79,6 @@ async function openSlashMenu(
     path,
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: true,
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
       ...featureSwitches,
     },
   });
@@ -94,28 +93,25 @@ const CATEGORIES = [
     category: "Presentation",
     kind: "presentation",
     builtInTitle: PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title,
-    builtInCount: 1,
     path: `/chats/${THREAD_ID}`,
   },
   {
     category: "Illustration",
     kind: "illustration",
     builtInTitle: ILLUSTRATION_TEMPLATE_ITEMS[0]!.title,
-    builtInCount: 1,
     path: `/agents/${AGENT_ID}/chat`,
   },
   {
     category: "Document",
     kind: "document",
     builtInTitle: DOCUMENT_TEMPLATE_ITEMS[0]!.title,
-    builtInCount: 0,
     path: `/agents/${AGENT_ID}/chat`,
   },
 ] as const;
 
 test.each(CATEGORIES)(
   "$category offers accessible custom templates and sends their custom references",
-  async ({ category, kind, builtInTitle, builtInCount, path }) => {
+  async ({ category, kind, builtInTitle, path }) => {
     const capture = mockTemplateChat();
     const own = template(kind);
     const shared = {
@@ -139,9 +135,7 @@ test.each(CATEGORIES)(
     const pane = await within(menu).findByRole("region", { name: category });
     await within(pane).findByText(own.title);
     expect(within(pane).getByText(shared.title)).toBeInTheDocument();
-    expect(within(pane).queryAllByText(builtInTitle)).toHaveLength(
-      builtInCount,
-    );
+    expect(within(pane).getByText(builtInTitle)).toBeInTheDocument();
     const otherKind = kind === "presentation" ? "illustration" : "presentation";
     expect(
       within(pane).queryByText(template(otherKind).title),
@@ -182,10 +176,10 @@ test("Disabling custom templates preserves the built-in slash catalog", async ()
   expect(
     within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),
   ).toBeInTheDocument();
-  expect(within(menu).queryByText("Document")).not.toBeInTheDocument();
+  expect(button("Document", menu)).toBeInTheDocument();
 });
 
-test("The Document row opens custom documents when built-in documents are disabled", async () => {
+test("The Document row opens the document template picker", async () => {
   mockTemplateChat();
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(200, [template("presentation"), template("document")]);
@@ -200,14 +194,12 @@ test("The Document row opens custom documents when built-in documents are disabl
   ).not.toBeInTheDocument();
 });
 
-test("Custom documents appear alongside enabled built-in documents", async () => {
+test("Custom documents appear alongside built-in documents", async () => {
   mockTemplateChat();
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(200, [template("document")]);
   });
-  const { menu } = await openSlashMenu({
-    [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
-  });
+  const { menu } = await openSlashMenu();
   await userEvent.setup().hover(button("Document", menu));
   const pane = await within(menu).findByRole("region", { name: "Document" });
   await within(pane).findByText(template("document").title);

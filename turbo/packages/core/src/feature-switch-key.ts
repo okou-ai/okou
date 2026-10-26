@@ -62,7 +62,6 @@ export enum FeatureSwitchKey {
   ChatThreadInlineRename = "chatThreadInlineRename",
   ChatMessagePdf = "chatMessagePdf",
   CustomTemplates = "customTemplates",
-  BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
   GoogleDocsSheetsConversion = "googleDocsSheetsConversion",

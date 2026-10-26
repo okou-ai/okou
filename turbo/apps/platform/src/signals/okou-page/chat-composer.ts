@@ -4,21 +4,11 @@ import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 /** `category` is null until an entry point or the member names one. */
-export function resolveTemplatePickerCategory(
-  category: string | null,
-  customTemplatesEnabled: boolean,
-  documentTemplatesEnabled: boolean,
-): string {
+export function resolveTemplatePickerCategory(category: string | null): string {
   switch (category) {
-    case "document": {
-      return documentTemplatesEnabled || customTemplatesEnabled
-        ? category
-        : "slides";
-    }
+    case "document":
     case "slides":
     case "website":
     case "illustration":
@@ -240,12 +230,7 @@ function createTemplatePickerListSignals() {
     return get(internalTemplatePickerCategory$);
   });
   const selectedTemplatePickerCategory$ = computed((get) => {
-    const features = get(featureSwitch$);
-    return resolveTemplatePickerCategory(
-      get(templatePickerCategory$),
-      features[FeatureSwitchKey.CustomTemplates] === true,
-      features[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
-    );
+    return resolveTemplatePickerCategory(get(templatePickerCategory$));
   });
   const setTemplatePickerCategory$ = command(({ set }, category: string) => {
     set(internalTemplatePickerCategory$, category);

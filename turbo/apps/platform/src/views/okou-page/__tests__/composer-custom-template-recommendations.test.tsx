@@ -95,14 +95,12 @@ async function openShelf(
   label: string,
   enabled = true,
   draft = "Keep my launch brief",
-  builtinDocumentTemplates = task === "Document",
 ) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: enabled,
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: builtinDocumentTemplates,
     },
   });
   const editor = await findComposerEditor();
@@ -493,18 +491,11 @@ test("A late document catalog and later refresh preserve an explicit category ch
   expect(within(shelf).queryByText("Initial document")).not.toBeInTheDocument();
 });
 
-test("Custom alone enables the Document task and sends the selected custom reference", async () => {
+test("The Document task sends the selected custom reference", async () => {
   const { capture, own } = mockShelfCatalog("document");
-  const { editor, shelf } = await openShelf(
-    "Document",
-    "Document templates",
-    true,
-    "Keep my launch brief",
-    false,
-  );
+  const { editor, shelf } = await openShelf("Document", "Document templates");
   await within(shelf).findByText(own.title);
   expect(button("Custom", shelf)).toHaveAttribute("aria-pressed", "true");
-  expect(within(shelf).queryByText("Creative brief")).not.toBeInTheDocument();
   click(button(`Use template ${own.title}`, shelf));
   expect(editor).toHaveTextContent("Keep my launch brief");
   expect(editor).toHaveTextContent(own.title);
@@ -536,8 +527,8 @@ test.each(["shelf", "picker"] as const)(
       "Document templates",
       true,
       "",
-      false,
     );
+    click(button("Custom", shelf));
     let importSurface = shelf;
     if (entry === "picker") {
       click(button("More templates", shelf));

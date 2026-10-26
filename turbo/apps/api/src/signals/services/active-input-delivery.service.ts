@@ -192,10 +192,9 @@ const steeringAnchorSeqId$ = command(
  * Prompts follow the last consumed queue input; the run's own budget remains
  * eligible regardless of that anchor. Both are returned in sequence order.
  * Read-only.
- * A prompt that cannot be steered as is (its template is disabled, its Discord
- * binding is gone, or it exceeds the control payload) yields `null` and stays
- * queued for the next pick, which rejects or launches it; later prompts do not
- * overtake it.
+ * A prompt that cannot be steered as is (its Discord binding is gone, or it
+ * exceeds the control payload) yields `null` and stays queued for the next
+ * pick, which rejects or launches it; later prompts do not overtake it.
  */
 export const loadNextSteerableInput$ = command(
   async (
@@ -255,10 +254,7 @@ export const loadNextSteerableInput$ = command(
       }
       return { outcome: "found", input: null };
     }
-    if (
-      prompt.value === null ||
-      !activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)
-    ) {
+    if (!activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)) {
       return { outcome: "found", input: null };
     }
     return {

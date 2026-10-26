@@ -11,8 +11,6 @@ import { useEditorState } from "@tiptap/react";
 import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -60,7 +58,6 @@ import { composerCreatePlaceholder } from "../../signals/okou-page/composer-crea
 import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../signals/chat-page/workflow-prompt-action.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
-import { slashCustomTemplatesEnabled$ } from "../../signals/okou-page/custom-template-library.ts";
 
 function isMacKeyboard(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -407,21 +404,11 @@ function useSlashTemplateCategorySuggestions(
   query: string | undefined,
 ): readonly SlashTemplateCategory[] {
   useTranslation();
-  const documentTemplatesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
-  const customTemplatesEnabled = useGet(slashCustomTemplatesEnabled$);
   if (query === undefined) {
     return [];
   }
   const normalized = query.toLowerCase().trim();
   return SLASH_TEMPLATE_CATEGORIES.filter((category) => {
-    if (
-      category === "document" &&
-      !documentTemplatesEnabled &&
-      !customTemplatesEnabled
-    ) {
-      return false;
-    }
     return slashTemplateCategoryLabel(category)
       .toLowerCase()
       .includes(normalized);

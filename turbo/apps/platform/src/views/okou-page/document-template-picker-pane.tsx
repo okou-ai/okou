@@ -1,5 +1,4 @@
 import type { ReactNode, UIEvent } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, FileText } from "lucide-react";
@@ -9,7 +8,6 @@ import {
   type DocumentTemplateItem,
 } from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { TemplateSourceSection } from "./template-source-section.tsx";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { DocumentTemplatePickerCategory } from "../../signals/okou-page/document-template-picker.ts";
@@ -45,7 +43,6 @@ export function DocumentTemplatePickerPane({
   const category = useGet(signals.template.documentCategory$);
   const items = useGet(signals.template.documentItems$);
   const search = useGet(signals.template.templatePickerSearch$);
-  const features = useGet(featureSwitch$);
   const filteredItems = customTemplates
     ? items.filter((item) => {
         return item.title.toLowerCase().includes(search.trim().toLowerCase());
@@ -53,16 +50,13 @@ export function DocumentTemplatePickerPane({
     : items;
   const saveScroll = useSet(signals.template.saveDocumentScroll$);
   const restoreScroll = useSet(signals.template.restoreDocumentScroll$);
-  const builtInEnabled =
-    features[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
-  // Without the built-in rollout there is nothing to filter.
-  const filters = builtInEnabled ? (
+  const filters = (
     <DocumentTemplatePickerFilters
       signals={signals}
       category={category}
       withCustom={customTemplates !== undefined}
     />
-  ) : null;
+  );
   const cards = (
     <div className={TEMPLATE_CARD_GRID}>
       {filteredItems.map((item) => {
@@ -83,7 +77,7 @@ export function DocumentTemplatePickerPane({
   );
   const showCustom =
     customTemplates !== undefined &&
-    (!builtInEnabled || category === "all" || category === "custom");
+    (category === "all" || category === "custom");
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {filters}
@@ -97,7 +91,7 @@ export function DocumentTemplatePickerPane({
         data-document-template-grid-scroll=""
       >
         {showCustom ? customTemplates : null}
-        {builtInEnabled && category !== "custom" ? (
+        {category !== "custom" ? (
           customTemplates && category === "all" ? (
             <TemplateSourceSection source="builtIn">
               {cards}
