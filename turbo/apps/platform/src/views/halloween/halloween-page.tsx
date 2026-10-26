@@ -11,10 +11,10 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { HalloweenStage } from "./halloween-art.tsx";
+import { HalloweenHeroArt, HalloweenStage } from "./halloween-art.tsx";
 import { HalloweenQuestionScreen } from "./halloween-game.tsx";
 import {
-  goldButton,
+  campaignButton,
   HalloweenFooter,
   HalloweenHeader,
   HalloweenRules,
@@ -39,64 +39,68 @@ function StartScreen() {
         ? copy.upcomingSub
         : copy.unavailableSub;
   return (
-    <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-14 pb-20 text-center md:py-20 md:pb-24">
-      <h1 className="mb-9 max-w-[900px] text-balance text-[42px] font-medium leading-[1.14] tracking-[-.045em] text-[#f6f3ed] md:text-[68px]">
+    <main className="relative z-10 mx-auto grid w-full max-w-[1280px] flex-1 content-center items-center gap-8 px-6 py-8 text-center md:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] md:gap-12 md:px-12 md:py-16 md:text-left lg:gap-16">
+      <div>
+        <p className="mb-5 text-sm font-medium text-[#B4DEF5]">
+          {copy.campaign}
+        </p>
+        <h1 className="mb-7 text-balance text-[36px] font-medium leading-[1.1] tracking-[-.045em] text-[#FAF5F3] md:text-[52px] lg:text-[60px]">
+          {open ? (
+            <>
+              {copy.title}
+              <span className="mt-2 block text-[#FFA500]">{copy.subtitle}</span>
+            </>
+          ) : (
+            title
+          )}
+        </h1>
         {open ? (
-          <>
-            {copy.title}
-            <span className="mt-2 block text-[1.03em] font-normal italic tracking-[-.045em] text-[#e8c68d] [font-family:Georgia,'Times_New_Roman',serif]">
-              {copy.subtitle}
-            </span>
-          </>
+          <p className="mb-8 text-sm leading-[1.9] text-[#96a5b9]">
+            {copy.rewardPrefix}
+            <strong className="text-[17px] font-medium text-[#FAF5F3]">
+              {copy.rewardEmphasis}
+            </strong>
+            <br />
+            {copy.review}
+          </p>
         ) : (
-          title
+          <p className="mb-8 max-w-[560px] text-base leading-relaxed text-[#a9b8ca]">
+            {subtitle}
+          </p>
         )}
-      </h1>
-      {open ? (
-        <p className="mb-8 text-sm leading-[1.9] text-[#96a5b9]">
-          {copy.rewardPrefix}
-          <strong className="text-[17px] font-medium text-[#e8cfaa]">
-            {copy.rewardEmphasis}
-          </strong>
-          <br />
-          {copy.review}
-        </p>
-      ) : (
-        <p className="mb-8 max-w-[560px] text-base leading-relaxed text-[#a9b8ca]">
-          {subtitle}
-        </p>
-      )}
-      {open ? (
-        <Button
-          className={cn(goldButton, "min-w-[184px]")}
-          pending={operation.state === "loading"}
-          onClick={() => {
-            detach(start(signal), Reason.DomCallback);
-          }}
-        >
-          {copy.start}
-          <ArrowRight className="size-4" />
-        </Button>
-      ) : (
-        <Button
-          nativeButton={false}
-          render={<Link pathname="/" />}
-          className={goldButton}
-        >
-          {copy.back}
-          <ArrowRight className="size-4" />
-        </Button>
-      )}
-      {open && (
-        <p className="mt-6 max-w-[420px] text-xs leading-relaxed text-[#8292a9]">
-          {copy.hint}
-        </p>
-      )}
-      {operation.state === "hasError" && (
-        <p role="alert" className="mt-4 text-sm text-[#ffccde]">
-          {copy.error}
-        </p>
-      )}
+        {open ? (
+          <Button
+            className={cn(campaignButton, "min-w-[184px]")}
+            pending={operation.state === "loading"}
+            onClick={() => {
+              detach(start(signal), Reason.DomCallback);
+            }}
+          >
+            {copy.start}
+            <ArrowRight className="size-4" />
+          </Button>
+        ) : (
+          <Button
+            nativeButton={false}
+            render={<Link pathname="/" />}
+            className={campaignButton}
+          >
+            {copy.back}
+            <ArrowRight className="size-4" />
+          </Button>
+        )}
+        {open && (
+          <p className="mt-5 text-xs leading-relaxed text-[#9caabd]">
+            {copy.hint}
+          </p>
+        )}
+        {operation.state === "hasError" && (
+          <p role="alert" className="mt-4 text-sm text-[#ffccde]">
+            {copy.error}
+          </p>
+        )}
+      </div>
+      <HalloweenHeroArt />
     </main>
   );
 }
@@ -104,15 +108,8 @@ function StartScreen() {
 export function HalloweenPage() {
   const screen = useGet(halloweenScreen$);
   return (
-    <div
-      className={cn(
-        "relative isolate flex min-h-full w-full flex-col overflow-hidden text-[#f6f3ed] antialiased [font-family:Geist,system-ui,sans-serif]",
-        screen === "result"
-          ? "bg-[radial-gradient(ellipse_at_50%_25%,#172c48,#091426_58%,#060d19)]"
-          : "bg-[radial-gradient(ellipse_at_50%_42%,#183452_0,#0c1d34_42%,#060d19_85%)]",
-      )}
-    >
-      {screen !== "result" && <HalloweenStage />}
+    <div className="relative isolate flex min-h-full w-full flex-col overflow-hidden bg-[#102137] text-[#FAF5F3] antialiased [font-family:Geist,system-ui,sans-serif]">
+      <HalloweenStage />
       <HalloweenHeader />
       {screen === "question" ? (
         <HalloweenQuestionScreen />

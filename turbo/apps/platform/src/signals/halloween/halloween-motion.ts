@@ -32,20 +32,6 @@ export const halloweenStageMotion$ = onRef(
     ) {
       return;
     }
-    const beams = Array.from(
-      element.querySelectorAll<HTMLElement>("[data-beam]"),
-    ).map((beam, index) => {
-      return beam.animate(
-        [{ transform: "rotate(-8deg)" }, { transform: "rotate(8deg)" }],
-        {
-          duration: index === 2 ? 22_000 : 16_000,
-          delay: -index * 5000,
-          direction: index === 1 ? "alternate-reverse" : "alternate",
-          iterations: Infinity,
-          easing: "ease-in-out",
-        },
-      );
-    });
     const silhouettes = Array.from(
       element.querySelectorAll<HTMLElement>("[data-haunt]"),
     ).map((art, index) => {
@@ -63,7 +49,7 @@ export const halloweenStageMotion$ = onRef(
         },
       );
     });
-    ownAnimations([...beams, ...silhouettes], signal);
+    ownAnimations(silhouettes, signal);
   }),
 );
 
