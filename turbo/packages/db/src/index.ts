@@ -1,3 +1,4 @@
+import * as iosPushRegistrationSchema from "./schema/ios-push-registration";
 import * as dataRouterRequestSchema from "./schema/data-router-request";
 import * as wechatSchema from "./schema/wechat";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
@@ -161,6 +162,7 @@ import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config
 import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
+  ...iosPushRegistrationSchema,
   ...mailNotificationSchema,
   ...wechatSchema,
   ...getStartedClaimSchema,

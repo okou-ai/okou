@@ -10,6 +10,7 @@ final class RealtimeService {
   private let tokenProvider: @Sendable () async throws -> Data
   private let onChange: @MainActor (ChatInvalidation) -> Void
   private let onConnection: @MainActor (RealtimeConnectionStatus) -> Void
+  private var isForeground = false
   private var realtime: ARTRealtime?
   private var generation = UUID()
   private var connectionAvailability = Availability.connecting
@@ -72,7 +73,10 @@ final class RealtimeService {
         @unknown default: connectionAvailability = .connecting
         }
         reportAvailability()
-        if state == .connected { onChange(.reconnected) }
+        if state == .connected {
+          reconcilePresence()
+          onChange(.reconnected)
+        }
       }
     }
     for name in channelNames {
@@ -122,7 +126,20 @@ final class RealtimeService {
     }
   }
 
+  func setForeground(_ active: Bool) {
+    isForeground = active
+    reconcilePresence()
+  }
+
+  private func reconcilePresence() {
+    guard let realtime, realtime.connection.state == .connected else { return }
+    let presence = realtime.channels.get("user-org-foreground:\(userID):\(workspaceID)").presence
+    if isForeground { presence.enter(nil) } else { presence.leave(nil) }
+  }
+
   func stop() {
+    isForeground = false
+    reconcilePresence()
     generation = UUID()
     realtime?.close()
     realtime = nil

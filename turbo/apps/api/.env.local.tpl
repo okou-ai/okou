@@ -289,3 +289,11 @@ OFFICIAL_RUNNER_SECRET=000000000000000000000000000000000000000000000000000000000
 # `pnpm dev`. A fixed local value is fine; production uses a Vercel-managed
 # secret and never touches this file.
 CRON_SECRET=local-dev-cron-secret
+
+# Optional native push. Production credentials must never be used for sandbox.
+APNS_PRIVATE_KEY_BASE64=
+APNS_KEY_ID=
+APNS_TEAM_ID=
+APNS_SANDBOX_PRIVATE_KEY_BASE64=
+APNS_SANDBOX_KEY_ID=
+APNS_SANDBOX_TEAM_ID=

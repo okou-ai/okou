@@ -59,6 +59,7 @@ with open(sys.argv[1], 'rb') as f:
 uuid.UUID(profile['UUID'])
 if profile['TeamIdentifier'] != ['C5UWSXYB67']: raise ValueError('Wrong signing team')
 if profile['Entitlements']['application-identifier'] != 'C5UWSXYB67.ai.okou.ios': raise ValueError('Wrong bundle ID')
+if profile['Entitlements'].get('aps-environment') != 'production': raise ValueError('Distribution profile must enable production APNs')
 if profile['Entitlements'].get('get-task-allow'): raise ValueError('Development profile is not a distribution profile')
 if profile.get('ProvisionedDevices') or profile.get('ProvisionsAllDevices'): raise ValueError('An App Store Connect distribution profile is required')
 if profile['ExpirationDate'] <= datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None): raise ValueError('Expired provisioning profile')
@@ -112,6 +113,8 @@ if entitlements['application-identifier'] != 'C5UWSXYB67.ai.okou.ios':
     raise ValueError('Exported IPA has the wrong application entitlement')
 if entitlements['com.apple.developer.team-identifier'] != 'C5UWSXYB67':
     raise ValueError('Exported IPA has the wrong signing team')
+if entitlements.get('aps-environment') != 'production':
+    raise ValueError('Exported IPA must have the production APNs entitlement')
 if entitlements.get('get-task-allow'):
     raise ValueError('Exported IPA is development-signed')
 PY
