@@ -56,8 +56,8 @@ type SourcesConnectorSetupProps = ConnectorSetupBaseProps & {
 };
 
 /**
- * The prompt handoff's sheet: the connectors its link names, drawn with the
- * source step's cards.
+ * The prompt handoff's sheet: recommended connections and the tools its link
+ * names, drawn with the source step's compact cards.
  */
 type ListConnectorSetupProps = ConnectorSetupBaseProps & {
   readonly variant: "sheet";
@@ -85,10 +85,11 @@ interface SourceConnectorCardProps {
   >;
   readonly connected: boolean;
   readonly busy: boolean;
+  readonly compact?: boolean;
   readonly onActivate?: () => void;
 }
 
-function MobileSourceConnectorCard({
+function CompactSourceConnectorCard({
   connectorSlug,
   connector,
   connected,
@@ -148,8 +149,8 @@ function SourceConnectorCard(props: SourceConnectorCardProps) {
   const interactive = !busy && onActivate !== undefined;
   const mobile = useMobileOnboarding();
 
-  if (mobile) {
-    return <MobileSourceConnectorCard {...props} />;
+  if (mobile || props.compact) {
+    return <CompactSourceConnectorCard {...props} />;
   }
 
   return (
@@ -464,7 +465,7 @@ function useListConnectHandlers(
 }
 
 function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
-  // The handoff's few connectors are looked up by the slugs its link names.
+  const { t } = useTranslation();
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const connectorCatalogItemsLoadable = useLastLoadable(
     onboardingMakeConnectorItems$,
@@ -484,6 +485,16 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
     return <ConnectorCatalogReadError />;
   }
 
+  if (connectorCatalogItemsLoadable.state === "loading") {
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.connectors.catalog.directory.loading;
+        })}
+      </p>
+    );
+  }
+
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
       ? connectorCatalogItemsLoadable.data
@@ -493,7 +504,7 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
 
   return (
     <>
-      <section className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {validConnectorSlugs.map((connectorSlug) => {
           const item = connectorCatalogItems.find((candidate) => {
             return candidate.slug === connectorSlug;
@@ -510,6 +521,7 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
           return (
             <SourceConnectorCard
               key={connectorSlug}
+              compact
               connectorSlug={connectorSlug}
               connector={item}
               connected={connected}
@@ -527,7 +539,7 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
             />
           );
         })}
-      </section>
+      </div>
       {selectedConnector && selectedAccountOptions ? (
         <ConnectModal
           item={selectedConnector}
