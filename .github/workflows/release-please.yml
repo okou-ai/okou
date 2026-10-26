@@ -859,8 +859,10 @@ jobs:
 
   publish-desktop-update-manifest:
     # Skipped Runner ancestors must not suppress an otherwise ready Desktop feed.
-    # R2 is authoritative; retain the GitHub mirror for outgoing API readers.
     needs: [release-please, promote-desktop-release, promote-api-production]
+    permissions:
+      actions: read
+      contents: read
     if: >-
       always() && !cancelled() &&
       needs.release-please.outputs.desktop_release_created == 'true' &&
