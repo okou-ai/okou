@@ -26,18 +26,21 @@ public actor NativeProcess {
 
   private struct PendingRequest {
     let continuation: CheckedContinuation<JSONValue, Error>
-    let diagnostics: NativeHelperRequestDiagnostics
+    var diagnostics: NativeHelperRequestDiagnostics
   }
 
   private let logger = Logger(subsystem: "ai.okou.desktop", category: "computer-use-helper")
   private let executable: URL
   private let environment: [String: String]
   private let purpose: Purpose
+  private let now: @Sendable () -> ContinuousClock.Instant
   private var process: Process?
   private var input: FileHandle?
   private var output: FileHandle?
   private var errors: FileHandle?
   private var standardError = NativeHelperStandardError()
+  private var outputReader: NativeHelperOutputReader
+  private var outputProcessedAt: ContinuousClock.Instant?
   private var timeouts: [Int: Task<Void, Never>] = [:]
   private var buffer = Data()
   private var nextReadSequence = 1
@@ -56,11 +59,14 @@ public actor NativeProcess {
   private var termination: NativeHelperTermination?
 
   public init(
-    executable: URL, environment: [String: String] = [:], purpose: Purpose = .computerUse
+    executable: URL, environment: [String: String] = [:], purpose: Purpose = .computerUse,
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
   ) {
     self.executable = executable
     self.environment = environment
     self.purpose = purpose
+    self.now = now
+    outputReader = NativeHelperOutputReader(now: now)
   }
   private func start() throws {
     if process?.isRunning == true { return }
@@ -75,7 +81,7 @@ public actor NativeProcess {
     let stdout = Pipe()
     let stderr = Pipe()
     let standardError = NativeHelperStandardError()
-    let reader = NativeHelperOutputReader()
+    let reader = NativeHelperOutputReader(now: now)
     child.executableURL = executable
     child.arguments = ["serve"]
     child.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value
@@ -106,6 +112,7 @@ public actor NativeProcess {
     output = stdout.fileHandleForReading
     errors = stderr.fileHandleForReading
     self.standardError = standardError
+    outputReader = reader
   }
   public func request(_ values: JSONValue, timeout: TimeInterval = 30) async throws -> JSONValue {
     try Task.checkCancellation()
@@ -118,15 +125,16 @@ public actor NativeProcess {
     data.append(10)
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
+        let diagnostics = NativeHelperRequestDiagnostics(values, timeout: timeout, started: now())
         pending[id] = PendingRequest(
-          continuation: continuation,
-          diagnostics: NativeHelperRequestDiagnostics(values, timeout: timeout))
+          continuation: continuation, diagnostics: diagnostics)
         do { try input?.write(contentsOf: data) } catch {
           reportFailure(.write)
           stop(error: DesktopFailure("accessibility_unavailable", "Native helper write failed"))
           return
         }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
+        pending[id]?.diagnostics.writtenAt = now()
+        let deadline = diagnostics.deadline
         timeouts[id] = Task {
           do { try await Task.sleep(until: deadline) } catch { return }
           self.expire(id)
@@ -160,6 +168,7 @@ public actor NativeProcess {
       if let termination { exited(generation: current, termination: termination) }
       return
     }
+    outputProcessedAt = now()
     readFragments.append(
       NativeHelperReadFragment(
         sequence: sequence, streamOffset: receivedBytes, byteCount: data.count))
@@ -188,6 +197,11 @@ public actor NativeProcess {
           .missingRequestID, reason: "missing or invalid request ID", response: line,
           responseStart: frameStart, decoderError: nil,
           decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
+        return
+      }
+      // A ready response must not bypass the deadline when the client resumes late.
+      if let request = pending[responseId], now() >= request.diagnostics.deadline {
+        expire(responseId, detectedBy: .response)
         return
       }
       if response["status"].string == "failed",
@@ -235,9 +249,16 @@ public actor NativeProcess {
         "accessibility_unavailable",
         "\(message) Reconnect Computer Use; do not replay the failed action automatically."))
   }
-  private func expire(_ id: Int) {
+  private func expire(
+    _ id: Int, detectedBy trigger: NativeHelperTimeoutDiagnostics.Trigger = .timer
+  ) {
     guard let request = pending[id] else { return }
-    reportFailure(.timeout, request: request.diagnostics)
+    let output = outputReader.snapshot
+    reportFailure(
+      .timeout, request: request.diagnostics,
+      timeout: NativeHelperTimeoutDiagnostics(
+        trigger: trigger, output: output, processedBytes: receivedBytes,
+        processedAt: outputProcessedAt, observedAt: now()))
     stop(
       error: DesktopFailure(
         "command_timeout",
@@ -256,13 +277,13 @@ public actor NativeProcess {
   private func reportFailure(
     _ reason: NativeHelperFailure, responseBytes: Int? = nil,
     termination: NativeHelperTermination? = nil, request: NativeHelperRequestDiagnostics? = nil,
-    attachments: NativeHelperDiagnostics? = nil
+    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
       reason, purpose: purpose, generation: generation,
       pendingRequests: pending.count, stderrBytes: standardError.count,
       responseBytes: responseBytes, termination: termination, request: request,
-      attachments: attachments)
+      attachments: attachments, timeout: timeout)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(error: Error) {
@@ -280,6 +301,8 @@ public actor NativeProcess {
     output = nil
     errors = nil
     standardError = NativeHelperStandardError()
+    outputReader = NativeHelperOutputReader(now: now)
+    outputProcessedAt = nil
     buffer.removeAll()
     queuedReads.removeAll()
     queuedReadBytes = 0

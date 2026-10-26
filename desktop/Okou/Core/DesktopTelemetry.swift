@@ -38,7 +38,7 @@ public enum DesktopTelemetry {
     pendingRequests: Int, stderrBytes: Int,
     responseBytes: Int? = nil, termination: NativeHelperTermination? = nil,
     request: NativeHelperRequestDiagnostics? = nil,
-    attachments: NativeHelperDiagnostics? = nil
+    attachments: NativeHelperDiagnostics? = nil, timeout: NativeHelperTimeoutDiagnostics? = nil
   ) {
     let event = Event(level: .error)
     event.message = SentryMessage(formatted: "Native helper failure: \(reason.rawValue)")
@@ -57,7 +57,26 @@ public enum DesktopTelemetry {
     if let request {
       diagnostics["operation"] = request.operation.rawValue
       diagnostics["timeoutMs"] = request.timeout * 1000
-      diagnostics["elapsedMs"] = request.started.duration(to: .now).seconds * 1000
+      let observed = timeout?.observedAt ?? .now
+      diagnostics["elapsedMs"] = request.started.duration(to: observed).seconds * 1000
+      if let written = request.writtenAt {
+        diagnostics["writeElapsedMs"] = request.started.duration(to: written).seconds * 1000
+      }
+      if let timeout {
+        diagnostics["timeoutDetectedBy"] = timeout.trigger.rawValue
+        diagnostics["deadlineOverrunMs"] = max(
+          0, request.deadline.duration(to: observed).seconds * 1000)
+        // Stdout counters describe this helper generation, not a particular request.
+        diagnostics["stdoutBytesRead"] = timeout.output.bytes
+        diagnostics["stdoutBytesProcessed"] = timeout.processedBytes
+        if let read = timeout.output.readAt, read >= request.started {
+          diagnostics["lastStdoutReadElapsedMs"] = request.started.duration(to: read).seconds * 1000
+        }
+        if let processed = timeout.processedAt, processed >= request.started {
+          diagnostics["lastStdoutProcessedElapsedMs"] =
+            request.started.duration(to: processed).seconds * 1000
+        }
+      }
     }
     if reason == .invalidJSON || reason == .missingRequestID {
       diagnostics["diagnosticAttachments"] = attachments == nil ? "rate_limited" : "included"
