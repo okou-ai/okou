@@ -9,6 +9,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.8.0](https://github.com/okou-ai/okou/compare/api-v2.7.0...api-v2.8.0) (2026-10-26)
+
+
+### Features
+
+* roll out tailscale setup and remove its feature switch ([#43012](https://github.com/okou-ai/okou/issues/43012)) ([78533ae](https://github.com/okou-ai/okou/commit/78533ae6f68a2ba6c58412e84c3e797646ec611f))
+* unify proactive planning and action settings ([#43022](https://github.com/okou-ai/okou/issues/43022)) ([305115c](https://github.com/okou-ai/okou/commit/305115c9796cd4994f93e152391c2d815720b482))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.5.0
+    * @okouai/core bumped to 8.790.0
+    * @okouai/db bumped to 2.5.0
+    * @okouai/pi-agent-runtime bumped to 1.50.73
+
 ## [2.7.0](https://github.com/okou-ai/okou/compare/api-v2.6.1...api-v2.7.0) (2026-10-26)
 
 
