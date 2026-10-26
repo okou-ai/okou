@@ -97,7 +97,7 @@ function ComposerModelPanelBody({
   });
   if (modelsResponse === undefined || catalog === undefined) {
     return (
-      <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
+      <p role="status" className="px-2 py-3 text-sm text-muted-foreground">
         {modelsLoadable.state === "loading" ||
         catalogLoadable.state === "loading"
           ? t(($) => {
@@ -130,6 +130,9 @@ function ComposerModelPanelBody({
        * The trigger already names the model, and the radio group and popover
        * carry the "Chat models" label for assistive tech. `-mr-1` lands the
        * overlay track on the popover's own edge instead of over the rows.
+       * The list's top and bottom space is padding inside the viewport, so
+       * rows scroll out at the popover's border and at the divider rather
+       * than under a blank band.
        */}
       <ScrollArea.Root className="group relative -mr-1 flex min-h-11 flex-col">
         <ScrollArea.Viewport
@@ -488,7 +491,7 @@ function ComposerModelPanelOptions({
     return null;
   }
   return (
-    <div className="mt-1 shrink-0 border-t border-divider pt-0.5">
+    <div className="shrink-0 border-t border-divider pb-1 pt-0.5">
       <ChatEffortSettings
         selection={value}
         disabled={disabled}
@@ -605,7 +608,7 @@ export function ComposerModelPanel({
         aria-label={t(($) => {
           return $.settings.models.picker.chatModels;
         })}
-        className="flex max-h-[var(--available-height)] w-[304px] max-w-[var(--available-width)] flex-col overflow-y-auto p-1"
+        className="flex max-h-[var(--available-height)] w-[304px] max-w-[var(--available-width)] flex-col overflow-y-auto px-1 py-0"
       >
         <ComposerModelPanelBody
           value={value}
