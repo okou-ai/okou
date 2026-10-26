@@ -254,7 +254,38 @@ fn record_reader_refuses_mismatched_creation_fields_even_with_matching_record_ha
 }
 
 #[test]
-fn record_reader_refuses_tampering_nonregular_oversized_and_duplicate_evidence() -> TestResult<()> {
+fn record_reader_enforces_the_64_kib_limit_on_otherwise_valid_records() -> TestResult<()> {
+    let fixture = Fixture::new()?;
+    let creation = fixture.capture()?;
+    fixture.output()?;
+    creation.publish()?;
+    let mut artifacts = fixture.artifacts()?;
+    let mut raw = std::fs::read(fixture.record())?;
+
+    // Pin the contract independently so changing the reader's limit cannot
+    // move the test boundary with it.
+    const LIMIT: usize = 64 * 1024;
+    assert!(raw.len() < LIMIT);
+    raw.resize(LIMIT, b' ');
+    std::fs::write(fixture.record(), &raw)?;
+    artifacts.snapshot_preparation_sha256 = hex::encode(Sha256::digest(&raw));
+    verify_record(&fixture.config.output_dir, &artifacts)?;
+
+    raw.push(b' ');
+    let _: Record = serde_json::from_slice(&raw)?;
+    std::fs::write(fixture.record(), &raw)?;
+    artifacts.snapshot_preparation_sha256 = hex::encode(Sha256::digest(&raw));
+    assert_eq!(
+        verify_record(&fixture.config.output_dir, &artifacts)
+            .unwrap_err()
+            .to_string(),
+        "snapshot preparation evidence exceeds its byte bound"
+    );
+    Ok(())
+}
+
+#[test]
+fn record_reader_refuses_tampering_nonregular_and_duplicate_evidence() -> TestResult<()> {
     let fixture = Fixture::new()?;
     let creation = fixture.capture()?;
     fixture.output()?;
@@ -265,7 +296,6 @@ fn record_reader_refuses_tampering_nonregular_oversized_and_duplicate_evidence()
     assert!(verify_record(&fixture.config.output_dir, &artifacts).is_err());
     for raw in [
         b"tampered".to_vec(),
-        vec![b' '; MAX_RECORD_BYTES as usize + 1],
         String::from_utf8(original.clone())?
             .replace("\"format\":", "\"format\":\"duplicate\",\"format\":")
             .into_bytes(),
