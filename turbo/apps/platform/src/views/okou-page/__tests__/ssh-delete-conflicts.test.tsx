@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -55,13 +54,10 @@ function mockSettings() {
   return data;
 }
 
-async function openDeletion(tailscaleEnabled = false) {
+async function openDeletion() {
   await setupPage({
     context,
     path: "/connectors?scope=remote-control&type=ssh",
-    featureSwitches: {
-      [FeatureSwitchKey.TailscaleAccess]: tailscaleEnabled,
-    },
     auth: {
       user: owner,
       session: { id: "ssh-delete-session", token: "original-token" },
@@ -185,7 +181,7 @@ test("A Tailscale SSH deletion reviews credential-free identity before acknowled
     data.connections = [];
     return respond(204);
   });
-  const dialog = await openDeletion(true);
+  const dialog = await openDeletion();
   click(getAction("button", "Delete host", dialog));
   await within(dialog).findByText("Version 5");
   expect(within(dialog).getByText("ubuntu@updated-peer:22")).toBeVisible();

@@ -45,7 +45,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { localizedVncError } from "../../lib/vnc-error.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
-import { scopedTailscaleConfigs$ } from "../../signals/tailscale.ts";
+import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerberos";
 import { VncConflictReview } from "./vnc-conflict-review.tsx";
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
@@ -168,7 +168,7 @@ function VncSaveNotice({
 
 function useNativeVncNetworkBlocked() {
   const access = useLoadable(cloudflareAccessConfigs$);
-  const tailscale = useLoadable(scopedTailscaleConfigs$);
+  const tailscale = useLoadable(tailscaleConfigs$);
   const editor = useGet(vncEditor$);
   const networkUnavailable = (type: string, id: string) => {
     if (type !== "cloudflare_access" && type !== "tailscale") {
@@ -328,7 +328,7 @@ function VncSetupReview() {
   const editor = useGet(vncEditor$);
   const ssh = useLoadable(sshConnections$);
   const access = useLoadable(cloudflareAccessConfigs$);
-  const tailscale = useLoadable(scopedTailscaleConfigs$);
+  const tailscale = useLoadable(tailscaleConfigs$);
   const networks = editor.transport === "tailscale" ? tailscale : access;
   const network =
     networks.state === "hasData"

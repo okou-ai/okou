@@ -21,10 +21,7 @@ import {
   cloudflareAccessConfigs$,
   retryCloudflareAccess$,
 } from "../../signals/cloudflare-access.ts";
-import {
-  scopedTailscaleConfigs$,
-  retryTailscale$,
-} from "../../signals/tailscale.ts";
+import { tailscaleConfigs$, retryTailscale$ } from "../../signals/tailscale.ts";
 import {
   chooseVncTransport$,
   chooseVncKdcTransport$,
@@ -123,7 +120,7 @@ function VncNetworkConfig({
 }) {
   const { t } = useTranslation();
   const access = useLoadable(cloudflareAccessConfigs$);
-  const tailscale = useLoadable(scopedTailscaleConfigs$);
+  const tailscale = useLoadable(tailscaleConfigs$);
   const configs = type === "cloudflare_access" ? access : tailscale;
   const retryAccess = useSet(retryCloudflareAccess$);
   const retryTailscale = useSet(retryTailscale$);
