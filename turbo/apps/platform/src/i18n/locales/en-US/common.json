@@ -2926,9 +2926,6 @@
       "empty": "Send a message to start the conversation",
       "frequentlyUsed": "Frequently used",
       "icon": "Chat thread icon",
-      "locator": {
-        "you": "You"
-      },
       "noEmojiFound": "No emoji found",
       "notFound": "Chat thread not found",
       "openBrowser": "Open browser",

@@ -2915,9 +2915,6 @@
       "empty": "Kirim pesan untuk memulai percakapan",
       "frequentlyUsed": "Sering digunakan",
       "icon": "Ikon thread chat",
-      "locator": {
-        "you": "Anda"
-      },
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
       "openBrowser": "Buka browser",

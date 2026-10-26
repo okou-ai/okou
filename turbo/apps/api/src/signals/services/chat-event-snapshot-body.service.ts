@@ -3,6 +3,7 @@ import {
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
+import { chatEventResponse } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { safeJsonParse, safeSync } from "../utils";
 
@@ -45,12 +46,16 @@ export function decodeChatEventSnapshotBody(
   });
 }
 
+/**
+ * Readers project snapshot rows without validating them again, so publication
+ * is where every row must satisfy the public ChatEvent contract.
+ */
 export function validateChatEventSnapshotRows(
   rows: readonly ChatEventRow[],
 ): void {
   for (const row of rows) {
     const projected = safeSync(() => {
-      chatEventFromRow(row);
+      chatEventResponse(chatEventFromRow(row));
     });
     if ("error" in projected) {
       throw new ChatEventSnapshotProjectionError();

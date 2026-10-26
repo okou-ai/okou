@@ -2926,9 +2926,6 @@
       "empty": "Senden Sie eine Nachricht, um das Gespräch zu beginnen",
       "frequentlyUsed": "Häufig verwendet",
       "icon": "Chat-Thread-Symbol",
-      "locator": {
-        "you": "Du"
-      },
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
       "openBrowser": "Browser öffnen",

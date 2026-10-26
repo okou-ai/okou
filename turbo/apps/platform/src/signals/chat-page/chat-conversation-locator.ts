@@ -4,7 +4,7 @@
  * A tick rail beside a long chat thread. The rail samples the thread's user
  * turns at an even interval, so a thread of any length reads as one scale
  * rather than as a list that runs off the end. Hovering magnifies neighbouring
- * ticks and names the sampled turn under the cursor; clicking jumps to it.
+ * ticks and shows the sampled turn's timestamp; clicking jumps to it.
  *
  * Everything the rail draws is derived from the sampled turns and the pointer.
  * The DOM contributes only the mounted scroll container when a jump needs its
@@ -19,12 +19,11 @@ import {
   type Computed,
   type State,
 } from "ccstate";
+import { isChatInputEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { logger } from "../log.ts";
-import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import { onRef, resetSignal } from "../utils.ts";
-import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
+import type { ChatEventGroup } from "./chat-event.ts";
 import type { ScrollToEventOptions } from "./chat-thread-scroll.ts";
-import { buildRunWorkFolding } from "./run-work-folding.ts";
 
 const L = logger("ConversationLocator");
 
@@ -38,7 +37,7 @@ const SHOW_MIN_TURNS = 8;
 const JUMP_VIEWPORT_RATIO = 0.28;
 /** Falloff radius, as a multiple of the tick interval, so density feels equal. */
 const MAGNIFY_SIGMA_RATIO = 2.6;
-/** A tick this close to the cursor is the one being named. */
+/** A tick this close to the cursor is the one being previewed. */
 const HIT_INTERVAL_RATIO = 1.1;
 /** Resting length and magnification of a tick. */
 const TICK_BASE_WIDTH_PX = 7;
@@ -48,7 +47,6 @@ const TICK_GROW_RATIO = 3.1;
 export interface LocatorTurn {
   readonly eventId: string;
   readonly turnIndex: number;
-  readonly text: string;
   readonly createdAt: string | undefined;
 }
 
@@ -69,7 +67,6 @@ export interface LocatorLayout {
 
 export interface LocatorPreview {
   readonly turnIndex: number;
-  readonly text: string;
   /** ISO timestamp of the turn, or undefined when it carries none. */
   readonly createdAt: string | undefined;
   /** The magnified tick the preview is anchored to. */
@@ -103,35 +100,6 @@ export interface ChatConversationLocatorSignals {
 // Turn projection
 // ---------------------------------------------------------------------------
 
-function normalizePreviewText(value: string | null | undefined): string {
-  return value?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function userMessageForLocator(event: EnrichedChatEvent) {
-  return "userMessage" in event ? event.userMessage : undefined;
-}
-
-function userMessageAnnotationForLocator(event: EnrichedChatEvent) {
-  return userMessageForLocator(event)?.parts.find((part) => {
-    return part.type === "automation";
-  });
-}
-
-function userPreviewText(event: EnrichedChatEvent): string {
-  const messageText = normalizePreviewText(
-    messageDocumentToDisplayText(userMessageForLocator(event)),
-  );
-  if (messageText) {
-    return messageText;
-  }
-  const annotation = userMessageAnnotationForLocator(event);
-  if (annotation !== undefined) {
-    const brief = normalizePreviewText(annotation.automationBrief);
-    return brief || normalizePreviewText(annotation.workflowName);
-  }
-  return normalizePreviewText(event.content);
-}
-
 /**
  * Every visible user turn in the thread, in order. Assistant turns are
  * deliberately absent: a run is located by the request that started it, and
@@ -144,13 +112,12 @@ function userTurns(groups: readonly ChatEventGroup[]): LocatorTurn[] {
       continue;
     }
     for (const event of group.events) {
-      if (event.isQueued) {
+      if (event.isQueued || !isChatInputEventType(event.eventType)) {
         continue;
       }
       turns.push({
         eventId: event.id,
         turnIndex: turns.length,
-        text: userPreviewText(event),
         createdAt: event.createdAt,
       });
     }
@@ -180,20 +147,12 @@ function sampleTurns(turns: readonly LocatorTurn[]): readonly LocatorTurn[] {
 }
 
 function createSampledTurns(
-  allChatGroups$: Computed<readonly ChatEventGroup[]>,
+  allSemanticChatGroups$: Computed<readonly ChatEventGroup[]>,
 ): Computed<readonly LocatorTurn[]> {
   return computed((get): readonly LocatorTurn[] => {
-    const activeGroups = get(allChatGroups$).flatMap((group) => {
-      const events = group.events.filter((event) => {
-        return !event.isQueued;
-      });
-      return events.length === 0 ? [] : [{ ...group, events }];
-    });
-    // Match the transcript's visible projection so every turn has a rendered
-    // anchor.
-    return sampleTurns(
-      userTurns(buildRunWorkFolding(activeGroups).visibleGroups),
-    );
+    // Semantic groups already exclude recalled and replaced inputs. Work
+    // folding preserves user turns, so the rail only needs their metadata.
+    return sampleTurns(userTurns(get(allSemanticChatGroups$)));
   });
 }
 
@@ -348,12 +307,12 @@ function createLanding(
 export function createChatConversationLocatorSignals({
   threadId,
   scrollContainer$,
-  allChatGroups$,
+  allSemanticChatGroups$,
   scrollToEvent$,
 }: {
   threadId: string;
   scrollContainer$: Computed<HTMLElement | null>;
-  allChatGroups$: Computed<readonly ChatEventGroup[]>;
+  allSemanticChatGroups$: Computed<readonly ChatEventGroup[]>;
   scrollToEvent$: Command<
     Promise<void>,
     [string, ScrollToEventOptions, AbortSignal]
@@ -363,7 +322,7 @@ export function createChatConversationLocatorSignals({
   const engaged$ = state(false);
   const landing = createLanding(scrollToEvent$);
 
-  const sampledTurns$ = createSampledTurns(allChatGroups$);
+  const sampledTurns$ = createSampledTurns(allSemanticChatGroups$);
   const layout$ = createLayout(sampledTurns$, pointerFraction$);
   const hitIndex$ = createHitIndex(layout$, pointerFraction$);
 
@@ -381,7 +340,6 @@ export function createChatConversationLocatorSignals({
       ? null
       : {
           turnIndex: turn.turnIndex,
-          text: turn.text,
           createdAt: turn.createdAt,
           tick,
         };

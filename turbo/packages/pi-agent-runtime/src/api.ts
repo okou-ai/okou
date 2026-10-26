@@ -43,11 +43,6 @@ export function createPiSessionJsonl(args: {
   }).toJsonl();
 }
 
-/** Project canonical Pi JSONL into a citation-free user export derivative. */
-export function projectPiSessionJsonlForExport(jsonl: string): string {
-  return MemoryPiSession.fromJsonl(jsonl).toPublicJsonl();
-}
-
 /** Inspect one native Pi JSONL session through a stable structural result. */
 export function inspectPiSessionJsonl(jsonl: string): PiSessionInspection {
   const session = MemoryPiSession.fromJsonl(jsonl);

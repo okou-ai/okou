@@ -58,10 +58,6 @@ pub(crate) struct ResolvedSessionHistory {
 }
 
 impl ResolvedSessionHistory {
-    pub(crate) fn plain_file_mut(&mut self) -> Option<&mut File> {
-        (!self.is_zstd).then_some(&mut self.file)
-    }
-
     pub(crate) fn into_content_bounded(
         self,
         max_bytes: u64,

@@ -1,5 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -191,6 +191,15 @@ async function setupCompletedConversationPhases(): Promise<void> {
   });
 
   await readyChat();
+
+  const viewport = screen
+    .getByText("Phase two final plan")
+    .closest("[data-scroll-container]");
+  if (!(viewport instanceof HTMLElement)) {
+    throw new Error("Chat scroll viewport not found");
+  }
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+  await screen.findByText("Plan phase one");
 }
 
 test("Summarize completed work by conversation phase", async () => {

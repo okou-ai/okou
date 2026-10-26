@@ -2972,9 +2972,6 @@
       "empty": "Envoyer un message pour commencer la conversation",
       "frequentlyUsed": "Fréquemment utilisé",
       "icon": "Icône de fil de discussion",
-      "locator": {
-        "you": "Vous"
-      },
       "noEmojiFound": "Aucun emoji trouvé",
       "notFound": "Fil de discussion introuvable",
       "openBrowser": "Ouvrir le navigateur",

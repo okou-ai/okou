@@ -42,6 +42,7 @@ async function setupLocatorConversation({
     context,
     path: `/chats/${threadId}`,
     host: "app.okou.ai",
+    locale: "en-US",
   });
 
   await screen.findByText(`Locator answer ${String(turnCount)}`);
@@ -61,7 +62,7 @@ function endpointMarkY(tickCount: number, endpoint: "first" | "last"): number {
   return VIEWPORT_HEIGHT / 2 + (endpoint === "first" ? -halfTrack : halfTrack);
 }
 
-test("sampled markers preserve the first-turn preview across the whole conversation", async () => {
+test("sampled markers show the first-turn timestamp across the whole conversation", async () => {
   const user = userEvent.setup();
   const { container, rail, tickCount } = await setupLocatorConversation({
     threadId: "b0000000-0000-4000-a000-000000000825",
@@ -79,7 +80,10 @@ test("sampled markers preserve the first-turn preview across the whole conversat
   });
   const preview = requiredElement("[data-conversation-locator-preview]");
   await waitFor(() => {
-    expect(preview).toHaveTextContent("Locator question 1");
+    expect(within(preview).getByText("Aug 1, 10:00 AM")).toHaveAttribute(
+      "datetime",
+      "2026-08-01T10:00:00.000Z",
+    );
   });
 });
 
@@ -168,7 +172,10 @@ test("selecting another marker moves the landing feedback", async () => {
   });
   const preview = requiredElement("[data-conversation-locator-preview]");
   await waitFor(() => {
-    expect(preview).toHaveTextContent("Locator question 8");
+    expect(within(preview).getByText("Aug 1, 10:07 AM")).toHaveAttribute(
+      "datetime",
+      "2026-08-01T10:07:00.000Z",
+    );
   });
   click(rail);
   await waitFor(() => {
@@ -187,7 +194,7 @@ test("selecting another marker moves the landing feedback", async () => {
   });
 });
 
-test("leaving the locator hides its preview", async () => {
+test("leaving the locator hides its timestamp preview", async () => {
   const user = userEvent.setup();
   const { rail, tickCount } = await setupLocatorConversation({
     threadId: "b0000000-0000-4000-a000-000000000829",
@@ -200,7 +207,10 @@ test("leaving the locator hides its preview", async () => {
   });
   const preview = requiredElement("[data-conversation-locator-preview]");
   await waitFor(() => {
-    expect(preview).toHaveTextContent("Locator question 1");
+    expect(within(preview).getByText("Aug 1, 10:00 AM")).toHaveAttribute(
+      "datetime",
+      "2026-08-01T10:00:00.000Z",
+    );
   });
 
   await user.unhover(rail);

@@ -22,7 +22,6 @@ import {
   AgentEventRunNotFoundError,
   RunOutputDiagnostics,
 } from "./run-content-ownership.service";
-import type { EventCitation } from "./pi-memory-citation-events";
 import { refreshTelegramTypingEvents$ } from "./agent-event-consumer-telegram-typing.service";
 import { joinAll, settle, tapError } from "../utils";
 
@@ -38,10 +37,6 @@ type ConsumerCommand = Command<ConsumerCommandResult, [AbortSignal]>;
 interface AgentEventsBody {
   readonly runId: string;
   readonly events: readonly AgentEvent[];
-  readonly piMemoryCitationTransport?: {
-    readonly schemaVersion: 1;
-    readonly citations: readonly EventCitation[];
-  };
 }
 
 interface ReceiveAgentEventsParams {
@@ -196,8 +191,6 @@ export const receiveAgentEvents$ = command(
         {
           payload,
           diagnostics,
-          suppliedCitations:
-            params.body.piMemoryCitationTransport?.citations ?? [],
         },
         signal,
       ),

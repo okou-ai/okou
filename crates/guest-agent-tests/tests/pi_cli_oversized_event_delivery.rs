@@ -1,4 +1,4 @@
-//! Real RPC stdout -> projection -> private citation isolation -> canonical
+//! Real RPC stdout -> projection -> canonical
 //! sequencing/masking -> bounded sender/HTTP. The official session is immutable.
 use common::delivery_image;
 use guest_agent_tests as common;
@@ -15,7 +15,6 @@ use std::time::Duration;
 const LIMIT: usize = 4 * 1024 * 1024;
 const SECRET: &str = "delivery-secret-value";
 const NOTICE: &str = "[event content truncated for delivery]";
-const CITATION: &str = "<oai-mem-citation>\n<citation_entries>\nprivate-memory.md:1-2|note=[private-note]\n</citation_entries>\n<rollout_ids>\n11111111-1111-4111-8111-111111111111\n</rollout_ids>\n</oai-mem-citation>";
 
 fn message_end(message: serde_json::Map<String, Value>) -> Value {
     Value::Object(serde_json::Map::from_iter([
@@ -176,15 +175,11 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
             json!([{"type":"text","text":"unchanged small event"}]),
             false,
         ),
+        assistant("large", json!([{"type":"text","text":text}]), false),
         assistant(
-            "large",
-            json!([{"type":"text","text":format!("{text}{CITATION}")}]),
-            false,
-        ),
-        assistant(
-            "split-citation",
+            "split-text",
             json!([
-                {"type":"text","text":"first block"}, {"type":"text","text":format!("last block{CITATION}")}
+                {"type":"text","text":"first block"}, {"type":"text","text":"last block"}
             ]),
             false,
         ),
@@ -250,7 +245,6 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
             result,
             config,
             delivered,
-            citations,
             log,
         } = deliver_pi_rpc(messages, &[SECRET]).await?;
         assert!(result.control_error.is_none(), "{:?}", result.control_error);
@@ -258,13 +252,11 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         let terminal = delivered.last().ok_or("missing terminal")?;
         assert_eq!(terminal["type"], "result");
         assert_eq!(terminal["is_error"], failed);
-        for sentinel in [SECRET, "private-memory", "private-note", "memoryCitation"] {
-            assert!(
-                !delivered
-                    .iter()
-                    .any(|event| common::contains_json_text(event, sentinel))
-            );
-        }
+        assert!(
+            !delivered
+                .iter()
+                .any(|event| common::contains_json_text(event, SECRET))
+        );
         let reductions = log
             .lines()
             .filter(|line| line.contains("Pi event reduced for delivery"))
@@ -279,15 +271,7 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         assert!(reductions.iter().all(|line| line.contains("[INFO]")
             && !line.contains("[WARN]")
             && !line.contains("[ERROR]")));
-        for sentinel in [
-            SECRET,
-            "private-memory",
-            "private-note",
-            "text-head",
-            "input-head",
-            "base64",
-            "image/png",
-        ] {
+        for sentinel in [SECRET, "text-head", "input-head", "base64", "image/png"] {
             assert!(reductions.iter().all(|line| !line.contains(sentinel)));
         }
         if failed {
@@ -309,13 +293,6 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
                 );
             }
             continue;
-        }
-        assert_eq!(citations.len(), 2);
-        for citation in &citations {
-            assert_eq!(
-                citation["citation"],
-                json!({"entries":[{"path":"private-memory.md","lineStart":1,"lineEnd":2,"note":"private-note"}],"rolloutIds":["11111111-1111-4111-8111-111111111111"]})
-            );
         }
         let find_message = |id: &str| {
             delivered
@@ -340,10 +317,11 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         );
         let split = delivered
             .iter()
-            .filter(|e| e["message"]["id"] == "split-citation")
+            .filter(|e| e["message"]["id"] == "split-text")
             .collect::<Vec<_>>();
         assert_eq!(split.len(), 2);
-        assert_eq!(citations[1]["sequenceNumber"], split[1]["sequenceNumber"]);
+        assert_eq!(split[0]["message"]["content"][0]["text"], "first block");
+        assert_eq!(split[1]["message"]["content"][0]["text"], "last block");
         let structure = &find_message("structure")["message"]["content"][0];
         assert_eq!(structure["id"], "structure-id");
         assert_eq!(structure["name"], "read");
@@ -385,125 +363,13 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
     Ok(())
 }
 
-const REDACTED_ROLLOUT: &str = "22222222-2222-4222-8222-222222222222";
-const RETAINED_ROLLOUT: &str = "11111111-1111-4111-8111-111111111111";
-
 #[tokio::test]
-async fn pi_rpc_isolates_citations_before_masking_field_names()
--> Result<(), Box<dyn std::error::Error>> {
-    let citation = format!(
-        "<oai-mem-citation>\n<citation_entries>\nprivate-memory-{SECRET}.md:17-23|note=[private-note-{SECRET}]\n</citation_entries>\n<rollout_ids>\n{RETAINED_ROLLOUT}\n{REDACTED_ROLLOUT}\n</rollout_ids>\n</oai-mem-citation>"
-    );
-    let id_only = format!(
-        "<oai-mem-citation>\n<rollout_ids>\n{REDACTED_ROLLOUT}\n</rollout_ids>\n</oai-mem-citation>"
-    );
-    for collision_secrets in [
-        vec!["memoryCitation"],
-        vec!["message"],
-        vec![
-            "entries",
-            "rolloutIds",
-            "lineStart",
-            "lineEnd",
-            "sequenceNumber",
-        ],
-    ] {
-        // Oversized parent-key collisions retain their existing admission
-        // rejection, covered separately below. Other cases must fully drain.
-        let oversized = !collision_secrets.contains(&"message");
-        let mut messages = vec![assistant(
-            "private-small",
-            json!([{"type":"text","text":format!("visible-{SECRET}-{}{citation}", collision_secrets[0])}]),
-            false,
-        )];
-        if oversized {
-            messages.push(assistant(
-                "private-large",
-                json!([{"type":"text","text":format!("large-{SECRET}-{}{citation}", "x".repeat(LIMIT))}]),
-                false,
-            ));
-        }
-        messages.extend([
-            assistant(
-                "private-split",
-                json!([
-                    {"type":"text","text":"first block"},
-                    {"type":"text","text":format!("last block{citation}")}
-                ]),
-                false,
-            ),
-            assistant(
-                "private-id-only",
-                json!([{"type":"text","text":format!("redacted citation only{id_only}")}]),
-                false,
-            ),
-            assistant(
-                "private-terminal",
-                json!([{"type":"text","text":format!("done-{SECRET}")}]),
-                false,
-            ),
-        ]);
-        let mut secrets = collision_secrets.clone();
-        secrets.extend([SECRET, REDACTED_ROLLOUT]);
-        let delivery = deliver_pi_rpc(&messages, &secrets).await?;
-        assert!(
-            delivery.result.control_error.is_none(),
-            "{:?}",
-            delivery.result.control_error
-        );
-        assert_eq!(delivery.result.exit_code, 0);
-        let expected_last = if oversized { 8 } else { 7 };
-        assert_eq!(delivery.result.last_event_sequence, Some(expected_last));
-        let terminal = delivery.delivered.last().ok_or("missing terminal")?;
-        assert_eq!(terminal["type"], "result");
-        assert_eq!(terminal["result"], "done-***");
-        assert_public_citation_isolation(&delivery.delivered);
-        let expected_citation = json!({
-            "entries":[{"path":"private-memory-***.md","lineStart":17,"lineEnd":23,"note":"private-note-***"}],
-            "rolloutIds":[RETAINED_ROLLOUT]
-        });
-        let expected_sequences = if oversized { vec![2, 3, 5] } else { vec![2, 4] };
-        assert_eq!(
-            delivery.citations,
-            expected_sequences
-                .iter()
-                .map(|sequence| json!({"sequenceNumber":sequence,"citation":expected_citation}))
-                .collect::<Vec<_>>()
-        );
-        let message_key = if oversized { "message" } else { "***" };
-        assert_eq!(
-            delivery.delivered[1][message_key]["content"][0]["text"],
-            "visible-***-***"
-        );
-        if !oversized {
-            assert!(delivery.delivered[1].get("message").is_none());
-        } else {
-            assert!(
-                delivery.delivered[2]["message"]["content"][0]["text"]
-                    .as_str()
-                    .is_some_and(|text| text.contains("bytes truncated for delivery"))
-            );
-        }
-        let split_last = if oversized { 4 } else { 3 };
-        assert_eq!(
-            delivery.delivered[split_last][message_key]["content"][0]["text"],
-            "last block"
-        );
-        assert_eq!(
-            delivery.delivered[split_last]["sequenceNumber"],
-            *expected_sequences.last().unwrap()
-        );
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn pi_rpc_skips_irreducible_events_and_delivers_later_output_without_private_citations()
+async fn pi_rpc_skips_irreducible_events_and_delivers_later_output()
 -> Result<(), Box<dyn std::error::Error>> {
     let messages = [
         assistant(
-            "private-large",
-            json!([{"type":"text","text":format!("{}{CITATION}", "x".repeat(LIMIT))}]),
+            "large",
+            json!([{"type":"text","text":"x".repeat(LIMIT)}]),
             false,
         ),
         assistant(
@@ -519,41 +385,19 @@ async fn pi_rpc_skips_irreducible_events_and_delivers_later_output_without_priva
         delivery.delivered[1]["***"]["content"][0]["text"],
         "later output"
     );
-    assert!(delivery.citations.is_empty());
     assert_eq!(delivery.result.last_event_sequence, Some(4));
     assert!(
         delivery
             .log
             .contains("Discarding oversized Pi event at sequence 2")
     );
-    assert!(!delivery.log.contains("private-memory"));
-    assert_public_citation_isolation(&delivery.delivered);
     Ok(())
-}
-
-fn assert_public_citation_isolation(events: &[Value]) {
-    for event in events {
-        for private_value in [
-            "private-memory",
-            "private-note",
-            RETAINED_ROLLOUT,
-            REDACTED_ROLLOUT,
-            "oai-mem-citation",
-            SECRET,
-        ] {
-            assert!(
-                !common::contains_json_text(event, private_value),
-                "private data in public event"
-            );
-        }
-    }
 }
 
 struct PiDelivery {
     result: guest_agent::cli::CliExecutionResult,
     config: GuestConfig,
     delivered: Vec<Value>,
-    citations: Vec<Value>,
     log: String,
 }
 
@@ -822,7 +666,6 @@ async fn deliver_pi_rpc_with_skips(
     };
     let requests = server.requests()?;
     let mut delivered = Vec::new();
-    let mut citations = Vec::new();
     for request in &requests {
         assert!(request.body.len() <= LIMIT);
         let mut payload: Value = serde_json::from_str(&request.body)?;
@@ -831,12 +674,6 @@ async fn deliver_pi_rpc_with_skips(
                 .get_mut("events")
                 .and_then(Value::as_array_mut)
                 .ok_or("missing events")?,
-        );
-        citations.append(
-            payload
-                .pointer_mut("/piMemoryCitationTransport/citations")
-                .and_then(Value::as_array_mut)
-                .ok_or("missing private transport")?,
         );
     }
     assert_eq!(
@@ -882,7 +719,6 @@ async fn deliver_pi_rpc_with_skips(
         result,
         config: runtime.config,
         delivered,
-        citations,
         log,
     })
 }

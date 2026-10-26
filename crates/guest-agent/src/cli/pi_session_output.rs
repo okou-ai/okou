@@ -5,8 +5,8 @@
 //! result, and never reports failure into the Run lifecycle. A failed block is
 //! abandoned until its authoritative `message_end` event reconciles the UI.
 //!
-//! The Pi projection applies the configured normal secret policy after citation
-//! normalization and before admitting chunks here. Each native text source
+//! The Pi projection applies the configured normal secret policy before
+//! admitting chunks here. Each native text source
 //! holds back at most the longest configured variant minus one bytes (plus UTF-8
 //! boundary rounding) so a secret split across provider deltas cannot escape.
 //! Completed messages flush their masked tail; interrupted/abandoned streams

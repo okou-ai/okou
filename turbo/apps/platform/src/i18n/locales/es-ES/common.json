@@ -2972,9 +2972,6 @@
       "empty": "Envía un mensaje para iniciar la conversación",
       "frequentlyUsed": "Usados con frecuencia",
       "icon": "Icono del hilo de chat",
-      "locator": {
-        "you": "Tú"
-      },
       "noEmojiFound": "No se ha encontrado ningún emoji",
       "notFound": "Hilo de chat no encontrado",
       "openBrowser": "Abrir navegador",

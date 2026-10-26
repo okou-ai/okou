@@ -5,13 +5,13 @@ import {
   type ChatEventType,
 } from "../chat-events";
 import { chatEventFromRow } from "../chat-event-row-projection";
-import {
-  PI_MEMORY_CITATION_OPEN,
-  PI_MEMORY_CITATION_CLOSE,
-} from "../pi-memory-citations";
 import { chatEventRowSchema, type ChatEventRow } from "../chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../chat-event-schema-version";
-import { chatEventSchema, chatThreadEventsContract } from "../chat-threads";
+import {
+  chatEventResponse,
+  chatEventSchema,
+  chatThreadEventsContract,
+} from "../chat-threads";
 
 const CREATED_AT = "2026-08-08T10:00:00.000Z";
 
@@ -54,7 +54,12 @@ function projectableRow(eventType: ChatEventType): ChatEventRow {
       payload: { userMessage, error: "rejected" },
       contextType: "web",
     },
-    "output.message": { payload: { content: "message" } },
+    "output.message": {
+      payload: {
+        content:
+          "  > Quoted text\n\n`value < limit` and **bold**\n<div>HTML</div>\n",
+      },
+    },
     "output.error": {
       payload: { content: "display error", error: "output error" },
     },
@@ -213,7 +218,10 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
         const wireRow = JSON.parse(
           JSON.stringify(projectableRow(eventType)),
         ) as unknown;
-        return chatEventFromRow(chatEventRowSchema.parse(wireRow)).eventType;
+        const row = chatEventRowSchema.parse(wireRow);
+        const projected = chatEventFromRow(row);
+        expect(projected.content).toBe(row.payload?.content ?? null);
+        return projected.eventType;
       }),
     ).toStrictEqual(CHAT_EVENT_TYPES);
   });
@@ -255,7 +263,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     },
   );
 
-  it("rejects private Discord launch fields in public source metadata", () => {
+  it("rejects private Discord launch fields at the public ChatEvent contract", () => {
     const row = canonicalRow({
       eventType: "input.prompt",
       contextType: "discord",
@@ -276,7 +284,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       },
     });
     expect(() => {
-      return chatEventFromRow(row);
+      return chatEventResponse(chatEventFromRow(row));
     }).toThrow();
   });
 
@@ -295,37 +303,6 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       eventType: "control.interrupt",
       interruptsRunId: target,
     });
-  });
-
-  it("defensively hides citation envelopes from historical cached rows", () => {
-    const projected = chatEventFromRow(
-      canonicalRow({
-        payload: {
-          content:
-            "visible<oai-mem-citation><citation_entries>private:1-1|note=[secret]</citation_entries></oai-mem-citation>",
-        },
-      }),
-    );
-    expect(projected).toMatchObject({
-      eventType: "output.message",
-      content: "visible",
-    });
-  });
-
-  it("repeatedly projects historical literal examples without mutating rows or leaking private bodies", () => {
-    const content = `explain \`${PI_MEMORY_CITATION_OPEN}\` suffix${PI_MEMORY_CITATION_OPEN}private path and note${PI_MEMORY_CITATION_CLOSE}`;
-    const row = canonicalRow({ payload: { content } });
-    const before = JSON.stringify(row);
-    const expected = `explain \`&lt;${PI_MEMORY_CITATION_OPEN.slice(1, -1)}&gt;\` suffix`;
-    let projectedContent = chatEventFromRow(row).content;
-    expect(projectedContent).toBe(expected);
-    for (let i = 0; i < 3; i++) {
-      projectedContent = chatEventFromRow(
-        canonicalRow({ payload: { content: projectedContent } }),
-      ).content;
-      expect(projectedContent).toBe(expected);
-    }
-    expect(JSON.stringify(row)).toBe(before);
   });
 
   it("reads canonical usage and error payloads", () => {

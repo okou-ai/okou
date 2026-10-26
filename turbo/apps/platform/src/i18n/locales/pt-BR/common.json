@@ -2972,9 +2972,6 @@
       "empty": "Envie uma mensagem para iniciar a conversa",
       "frequentlyUsed": "Usados com frequência",
       "icon": "Ícone da conversa",
-      "locator": {
-        "you": "Você"
-      },
       "noEmojiFound": "Nenhum emoji encontrado",
       "notFound": "Conversa não encontrada",
       "openBrowser": "Abrir navegador",
