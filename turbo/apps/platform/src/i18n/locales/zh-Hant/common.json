@@ -5122,8 +5122,8 @@
           "title": "偏好設定"
         },
         "proactiveAgent": {
-          "description": "選擇 Okou 如何學習、規劃、推進任務和提供建議。",
-          "title": "Proactive Agent"
+          "description": "選擇 Okou 主動工作的方式。",
+          "title": "Proactive"
         },
         "tools": {
           "title": "工具"
@@ -5528,16 +5528,6 @@
         "retryMessage": "晨報設定無法載入或更新，請重試以繼續。",
         "title": "晨報"
       },
-      "proactiveJobs": {
-        "description": "自動推進你的任務，在需要你協助或任務完成時通知你。",
-        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
-        "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "任務暫時無法推進；如果工作已暫停，可關閉後重新開啟以重試。",
-        "preparing": "正在準備任務，你可以隨時關閉。",
-        "retry": "重試",
-        "retryMessage": "無法讀取或更新任務設定，請重試。",
-        "title": "自動推進任務"
-      },
       "proactiveLearning": {
         "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
         "missingDefaultAgent": "請先選擇可用的預設 Agent。",
@@ -5548,15 +5538,15 @@
         "retryMessage": "無法載入或更新此設定，請重試。",
         "title": "主動學習"
       },
-      "proactivePlanning": {
-        "description": "在你明確交辦的範圍內規劃並維護任務。開啟 Tasks 後，新任務可立即推進。",
+      "proactivePlanningAction": {
+        "description": "在你交辦的範圍內規劃並推進任務，需要你處理時提醒你。",
         "missingDefaultAgent": "請先選擇可用的預設 Agent。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "此工作流程暫不可用，Okou 會重試。",
         "preparing": "正在準備此工作流程。",
         "retry": "重試",
         "retryMessage": "無法載入或更新此設定，請重試。",
-        "title": "主動規劃"
+        "title": "規劃與執行"
       },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
@@ -5566,7 +5556,7 @@
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
         "retry": "重試",
         "retryMessage": "無法載入或更新主動建議設定，請重試。",
-        "title": "主動建議"
+        "title": "建議"
       },
       "send": {
         "cmdEnter": "⌘ Enter",
@@ -5970,8 +5960,6 @@
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 身分驗證失敗。請檢查系統使用者名稱，在帶標籤的目標裝置上啟用 Tailscale SSH，並在 tailnet 的 SSH accept 原則中允許此登入。",
       "deleteHelp": "確定刪除此主機？智慧體將不再於可用主機清單中看到它。",
-      "editUnavailable": "此主機現已使用 Tailscale。此處尚未提供 Tailscale 編輯和重新綁定功能。請取消此次編輯以保留已儲存的傳輸方式。",
-      "needsRebind": "此主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。",
       "sshDocs": "Tailscale SSH 官方文件",
       "sshHelp": "使用所選 Tailscale 網路的身分驗證，無需 SSH 密碼或私鑰。請在帶標籤的目標裝置上啟用 Tailscale SSH，並透過 SSH accept 原則允許此系統使用者名稱。",
       "sshTitle": "Tailscale SSH",
@@ -6345,7 +6333,6 @@
       "sshHelp": "SSH 僅保護 Runner 到 SSH 伺服器這一段。該伺服器必須能夠存取 RFB 目標。只有在聊天中同時啟用該 SSH 主機，才能使用此路由。",
       "sshNeedsRebind": "此 VNC 連線使用的 SSH 主機需要重新綁定 Cloudflare Access。請先在 SSH 設定中重新綁定，或明確選擇直接連線，再嘗試連線。",
       "sshNeedsRebindStatus": "SSH 需要重新綁定",
-      "sshTailscaleNeedsRebind": "此 VNC 連線使用的 SSH 主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。",
       "title": "連線路由",
       "unavailable": "此帳戶無法使用 SSH 設定。",
       "via": "SSH 主機："

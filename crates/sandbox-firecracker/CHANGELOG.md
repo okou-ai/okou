@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.53.37](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.36...sandbox-firecracker-v0.53.37) (2026-10-26)
+
+## [0.53.36](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.35...sandbox-firecracker-v0.53.36) (2026-10-26)
+
+
+### Documentation
+
+* **sandbox:** document exclusive snapshot output ownership ([#43006](https://github.com/okou-ai/okou/issues/43006)) ([6503b17](https://github.com/okou-ai/okou/commit/6503b176034386c72c3b4cbc5f728f28be4d7112))
+
 ## [0.53.35](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.34...sandbox-firecracker-v0.53.35) (2026-10-26)
 
 

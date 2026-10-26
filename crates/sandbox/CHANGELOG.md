@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.4](https://github.com/okou-ai/okou/compare/sandbox-v0.28.3...sandbox-v0.28.4) (2026-10-26)
+
+
+### Documentation
+
+* **sandbox:** document exclusive snapshot output ownership ([#43006](https://github.com/okou-ai/okou/issues/43006)) ([6503b17](https://github.com/okou-ai/okou/commit/6503b176034386c72c3b4cbc5f728f28be4d7112))
+
 ## [0.28.3](https://github.com/okou-ai/okou/compare/sandbox-v0.28.2...sandbox-v0.28.3) (2026-10-21)
 
 

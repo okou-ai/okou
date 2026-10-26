@@ -3,7 +3,7 @@ import { useLoadable } from "ccstate-react";
 import type { z } from "zod";
 import type { vncTransportMetadataSchema } from "@okouai/api-contracts/contracts/vnc-transport";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
-import { scopedTailscaleConfigs$ } from "../../signals/tailscale.ts";
+import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 
 /** Read only; never infers a Direct route or inner VNC trust from a provider. */
 export function VncNativeRoute({
@@ -13,7 +13,7 @@ export function VncNativeRoute({
 }) {
   const { t } = useTranslation();
   const cloudflare = useLoadable(cloudflareAccessConfigs$);
-  const tailscale = useLoadable(scopedTailscaleConfigs$);
+  const tailscale = useLoadable(tailscaleConfigs$);
   if (
     !transport ||
     (transport.type !== "cloudflare_access" && transport.type !== "tailscale")

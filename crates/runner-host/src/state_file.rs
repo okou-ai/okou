@@ -229,6 +229,16 @@ pub async fn write_private_atomic(path: &Path, content: &[u8]) -> HostResult<()>
         .map_err(|e| HostError::Internal(e.to_string()))
 }
 
+/// Synchronous counterpart to [`write_private_atomic`] for a blocking owner.
+///
+/// The caller must keep this off async workers and retain its write authority
+/// until the call returns. Publication, permissions, error cleanup and the lack
+/// of an fsync guarantee match the asynchronous helper.
+pub fn write_private_atomic_blocking(path: &Path, content: &[u8]) -> HostResult<()> {
+    crate::host_file::write_private_atomic_blocking(path, content, "state file")
+        .map_err(|e| HostError::Internal(e.to_string()))
+}
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
@@ -240,6 +250,46 @@ mod tests {
     use std::time::Duration;
 
     const FIFO_READ_CHILD_PATH_ENV: &str = "OKOU_RUN_STATE_FILE_FIFO_READ_CHILD_PATH";
+
+    #[test]
+    fn blocking_atomic_write_replaces_without_following_symlink_and_stays_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::write(&target, b"original target").unwrap();
+        let path = dir.path().join("state.json");
+        symlink(&target, &path).unwrap();
+
+        write_private_atomic_blocking(&path, b"new content").unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"new content");
+        assert_eq!(std::fs::read(&target).unwrap(), b"original target");
+        assert!(!std::fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        write_private_atomic_blocking(&path, b"replacement").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn blocking_atomic_write_cleans_staging_after_publication_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::create_dir(&path).unwrap();
+
+        let error = write_private_atomic_blocking(&path, b"content").unwrap_err();
+
+        assert!(
+            error.to_string().contains("rename state file"),
+            "got {error}"
+        );
+        assert!(path.is_dir());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 
     #[tokio::test]
     async fn read_to_string_rejects_symlink_without_reading_target() {

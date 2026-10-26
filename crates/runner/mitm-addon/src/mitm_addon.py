@@ -854,6 +854,12 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
     codex_model_catalog_cache.capture_and_strip_prefetch_marker(flow)
     connector_intent.capture_and_strip(flow)
 
+    if flow.error is not None:
+        # Native validation emits this hook to register rejected flows. Keep
+        # error-log attribution without body checks, admission or authorization.
+        _classify_request_for_flow(flow)
+        return None
+
     auth_base_body_check = _auth_base_body_header_check(
         flow,
         request_end_stream=request_end_stream,
@@ -1750,6 +1756,8 @@ async def request(flow: http.HTTPFlow) -> None:
             if isinstance(classification, request_classification.PublicDestinationDenied):
                 terminal_usage.release_tracked_flow(flow)
             _block_request_classification(flow, classification)
+            return
+        if classification.kind == "native_rejected":
             return
         if classification.kind == "pass_through":
             return

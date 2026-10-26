@@ -4,7 +4,6 @@ import {
 } from "./remote-network-scope.ts";
 import { command, computed, state } from "ccstate";
 import { privateNetworkHostCount } from "../lib/private-network-references.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   tailscaleChangedPayloadSchema,
   tailscaleContract,
@@ -22,7 +21,6 @@ import {
   currentOrgInfo$,
   user$,
 } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { isOrgAdmin$ } from "./org.ts";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
 import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
@@ -31,19 +29,6 @@ import {
   openRemoteNetworkEditor$,
   closeRemoteNetworkEditor$,
 } from "./remote-network-location.ts";
-
-export const tailscaleEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.TailscaleAccess];
-});
-
-/** VNC uses reusable networks without enabling the Tailscale SSH editor. */
-export const tailscaleSettingsEnabled$ = computed((get) => {
-  const switches = get(featureSwitch$);
-  return (
-    switches[FeatureSwitchKey.TailscaleAccess] ||
-    switches[FeatureSwitchKey.VncAccess]
-  );
-});
 
 export const tailscaleIdentity$ = computed(async (get) => {
   const sessionKey = get(authenticatedSessionKey$);
@@ -100,8 +85,7 @@ export const invalidateTailscale$ = command(({ set }) => {
   set(invalidateRemoteAccess$);
 });
 
-/** Shared owner metadata; each settings surface owns its existing UI gate. */
-export const scopedTailscaleConfigs$ = computed(async (get) => {
+export const tailscaleConfigs$ = computed(async (get) => {
   get(reload$);
   if (!(await get(tailscaleIdentity$))) {
     return null;
@@ -113,11 +97,6 @@ export const scopedTailscaleConfigs$ = computed(async (get) => {
     { showErrorToast: false },
   );
   return result.body.configs;
-});
-export const tailscaleConfigs$ = computed(async (get) => {
-  return get(tailscaleSettingsEnabled$)
-    ? await get(scopedTailscaleConfigs$)
-    : null;
 });
 
 export const retryTailscale$ = command(({ set }, signal: AbortSignal) => {
@@ -181,11 +160,7 @@ const resetSave$ = resetSignal();
 
 export const tailscaleDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
-  if (
-    !get(tailscaleSettingsEnabled$) ||
-    !dialog ||
-    dialog.sessionKey !== get(authenticatedSessionKey$)
-  ) {
+  if (!dialog || dialog.sessionKey !== get(authenticatedSessionKey$)) {
     return null;
   }
   return dialog?.identity === (await get(tailscaleIdentity$)) ? dialog : null;
@@ -249,10 +224,7 @@ export const mountTailscaleForm$ = onRef(
       () => {
         form.reset();
         if (get(dialog$) === mounted) {
-          if (
-            !get(tailscaleSettingsEnabled$) ||
-            mounted?.sessionKey !== get(authenticatedSessionKey$)
-          ) {
+          if (mounted?.sessionKey !== get(authenticatedSessionKey$)) {
             set(closeTailscaleDialog$);
           } else {
             // Ref reattachment must preserve the dialog's replacement choice.
@@ -292,7 +264,7 @@ export const openTailscaleDialog$ = command(
       get(isOrgAdmin$),
     ]);
     signal.throwIfAborted();
-    if (!identity || !get(tailscaleSettingsEnabled$)) {
+    if (!identity) {
       return;
     }
     if (kind !== "create" && !config) {
@@ -469,11 +441,7 @@ const createTailscale$ = command(
   ) => {
     const clients = await get(tailscaleClient$);
     signal.throwIfAborted();
-    if (
-      clients.identity !== dialog.identity ||
-      get(dialog$) !== dialog ||
-      !get(tailscaleSettingsEnabled$)
-    ) {
+    if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
       return false;
     }
     const attempt = get(attempt$);
@@ -525,11 +493,7 @@ const editTailscale$ = command(
     }
     const clients = await get(tailscaleClient$);
     signal.throwIfAborted();
-    if (
-      clients.identity !== dialog.identity ||
-      get(dialog$) !== dialog ||
-      !get(tailscaleSettingsEnabled$)
-    ) {
+    if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
       return false;
     }
     const parsed = tailscaleContract.update.body.safeParse({
@@ -620,11 +584,7 @@ const confirmTailscaleChange$ = command(
     }
     const clients = await get(tailscaleClient$);
     signal.throwIfAborted();
-    if (
-      clients.identity !== dialog.identity ||
-      get(dialog$) !== dialog ||
-      !get(tailscaleSettingsEnabled$)
-    ) {
+    if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
       return false;
     }
     const params = { configId: config.id };
@@ -722,7 +682,7 @@ export const saveTailscale$ = command(
         true,
       );
     }
-    if (get(dialog$) !== dialog || !get(tailscaleSettingsEnabled$)) {
+    if (get(dialog$) !== dialog) {
       return;
     }
     if (dialog.kind === "edit" && dialog.config) {

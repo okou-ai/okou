@@ -1,15 +1,12 @@
 import { command, computed, state } from "ccstate";
-import {
-  proactiveLearningContract,
-  proactivePlanningContract,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { searchParams$ } from "../../route.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 
 function createNightlyPreferenceSignals(
-  contract: typeof proactiveLearningContract | typeof proactivePlanningContract,
+  contract: typeof proactiveLearningContract,
 ) {
   const revision$ = state(0);
   const preference$ = computed(async (get) => {
@@ -42,7 +39,4 @@ function createNightlyPreferenceSignals(
 
 export const proactiveLearningSignals = createNightlyPreferenceSignals(
   proactiveLearningContract,
-);
-export const proactivePlanningSignals = createNightlyPreferenceSignals(
-  proactivePlanningContract,
 );

@@ -13,7 +13,7 @@ export function proactiveWorkflowOwnerEnabledSql(
     jobs: sql`preference.proactive_action_enabled = true`,
     suggestions: sql`preference.proactive_suggestions_enabled = true`,
     learning: sql`preference.proactive_learning_enabled = true`,
-    planning: sql`preference.proactive_planning_enabled = true`,
+    planning: sql`preference.proactive_action_enabled = true`,
   }[kind];
   return sql`EXISTS (
     SELECT 1 FROM org_members_metadata AS preference

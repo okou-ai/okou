@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.18...runner-provider-v0.11.19) (2026-10-26)
+
+## [0.11.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.17...runner-provider-v0.11.18) (2026-10-26)
+
+## [0.11.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.16...runner-provider-v0.11.17) (2026-10-26)
+
+
+### Performance Improvements
+
+* **runner-provider:** coalesce successful claim bodies once ([#42951](https://github.com/okou-ai/okou/issues/42951)) ([690ed56](https://github.com/okou-ai/okou/commit/690ed562676243da24aa5a1d481d4e3e83afe2e6))
+
 ## [0.11.16](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.15...runner-provider-v0.11.16) (2026-10-26)
 
 ## [0.11.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.14...runner-provider-v0.11.15) (2026-10-25)

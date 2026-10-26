@@ -94,7 +94,7 @@ async fn byte_adapter_handles_partial_writes_and_ping_during_socket_backpressure
 }
 
 #[tokio::test]
-async fn access_sessions_survive_notification_outages_without_replaying_work() {
+async fn access_sessions_run_without_a_subscription_and_honor_delivered_invalidation() {
     let (mut h, gateway) = gateway::setup(Reply::Process, Mode::Proxy, "ssh.example.com").await;
     let resolve = h.resolve(credential(&h, true, true)).await;
     super::notifications::session_continuity(&h).await;
@@ -107,7 +107,7 @@ async fn access_sessions_survive_notification_outages_without_replaying_work() {
 }
 
 #[tokio::test]
-async fn access_in_flight_exec_completes_once_across_notification_outages() {
+async fn access_in_flight_exec_completes_once_without_a_subscription() {
     let (mut h, gateway) = gateway::setup(Reply::Process, Mode::Proxy, "ssh.example.com").await;
     let _resolve = h.resolve(credential(&h, true, true)).await;
     super::notifications::exec_continuity(&h).await;
@@ -116,11 +116,11 @@ async fn access_in_flight_exec_completes_once_across_notification_outages() {
 }
 
 #[tokio::test]
-async fn access_file_transfer_completes_across_notification_outages() {
+async fn access_file_transfer_completes_without_a_subscription() {
     let (mut h, gateway) =
         gateway::setup(Reply::Sftp("normal"), Mode::Proxy, "ssh.example.com").await;
     let _resolve = h.resolve(credential(&h, true, true)).await;
-    super::files::upload_across_notification_outages(&h).await;
+    super::files::upload_without_subscription(&h).await;
     h.shutdown().await;
     wait_for(|| gateway.observed.closed.load(Ordering::SeqCst) == 2).await;
 }
@@ -131,9 +131,8 @@ async fn tls_binary_carrier_preserves_key_password_output_and_idle_reuse() {
         let (mut h, gateway) =
             gateway::setup(Reply::default(), Mode::Fragmented, "ssh.example.com").await;
         let resolve = h.resolve(credential(&h, password, true)).await;
-        let mut notifications = h.notifications();
-        for event in super::notifications::outage_events() {
-            notifications.send(event).await;
+        // The second command exercises cached authority and idle carrier reuse.
+        for _ in 0..2 {
             let frames = h.request(params()).await;
             assert_eq!(terminal(&frames)["type"], "finished", "{frames:?}");
             assert_eq!(terminal(&frames)["exit"]["code"], 7);

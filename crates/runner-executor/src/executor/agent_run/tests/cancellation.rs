@@ -1,10 +1,13 @@
 use std::io;
 use std::time::Duration;
 
-use guest_control_client::{ConnectionClosedAtAdmission, FrameWriteObserver, GuestControlClient};
+use guest_control_client::{
+    ConnectionClosedAtAdmission, FrameWriteObserver, GuestControlClient,
+    NormalOperationFenceRejection,
+};
 use guest_control_proto::{
     MSG_PING, MSG_PONG, MSG_READY, MSG_SHUTDOWN, MSG_SHUTDOWN_ACK, MSG_WRITE_FILE,
-    MSG_WRITE_FILE_RESULT, MSG_WRITE_FILE_STREAM_BEGIN,
+    MSG_WRITE_FILE_RESULT, MSG_WRITE_FILE_STREAM_BEGIN, MSG_WRITE_PRIVATE_FILES,
 };
 use sandbox::{FileCompression, OperationCancellationContext};
 use tokio::io::AsyncReadExt;
@@ -16,6 +19,57 @@ use crate::test_fixtures::guest_control::{read_frame, send_frame};
 
 const BOUND: Duration = Duration::from_secs(5);
 const SANDBOX: &str = "preparation-sandbox";
+
+#[tokio::test]
+async fn cancelled_private_bootstrap_batch_fences_reuse_and_never_replays() {
+    let (client, mut guest) = connection().await;
+    let cancel = CancellationToken::new();
+    let owner =
+        OperationCancellationContext::new("bootstrap-run", SANDBOX, "guest_agent_bootstrap_files");
+    let files = [
+        guest_control_client::WriteFileEntry {
+            path: "/tmp/instructions",
+            content: b"current",
+        },
+        guest_control_client::WriteFileEntry {
+            path: "/tmp/context",
+            content: b"context",
+        },
+        guest_control_client::WriteFileEntry {
+            path: "/tmp/environment",
+            content: b"environment",
+        },
+        guest_control_client::WriteFileEntry {
+            path: "/tmp/payload",
+            content: b"payload",
+        },
+    ];
+    let mut phase = Box::pin(run_pre_spawn_phase(
+        &cancel,
+        &owner,
+        client.write_private_files(&files),
+    ));
+    tokio::select! {
+        _ = &mut phase => panic!("batch finished before its terminal acknowledgement"),
+        request = read_frame(&mut guest) => assert_eq!(request.msg_type, MSG_WRITE_PRIVATE_FILES),
+    }
+    cancel.cancel();
+    assert!(phase.await.is_none());
+    assert_eq!(owner.cancelled_owner().unwrap().run_id(), "bootstrap-run");
+    // A fully written batch awaiting its terminal result leaves the existing
+    // tracker not parkable. Unlike an interrupted streaming transfer, this
+    // state does not promise immediate socket EOF; normal work is fenced.
+    assert!(matches!(
+        client.try_fence_normal_operations(),
+        Err(NormalOperationFenceRejection::NotParkable)
+    ));
+    let error = client
+        .write_private_file("/tmp/later", b"never sent")
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
+    acknowledge_shutdown(&client, &mut guest).await;
+}
 
 async fn connection() -> (GuestControlClient, UnixStream) {
     let (host, mut guest) = UnixStream::pair().unwrap();

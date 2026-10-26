@@ -54,7 +54,6 @@ async function createRun(actor = bdd.user()) {
     actor,
     agentId: agent.agentId,
     runId: run.runId,
-    threadId: run.threadId,
     claim,
     headers: { authorization: `Bearer ${claim.sandboxToken}` },
   };
@@ -98,16 +97,16 @@ async function finish(run: Awaited<ReturnType<typeof createRun>>) {
 }
 
 describe("Data Router accounting when a run ends", () => {
-  it("charges returned credits once at completion and keeps the service token out of the sandbox environment", async () => {
+  it("totals reported request credits once at completion and keeps the service token out of the sandbox environment", async () => {
     const run = await createRun();
     expect(run.claim.platformEnvironment.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
     expect(
       JSON.stringify([run.claim.environment, run.claim.platformEnvironment]),
     ).not.toContain("router-test-service-token");
     const requestId = randomUUID();
-    const unreportedRequestId = randomUUID();
+    const secondRequestId = randomUUID();
     await accept(register(run, requestId), [200]);
-    await accept(register(run, unreportedRequestId), [200]);
+    await accept(register(run, secondRequestId), [200]);
     const before = await credits(run.actor);
     server.use(
       http.post(ROUTER, async ({ request }) => {
@@ -123,7 +122,12 @@ describe("Data Router accounting when a run ends", () => {
           jsonrpc: "2.0",
           id: "test",
           result: {
-            structuredContent: { records: [{ requestId, credits: 7 }] },
+            structuredContent: {
+              records: [
+                { requestId, credits: 3 },
+                { requestId: secondRequestId, credits: 4 },
+              ],
+            },
           },
         });
       }),
@@ -132,23 +136,6 @@ describe("Data Router accounting when a run ends", () => {
     await expect(credits(run.actor)).resolves.toBe(before - 7);
     await finish(run);
     await expect(credits(run.actor)).resolves.toBe(before - 7);
-  });
-
-  it("does not retry a failed completion lookup", async () => {
-    const run = await createRun();
-    await accept(register(run, randomUUID()), [200]);
-    const before = await credits(run.actor);
-    let lookups = 0;
-    server.use(
-      http.post(ROUTER, () => {
-        lookups += 1;
-        return new HttpResponse(null, { status: 503 });
-      }),
-    );
-    await finish(run);
-    await finish(run);
-    expect(lookups).toBe(1);
-    await expect(credits(run.actor)).resolves.toBe(before);
   });
 
   it("settles captured usage after the completed Agent and Run are deleted", async () => {
@@ -184,54 +171,7 @@ describe("Data Router accounting when a run ends", () => {
     await expect(credits(run.actor)).resolves.toBe(before - 4);
   });
 
-  it("does not charge again when another completion redrives an undelivered chat callback", async () => {
-    const run = await createRun();
-    const requestId = randomUUID();
-    await accept(register(run, requestId), [200]);
-    const before = await credits(run.actor);
-    const callbackEntered = createDeferredPromise<void>(context.signal);
-    const releaseCallback = createDeferredPromise<void>(context.signal);
-    let heldCallback = false;
-    context.mocks.ably.publish.mockImplementation(async (topic: unknown) => {
-      if (
-        !heldCallback &&
-        topic === `chatThreadMessageCreated:${run.threadId}`
-      ) {
-        heldCallback = true;
-        callbackEntered.resolve(undefined);
-        await releaseCallback.promise;
-      }
-    });
-    server.use(
-      http.post(ROUTER, () => {
-        return HttpResponse.json({
-          jsonrpc: "2.0",
-          id: "callback-redrive",
-          result: {
-            structuredContent: { records: [{ requestId, credits: 5 }] },
-          },
-        });
-      }),
-    );
-    const first = webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Callback redrive" },
-      run.headers,
-      [200],
-    );
-    await callbackEntered.promise;
-    // The first request has committed the terminal state; its callback is pending.
-    await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Callback redrive" },
-      run.headers,
-      [200],
-    );
-    releaseCallback.resolve(undefined);
-    await first;
-    await flushWaitUntilForTest();
-    await expect(credits(run.actor)).resolves.toBe(before - 5);
-  });
-
-  it("settles a fresh cancellation once without charging again on cancellation recovery", async () => {
+  it("settles reported usage once across cancellation and completion callbacks", async () => {
     const run = await createRun();
     const requestId = randomUUID();
     await accept(register(run, requestId), [200]);

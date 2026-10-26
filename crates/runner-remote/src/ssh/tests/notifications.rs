@@ -1,6 +1,10 @@
-use std::{sync::atomic::Ordering, time::Duration};
+//! SSH RPCs run without a subscription; delivered messages revoke authority.
+//! Subscription health and supervisor lifetime belong to runner-provider.
 
-use ably_subscriber::{Event, Message};
+use std::sync::atomic::Ordering;
+
+use ably_subscriber::Message;
+use runner_provider::AblySideMessageHandler;
 use serde_json::{Value, json};
 
 use super::{
@@ -10,35 +14,18 @@ use super::{
     terminal, wait_for,
 };
 
-pub(super) fn outage_events() -> Vec<Option<Event>> {
-    vec![
-        Some(Event::Connected),
-        Some(Event::Disconnected {
-            reason: Some("connection reset".into()),
-        }),
-        Some(Event::Connected),
-        Some(Event::Disconnected { reason: None }),
-        Some(Event::Connected),
-        Some(Event::Error {
-            code: 40142,
-            message: "subscription unavailable".into(),
-        }),
-        None,
-    ]
-}
-
-fn invalidation(h: &Harness, connection: Value) -> Option<Event> {
-    Some(Event::Message(Message {
+fn invalidation(h: &Harness, connection: Value) -> Message {
+    Message {
         name: Some("ssh-authority-invalidated".into()),
         data: json!({"runId": h.run, "connectionId": connection}),
         id: None,
         client_id: None,
         timestamp: None,
-    }))
+    }
 }
 
 #[tokio::test]
-async fn direct_sessions_survive_notification_outages_without_replaying_work() {
+async fn direct_sessions_run_without_a_subscription_and_honor_delivered_invalidation() {
     let mut h = Harness::new(Reply::Process).await;
     let resolve = h.resolve(h.credential(true)).await;
     session_continuity(&h).await;
@@ -49,16 +36,13 @@ async fn direct_sessions_survive_notification_outages_without_replaying_work() {
 }
 
 pub(super) async fn session_continuity(h: &Harness) {
-    let mut notifications = h.notifications();
-    // Neither session waits for initial subscription readiness.
     let idle = start(h, json!({"type":"shell"}), false).await;
     let active = start(h, json!({"type":"shell"}), false).await;
     state(h, &idle, "running").await;
     state(h, &active, "running").await;
     let mut cursor = json!(0);
     let mut expected = Vec::new();
-    for (index, event) in outage_events().into_iter().enumerate() {
-        notifications.send(event).await;
+    for index in 0..3 {
         let text = format!("chunk-{index}");
         write(h, &active, &format!("printf {text}\n"), false).await;
         let read = rpc(
@@ -73,11 +57,6 @@ pub(super) async fn session_continuity(h: &Harness) {
         state(h, &idle, "running").await;
         state(h, &active, "running").await;
     }
-    // No reconnect/grace deadline: exceed the supervisor's prolonged-outage threshold.
-    // Ordinary idle-pool expiration is allowed; these active session transports remain live.
-    tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(65)).await;
-    tokio::time::resume();
     state(h, &idle, "running").await;
     state(h, &active, "running").await;
     assert_eq!(
@@ -86,7 +65,7 @@ pub(super) async fn session_continuity(h: &Harness) {
     );
     assert!(h.observed.commands.lock().unwrap().is_empty());
 
-    // A new session is admitted during the outage; the older sessions keep their IDs.
+    // Fresh API-authorized work preserves the older session IDs.
     let fresh = start(h, json!({"type":"exec", "command":"printf fresh"}), false).await;
     state(h, &fresh, "finished").await;
     assert_eq!(
@@ -99,8 +78,6 @@ pub(super) async fn session_continuity(h: &Harness) {
     );
     assert_eq!(h.observed.commands.lock().unwrap().len(), 1);
 
-    // Retiring the notification supervisor is not retiring the Run.
-    drop(notifications);
     write(h, &idle, "printf still-live; exit 0\n", false).await;
     state(h, &idle, "finished").await;
     assert_eq!(
@@ -112,18 +89,13 @@ pub(super) async fn session_continuity(h: &Harness) {
         "closed"
     );
 
-    let mut notifications = h.notifications();
-    notifications
-        .send(invalidation(h, json!(uuid::Uuid::new_v4())))
-        .await;
-    state(h, &active, "running").await;
-    // Delivered invalidation still retires the exact ID, even while disconnected.
-    notifications.send(invalidation(h, json!(CONNECTION))).await;
-    assert_eq!(
-        rpc(h, "status", json!({"sessionId":active})).await["failure_reason"],
-        "unavailable"
+    assert!(
+        h.runtime
+            .handle(&invalidation(h, json!(uuid::Uuid::new_v4())))
     );
-    notifications.send(Some(Event::Connected)).await;
+    state(h, &active, "running").await;
+    // Delivered invalidation retires only its exact authority ID.
+    assert!(h.runtime.handle(&invalidation(h, json!(CONNECTION))));
     assert_eq!(
         rpc(h, "status", json!({"sessionId":active})).await["failure_reason"],
         "unavailable"
@@ -133,15 +105,8 @@ pub(super) async fn session_continuity(h: &Harness) {
 }
 
 #[tokio::test]
-async fn outage_admission_still_requires_api_authority_and_never_restores_revoked_snapshots() {
+async fn admission_requires_api_authority_and_never_restores_revoked_snapshots() {
     let mut h = Harness::new(Reply::Process).await;
-    let mut notifications = h.notifications();
-    notifications
-        .send(Some(Event::Error {
-            code: 40142,
-            message: "unavailable".into(),
-        }))
-        .await;
     let first = start(&h, json!({"type":"exec", "command":"never"}), false).await;
     assert_eq!(
         state(&h, &first, "failed").await["state"]["failure_reason"],
@@ -159,8 +124,7 @@ async fn outage_admission_still_requires_api_authority_and_never_restores_revoke
     request["command"] = json!("printf granted");
     assert_eq!(output(&h.request(request).await, "stdout"), b"granted");
     granted.delete_async().await;
-    notifications.send(invalidation(&h, Value::Null)).await;
-    notifications.send(Some(Event::Connected)).await;
+    assert!(h.runtime.handle(&invalidation(&h, Value::Null)));
     assert_eq!(
         terminal(&h.request(params()).await)["failure_reason"],
         "authority_failure"
@@ -170,7 +134,7 @@ async fn outage_admission_still_requires_api_authority_and_never_restores_revoke
 }
 
 #[tokio::test]
-async fn direct_in_flight_exec_completes_once_across_notification_outages() {
+async fn direct_in_flight_exec_completes_once_without_a_subscription() {
     let mut h = Harness::new(Reply::Process).await;
     let _resolve = h.resolve(h.credential(true)).await;
     exec_continuity(&h).await;
@@ -188,11 +152,6 @@ pub(super) async fn exec_continuity(h: &Harness) {
     ));
     let (frames, ()) = tokio::join!(h.request(request), async {
         wait_for(|| h.observed.commands.lock().unwrap().len() == 1).await;
-        let mut notifications = h.notifications();
-        for event in outage_events() {
-            notifications.send(event).await;
-        }
-        drop(notifications);
         std::fs::write(&release, []).unwrap();
     });
     assert_eq!(terminal(&frames)["type"], "finished");
@@ -207,8 +166,7 @@ async fn delivered_invalidation_interrupts_in_flight_exec_without_a_subscription
     let _resolve = h.resolve(h.credential(true)).await;
     let (frames, ()) = tokio::join!(h.request(params()), async {
         wait_for(|| h.observed.commands.lock().unwrap().len() == 1).await;
-        let mut notifications = h.notifications();
-        notifications.send(invalidation(&h, Value::Null)).await;
+        assert!(h.runtime.handle(&invalidation(&h, Value::Null)));
     });
     assert_eq!(terminal(&frames)["type"], "failed");
     assert_eq!(terminal(&frames)["effects"], "unknown");

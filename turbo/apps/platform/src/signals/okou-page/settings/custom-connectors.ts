@@ -858,25 +858,40 @@ export const connectCustomConnectorAuthorizationForAgent$ = command(
 );
 
 const resetCustomConnectorConnectionSignal$ = resetSignal();
-export const cancelCustomConnectorConnection$ = command(({ set }) => {
-  set(resetCustomConnectorConnectionSignal$);
-});
+const closeCustomConnectorConnection$ = command(
+  ({ set }, onClose: (() => void) | undefined) => {
+    set(resetCustomConnectorConnectInput$);
+    if (onClose) {
+      onClose();
+    } else {
+      set(closeCustomConnectorDialog$);
+    }
+  },
+);
+export const cancelCustomConnectorConnection$ = command(
+  ({ set }, onClose: (() => void) | undefined) => {
+    set(resetCustomConnectorConnectionSignal$);
+    set(closeCustomConnectorConnection$, onClose);
+  },
+);
 
-const submitCustomConnectorConnectionCommand$ = command(
+interface CustomConnectorConnectionInput {
+  readonly connector: CustomConnectorResponse;
+  readonly agentId?: string;
+  readonly values: readonly CustomConnectorValueInput[];
+  readonly accountOptions: CustomConnectorAccountMutationOptions;
+  readonly accountMode?: ConnectorAccountConnectMode;
+  readonly onConnected?: ConnectorConnectSuccess;
+  readonly onSuccess?: ConnectorConnectSuccess;
+  readonly onClose?: () => void;
+}
+
+const runCustomConnectorConnection$ = command(
   async (
     { get, set },
-    args: {
-      readonly connector: CustomConnectorResponse;
-      readonly agentId?: string;
-      readonly values: readonly CustomConnectorValueInput[];
-      readonly accountOptions: CustomConnectorAccountMutationOptions;
-      readonly accountMode?: ConnectorAccountConnectMode;
-      readonly onConnected?: ConnectorConnectSuccess;
-    },
-    onSuccess: ConnectorConnectSuccess | undefined,
-    parentSignal: AbortSignal,
+    args: CustomConnectorConnectionInput,
+    signal: AbortSignal,
   ): Promise<boolean> => {
-    const signal = set(resetCustomConnectorConnectionSignal$, parentSignal);
     const finish = async (
       result: CustomConnectorConnectionResult,
       attemptSignal: AbortSignal,
@@ -886,7 +901,7 @@ const submitCustomConnectorConnectionCommand$ = command(
         attemptSignal.throwIfAborted();
       }
       if (result.connected && (result.targetAuthorized || args.accountMode)) {
-        await onSuccess?.(result.connectionId, attemptSignal);
+        await args.onSuccess?.(result.connectionId, attemptSignal);
         attemptSignal.throwIfAborted();
       }
     };
@@ -932,9 +947,21 @@ const submitCustomConnectorConnectionCommand$ = command(
   },
 );
 
-/** One loadable owns connection, target authorization, and the continuation. */
-export const submitCustomConnectorConnection$ =
-  submitCustomConnectorConnectionCommand$;
+/** One loadable owns connection, success callbacks, and dialog completion. */
+export const submitCustomConnectorConnection$ = command(
+  async (
+    { set },
+    args: CustomConnectorConnectionInput,
+    parentSignal: AbortSignal,
+  ): Promise<void> => {
+    const signal = set(resetCustomConnectorConnectionSignal$, parentSignal);
+    const connected = await set(runCustomConnectorConnection$, args, signal);
+    signal.throwIfAborted();
+    if (connected) {
+      set(closeCustomConnectorConnection$, args.onClose);
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Settings page dialog state — tracks which dialog is open.

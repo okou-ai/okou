@@ -151,11 +151,10 @@ PG_BIN=/usr/lib/postgresql/18/bin \
 
 `DATABASE_URL` must address a disposable local PostgreSQL administrator database.
 The native test creates/drops uniquely named source and restore databases and
-uses the real CLI and PostgreSQL tools. It covers lossless large integers and
-private fields, quoted/backslash/Unicode values, required-channel-binding refusal,
-full schema/data restore with dropped-column history, existing-target refusal,
-stale-row and incoming-CASCADE refusal, no
-compensation, unchanged financial data, idempotent replay and missing-receipt
-reconciliation. It also runs in migration consistency CI. Retire this directory
-and its CI invocation after production acceptance; preserve immutable schema
-migration history and the private operational archive.
+uses the real CLI and PostgreSQL tools. It covers inventory, archive, full
+schema/data restore with dropped-column history, exact large integers, retirement
+receipts, financial-data preservation, idempotent replay and missing-receipt
+reconciliation. Migration consistency CI also verifies billing-history
+preservation and current Router writes through migration 1464. Retire this
+directory and its CI invocation after production acceptance; preserve immutable
+schema migration history and the private operational archive.

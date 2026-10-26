@@ -50,7 +50,6 @@ import {
   tailscaleAcknowledged$,
   tailscaleConfigs$,
   tailscaleDialog$,
-  tailscaleSettingsEnabled$,
   tailscaleImpact$,
   tailscaleLatestConfig$,
   tailscaleSaveUncertain$,
@@ -805,15 +804,11 @@ export function TailscaleSection({
 
 export function TailscaleManagement() {
   const { t } = useTranslation();
-  const enabled = useGet(tailscaleSettingsEnabled$);
   const configs = useLoadable(tailscaleConfigs$);
   const admin = useLoadable(isOrgAdmin$);
   const open = useSet(openTailscaleDialog$);
   const retry = useSet(retryTailscale$);
   const signal = useGet(pageSignal$);
-  if (!enabled) {
-    return null;
-  }
   return (
     <section
       className="grid gap-4"

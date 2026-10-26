@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.86](https://github.com/okou-ai/okou/compare/runner-network-v0.2.85...runner-network-v0.2.86) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner-network:** retain ca authority through physical preparation ([#43055](https://github.com/okou-ai/okou/issues/43055)) ([5191452](https://github.com/okou-ai/okou/commit/5191452e0f77c4504965705d032120d51e4b1d63))
+
+## [0.2.85](https://github.com/okou-ai/okou/compare/runner-network-v0.2.84...runner-network-v0.2.85) (2026-10-26)
+
+## [0.2.84](https://github.com/okou-ai/okou/compare/runner-network-v0.2.83...runner-network-v0.2.84) (2026-10-26)
+
 ## [0.2.83](https://github.com/okou-ai/okou/compare/runner-network-v0.2.82...runner-network-v0.2.83) (2026-10-26)
 
 ## [0.2.82](https://github.com/okou-ai/okou/compare/runner-network-v0.2.81...runner-network-v0.2.82) (2026-10-25)

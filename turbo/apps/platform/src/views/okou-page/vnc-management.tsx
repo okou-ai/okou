@@ -25,7 +25,6 @@ import {
   sshConnections$,
   usesTailscaleNetwork,
 } from "../../signals/ssh.ts";
-import { tailscaleEnabled$ } from "../../signals/tailscale.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import { isRsaAesProfile } from "../../signals/vnc-rsa-aes.ts";
 import { useRsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
@@ -148,7 +147,6 @@ function VncRebindWarning({
   readonly sshConnection: SshConnectionResponse | null | undefined;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(tailscaleEnabled$);
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
   return (
@@ -159,13 +157,11 @@ function VncRebindWarning({
       >
         {t(($) => {
           return tailscale
-            ? enabled
-              ? $.tailscale.vncRebind
-              : $.vnc.transport.sshTailscaleNeedsRebind
+            ? $.tailscale.vncRebind
             : $.vnc.transport.sshNeedsRebind;
         })}
       </p>
-      {(!tailscale || enabled) && sshConnection && (
+      {sshConnection && (
         <Button
           type="button"
           variant="outline"

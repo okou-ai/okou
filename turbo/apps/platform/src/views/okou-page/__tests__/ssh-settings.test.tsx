@@ -433,7 +433,7 @@ test.each([
   { initialCarrier: "Cloudflare", binding: "bound" },
   { initialCarrier: "Cloudflare", binding: "retained" },
 ] as const)(
-  "A $initialCarrier edit cannot accept a $binding Tailscale conflict into the legacy editor",
+  "A $initialCarrier edit requires Tailscale selection to accept a $binding Tailscale conflict",
   async ({ initialCarrier, binding }) => {
     const accessId = "e0000000-0000-4000-8000-000000000001";
     const initial: SshConnectionResponse =
@@ -468,7 +468,7 @@ test.each([
     const requests: unknown[] = [];
     context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
       requests.push(body);
-      // A later capable API may change the saved carrier from another client.
+      // Another client may change the saved connection mode.
       current = {
         ...base,
         host: "100.80.10.20",
@@ -504,7 +504,7 @@ test.each([
     await within(dialog).findByText("Tailscale");
     expect(
       within(dialog).getByText(
-        "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
+        "Select or create a Tailscale network to rebind this host. Its SSH login and trusted host key are preserved.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -532,42 +532,16 @@ test.each([
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(getAction("button", "Edit host")).toBeDisabled();
+    expect(getAction("button", "Edit host")).toBeEnabled();
     expect(screen.getByText("SHA256:retained")).toBeInTheDocument();
   },
 );
-
-test("Bound Tailscale hosts stay distinguishable and cannot enter the legacy carrier editor", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, {
-      connections: [
-        {
-          ...base,
-          transport: {
-            type: "tailscale",
-            configId: "e0000000-0000-4000-8000-000000000001",
-          },
-        },
-      ],
-    });
-  });
-  await page();
-  const title = await screen.findByRole("heading", { name: base.displayName });
-  const card = title.closest("article");
-  if (!card) {
-    throw new Error("Expected production host card");
-  }
-  expect(within(card).getByText("Tailscale")).toBeVisible();
-  expect(getAction("button", "Edit host", card)).toBeDisabled();
-  expect(getAction("button", "Delete host", card)).toBeEnabled();
-  expect(screen.queryByRole("dialog")).toBeNull();
-});
 
 test.each([
   {
     type: "tailscale",
     notice:
-      "This host needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
+      "This host needs a new Tailscale network. Edit it to select or create one.",
   },
   {
     type: "cloudflare_access",
@@ -615,10 +589,7 @@ test.each([
     const card = await screen.findByRole("article");
     expect(within(card).getByRole("alert").textContent).toBe(notice);
     expect(within(card).getByText("SHA256:retained")).toBeInTheDocument();
-    expect(getAction("button", "Edit host", card)).toHaveProperty(
-      "disabled",
-      type === "tailscale",
-    );
+    expect(getAction("button", "Edit host", card)).toBeEnabled();
     expect(getAction("button", "Reset host key", card)).toBeEnabled();
     expect(getAction("button", "Delete host", card)).toBeEnabled();
     expect(screen.queryByRole("dialog")).toBeNull();

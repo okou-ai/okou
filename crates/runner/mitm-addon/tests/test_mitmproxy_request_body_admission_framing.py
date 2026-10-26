@@ -1,6 +1,8 @@
 """Request-body admission framing tests through mitmproxy's real hook pipeline."""
 
+import sys
 from pathlib import Path
+from types import FrameType
 from typing import Literal
 from unittest.mock import AsyncMock, patch
 
@@ -21,8 +23,12 @@ from mitmproxy.test import taddons
 import auth
 import auth_base_forwarder
 import aws_sigv4_body_admission
+import content_length as content_length_parser
 import flow_metadata_keys as metadata_keys
+import managed_upload_runtime
 import mitm_addon
+import mitmproxy_compat
+import usage
 from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
 from tests.aws_sigv4_helpers import (
     DEFAULT_SIGV4_TIMESTAMP,
@@ -198,23 +204,50 @@ def _start_http1_request(
 
 
 @pytest.mark.parametrize(
-    "content_length",
+    ("content_length", "firewall_kind", "mismatched_authority"),
     [
-        pytest.param("9" * 5000, id="long-positive"),
-        pytest.param("0" * 5000, id="long-zero"),
-        pytest.param("0" * 5000 + "1", id="long-leading-zero-positive"),
+        pytest.param("9" * 5000, "aws", False, id="long-positive"),
+        pytest.param("0" * 5000, "aws", False, id="long-zero"),
+        pytest.param("0" * 5000 + "1", "aws", False, id="long-leading-zero-positive"),
+        pytest.param("0" * (1024 * 1024), "aws", False, id="large-zero-aws"),
+        pytest.param("0" * (1024 * 1024), "auth-base", False, id="large-zero-auth-base"),
+        pytest.param("0" * (1024 * 1024), "aws", True, id="large-zero-authority-mismatch"),
     ],
 )
-async def test_http1_rejected_long_content_length_survives_aws_action_header_hook(
+async def test_http1_rejected_content_length_skips_addon_body_work(
     tmp_path: Path,
     content_length: str,
+    firewall_kind: str,
+    mismatched_authority: bool,
 ) -> None:
-    registry_path = _write_aws_sigv4_firewall_registry(
-        tmp_path,
-        rules=["POST / AWS sigv4=sts action=GetCallerIdentity"],
-    )
+    if firewall_kind == "aws":
+        registry_path = _write_aws_sigv4_firewall_registry(
+            tmp_path,
+            rules=["POST / AWS sigv4=sts action=GetCallerIdentity"],
+        )
+        host = STS_HOST
+        method = "POST"
+    else:
+        registry_path = _write_auth_base_firewall_registry(tmp_path)
+        host = PLACEHOLDER_HOST
+        method = "GET"
     authorization = aws_sigv4_authorization()
     get_headers = AsyncMock()
+    length_parse_calls = 0
+    classified_calls = 0
+    end_stream_markers: list[object] = []
+
+    def observe_header_work(frame: FrameType, event: str, result: object) -> None:
+        nonlocal length_parse_calls, classified_calls
+        if event == "call":
+            if frame.f_code is content_length_parser.parse.__code__:
+                length_parse_calls += 1
+            elif frame.f_code is managed_upload_runtime.headers_classified.__code__:
+                classified_calls += 1
+        elif (
+            event == "return" and frame.f_code is mitmproxy_compat.take_request_end_stream.__code__
+        ):
+            end_stream_markers.append(result)
 
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
@@ -228,12 +261,13 @@ async def test_http1_rejected_long_content_length_survives_aws_action_header_hoo
         client, http_layer = start_http_layer(
             addon_context,
             alpn=b"http/1.1",
-            host=STS_HOST,
+            host=host,
         )
         # Absolute-form retains the destination when native validation rejects
         # headers before the usual Host normalization.
+        host_header = "other.example.com" if mismatched_authority else host
         request_head = (
-            f"POST https://{STS_HOST}/ HTTP/1.1\r\nHost: {STS_HOST}\r\n"
+            f"{method} https://{host}/ HTTP/1.1\r\nHost: {host_header}\r\n"
             f"X-Amz-Date: {DEFAULT_SIGV4_TIMESTAMP}\r\nAuthorization: {authorization}\r\n"
             f"Content-Length: {content_length}\r\n\r\n"
         ).encode()
@@ -243,9 +277,24 @@ async def test_http1_rejected_long_content_length_survives_aws_action_header_hoo
         )
         flow = request_headers_hook.flow
         assert flow.error is not None
-        original_error = flow.error.msg
+        original_error = flow.error
 
-        await addon_context.master.addons.invoke_addon(mitm_addon, request_headers_hook)
+        previous_profile = sys.getprofile()
+        sys.setprofile(observe_header_work)
+        try:
+            await addon_context.master.addons.invoke_addon(mitm_addon, request_headers_hook)
+        finally:
+            sys.setprofile(previous_profile)
+        assert length_parse_calls == 0
+        assert classified_calls == 1
+        assert end_stream_markers == [False]
+        assert mitmproxy_compat.take_request_end_stream(flow) is None
+        assert flow.error is original_error
+        assert flow.request.raw_content is None
+        assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+        assert auth_base_forwarder.forward_request_admission_state_for_tests() == (0, 0)
+        assert usage.counters.delivery_snapshot()["flows"] == 0
+        get_headers.assert_not_awaited()
         header_commands = list(
             http_layer.handle_event(events.HookCompleted(request_headers_hook, None))
         )
@@ -256,8 +305,7 @@ async def test_http1_rejected_long_content_length_survives_aws_action_header_hoo
         await addon_context.master.addons.invoke_addon(mitm_addon, error_hook)
         all_commands.extend(http_layer.handle_event(events.HookCompleted(error_hook, None)))
 
-    assert flow.error is not None
-    assert flow.error.msg == original_error
+    assert flow.error is original_error
     assert flow.live is False
     assert flow.request.raw_content is None
     assert flow.request.headers["Authorization"] == authorization
@@ -278,6 +326,18 @@ async def test_http1_rejected_long_content_length_survives_aws_action_header_hoo
     )
     assert client_bytes.startswith(b"HTTP/1.1 400")
     get_headers.assert_not_awaited()
+    assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+    assert auth_base_forwarder.forward_request_admission_state_for_tests() == (0, 0)
+    assert usage.counters.delivery_snapshot()["flows"] == 0
+    assert flow.metadata[metadata_keys.SANDBOX_RUN_ID] == "run-conn-1"
+    [network_entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
+    assert network_entry["status"] == 0
+    assert network_entry["error"] == original_error.msg
+    assert network_entry["url"] == f"https://{host}/"
+    assert network_entry["host"] == host
+    [proxy_entry] = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
+    assert proxy_entry["type"] == "connection_error"
+    assert proxy_entry["error"] == original_error.msg
 
 
 @pytest.mark.parametrize("action_rule", [False, True], ids=["path-rule", "action-rule"])

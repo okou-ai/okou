@@ -13,6 +13,10 @@ export interface RequestQuerySpan {
 /** Only Workers supply this context; Node/Vercel retain their existing owners. */
 export interface RequestRuntime {
   readonly nativeTelemetry: boolean;
+  /** The host owns the client-certificate private key and TLS handshake. */
+  readonly gcpMtls?: {
+    readonly fetch: (url: string, init: RequestInit) => Promise<Response>;
+  };
   readonly database: () => ApiDb;
   readonly waitUntil: (work: Promise<unknown>) => void;
   readonly traceQuery: (

@@ -5,6 +5,7 @@ use super::{
 };
 use crate::test_fixtures::remote_inventory;
 use crate::test_fixtures::{diagnostic_attempt, diagnostic_text};
+use runner_provider::AblySideMessageHandler;
 use serde_json::{Value, json};
 
 mod authority;
@@ -200,17 +201,13 @@ async fn retained_ssh_process_failure_remains_after_authority_prunes_its_session
         .await;
     let session = sessions::start(&h, json!({"type":"shell"}), false).await;
     sessions::state(&h, &session, "running").await;
-    h.notifications()
-        .send(Some(ably_subscriber::Event::Message(
-            ably_subscriber::Message {
-                name: Some("ssh-authority-invalidated".into()),
-                data: json!({"runId":h.run,"connectionId":CONNECTION}),
-                id: None,
-                client_id: None,
-                timestamp: None,
-            },
-        )))
-        .await;
+    assert!(h.runtime.handle(&ably_subscriber::Message {
+        name: Some("ssh-authority-invalidated".into()),
+        data: json!({"runId":h.run,"connectionId":CONNECTION}),
+        id: None,
+        client_id: None,
+        timestamp: None,
+    }));
     wait_for(|| h.observed.closed.load(Ordering::SeqCst) > 0).await;
     h.ssh().prune();
     let last = query(&h, json!({"sessionId":session})).await;

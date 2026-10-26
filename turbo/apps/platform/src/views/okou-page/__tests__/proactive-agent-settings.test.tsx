@@ -10,24 +10,29 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test("offers four independent preferences and leaves Morning Brief in Preference", async () => {
+test("offers Learning, Planning and action, and Suggestions as independent preferences", async () => {
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
     featureSwitches: { [FeatureSwitchKey.ProactiveAgent]: true },
   });
   const learning = await screen.findByRole("switch", { name: "Learning" });
-  const planning = await screen.findByRole("switch", { name: "Planning" });
-  const tasks = await screen.findByRole("switch", { name: "Proactive tasks" });
+  const planning = await screen.findByRole("switch", {
+    name: "Planning & action",
+  });
   const suggestions = await screen.findByRole("switch", {
-    name: "Proactive Suggestions",
+    name: "Suggestions",
   });
   await waitFor(() => {
-    for (const toggle of [learning, planning, tasks, suggestions]) {
+    for (const toggle of [learning, planning, suggestions]) {
       expect(toggle).toBeEnabled();
       expect(toggle).not.toBeChecked();
     }
   });
+  expect(screen.getAllByRole("switch")).toHaveLength(3);
+  expect(
+    screen.getByRole("heading", { name: "Proactive" }),
+  ).toBeInTheDocument();
   expect(
     screen.queryByRole("switch", { name: "Morning brief" }),
   ).not.toBeInTheDocument();
@@ -36,14 +41,13 @@ test("offers four independent preferences and leaves Morning Brief in Preference
     return expect(learning).toBeChecked();
   });
   expect(planning).not.toBeChecked();
-  expect(tasks).not.toBeChecked();
   expect(suggestions).not.toBeChecked();
   click(planning);
   await waitFor(() => {
     return expect(planning).toBeChecked();
   });
   expect(learning).toBeChecked();
-  expect(tasks).not.toBeChecked();
+  expect(suggestions).not.toBeChecked();
   const preference = queryAllByRoleFast("button").find((button) => {
     return button.textContent?.trim() === "Preference";
   });
@@ -55,7 +59,7 @@ test("offers four independent preferences and leaves Morning Brief in Preference
   expect(morning).not.toBeChecked();
 });
 
-test("redirects an unavailable Proactive Agent deep link without hiding Morning Brief", async () => {
+test("redirects an unavailable Proactive deep link without hiding Morning Brief", async () => {
   await setupPage({
     context,
     path: "/agents?settings=proactive-agent",
@@ -66,7 +70,7 @@ test("redirects an unavailable Proactive Agent deep link without hiding Morning 
   ).resolves.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button").some((button) => {
-      return button.textContent?.trim() === "Proactive Agent";
+      return button.textContent?.trim() === "Proactive";
     }),
   ).toBeFalsy();
   expect(

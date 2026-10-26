@@ -62,6 +62,7 @@ import { useCustomTemplateRecommendations } from "./use-custom-template-recommen
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
+import { SCROLLBAR_HIDDEN } from "./scroll-fade.ts";
 
 /**
  * The task-type row. `outline` at its default size is a form button: `px-4`
@@ -83,7 +84,13 @@ import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
  *
  * Padding is the caller's to set; the border is not.
  */
-const TASK_CHIP = "px-3";
+const TASK_CHIP = "shrink-0 px-3";
+// Center the row when it fits; overflow scrolls from the first chip. Padding
+// keeps focus rings and the active shadow inside the scrollport.
+const TASK_CHIP_ROW = cn(
+  "-my-1 mx-auto flex h-auto w-max max-w-full flex-nowrap items-center justify-start gap-2 overflow-x-auto overscroll-x-contain bg-transparent p-1",
+  SCROLLBAR_HIDDEN,
+);
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
  * the task row uses. A fixed box is what makes the row read as one set: the
@@ -730,9 +737,6 @@ function ComposerTaskTabs({
   const { t } = useTranslation();
   const browseTask = useSet(signals.taskChips.browseTask$);
   const selectTask = useSet(signals.taskChips.selectTask$);
-  // Jobs and Suggestions can each add an entry to the six creation tasks.
-  const compact = tasks.length > 6;
-  const crowded = tasks.length > 7;
   const labels = t(
     ($) => {
       return $.chat.taskChips.tasks;
@@ -757,13 +761,7 @@ function ComposerTaskTabs({
         return $.chat.taskChips.label;
       })}
     >
-      <TabsList
-        className={cn(
-          "mx-auto h-auto flex-wrap gap-2 bg-transparent p-0",
-          compact && "gap-1",
-          crowded && "gap-0.5",
-        )}
-      >
+      <TabsList className={TASK_CHIP_ROW}>
         {tasks.map((task) => {
           const Icon = TASK_ICONS[task];
           // Keep the Button's chip geometry; the styled TabsTrigger supplies
@@ -774,15 +772,7 @@ function ComposerTaskTabs({
               value={task}
               className="data-active:bg-segment-selected data-active:shadow-segment-selected"
               render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={cn(
-                    TASK_CHIP,
-                    compact && "gap-1 px-2",
-                    crowded && "gap-0.5 px-1",
-                  )}
-                />
+                <Button type="button" variant="outline" className={TASK_CHIP} />
               }
             >
               <Icon size={16} className="text-muted-foreground" aria-hidden />
@@ -883,7 +873,7 @@ export function ComposerTaskChips({
     >
       {selected === null && (
         <div
-          className="flex flex-wrap items-center justify-center gap-2"
+          className={TASK_CHIP_ROW}
           role="group"
           aria-label={t(($) => {
             return $.chat.taskChips.chooseTask;
