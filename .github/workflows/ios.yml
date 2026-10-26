@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      publisher_provenance_experiment:
+        description: Replay immutable publication with isolated R2 keys and compare provenance reads
+        type: boolean
+        default: false
       sample_xcode_startup:
         description: Sample the compile-phase Xcode startup
         type: boolean
@@ -350,6 +354,40 @@ jobs:
           export IOS_RAN_TESTS
           python3 ios/scripts/archive-promotion.py publish "$RUNNER_TEMP/okou-ios-promotion"
 
+  publisher-provenance-experiment:
+    if: github.event_name == 'workflow_dispatch' && inputs.publisher_provenance_experiment
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 32
+      - name: Validate the isolated storage boundary
+        run: python3 ops/ios-ci/publisher-external-proxy.test.py
+      - name: Prepare the exact successful merge-group archive replay
+        run: python3 ops/ios-ci/publisher-provenance-experiment.py prepare
+      - name: Trace real provenance requests in A1 B1 B2 A2 order
+        run: python3 ops/ios-ci/publisher-provenance-experiment.py run-block --block 1
+      - name: Time complete publication in A1 B1 B2 A2 order, first block
+        run: python3 ops/ios-ci/publisher-provenance-experiment.py run-block --block 2
+      - name: Time complete publication in A1 B1 B2 A2 order, second block
+        run: python3 ops/ios-ci/publisher-provenance-experiment.py run-block --block 3
+      - name: Retain replay measurements and cleanup receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-publisher-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publisher-provenance-replay/results
+          if-no-files-found: error
+          retention-days: 7
+
   ci-gate-ios:
     needs:
       [
@@ -359,6 +397,7 @@ jobs:
         build-test,
         build-archive,
         publish-archive,
+        publisher-provenance-experiment,
       ]
     if: always()
     runs-on: ubuntu-latest
@@ -369,6 +408,11 @@ jobs:
           sparse-checkout: /ios/scripts/ci-gate.sh
           sparse-checkout-cone-mode: false
           persist-credentials: false
+      - name: Validate requested publisher experiment
+        if: github.event_name == 'workflow_dispatch' && inputs.publisher_provenance_experiment
+        env:
+          RESULT: ${{ needs.publisher-provenance-experiment.result }}
+        run: test "$RESULT" = success
       - name: Validate iOS check results
         env:
           EVENT_NAME: ${{ github.event_name }}

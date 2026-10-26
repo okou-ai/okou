@@ -47,6 +47,9 @@ route = sys.argv[2]
 records = json.load(open(os.environ['GITHUB_RECORDS']))
 run_id = route.split('/runs/')[1].split('/')[0]
 record = records[run_id]
+if 'attempts' in record:
+    attempt = route.split('/attempts/')[1].split('/')[0]
+    record = record['attempts'][attempt]
 if '/jobs?' in route:
     print(json.dumps([{'jobs': record['jobs']}]))
     if 'nextJobs' in record:
@@ -486,6 +489,29 @@ class PromotionTest(unittest.TestCase):
                 target / "Original.xcarchive/Products/Applications/Okou.app/Okou"
             ).is_file()
         )
+
+    def test_release_rerun_preserves_test_evidence_from_another_attempt(self):
+        self.cli("publish", self.work)
+        original_attempt = json.loads(json.dumps(self.records["123"]))
+        self.release()
+        self.capture()
+        self.cli("resolve-tests", self.work)
+        self.env["GITHUB_RUN_ATTEMPT"] = "2"
+        self.env["IOS_RAN_TESTS"] = "false"
+        self.record()
+        current_attempt = self.records["123"]
+        current_attempt["jobs"][0]["steps"][0]["conclusion"] = "skipped"
+        self.records["123"] = {
+            "attempts": {"1": original_attempt, "2": current_attempt}
+        }
+        self.save_records()
+        self.archive()
+        self.cli("publish", self.work)
+        target = self.consume_work()
+        self.cli("consume", target, "--wait-seconds", 0)
+        mapping = json.loads((target / "release-mapping.json").read_bytes())
+        self.assertEqual(mapping["builderRunAttempt"], 2)
+        self.assertEqual(mapping["testEvidence"]["runAttempt"], 1)
 
     def test_pending_builder_that_fails_cannot_publish(self):
         record = self.records["123"]
