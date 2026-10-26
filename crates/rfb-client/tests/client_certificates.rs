@@ -318,6 +318,72 @@ async fn no_client_certificate_request_is_rejected_before_password_or_result() {
     }
 }
 
+async fn assert_identifications(
+    fixture: Fixture,
+    server_name: &str,
+    roots: TrustRoots,
+    expect_success: bool,
+) {
+    let (client, server) = sockets().await;
+    let peer = async {
+        let result = TlsAcceptor::from(Arc::clone(&fixture.config))
+            .accept(negotiate(server, 260).await)
+            .await;
+        assert_eq!(
+            result.is_ok(),
+            expect_success,
+            "unexpected peer TLS outcome"
+        );
+        if let Ok(mut stream) = result {
+            stream.write_u32(0).await.unwrap();
+            stream.write_u8(0x42).await.unwrap();
+            stream.flush().await.unwrap();
+            assert_eq!(stream.read_u8().await.unwrap(), 1);
+        }
+    };
+    let caller = async {
+        let result = authenticate_with_client_certificate(
+            client,
+            server_name,
+            ClientCertificateAuthentication::None,
+            roots,
+            fixture.identity(),
+            deadline(),
+        )
+        .await;
+        if expect_success {
+            let mut stream = result.unwrap().into_stream();
+            assert_eq!(stream.read_u8().await.unwrap(), 0x42);
+            stream.write_u8(1).await.unwrap();
+            stream.flush().await.unwrap();
+        } else {
+            let error = result.err().expect("invalid identity authenticated");
+            // TLS 1.3 client-certificate alerts can arrive during SecurityResult.
+            // Neither a fixture EOF nor a deadline is certificate rejection.
+            assert!(
+                matches!(
+                    &error,
+                    Error::Tls(error) | Error::Io(error)
+                        if error.kind() == std::io::ErrorKind::InvalidData
+                ),
+                "expected certificate rejection, got {error:?}"
+            );
+        }
+    };
+    timeout(Duration::from_secs(5), async { tokio::join!(peer, caller) })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn valid_client_and_server_identifications_return_a_stream() {
+    for tls12 in [false, true] {
+        let fixture = Fixture::new(tls12, true, false, false);
+        let roots = fixture.roots();
+        assert_identifications(fixture, NAME, roots, true).await;
+    }
+}
+
 #[tokio::test]
 async fn invalid_client_and_server_identifications_never_return_a_stream() {
     for (tls12, wrong_client_ca, expired_client, wrong_name, wrong_root) in [
@@ -328,39 +394,17 @@ async fn invalid_client_and_server_identifications_never_return_a_stream() {
         (false, false, false, false, true),
     ] {
         let fixture = Fixture::new(tls12, true, wrong_client_ca, expired_client);
-        let (client, server) = sockets().await;
-        let peer = async {
-            let negotiated = negotiate(server, 260).await;
-            let _ = TlsAcceptor::from(Arc::clone(&fixture.config))
-                .accept(negotiated)
-                .await;
+        let roots = if wrong_root {
+            TrustRoots::custom(vec![root().2]).unwrap()
+        } else {
+            fixture.roots()
         };
-        let caller = async {
-            let roots = if wrong_root {
-                TrustRoots::custom(vec![root().2]).unwrap()
-            } else {
-                fixture.roots()
-            };
-            assert!(
-                authenticate_with_client_certificate(
-                    client,
-                    if wrong_name {
-                        "wrong.example.test"
-                    } else {
-                        NAME
-                    },
-                    ClientCertificateAuthentication::None,
-                    roots,
-                    fixture.identity(),
-                    deadline(),
-                )
-                .await
-                .is_err()
-            );
+        let server_name = if wrong_name {
+            "wrong.example.test"
+        } else {
+            NAME
         };
-        timeout(Duration::from_secs(5), async { tokio::join!(peer, caller) })
-            .await
-            .unwrap();
+        assert_identifications(fixture, server_name, roots, false).await;
     }
 }
 
