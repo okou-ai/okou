@@ -43,17 +43,16 @@ export function createHostedSiteBannerSignals(
       if (!current || current.showBanner === showBanner) {
         return;
       }
-      const response = await accept(
+      await accept(
         get(apiClient$)(hostContract).updateSiteBanner({
           params: { siteId: current.siteId },
           body: { showBanner, expectedRevision: current.revision },
           fetchOptions: { signal },
         }),
-        [200, 409],
+        [200],
         signal,
       );
       await set(refreshBanner$, signal);
-      await accept(Promise.resolve(response), [200], signal);
       toast.success(
         i18n.t(($) => {
           return $.artifacts.siteBanner.updated;
@@ -61,5 +60,5 @@ export function createHostedSiteBannerSignals(
       );
     },
   );
-  return { banner$, refreshBanner$, changeBanner$ };
+  return { banner$, changeBanner$ };
 }

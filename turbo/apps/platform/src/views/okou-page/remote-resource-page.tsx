@@ -22,22 +22,14 @@ import {
   sshConnections$,
   sshDialog$,
   closeSshDialog$,
-  invalidateSsh$,
 } from "../../signals/ssh.ts";
 import {
   vncConnections$,
   vncDialog$,
   closeVncDialog$,
-  invalidateVnc$,
 } from "../../signals/vnc.ts";
-import {
-  tailscaleConfigs$,
-  invalidateTailscale$,
-} from "../../signals/tailscale.ts";
-import {
-  cloudflareAccessConfigs$,
-  invalidateCloudflareAccess$,
-} from "../../signals/cloudflare-access.ts";
+import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
+import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { RemoteDetailPage } from "./remote-detail-page.tsx";
 import { SshHostCard, SshDialog } from "./ssh-management.tsx";
@@ -123,15 +115,6 @@ function useRemoteResourceState() {
 function RemoteResourceLoadError() {
   const { t } = useTranslation();
   const resource = useGet(remoteResource$);
-  const retry = useSet(
-    resource?.kind === "ssh"
-      ? invalidateSsh$
-      : resource?.kind === "vnc"
-        ? invalidateVnc$
-        : resource?.kind === "tailscale"
-          ? invalidateTailscale$
-          : invalidateCloudflareAccess$,
-  );
   return (
     <LoadErrorRow
       message={t(($) => {
@@ -143,10 +126,6 @@ function RemoteResourceLoadError() {
               ? $.tailscale.loadFailed
               : $.cloudflareAccess.loadFailed;
       })}
-      retryLabel={t(($) => {
-        return $.remoteControlSetup.retry;
-      })}
-      onRetry={retry}
     />
   );
 }

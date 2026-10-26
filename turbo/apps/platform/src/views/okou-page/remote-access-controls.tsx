@@ -28,7 +28,6 @@ import {
   setRemoteHostDefault$,
   setThreadRemoteAccess$,
 } from "../../signals/remote-access.ts";
-import { invalidateRemoteAccess$ } from "../../signals/remote-access-refresh.ts";
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
@@ -76,7 +75,6 @@ function OwnerRemoteHostDefaultToggle({
   const { t } = useTranslation();
   const defaults = useLoadable(remoteHostDefaults$);
   const previousDefaults = useLastResolved(remoteHostDefaults$);
-  const retry = useSet(invalidateRemoteAccess$);
   const [saving, update] = useLoadableSet(setRemoteHostDefault$);
   const signal = useGet(pageSignal$);
   const host = resolvedDuringRefresh(defaults, previousDefaults)?.[
@@ -103,11 +101,6 @@ function OwnerRemoteHostDefaultToggle({
               return $.chat.remoteAccess.loadFailed;
             })}
           </span>
-          <Button type="button" variant="outline" size="sm" onClick={retry}>
-            {t(($) => {
-              return $.chat.remoteAccess.retry;
-            })}
-          </Button>
         </div>
       ) : (
         <LoadingSwitch
@@ -478,7 +471,6 @@ interface ThreadRemoteAccessSectionProps {
   threadId?: string;
   remoteAccess$: ComposerSignals["remoteAccess$"];
   defaults$: ComposerSignals["connector"]["resources"]["remoteHostDefaults$"];
-  reloadRemotes$: ComposerSignals["connector"]["resources"]["reloadRemotes$"];
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -504,7 +496,6 @@ function OwnerThreadRemoteAccessSection({
   threadId,
   remoteAccess$,
   defaults$,
-  reloadRemotes$,
   pendingRemoteAccess,
   open,
   onOpenChange,
@@ -605,7 +596,6 @@ function OwnerThreadRemoteAccessSection({
             threadId={threadId}
             remoteAccess$={remoteAccess$}
             defaults$={defaults$}
-            reloadRemotes$={reloadRemotes$}
             pendingRemoteAccess={pendingRemoteAccess}
           />
         )}
@@ -614,7 +604,7 @@ function OwnerThreadRemoteAccessSection({
   );
 }
 
-function RemoteHostLoadError({ onRetry }: { onRetry: () => void }) {
+function RemoteHostLoadError() {
   const { t } = useTranslation();
   return (
     <div
@@ -626,11 +616,6 @@ function RemoteHostLoadError({ onRetry }: { onRetry: () => void }) {
           return $.chat.remoteAccess.loadFailed;
         })}
       </span>
-      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-        {t(($) => {
-          return $.chat.remoteAccess.retry;
-        })}
-      </Button>
     </div>
   );
 }
@@ -639,22 +624,14 @@ function ThreadRemoteHostChoices({
   threadId,
   remoteAccess$,
   defaults$,
-  reloadRemotes$,
   pendingRemoteAccess,
 }: {
   threadId?: string;
   remoteAccess$: ComposerSignals["remoteAccess$"];
   defaults$: ComposerSignals["connector"]["resources"]["remoteHostDefaults$"];
-  reloadRemotes$: ComposerSignals["connector"]["resources"]["reloadRemotes$"];
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
 }) {
   const { t } = useTranslation();
-  const retryAccess = useSet(invalidateRemoteAccess$);
-  const retryRemotes = useSet(reloadRemotes$);
-  const retry = () => {
-    retryAccess();
-    retryRemotes();
-  };
   const defaults = useLoadable(defaults$);
   const access = useLoadable(remoteAccess$);
   const lastDefaults = useLastResolved(defaults$);
@@ -684,7 +661,7 @@ function ThreadRemoteHostChoices({
   return (
     <div className="min-h-0 overflow-y-auto p-1">
       {(defaults.state === "hasError" || accessFailed) && (
-        <RemoteHostLoadError onRetry={retry} />
+        <RemoteHostLoadError />
       )}
       {threadId && access.state === "loading" && !accessData ? (
         <p role="status" className="px-2 py-2 text-sm text-muted-foreground">

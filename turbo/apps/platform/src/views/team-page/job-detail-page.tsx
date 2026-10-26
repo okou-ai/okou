@@ -90,10 +90,7 @@ import {
   currentAgentUserPermissionGrants$,
 } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
-import {
-  userConnectedConnectors$,
-  reloadUserConnectedConnectors$,
-} from "../../signals/okou-page/connector-overview.ts";
+import { userConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
 import {
   copyWorkflow$,
   currentAgentVisibleWorkflows$,
@@ -239,18 +236,6 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
           <Card className={surfaceVariants()}>
             <CardContent className="px-6 py-6 text-center space-y-3">
               <p className="text-sm text-destructive">{error}</p>
-              <Link
-                pathname="/agents/:agentId"
-                options={{ pathParams: { agentId: agentId } }}
-                className={cn(
-                  buttonVariants({ variant: "neutral" }),
-                  "h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface",
-                )}
-              >
-                {t(($) => {
-                  return $.actions.retry;
-                })}
-              </Link>
             </CardContent>
           </Card>
         </div>
@@ -309,7 +294,6 @@ function AgentTabNav({
       onValueChange={onTabChange}
       className="flex-1 min-w-0"
     >
-      {/* Mobile: Select dropdown */}
       <div className="sm:hidden">
         <Select
           items={tabItems}
@@ -348,7 +332,7 @@ function AgentTabNav({
           </SelectContent>
         </Select>
       </div>
-      {/* Desktop: tab list */}
+
       <TabsList className="hidden sm:inline-flex">
         <TabsTrigger value="authorization">
           <Shield size={14} />
@@ -429,16 +413,11 @@ function PermissionGrantsError() {
 
 function ConnectorOverviewError() {
   const { t } = useTranslation();
-  const retry = useSet(reloadUserConnectedConnectors$);
   return (
     <LoadErrorRow
       message={t(($) => {
         return $.connectors.accounts.accountsUnavailable;
       })}
-      retryLabel={t(($) => {
-        return $.connectors.actions.tryAgain;
-      })}
-      onRetry={retry}
     />
   );
 }

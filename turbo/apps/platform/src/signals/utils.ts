@@ -245,36 +245,11 @@ export function abortAfter(
   return AbortSignal.any([parentSignal, controller.signal]);
 }
 
-// ---------------------------------------------------------------------------
-// Polling loop with fibonacci backoff
-// ---------------------------------------------------------------------------
-const FIB_DELAYS_MS = [
-  1000, 1000, 2000, 3000, 5000, 8000, 13_000, 21_000, 34_000, 55_000, 60_000,
-] as const;
-
 const MAX_LOOP_COUNT_IN_TEST = 100;
-
-function fibonacciRetryDelayMs(retryIndex: number): number {
-  return (
-    FIB_DELAYS_MS[Math.min(retryIndex, FIB_DELAYS_MS.length - 1)] ?? 60_000
-  );
-}
-
-async function waitForFibonacciRetry(
-  retryIndex: number,
-  signal: AbortSignal,
-): Promise<void> {
-  const delayMs = fibonacciRetryDelayMs(retryIndex);
-  await delay(IN_VITEST ? 0 : delayMs, { signal });
-  signal.throwIfAborted();
-}
 
 type LoopBody = (signal: AbortSignal) => Promise<boolean> | boolean;
 
 interface LoopOptions {
-  retryTransientErrors?: boolean;
-  shouldRetryError?: (error: unknown) => boolean;
-  logTransientErrors?: boolean;
   /** Keep an intentionally owner-lived loop paced in tests until its signal aborts. */
   testIntervalMs?: number;
 }
@@ -309,7 +284,6 @@ async function internalSetLoop(
   signal: AbortSignal,
   options: LoopOptions,
 ): Promise<void> {
-  let fibIndex = 0;
   let loopCount = 0;
   while (!signal.aborted) {
     if (
@@ -322,38 +296,14 @@ async function internalSetLoop(
       );
     }
 
-    // use try-catch here to implement an automatic retry.
-    // eslint-disable-next-line no-restricted-syntax
-    try {
-      const done = await loopBody(signal);
-      if (done) {
-        return;
-      }
-      fibIndex = 0;
-      // Keep yielding to the macrotask queue in tests so React can flush renders
-      // between iterations, without waiting for the production interval.
-      await delay(IN_VITEST ? (options.testIntervalMs ?? 0) : interval, {
-        signal,
-      });
-    } catch (error) {
-      throwIfAbort(error);
-      if (
-        options.retryTransientErrors === false ||
-        (options.shouldRetryError !== undefined &&
-          !options.shouldRetryError(error))
-      ) {
-        throw error;
-      }
-      const backoff = fibonacciRetryDelayMs(fibIndex);
-      if (options.logTransientErrors !== false) {
-        L.warn(
-          `setLoop: transient error (attempt ${fibIndex + 1}), retrying in ${backoff}ms`,
-          error,
-        );
-      }
-      await waitForFibonacciRetry(fibIndex, signal);
-      fibIndex++;
+    const done = await loopBody(signal);
+    if (done) {
+      return;
     }
+    // Yield in tests so observable UI updates can render between iterations.
+    await delay(IN_VITEST ? (options.testIntervalMs ?? 0) : interval, {
+      signal,
+    });
   }
 }
 

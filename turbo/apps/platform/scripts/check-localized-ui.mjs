@@ -140,10 +140,6 @@ function getInternalAllowedLiterals() {
 function getConnectorAllowedLiterals() {
   return [
     [
-      "src/views/okou-page/ssh-management.tsx\u0000Tailscale",
-      "Official private-network product name on retained SSH metadata",
-    ],
-    [
       "src/views/okou-page/ssh-management.tsx\u0000ubuntu",
       "Example destination operating-system username",
     ],

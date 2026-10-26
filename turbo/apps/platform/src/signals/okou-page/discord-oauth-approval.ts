@@ -100,7 +100,7 @@ const showDiscordApprovalResult$ = command(
   ) => {
     signal.throwIfAborted();
     // A terminal result consumes this attempt. Its approval response may still
-    // be in flight, and must not overwrite the result or offer an obsolete retry.
+    // be in flight and must not overwrite the terminal result.
     set(approvalProof$, null);
     set(approvalRequest$, null);
     set(approvalSucceeded$, false);
@@ -218,7 +218,7 @@ export const approveDiscordAuthorization$ = command(
     // The authenticated endpoint verifies the initiating account and workspace.
     const request = set(verifyDiscordAuthorization$, proof, signal);
     set(approvalRequest$, request);
-    // The panel owns failure and retry UI; a rejection must not fail route setup.
+    // The panel displays the failed request; a rejection must not fail route setup.
     await settle(request, signal);
   },
 );

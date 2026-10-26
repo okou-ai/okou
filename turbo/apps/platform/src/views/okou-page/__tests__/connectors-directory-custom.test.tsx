@@ -175,18 +175,13 @@ test("Scope navigation returns directly to Remote control", async () => {
 
 test("Do not turn Custom loading failure into an empty search result", async () => {
   installCustomDirectory();
-  let failing = true;
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return failing
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Custom unavailable",
-          },
-        })
-      : respond(200, {
-          connectors: [customConnector({ displayName: "Recovered Service" })],
-        });
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Custom unavailable",
+      },
+    });
   });
   await setupPage({
     context,
@@ -199,11 +194,6 @@ test("Do not turn Custom loading failure into an empty search result", async () 
     within(section).findByText("Couldn't load custom connectors."),
   ).resolves.toBeVisible();
   expect(screen.queryByText(/No connectors matching/u)).toBeNull();
-  failing = false;
-  click(getConnectorAction("button", "Try again", section));
-  await waitFor(() => {
-    expect(getConnectorCard("Recovered Service")).toBeVisible();
-  });
 });
 
 test("Keep Remote control and Custom in separate scopes", async () => {

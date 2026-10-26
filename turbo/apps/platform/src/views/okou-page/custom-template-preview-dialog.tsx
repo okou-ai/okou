@@ -38,32 +38,16 @@ import {
   openCustomTemplateKind$,
   openCustomTemplatePageIndex$,
   projectCustomTemplate$,
-  reloadCustomTemplates$,
   selectCustomTemplatePage$,
 } from "../../signals/okou-page/custom-template-library.ts";
 
-/**
- * What a catalog that would not load says, and how to ask again.
- *
- * Both the catalog and one open template can fail to load, and retrying either
- * is the same request. It lives here rather than beside the panel because the
- * panel already imports this module, and importing it back would close a
- * cycle.
- */
 export function CustomTemplatesLoadError() {
   const { t } = useTranslation();
-  const reload = useSet(reloadCustomTemplates$);
   return (
     <LoadErrorRow
       message={t(($) => {
         return $.templates.loadFailed;
       })}
-      retryLabel={t(($) => {
-        return $.templates.retry;
-      })}
-      onRetry={() => {
-        reload();
-      }}
     />
   );
 }
@@ -289,13 +273,6 @@ export function CustomTemplatePreviewDialog({
         height={760}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
-        {/* A fixed band rather than padding around the line: the close button
-            is the shared one, pinned 16px down the popup and 36px tall, so its
-            center sits at 34px whatever the header does. 68px is twice that,
-            which puts the breadcrumb on the same axis — the height the
-            imported-deck preview header already carries for the same reason.
-            Padding alone left the title 10px above the button and the button
-            itself hanging past the border below it. */}
         <DialogHeader className="h-[68px] shrink-0 justify-center px-6 pr-14 text-left">
           <div className="flex min-w-0 max-w-full items-center gap-1.5">
             <DialogTitle
@@ -318,8 +295,7 @@ export function CustomTemplatePreviewDialog({
                 })}
               </button>
               <span className="shrink-0 text-muted-foreground">/</span>
-              {/* The heading that names the dialog stays text: where the name
-                is editable, the editor sits beside the title, not inside it. */}
+
               <span
                 className={
                   detail?.canManage

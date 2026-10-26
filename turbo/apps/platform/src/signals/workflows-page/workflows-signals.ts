@@ -834,16 +834,6 @@ export const allWorkflowAutomationEntries$ = computed(
   },
 );
 
-interface WorkflowDetailOverride {
-  readonly detail: WorkflowDetailResponse | null;
-  readonly reloadVersion: number;
-  readonly workflowId: string;
-}
-
-const currentWorkflowDetailOverride$ = state<WorkflowDetailOverride | null>(
-  null,
-);
-
 async function readWorkflowDetail(
   createClient: ApiClientFactory,
   workflowId: string,
@@ -863,50 +853,12 @@ async function readWorkflowDetail(
 /** The workflow detail derived from the active route. */
 export const currentWorkflowDetail$ = computed(
   (get): Promise<WorkflowDetailResponse | null> => {
-    const reloadVersion = get(workflowReloadVersion$);
+    get(workflowReloadVersion$);
     const workflowId = get(currentWorkflowId$);
     if (!workflowId) {
       return Promise.resolve(null);
     }
-    const override = get(currentWorkflowDetailOverride$);
-    if (
-      override?.workflowId === workflowId &&
-      override.reloadVersion === reloadVersion
-    ) {
-      return Promise.resolve(override.detail);
-    }
     return readWorkflowDetail(get(apiClient$), workflowId);
-  },
-);
-
-/** Refresh the same summary the open page renders, owned by the caller. */
-export const reloadCurrentWorkflowDetail$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const workflowId = get(currentWorkflowId$);
-    if (!workflowId) {
-      return null;
-    }
-    const reloadVersion = get(workflowReloadVersion$);
-    const detail = await readWorkflowDetail(
-      get(apiClient$),
-      workflowId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (
-      get(currentWorkflowId$) === workflowId &&
-      get(workflowReloadVersion$) === reloadVersion
-    ) {
-      // Publish only an authoritative successful read. Failed or cancelled
-      // confirmation retains the last resolved workflow detail.
-      set(currentWorkflowDetailOverride$, {
-        detail,
-        reloadVersion,
-        workflowId,
-      });
-    }
-    return detail;
   },
 );
 

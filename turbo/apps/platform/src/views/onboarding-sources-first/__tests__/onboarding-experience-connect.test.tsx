@@ -184,7 +184,7 @@ test("The step reports connected once the account lists the subscription", async
   });
 });
 
-test("A failed connect still lets the person retry or continue", async () => {
+test("A failed connection does not prevent continuing onboarding", async () => {
   context.mocks.data.personalModelProviders([]);
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
     return respond(503, {

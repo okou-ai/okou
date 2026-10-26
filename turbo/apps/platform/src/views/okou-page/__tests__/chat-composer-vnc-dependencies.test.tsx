@@ -112,7 +112,6 @@ function installDependencyFixture({
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
       if (failAccessRead) {
-        failAccessRead = false;
         return respond(500, {
           error: {
             code: "INTERNAL_ERROR",
@@ -348,7 +347,7 @@ test("Pending VNC configuration is not interpreted as disabled SSH access", asyn
   ).resolves.toBeInTheDocument();
 });
 
-test("A failed access refresh reports its error before showing dependency feedback after retry", async () => {
+test("A failed access refresh reports its error without claiming dependency status", async () => {
   installDependencyFixture({
     vncDefaultEnabled: false,
     failAccessAfterVncEnabled: true,
@@ -360,8 +359,4 @@ test("A failed access refresh reports its error before showing dependency feedba
     within(menu).findByText("Couldn't load remote access."),
   ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
-  click(await findFastControl("button", "Retry", menu));
-  await expect(
-    within(menu).findByText(SSH_WARNING),
-  ).resolves.toBeInTheDocument();
 });

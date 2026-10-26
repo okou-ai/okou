@@ -574,7 +574,6 @@ function ExactReconnectConnectorActionCard({
   const statusLoadable = useLoadable(signals.status$);
   const status = useLastResolved(signals.status$);
   const [activateLoadable, activate] = useLoadableSet(signals.activate$);
-  const refresh = useSet(signals.refresh$);
   const accountLabelOf = useConnectorAccountLabel();
 
   if (statusLoadable.state === "hasError") {
@@ -585,16 +584,6 @@ function ExactReconnectConnectorActionCard({
             return $.chat.connectorAccountSwitch.loadFailed;
           })}
         </span>
-        <Button
-          size="sm"
-          variant="outline"
-          className="shrink-0"
-          onClick={refresh}
-        >
-          {t(($) => {
-            return $.chat.connectorAccountSwitch.retry;
-          })}
-        </Button>
       </ChatCard>
     );
   }
@@ -886,11 +875,7 @@ function PermissionActionButton({
   onClick: () => void;
 }) {
   const { t } = useTranslation();
-  if (
-    status.kind !== "ready" &&
-    status.kind !== "saving" &&
-    status.kind !== "save-error"
-  ) {
+  if (status.kind !== "ready" && status.kind !== "saving") {
     return null;
   }
 
@@ -1020,7 +1005,6 @@ function permissionActionHasControls(
 ): boolean {
   switch (status.kind) {
     case "loading":
-    case "save-error":
     case "ready":
     case "saving":
     case "saved":
@@ -1028,6 +1012,7 @@ function permissionActionHasControls(
       return true;
     }
     case "load-error":
+    case "save-error":
     case "missing-target":
     case "missing-permission": {
       return false;
@@ -1311,9 +1296,7 @@ function PermissionActionCardContent({
   );
   const showDurationSelect =
     expirationAvailable &&
-    (status.kind === "ready" ||
-      status.kind === "saving" ||
-      status.kind === "save-error");
+    (status.kind === "ready" || status.kind === "saving");
   const showInlineStatus =
     status.kind === "load-error" ||
     status.kind === "save-error" ||
@@ -1378,15 +1361,17 @@ function PermissionActionCardContent({
 
 function PermissionActionCardForTarget({
   signals,
-  hasTarget,
-  targetLoadableState,
-  userGrantsLoadable,
 }: {
   signals: PermissionSignals;
-  hasTarget: boolean;
-  targetLoadableState: string;
-  userGrantsLoadable: LoadableLike<readonly PermissionActionUserGrant[]>;
 }) {
+  const agentLoadable = useLastLoadable(signals.agent$);
+  const lastUserGrants = useLastLoadable(signals.grants$);
+  const currentUserGrants = useLoadable(signals.grants$);
+  const userGrantsLoadable =
+    currentUserGrants.state === "hasError" ? currentUserGrants : lastUserGrants;
+  const hasTarget =
+    agentLoadable.state === "hasData" && Boolean(agentLoadable.data);
+  const targetLoadableState = agentLoadable.state;
   const pageSignal = useGet(pageSignal$);
   const expirationAvailable = signals.action === "allow";
   const durationScope = `${signals.href}\u0000${signals.expiresIn ?? ""}`;
@@ -1453,10 +1438,7 @@ function PermissionActionCardForTarget({
       }}
       expiresAt={grantExpiresAt}
       onClick={() => {
-        if (
-          actionState.status.kind !== "ready" &&
-          actionState.status.kind !== "save-error"
-        ) {
+        if (actionState.status.kind !== "ready") {
           return;
         }
         detach(
@@ -1485,28 +1467,7 @@ function PermissionActionCard({ signals }: { signals: PermissionSignals }) {
       data-testid="permission-action-card-shell"
       className={cn("w-full", CHAT_ACTION_CARD_HEIGHT_CLASS)}
     >
-      <PermissionActionCardState signals={signals} />
+      <PermissionActionCardForTarget signals={signals} />
     </ChatCard>
-  );
-}
-
-function PermissionActionCardState({
-  signals,
-}: {
-  signals: PermissionSignals;
-}) {
-  const agentLoadable = useLastLoadable(signals.agent$);
-  const lastUserGrants = useLastLoadable(signals.grants$);
-  const currentUserGrants = useLoadable(signals.grants$);
-  const userGrantsLoadable =
-    currentUserGrants.state === "hasError" ? currentUserGrants : lastUserGrants;
-  const agent = agentLoadable.state === "hasData" ? agentLoadable.data : null;
-  return (
-    <PermissionActionCardForTarget
-      signals={signals}
-      hasTarget={Boolean(agent)}
-      targetLoadableState={agentLoadable.state}
-      userGrantsLoadable={userGrantsLoadable}
-    />
   );
 }

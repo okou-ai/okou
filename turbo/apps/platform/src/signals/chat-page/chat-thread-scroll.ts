@@ -844,7 +844,6 @@ export function createChatThreadScrollSignals(
         },
         16,
         signal,
-        { retryTransientErrors: false },
       );
       signal.throwIfAborted();
       const eventExists = get(chatEvents$).some((event) => {

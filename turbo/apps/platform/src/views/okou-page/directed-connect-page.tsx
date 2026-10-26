@@ -731,8 +731,6 @@ function DirectedConnectAccountsError({
 }) {
   const { t } = useTranslation();
   const accounts = useLastLoadable(directedConnectAccounts$);
-  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
-  const signal = useGet(pageSignal$);
   if (accounts.state !== "hasError") {
     return null;
   }
@@ -747,12 +745,6 @@ function DirectedConnectAccountsError({
         message={t(($) => {
           return $.connectors.accounts.accountsUnavailable;
         })}
-        retryLabel={t(($) => {
-          return $.global.actions.tryAgain;
-        })}
-        onRetry={() => {
-          reloadAccounts(signal);
-        }}
       />
     </DirectedCardShell>
   );

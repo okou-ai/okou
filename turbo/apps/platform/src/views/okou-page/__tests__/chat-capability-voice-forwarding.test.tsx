@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
+import { openDB } from "idb";
 import { expect, vi, describe, beforeEach, it, test } from "vitest";
 
 import {
@@ -173,9 +174,13 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
       context.signal,
     );
     installVoiceBoundaries();
-    context.mocks.browser.voiceInput({ rms: 0.12 });
+    const capture = context.mocks.deferred<(samples: Float32Array) => void>();
+    context.mocks.browser.voiceInput({
+      rms: 0.12,
+      onPcmCapture: capture.resolve,
+      finalPcmSamples: new Float32Array(0),
+    });
     const uploads: ArrayBuffer[] = [];
-    let successful = false;
     context.mocks.http.post("*/api/voice-io/polish/segments", () => {
       return HttpResponse.json({ text: "Original recording." });
     });
@@ -183,13 +188,10 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
       "*/api/voice-io/transcribe/segment",
       async ({ request }) => {
         uploads.push(await uploadedAudio(request));
-        return successful
-          ? HttpResponse.json({
-              transcript: "original",
-
-              language: "en-US",
-            })
-          : HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
+        return HttpResponse.json({
+          transcript: "original",
+          language: "en-US",
+        });
       },
     );
     await setupPage({
@@ -198,18 +200,16 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
       path: NEW_CHAT_PATH,
     });
     click(await findEnabledButton("Voice input"));
-    click(await findEnabledButton("Stop recording"));
-    await findEnabledButton("Retry");
-    return {
-      resetInitialPage$,
-      get successful() {
-        return successful;
-      },
-      set successful(next: typeof successful) {
-        successful = next;
-      },
-      uploads,
-    };
+    const emit = await capture.promise;
+    emit(new Float32Array(4096).fill(0.25));
+    await waitFor(async () => {
+      const database = await openDB("okou-voice-drafts");
+      const recordings: unknown[] = await database.getAll("drafts");
+      database.close();
+      expect(recordings).toHaveLength(1);
+      expect(recordings[0]).toMatchObject({ sampleCount: 4096, chunkCount: 1 });
+    });
+    return { resetInitialPage$, uploads };
   }
   let preparedRecording: Awaited<ReturnType<typeof prepareRecording>>;
   beforeEach(async () => {
@@ -237,21 +237,19 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
     });
     expect(originalComposer).toHaveAccessibleName("Message");
     const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
-    await findEnabledButton("Retry", dialog);
+    await findEnabledButton("Use recording", dialog);
     return { dialog, originalComposer };
   }
-  it("recovers the restored audio into the forward dialog without changing the original composer", async () => {
+  it("uses the saved recording in the forward dialog without changing the original composer", async () => {
     const { uploads } = preparedRecording;
     const { dialog, originalComposer } = await openRestoredRecording();
     expect(queryButton("Voice input", dialog)).toBeNull();
-    preparedRecording.successful = true;
-    click(await findEnabledButton("Retry", dialog));
+    click(await findEnabledButton("Use recording", dialog));
     await findEnabledButton("Voice input", dialog);
     expect(
       within(dialog).getByRole("textbox", { name: "Message" }),
     ).toHaveTextContent("Original recording.");
     expect(originalComposer).toHaveTextContent("Keep the existing notes.");
-    expect(uploads).toHaveLength(2);
-    expect(uploads[1]).toStrictEqual(uploads[0]);
+    expect(uploads).toHaveLength(1);
   });
 });

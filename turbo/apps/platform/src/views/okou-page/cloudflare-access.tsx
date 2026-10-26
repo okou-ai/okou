@@ -50,7 +50,6 @@ import {
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
-  acceptCloudflareAccessConflictReview$,
   acknowledgeCloudflareAccessConversion$,
   acknowledgeCloudflareAccessDeletion$,
   acknowledgeCloudflareAccessPromotion$,
@@ -72,7 +71,6 @@ import {
   cloudflareAccessPromotionError$,
   cloudflareAccessPromotionAcknowledged$,
   cloudflareAccessConflict$,
-  cloudflareAccessConflictReview$,
   cloudflareAccessCreateScope$,
   cloudflareAccessDialog$,
   cloudflareAccessReplaceToken$,
@@ -87,9 +85,6 @@ import {
   openCloudflareAccessDeletion$,
   openCloudflareAccessPromotion$,
   replaceCloudflareAccessToken$,
-  retryCloudflareAccess$,
-  reviewCloudflareAccessConversion$,
-  reviewCloudflareAccessDeletion$,
   saveCloudflareAccess$,
   type CloudflareAccessDialogState,
 } from "../../signals/cloudflare-access.ts";
@@ -99,87 +94,29 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { PrivateNetworkAffectedMembers } from "./private-network-impact.tsx";
 
-export function CloudflareAccessConflictReview() {
+function CloudflareAccessConflictNotice() {
   const { t } = useTranslation();
   const conflict = useGet(cloudflareAccessConflict$);
-  const review = useLoadable(cloudflareAccessConflictReview$);
-  const acceptReview = useSet(acceptCloudflareAccessConflictReview$);
-  const signal = useGet(pageSignal$);
   if (!conflict) {
     return null;
   }
-  const current = review.state === "hasData" ? review.data : null;
   return (
-    <div className="grid gap-3 rounded-lg border p-4 text-sm">
-      <p role="alert">
-        {localizedCloudflareAccessError(conflict) ??
-          t(($) => {
-            return $.cloudflareAccess.failed;
-          })}
-      </p>
-      {review.state === "hasError" && <CloudflareAccessLoadError />}
-      {review.state === "loading" && (
-        <p role="status">
-          {t(($) => {
-            return $.cloudflareAccess.loading;
-          })}
-        </p>
-      )}
-      {current && (
-        <>
-          <h3 className="font-semibold">
-            {t(($) => {
-              return $.cloudflareAccess.latest;
-            })}
-          </h3>
-          {current.config && (
-            <>
-              <p>{current.config.name}</p>
-              <AccessImpact config={current.config} />
-            </>
-          )}
-          <p>
-            {t(($) => {
-              return $.cloudflareAccess.reviewHelp;
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={
-              current.kind === "delete" &&
-              !!current.config &&
-              privateNetworkHostCount(current.config) > 0
-            }
-            onClick={() => {
-              return detach(acceptReview(current, signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.keepChanges;
-            })}
-          </Button>
-        </>
-      )}
-    </div>
+    <p role="alert" className="text-sm text-destructive">
+      {localizedCloudflareAccessError(conflict) ??
+        t(($) => {
+          return $.cloudflareAccess.failed;
+        })}
+    </p>
   );
 }
 
 export function CloudflareAccessLoadError() {
   const { t } = useTranslation();
-  const retry = useSet(retryCloudflareAccess$);
-  const signal = useGet(pageSignal$);
   return (
     <LoadErrorRow
       message={t(($) => {
         return $.cloudflareAccess.loadFailed;
       })}
-      retryLabel={t(($) => {
-        return $.global.actions.tryAgain;
-      })}
-      onRetry={() => {
-        retry(signal);
-      }}
     />
   );
 }
@@ -646,7 +583,7 @@ export function CloudflareAccessDialog({
         aria-busy={isSaving}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!isSaving && !scopeStatus.error && (uncertain || !conflict)) {
+          if (!isSaving && !uncertain && !scopeStatus.error && !conflict) {
             detach(save(event.currentTarget, signal), Reason.DomCallback);
           }
         }}
@@ -656,7 +593,7 @@ export function CloudflareAccessDialog({
             dialog={dialog}
             disabled={isSaving || uncertain}
           />
-          <CloudflareAccessConflictReview />
+          <CloudflareAccessConflictNotice />
           {!isSaving && <CloudflareAccessSaveNotice />}
           <RemoteNetworkScopeConfirmation
             busy={isSaving}
@@ -672,7 +609,7 @@ export function CloudflareAccessDialog({
           })}
           cancelDisabled={isSaving}
           submitDisabled={
-            isSaving || (!uncertain && (!!conflict || !!scopeStatus.error))
+            isSaving || uncertain || !!conflict || !!scopeStatus.error
           }
           destructive={destructive}
           submitLabel={
@@ -680,17 +617,13 @@ export function CloudflareAccessDialog({
               ? t(($) => {
                   return $.connectors.actions.saving;
                 })
-              : uncertain
-                ? t(($) => {
-                    return $.cloudflareAccess.retry;
-                  })
-                : destructive
-                  ? title
-                  : guided
-                    ? saveLabel
-                    : t(($) => {
-                        return $.cloudflareAccess.save;
-                      })
+              : destructive
+                ? title
+                : guided
+                  ? saveLabel
+                  : t(($) => {
+                      return $.cloudflareAccess.save;
+                    })
           }
         />
       </form>
@@ -901,7 +834,6 @@ export function CloudflareAccessDeletionDialog() {
   const acknowledge = useSet(acknowledgeCloudflareAccessDeletion$);
   const error = useGet(cloudflareAccessDeletionError$);
   const close = useSet(closeCloudflareAccessDeletion$);
-  const review = useSet(reviewCloudflareAccessDeletion$);
   const [saving, confirm] = useLoadableSet(confirmCloudflareAccessDeletion$);
   const signal = useGet(pageSignal$);
   const current = dialog.state === "hasData" ? dialog.data : null;
@@ -964,18 +896,7 @@ export function CloudflareAccessDeletionDialog() {
                   }))}
             </p>
           )}
-          {(error || preview.state === "hasError") && (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSaving}
-              onClick={review}
-            >
-              {t(($) => {
-                return $.cloudflareAccess.reviewLatest;
-              })}
-            </Button>
-          )}
+
           <div className="flex justify-end gap-2">
             <Button
               type="button"
@@ -1019,7 +940,6 @@ export function CloudflareAccessConversionDialog() {
   const preview = useLoadable(cloudflareAccessConversionPreview$);
   const error = useGet(cloudflareAccessConversionError$);
   const close = useSet(closeCloudflareAccessConversion$);
-  const review = useSet(reviewCloudflareAccessConversion$);
   const [saving, confirm] = useLoadableSet(confirmCloudflareAccessConversion$);
   const signal = useGet(pageSignal$);
   const current = dialog.state === "hasData" ? dialog.data : null;
@@ -1069,11 +989,6 @@ export function CloudflareAccessConversionDialog() {
                   return $.cloudflareAccess.loadFailed;
                 })}
               </p>
-              <Button type="button" variant="outline" onClick={review}>
-                {t(($) => {
-                  return $.cloudflareAccess.retry;
-                })}
-              </Button>
             </div>
           )}
           {preview.state === "hasData" && !impact && (
@@ -1095,18 +1010,7 @@ export function CloudflareAccessConversionDialog() {
                   }))}
             </p>
           )}
-          {error && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={review}
-              disabled={isSaving}
-            >
-              {t(($) => {
-                return $.cloudflareAccess.reviewLatest;
-              })}
-            </Button>
-          )}
+
           <CloudflareAccessConversionControls
             preview={error ? null : impact}
             isSaving={isSaving}

@@ -278,17 +278,6 @@ function ArtifactAccessPage() {
               return $.artifacts.access.signIn;
             })}
       </Button>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          window.location.reload();
-        }}
-      >
-        {t(($) => {
-          return $.artifacts.access.tryAgain;
-        })}
-      </Button>
     </ResourceAccessCard>
   );
 }

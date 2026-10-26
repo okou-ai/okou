@@ -3,6 +3,7 @@ import { expect, test, vi } from "vitest";
 
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -20,6 +21,8 @@ test.each(["success", "failure", "pending task"])(
   "Switch accounts: %s",
   async (outcome) => {
     prepareDefaultAgent();
+    const sentry = context.mocks.sentry();
+    initSentry();
 
     await setupPage({
       context,
@@ -76,13 +79,6 @@ test.each(["success", "failure", "pending task"])(
     const replace = vi
       .spyOn(window.location, "replace")
       .mockImplementation(() => {});
-    const reloadedUrls: string[] = [];
-    const reload = vi
-      .spyOn(window.location, "reload")
-      .mockImplementation(() => {
-        reloadedUrls.push(window.location.href);
-      });
-    const originalUrl = window.location.href;
     const lifecycle = window._okou;
     expect(
       document.querySelector('[data-slot="app-shell"]'),
@@ -108,10 +104,10 @@ test.each(["success", "failure", "pending task"])(
     expect(window._okou).toBe(lifecycle);
     expect(context.signal.aborted).toBeFalsy();
     expect(replace).not.toHaveBeenCalled();
-    expect(reload).not.toHaveBeenCalled();
 
+    const failure = new Error("Session switch failed");
     if (outcome === "failure") {
-      finishSwitch.reject(new Error("Session switch failed"));
+      finishSwitch.reject(failure);
     } else {
       finishSwitch.resolve();
     }
@@ -121,10 +117,15 @@ test.each(["success", "failure", "pending task"])(
       expect(replace.mock.calls).toStrictEqual(
         outcome === "failure" ? [] : [[destination]],
       );
-      expect(reloadedUrls).toStrictEqual(
-        outcome === "failure" ? [originalUrl] : [],
-      );
+      expect(
+        sentry.reports.some((report) => {
+          return report.type === "exception" && report.error === failure;
+        }),
+      ).toBe(outcome === "failure");
     });
+    expect(
+      document.querySelector('[data-slot="app-shell"]'),
+    ).not.toBeInTheDocument();
   },
 );
 

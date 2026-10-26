@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { animationFrame } from "signal-timers";
-import { detach, onRef, Reason, resetSignal } from "../../utils.ts";
+import { onRef } from "../../utils.ts";
 import {
   orgContract,
   orgDeleteContract,
@@ -78,18 +78,6 @@ export const profileName$ = computed((get) => {
 
 export const setProfileName$ = command(({ set }, value: string) => {
   set(internalProfileName$, value);
-});
-
-const internalProfileLogoRequest$ = state<Promise<string | null> | null>(null);
-const resetLogoRequest$ = resetSignal();
-
-export const profileLogoUrl$ = computed((get) => {
-  return get(internalProfileLogoRequest$);
-});
-
-export const resetOrgLogo$ = command(({ set }) => {
-  set(resetLogoRequest$);
-  set(internalProfileLogoRequest$, null);
 });
 
 const internalPendingLogoFile$ = state<File | null>(null);
@@ -450,31 +438,6 @@ const uploadOrgLogo$ = command(
   },
 );
 
-export const loadOrgLogo$ = command(({ get, set }, signal: AbortSignal) => {
-  signal.throwIfAborted();
-  signal = set(resetLogoRequest$, signal);
-  const request = (async () => {
-    const result = await accept(
-      get(apiClient$)(orgLogoContract).get({ fetchOptions: { signal } }),
-      [200],
-      signal,
-    );
-    return result.body.logoUrl;
-  })();
-  set(internalProfileLogoRequest$, request);
-  return request;
-});
-
-export const startOrgLogoLoading$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    if (get(internalProfileLogoRequest$) !== null) {
-      return;
-    }
-    // The dialog owns this background read across General tab remounts.
-    detach(set(loadOrgLogo$, signal), Reason.Daemon, "Load workspace logo");
-  },
-);
-
 export const saveOrgProfile$ = command(
   async (
     { get, set },
@@ -490,10 +453,8 @@ export const saveOrgProfile$ = command(
     const hasNameChange = input.name !== (org.name ?? "");
 
     if (input.logoFile) {
-      const result = await set(uploadOrgLogo$, input.logoFile, signal);
+      await set(uploadOrgLogo$, input.logoFile, signal);
       signal.throwIfAborted();
-      set(resetLogoRequest$);
-      set(internalProfileLogoRequest$, Promise.resolve(result.logoUrl));
     }
 
     if (hasNameChange) {

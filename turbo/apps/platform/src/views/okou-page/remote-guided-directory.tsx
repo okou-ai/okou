@@ -44,9 +44,8 @@ import {
 } from "../../signals/remote-control-setup.ts";
 import { sshConnections$, sshIdentity$ } from "../../signals/ssh.ts";
 import { vncConnections$ } from "../../signals/vnc.ts";
-import { tailscaleConfigs$, retryTailscale$ } from "../../signals/tailscale.ts";
+import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { SshDialog } from "./ssh-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
@@ -685,8 +684,6 @@ function OwnerPrivateNetworkPanel() {
   const tailscale = useLastLoadable(tailscaleConfigs$);
   const access = useLastLoadable(cloudflareAccessConfigs$);
   const open = useSet(setRemoteNetworkPicker$);
-  const retry = useSet(retryTailscale$);
-  const signal = useGet(pageSignal$);
   const ts = tailscale.state === "hasData" ? tailscale.data : null;
   const cf = access.state === "hasData" ? access.data : null;
   const loading = access.state === "loading" || tailscale.state === "loading";
@@ -724,12 +721,6 @@ function OwnerPrivateNetworkPanel() {
             message={t(($) => {
               return $.tailscale.loadFailed;
             })}
-            retryLabel={t(($) => {
-              return $.remoteControlSetup.retry;
-            })}
-            onRetry={() => {
-              return retry(signal);
-            }}
           />
         )}
         <PrivateNetworkRows ts={ts} cf={cf} />

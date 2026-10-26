@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { state } from "ccstate";
 import {
   paidToolsContract,
   type PaidToolId,
@@ -19,6 +20,25 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+
+function mockPaidTools(initialDisabledTools: PaidToolId[] = []) {
+  const disabledTools$ = state(initialDisabledTools);
+  const updates: { toolId: string; disabled: boolean }[] = [];
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: context.store.get(disabledTools$) });
+  });
+  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+    updates.push({ toolId: params.toolId, disabled: body.disabled });
+    context.store.set(disabledTools$, (previous) => {
+      const enabled = previous.filter((toolId) => {
+        return toolId !== params.toolId;
+      });
+      return body.disabled ? [...enabled, params.toolId] : enabled;
+    });
+    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+  });
+  return updates;
+}
 
 function button(name: string, container: ParentNode = document.body) {
   const element = queryAllByRoleFast("button", container).find((candidate) => {
@@ -98,14 +118,7 @@ test("Members manage Paid tools in Tools", async () => {
 });
 
 test("Paid tools toggles save inverted enabled state and can re-enable a tool", async () => {
-  const updates: { toolId: string; disabled: boolean }[] = [];
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["web-search"] });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    updates.push({ toolId: params.toolId, disabled: body.disabled });
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  const updates = mockPaidTools(["web-search"]);
   await openPaidTools();
   const toggle = await readySwitch("Web search");
   expect(toggle).not.toBeChecked();
@@ -125,21 +138,7 @@ test("Paid tools toggles save inverted enabled state and can re-enable a tool", 
 });
 
 test("Advanced data research saves independently and retains preferences across Tools visits", async () => {
-  const updates: { toolId: string; disabled: boolean }[] = [];
-  let disabledTools: PaidToolId[] = [];
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    updates.push({ toolId: params.toolId, disabled: body.disabled });
-    disabledTools = disabledTools.filter((toolId) => {
-      return toolId !== params.toolId;
-    });
-    if (body.disabled) {
-      disabledTools.push(params.toolId);
-    }
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  const updates = mockPaidTools();
   const dialog = await openPaidTools();
   const advanced = await readySwitch("Advanced data research");
   const people = await readySwitch("People search");
@@ -166,26 +165,20 @@ test("Advanced data research saves independently and retains preferences across 
   ]);
 });
 
-test("A failed load shows no assumed enabled tools and can be retried", async () => {
-  let available = false;
+test("A failed load shows no assumed enabled tools", async () => {
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return available
-      ? respond(200, { disabledTools: ["web-search"] })
-      : respond(500, {
-          error: {
-            message: "Preferences temporarily unavailable",
-            code: "INTERNAL_SERVER_ERROR",
-          },
-        });
+    return respond(500, {
+      error: {
+        message: "Preferences temporarily unavailable",
+        code: "INTERNAL_SERVER_ERROR",
+      },
+    });
   });
   const dialog = await openPaidTools();
   await within(dialog).findByText("Your tool settings could not be loaded.");
   expect(
     within(dialog).queryByRole("switch", { name: "Web search" }),
   ).not.toBeInTheDocument();
-  available = true;
-  click(button("Retry", dialog));
-  await expect(readySwitch("Web search")).resolves.not.toBeChecked();
 });
 
 test("A workspace switch while a save obtains its token prevents sending that save under the new workspace", async () => {
@@ -246,12 +239,7 @@ test("The image model is locked but still shown while image generation is off", 
   context.mocks.data.userModelPreference(
     modelPreference({ selectedImageModel: "ideogram/v4" }),
   );
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["image-generation"] });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
+  mockPaidTools(["image-generation"]);
   await openPaidTools();
   const toggle = await readySwitch("Image generation");
   expect(toggle).not.toBeChecked();
@@ -284,6 +272,9 @@ test("Choosing an image model saves it with the stored run model", async () => {
       updatedAt: "2026-09-28T00:00:00.000Z",
     });
     context.mocks.data.userModelPreference(stored);
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultImageModel"],
+    });
     return respond(200, stored);
   });
   await openPaidTools();
@@ -309,24 +300,16 @@ test("Choosing an image model saves it with the stored run model", async () => {
   ]);
 });
 
-test("A failed image model save retains the unsaved choice and can be retried", async () => {
-  let failing = true;
+test("A failed image model save retains the unsaved choice", async () => {
   const updates: UpdateUserModelPreferenceRequest[] = [];
   context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
     updates.push(body);
-    if (failing) {
-      return respond(500, {
-        error: {
-          message: "Preferences temporarily unavailable",
-          code: "INTERNAL_SERVER_ERROR",
-        },
-      });
-    }
-    const stored = modelPreference({
-      selectedImageModel: body.selectedImageModel ?? null,
+    return respond(500, {
+      error: {
+        message: "Preferences temporarily unavailable",
+        code: "INTERNAL_SERVER_ERROR",
+      },
     });
-    context.mocks.data.userModelPreference(stored);
-    return respond(200, stored);
   });
   const dialog = await openPaidTools();
   const select = await imageModelSelect();
@@ -340,28 +323,6 @@ test("A failed image model save retains the unsaved choice and can be retried", 
   );
   await within(dialog).findByText("Your image model was not saved.");
   expect(select).toHaveTextContent("Nano Banana 2 Lite");
-  failing = false;
-  click(button("Retry", dialog));
-  await waitFor(() => {
-    expect(
-      within(dialog).queryByText("Your image model was not saved."),
-    ).not.toBeInTheDocument();
-    expect(select).not.toBeDisabled();
-  });
-  expect(select).toHaveTextContent("Nano Banana 2 Lite");
-  expect(updates).toHaveLength(2);
-  expect(updates[1]?.selectedImageModel).toBe("google/nano-banana-2-lite");
-  context.mocks.data.userModelPreference(
-    modelPreference({ selectedImageModel: "gpt-image-2" }),
-  );
-  act(() => {
-    context.mocks.ably.trigger("userPreferenceChanged", {
-      kinds: ["defaultImageModel"],
-    });
-  });
-  await waitFor(() => {
-    expect(select).toHaveTextContent("GPT Image 2");
-  });
 });
 
 test.each(["disable image generation", "leave Tools"] as const)(
@@ -375,9 +336,7 @@ test.each(["disable image generation", "leave Tools"] as const)(
         },
       });
     });
-    context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-      return respond(200, { toolId: params.toolId, disabled: body.disabled });
-    });
+    mockPaidTools();
     const dialog = await openPaidTools();
     const select = await imageModelSelect();
     await waitFor(() => {

@@ -1,4 +1,5 @@
 import type { Computed } from "ccstate";
+import type { ChatActionCallbackIds } from "./action-callback.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import type {
   PlatformConnectorPermissionMetadata,
@@ -23,6 +24,7 @@ import {
  */
 export interface PermissionSignals extends PermissionActionDescriptor {
   readonly href: string;
+  readonly callbackIds: ChatActionCallbackIds;
   readonly agent$: Computed<Promise<AgentResponse>>;
   readonly grants$: Computed<Promise<readonly PlatformUserPermissionGrant[]>>;
   readonly metadata$: Computed<
@@ -41,6 +43,10 @@ function createPermissionSignals(
   return {
     ...descriptor,
     href: permissionActionResourceKey(descriptor),
+    callbackIds: {
+      clientEventId: crypto.randomUUID(),
+      chatThreadSortEventId: crypto.randomUUID(),
+    },
     agent$: agentById(descriptor.agentId),
     grants$: userPermissionGrantsByAgent({ agentId: descriptor.agentId }),
     metadata$: firewallPermissionMetadataByConnector({

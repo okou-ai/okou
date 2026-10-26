@@ -24,7 +24,6 @@ import {
   type CapturedChatSend,
   readyChat,
   RUN_PATH,
-  RUN_THREAD_ID,
   createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import {
@@ -222,7 +221,7 @@ test("Fail closed on permission load and save errors", async () => {
     "Couldn't update permissions",
   );
   expect(updateFailure).toBeVisible();
-  expect(getButton("Confirm", card)).toBeEnabled();
+  expect(sends).toHaveLength(0);
   expect(
     within(card).queryByText("Permissions updated"),
   ).not.toBeInTheDocument();
@@ -365,12 +364,11 @@ test("Reflect current connector permission decisions", async () => {
   expect(queryButton("Confirm", expiredCard)).not.toBeInTheDocument();
 });
 
-test("Permission cards keep callback work pending and expose a retryable callback failure", async () => {
+test("Permission cards keep the full operation pending and expose callback failure", async () => {
   const connectorSlug = "callback-service";
   const permission = "reports.read";
   const callbackStarted = context.mocks.deferred<void>();
   const callbackResponse = context.mocks.deferred<void>();
-  let callbackAvailable = false;
   let grants: UserPermissionGrantResponse[] = [];
   installPermissionMetadata((slug) => {
     return slug === connectorSlug
@@ -398,15 +396,10 @@ test("Permission cards keep callback work pending and expose a retryable callbac
     ],
   });
   context.mocks.api(chatEventsContract.send, async ({ respond }) => {
-    if (!callbackAvailable) {
-      callbackStarted.resolve(undefined);
-      await callbackResponse.promise;
-      return respond(500, {
-        error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-      });
-    }
-    return respond(201, {
-      threadId: RUN_THREAD_ID,
+    callbackStarted.resolve(undefined);
+    await callbackResponse.promise;
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
     });
   });
   await setupPage({ context, path: RUN_PATH });
@@ -428,14 +421,6 @@ test("Permission cards keep callback work pending and expose a retryable callbac
   callbackResponse.resolve(undefined);
   await expect(
     within(card).findByText("Couldn't update permissions"),
-  ).resolves.toBeInTheDocument();
-  expect(getButton("Confirm", card)).toBeEnabled();
-  expect(within(card).queryByText("Already allowed")).not.toBeInTheDocument();
-
-  callbackAvailable = true;
-  click(getButton("Confirm", card));
-  await expect(
-    within(card).findByText("Permissions updated"),
   ).resolves.toBeInTheDocument();
 });
 

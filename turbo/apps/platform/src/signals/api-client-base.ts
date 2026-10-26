@@ -143,43 +143,37 @@ export function createAuthedContractClient<T extends AppRouter>(
         bootstrapResponse ??
         (await (async () => {
           const validateToken = options.getTokenGuard?.();
-          const request = async () => {
-            signal?.throwIfAborted();
-            validateToken?.();
-            const token = await options.getToken(signal);
-            signal?.throwIfAborted();
-            validateToken?.();
-            const measurement = startClientTelemetryMeasurement();
-            const requestTelemetry = {
-              event_name: "http.request",
-              method: args.route.method,
-              route: args.route.path,
-            } satisfies ClientTelemetryOperation;
-            // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: shared network-failure telemetry.
-            const networkResponse = await onRejection(
-              requestWithToken(token),
-              (error) => {
-                recordClientTelemetry(
-                  measurement,
-                  requestTelemetry,
-                  clientTelemetryOutcomeForError(error),
-                );
-              },
-            );
-            recordClientTelemetry(
-              measurement,
-              {
-                ...requestTelemetry,
-                response_status_code: networkResponse.status,
-              },
-              networkResponse.status >= 500 ? "error" : "success",
-            );
-            return networkResponse;
-          };
-          const firstResponse = await request();
-          // A suspended runtime can outlive its token. Read again and replay
-          // once; a second failure belongs to the existing caller boundary.
-          return firstResponse.status === 401 ? await request() : firstResponse;
+          signal?.throwIfAborted();
+          validateToken?.();
+          const token = await options.getToken(signal);
+          signal?.throwIfAborted();
+          validateToken?.();
+          const measurement = startClientTelemetryMeasurement();
+          const requestTelemetry = {
+            event_name: "http.request",
+            method: args.route.method,
+            route: args.route.path,
+          } satisfies ClientTelemetryOperation;
+          // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: shared network-failure telemetry.
+          const networkResponse = await onRejection(
+            requestWithToken(token),
+            (error) => {
+              recordClientTelemetry(
+                measurement,
+                requestTelemetry,
+                clientTelemetryOutcomeForError(error),
+              );
+            },
+          );
+          recordClientTelemetry(
+            measurement,
+            {
+              ...requestTelemetry,
+              response_status_code: networkResponse.status,
+            },
+            networkResponse.status >= 500 ? "error" : "success",
+          );
+          return networkResponse;
         })());
 
       if (reportForceUpgradeResponse(response, options.onForceUpgrade)) {

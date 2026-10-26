@@ -197,7 +197,7 @@ function createClaudeCodeRun$(
   return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
     const flowSignal = set(ctx.resetFlowSignal$, signal);
     // Startup stays short; the real session owner can still end later through
-    // navigation, retry or close. Invalidate account truth at that boundary.
+    // navigation, a new authorization session or close. Invalidate account truth then.
     flowSignal.addEventListener(
       "abort",
       () => {
@@ -207,7 +207,7 @@ function createClaudeCodeRun$(
     );
     set(ctx.internalFlowState$, createIdleFlowState());
     const operation = set(startFlow$, createRequestId(ctx.scope), flowSignal);
-    // Retain the actual startup result until retry or dialog-session release.
+    // Retain the actual startup result for this authorization session.
     set(ctx.internalStartOperation$, operation);
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {

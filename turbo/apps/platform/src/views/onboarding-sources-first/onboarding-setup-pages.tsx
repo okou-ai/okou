@@ -9,7 +9,6 @@ import {
   OnboardingSecurityLink,
 } from "./onboarding-industry-parts.tsx";
 import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
-import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
   sourcesFirstInviteEmailValid,
@@ -62,7 +61,6 @@ export function OnboardingIndustryPage() {
   const [continueLoadable, continueToSources] = useLoadableSet(
     continueSourcesFirstIndustry$,
   );
-  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const captureIndustrySelected = useSet(
     captureSourceOnboardingIndustrySelected$,
   );
@@ -142,16 +140,6 @@ export function OnboardingIndustryPage() {
               return $.connectors.catalog.directory.builtinLoadFailed;
             })}
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={retryCatalog}
-          >
-            {t(($) => {
-              return $.connectors.catalog.directory.retry;
-            })}
-          </Button>
         </div>
       ) : null}
     </OnboardingStepLayout>
@@ -506,17 +494,12 @@ function SubscriptionConnectLabel({
       return $.onboarding.sourcesFirst.subscription.connecting;
     });
   }
-  if (status === "idle") {
-    return t(
-      ($) => {
-        return $.onboarding.sourcesFirst.subscription.connect;
-      },
-      { provider: providerName },
-    );
-  }
-  return t(($) => {
-    return $.onboarding.sourcesFirst.subscription.retry;
-  });
+  return t(
+    ($) => {
+      return $.onboarding.sourcesFirst.subscription.connect;
+    },
+    { provider: providerName },
+  );
 }
 
 /**

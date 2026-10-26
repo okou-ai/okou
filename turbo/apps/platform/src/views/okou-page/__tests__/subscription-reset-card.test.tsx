@@ -252,51 +252,6 @@ test("the standalone Claude Code page exposes natural recovery without manual-cr
   ).not.toBeInTheDocument();
 });
 
-test("an uncertain last-credit request can be retried from another card with its original idempotency key", async () => {
-  const keys: string[] = [];
-  context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      subscription({ subscriptionResetCredits: keys.length === 0 ? 1 : 0 }),
-    );
-  });
-  context.mocks.api(
-    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
-    ({ body, respond }) => {
-      keys.push(body.idempotencyKey);
-      return keys.length === 1
-        ? respond(500, {
-            error: { code: "INTERNAL_SERVER_ERROR", message: "Response lost" },
-          })
-        : respond(200, { outcome: "alreadyRedeemed" });
-    },
-  );
-  await setupChat(`${URL}\n\nThe same request:\n\n${URL}`);
-  await waitFor(() => {
-    expect(screen.getAllByText("Remaining resets: 1")).toHaveLength(2);
-  });
-  const cards = screen.getAllByTestId("subscription-reset-card");
-  const firstCard = cards[0]!;
-  const retryCard = cards[1]!;
-  click(button("1 reset", firstCard));
-  await screen.findByText("Reset failed. Retry with the same request.");
-  await waitFor(() => {
-    expect(screen.getAllByText("Remaining resets: 0")).toHaveLength(2);
-    expect(button("0 resets", retryCard)).toBeEnabled();
-  });
-  // This card has no failed hook result: retry eligibility belongs to the
-  // request's idempotency history, not the first view's local error.
-  click(button("0 resets", retryCard));
-  await expect(
-    within(retryCard).findByText(
-      "This reset request has already been redeemed.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(button("0 resets", firstCard)).toBeDisabled();
-  expect(button("0 resets", retryCard)).toBeDisabled();
-  expect(keys).toStrictEqual([REQUEST_ID, REQUEST_ID]);
-});
-
 test.each([
   {
     name: "Claude Code",

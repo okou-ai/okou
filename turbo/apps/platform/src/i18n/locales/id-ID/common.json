@@ -87,7 +87,7 @@
           "title": "Kredit habis"
         },
         "noModelProvider": {
-          "guidance": "Coba lagi sebentar lagi, atau hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
+          "guidance": "Hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
           "title": "Tidak ada penyedia model yang tersedia untuk eksekusi ini"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "Provider tidak kompatibel"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "Provider model sedang tidak tersedia. Silakan coba lagi nanti.",
+          "guidance": "Provider model sedang tidak tersedia.",
           "title": "Provider sementara tidak tersedia"
         }
       },
@@ -112,7 +112,6 @@
         "time": "Waktu"
       },
       "log": "Log",
-      "manualReloadNotice": "Log tidak diperbarui secara otomatis.",
       "modelProvidedBy": "{{model}} disediakan oleh {{provider}}",
       "networkEmpty": {
         "description": "Tidak ada traffic jaringan yang direkam untuk run ini.",
@@ -123,7 +122,6 @@
         "description": "Log ini tidak ada atau Anda tidak memiliki izin untuk melihatnya di ruang kerja saat ini.",
         "title": "Log tidak ditemukan"
       },
-      "refresh": "Segarkan",
       "runner": {
         "environment": "Lingkungan",
         "framework": "Framework",
@@ -437,16 +435,15 @@
       "signedInAs": "Masuk sebagai {{email}}",
       "signedInDescription": "Artefak ini mungkin tidak ada atau dibagikan ke akun atau organisasi lain.",
       "signIn": "Masuk",
-      "signInFailed": "Tidak dapat membuka halaman masuk. Silakan coba lagi.",
+      "signInFailed": "Tidak dapat membuka halaman masuk.",
       "switchAccount": "Ganti akun",
-      "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",
+      "switchAccountFailed": "Tidak dapat membuka pemilih akun.",
       "title": "Anda tidak dapat melihat artefak ini",
-      "tryAgain": "Coba lagi",
       "websiteAuthenticationDescription": "Masuk dengan akun yang memiliki akses ke situs web ini.",
       "websiteAuthenticationSignedInDescription": "Lanjutkan untuk memverifikasi akses dengan akun Anda saat ini.",
       "websiteAuthenticationTitle": "Verifikasi akses ke situs web ini",
       "websiteTitle": "Anda tidak dapat melihat situs web ini",
-      "websiteUnavailableDescription": "Coba lagi sebentar lagi.",
+      "websiteUnavailableDescription": "Situs web ini untuk sementara tidak tersedia.",
       "websiteUnavailableTitle": "Situs web ini sementara tidak tersedia"
     },
     "actions": {
@@ -621,8 +618,7 @@
       "organizationOptionUnnamed": "Siapa pun di organisasi Anda",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
-      "publicOption": "Siapa pun yang memiliki tautan",
-      "retry": "Coba lagi"
+      "publicOption": "Siapa pun yang memiliki tautan"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",
@@ -638,7 +634,7 @@
     "siteUrl": {
       "available": "Tersedia",
       "cancel": "Batal",
-      "checkFailed": "Tidak dapat memeriksa alamat. Ubah untuk mencoba lagi.",
+      "checkFailed": "Alamat ini tidak dapat diperiksa.",
       "checking": "Memeriksa ketersediaan…",
       "customize": "Sesuaikan URL",
       "hint": "Pilih nama yang singkat dan mudah diingat",
@@ -648,7 +644,7 @@
       "oldUrlWarning": "URL lama tidak akan berfungsi. Perbarui tautan yang telah dibagikan.",
       "published": "Dipublikasikan",
       "save": "Simpan",
-      "saveFailed": "Tidak dapat menyimpan. Alamat mungkin sudah digunakan atau berubah. Muat ulang dan coba lagi.",
+      "saveFailed": "Tidak dapat menyimpan. Alamat mungkin sudah digunakan atau berubah.",
       "taken": "Alamat ini sudah digunakan",
       "updated": "URL situs diperbarui"
     },
@@ -950,7 +946,7 @@
   },
   "authorization": {
     "browser": {
-      "actionFailed": "Tidak dapat melanjutkan. Coba lagi.",
+      "actionFailed": "Tidak dapat melanjutkan.",
       "allow": "Izinkan",
       "allowed": "Diizinkan",
       "callbackPrompt": "Browser cloud telah diaktifkan. Silakan lanjutkan tugas sebelumnya.",
@@ -959,7 +955,6 @@
       "enable": "Aktifkan untuk thread ini",
       "enabled": "Browser cloud diaktifkan",
       "linkExpires": "Tautan kedaluwarsa pada {{date}}.",
-      "retry": "Coba lagi",
       "title": "Aktifkan browser cloud",
       "unavailableDescription": "Tautan otorisasi browser cloud ini tidak valid, kedaluwarsa, atau tidak tersedia untuk ruang kerja ini.",
       "unavailableTitle": "Tautan otorisasi tidak tersedia"
@@ -973,7 +968,7 @@
       "lastSeen": "Terakhir terlihat {{date}}",
       "linkExpires": "Tautan kedaluwarsa pada {{date}}.",
       "macRequirement": "Memerlukan Mac Apple silicon dengan macOS 14 atau yang lebih baru. Mac Intel tidak didukung.",
-      "noHostsDescription": "Buka {{desktopApplicationName}} di Mac Anda dan muat ulang halaman ini saat sudah online.",
+      "noHostsDescription": "Buka {{desktopApplicationName}} di Mac Anda agar perangkat terhubung.",
       "noHostsTitle": "Tidak ada komputer online",
       "sources": {
         "chat": "thread chat ini",
@@ -1037,10 +1032,8 @@
       "allowed": "Izin diberikan",
       "allowedCount": "{{allowed}} dari {{total}} izin diberikan",
       "alwaysNote": "Izin ini tetap berlaku sampai Anda mengubah atau mencabutnya.",
-      "continue": "Lanjutkan",
       "continued": "Percakapan telah dilanjutkan.",
-      "continueFailed": "Izin telah diberikan, tetapi percakapan tidak dapat dilanjutkan. Coba lanjutkan lagi.",
-      "continuing": "Melanjutkan…",
+      "continueFailed": "Izin telah diberikan, tetapi percakapan tidak dapat dilanjutkan.",
       "details": "Lihat detail izin",
       "dismissed": "Tidak ada izin yang diubah.",
       "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
@@ -1074,7 +1067,6 @@
       "preparing": "Menyiapkan...",
       "redirecting": "Mengarahkan...",
       "restore": "Pulihkan",
-      "retry": "Coba lagi",
       "unavailable": "Tidak tersedia",
       "updating": "Memperbarui..."
     },
@@ -1255,7 +1247,7 @@
           "confirmDescription": "Paket dan hak Anda saat ini tetap aktif hingga periode penagihan ini berakhir. Stripe menagih total berulang baru saat paket baru dimulai.",
           "convertPlan": "Konversi paket",
           "description": "Konversikan ruang kerja {{plan}} lama ke paket baru dengan paket penggunaan bulanan individual untuk setiap anggota.",
-          "error": "Langganan ini tidak dapat dimigrasikan. Muat ulang halaman dan coba lagi.",
+          "error": "Langganan ini tidak dapat dimigrasikan.",
           "invoice": "Lihat faktur",
           "processing": "Menjadwalkan konversi dengan Stripe.",
           "ready": "Pilih paket bulanan untuk setiap anggota dan undangan tertunda, atau pilih Tanpa paket.",
@@ -1274,7 +1266,7 @@
         "packCreditsDiscount": "{{credits}} kredit · diskon {{discount}}%",
         "packOption": "{{price}} · {{credits}} kredit · Diskon {{discount}}%",
         "paidPackageRequired": "Pilih paket berbayar untuk setidaknya satu anggota agar dapat melanjutkan.",
-        "planChangeError": "Perubahan langganan tidak dapat disiapkan. Coba lagi.",
+        "planChangeError": "Perubahan langganan tidak dapat disiapkan.",
         "planPlusPackages": "Paket {{plan}} · paket anggota {{lowest}}–{{highest}} per orang",
         "planStep": "Paket",
         "priceFrom": "mulai",
@@ -1400,7 +1392,7 @@
       "generatePdf": "Buat PDF",
       "generatingPdf": "Membuat PDF…",
       "more": "Tindakan lainnya",
-      "pdfGenerationFailed": "Tidak dapat membuat PDF. Coba lagi.",
+      "pdfGenerationFailed": "Tidak dapat membuat PDF.",
       "remove": "Hapus",
       "rename": "Ubah nama",
       "saving": "Menyimpan...",
@@ -1447,7 +1439,7 @@
             "connected": "Terhubung",
             "description": "Pilih satu dan {{assistantName}} mulai bekerja di dalamnya.",
             "notConnected": "Belum terhubung",
-            "pickerFailed": "Konektor gagal dimuat. Buka halaman konektor untuk mencoba lagi.",
+            "pickerFailed": "Konektor gagal dimuat.",
             "pickerLoading": "Memuat konektor…",
             "title": "{{assistantName}} bekerja di dalam alat yang sudah Anda pakai"
           },
@@ -1566,8 +1558,7 @@
       "next": "Saran berikutnya",
       "position": "{{current}} dari {{total}}",
       "previous": "Saran sebelumnya",
-      "recoveryHint": "Periksa chat sebelum mengirim lagi. Anda dapat memulihkan saran ke draf.",
-      "restoreDraft": "Pulihkan draf"
+      "useSuggestion": "Gunakan saran"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -1578,7 +1569,7 @@
       "title": "Lampiran",
       "unavailable": "{{filename}} tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
       "unavailableCount_other": "{{count}} lampiran tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
-      "uploadFailedRetry": "Gagal mengunggah {{filename}}. Coba lagi."
+      "uploadFailed": "Gagal mengunggah {{filename}}."
     },
     "automations": {
       "active": "Aktif",
@@ -1698,7 +1689,6 @@
       "readOnly": "Rekening, saldo, dan transaksi · hanya baca",
       "repair": "Perbaiki",
       "repairRequired": "{{institution}} perlu diperbaiki",
-      "retry": "Coba lagi",
       "revoke": "Cabut",
       "revokeConfirm": "Cabut akses perbankan Agen ini?",
       "selectAccounts": "Pilih rekening",
@@ -1733,21 +1723,18 @@
       "unavailableDescription": "Permintaan browser ini tidak valid atau sudah tidak tersedia."
     },
     "browserInput": {
-      "applyFailed": "Informasi tidak dapat ditambahkan. Isian Anda masih tersedia. Coba lagi.",
+      "applyFailed": "Informasi tidak dapat ditambahkan. Isian Anda masih tersedia.",
       "applying": "Menambahkan informasi",
       "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
-      "callbackFailed": "Agen belum diberi tahu.",
       "cancel": "Batal",
-      "cancelFailed": "Permintaan tidak dapat dibatalkan. Coba lagi.",
+      "cancelFailed": "Permintaan tidak dapat dibatalkan.",
       "cancelled": "Permintaan dibatalkan",
       "cancelling": "Membatalkan…",
-      "checkFailed": "Browser tidak dapat diperiksa. Isian Anda tetap tersimpan; coba lagi sebelum mengirim.",
+      "checkFailed": "Browser tidak dapat diperiksa. Isian Anda masih tersedia.",
       "checkingOutcome": "Memeriksa status browser",
       "checkingOutcomeDescription": "Menunggu browser mengonfirmasi permintaan ini.",
       "completed": "Informasi ditambahkan",
       "confirmRangeValue": "Gunakan nilai saat ini",
-      "continue": "Beri tahu agen",
-      "continuing": "Memberi tahu agen…",
       "delivered": "Agen diberi tahu",
       "expired": "Permintaan kedaluwarsa",
       "expiredDescription": "Browser ditutup atau permintaan ini sudah tidak aktif.",
@@ -1755,12 +1742,11 @@
       "fileLimit": "Pilih hingga 3 berkas (1 untuk situs dengan satu berkas), total 10 MiB.",
       "fileNotice": "Menambahkan ke browser akan mengirim berkas ke situs ini. Situs dapat mengunggahnya atau mengirim formulir saat pilihan berkas berubah:",
       "loadFailed": "Permintaan ini tidak dapat dimuat",
-      "loadFailedDescription": "Coba lagi sebentar lagi.",
+      "loadFailedDescription": "Permintaan ini saat ini tidak tersedia.",
       "loadingDescription": "Memeriksa permintaan ini…",
       "open": "Masukkan informasi",
       "optional": "(Opsional)",
       "required": "(Wajib)",
-      "retry": "Coba lagi",
       "site": "Situs",
       "stale": "Kolom telah berubah",
       "staleDescription": "Minta agen membuat permintaan baru.",
@@ -1770,7 +1756,7 @@
       "title": "Masukkan informasi di browser",
       "unavailable": "Permintaan tidak tersedia",
       "uncertain": "Periksa browser",
-      "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen memeriksanya sebelum mencoba lagi."
+      "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen untuk memeriksa hasilnya."
     },
     "cards": {
       "viewDetails": "Lihat detail"
@@ -1866,11 +1852,10 @@
     },
     "connectorAccountSwitch": {
       "accountFallback": "Akun konektor",
-      "actionFailed": "Tidak dapat beralih akun. Coba lagi.",
+      "actionFailed": "Tidak dapat beralih akun.",
       "customConnector": "Konektor khusus",
       "loadFailed": "Akun konektor ini tidak dapat dimuat.",
       "reconnectRequired": "Perlu menghubungkan kembali. Proses berikutnya mungkin menggunakan cadangan yang ada.",
-      "retry": "Coba lagi",
       "selected": "Beralih ke {{account}}",
       "switch": "Beralih",
       "switching": "Beralih...",
@@ -1952,7 +1937,6 @@
       "replies": "Your replies",
       "reply": "Reply",
       "result": "Result",
-      "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
       "sourceUpdate": "Pembaruan sumber",
@@ -1968,22 +1952,21 @@
       "genericTitle": "Proses ini tidak dapat diselesaikan",
       "loadMessages": "Gagal memuat pesan",
       "noModelProviderAction": "Kelola langganan",
-      "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Coba lagi, atau hubungkan langganan pribadi.",
+      "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Hubungkan langganan pribadi.",
       "providerIncompatibleAction": "Mulai sesi baru",
       "providerIncompatiblePrefix": "Sesi ini dimulai dengan provider model yang berbeda dan tidak bisa dilanjutkan dengan yang saat ini.",
       "recovery": {
-        "accessProgramDescription": "Coba lagi sebentar lagi. Chat ini bisa tetap terbuka.",
+        "accessProgramDescription": "Chat ini bisa tetap terbuka.",
         "accessProgramTitle": "Akses Codex sementara tidak tersedia",
-        "autonomyLimitDescription": "Batas proses otomatis berturut-turut telah tercapai. Konfirmasi untuk melanjutkan.",
+        "autonomyLimitDescription": "Batas proses otomatis berturut-turut telah tercapai.",
         "autonomyLimitTitle": "Batas proses otomatis tercapai",
-        "capacityDescription": "Coba lagi sebentar, atau pilih model lain agar pekerjaan tetap berjalan.",
+        "capacityDescription": "Pilih model lain agar pekerjaan tetap berjalan.",
         "capacityTitle": "Model ini sedang sibuk",
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "connectionLostTitle": "Jawaban terputus",
         "contextWindowTitle": "Chat ini terlalu panjang",
-        "continue": "Lanjutkan",
-        "filesystemFullDescription": "Proses ini tidak dapat menyimpan lebih banyak file. Coba lagi untuk melanjutkan.",
+        "filesystemFullDescription": "Proses ini tidak dapat menyimpan lebih banyak file.",
         "filesystemFullTitle": "Penyimpanan untuk proses ini habis",
         "fiveHourReset": "Batas 5 jam direset {{time}}",
         "inputTooLargeDescription": "Persingkat pesan Anda lalu kirim lagi.",
@@ -1993,7 +1976,7 @@
         "newChat": "Chat baru",
         "newChatDescription": "Mulai chat baru dan sertakan informasi penting yang ingin Anda bawa.",
         "openClaude": "Buka Claude",
-        "outputLimitDescription": "Jawaban berhenti sebelum selesai. Pilih Lanjutkan untuk meneruskannya.",
+        "outputLimitDescription": "Jawaban berhenti sebelum selesai.",
         "outputLimitTitle": "Jawaban mencapai batas panjang",
         "personalAccount": "Langganan pribadi {{account}}",
         "personalAccountDisconnected": "Langganan pribadi terputus",
@@ -2006,16 +1989,13 @@
         "providerStreamTimeoutTitle": "Respons model kehabisan waktu",
         "reconnectTitle": "Hubungkan kembali akun model Anda",
         "resetsAt": "Direset pada {{time}}",
-        "resetUsageRemaining": "Reset · tersisa {{value}}",
         "safetyDescription": "Permintaan ini tidak lolos pemeriksaan keamanan model. Coba ubah kalimatnya atau pilih model lain.",
         "safetyTitle": "Model tidak dapat membantu permintaan ini",
-        "selectModel": "Ganti model",
         "sessionHistoryTitle": "Chat ini sudah mencapai batasnya",
         "termsDescription": "Setujui ketentuan terbaru di Claude, lalu kembali dan coba lagi.",
         "termsTitle": "Ketentuan Claude perlu diterima",
-        "timeoutDescription": "Anda dapat melanjutkan dari titik proses ini terhenti.",
+        "timeoutDescription": "Kirim pesan baru untuk melanjutkan.",
         "timeoutTitle": "Batas waktu tercapai",
-        "tryAgain": "Coba lagi",
         "unavailableDescription": "Pilih model lain yang dapat digunakan dengan akun penyedia Anda.",
         "unavailableTitle": "Model yang dipilih tidak tersedia",
         "usageDescription": "Anda dapat melanjutkan saat batas penggunaan direset, atau ganti model sekarang.",
@@ -2081,7 +2061,6 @@
         "open": "Kelola email",
         "openEmail": "Buka email: {{subject}}",
         "result": "{{succeeded}} selesai · {{failed}} gagal",
-        "retry": "Coba lagi",
         "search": "Cari berdasarkan subjek atau pengirim",
         "selectAll": "Pilih semua",
         "selected": "{{quantity}} dipilih",
@@ -2205,7 +2184,6 @@
       "off": "Nonaktif",
       "on": "Aktif",
       "requiresSsh": "Memerlukan SSH: {{name}}",
-      "retry": "Coba lagi",
       "sshDisabled": "Aktifkan SSH: {{name}}",
       "sshEnabled": "SSH aktif: {{name}}",
       "title": "Akses jarak jauh",
@@ -2217,7 +2195,6 @@
       "empty": "Artefak dan chat terkait dari chat ini muncul di sini.",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loading": "Memuat sumber daya",
-      "retry": "Coba lagi",
       "showMore": "Tampilkan lebih banyak",
       "title": "Sumber daya chat"
     },
@@ -2274,10 +2251,10 @@
       "copyFailed": "Tautan tidak dapat disalin",
       "copyLink": "Salin tautan",
       "create": "Bagikan",
-      "createFailed": "Percakapan yang dibagikan tidak dapat dibuat. Coba lagi.",
+      "createFailed": "Percakapan yang dibagikan tidak dapat dibuat.",
       "deselectGroup": "Batalkan pilihan grup pesan",
       "linkCopied": "Tautan disalin",
-      "messageShareFailed": "Tautan berbagi tidak dapat dibuat. Coba lagi.",
+      "messageShareFailed": "Tautan berbagi tidak dapat dibuat.",
       "publicDescription": "Pesan yang dipilih dan lampirannya akan menjadi publik.",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
@@ -2335,7 +2312,7 @@
       "confirmUnknown": "— reset",
       "credits_other": "Sisa reset: {{count}}",
       "creditsUnknown": "Sisa reset: tidak diketahui",
-      "error": "Reset gagal. Coba lagi permintaan yang sama.",
+      "error": "Hasil reset tidak dapat dikonfirmasi.",
       "expiresAt": "Kredit kedaluwarsa: {{time}}",
       "loadFailed": "Tidak dapat membaca penggunaan langganan.",
       "loading": "Memuat langganan…",
@@ -2349,7 +2326,6 @@
       "unknown": "Tidak diketahui",
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
-    "syncFailed": "Percakapan Anda mungkin belum diperbarui",
     "taskChips": {
       "chooseTask": "Pilih tugas",
       "ideas": {
@@ -2968,7 +2944,7 @@
       "checkingLimit": "Memeriksa batas input suara",
       "cleanupFailed": "Teks ditambahkan, tetapi rekaman yang tersimpan tidak dapat dihapus.",
       "confirmRecording": "Selesai",
-      "detectionFailed": "Deteksi ucapan tidak tersedia. Rekaman Anda tetap disimpan. Silakan coba lagi.",
+      "detectionFailed": "Deteksi ucapan tidak tersedia. Rekaman Anda tetap disimpan.",
       "discarding": "Menghapus draf suara...",
       "input": "Input suara",
       "inputLimitReached": "Batas input suara tercapai. Upgrade ke Pro atau Team untuk batas yang lebih tinggi.",
@@ -2979,31 +2955,30 @@
       "microphoneAccessDenied": "Akses mikrofon ditolak. Izinkan akses mikrofon dan coba lagi.",
       "noSpeechDetected": "Tidak ada ucapan yang terdeteksi. Silakan rekam lagi.",
       "openingMicrophone": "Membuka mikrofon...",
+      "recordingSaved": "Rekaman Anda telah disimpan.",
       "removeDraft": "Hapus draf suara",
-      "restoreFailed": "Draf suara Anda tidak dapat dimuat. Coba lagi.",
-      "retry": "Coba lagi",
-      "retryingSavedAudio": "Mencoba ulang audio tersimpan",
-      "retryReady": "Rekaman Anda tetap tersimpan. Coba transkripsi lagi.",
+      "restoreFailed": "Draf suara Anda tidak dapat dimuat.",
       "returningToComposer": "Kembali ke kolom pesan",
       "starting": "Memulai input suara",
       "stopRecording": "Berhenti merekam",
-      "storageFailed": "Audio tidak dapat disimpan. Coba lagi hanya memulihkan audio yang sudah tersimpan di perangkat ini.",
+      "storageFailed": "Audio tidak dapat disimpan. Hanya audio yang sudah tersimpan di perangkat ini yang tersedia.",
       "textTakingShape": "Teks sedang terbentuk",
       "transcribing": "Mentranskripsi",
-      "transcriptionFailed": "Transkripsi suara gagal. Coba lagi."
+      "transcriptionFailed": "Transkripsi suara gagal.",
+      "useRecording": "Gunakan rekaman"
     },
     "walletAction": {
       "approvalApproved": "Disetujui; menunggu untuk melanjutkan",
       "approvalContinued": "Permintaan pembelian dilanjutkan",
       "approvalRecorded": "Status diperbarui",
-      "approvalStopped": "Penantian otomatis berakhir; Anda dapat melanjutkan secara manual",
+      "approvalStopped": "Penantian otomatis telah berakhir.",
       "approvalWaiting": "Menunggu persetujuan pembelian",
       "approveButton": "Tinjau",
       "approveTitle": "Tinjau pembelian",
       "authorized": "Diizinkan",
-      "callbackFailed": "Sudah diizinkan. Pilih Lanjutkan untuk mencoba mengirim pesan lagi.",
+      "callbackFailed": "Sudah diizinkan. Pesan Anda tidak dapat dikirim.",
       "callbackPrompt": "Otorisasi dompet Link selesai. Lanjutkan tugas sebelumnya.",
-      "checkFailed": "Tidak dapat memeriksa otorisasi. Coba lagi.",
+      "checkFailed": "Tidak dapat memeriksa otorisasi.",
       "connectButton": "Izinkan",
       "connectTitle": "Izinkan dompet Link",
       "continueButton": "Lanjutkan",
@@ -3022,7 +2997,7 @@
     "add": "Tambah Cloudflare Access",
     "affectedMembers_other": "{{count}} anggota",
     "cancel": "Batal",
-    "changed": "Cloudflare Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
+    "changed": "Cloudflare Access ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan.",
     "clientId": "ID klien Service Token",
     "clientIdPlaceholder": "Tempel Client ID Service Token",
     "clientSecret": "Rahasia klien Service Token",
@@ -3030,20 +3005,18 @@
     "configuration": "Cloudflare Access",
     "convert": "Jadikan pribadi",
     "convertHelp": "Cloudflare Access organisasi ini akan menjadi konfigurasi pribadi milik Anda sendiri, meskipun dibuat oleh orang lain. Service Token tetap sama dan host SSH Anda dapat tetap terhubung.",
-    "convertUncertain": "Konversi belum dapat dikonfirmasi. Tinjau konfigurasi terbaru sebelum mencoba lagi.",
+    "convertUncertain": "Konversi belum dapat dikonfirmasi.",
     "createNew": "Buat Cloudflare Access baru",
     "delete": "Hapus Cloudflare Access",
     "deleteHelp": "Hapus Cloudflare Access ini? Service Token yang tersimpan tidak dapat dipulihkan. Hubungkan kembali host milik Anda terlebih dahulu.",
-    "deleteUncertain": "Penghapusan tidak dapat dipastikan. Tinjau dampak terbaru sebelum mencoba lagi.",
+    "deleteUncertain": "Penghapusan tidak dapat dipastikan.",
     "edit": "Edit Cloudflare Access",
-    "failed": "Tidak dapat menyimpan perubahan Cloudflare Access. Coba lagi.",
+    "failed": "Tidak dapat menyimpan perubahan Cloudflare Access.",
     "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
-    "impactChanged": "Host yang terdampak berubah. Tinjau dampak terbaru sebelum mengonfirmasi lagi.",
+    "impactChanged": "Host yang terdampak telah berubah. Perubahan tidak diterapkan.",
     "inUse": "Sebuah host SSH menggunakan Cloudflare Access ini. Pemiliknya harus mengikat ulang atau menghapus host tersebut terlebih dahulu.",
     "invalidInput": "Beberapa pengaturan Cloudflare Access tidak valid. Periksa kolom dan coba lagi.",
-    "keepChanges": "Terapkan perubahan saya ke versi ini",
-    "latest": "Pengaturan terakhir yang disimpan",
-    "loadFailed": "Tidak dapat memuat Cloudflare Access. Coba lagi.",
+    "loadFailed": "Tidak dapat memuat Cloudflare Access.",
     "loading": "Memuat Cloudflare Access…",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "Cloudflare Access ini tidak tersedia lagi. Pilih yang lain atau buat yang baru.",
@@ -3056,12 +3029,9 @@
     "promote": "Bagikan ke organisasi",
     "promoteConfirm": "Saya memahami semua anggota organisasi dapat menggunakan Service Token ini.",
     "promoteHelp": "Bagikan Cloudflare Access pribadi Anda ke organisasi. Service Token dan ikatan host SSH Anda tetap sama.",
-    "promoteUncertain": "Konversi tidak dapat dipastikan. Tutup dialog ini dan periksa konfigurasi terbaru sebelum mencoba lagi.",
+    "promoteUncertain": "Kami tidak dapat mengonfirmasi konversi.",
     "replace": "Ganti Service Token",
-    "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
-    "retry": "Coba lagi",
-    "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
-    "reviewLatest": "Tinjau dampak terbaru",
+    "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan.",
     "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru.",
     "save": "Simpan",
     "saveUncertain": "Gagal menyimpan.",
@@ -3147,7 +3117,6 @@
       "save": "Simpan",
       "saving": "Menyimpan...",
       "savingEllipsis": "Menyimpan…",
-      "tryAgain": "Coba lagi",
       "uninstall": "Copot pemasangan",
       "uninstalling": "Mencopot pemasangan..."
     },
@@ -3261,7 +3230,6 @@
         "loading": "Memuat konektor…",
         "noCategoryMatches": "Tidak ada konektor yang cocok dalam kategori ini.",
         "noCustomMatches": "Tidak ada konektor kustom yang cocok dengan pencarian Anda.",
-        "retry": "Coba lagi",
         "searchAll": "Cari semua konektor"
       },
       "empty": {
@@ -3326,7 +3294,7 @@
         "denied": "Koneksi ditolak. Mulai lagi untuk mencoba ulang.",
         "expired": "Sesi koneksi kedaluwarsa. Mulai lagi untuk mencoba ulang.",
         "failed": "Koneksi gagal. Mulai lagi untuk mencoba ulang.",
-        "verificationOpen": "Tidak dapat membuka halaman verifikasi. Coba lagi."
+        "verificationOpen": "Tidak dapat membuka halaman verifikasi."
       },
       "external": {
         "code": "Kode",
@@ -3367,7 +3335,7 @@
           "clientRegistrationRejected": "Penyedia OAuth menolak pendaftaran klien otomatis dan mungkin membatasi klien MCP atau metadata pendaftaran yang didukung. Gunakan klien MCP yang didukung penyedia, OAuth Kustom hanya jika Anda sudah memiliki kredensial klien terdaftar, atau hubungi dukungan Okou.",
           "clientRegistrationUnavailable": "Penyedia OAuth tidak menawarkan metode pendaftaran klien otomatis yang didukung. Gunakan OAuth Kustom jika Anda sudah memiliki kredensial klien terdaftar, atau hubungi dukungan Okou.",
           "discoveryInvalid": "Metadata discovery OAuth server MCP tidak lengkap atau tidak konsisten. Perbaiki metadata yang dipublikasikan jika Anda mengelola server, atau hubungi administrator server.",
-          "providerUnavailable": "Penyedia OAuth MCP untuk sementara tidak tersedia atau sedang membatasi permintaan. Coba lagi nanti dan periksa ketersediaan penyedia.",
+          "providerUnavailable": "Penyedia OAuth MCP untuk sementara tidak tersedia atau sedang membatasi permintaan. Periksa ketersediaan penyedia.",
           "unsafeUrl": "Server MCP memublikasikan URL OAuth yang bukan endpoint HTTPS publik. Perbaiki URL OAuth yang dipublikasikan server sebelum mencoba lagi."
         },
         "save": "Simpan",
@@ -3556,7 +3524,7 @@
         "linkIncompleteTitle": "Tautan koneksi tidak lengkap",
         "notInstalledDescription": "Minta admin organisasi menginstal GitHub sebelum menghubungkan akun Anda.",
         "notInstalledTitle": "GitHub belum diinstal",
-        "refresh": "Muat ulang halaman ini dan coba lagi.",
+        "refresh": "Status masuk Anda tidak dapat diperiksa.",
         "signInButton": "Masuk ke {{brandName}}",
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna GitHub ini.",
@@ -3579,17 +3547,15 @@
         "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
         "connectTitle": "Hubungkan ke Slack",
         "currentConnection": "Slack terhubung",
-        "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack. Coba lagi.",
+        "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack.",
         "invalidDescription": "Halaman ini dimaksudkan untuk dibuka dari tautan koneksi Slack.",
         "keepAccount": "Pertahankan {{account}}",
         "open": "Buka Slack",
         "reauthorize": "Perbarui izin Slack",
-        "retryStatus": "Periksa lagi",
-        "startAgain": "Mulai lagi",
         "successDescription": "Sebut bot yang terinstal di channel mana pun atau kirim DM untuk mulai mengobrol.",
         "successDescriptionWorkspace": "Anda tersambung ke {{workspace}}. Sebut bot yang terinstal di channel mana pun atau kirim DM untuk mulai mengobrol.",
         "switchAccount": "Beralih ke {{account}}",
-        "unavailable": "Koneksi Slack sedang tidak tersedia. Coba lagi nanti.",
+        "unavailable": "Koneksi Slack sedang tidak tersedia.",
         "workspaceMismatchDescription": "Ruang kerja Slack ini tidak tersedia untuk organisasi Okou Anda saat ini. Beralih organisasi atau minta bantuan admin.",
         "workspaceMismatchDescriptionNamed": "Organisasi Okou Anda saat ini terhubung ke {{workspace}}. Beralih organisasi atau minta admin menghapus instalasinya sebelum menghubungkan ruang kerja Slack ini.",
         "workspaceMismatchTitle": "Ruang kerja Slack tidak cocok"
@@ -3608,7 +3574,7 @@
         "pendingTitle": "Instal di Teams untuk menyelesaikan",
         "providerName": "Microsoft Teams",
         "reinstall": "Instal ulang di Teams",
-        "statusFailed": "Tidak dapat memeriksa koneksi Teams. Coba lagi.",
+        "statusFailed": "Tidak dapat memeriksa koneksi Teams.",
         "successDescription": "Anda tersambung ke {{team}}. Sebut @{{botName}} di Teams untuk mulai mengobrol.",
         "successTitle": "Berhasil tersambung ke Microsoft Teams",
         "unavailable": "Pengaturan Teams tidak tersedia. Hubungi administrator organisasi Anda."
@@ -3621,10 +3587,10 @@
         "conflictDescription": "Anda terhubung sebagai {{current}}, tetapi tautan ini meminta {{requested}}. Pertahankan koneksi Anda atau kelola koneksi secara manual sebelum mencoba lagi.",
         "conflictTitle": "Akun Telegram lain sedang terhubung",
         "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
-        "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi. Silakan coba lagi sebentar lagi.",
+        "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
-        "domainNotVerified": "Login Telegram untuk aplikasi ini tidak dapat diverifikasi. Coba lagi, atau hubungi dukungan jika masalah berlanjut.",
+        "domainNotVerified": "Login Telegram untuk aplikasi ini tidak dapat diverifikasi. Hubungi dukungan jika masalah berlanjut.",
         "errorFallback": "Kami tidak dapat menghubungkan Telegram. Coba lagi dari Telegram.",
         "interrupted": "Percobaan ini tidak mengonfirmasi koneksi. Periksa status saat ini sebelum mencoba lagi.",
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
@@ -3658,7 +3624,7 @@
         "copyCodeSuccess": "Kode koneksi disalin",
         "copyError": "Gagal menyalin nomor telepon",
         "copySuccess": "Nomor telepon disalin",
-        "createCodeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
+        "createCodeError": "Tidak dapat membuat kode koneksi.",
         "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
         "openMessages": "Buka Pesan",
@@ -3666,8 +3632,7 @@
         "phoneLabel": "Telepon",
         "qrTitle": "Pindai untuk membuka Pesan dengan kode koneksi yang sudah terisi",
         "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim.",
-        "sendToLabel": "Kirim ke",
-        "tryAgain": "Coba lagi"
+        "sendToLabel": "Kirim ke"
       },
       "errors": {
         "githubAuthorizationWindow": "Gagal membuka jendela otorisasi"
@@ -3977,7 +3942,7 @@
     }
   },
   "desktopShellAuthorization": {
-    "actionFailed": "Tidak dapat memperbarui otorisasi. Muat ulang dan coba lagi.",
+    "actionFailed": "Tidak dapat memperbarui otorisasi.",
     "allow": "Izinkan selama 1 jam",
     "approved": "Akses Shell diizinkan",
     "deadline": "Berakhir {{date}}",
@@ -3988,7 +3953,6 @@
     "expired": "Otorisasi kedaluwarsa",
     "loading": "Memuat otorisasi…",
     "pending": "Siap disetujui",
-    "refresh": "Muat ulang",
     "revoke": "Cabut akses",
     "revoked": "Akses Shell dicabut",
     "scope": "Hanya chat dan komputer ini. Terminal yang ada tetap terbuka saat akses berakhir.",
@@ -4047,14 +4011,10 @@
     "page": "Halaman {{page}}",
     "preview": "Pratinjau {{title}}",
     "previousPage": "Halaman contoh sebelumnya",
-    "retry": "Coba lagi",
     "title": "Dokumen",
     "useNamed": "Gunakan {{title}}"
   },
   "global": {
-    "actions": {
-      "tryAgain": "Coba lagi"
-    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Permintaan gagal"
@@ -4111,11 +4071,11 @@
           "title": "Anda sudah menukarkan penawaran ini"
         },
         "billingUnavailable": {
-          "body": "Sistem pembayaran kami sedang tidak tersedia saat ini. Silakan coba lagi dalam beberapa menit.",
+          "body": "Sistem pembayaran kami sedang tidak tersedia saat ini.",
           "title": "Penagihan sementara tidak tersedia"
         },
         "broken": {
-          "body": "Kami tidak dapat menyelesaikan penukaran Anda. Silakan coba lagi atau hubungi dukungan.",
+          "body": "Kami tidak dapat menyelesaikan penukaran Anda. Silakan hubungi dukungan.",
           "title": "Terjadi kesalahan"
         },
         "campaignUnavailable": {
@@ -4127,7 +4087,7 @@
           "title": "Pembayaran berhasil"
         },
         "processing": {
-          "body": "Kami sedang menerapkan kredit Anda ke {{orgName}} sekarang. Biasanya ini memakan waktu beberapa detik — muat ulang sebentar lagi untuk melihat saldo yang diperbarui.",
+          "body": "Kredit Anda sedang diterapkan ke {{orgName}}. Biasanya proses ini hanya membutuhkan beberapa detik.",
           "title": "Pembayaran diterima"
         },
         "ready": {
@@ -4322,7 +4282,6 @@
         "showFullPrompt": "Tampilkan prompt lengkap",
         "startError": "Sesi impor tidak dapat dibuka.",
         "title": "Bawa skill Anda ke Okou",
-        "tryAgain": "Coba lagi",
         "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },
       "slack": {
@@ -4672,10 +4631,9 @@
         "connect": "Hubungkan {{provider}}",
         "connected": "Terhubung",
         "connecting": "Menghubungkan…",
-        "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Coba lagi atau hubungkan nanti.",
-        "retry": "Coba lagi",
+        "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Anda dapat melanjutkan dan menghubungkannya nanti.",
         "rowCopy": "Hubungkan agar tugas memakai paket Anda, bukan kredit Okou.",
-        "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
+        "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Anda dapat melanjutkan dan menghubungkannya nanti."
       },
       "team": {
         "copy": "Undang anggota tim untuk berbagi alur kerja Anda, sementara setiap orang menghubungkan alatnya sendiri.",
@@ -4863,7 +4821,7 @@
     "emptyTitle": "Belum ada perangkat yang ditambahkan",
     "entryDescription": "Pilih cara Okou berinteraksi dengan perangkat.",
     "entryTitle": "Tambahkan koneksi jarak jauh",
-    "failedLoad": "Langkah ini tidak dapat dimuat. Isian Anda tersimpan di formulir. Coba lagi.",
+    "failedLoad": "Langkah ini tidak dapat dimuat. Isian Anda tersimpan di formulir.",
     "hideSecret": "Sembunyikan nilai yang dimasukkan",
     "keepSavedLoginHelp": "Biarkan kolom kosong untuk tetap menggunakan informasi login yang tersimpan. Saat mengganti akun atau sertifikat, masukkan detail baru selengkapnya, termasuk kunci privat sertifikat.",
     "keepSavedSecret": "Biarkan kosong untuk mempertahankan nilai tersimpan",
@@ -4891,7 +4849,7 @@
     "networkSettings": "Pengaturan jaringan privat",
     "networkTailscaleHelp": "Hubungkan ke perangkat dengan Tailscale",
     "networkTitle": "Jaringan privat",
-    "networkUnavailable": "Jaringan ini tidak lagi tersedia. Pilih jaringan lain atau muat ulang halaman.",
+    "networkUnavailable": "Jaringan ini tidak lagi tersedia. Pilih jaringan lain.",
     "newLogin": "Isi data secara manual",
     "next": "Lanjutkan",
     "optionalName": "Nama koneksi (opsional)",
@@ -4899,7 +4857,6 @@
     "passwordHelp": "Masukkan kata sandi akun perangkat ini. Di Windows, gunakan kata sandi akun; PIN tidak didukung.",
     "passwordPlaceholder": "Masukkan kata sandi akun perangkat",
     "resourceUnavailable": "Konfigurasi ini tidak tersedia atau Anda tidak lagi memiliki akses.",
-    "retry": "Coba lagi",
     "rsaGroup": "RSA-AES",
     "saved": "Koneksi ditambahkan",
     "savedHelp": "Anda dapat melihat atau mengedit detail koneksi di Pengaturan.",
@@ -5042,7 +4999,7 @@
     "scopeDescription": "Beri nama jaringan dan pilih siapa yang dapat menggunakannya.",
     "scopeSaved": "Pengaturan berbagi jaringan tersimpan. Perubahan lain belum disimpan. Simpan perubahan tersebut atau kembali ke detail jaringan.",
     "scopeUnavailable": "Jaringan ini tidak tersedia atau Anda tidak lagi memiliki izin administrator yang diperlukan.",
-    "scopeUncertain": "Kami tidak dapat memastikan perubahan ini. Muat ulang dan tinjau pengaturan tersimpan sebelum mengirim lagi.",
+    "scopeUncertain": "Kami tidak dapat mengonfirmasi perubahan. Pengaturan yang tersimpan belum diverifikasi.",
     "unknownOrganization": "organisasi Anda",
     "view": "Lihat"
   },
@@ -5060,12 +5017,12 @@
     "contentPolicyRejected": "Penyedia model menolak permintaan ini berdasarkan kebijakan keamanan kontennya. Mencoba lagi dengan masukan yang sama akan tetap gagal. Ubah kalimat permintaan, mulai percakapan baru, atau beralih ke model lain.",
     "executionTimeout": "Proses ini mencapai batas waktu eksekusi.",
     "failed": "Eksekusi gagal",
-    "modelRoutesUnavailable": "Semua rute bawaan untuk model ini sementara tidak tersedia. Silakan coba lagi nanti.",
+    "modelRoutesUnavailable": "Semua rute bawaan untuk model ini sementara tidak tersedia.",
     "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
     "modelUnavailable": "Model saat ini tidak tersedia.",
-    "overloaded": "{{model}} sedang kelebihan beban. Tunggu beberapa menit dan coba lagi, atau beralih ke model lain.",
+    "overloaded": "{{model}} sedang kelebihan beban. Beralih ke model lain.",
     "providerBalance": "Saldo akun langganan yang terhubung tidak mencukupi.",
-    "transient": "Terjadi kesalahan. Silakan coba lagi nanti.",
+    "transient": "Terjadi kesalahan.",
     "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."
   },
   "serviceStatus": {
@@ -5195,7 +5152,7 @@
         "downloadTitle": "Ekspor Anda siap",
         "expiredDescription": "Mulai ekspor baru untuk mendapatkan tautan unduhan baru.",
         "expiredTitle": "Ekspor sebelumnya kedaluwarsa",
-        "failedDescription": "Coba lagi, atau hubungi dukungan jika ini terus terjadi.",
+        "failedDescription": "Ekspor tidak dapat diselesaikan.",
         "failedTitle": "Ekspor tidak selesai",
         "preparingDescription": "Ini bisa memakan waktu beberapa menit. Anda dapat membiarkan halaman ini tetap terbuka.",
         "preparingTitle": "Menyiapkan ekspor Anda",
@@ -5286,7 +5243,6 @@
         "noAccounts": "Belum ada akun terhubung.",
         "ownPlan": "Jalankan dengan paket Anda sendiri",
         "reconnectAccount": "Hubungkan ulang",
-        "retry": "Coba lagi",
         "status": {
           "connected": "Terhubung",
           "fiveHour": "5 jam",
@@ -5368,7 +5324,6 @@
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
       "openSettings": "Buka pengaturan",
-      "retry": "Coba lagi",
       "saveError": "Perubahan Anda tidak tersimpan.",
       "saving": "Menyimpan…",
       "scope": "Pengaturan ini hanya berlaku untuk Anda di {{workspace}}.",
@@ -5466,11 +5421,10 @@
           "countExplanation": "Penghitungan menggunakan transaksi hanya-baca dan tidak membaca isi rekaman.",
           "description": "Periksa jumlah rekaman dalam cache chat lokal yang dikelola shared worker.",
           "loading": "Memuat penyimpanan IndexedDB...",
-          "measurementUnavailable": "Pengukuran snapshot gagal. Coba lagi.",
+          "measurementUnavailable": "Pengukuran snapshot gagal.",
           "measureSnapshot": "Ukur snapshot",
           "measuring": "Mengukur...",
           "records": "rekaman",
-          "refresh": "Segarkan",
           "schema": "skema",
           "snapshotDescription": "Satu rekaman dapat berisi banyak thread. Ukuran memperkirakan JSON UTF-8 tanpa overhead database; waktu baca tidak termasuk perkiraan ukuran.",
           "snapshotEmpty": "Tidak ada snapshot thread dalam cache.",
@@ -5483,11 +5437,9 @@
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
         "morningBrief": {
-          "checkStatus": "Periksa status",
           "description": "Jalankan sekali alur kerja yang aktif di akunmu. Ini dapat memperbarui saran dan mengirim email sungguhan. Jadwal harianmu tidak berubah.",
           "openChat": "Buka percakapan",
-          "requestFailed": "Permintaan belum selesai. Percobaan ulang memakai permintaan yang sama agar tidak dijalankan dua kali.",
-          "retry": "Coba lagi",
+          "requestFailed": "Hasil permintaan tidak dapat dikonfirmasi.",
           "run": "Jalankan ringkasan",
           "runAgain": "Jalankan lagi",
           "starting": "Memulai…",
@@ -5510,7 +5462,7 @@
           "create": "Buat obrolan sambutan",
           "creating": "Membuat…",
           "description": "Buat obrolan sambutan berisi pengantar dan contoh.",
-          "failed": "Tidak dapat membuat obrolan sambutan. Coba lagi.",
+          "failed": "Tidak dapat membuat obrolan sambutan.",
           "title": "Obrolan sambutan"
         }
       },
@@ -5542,44 +5494,40 @@
         "title": "Bahasa"
       },
       "morningBrief": {
-        "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten. Coba lagi setelah rekonsiliasi selesai.",
+        "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten.",
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
+        "errorMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
+        "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
-        "retry": "Coba lagi",
-        "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
       "proactiveLearning": {
         "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
+        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Alur kerja ini sementara tidak tersedia. Okou akan mencoba lagi.",
+        "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
-        "retry": "Retry",
-        "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
         "title": "Pembelajaran"
       },
       "proactivePlanningAction": {
         "description": "Rencanakan dan kerjakan tugas yang Anda delegasikan, serta beri tahu saat masukan Anda diperlukan.",
+        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Alur kerja ini sementara tidak tersedia. Okou akan mencoba lagi.",
+        "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
-        "retry": "Retry",
-        "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
         "title": "Perencanaan & tindakan"
       },
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
+        "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
-        "retry": "Coba lagi",
-        "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
         "title": "Saran"
       },
       "send": {
@@ -5640,7 +5588,7 @@
         "description": "Tambahkan kartu atau ubah kartu default di dompet Link Anda.",
         "empty": "Belum ada kartu di dompet Link Anda",
         "expires": "Berlaku hingga {{date}}",
-        "loadError": "Kartu Anda tidak dapat dimuat. Coba lagi.",
+        "loadError": "Kartu Anda tidak dapat dimuat.",
         "loading": "Memuat kartu",
         "manage": "Kelola kartu",
         "title": "Kartu Anda di Link"
@@ -5649,13 +5597,12 @@
       "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
-      "retry": "Coba lagi",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
       "title": "Dompet",
       "transactions": {
         "description": "Transaksi terbaru dari akun Link yang terhubung.",
         "empty": "Belum ada transaksi Link",
-        "loadError": "Tidak dapat memuat transaksi. Coba lagi.",
+        "loadError": "Tidak dapat memuat transaksi.",
         "loading": "Memuat transaksi",
         "merchant": "Penjual",
         "refunded": "Dikembalikan",
@@ -5777,7 +5724,6 @@
           "fallbackAlt": "Ruang kerja",
           "loadError": "Logo ruang kerja tidak dapat dimuat.",
           "loading": "Memuat logo ruang kerja",
-          "retry": "Coba lagi",
           "title": "Logo",
           "upload": "Unggah logo"
         },
@@ -5834,8 +5780,7 @@
       "title": "Ups! Ada yang salah"
     },
     "forceUpgrade": {
-      "action": "Muat ulang",
-      "description": "Versi {{brandName}} ini tidak lagi didukung. Muat ulang untuk memuat versi terbaru.",
+      "description": "Versi {{brandName}} ini tidak lagi didukung.",
       "title": "Pembaruan diperlukan"
     },
     "mermaid": {
@@ -5852,9 +5797,8 @@
       "title": "Halaman itu tidak ada di sini."
     },
     "workerFailure": {
-      "action": "Muat ulang",
-      "description": "Koneksi Anda terputus. Muat ulang halaman untuk melanjutkan.",
-      "title": "Muat ulang untuk melanjutkan"
+      "description": "Koneksi ke aplikasi ini terputus.",
+      "title": "Koneksi terputus"
     }
   },
   "sharedThread": {
@@ -5874,14 +5818,11 @@
     "choosePrivateKeyFile": "Pilih file kunci privat",
     "cloudflare": {
       "direct": "Langsung",
-      "keepChanges": "Terapkan perubahan saya ke versi ini",
-      "latest": "Pengaturan terakhir yang disimpan",
       "mode": "Koneksi",
       "needsRebind": "Host ini perlu ditautkan ulang ke konfigurasi Cloudflare Access. Edit host untuk memilih konfigurasi lain atau Direct. Host tidak dapat tersambung sebelum itu.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nama host yang dipublikasikan",
       "rebindHelp": "Pilih konfigurasi Cloudflare Access yang diizinkan atau Direct untuk memulihkan host ini. Tidak ada perubahan hingga Anda menyimpan.",
-      "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access tidak tersedia untuk akun ini."
     },
@@ -5924,24 +5865,17 @@
     "credentialsHelp": "Kredensial hanya dapat ditulis dan tetap berada di luar sandbox. Tempelkan kunci lengkap; spasi dipertahankan. Kolom dikosongkan saat formulir ditutup.",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
-    "deleteReview": {
-      "acknowledge": "Gunakan versi ini untuk penghapusan",
-      "changed": "Host ini telah berubah. Tinjau pengaturan tersimpan terbarunya sebelum menghapus.",
-      "help": "Tinjau pengaturan tersimpan ini, lalu pilih Hapus host untuk menghapus versi ini.",
-      "unavailable": "Host ini tidak lagi tersedia. Tutup dialog ini dan muat ulang konfigurasi sebelum mencoba lagi.",
-      "version": "Versi {{version}}"
-    },
     "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
     "displayName": "Nama tampilan",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host, lalu aktifkan secara default atau di chat tertentu.",
     "errors": {
-      "configurationChanged": "Host ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbarunya sebelum menerapkan perubahan Anda.",
-      "credentialChanged": "Kredensial ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbaru dan host yang terpengaruh sebelum menyimpan.",
+      "configurationChanged": "Host ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
+      "credentialChanged": "Kredensial ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
       "credentialInUse": "Kredensial ini sedang digunakan. Pilih kredensial lain untuk host terkait atau hapus host tersebut terlebih dahulu.",
       "credentialUnavailable": "Kredensial SSH ini tidak lagi tersedia. Pilih yang lain atau buat kredensial baru.",
-      "failed": "Tidak dapat menyimpan perubahan SSH. Coba lagi.",
+      "failed": "Tidak dapat menyimpan perubahan SSH.",
       "hostInUse": "Host SSH ini digunakan oleh rute VNC. Pilih host SSH lain untuk rute VNC tersebut, ubah secara eksplisit ke Langsung, atau hapus rutenya sebelum menghapus host ini.",
       "hostUnavailable": "Host SSH ini tidak lagi tersedia. Kembali ke daftar host dan pilih host yang ada.",
       "invalidHost": "Masukkan nama host atau alamat IP tanpa skema URL, jalur, atau spasi.",
@@ -5955,7 +5889,7 @@
     "host": "Nama host publik atau alamat IP",
     "hostSection": "Host",
     "label": "SSH",
-    "loadFailed": "Tidak dapat memuat pengaturan SSH. Coba lagi.",
+    "loadFailed": "Tidak dapat memuat pengaturan SSH.",
     "loading": "Memuat host SSH…",
     "manage": "Kelola host SSH",
     "notLearned": "Kunci host belum tersimpan",
@@ -5973,10 +5907,9 @@
     "privateKey": "Kunci privat",
     "reset": "Reset kunci host",
     "resetHelp": "Reset hanya setelah memverifikasi identitas server baru secara independen. Koneksi berikutnya akan memercayai dan menyimpan kunci host baru.",
-    "retry": "Coba lagi",
     "save": "Simpan",
     "saveRecovery": {
-      "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
+      "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan.",
       "uncertain": "Gagal menyimpan."
     },
     "summary_one": "{{count}} host dikonfigurasi",
@@ -5996,14 +5929,14 @@
     "add": "Tambahkan Tailscale",
     "addressHelp": "Gunakan IP, nama host lengkap, atau nama singkat peer tailnet yang terdaftar. Login SSH dan verifikasi kunci host tetap diperlukan.",
     "adoptHelp": "Jadikan jaringan organisasi ini sebagai jaringan pribadi Anda. Pemilik lain harus menghubungkan ulang host tersimpan mereka.",
-    "changed": "Jaringan Tailscale ini berubah. Periksa pengaturan terbaru sebelum menyimpan draf.",
+    "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
     "clientId": "ID klien OAuth",
     "clientSecret": "Rahasia klien OAuth",
     "createNew": "Buat jaringan Tailscale",
     "delete": "Hapus Tailscale",
     "deleteHelp": "Hapus jaringan ini? Kredensial tersimpan tidak dapat dipulihkan. Hubungkan ulang host Anda terlebih dahulu.",
     "edit": "Edit Tailscale",
-    "failed": "Perubahan Tailscale tidak dapat disimpan. Coba lagi.",
+    "failed": "Perubahan Tailscale tidak dapat disimpan.",
     "forbidden": "Anda tidak dapat mengelola jaringan Tailscale ini. Jaringan organisasi memerlukan admin.",
     "guide": {
       "accessControls": "Access controls",
@@ -6025,7 +5958,7 @@
     },
     "inUse": "Host SSH Anda masih memakai jaringan ini. Hubungkan ulang atau hapus host tersebut terlebih dahulu.",
     "invalid": "Sebagian pengaturan Tailscale tidak valid. Periksa kolom lalu coba lagi.",
-    "loadFailed": "Tailscale tidak dapat dimuat. Coba lagi.",
+    "loadFailed": "Tailscale tidak dapat dimuat.",
     "loading": "Memuat Tailscale…",
     "missing": "Jaringan Tailscale ini tidak tersedia lagi. Pilih yang lain atau buat jaringan baru.",
     "peer": "Nama host atau alamat IP tailnet",
@@ -6058,7 +5991,7 @@
       "confirm": "Hapus templat",
       "deleting": "Menghapus...",
       "description": "\"{{title}}\" akan dihapus untuk semua orang yang dapat melihatnya. Tindakan ini tidak dapat dibatalkan.",
-      "failed": "Templat tidak dapat dihapus. Coba lagi.",
+      "failed": "Templat tidak dapat dihapus.",
       "title": "Hapus templat?"
     },
     "detail": {
@@ -6072,7 +6005,6 @@
       "save": "Simpan"
     },
     "renameFailed": "Tidak dapat mengganti nama templat.",
-    "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
     "sharedByMember": "Dibagikan oleh anggota organisasi",
     "visibility": {
@@ -6230,7 +6162,7 @@
       "keytabFile": "Berkas keytab (.keytab)",
       "lifetime": "Masa berlaku tiket yang diminta (detik)",
       "offlineHelp": "Hanya gunakan tiket layanan yang dipilih. Tanpa koneksi KDC atau perpanjangan.",
-      "onlineHelp": "Izinkan pengambilan tiket melalui rute KDC terpisah. Pembaruan menyiapkan koneksi baru; sesi yang ada tetap memakai waktu kedaluwarsa awal.",
+      "onlineHelp": "Izinkan sumber ini memperoleh tiket melalui rute KDC terpisah. Koneksi baru memperoleh tiket baru; sesi yang ada tetap menggunakan waktu kedaluwarsa semula.",
       "password": "Kerberos · kata sandi",
       "realm": "Realm pemrakarsa",
       "renewableLifetime": "Masa perpanjangan (detik; 0 menonaktifkan)",
@@ -6267,7 +6199,6 @@
       "select": "Pilih konfigurasi jaringan tersimpan"
     },
     "port": "Port",
-    "retry": "Coba lagi",
     "rsaAes": {
       "fieldHelp": "Setiap bidang memerlukan 1–255 byte UTF-8 tanpa NUL. Spasi dipertahankan; bukan kata sandi VNC klasik delapan byte.",
       "fullHelp": "RA2 dan RA2_256 mengenkripsi seluruh sesi RFB dengan EAX. Verifikasi pin lengkap kunci RSA format protokol secara independen; kepercayaan CA tidak menggantikannya.",
@@ -6291,17 +6222,8 @@
     },
     "save": "Simpan",
     "saveRecovery": {
-      "deleteHelp": "Tinjau detail tersimpan ini sebelum menghapus. Tindakan ini hanya memilih versi; konfirmasikan penghapusan secara terpisah.",
-      "incompatible": "Metode autentikasi telah berubah. Tutup dialog ini dan buka kembali kredensial untuk mengedit metode saat ini.",
-      "keepChanges": "Pertahankan perubahan saya dengan versi ini",
-      "keepDeletion": "Gunakan versi ini untuk penghapusan",
-      "keepHelp": "Tinjau detail ini, lalu pertahankan draf dan simpan berdasarkan versi ini. Pilihan autentikasi dan kepercayaan Anda akan dipertahankan.",
-      "latest": "Detail yang tersimpan saat ini",
-      "resourceIdConflict": "Sumber daya ini tidak dapat dibuat. Tutup dialog ini dan coba lagi.",
-      "review": "Konfigurasi telah disegarkan. Tutup dialog ini dan tinjau detail terbaru sebelum mencoba lagi.",
-      "unavailable": "Sumber daya ini tidak lagi tersedia. Tutup dialog ini dan muat ulang konfigurasi sebelum mencoba lagi.",
-      "uncertain": "Gagal menyimpan.",
-      "version": "Versi {{version}}"
+      "resourceIdConflict": "Sumber daya ini tidak dapat dibuat.",
+      "uncertain": "Gagal menyimpan."
     },
     "saving": "Menyimpan…",
     "security": {
@@ -6379,25 +6301,20 @@
         "cancelledDescription": "Jalankan saat acara kalender dibatalkan.",
         "cancelledRule": "Saat acara kalender {{calendar}} dibatalkan",
         "cancelledTitle": "Acara Google Calendar dibatalkan",
-        "cancelRecovery": "Batal",
         "changeAria": "Ubah otomatisasi Google Calendar",
         "changeCalendar": "Ubah kalender",
-        "checkingRecovery": "Memeriksa apakah otomatisasi ini dapat dilanjutkan…",
-        "checkRecoveryStatus": "Periksa status",
         "createdDescription": "Jalankan saat acara kalender dibuat.",
         "createdRule": "Saat kalender {{calendar}} mendapat acara baru",
         "createdTitle": "Acara Google Calendar dibuat",
         "enabledIntent": "Diaktifkan",
         "reconnectDescription": "Google Calendar perlu dihubungkan kembali sebelum otomatisasi ini dapat dilanjutkan.",
         "reconnectGoogleCalendar": "Hubungkan kembali Google Calendar",
-        "recoveryStatus": "Pemulihan Google Kalender",
-        "recoveryUnconfirmed": "Pemulihan belum dikonfirmasi. Tinjau peringatan otomatisasi ini, lalu periksa kembali statusnya.",
         "saveCalendar": "Simpan kalender",
         "summary": "Kalender {{calendar}}",
         "updatedDescription": "Jalankan saat acara kalender diperbarui.",
         "updatedRule": "Saat acara kalender {{calendar}} diperbarui",
         "updatedTitle": "Acara Google Calendar diperbarui",
-        "updateError": "Kami tidak dapat mengubah kalender ini. Coba lagi."
+        "updateError": "Kami tidak dapat mengubah kalender ini."
       },
       "chat": {
         "addAction": "Tambahkan otomatisasi chat",
@@ -6957,7 +6874,6 @@
       "open": "Buka {{title}}",
       "openRecovery": "Buka pemulihan {{title}}",
       "ownerLoading": "Memuat penulis…",
-      "ownerRetry": "Penulis tidak tersedia. Buka kembali untuk mencoba lagi.",
       "ownerUnavailable": "Penulis tidak tersedia",
       "runsAs": "Dijalankan sebagai",
       "runsAsAria": "Dijalankan sebagai {{agent}}",
@@ -7006,8 +6922,8 @@
     "discord": {
       "addNewServer": "Gabung ke server baru",
       "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
-      "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi.",
-      "cancelled": "Otorisasi Discord dibatalkan. Anda dapat memulai lagi.",
+      "authorizationError": "Otorisasi Discord tidak dapat diselesaikan.",
+      "cancelled": "Otorisasi Discord dibatalkan.",
       "chooseWorkspace": "Pilih ruang kerja",
       "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
       "connectedTitle": "Terhubung ke Discord",
@@ -7019,10 +6935,8 @@
       "installTitle": "Tambahkan Okou ke server",
       "invalidLink": "Tautan koneksi Discord ini tidak valid. Buka tautan baru dari Discord.",
       "open": "Buka Discord",
-      "pendingConsent": "Otorisasi terhenti atau halaman dimuat ulang. Mulai lagi untuk memverifikasi koneksi baru.",
-      "popupBlocked": "Izinkan popup untuk mengotorisasi Discord, lalu coba lagi.",
-      "restartAuthorization": "Mulai ulang otorisasi",
-      "retry": "Coba lagi",
+      "pendingConsent": "Otorisasi ini terputus atau halaman dimuat ulang.",
+      "popupBlocked": "Pop-up otorisasi Discord diblokir.",
       "serverPermissionRequired": "Periksa keanggotaan server, pemasangan bot, dan izin menambahkan bot, lalu coba lagi.",
       "suspended": "Discord untuk sementara tidak tersedia. Koneksi yang ada tetap disimpan.",
       "title": "Discord",
@@ -7077,7 +6991,7 @@
       "description": "Mengobrol dengan agen Anda di WeChat.",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
-      "failed": "Tidak dapat terhubung ke WeChat. Coba lagi.",
+      "failed": "Tidak dapat terhubung ke WeChat.",
       "instructions": "Pindai kode QR ini dengan WeChat, lalu konfirmasi di ponsel Anda.",
       "linkUnavailable": "Tautan ini tidak tersedia. Gunakan akun dan ruang kerja semula, lalu kirim pesan lagi di WeChat untuk mendapatkan tautan baru. Anda juga dapat memindai kode QR baru.",
       "name": "WeChat",
@@ -7086,7 +7000,6 @@
       "reconnect_required": "Pindai lagi untuk menghubungkan kembali.",
       "restart_required": "Akun WeChat ini sudah ditautkan. Buat kode QR baru untuk menghubungkannya kembali.",
       "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
-      "retry": "Buat kode QR baru",
       "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
       "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",

@@ -21,7 +21,7 @@ import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   DeviceAuthDialogShell,
   DeviceAuthLoadingContent,
-  DeviceAuthRetryContent,
+  DeviceAuthStartContent,
 } from "./device-auth-dialog-shell.tsx";
 
 type ClaudeCodeDeviceAuthDialogState = {
@@ -151,7 +151,7 @@ function ClaudeCodeDeviceAuthBody({
   }
   if (startLoadable.state === "hasError" || flow.status !== "pending") {
     return (
-      <DeviceAuthRetryContent
+      <DeviceAuthStartContent
         message={flow.status === "expired" ? flow.message : undefined}
         testId="claude-code-device-auth-start"
         onStart={onStart}

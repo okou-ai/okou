@@ -4,7 +4,7 @@ import type {
   MailDraftStatus,
 } from "@okouai/api-contracts/contracts/mail";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
-import { Button, Skeleton, cn } from "@okouai/ui";
+import { Skeleton, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
@@ -210,11 +210,6 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
             return $.chat.mail.unavailable;
           })}
         </span>
-        <Button type="button" variant="outline" size="sm" onClick={reloadDraft}>
-          {t(($) => {
-            return $.billing.common.retry;
-          })}
-        </Button>
       </div>
     );
   }

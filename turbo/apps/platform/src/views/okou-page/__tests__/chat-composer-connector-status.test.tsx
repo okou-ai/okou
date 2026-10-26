@@ -210,7 +210,7 @@ test("Pending connected membership does not expose an ordinary add action as if 
   ).resolves.toHaveTextContent("No accounts");
 });
 
-test("Connected inventory failure is retryable and leaves managed Feishu in its own lifecycle", async () => {
+test("Connected inventory failure leaves managed Feishu in its own lifecycle", async () => {
   const target = {
     kind: "custom",
     customConnectorId: ACME_CONNECTOR_ID,
@@ -246,26 +246,10 @@ test("Connected inventory failure is retryable and leaves managed Feishu in its 
   await findFastControl("button", "Connect Feishu", dialog);
   expect(queryFastControl("button", "Connect Acme Search", dialog)).toBeNull();
   expect(within(dialog).queryByText("No accounts")).toBeNull();
-  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [
-        {
-          id: ACME_CONNECTOR_ID,
-          slug: "_acme-search",
-          displayName: "Acme Search",
-          permissionBundleRef: null,
-          integrationManaged: false,
-        },
-      ],
-    });
-  });
-  click(await findFastControl("button", "Try again", dialog));
-  await findFastControl("button", "Connect Acme Search", dialog);
   expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
 });
 
-test("Custom definition failure keeps an explicit retry instead of an empty directory", async () => {
+test("Custom definition failure keeps the unavailable directory explicit", async () => {
   const connector = acme();
   installComposerConnectorFixture({ customConnectors: [connector] });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
@@ -277,11 +261,6 @@ test("Custom definition failure keeps an explicit retry instead of an empty dire
   await openCustom(dialog);
   await within(dialog).findByText("Couldn't load custom connectors.");
   expect(queryFastControl("button", "Connect Acme Search", dialog)).toBeNull();
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  click(await findFastControl("button", "Try again", dialog));
-  await findFastControl("button", "Connect Acme Search", dialog);
 });
 
 test("A saved builtin target with no default sends the user to account management without inventing an account", async () => {

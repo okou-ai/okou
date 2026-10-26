@@ -27,16 +27,6 @@ export function createDocumentTemplateSignals() {
   const failDocumentImage$ = command(({ get, set }, url: string) => {
     set(imageFailures$, new Set([...get(imageFailures$), url]));
   });
-  const retryDocumentImage$ = command(({ get, set }, url: string) => {
-    set(
-      imageFailures$,
-      new Set(
-        [...get(imageFailures$)].filter((item) => {
-          return item !== url;
-        }),
-      ),
-    );
-  });
   const documentCategory$ = computed((get) => {
     return get(category$);
   });
@@ -108,7 +98,6 @@ export function createDocumentTemplateSignals() {
     documentItems$,
     documentImageFailures$,
     failDocumentImage$,
-    retryDocumentImage$,
     setDocumentCategory$,
     openDocumentPreview$,
     closeDocumentPreview$,

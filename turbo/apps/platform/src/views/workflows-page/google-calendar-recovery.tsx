@@ -1,10 +1,8 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { i18n } from "../../i18n/index.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 import { relatedCatalogItems$ } from "../../signals/okou-page/settings/connectors.ts";
 import {
   builtinAccountConnectDialog$,
@@ -13,7 +11,7 @@ import {
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import {
   cancelGoogleCalendarRecovery$,
-  checkGoogleCalendarRecovery$,
+  finishGoogleCalendarReconnect$,
   closeGoogleCalendarReconnect$,
   googleCalendarRecoveryTarget$,
   openGoogleCalendarRecovery$,
@@ -69,11 +67,8 @@ export function GoogleCalendarRecoveryDialogs() {
   const recovery = useGet(googleCalendarRecoveryTarget$);
   const cancelRecovery = useSet(cancelGoogleCalendarRecovery$);
   const closeReconnect = useSet(closeGoogleCalendarReconnect$);
-  const [confirmation, checkRecovery] = useLoadableSet(
-    checkGoogleCalendarRecovery$,
-  );
+  const finishReconnect = useSet(finishGoogleCalendarReconnect$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
-  const pageSignal = useGet(pageSignal$);
   const googleCalendarManager =
     managedConnector?.slug === GOOGLE_CALENDAR_CONNECTOR_SLUG
       ? managedConnector
@@ -89,18 +84,6 @@ export function GoogleCalendarRecoveryDialogs() {
 
   return (
     <>
-      {recovery?.phase === "confirm" ? (
-        <GoogleCalendarRecoveryStatus
-          checking={confirmation.state === "loading"}
-          onCheck={() => {
-            detach(
-              checkRecovery(recovery, undefined, pageSignal),
-              Reason.DomCallback,
-            );
-          }}
-          onCancel={cancelRecovery}
-        />
-      ) : null}
       {googleCalendarManager && recovery ? (
         <ConnectorAccountManagerDialog
           target={{
@@ -134,61 +117,10 @@ export function GoogleCalendarRecoveryDialogs() {
             closeReconnect(recovery);
           }}
           onSuccess={(connectionId, signal) => {
-            return checkRecovery(recovery, connectionId, signal);
+            return finishReconnect(recovery, connectionId, signal);
           }}
         />
       ) : null}
     </>
-  );
-}
-
-function GoogleCalendarRecoveryStatus({
-  checking,
-  onCheck,
-  onCancel,
-}: {
-  readonly checking: boolean;
-  readonly onCheck: () => void;
-  readonly onCancel: () => void;
-}) {
-  return (
-    <section
-      aria-label={i18n.t(($) => {
-        return $.workflows.automations.calendar.recoveryStatus;
-      })}
-      className="mx-6 my-3 rounded-lg border p-4 text-sm"
-    >
-      {checking ? (
-        <p role="status" className="flex items-center gap-2">
-          <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-          {i18n.t(($) => {
-            return $.workflows.automations.calendar.checkingRecovery;
-          })}
-        </p>
-      ) : (
-        <p role="alert">
-          {i18n.t(($) => {
-            return $.workflows.automations.calendar.recoveryUnconfirmed;
-          })}
-        </p>
-      )}
-      <div className="mt-3 flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={checking}
-          onClick={onCheck}
-        >
-          {i18n.t(($) => {
-            return $.workflows.automations.calendar.checkRecoveryStatus;
-          })}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onCancel}>
-          {i18n.t(($) => {
-            return $.workflows.automations.calendar.cancelRecovery;
-          })}
-        </Button>
-      </div>
-    </section>
   );
 }

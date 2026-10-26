@@ -199,8 +199,7 @@ function MemberAvatar({
           className="h-full w-full object-cover"
         />
       )}
-      {/* With a picture on the way the circle stays empty while it loads, so
-          initials do not flash first; they still stand in if it fails. */}
+
       <Avatar.Fallback
         aria-hidden="true"
         delay={imageUrl ? MEMBER_AVATAR_FALLBACK_DELAY_MS : undefined}
@@ -430,7 +429,7 @@ function WorkflowHoverContent({
       : undefined;
   const ownerStatus = failed
     ? i18n.t(($) => {
-        return $.workflows.list.ownerRetry;
+        return $.workflows.list.ownerUnavailable;
       })
     : profile
       ? i18n.t(($) => {

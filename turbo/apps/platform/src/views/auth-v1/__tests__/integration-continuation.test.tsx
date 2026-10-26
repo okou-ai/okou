@@ -214,7 +214,7 @@ test.each([
   },
 );
 
-test("A sanitized Discord return after login or actor change restarts lost approval", async () => {
+test("A sanitized Discord return after login or actor change reports interrupted approval", async () => {
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, {
       isAvailable: true,
@@ -243,7 +243,7 @@ test("A sanitized Discord return after login or actor change restarts lost appro
     screen.findByRole("heading", { name: "Connection failed" }),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.getByText(/restart the connection|Start again/u),
+    screen.getByText("This authorization was interrupted or refreshed."),
   ).toBeInTheDocument();
   expect(screen.getByText("Back to settings").closest("a")).toHaveAttribute(
     "href",

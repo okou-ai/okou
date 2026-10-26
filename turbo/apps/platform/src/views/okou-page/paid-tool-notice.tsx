@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import {
   disabledPaidTools$,
   paidToolDisabledMessage,
-  reloadDisabledPaidTools$,
   type AvailablePaidToolId,
 } from "../../signals/okou-page/paid-tools.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
@@ -29,7 +28,6 @@ function usePaidToolNoticeRow(
 ): PaidToolNoticeRow | null {
   const { t } = useTranslation();
   const disabled = useLoadable(disabledPaidTools$);
-  const retry = useSet(reloadDisabledPaidTools$);
   const openSettings = useSet(openSettingsDialogAt$);
   const signal = useGet(pageSignal$);
   if (disabled.state === "loading") {
@@ -47,14 +45,7 @@ function usePaidToolNoticeRow(
       message: t(($) => {
         return $.settings.paidTools.loadError;
       }),
-      action: {
-        label: t(($) => {
-          return $.settings.paidTools.retry;
-        }),
-        run: () => {
-          retry();
-        },
-      },
+      action: null,
     };
   }
   const blocked = tools.filter((tool) => {

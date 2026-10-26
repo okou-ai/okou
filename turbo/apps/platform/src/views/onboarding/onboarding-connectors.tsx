@@ -18,7 +18,6 @@ import {
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { onboardingMakeConnectorItems$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import type {
@@ -299,7 +298,6 @@ function useSourceConnectorActivate(
 }
 
 function ConnectorCatalogReadError() {
-  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const { t } = useTranslation();
   return (
     <div
@@ -311,11 +309,6 @@ function ConnectorCatalogReadError() {
           return $.connectors.catalog.directory.builtinLoadFailed;
         })}
       </p>
-      <Button type="button" variant="outline" size="sm" onClick={retryCatalog}>
-        {t(($) => {
-          return $.connectors.catalog.directory.retry;
-        })}
-      </Button>
     </div>
   );
 }
@@ -361,8 +354,6 @@ function SourcesConnectorGrid({
 
   return (
     <>
-      {/* Two columns whatever the card's width: three leaves each source too
-          narrow to read its own description. */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {validConnectorSlugs.map((connectorSlug) => {
           const item = connectorCatalogItems.find((candidate) => {

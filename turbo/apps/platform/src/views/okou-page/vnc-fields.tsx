@@ -66,7 +66,6 @@ import {
   vncTransport$,
   vncCredentialSelection$,
   vncCredentials$,
-  invalidateVnc$,
   mountVncSecret$,
   mountVncCertificateSecret$,
   vncAuthMethodForProfile,
@@ -74,7 +73,7 @@ import {
   requiresVncProtectiveRoute,
   type VncProfile,
 } from "../../signals/vnc.ts";
-import { invalidateSsh$, sshConnections$ } from "../../signals/ssh.ts";
+import { sshConnections$ } from "../../signals/ssh.ts";
 import {
   RSA_AES_PROFILES,
   isRsaAesProfile,
@@ -1059,7 +1058,6 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
   const editor = useGet(vncEditor$);
   const connections = useLoadable(sshConnections$);
   const chooseConnection = useSet(chooseVncSshConnection$);
-  const retry = useSet(invalidateSsh$);
   const isEmpty =
     connections.state === "hasData" && connections.data?.length === 0;
   const connectionItems =
@@ -1096,11 +1094,6 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
               return $.vnc.transport.loadFailed;
             })}
           </p>
-          <Button type="button" variant="outline" onClick={retry}>
-            {t(($) => {
-              return $.vnc.retry;
-            })}
-          </Button>
         </div>
       ) : connections.state === "loading" ? (
         <p role="status" className="text-sm">
@@ -2037,7 +2030,6 @@ export function VncCredentialFields({
 
 function VncCredentialLoadError() {
   const { t } = useTranslation();
-  const retry = useSet(invalidateVnc$);
   return (
     <div
       role="alert"
@@ -2048,17 +2040,6 @@ function VncCredentialLoadError() {
           return $.vnc.loadFailed;
         })}
       </p>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          retry();
-        }}
-      >
-        {t(($) => {
-          return $.vnc.retry;
-        })}
-      </Button>
     </div>
   );
 }

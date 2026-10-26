@@ -871,7 +871,7 @@ export const confirmSubscriptionPurchase$ = command(
               },
               fetchOptions: { signal },
             }),
-            [200, 409],
+            [200],
           )
         : await accept(
             createClient(billingUsagePackCheckoutContract).create({
@@ -884,36 +884,6 @@ export const confirmSubscriptionPurchase$ = command(
             [200],
           );
     signal.throwIfAborted();
-    if (response.status === 409) {
-      if (state.purchaseType !== "plan") {
-        throw new Error("Usage pack confirmation returned a conflict");
-      }
-      const refreshed = await accept(
-        createClient(billingCheckoutContract).create({
-          body: state.request,
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
-      signal.throwIfAborted();
-      if ("url" in refreshed.body) {
-        set(capturePaidOnboardingRedirectToStripe$, "paywall");
-        if (state.newTab) {
-          window.open(refreshed.body.url, "_blank");
-        } else {
-          window.location.href = refreshed.body.url;
-        }
-        return;
-      }
-      if (refreshed.body.status !== "preview") {
-        throw new Error("Plan preview refresh returned a confirmation");
-      }
-      set(internalSubscriptionPurchasePreview$, {
-        ...state,
-        preview: refreshed.body,
-      });
-      return;
-    }
     if ("url" in response.body) {
       if (state.newTab) {
         window.open(response.body.url, "_blank");
@@ -1791,7 +1761,7 @@ export const saveAutoRecharge$ = command(
     // the unsaved-bar briefly disappears because `autoRechargeDirty$` goes
     // false when all overrides are null against the stale config. If the
     // refetch fails, `accept()` inside billingStatusAsync$ already surfaces
-    // the error; leaving overrides in place lets the user retry or discard.
+    // the error; the unsaved form values remain available to edit or discard.
     await get(autoRechargeConfig$);
     signal.throwIfAborted();
     set(internalPendingEnabled$, null);

@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ArrowUpRight,
@@ -685,7 +686,7 @@ function EditorFooter({
 }) {
   const { t } = useTranslation();
   const close = useSet(signals.closeAnnotationEditor$);
-  const commit = useSet(signals.commitAnnotation$);
+  const [operation, commit] = useLoadableSet(signals.commitAnnotation$);
   const pageSignal = useGet(pageSignal$);
   // Nothing drawn, nothing to attach — an enabled button here promises an edit
   // the session does not have.
@@ -707,7 +708,8 @@ function EditorFooter({
       <Button
         type="button"
         size="sm"
-        disabled={!dirty}
+        data-annotation-commit
+        disabled={!dirty || operation.state === "loading"}
         onClick={() => {
           detach(commit(pageSignal), Reason.DomCallback);
         }}

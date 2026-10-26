@@ -1,5 +1,5 @@
 import { uuid } from "zod";
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import { command, computed, type Command, type Computed } from "ccstate";
 import {
   personalSubscriptionsContract,
   type ResetPersonalModelProviderSubscriptionUsageResponse,
@@ -10,7 +10,6 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { resetPersonalCodexAccountSubscriptionUsage$ } from "../external/personal-model-providers.ts";
 import { personalModelProviderAccountRevision$ } from "../external/third-party-subscriptions.ts";
-import { withCleanup } from "../utils.ts";
 import type { ChatActionParseResult } from "./chat-action-context.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
@@ -30,9 +29,6 @@ export type ResetOutcome =
 
 export interface SubscriptionResetSignals extends SubscriptionResetDescriptor {
   readonly status$: Computed<Promise<SubscriptionResetStatus>>;
-  readonly requestAttempted$: Computed<boolean>;
-  readonly terminalOutcome$: Computed<ResetOutcome | null>;
-  readonly refresh$: Command<void, []>;
   readonly confirm$: Command<Promise<ResetOutcome>, [AbortSignal]>;
 }
 
@@ -74,11 +70,7 @@ export function subscriptionResetResourceKey(
 export function createSubscriptionResetSignals(
   descriptor: SubscriptionResetDescriptor,
 ): SubscriptionResetSignals {
-  const revision$ = state(0);
-  const requestAttempted$ = state(false);
-  const terminalOutcome$ = state<ResetOutcome | null>(null);
   const status$ = computed(async (get): Promise<SubscriptionResetStatus> => {
-    get(revision$);
     get(personalModelProviderAccountRevision$);
     const result = await accept(
       get(apiClient$)(personalSubscriptionsContract).get({
@@ -91,17 +83,8 @@ export function createSubscriptionResetSignals(
     }
     return { kind: "ready", account: result.body };
   });
-  const refresh$ = command(({ set }) => {
-    set(revision$, (revision) => {
-      return revision + 1;
-    });
-  });
-  const reset$ = command(
-    async (
-      { get, set },
-      retry: boolean,
-      signal: AbortSignal,
-    ): Promise<ResetOutcome> => {
+  const confirm$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<ResetOutcome> => {
       signal.throwIfAborted();
       const status = await get(status$);
       signal.throwIfAborted();
@@ -110,11 +93,10 @@ export function createSubscriptionResetSignals(
         status.account.type !== "codex-oauth-token" ||
         status.account.subscriptionResetSupported !== true ||
         status.account.needsReconnect ||
-        (!retry &&
-          !(
-            status.account.subscriptionResetCredits &&
-            status.account.subscriptionResetCredits > 0
-          ))
+        !(
+          status.account.subscriptionResetCredits &&
+          status.account.subscriptionResetCredits > 0
+        )
       ) {
         throw new Error("This subscription is not eligible for a usage reset");
       }
@@ -127,40 +109,12 @@ export function createSubscriptionResetSignals(
         signal,
       );
       signal.throwIfAborted();
-      // Every service outcome is terminal for this request, not only a reset.
-      set(terminalOutcome$, result.outcome);
       return result.outcome;
-    },
-  );
-  const confirm$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<ResetOutcome> => {
-      signal.throwIfAborted();
-      const terminalOutcome = get(terminalOutcome$);
-      if (terminalOutcome !== null) {
-        return terminalOutcome;
-      }
-      // The same request key may have spent the last credit before its response
-      // was lost. Request history permits retry without mirroring its lifecycle.
-      const retry = get(requestAttempted$);
-      set(requestAttempted$, true);
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: reconcile remaining credits after an uncertain reset response.
-      return await withCleanup(set(reset$, retry, signal), () => {
-        if (!signal.aborted) {
-          set(refresh$);
-        }
-      });
     },
   );
   return {
     ...descriptor,
     status$,
-    requestAttempted$: computed((get) => {
-      return get(requestAttempted$);
-    }),
-    terminalOutcome$: computed((get) => {
-      return get(terminalOutcome$);
-    }),
-    refresh$,
     confirm$,
   };
 }

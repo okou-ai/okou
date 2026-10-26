@@ -655,16 +655,12 @@ function OAuthDeviceAuthStartContent({
           ? t(($) => {
               return $.connectors.connectDialog.device.starting;
             })
-          : message
-            ? t(($) => {
-                return $.connectors.actions.tryAgain;
-              })
-            : t(
-                ($) => {
-                  return $.connectors.connectDialog.device.connect;
-                },
-                { connector: connectorLabel },
-              )}
+          : t(
+              ($) => {
+                return $.connectors.connectDialog.device.connect;
+              },
+              { connector: connectorLabel },
+            )}
       </Button>
     </div>
   );

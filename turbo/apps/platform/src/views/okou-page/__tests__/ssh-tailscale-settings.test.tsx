@@ -518,7 +518,7 @@ test("Changing carriers preserves endpoint drafts and the independently selected
   ).resolves.toHaveTextContent(config.name);
 });
 
-test("An uncertain host create retries the same request and leaves one saved host", async () => {
+test("An unconfirmed SSH creation keeps its draft frozen", async () => {
   let created: SshConnectionResponse | null = null;
   const requests: unknown[] = [];
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -544,18 +544,7 @@ test("An uncertain host create retries the same request and leaves one saved hos
   const dialog = await addHost();
   click(getAction("button", "Save", dialog));
   await within(dialog).findByRole("alert");
-  click(getAction("button", "Retry", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  await expect(
-    screen.findByRole("heading", { name: "New private host" }),
-  ).resolves.toBeVisible();
-  expect(requests).toStrictEqual([requests[0], requests[0]]);
-  expect(
-    screen.getAllByRole("heading", { name: "New private host" }),
-  ).toHaveLength(1);
-  expect(document.body.textContent).not.toContain("provider-secret-canary");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
 });
 
 test.each(["tailscale", "cloudflare_access"] as const)(

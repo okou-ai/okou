@@ -232,79 +232,28 @@ test.each(["children", "communications"] as const)(
   },
 );
 
-test("Keep loaded relationships visible while retrying a failed source", async () => {
-  const requested = createDeferredPromise<void>(context.signal);
-  const response = createDeferredPromise<void>(context.signal);
-  let retrying = false;
-  await setupRelations({
-    mock: () => {
-      context.mocks.api(chatRelationsContract.children, async ({ respond }) => {
-        if (retrying) {
-          if (!requested.settled()) {
-            requested.resolve();
-          }
-          await response.promise;
-        }
-        return respond(200, {
-          items: [
-            createdChat(CHILD, retrying ? "Updated child" : "Research child"),
-          ],
-        });
-      });
-      context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
-        return retrying
-          ? respond(200, { items: [] })
-          : respond(500, {
-              error: {
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Temporarily unavailable",
-              },
-            });
-      });
-    },
-  });
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  await within(panel).findByText("Research child");
-  retrying = true;
-  click(buttonNamed("Try again", panel));
-  await requested.promise;
-  expect(within(panel).getByText("Research child")).toBeInTheDocument();
-  expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
-  response.resolve();
-  await within(panel).findByText("Updated child");
-});
-
-test("Close an automatic panel but keep the trigger when the last resource disappears", async () => {
-  let empty = false;
+test("Keep loaded relationships visible when another source fails", async () => {
   await setupRelations({
     mock: () => {
       context.mocks.api(chatRelationsContract.children, ({ respond }) => {
         return respond(200, {
-          items: empty ? [] : [createdChat()],
+          items: [createdChat(CHILD, "Research child")],
         });
       });
       context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
-        return empty
-          ? respond(200, { items: [] })
-          : respond(500, {
-              error: {
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Temporarily unavailable",
-              },
-            });
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Temporarily unavailable",
+          },
+        });
       });
     },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
-  await within(panel).findByText("Research child");
-  empty = true;
-  click(buttonNamed("Try again", panel));
-  // An automatic opening has nothing left to show, so it steps away.
-  await waitFor(() => {
-    expect(panel).not.toBeInTheDocument();
-  });
-  expect(buttonNamed("Resources")).toBeEnabled();
-  expect(buttonNamed("Resources")).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    within(panel).findByText("Research child"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Draw the next chat's panel only once its relationships answer", async () => {
@@ -659,19 +608,16 @@ test("Show empty chats and unavailable relationship targets without inventing an
   ).toBeInTheDocument();
 });
 
-test("Retry a failed relationship list without hiding the other sections", async () => {
-  let fail = true;
+test("Keep other sections visible when a relationship list fails", async () => {
   await setupRelations({
     mock: () => {
       context.mocks.api(chatRelationsContract.children, ({ respond }) => {
-        return fail
-          ? respond(500, {
-              error: {
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Temporarily unavailable",
-              },
-            })
-          : respond(200, { items: [createdChat()] });
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Temporarily unavailable",
+          },
+        });
       });
       mockCommunications();
     },
@@ -682,11 +628,6 @@ test("Retry a failed relationship list without hiding the other sections", async
   ).resolves.toBeInTheDocument();
   await expect(
     within(panel).findByText("Existing planning chat"),
-  ).resolves.toBeInTheDocument();
-  fail = false;
-  await userEvent.click(buttonNamed("Try again", panel));
-  await expect(
-    within(panel).findByText("Research child"),
   ).resolves.toBeInTheDocument();
 });
 

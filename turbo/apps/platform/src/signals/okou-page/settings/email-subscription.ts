@@ -13,7 +13,7 @@ export const emailSubscription$ = computed(async (get) => {
   return result.body;
 });
 
-export const retryEmailSubscription$ = command(({ set }) => {
+export const invalidateEmailSubscription$ = command(({ set }) => {
   set(emailSubscriptionVersion$, (version) => {
     return version + 1;
   });
@@ -27,6 +27,6 @@ export const updateEmailSubscription$ = command(
       [200],
     );
     signal.throwIfAborted();
-    set(retryEmailSubscription$);
+    set(invalidateEmailSubscription$);
   },
 );

@@ -396,26 +396,22 @@ test("labels recorded approvals as unconfirmed and retains history when disconne
   expect(queryAllByRoleFast("button", list)).toHaveLength(0);
 });
 
-test("shows a transaction error separately from connection status and retries to an empty list", async () => {
-  let fail = true;
+test("shows a transaction error separately from connection status", async () => {
   context.mocks.api(walletUserContract.status, ({ respond }) => {
     return respond(200, connection(true));
   });
   context.mocks.api(walletUserContract.transactions, ({ respond }) => {
-    return fail
-      ? respond(403, { error: { code: "FORBIDDEN", message: "Unavailable" } })
-      : respond(200, { transactions: [], nextCursor: null });
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Unavailable" },
+    });
   });
   await openWallet();
   const list = await screen.findByRole("region", { name: "Link transactions" });
-  await within(list).findByText("Couldn’t load transactions. Try again.");
+  await within(list).findByText("Couldn’t load transactions.");
   expect(screen.getByText("Connected")).toBeInTheDocument();
   expect(
     within(list).queryByText("No Link transactions yet"),
   ).not.toBeInTheDocument();
-  fail = false;
-  click(await button("Retry"));
-  await within(list).findByText("No purchase requests yet");
 });
 
 test("replaces recorded approvals with actual Link activity after permission is granted", async () => {
@@ -518,7 +514,7 @@ test("shows a failed Link activity read as an error rather than recorded approva
     });
   });
   await openWallet();
-  await screen.findByText("Couldn’t load transactions. Try again.");
+  await screen.findByText("Couldn’t load transactions.");
   expect(
     screen.queryByText("Approved, payment unconfirmed"),
   ).not.toBeInTheDocument();

@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
+import { reloadWorkflowData$ } from "./workflow-reload.ts";
 import { createElement } from "react";
 import {
   isMorningBriefDefinitionName,
@@ -33,6 +35,15 @@ export const setupWorkflowDetailPage$ = command(
     );
     set(resetConnectorAccountDialogs$);
     set(resetWorkflowDetailUiState$);
+    set(
+      setAblyInvalidationLoop$,
+      {
+        topic: "connector:changed",
+        invalidations: [reloadWorkflowData$],
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
     const detail = await get(currentWorkflowDetail$);
     signal.throwIfAborted();
     // Official Workflows are system-managed: Morning Brief is configured in

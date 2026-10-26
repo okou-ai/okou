@@ -124,66 +124,72 @@ function openPage({
   });
 }
 
-test("A user allows grouped permissions once and retries only a failed continuation", async () => {
-  const grants = installResources();
-  let firstCallback = true;
-  const sent: ChatEventSendBody[] = [];
-  const applied: string[] = [];
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      for (const group of body.groups) {
-        for (const grant of group.grants) {
-          expect(grant.expiresIn).toBe("1h");
-          applied.push(`${group.connectorSlug}:${grant.permission}`);
-          grants.push({
-            agentId: AGENT_ID,
-            connectorSlug: group.connectorSlug,
-            permission: grant.permission,
-            action: "allow",
-            expiresAt: "2099-01-01T00:00:00.000Z",
-            createdAt: "2030-01-01T00:00:00.000Z",
-            updatedAt: "2030-01-01T00:00:00.000Z",
-          });
+test.each([
+  {
+    outcome: "success",
+    message: "The conversation has continued.",
+  },
+  {
+    outcome: "failure",
+    message: /^Permissions allowed, but could not continue\./u,
+  },
+] as const)(
+  "Grouped permissions remain allowed after continuation $outcome",
+  async ({ outcome, message }) => {
+    const grants = installResources();
+    const applied: string[] = [];
+    context.mocks.api(
+      userPermissionGrantsContract.applyBatch,
+      ({ body, respond }) => {
+        for (const group of body.groups) {
+          for (const grant of group.grants) {
+            expect(grant.expiresIn).toBe("1h");
+            applied.push(`${group.connectorSlug}:${grant.permission}`);
+            grants.push({
+              agentId: AGENT_ID,
+              connectorSlug: group.connectorSlug,
+              permission: grant.permission,
+              action: "allow",
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              createdAt: "2030-01-01T00:00:00.000Z",
+              updatedAt: "2030-01-01T00:00:00.000Z",
+            });
+          }
         }
-      }
-      return respond(200, grants);
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    sent.push(body);
-    if (firstCallback) {
-      firstCallback = false;
-      return respond(500, {
-        error: { code: "INTERNAL_SERVER_ERROR", message: "Try again" },
-      });
-    }
-    return respond(201, { threadId: THREAD_ID });
-  });
-  await openPage({ callback: true });
-  await screen.findByText("Description for chat:write");
-  expect(screen.getByText("GitHub")).toBeInTheDocument();
-  expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
-  expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
-    "1 hour",
-  );
-  await waitFor(() => {
-    expect(button("Allow all 2 permissions")).toBeEnabled();
-  });
-  click(button("Allow all 2 permissions"));
-  await screen.findByText("Permissions allowed");
-  await screen.findByText(
-    "Permissions allowed, but could not continue. Try continuing again.",
-  );
-  click(button("Continue"));
-  await screen.findByText("The conversation has continued.");
-  expect(applied.sort()).toStrictEqual([
-    "github:issues:read",
-    "slack:chat:write",
-  ]);
-  expect(sent).toHaveLength(2);
-  expect(sent[1]).toStrictEqual(sent[0]);
-});
+        context.mocks.ably.trigger("connectorPermissionUpdated");
+        return respond(200, grants);
+      },
+    );
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return outcome === "success"
+        ? respond(201, { threadId: THREAD_ID })
+        : respond(500, {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Chat unavailable",
+            },
+          });
+    });
+    await openPage({ callback: true });
+    await screen.findByText("Description for chat:write");
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
+    expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
+    expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
+      "1 hour",
+    );
+    await waitFor(() => {
+      expect(button("Allow all 2 permissions")).toBeEnabled();
+    });
+    click(button("Allow all 2 permissions"));
+    await screen.findByText("Permissions allowed");
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    expect(screen.getByText("2 of 2 permissions allowed")).toBeInTheDocument();
+    expect(applied.sort()).toStrictEqual([
+      "github:issues:read",
+      "slack:chat:write",
+    ]);
+  },
+);
 
 test.each(["dismissed", "continued"] as const)(
   "Navigating from a %s batch isolates the next agent's permissions and continuation",
@@ -234,6 +240,7 @@ test.each(["dismissed", "continued"] as const)(
           });
         });
         grants.push(...saved);
+        context.mocks.ably.trigger("connectorPermissionUpdated");
         return respond(200, saved);
       },
     );
@@ -314,56 +321,6 @@ test.each(["dismissed", "continued"] as const)(
   },
 );
 
-test("A fresh revoked grant list supersedes save success after a callback failure", async () => {
-  const grants = installResources();
-  let revoked = false;
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, revoked ? [] : grants);
-  });
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      grants.push(
-        ...body.groups.flatMap((group) => {
-          return group.grants.map((grant) => {
-            return {
-              agentId: AGENT_ID,
-              connectorSlug: group.connectorSlug,
-              permission: grant.permission,
-              action: "allow" as const,
-              expiresAt: "2099-01-01T00:00:00.000Z",
-              createdAt: "2030-01-01T00:00:00.000Z",
-              updatedAt: "2030-01-01T00:00:00.000Z",
-            };
-          });
-        }),
-      );
-      return respond(200, grants);
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Try again" },
-    });
-  });
-  await openPage({ callback: true });
-  await screen.findByText("Description for chat:write");
-  await waitFor(() => {
-    expect(button("Allow all 2 permissions")).toBeEnabled();
-  });
-  click(button("Allow all 2 permissions"));
-  await screen.findByText(
-    "Permissions allowed, but could not continue. Try continuing again.",
-  );
-  expect(screen.getByText("2 of 2 permissions allowed")).toBeInTheDocument();
-  revoked = true;
-  click(button("Continue"));
-  await screen.findByText("0 of 2 permissions allowed");
-  await waitFor(() => {
-    expect(button("Allow all 2 permissions")).toBeEnabled();
-  });
-});
-
 test("Policy-allowed batches show their completed state without requiring a grant", async () => {
   installResources({ permissionDefault: "allow" });
   await openPage();
@@ -402,7 +359,7 @@ test("A successful HTTP response without all grant acknowledgments cannot contin
   click(button("Allow all 2 permissions"));
   await screen.findByRole("alert");
   expect(screen.getByText("0 of 2 permissions allowed")).toBeInTheDocument();
-  expect(button("Allow all 2 permissions")).toBeEnabled();
+  expect(button("Allow all 2 permissions")).toBeDisabled();
   expect(
     screen.queryByText("Permissions allowed", { exact: true }),
   ).not.toBeInTheDocument();

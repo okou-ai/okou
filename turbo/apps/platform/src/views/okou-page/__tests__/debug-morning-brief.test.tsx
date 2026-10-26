@@ -66,38 +66,7 @@ test("a member runs a real brief, sees its conversation link and requests anothe
   expect(new Set(ids).size).toBe(2);
 });
 
-test("keeps the same request ID after a failed HTTP request", async () => {
-  const ids: string[] = [];
-  context.mocks.api(debugMorningBriefContract.run, ({ body, respond }) => {
-    ids.push(body.requestId);
-    return ids.length === 1
-      ? respond(409, {
-          error: {
-            code: "CONFLICT",
-            message: "Morning Brief unavailable",
-          },
-        })
-      : respond(200, {
-          requestId: body.requestId,
-          status: "completed",
-          chatThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        });
-  });
-  await openDebug();
-  const send = button("Run Morning Brief");
-  await waitFor(() => {
-    return expect(send).toBeEnabled();
-  });
-  click(send);
-  await screen.findByText(/The request did not finish/u);
-  click(button("Retry Morning Brief"));
-  await screen.findByText("Morning Brief completed.");
-  expect(ids).toHaveLength(2);
-  expect(ids[1]).toBe(ids[0]);
-});
-
-test("checks a queued run before allowing another brief", async () => {
+test("a queued brief links to its conversation", async () => {
   let requestId = "";
   context.mocks.api(debugMorningBriefContract.run, ({ body, respond }) => {
     requestId = body.requestId;
@@ -108,15 +77,6 @@ test("checks a queued run before allowing another brief", async () => {
       runId: null,
     });
   });
-  context.mocks.api(debugMorningBriefContract.get, ({ params, respond }) => {
-    expect(params.id).toBe(requestId);
-    return respond(200, {
-      requestId,
-      status: "completed",
-      chatThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    });
-  });
   await openDebug();
   const send = button("Run Morning Brief");
   await waitFor(() => {
@@ -125,9 +85,6 @@ test("checks a queued run before allowing another brief", async () => {
   click(send);
   await screen.findByText(/Queued. Open the conversation/u);
   expect(button("Run another Morning Brief")).toBeDisabled();
-  click(button("Check run status"));
-  await screen.findByText("Morning Brief completed.");
-  expect(button("Run another Morning Brief")).toBeEnabled();
 });
 
 test("reports a failed run with its conversation for details", async () => {

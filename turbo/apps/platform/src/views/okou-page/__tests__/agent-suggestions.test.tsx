@@ -8,9 +8,8 @@ import {
 } from "@okouai/api-contracts/contracts/suggestions";
 import {
   chatThreadDraftContract,
+  chatThreadMetadataContract,
   chatThreadByIdContract,
-  chatEventsContract,
-  type ChatThreadDraft,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -28,8 +27,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
-import { apiClient$ } from "../../../signals/api-client.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   draftAttachment,
@@ -204,6 +201,7 @@ test("Selecting a task hides the categories, focuses the composer, and restores 
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   expect(composer()).toHaveTextContent("My draft stays here");
 });
+
 test.each([
   "Workflow",
   "Presentation",
@@ -257,6 +255,7 @@ test.each([
     expect(composer()).toHaveTextContent("Keep my draft");
   },
 );
+
 test("An empty pool hides Suggestions until a realtime publication without changing the chosen category or draft", async () => {
   const pool = mockPool([]);
   await setupPage({
@@ -290,88 +289,48 @@ test("An empty pool hides Suggestions until a realtime publication without chang
   await screen.findByText(makeSuggestion().title);
   expect(composer()).toHaveTextContent("Keep my draft");
 });
-test("All options are expanded, and the second option sends its own structured reference once while preserving the home draft", async () => {
+test("An expanded suggestion adds the selected option to the ordinary composer without replacing its draft", async () => {
   const user = userEvent.setup();
+  const selected = makeOption({ id: "prepare", label: "Prepare response" });
   const suggestion = {
     ...makeSuggestion(),
     options: [
       makeOption({
-        id: "investigate",
-        label: "Investigate alternatives",
-        description: "Compare the possible approaches",
         draft: {
           draftUserMessage: {
             version: 1 as const,
-            parts: [
-              { type: "text" as const, text: "Investigate alternatives only" },
-            ],
+            parts: [{ type: "text" as const, text: "Unselected action" }],
           },
           draftAttachments: null,
         },
       }),
-      makeOption(),
-      makeOption({
-        id: "plan",
-        label: "Plan a follow-up",
-        description: "Prepare a follow-up plan",
-      }),
+      selected,
+      makeOption({ id: "summarize", label: "Summarize the decision" }),
     ],
   };
   const pool = mockPool([suggestion]);
-  const sent: UserMessageDocument[] = [];
-  const accepted = createDeferredPromise<void>(context.signal);
-  mockChatLifecycle(context, {
-    sendGate: accepted.promise,
-    onSendRequest: ({ userMessage }) => {
-      if (userMessage) {
-        sent.push(userMessage);
-      }
-    },
-  });
   await setupPage({
     context,
     path: `/agents/${agentId}/chat`,
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  for (const option of suggestion.options) {
-    expect(button(option.label)).toBeVisible();
-    expect(screen.getByText(option.description)).toBeVisible();
-  }
-  const actions = queryAllByRoleFast("button", screen.getByRole("article"));
-  expect(actions.at(-1)).toHaveTextContent("Dismiss");
-  expect(
-    actions.filter((action) => {
-      return action.textContent?.trim() === "Dismiss";
-    }),
-  ).toHaveLength(1);
   await fill(composer(), "My original draft");
-  await user.dblClick(button(makeSuggestion().options[0].label));
+  expect(button("Review decision")).toBeInTheDocument();
+  expect(button("Summarize the decision")).toBeInTheDocument();
+  await user.click(button(selected.label));
   await waitFor(() => {
-    return expect(pathname()).toMatch(/^\/chats\//);
+    expect(composer()).toHaveTextContent("Referenced decision");
+    expect(composer()).toHaveTextContent("My original draft");
   });
-  accepted.resolve();
-  await screen.findByText("Referenced decision");
-  expect(sent).toHaveLength(1);
-  expect(sent[0]?.parts).toContainEqual({
-    type: "chat_thread",
-    threadId,
-    titleSnapshot: "Referenced decision",
-  });
-  expect(JSON.stringify(sent)).not.toContain("My original draft");
-  expect(JSON.stringify(sent)).not.toContain("Investigate alternatives only");
-  expect(pool.consumed).toHaveLength(1);
+  expect(pool.consumed).toStrictEqual([makeSuggestion().id]);
   expect(pool.selections).toStrictEqual([
-    { id: suggestion.id, optionId: "review" },
+    { id: suggestion.id, optionId: selected.id },
   ]);
-  click(button("New chat"));
-  await waitFor(() => {
-    return expect(pathname()).toBe(`/agents/${agentId}/chat`);
-  });
-  expect(composer()).toHaveTextContent("My original draft");
-  expect(composer()).not.toHaveTextContent("Referenced decision");
+  expect(composer()).not.toHaveTextContent("Unselected action");
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
-test("An existing-thread suggestion sends only its own content and attachments, preserving the remote draft", async () => {
+test("An existing-thread suggestion merges its content and attachments with the remote draft", async () => {
   const incoming = draftAttachment("suggested.txt", {
     id: "a0000000-0000-4000-a000-000000000081",
     contentType: "text/plain",
@@ -389,8 +348,7 @@ test("An existing-thread suggestion sends only its own content and attachments, 
           draftUserMessage: {
             version: 1,
             parts: [
-              ...(makeSuggestion().options[0].draft.draftUserMessage?.parts ??
-                []),
+              ...(makeOption().draft.draftUserMessage?.parts ?? []),
               {
                 type: "file",
                 fileId: incoming.id,
@@ -441,19 +399,44 @@ test("An existing-thread suggestion sends only its own content and attachments, 
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  click(button(makeSuggestion().options[0].label));
+  click(button(makeOption().label));
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${threadId}`);
-    expect(composer()).not.toHaveTextContent("Referenced decision");
+    expect(composer()).toHaveTextContent("Referenced decision");
     expect(composer()).toHaveTextContent("Existing remote draft");
   });
   await expect(screen.findByText("suggested.txt")).resolves.toBeInTheDocument();
   await expect(screen.findByText("original.txt")).resolves.toBeInTheDocument();
-  expect(sends).toHaveLength(1);
-  expect(JSON.stringify(sends)).toContain("Referenced decision");
-  expect(JSON.stringify(sends)).toContain(incoming.id);
-  expect(JSON.stringify(sends)).not.toContain(original.id);
-  expect(JSON.stringify(sends)).not.toContain("Existing remote draft");
+  expect(sends).toHaveLength(0);
+});
+test("A consumed suggestion reaches its saved draft before target metadata is available", async () => {
+  const suggestion = {
+    ...makeSuggestion(),
+    options: [makeOption({ threadId })],
+  };
+  const pool = mockPool([suggestion]);
+  mockChatLifecycle(context, { threadId });
+  const saved: (UserMessageDocument | null | undefined)[] = [];
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Thread metadata is unavailable" },
+    });
+  });
+  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
+    saved.push(body.draftUserMessage);
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(suggestion.title);
+  click(button(suggestion.options[0].label));
+  await waitFor(() => {
+    expect(saved).toContainEqual(suggestion.options[0].draft.draftUserMessage);
+  });
+  expect(pool.consumed).toStrictEqual([suggestion.id]);
 });
 test("A conflicting consumption does not send or change the home draft", async () => {
   mockPool();
@@ -469,261 +452,12 @@ test("A conflicting consumption does not send or change the home draft", async (
   });
   await screen.findByText(makeSuggestion().title);
   await fill(composer(), "Keep this draft");
-  click(button(makeSuggestion().options[0].label));
+  click(button(makeOption().label));
   await waitFor(() => {
     return expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
   expect(composer()).toHaveTextContent("Keep this draft");
-  expect(screen.queryByText("Restore draft")).not.toBeInTheDocument();
-});
-function mockFailedSuggestionRecovery(holdRecovery: boolean) {
-  mockChatLifecycle(context, { threadId, threadTitle: "Recovery target" });
-  let persisted: ChatThreadDraft = {
-    draftUserMessage: {
-      version: 1,
-      parts: [{ type: "text", text: "Existing target draft" }],
-    },
-    draftAttachments: null,
-  };
-  const recoveryStarted = createDeferredPromise<void>(context.signal);
-  const releaseRecovery = createDeferredPromise<void>(context.signal);
-  const recoveryFinished = createDeferredPromise<void>(context.signal);
-  const newerCommitted = createDeferredPromise<void>(context.signal);
-  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-    return respond(200, persisted);
-  });
-  let heldRecovery = false;
-  let unmountedRecoveryRoute: string | null = null;
-  context.mocks.api(
-    chatThreadByIdContract.patch,
-    async ({ body, request, respond }) => {
-      if (body.draftUserMessage === undefined) {
-        return respond(204);
-      }
-      const structuredRecovery = JSON.stringify(body).includes(
-        "Referenced decision",
-      );
-      if (!holdRecovery && structuredRecovery) {
-        // This write must happen before navigation installs the target editor.
-        unmountedRecoveryRoute = pathname();
-      }
-      const recovery = holdRecovery && !heldRecovery && structuredRecovery;
-      if (recovery) {
-        heldRecovery = true;
-        recoveryStarted.resolve();
-        // Gate the write BEFORE its simulated commit, not just its response.
-        await releaseRecovery.promise;
-      }
-      if (!request.signal.aborted) {
-        persisted = {
-          draftUserMessage: body.draftUserMessage,
-          draftAttachments: body.draftAttachments ?? null,
-        };
-        if (JSON.stringify(body).includes("Newest ordinary draft")) {
-          newerCommitted.resolve();
-        }
-      }
-      if (recovery) {
-        recoveryFinished.resolve();
-      }
-      return respond(204);
-    },
-  );
-  let attempts = 0;
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    attempts += 1;
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Send failed" },
-    });
-  });
-  return {
-    recoveryStarted,
-    releaseRecovery,
-    recoveryFinished,
-    newerCommitted,
-    get unmountedRecoveryRoute() {
-      return unmountedRecoveryRoute;
-    },
-    get attempts() {
-      return attempts;
-    },
-  };
-}
-test("A failed second option preserves only its structured recovery before the target editor mounts", async () => {
-  mockPool([
-    {
-      ...makeSuggestion(),
-      options: [
-        makeOption({
-          id: "investigate",
-          label: "Investigate alternatives",
-          draft: {
-            draftUserMessage: {
-              version: 1,
-              parts: [
-                { type: "text", text: "Investigate the alternatives instead." },
-              ],
-            },
-            draftAttachments: null,
-          },
-        }),
-        makeOption({
-          threadId,
-        }),
-      ],
-    },
-  ]);
-  const recovery = mockFailedSuggestionRecovery(false);
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await screen.findByText(makeSuggestion().title);
-  await fill(composer(), "Keep this draft");
-  click(button(makeSuggestion().options[0].label));
-  await waitFor(() => {
-    return button("Restore draft");
-  });
-  expect(button("Investigate alternatives")).toBeDisabled();
-  // Recover with no target editor: storage, not a later rich mount,
-  // must preserve the reference through the pre-navigation write.
-  click(button("Restore draft"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${threadId}`);
-    expect(composer()).toHaveTextContent("Referenced decision");
-  });
-  const client = context.store.get(apiClient$)(chatThreadDraftContract);
-  const restored = await client.get({ params: { id: threadId } });
-  expect(restored.status).toBe(200);
-  expect(recovery.unmountedRecoveryRoute).toBe(`/agents/${agentId}/chat`);
-  expect(restored.body).toStrictEqual({
-    draftUserMessage: {
-      version: 1,
-      parts: [
-        { type: "text", text: "Review the pending decision in " },
-        {
-          type: "chat_thread",
-          threadId,
-          titleSnapshot: "Referenced decision",
-        },
-        { type: "text", text: "\n\n" },
-        { type: "text", text: "Existing target draft" },
-      ],
-    },
-    draftAttachments: null,
-  });
-  click(button("New chat"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${agentId}/chat`);
-    expect(composer()).toHaveTextContent("Keep this draft");
-  });
-  expect(recovery.attempts).toBe(1);
-});
-test("A failed refreshed suggestion cannot overwrite a newer mounted edit during recovery", async () => {
-  const pool = mockPool([]);
-  const recovery = mockFailedSuggestionRecovery(true);
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await fill(composer(), "Keep this draft");
-  pool.publish({
-    ...makeSuggestion(),
-    id: "a0000000-0000-4000-a000-000000000002",
-    options: [
-      makeOption({
-        threadId,
-      }),
-    ],
-  });
-  context.mocks.ably.trigger("agentSuggestionsChanged");
-  await screen.findByText(makeSuggestion().title);
-  click(button(makeSuggestion().options[0].label));
-  await waitFor(() => {
-    return button("Restore draft");
-  });
-  // The retained failed action survives navigation to the ordinary panel.
-  click(await screen.findByText("Recovery target"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${threadId}`);
-    expect(composer()).toHaveTextContent("Existing target draft");
-  });
-  click(button("Restore draft"));
-  await recovery.recoveryStarted.promise;
-  expect(composer()).toHaveTextContent("Referenced decision");
-  expect(composer()).toHaveTextContent("Existing target draft");
-  await fill(composer(), "Newest ordinary draft");
-  await recovery.newerCommitted.promise;
-  recovery.releaseRecovery.resolve();
-  await recovery.recoveryFinished.promise;
-  click(button("New chat"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${agentId}/chat`);
-    expect(composer()).toHaveTextContent("Keep this draft");
-  });
-  // Read the public persisted draft, not the still-cached local editor state.
-  const client = context.store.get(apiClient$)(chatThreadDraftContract);
-  const response = await client.get({ params: { id: threadId } });
-  expect(response.status).toBe(200);
-  expect(response.body).toStrictEqual({
-    draftUserMessage: {
-      version: 1,
-      parts: [{ type: "text", text: "Newest ordinary draft" }],
-    },
-    draftAttachments: null,
-  });
-  expect(recovery.attempts).toBe(1);
-});
-test("A failed new-chat suggestion offers draft recovery without automatically sending again", async () => {
-  mockPool([
-    {
-      ...makeSuggestion(),
-      options: [
-        makeOption({
-          threadId: null,
-        }),
-      ],
-    },
-  ]);
-  mockChatLifecycle(context, { threadId });
-  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-    return respond(200, {
-      draftUserMessage: {
-        version: 1,
-        parts: [{ type: "text", text: "Existing target draft" }],
-      },
-      draftAttachments: null,
-    });
-  });
-  let attempts = 0;
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    attempts += 1;
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Send failed" },
-    });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}/chat`,
-    featureSwitches: features,
-  });
-  await screen.findByText(makeSuggestion().title);
-  await fill(composer(), "Keep this draft");
-  click(button(makeSuggestion().options[0].label));
-  click(
-    await waitFor(() => {
-      return button("Restore draft");
-    }),
-  );
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${agentId}/chat`);
-    expect(composer()).toHaveTextContent("Referenced decision");
-  });
-  expect(composer()).toHaveTextContent("Keep this draft");
-  expect(attempts).toBe(1);
 });
 test("Realtime removal hides Suggestions without changing another selected category", async () => {
   const pool = mockPool();
@@ -750,19 +484,10 @@ test("Realtime removal hides Suggestions without changing another selected categ
     expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });
 });
-test("A suggestion joins the queue of a running target chat", async () => {
+test("A suggestion uses the ordinary composer to join a running target chat", async () => {
   const runId = "d0000000-0000-4000-a000-000000000821";
   const queued: UserMessageDocument[] = [];
-  mockPool([
-    {
-      ...makeSuggestion(),
-      options: [
-        makeOption({
-          threadId,
-        }),
-      ],
-    },
-  ]);
+  mockPool([{ ...makeSuggestion(), options: [makeOption({ threadId })] }]);
   mockChatLifecycle(context, {
     threadId,
     activeRunIds: [runId],
@@ -792,13 +517,19 @@ test("A suggestion joins the queue of a running target chat", async () => {
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  click(button(makeSuggestion().options[0].label));
+  click(button(makeOption().label));
   await waitFor(() => {
     return expect(pathname()).toBe(`/chats/${threadId}`);
   });
   await screen.findByText("Still working");
   await screen.findByText("Referenced decision");
-  expect(queued).toHaveLength(1);
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
+  await waitFor(() => {
+    return expect(queued).toHaveLength(1);
+  });
   expect(queued[0]?.parts).toContainEqual({
     type: "chat_thread",
     threadId,
@@ -812,9 +543,8 @@ test("The consume response owns the message and target, including updates since 
     return respond(200, {
       ...makeSuggestion(),
       status: "consumed",
-      selectedOptionId: "review",
+      selectedOptionId: makeOption().id,
       options: [
-        makeOption({ id: "different", label: "A different direction" }),
         makeOption({
           threadId,
           draft: {
@@ -834,62 +564,13 @@ test("The consume response owns the message and target, including updates since 
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  click(button(makeSuggestion().options[0].label));
+  click(button(makeOption().label));
   await waitFor(() => {
     return expect(pathname()).toBe(`/chats/${threadId}`);
   });
   await screen.findByText("Updated action");
   expect(screen.queryByText("Referenced decision")).not.toBeInTheDocument();
 });
-test.each([true, false])(
-  "An unavailable suggestion attachment stops the send and offers recovery (metadata: %s)",
-  async (hasMetadata) => {
-    const attachment = draftAttachment("required.txt", {
-      id: "a0000000-0000-4000-a000-000000000083",
-      contentType: "text/plain",
-    });
-    const suggestion = makeSuggestion();
-    mockPool([
-      {
-        ...suggestion,
-        options: [
-          makeOption({
-            draft: {
-              draftUserMessage: {
-                version: 1,
-                parts: [
-                  ...(suggestion.options[0].draft.draftUserMessage?.parts ??
-                    []),
-                  {
-                    type: "file",
-                    fileId: attachment.id,
-                    filenameSnapshot: attachment.filename,
-                    contentType: attachment.contentType,
-                  },
-                ],
-              },
-              draftAttachments: hasMetadata ? [attachment] : null,
-            },
-          }),
-        ],
-      },
-    ]);
-    mockPrivateUrlSequence(context, {});
-    await setupPage({
-      context,
-      path: `/agents/${agentId}/chat`,
-      featureSwitches: features,
-    });
-    await screen.findByText(suggestion.title);
-    click(button(suggestion.options[0].label));
-    await expect(
-      waitFor(() => {
-        return button("Restore draft");
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe(`/agents/${agentId}/chat`);
-  },
-);
 function numberedSuggestions(count: number): Suggestion[] {
   return Array.from({ length: count }, (_, index) => {
     return {
@@ -953,11 +634,11 @@ test("Dismissing a suggestion consumes it without opening it and brings up the n
       "a0000000-0000-4000-a000-000000000001",
     ]);
   });
-  expect(pool.selections).toStrictEqual([
-    { id: "a0000000-0000-4000-a000-000000000001", optionId: null },
-  ]);
   expect(composer()).toHaveTextContent("Keep this draft");
   expect(composer()).not.toHaveTextContent("Referenced decision");
+  expect(pool.selections).toStrictEqual([
+    { id: makeSuggestion().id, optionId: null },
+  ]);
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
   click(button("Dismiss"));
   await waitFor(() => {
@@ -970,17 +651,8 @@ test("Dismissing a suggestion consumes it without opening it and brings up the n
   expect(composer()).toHaveTextContent("Keep this draft");
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
-test("A deleted target offers recovery without sending to another chat", async () => {
-  mockPool([
-    {
-      ...makeSuggestion(),
-      options: [
-        makeOption({
-          threadId,
-        }),
-      ],
-    },
-  ]);
+test("A deleted suggestion target leaves the current draft in place", async () => {
+  mockPool([{ ...makeSuggestion(), options: [makeOption({ threadId })] }]);
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Chat thread not found" },
@@ -997,12 +669,10 @@ test("A deleted target offers recovery without sending to another chat", async (
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  click(button(makeSuggestion().options[0].label));
-  await expect(
-    waitFor(() => {
-      return button("Restore draft");
-    }),
-  ).resolves.toBeInTheDocument();
+  click(button(makeOption().label));
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  });
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
 test("The switch-off and secondary-Agent home retain their ordinary starting points", async () => {

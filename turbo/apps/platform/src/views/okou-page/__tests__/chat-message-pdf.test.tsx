@@ -156,7 +156,7 @@ test("A generation error is visible and the PDF action can be retried", async ()
   });
   first.resolve({ ok: false });
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Could not generate PDF. Try again.",
+    "Could not generate PDF.",
   );
   response = retry;
   click(button("Generate PDF"));

@@ -482,34 +482,20 @@ test("A refreshed shared revision is deleted only after acknowledging its curren
   ]);
 });
 
-test("An impact conflict refreshes the snapshot and requires explicit review and acknowledgement", async () => {
-  let currentImpact = impact;
+test("An impact conflict rejects the outdated confirmation", async () => {
   const requests: unknown[] = [];
   context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-    return respond(200, currentImpact);
+    return respond(200, impact);
   });
   context.mocks.api(
     tailscaleContract.convertToPersonal,
     ({ body, respond }) => {
       requests.push(body);
-      if (requests.length === 1) {
-        currentImpact = {
-          ...impact,
-          otherHostCount: 3,
-          impactSnapshot: "b".repeat(64),
-        };
-        return respond(409, {
-          error: {
-            code: TAILSCALE_ERROR_CODES.IMPACT_CONFLICT,
-            message: "private-provider-detail",
-          },
-        });
-      }
-      return respond(200, {
-        ...shared,
-        scope: "personal",
-        revision: 2,
-        generation: 2,
+      return respond(409, {
+        error: {
+          code: TAILSCALE_ERROR_CODES.IMPACT_CONFLICT,
+          message: "private-provider-detail",
+        },
       });
     },
   );
@@ -530,27 +516,15 @@ test("An impact conflict refreshes the snapshot and requires explicit review and
   );
   click(getAction("button", "Make personal", dialog));
   await within(dialog).findByText(
-    "The affected hosts changed. Review the latest impact before confirming again.",
+    "The affected hosts changed. The change was not applied.",
   );
   expect(document.body.textContent).not.toContain("private-provider-detail");
-  click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/Affected: 1 member and 3 hosts\./u);
-  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  click(getAction("button", "Make personal", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
   expect(requests).toStrictEqual([
     { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
-    { expectedRevision: 1, impactSnapshot: "b".repeat(64) },
   ]);
 });
 
-test("An uncertain create retries its original UUID and leaves one saved network", async () => {
+test("An unconfirmed network creation keeps the credential draft frozen", async () => {
   let created: TailscaleConfig | null = null;
   const requests: { id: string }[] = [];
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
@@ -558,9 +532,6 @@ test("An uncertain create retries its original UUID and leaves one saved network
   });
   context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
     requests.push(body);
-    if (created) {
-      return respond(204);
-    }
     created = { ...config, id: body.id, name: body.name, tags: body.tags };
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "private-secret-detail" },
@@ -571,13 +542,7 @@ test("An uncertain create retries its original UUID and leaves one saved network
   click(getAction("button", "Save", dialog));
   await within(dialog).findByRole("alert");
   expect(within(dialog).getByLabelText("OAuth client secret")).toBeDisabled();
-  click(getAction("button", "Retry", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  await screen.findByText("New network");
-  expect(screen.getAllByText("New network")).toHaveLength(1);
-  expect(requests).toStrictEqual([requests[0], requests[0]]);
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(document.body.textContent).not.toContain("private-secret-detail");
 });
 
@@ -640,59 +605,6 @@ test("Promotion requires explicit sharing acknowledgement and preserves the reso
   });
   expect(requests).toStrictEqual([
     { params: { configId: config.id }, body: { expectedRevision: 1 } },
-  ]);
-});
-
-test("Revision review preserves a draft and permits restoring the original metadata", async () => {
-  let current = config;
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
-  });
-  context.mocks.api(tailscaleContract.update, ({ body, respond }) => {
-    requests.push(body);
-    if (requests.length === 1) {
-      current = {
-        ...config,
-        name: "Server rename",
-        revision: 2,
-        generation: 2,
-      };
-      return respond(409, {
-        error: {
-          code: TAILSCALE_ERROR_CODES.REVISION_CONFLICT,
-          message: "private-provider-detail",
-        },
-      });
-    }
-    return respond(200, {
-      ...current,
-      name: body.name ?? current.name,
-      revision: 3,
-    });
-  });
-  await page();
-  const section = await networkSection();
-  await within(section).findByText(config.name);
-  click(getAction("button", "Edit Tailscale", section));
-  const dialog = await screen.findByRole("dialog");
-  await fill(within(dialog).getByLabelText("Name"), "My draft");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText("Server rename");
-  expect(within(dialog).getByLabelText("Name")).toHaveValue("My draft");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-  await fill(within(dialog).getByLabelText("Name"), config.name);
-  click(getAction("button", "Keep my changes with this version", dialog));
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, name: "My draft", tags: ["tag:okou"] },
-    { expectedRevision: 2, name: config.name, tags: ["tag:okou"] },
   ]);
 });
 

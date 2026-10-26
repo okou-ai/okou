@@ -265,37 +265,6 @@ test.each(["focus", "visibilitychange"])(
   },
 );
 
-test("A failed status read is an error with manual recovery, never disconnected or success", async () => {
-  setConnection(false);
-  let failed = true;
-  context.mocks.api(
-    integrationsTelegramContract.getLinkStatus,
-    ({ respond }) => {
-      return failed
-        ? respond(403, {
-            error: { code: "FORBIDDEN", message: "Status unavailable" },
-          })
-        : respond(200, {
-            linked: true,
-            telegramUserId: "99001",
-            botUsername: "support_bot",
-          });
-    },
-  );
-  await setupPage({ context, path: "/settings/telegram?status=connected" });
-  await expect(
-    screen.findByRole("heading", { name: "Connection failed" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    queryAction("button", "Continue with Telegram"),
-  ).not.toBeInTheDocument();
-  failed = false;
-  click(getAction("button", "Try again"));
-  await expect(
-    screen.findByText("Send the bot a message in Telegram to start chatting."),
-  ).resolves.toBeInTheDocument();
-});
-
 test("A member without a default agent sees the administrator prerequisite with the link intact", async () => {
   setConnection(false);
   context.mocks.data.onboardingStatus({
@@ -356,17 +325,10 @@ test.each([
   "bot=unknown",
   "bot=official&bot=official",
   "bot=official&tgUser=99001",
-])(
-  "An unsupported or incomplete entry %s fails closed with a usable restart",
-  async (search) => {
-    await setupPage({ context, path: `/settings/telegram?${search}` });
-    await expect(
-      screen.findByRole("heading", { name: "Connect link is incomplete" }),
-    ).resolves.toBeInTheDocument();
-    expect(getAction("link", "Try again")).toHaveAttribute(
-      "href",
-      "/settings/telegram",
-    );
-    expect(queryAction("button", "Connect")).toBeNull();
-  },
-);
+])("An unsupported or incomplete entry %s fails closed", async (search) => {
+  await setupPage({ context, path: `/settings/telegram?${search}` });
+  await expect(
+    screen.findByRole("heading", { name: "Connect link is incomplete" }),
+  ).resolves.toBeInTheDocument();
+  expect(queryAction("button", "Connect")).toBeNull();
+});

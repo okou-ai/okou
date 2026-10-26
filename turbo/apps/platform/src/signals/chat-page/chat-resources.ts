@@ -12,56 +12,15 @@ import {
   updateUserPreference$,
   userPreferences$,
 } from "../okou-page/settings/user-preferences.ts";
-import { onRef, withCleanup } from "../utils.ts";
+import { onRef } from "../utils.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
 
 const RESOURCE_PANEL_MIN_GUTTER = 408;
 
-// The header button is the preference, as in Codex: the latest press shows at
-// once, and saves run one after another so the last press is the one kept.
-const optimisticPreference$ = state<{
-  readonly enabled: boolean;
-  readonly write: number;
-} | null>(null);
-const preferenceWrites$ = state(0);
-const preferenceSaves$ = state<Promise<unknown>>(Promise.resolve());
-
 /** Whether the resource panel shows on its own when there is room beside the transcript. */
 const chatResourcesEnabledByDefault$ = computed(async (get) => {
-  const optimistic = get(optimisticPreference$);
-  return optimistic
-    ? optimistic.enabled
-    : (await get(userPreferences$)).chatResourcesEnabledByDefault;
+  return (await get(userPreferences$)).chatResourcesEnabledByDefault;
 });
-
-const savePreference$ = command(
-  async ({ get, set }, enabled: boolean, signal: AbortSignal) => {
-    const write = get(preferenceWrites$) + 1;
-    set(preferenceWrites$, write);
-    set(optimisticPreference$, { enabled, write });
-    const previous = get(preferenceSaves$);
-    const save = (async () => {
-      // An earlier failed save has already been reported; only its order matters.
-      await Promise.allSettled([previous]);
-      await set(
-        updateUserPreference$,
-        { chatResourcesEnabledByDefault: enabled },
-        signal,
-      );
-      signal.throwIfAborted();
-      await get(userPreferences$);
-      signal.throwIfAborted();
-    })();
-    set(preferenceSaves$, save);
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    await withCleanup(save, () => {
-      // A later press owns the shown value until its own save settles.
-      if (get(optimisticPreference$)?.write === write) {
-        set(optimisticPreference$, null);
-      }
-    });
-  },
-);
 
 export const copyChatResourceArtifact$ = command(
   async (
@@ -175,6 +134,19 @@ function createResourceDemand() {
   };
 }
 
+interface ResourcePanelChoice {
+  readonly open: boolean;
+  readonly narrow: boolean;
+}
+
+function resourceGutterWidth(viewport: HTMLElement, column: HTMLElement) {
+  return Math.max(
+    0,
+    viewport.getBoundingClientRect().right -
+      column.getBoundingClientRect().right,
+  );
+}
+
 function createChatResourcePanelSignals() {
   const gutterWidth$ = state(0);
   const anchor = createResourceElementRef();
@@ -184,10 +156,7 @@ function createChatResourcePanelSignals() {
   const messageColumn$ = state<HTMLElement | null>(null);
   // The user's choice in this chat. A close always holds; an open made with
   // room beside the transcript steps aside while that room is gone.
-  const choice$ = state<{
-    readonly open: boolean;
-    readonly narrow: boolean;
-  } | null>(null);
+  const choice$ = state<ResourcePanelChoice | null>(null);
   const demand = createResourceDemand();
   const wide$ = computed((get) => {
     return get(gutterWidth$) > RESOURCE_PANEL_MIN_GUTTER;
@@ -216,9 +185,15 @@ function createChatResourcePanelSignals() {
         set(choice$, { open, narrow: true });
         return;
       }
+      await set(
+        updateUserPreference$,
+        { chatResourcesEnabledByDefault: open },
+        signal,
+      );
+      await get(userPreferences$);
+      signal.throwIfAborted();
       // An explicit open also shows a chat that has nothing to list yet.
       set(choice$, open ? { open, narrow: false } : null);
-      await set(savePreference$, open, signal);
     },
   );
   const measure$ = command(({ get, set }) => {
@@ -227,11 +202,7 @@ function createChatResourcePanelSignals() {
     if (!viewport || !column) {
       return;
     }
-    const width = Math.max(
-      0,
-      viewport.getBoundingClientRect().right -
-        column.getBoundingClientRect().right,
-    );
+    const width = resourceGutterWidth(viewport, column);
     set(gutterWidth$, width);
     set(demand.recordGutter$, width);
   });

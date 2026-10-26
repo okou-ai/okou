@@ -57,9 +57,6 @@ export function DocumentTemplatePreviewPage({
               close();
             }}
           >
-            {/* Named by what it says, like the custom detail's breadcrumb:
-                an aria-label that replaced the visible "Document" made the
-                control announce words no one could see. */}
             {t(($) => {
               return $.documentTemplates.title;
             })}
@@ -123,7 +120,6 @@ function DocumentPreviewStage({
   const { t } = useTranslation();
   const failures = useGet(signals.template.documentImageFailures$);
   const failImage = useSet(signals.template.failDocumentImage$);
-  const retryImage = useSet(signals.template.retryDocumentImage$);
   const setPage = useSet(signals.template.setDocumentPreviewPage$);
   return (
     <div
@@ -140,16 +136,6 @@ function DocumentPreviewStage({
               return $.documentTemplates.imageError;
             })}
           </p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              retryImage(url);
-            }}
-          >
-            {t(($) => {
-              return $.documentTemplates.retry;
-            })}
-          </Button>
         </div>
       ) : (
         <img
@@ -167,7 +153,7 @@ function DocumentPreviewStage({
           }}
         />
       )}
-      {/* A single sample page has nowhere to go: no arrows and no "1 / 1". */}
+
       {total > 1 ? (
         <>
           <button
@@ -242,7 +228,6 @@ function DocumentPreviewDetails({
   });
   return (
     <div className="flex flex-col items-start gap-4 lg:w-[220px] lg:shrink-0 lg:overflow-y-auto">
-      {/* The purpose, unless it is the name the breadcrumb already says. */}
       {category === item.title ? null : (
         <Badge className="text-xs text-muted-foreground">{category}</Badge>
       )}

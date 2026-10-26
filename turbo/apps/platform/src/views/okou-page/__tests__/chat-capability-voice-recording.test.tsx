@@ -70,7 +70,7 @@ function owningComposer(control: HTMLElement): HTMLElement {
   return composer;
 }
 
-test("Recover committed PCM after a reload during recording", async () => {
+test("Use committed PCM as a normal recording draft after reload", async () => {
   const resetFirstPage$ = resetSignal();
   const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
   const capture = context.mocks.deferred<(samples: Float32Array) => void>();
@@ -115,34 +115,16 @@ test("Recover committed PCM after a reload during recording", async () => {
 
   context.store.set(resetFirstPage$);
   releasePageDom();
-  const openDatabase = globalThis.indexedDB.open.bind(globalThis.indexedDB);
-  const failedRead = vi
-    .spyOn(globalThis.indexedDB, "open")
-    .mockImplementation((name, version) => {
-      if (name === "okou-voice-drafts") {
-        throw new DOMException(
-          "Storage is temporarily unavailable",
-          "UnknownError",
-        );
-      }
-      return openDatabase(name, version);
-    });
   await setupPage({
     locale: "en-US",
     context: secondContext,
     path: RUN_PATH,
   });
 
-  const retryButton = await findEnabledButton("Retry");
-  const restoredComposer = owningComposer(retryButton);
-  expect(
-    within(restoredComposer).getByText(
-      "Audio could not be saved. Retry can recover only audio already saved on this device.",
-    ),
-  ).toBeInTheDocument();
-  failedRead.mockRestore();
+  const useRecording = await findEnabledButton("Use recording");
+  const restoredComposer = owningComposer(useRecording);
   expect(queryButton("Stop recording")).toBeNull();
-  click(retryButton);
+  click(useRecording);
   await findEnabledButton("Voice input", restoredComposer);
   expect(
     within(restoredComposer).getByRole("textbox", { name: "Message" }),
@@ -190,7 +172,7 @@ test("Include the final worklet chunk before transcribing", async () => {
   await findEnabledButton("Voice input");
 });
 
-test("Restore completed transcripts after reload and retry only polish", async () => {
+test("Use the completed transcript retained in a recording draft after reload", async () => {
   const resetFirstPage$ = resetSignal();
   const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
   context.mocks.browser.voiceInput({ rms: 0.12 });
@@ -240,7 +222,7 @@ test("Restore completed transcripts after reload and retry only polish", async (
   });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Retry");
+  await findEnabledButton("Remove voice draft");
   await expect(
     screen.findByText("Editing is busy", { exact: false }),
   ).resolves.toBeInTheDocument();
@@ -248,7 +230,7 @@ test("Restore completed transcripts after reload and retry only polish", async (
   releasePageDom();
   polishAvailable = true;
   await setupPage({ context: secondContext, path: RUN_PATH });
-  click(await findEnabledButton("Retry"));
+  click(await findEnabledButton("Use recording"));
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
       "Keep this saved speech.",
@@ -304,7 +286,7 @@ test.each([
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
-    await findEnabledButton("Retry");
+    await findEnabledButton("Remove voice draft");
     context.store.set(resetFirstPage$);
     releasePageDom();
 
@@ -338,17 +320,9 @@ test.each([
     );
     database.close();
     restored = true;
-    await setupPage({ context: secondContext, path: RUN_PATH });
-    click(await findEnabledButton("Retry"));
-    await expect(
-      screen.findByText("Editing is busy", { exact: false }),
-    ).resolves.toBeInTheDocument();
-    await findEnabledButton("Retry");
-    expect((await savedRecording())?.progress?.segments).toStrictEqual(
-      segments,
-    );
     available = true;
-    click(await findEnabledButton("Retry"));
+    await setupPage({ context: secondContext, path: RUN_PATH });
+    click(await findEnabledButton("Use recording"));
     await waitFor(() => {
       expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
         fullText,
@@ -366,10 +340,7 @@ test.each([
       },
     );
     expect(requests).toStrictEqual(bodies);
-    expect(bodies).toStrictEqual([
-      { segments: expectedSegments },
-      { segments: expectedSegments },
-    ]);
+    expect(bodies).toStrictEqual([{ segments: expectedSegments }]);
     expect(uploads).toBe(1);
   },
 );

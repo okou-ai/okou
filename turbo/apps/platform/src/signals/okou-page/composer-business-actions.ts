@@ -131,31 +131,15 @@ export function createComposerDraftActions(
       );
     },
   );
-  const retryAttachmentAnnotations$ = command(
-    async (
-      { set },
-      attachment: ChatAttachment,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      await withCleanup(set(attachment.retryAnnotationUpload$, signal), () => {
-        if (!signal.aborted) {
-          return set(saveDraft$, signal);
-        }
-        return undefined;
-      });
-    },
-  );
   return {
     restorePastedAttachments$,
     confirmAttachmentAnnotations$,
-    retryAttachmentAnnotations$,
   };
 }
 
 export type ComposerAttachmentAnnotationActions = Pick<
   ReturnType<typeof createComposerDraftActions>,
-  "confirmAttachmentAnnotations$" | "retryAttachmentAnnotations$"
+  "confirmAttachmentAnnotations$"
 >;
 
 export function createComposerConnectorCompletion(

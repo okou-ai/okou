@@ -251,15 +251,13 @@ test("Document sends its creation intent and keeps its task chip in the new thre
   ).toBeInTheDocument();
 });
 
-test("Document failed preview pages can be retried", async () => {
+test("Document preview pages display unavailable images", async () => {
   const { user } = await setup();
   const dialog = await openTemplatePicker(user);
   click(control(dialog, "tab", "Document"));
   click(control(dialog, "button", "Preview Simple invoice"));
   fireEvent.error(within(dialog).getByAltText("Page 1"));
   expect(within(dialog).getByText("Preview unavailable")).toBeVisible();
-  click(control(dialog, "button", "Retry"));
-  expect(within(dialog).getByAltText("Page 1")).toBeInTheDocument();
 });
 
 test("Document preview pages navigate, reset on reopen, and can be selected from details", async () => {

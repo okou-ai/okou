@@ -1,5 +1,5 @@
 import { Button } from "@okouai/ui/components/ui/button";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Check, Globe, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -16,18 +16,13 @@ export function BrowserAuthorizationCard({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const request = useLoadable(signals.request$);
-  const phase = useGet(signals.phase$);
-  const refresh = useSet(signals.refresh$);
   const [operation, allow] = useLoadableSet(signals.allow$);
   const loading = request.state === "loading";
   const data = request.state === "hasData" ? request.data : null;
   const busy = operation.state === "loading";
   const failed = operation.state === "hasError";
   const enabled =
-    phase === "done" ||
-    (phase === "authorize" &&
-      data !== null &&
-      (data.cloudBrowserEnabled || data.completedAt !== null));
+    data !== null && (data.cloudBrowserEnabled || data.completedAt !== null);
   const unavailable = !loading && !data;
 
   return (
@@ -67,17 +62,11 @@ export function BrowserAuthorizationCard({
           </p>
         </div>
       </div>
-      {unavailable ? (
-        <Button variant="neutral" className="shrink-0" onClick={refresh}>
-          {t(($) => {
-            return $.authorization.browser.retry;
-          })}
-        </Button>
-      ) : (
+      {!unavailable && (
         <Button
           variant="secondary"
           className="w-full shrink-0 @[640px]:w-auto"
-          disabled={loading || enabled}
+          disabled={loading || enabled || failed}
           pending={busy}
           onClick={() => {
             detach(allow(pageSignal), Reason.DomCallback);
@@ -92,13 +81,9 @@ export function BrowserAuthorizationCard({
             ? t(($) => {
                 return $.authorization.browser.allowed;
               })
-            : failed
-              ? t(($) => {
-                  return $.authorization.browser.retry;
-                })
-              : t(($) => {
-                  return $.authorization.browser.allow;
-                })}
+            : t(($) => {
+                return $.authorization.browser.allow;
+              })}
         </Button>
       )}
     </ChatCard>

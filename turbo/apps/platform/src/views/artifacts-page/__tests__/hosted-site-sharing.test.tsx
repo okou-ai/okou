@@ -244,7 +244,7 @@ test("a save conflict keeps the draft and current shared address", async () => {
   expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
 });
 
-test("an unavailable address check disables saving and a new draft can retry", async () => {
+test("an unavailable address check disables saving until a new address is validated", async () => {
   let unavailable = true;
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site);
@@ -268,38 +268,29 @@ test("an unavailable address check disables saving and a new draft can retry", a
   const input = await screen.findByLabelText("Website URL");
   await fill(input, "launch-report");
   await screen.findByText("Address check unavailable");
-  await screen.findByText(
-    "Could not check this address. Edit it to try again.",
-  );
+  await screen.findByText("Could not check this address.");
   expect(getButtonByName("Save")).toBeDisabled();
   expect(input).toHaveValue("launch-report");
   unavailable = false;
-  await fill(input, "launch-report-retry");
+  await fill(input, "launch-report-revised");
   await screen.findByText("Available");
   expect(getButtonByName("Save")).toBeEnabled();
 });
 
-test("a failed save retains the draft and can retry without replacing the current address", async () => {
-  let unavailable = true;
+test("a failed save retains the draft and the current address", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site);
   });
   context.mocks.api(hostContract.siteUrlAvailability, ({ respond }) => {
     return respond(200, { available: true });
   });
-  context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
-    return unavailable
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Website save unavailable",
-          },
-        })
-      : respond(200, {
-          ...site,
-          publicSlug: body.publicSlug,
-          url: `https://${body.publicSlug}.okou.app`,
-        });
+  context.mocks.api(hostContract.updateSiteUrl, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Website save unavailable",
+      },
+    });
   });
   await openSite();
   await openShare();
@@ -317,42 +308,22 @@ test("a failed save retains the draft and can retry without replacing the curren
   expect(
     screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
   ).toHaveAttribute("src", site.url);
-  unavailable = false;
-  click(getButtonByName("Save"));
-  await screen.findByText("Website URL updated");
-  await waitFor(() => {
-    expect(siteAddress("launch-report.okou.app")).toBeInTheDocument();
-  });
 });
 
-test("a settings failure disables copying until Retry resolves the current address", async () => {
-  let unavailable = true;
-  const clipboard = context.mocks.browser.clipboardWriteText();
+test("A settings failure disables copying an unknown address", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-    return unavailable
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Website settings unavailable",
-          },
-        })
-      : respond(200, site);
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Website settings unavailable",
+      },
+    });
   });
   await openSite();
   await openShare();
   await screen.findByText("Could not load website settings");
   expect(getButtonByName("Copy link")).toBeDisabled();
   expect(queryButtonByName("Customize URL")).toBeUndefined();
-  unavailable = false;
-  click(getButtonByName("Retry"));
-  await waitFor(() => {
-    expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
-  });
-  expect(getButtonByName("Copy link")).toBeEnabled();
-  click(getButtonByName("Copy link"));
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([site.url]);
-  });
 });
 
 test("other people's sites offer Published and copying without URL editing", async () => {
@@ -427,21 +398,18 @@ test("Public Site previews continue rendering the anonymous URL with visibility 
 
 type SiteVisibilityStatus = zInfer<typeof hostedSiteVisibilityStatusSchema>;
 
-test("unavailable banner settings can be retried without claiming that the banner is hidden", async () => {
+test("Unavailable banner settings do not claim that the banner is hidden", async () => {
   mockSiteAlias();
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "public", revision: null });
   });
-  let unavailable = true;
   context.mocks.api(hostContract.siteBanner, ({ respond }) => {
-    return unavailable
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Banner settings unavailable",
-          },
-        })
-      : respond(200, { siteId, showBanner: true, revision: null });
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Banner settings unavailable",
+      },
+    });
   });
   await openSite({ visibility: true, urlEditing: false });
   await openShare();
@@ -449,11 +417,6 @@ test("unavailable banner settings can be retried without claiming that the banne
   expect(
     screen.queryByRole("switch", { name: "Show Okou banner" }),
   ).not.toBeInTheDocument();
-  unavailable = false;
-  click(getButtonByName("Retry"));
-  await expect(
-    screen.findByRole("switch", { name: "Show Okou banner" }),
-  ).resolves.toBeChecked();
 });
 
 test.each([false, true])(
@@ -500,17 +463,16 @@ test.each([false, true])(
   },
 );
 
-test("a stale banner edit reloads the saved preference instead of overwriting it", async () => {
+test("a stale banner edit preserves the last confirmed preference", async () => {
   mockSiteAlias();
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "public", revision: null });
   });
-  let banner = { siteId, showBanner: true, revision: null as string | null };
+  const banner = { siteId, showBanner: true, revision: null };
   context.mocks.api(hostContract.siteBanner, ({ respond }) => {
     return respond(200, banner);
   });
   context.mocks.api(hostContract.updateSiteBanner, ({ respond }) => {
-    banner = { siteId, showBanner: true, revision: crypto.randomUUID() };
     return respond(409, {
       error: {
         code: "CONFLICT",
@@ -679,22 +641,15 @@ test("permissions preload without claiming public access while their read is pen
   await expectPermission("Only me");
 });
 
-test("unavailable visibility settings can be retried", async () => {
+test("Unavailable visibility settings keep permission choices disabled", async () => {
   mockSiteAlias();
-  let unavailable = true;
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-    return unavailable
-      ? respond(403, {
-          error: {
-            code: "FORBIDDEN",
-            message: "Website visibility management is not available",
-          },
-        })
-      : respond(200, {
-          siteId,
-          visibility: "organization",
-          revision: crypto.randomUUID(),
-        });
+    return respond(403, {
+      error: {
+        code: "FORBIDDEN",
+        message: "Website visibility management is not available",
+      },
+    });
   });
   await openSite({ urlEditing: false, visibility: true });
   await openShare();
@@ -704,12 +659,9 @@ test("unavailable visibility settings can be retried", async () => {
     expect(row).toBeDisabled();
   }
   expect(getButtonByName("Copy link")).toBeEnabled();
-  unavailable = false;
-  click(getButtonByName("Retry"));
-  await expectPermission("Anyone at Default Org");
 });
 
-test("a conflicting change reloads the current revision before the owner retries", async () => {
+test("a conflicting permission change preserves the last confirmed audience", async () => {
   mockSiteAlias();
   let status: SiteVisibilityStatus = {
     siteId,
@@ -741,19 +693,15 @@ test("a conflicting change reloads the current revision before the owner retries
     revision: crypto.randomUUID(),
   };
   click(permission("Only me"));
-  await screen.findByText("Website visibility changed");
-  await expectPermission("Anyone at Default Org");
-  click(permission("Only me"));
-  await expectPermission("Only me");
   await expect(
-    screen.findByText("Access updated"),
+    screen.findByText("Website visibility changed"),
   ).resolves.toBeInTheDocument();
+  await expectPermission("Anyone with the link");
 });
 
-test("a failed visibility save restores the server audience and can be retried", async () => {
+test("a failed visibility save preserves the last confirmed audience", async () => {
   mockSiteAlias();
-  let unavailable = true;
-  let status: SiteVisibilityStatus = {
+  const status: SiteVisibilityStatus = {
     siteId,
     visibility: "private",
     revision: null,
@@ -761,34 +709,22 @@ test("a failed visibility save restores the server audience and can be retried",
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, status);
   });
-  context.mocks.api(hostContract.updateSiteVisibility, ({ body, respond }) => {
-    if (unavailable) {
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Website visibility save unavailable",
-        },
-      });
-    }
-    status = {
-      siteId,
-      visibility: body.visibility,
-      revision: crypto.randomUUID(),
-    };
-    return respond(200, status);
+  context.mocks.api(hostContract.updateSiteVisibility, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Website visibility save unavailable",
+      },
+    });
   });
   await openSite({ urlEditing: false, visibility: true });
   await openShare();
   await expectPermission("Only me");
   click(permission("Anyone with the link"));
-  await screen.findByText("Website visibility save unavailable");
-  await expectPermission("Only me");
-  unavailable = false;
-  click(permission("Anyone with the link"));
-  await expectPermission("Anyone with the link");
   await expect(
-    screen.findByText("Access updated"),
+    screen.findByText("Website visibility save unavailable"),
   ).resolves.toBeInTheDocument();
+  await expectPermission("Only me");
 });
 
 test("non-owners can copy a website link without permission controls", async () => {

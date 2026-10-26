@@ -267,7 +267,7 @@ test.each([
       },
     },
     message:
-      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+      "We couldn't verify Telegram login for this app. Contact support if the problem continues.",
   },
   {
     name: "a bot whose installation is no longer available",
@@ -294,7 +294,7 @@ test.each([
       },
     },
     message:
-      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+      "We couldn't verify Telegram login for this app. Contact support if the problem continues.",
   },
   {
     name: "an unreachable Telegram authorization service",
@@ -308,8 +308,7 @@ test.each([
         domainConfigured: false,
       },
     },
-    message:
-      "We couldn't reach Telegram to check the connection. Please try again in a moment.",
+    message: "We couldn't reach Telegram to check the connection.",
   },
 ] satisfies {
   name: string;
@@ -358,7 +357,7 @@ test.each(["/telegram/connect", "/settings/telegram"])(
     ).resolves.toBeInTheDocument();
     expect(
       screen.getByText(
-        "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+        "We couldn't verify Telegram login for this app. Contact support if the problem continues.",
       ),
     ).toBeInTheDocument();
     expect(getAction("link", "Back to settings")).toHaveAttribute(

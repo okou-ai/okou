@@ -61,7 +61,6 @@ function resetSupported(account: ModelProviderResponse | null): boolean {
 function useResetNotice(
   account: ModelProviderResponse | null,
   operation: Loadable<ResetOutcome> | { readonly state: "idle" },
-  terminalOutcome: ResetOutcome | null,
   readFailed: boolean,
   unavailable: boolean,
 ): string | null {
@@ -91,19 +90,17 @@ function useResetNotice(
       return $.chat.subscriptionReset.reconnect;
     });
   }
-  if (terminalOutcome === null && operation.state === "hasError") {
+  if (operation.state === "hasError") {
     return t(($) => {
       return $.chat.subscriptionReset.error;
     });
   }
-  if (terminalOutcome === null && operation.state === "loading") {
+  if (operation.state === "loading") {
     return t(($) => {
       return $.chat.subscriptionReset.resetting;
     });
   }
-  const outcome =
-    terminalOutcome ??
-    (operation.state === "hasData" ? operation.data : undefined);
+  const outcome = operation.state === "hasData" ? operation.data : undefined;
   switch (outcome) {
     case "reset": {
       return t(($) => {
@@ -143,8 +140,6 @@ function SubscriptionResetCardContent({
   const loadable = useLoadable(signals.status$);
   const last = useLastLoadable(signals.status$);
   const [operation, confirm] = useLoadableSet(signals.confirm$);
-  const requestAttempted = useGet(signals.requestAttempted$);
-  const terminalOutcome = useGet(signals.terminalOutcome$);
   const pageSignal = useGet(pageSignal$);
   const status =
     loadable.state === "hasData"
@@ -158,7 +153,6 @@ function SubscriptionResetCardContent({
   const notice = useResetNotice(
     account,
     operation,
-    terminalOutcome,
     readFailed,
     status?.kind === "unavailable",
   );
@@ -180,8 +174,6 @@ function SubscriptionResetCardContent({
           disabled={resetActionDisabled(
             account,
             operation,
-            requestAttempted,
-            terminalOutcome,
             refreshing || readFailed,
           )}
           onConfirm={() => {
@@ -322,20 +314,15 @@ function SubscriptionResetIdentityContent({
 function resetActionDisabled(
   account: ModelProviderResponse | null,
   operation: Loadable<ResetOutcome> | { readonly state: "idle" },
-  requestAttempted: boolean,
-  terminalOutcome: ResetOutcome | null,
   readUnavailable: boolean,
 ): boolean {
-  const terminal =
-    operation.state === "loading" ||
-    operation.state === "hasData" ||
-    terminalOutcome !== null;
+  const terminal = operation.state !== "idle";
   const credits = account?.subscriptionResetCredits;
   return (
     terminal ||
     readUnavailable ||
     account?.needsReconnect === true ||
-    (!requestAttempted && !(credits && credits > 0))
+    !(credits && credits > 0)
   );
 }
 

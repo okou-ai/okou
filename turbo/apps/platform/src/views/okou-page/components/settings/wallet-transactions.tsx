@@ -2,15 +2,12 @@ import type {
   WalletPurchaseHistoryEntry,
   WalletTransaction,
 } from "@okouai/api-contracts/contracts/wallet";
-import { Badge, Button, cn } from "@okouai/ui";
+import { Badge, cn } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
-import { useLastLoadable, useSet } from "ccstate-react";
+import { useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { currentLocale } from "../../../../i18n/index.ts";
-import {
-  refreshWalletTransactions$,
-  walletTransactions$,
-} from "../../../../signals/okou-page/settings/wallet.ts";
+import { walletTransactions$ } from "../../../../signals/okou-page/settings/wallet.ts";
 
 function TransactionStatus({
   status,
@@ -165,7 +162,6 @@ function TransactionRow({
 export function WalletTransactions() {
   const { t } = useTranslation();
   const transactions = useLastLoadable(walletTransactions$);
-  const retry = useSet(refreshWalletTransactions$);
   const data = transactions.state === "hasData" ? transactions.data : null;
   const loading = transactions.state === "loading";
   const requests = data?.source === "requests";
@@ -197,17 +193,6 @@ export function WalletTransactions() {
               return $.settings.wallet.transactions.loadError;
             })}
           </p>
-          <Button
-            variant="quiet"
-            size="sm"
-            onClick={() => {
-              retry();
-            }}
-          >
-            {t(($) => {
-              return $.settings.wallet.retry;
-            })}
-          </Button>
         </div>
       ) : !loading && !data?.transactions.length ? (
         <p className="text-sm text-muted-foreground">

@@ -59,7 +59,7 @@ export function createSkillImportSignals(options: SkillImportOptions) {
     return result.body;
   });
 
-  const retry$ = command(({ set }) => {
+  const renewSession$ = command(({ set }) => {
     set(sessionVersion$, (version) => {
       return version + 1;
     });
@@ -107,7 +107,7 @@ export function createSkillImportSignals(options: SkillImportOptions) {
       session.ok &&
       session.value.expiresAt - now() <= SESSION_MIN_REMAINING_MS
     ) {
-      set(retry$);
+      set(renewSession$);
     }
   });
   // The dialog's mounted content owns this subscription. Ref cleanup also
@@ -120,7 +120,6 @@ export function createSkillImportSignals(options: SkillImportOptions) {
   return {
     session$,
     imported$,
-    retry$,
     reloadImported$,
     copyPrompt$,
     promptDisplayed$,

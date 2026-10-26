@@ -95,10 +95,12 @@ test("A trusted link becomes a persistent card and approval only uses the explic
       approvedAt: new Date(now()).toISOString(),
       grantExpiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
     });
+    context.mocks.ably.trigger(SHELL_TOPIC);
     return respond(200, current);
   });
   context.mocks.api(contract.revoke, ({ respond }) => {
     current = { ...current, status: "revoked" };
+    context.mocks.ably.trigger(SHELL_TOPIC);
     return respond(200, current);
   });
   await setupChat(`[Allow Shell access](${URL})`);
@@ -133,7 +135,7 @@ test("The direct page waits for the requesting Run to end and never approves on 
     return expect(button(card, "Allow for 1 hour")).toBeDisabled();
   });
   current = authorization();
-  click(button(card, "Refresh"));
+  context.mocks.ably.trigger(SHELL_TOPIC);
   await waitFor(() => {
     return expect(button(card, "Allow for 1 hour")).toBeEnabled();
   });
@@ -217,14 +219,12 @@ test("The direct page automatically removes and restores the approval blocker on
   await waitFor(() => {
     expect(button(card, "Allow for 1 hour")).toBeEnabled();
   });
-  expect(findButton(card, "Refresh")).toBeUndefined();
 
   current = authorization({ approvalBlockedReason: "run_active" });
   context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
   await waitFor(() => {
     expect(button(card, "Allow for 1 hour")).toBeDisabled();
   });
-  expect(button(card, "Refresh")).toBeEnabled();
 });
 
 test("A host change makes an unavailable authorization stop offering approval", async () => {
@@ -255,7 +255,7 @@ test("A host change makes an unavailable authorization stop offering approval", 
   expect(findButton(card, "Allow for 1 hour")).toBeUndefined();
 });
 
-test("Refreshing a pending request rearms its deadline and expires it without an event", async () => {
+test("A request update rearms its deadline and expires it without another event", async () => {
   let current = authorization({ approvalBlockedReason: "run_active" });
   context.mocks.api(contract.get, ({ respond }) => {
     return respond(200, current);
@@ -263,13 +263,13 @@ test("Refreshing a pending request rearms its deadline and expires it without an
   await setupPage({ context, path: PATH, host: "app.okou.ai" });
   const card = await screen.findByTestId("desktop-shell-authorization-card");
   await waitFor(() => {
-    expect(button(card, "Refresh")).toBeEnabled();
+    expect(context.mocks.ably.hasSubscription(SHELL_TOPIC)).toBeTruthy();
   });
   current = authorization({
     reason: "This request is about to expire",
     requestExpiresAt: new Date(now() + 250).toISOString(),
   });
-  click(button(card, "Refresh"));
+  context.mocks.ably.trigger(SHELL_TOPIC);
   await expect(
     within(card).findByText("This request is about to expire"),
   ).resolves.toBeInTheDocument();
@@ -292,6 +292,7 @@ test("Approving a request arms the grant deadline and removes revoke when access
       approvedAt: new Date(now()).toISOString(),
       grantExpiresAt: new Date(now() + 250).toISOString(),
     });
+    context.mocks.ably.trigger(SHELL_TOPIC);
     return respond(200, current);
   });
   await setupChat(URL);

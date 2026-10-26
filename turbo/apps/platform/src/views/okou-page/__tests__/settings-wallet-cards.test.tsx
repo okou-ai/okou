@@ -6,13 +6,13 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
+import { state } from "ccstate";
 import {
   walletUserContract,
   type WalletConnectionStatus,
   type WalletPaymentMethod,
 } from "@okouai/api-contracts/contracts/wallet";
 import {
-  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -309,36 +309,25 @@ test("keeps cards and transactions on tab return and refreshes both after a wall
   expect(screen.queryByText("Recent purchase")).not.toBeInTheDocument();
 });
 
-test("shows a failed wallet refresh and retries with the updated default card", async () => {
-  let fail = false;
-  let methods = [everyday, business];
+test("shows a wallet refresh failure while keeping card management available", async () => {
+  const unavailable$ = state(false);
   context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
-    return fail
+    return context.store.get(unavailable$)
       ? respond(502, {
           error: { code: "BAD_GATEWAY", message: "Link unavailable" },
         })
-      : respond(200, { data: methods });
+      : respond(200, { data: [everyday, business] });
   });
   await openWallet();
   const region = await screen.findByRole("region", {
     name: "Your cards in Link",
   });
   await within(region).findByText("Everyday");
-  fail = true;
+  context.store.set(unavailable$, true);
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
-  await within(region).findByText("Couldn’t load your cards. Try again.");
+  await within(region).findByText("Couldn’t load your cards.");
   expect(within(region).queryByText("Everyday")).not.toBeInTheDocument();
   expect(manageCards(region)).toBeInTheDocument();
-  fail = false;
-  methods = [{ ...business, isDefault: true }];
-  const retry = queryAllByRoleFast("button", region).find((element) => {
-    return element.textContent?.trim() === "Retry";
-  });
-  expect(retry).toBeDefined();
-  click(retry!);
-  await within(region).findByText("Business");
-  expect(within(region).getByText("Default")).toBeInTheDocument();
-  expect(within(region).queryByText("Everyday")).not.toBeInTheDocument();
 });
 
 test.each(["disconnected", "missing permission", "revocation pending"])(

@@ -187,8 +187,14 @@ test("Transcribe a voice draft with its editor context", async () => {
   click(voiceInput);
   const stop = await activeVoiceDraftStopButton();
   placeCaret(currentComposer(), "Opening  closing", 16);
+  const voiceTray = stop.closest("[data-composer-voice-tray]");
   click(stop);
   await transcriptionStarted.promise;
+  // Finishing capture must retain the component that owns this operation.
+  expect(voiceTray).toBeInTheDocument();
+  expect(voiceTray).toHaveAttribute("role", "status");
+  expect(queryButton("Use recording")).toBeNull();
+  expect(queryButton("Voice input")).toBeNull();
 
   placeCaret(currentComposer(), "Opening  closing", 8);
 
@@ -310,11 +316,9 @@ test("Finish a provider no-speech response and preserve the input", async () => 
 
   await findEnabledButton("Voice input");
   expect(normalizedComposerText()).toBe(initialText);
-  expect(screen.queryByLabelText("Add")).toBeVisible();
+  await expect(findEnabledButton("Add")).resolves.toBeVisible();
   expect(queryButton("Send")).toBeEnabled();
-  expect(
-    screen.queryByText("Voice transcription failed. Try again."),
-  ).toBeNull();
+  expect(screen.queryByText("Voice transcription failed.")).toBeNull();
 
   await userEvent.type(currentComposer(), "New words", { skipClick: true });
   expect(normalizedComposerText()).toBe("New words");
