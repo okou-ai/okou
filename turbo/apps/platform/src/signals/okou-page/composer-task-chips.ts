@@ -75,12 +75,6 @@ function createDocumentCategorySignals() {
   );
   const documentCategory$ = computed((get) => {
     const switches = get(featureSwitch$);
-    if (switches[FeatureSwitchKey.CustomTemplates] !== true) {
-      const selected = get(internalDocumentCategory$);
-      return selected === "custom"
-        ? "creative-brief"
-        : (selected ?? "creative-brief");
-    }
     if (switches[FeatureSwitchKey.BuiltinDocumentTemplates] !== true) {
       return "custom";
     }

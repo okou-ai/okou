@@ -46,28 +46,11 @@ async function setup(enabled = true) {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: false,
       [FeatureSwitchKey.BuiltinDocumentTemplates]: enabled,
     },
   });
   return { user, capture };
 }
-
-test("Document remains hidden when its rollout switch is off", async () => {
-  const { user } = await setup(false);
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  expect(within(tasks).queryByText("Document")).not.toBeInTheDocument();
-  await fill(await findComposerEditor(), "/doc");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  expect(within(menu).queryByText("Document")).not.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  const dialog = await openTemplatePicker(user);
-  expect(
-    queryAllByRoleFast("tab", dialog).map((tab) => {
-      return tab.textContent;
-    }),
-  ).not.toContain("Document");
-});
 
 test("Document category and scroll survive preview", async () => {
   const { user, capture } = await setup();
@@ -78,13 +61,7 @@ test("Document category and scroll survive preview", async () => {
     tabs.map((tab) => {
       return tab.textContent;
     }),
-  ).toStrictEqual([
-    "Presentation",
-    "Document",
-    "Website",
-    "Illustration",
-    "Workflow",
-  ]);
+  ).toStrictEqual(["Presentation", "Document", "Website", "Image", "Workflow"]);
   click(control(dialog, "tab", "Document"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(46);
   click(control(dialog, "button", "Invoice"));
@@ -177,7 +154,7 @@ test("Document purposes are directly selectable without losing the draft or sele
     "aria-pressed",
     "true",
   );
-  expect(within(categories).queryByText("Custom")).not.toBeInTheDocument();
+  expect(control(categories, "button", "Custom")).toBeVisible();
   expect(
     within(shelf).queryByLabelText("Import your own document"),
   ).not.toBeInTheDocument();

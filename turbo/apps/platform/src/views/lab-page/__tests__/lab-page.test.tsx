@@ -103,7 +103,9 @@ test("Lab groups active feature switches", async () => {
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
-    within(featureSwitchGroup("Released")).getByText("Custom templates"),
+    within(featureSwitchGroup("Released")).getByText(
+      "Built-in document templates",
+    ),
   ).toBeVisible();
   expect(
     within(featureSwitchGroup("Internal")).getByText(
@@ -147,7 +149,7 @@ test("Maintainer filters narrow the feature list", async () => {
 
   await user.click(bingjie);
 
-  expect(screen.getByText("Custom templates")).toBeInTheDocument();
+  expect(screen.getByText("Built-in document templates")).toBeInTheDocument();
   expect(
     screen.queryByText(FeatureSwitchKey.AhrefsConnector),
   ).not.toBeInTheDocument();

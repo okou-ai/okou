@@ -679,7 +679,6 @@
       "previewSlide": "Vorschaufolie {{slideNumber}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previousSlide": "Vorschau der vorherigen Folie",
-      "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
       "selectStyle": "Stil auswählen {{style}}",
@@ -718,9 +717,7 @@
       "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
       "visibility": {
-        "changeLabel": "Sichtbarkeit der Vorlage ändern",
-        "privateState": "Nur du kannst sie sehen und verwenden",
-        "workspaceState": "Alle in diesem Arbeitsbereich können sie verwenden"
+        "changeLabel": "Sichtbarkeit der Vorlage ändern"
       },
       "website": "Webseite",
       "websitePreview": "{{title}} Vorschau der Website-Vorlage",
@@ -2929,15 +2926,12 @@
         "website": "Webseite",
         "workflow": "Workflow"
       },
-      "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
-      "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
       "previewTemplate": "Vorschauvorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previewWorkflow": "Vorschau der Workflow-Vorlage {{title}}",
       "removeTemplate": "Vorlage {{title}} entfernen",
       "removeWebsite": "Website-Vorlage {{title}} entfernen",
-      "removeWorkflow": "Workflow-Vorlage {{title}} entfernen",
-      "retry": "Erneut versuchen"
+      "removeWorkflow": "Workflow-Vorlage {{title}} entfernen"
     },
     "thread": {
       "ariaLabel": "Chat-Thread",

@@ -87,18 +87,12 @@ export function createRunTemplates(
     });
   });
   const mounted$ = computed(async (get) => {
-    const [selection, features] = await Promise.all([
-      get(selection$),
-      get(features$),
-    ]);
+    const selection = await get(selection$);
     if (!selection) {
       return [];
     }
     const ids = selectedUserTemplateIds(selection.templates);
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.CustomTemplates, features) ||
-      !ids.length
-    ) {
+    if (!ids.length) {
       return [];
     }
     const rows = await get(db$)

@@ -291,8 +291,6 @@ function ComposerTemplateShelf({
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
   const previews = slashTemplatePreviews(category);
   const custom = useCustomTemplateRecommendations(signals, "illustration");
-  const customTemplatesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
@@ -338,7 +336,7 @@ function ComposerTemplateShelf({
         rail={`templates:${task}`}
         gap="gap-3"
         items={[
-          ...(task === "image" && customTemplatesEnabled
+          ...(task === "image"
             ? [
                 <TemplateImportCard
                   key="import"
@@ -566,8 +564,6 @@ function ComposerDocumentRecommendations({
   const category =
     categoryResult.state === "hasData" ? categoryResult.data : undefined;
   const switches = useGet(featureSwitch$);
-  const customTemplatesEnabled =
-    switches[FeatureSwitchKey.CustomTemplates] === true;
   const builtinTemplatesEnabled =
     switches[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
   const custom = useCustomTemplateRecommendations(signals, "document");
@@ -627,16 +623,12 @@ function ComposerDocumentRecommendations({
             return $.documentTemplates.filter;
           })}
           pills={[
-            ...(customTemplatesEnabled
-              ? [
-                  {
-                    id: "custom",
-                    label: t(($) => {
-                      return $.templates.custom;
-                    }),
-                  },
-                ]
-              : []),
+            {
+              id: "custom",
+              label: t(($) => {
+                return $.templates.custom;
+              }),
+            },
             ...(builtinTemplatesEnabled
               ? DOCUMENT_CATEGORIES.map((id) => {
                   return {
@@ -649,7 +641,7 @@ function ComposerDocumentRecommendations({
               : []),
           ]}
           onSelect={(id) => {
-            if (id === "custom" && customTemplatesEnabled) {
+            if (id === "custom") {
               setCategory("custom");
               return;
             }
@@ -798,10 +790,6 @@ export function ComposerTaskChips({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const switches = useGet(featureSwitch$);
-  const documentTemplatesEnabled =
-    switches[FeatureSwitchKey.BuiltinDocumentTemplates] === true ||
-    switches[FeatureSwitchKey.CustomTemplates] === true;
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;
@@ -840,9 +828,6 @@ export function ComposerTaskChips({
   ).filter((task) => {
     if (task === "jobs") {
       return jobsEnabled;
-    }
-    if (task === "document") {
-      return documentTemplatesEnabled;
     }
     if (task === "suggestions") {
       return showSuggestions;

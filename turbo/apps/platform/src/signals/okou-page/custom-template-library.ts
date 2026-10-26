@@ -8,20 +8,13 @@ import {
   type UserTemplateSummary,
 } from "@okouai/api-contracts/contracts/user-templates";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { rootVersion$ } from "../root-signal.ts";
 
 const catalogVersion$ = state(0);
-
-export const slashCustomTemplatesEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
-});
 
 type ConfirmedTemplateChange = Pick<
   UserTemplateSummary,
@@ -67,12 +60,6 @@ export const projectCustomTemplate$ = computed((get) => {
 const serverCustomTemplateCatalog$ = computed(
   async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
     get(catalogVersion$);
-    // A member without the feature has no catalog, and the routes refuse them
-    // anyway. Answering here rather than at each reader keeps every reader
-    // honest: the picker and the composer's selection both go through this.
-    if (get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] !== true) {
-      return [];
-    }
     const client = get(apiClient$)(userTemplatesContract);
     const result = await accept(client.list(), [200]);
     return result.body;
@@ -129,12 +116,6 @@ export const reloadCustomTemplates$ = command(({ get, set }) => {
  * `runOnSubscribe` closes the window between the first read of the catalog and
  * the subscription attaching, which is the window a publish would otherwise
  * have to land in to be missed until the next mutation.
- *
- * The feature switch is deliberately not read here. The catalog above answers
- * for it, so a notification that reaches a member without the feature resolves
- * an empty catalog and asks the API for nothing; and switches arrive from the
- * API after this daemon starts, so a subscription that read one at startup
- * would be absent for exactly the members who have the feature.
  */
 export const subscribeCustomTemplatesChanged$ = command(
   ({ set }, signal: AbortSignal): void => {

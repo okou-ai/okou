@@ -78,7 +78,6 @@ async function openSlashMenu(
     context,
     path,
     featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: true,
       [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
       ...featureSwitches,
     },
@@ -166,24 +165,6 @@ test.each(CATEGORIES)(
     });
   },
 );
-
-test("Disabling custom templates preserves the built-in slash catalog", async () => {
-  mockTemplateChat();
-  context.mocks.api(userTemplatesContract.list, () => {
-    throw new Error("A disabled slash custom catalog must not be requested");
-  });
-  const { menu } = await openSlashMenu({
-    [FeatureSwitchKey.CustomTemplates]: false,
-  });
-  await userEvent.setup().hover(button("Presentation", menu));
-  const pane = await within(menu).findByRole("region", {
-    name: "Presentation",
-  });
-  expect(
-    within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),
-  ).toBeInTheDocument();
-  expect(within(menu).queryByText("Document")).not.toBeInTheDocument();
-});
 
 test("The Document row opens custom documents when built-in documents are disabled", async () => {
   mockTemplateChat();
