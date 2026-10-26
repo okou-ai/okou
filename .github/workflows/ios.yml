@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      cache_preboot_experiment:
+        description: Compare cold compiler-cache producers with and without simulator preboot
+        type: boolean
+        default: false
       sample_xcode_startup:
         description: Sample the compile-phase Xcode startup
         type: boolean
@@ -33,6 +37,54 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  cache-preboot-a1:
+    if: github.event_name == 'workflow_dispatch' && inputs.cache_preboot_experiment
+    uses: ./.github/workflows/ios-cache-preboot-experiment.yml
+    with:
+      mode: produce
+      label: A1
+      preboot: true
+
+  cache-preboot-b1:
+    needs: cache-preboot-a1
+    uses: ./.github/workflows/ios-cache-preboot-experiment.yml
+    with:
+      mode: produce
+      label: B1
+      preboot: false
+
+  cache-preboot-b2:
+    needs: cache-preboot-b1
+    uses: ./.github/workflows/ios-cache-preboot-experiment.yml
+    with:
+      mode: produce
+      label: B2
+      preboot: false
+
+  cache-preboot-a2:
+    needs: cache-preboot-b2
+    uses: ./.github/workflows/ios-cache-preboot-experiment.yml
+    with:
+      mode: produce
+      label: A2
+      preboot: true
+
+  cache-preboot-verify-b1:
+    needs: [cache-preboot-a2, cache-preboot-b1]
+    uses: ./.github/workflows/ios-cache-preboot-experiment.yml
+    with:
+      mode: consume
+      label: Verify-B1
+      cache-key: ${{ needs.cache-preboot-b1.outputs.cache-key }}
+
+  cache-preboot-verify-b2:
+    needs: [cache-preboot-verify-b1, cache-preboot-b2]
+    uses: ./.github/workflows/ios-cache-preboot-experiment.yml
+    with:
+      mode: consume
+      label: Verify-B2
+      cache-key: ${{ needs.cache-preboot-b2.outputs.cache-key }}
+
   archive-cache-seed:
     if: github.event_name == 'workflow_dispatch' && inputs.archive_cache_experiment
     uses: ./.github/workflows/ios-archive-cache-experiment.yml

@@ -1,0 +1,194 @@
+name: iOS Compiler Cache Preboot Experiment
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+      label:
+        type: string
+        required: true
+      preboot:
+        type: boolean
+        default: false
+      cache-key:
+        type: string
+        default: ""
+    outputs:
+      cache-key:
+        description: Isolated compiler cache produced by this measurement
+        value: ${{ jobs.produce.outputs.cache-key }}
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+  IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+  IOS_BUILD_CACHE_ENABLED: "true"
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: http.version
+  GIT_CONFIG_VALUE_0: HTTP/1.1
+
+jobs:
+  produce:
+    name: ${{ inputs.label }}
+    if: inputs.mode == 'produce'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    outputs:
+      cache-key: ${{ steps.identity.outputs.cache-key }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore locked dependencies without a compiler cache
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          restore-compilation: "false"
+      - name: Bind an isolated cold producer
+        id: identity
+        env:
+          COMPILATION_PATH: ${{ steps.cache.outputs.compilation-path }}
+          COMPILATION_KEY: ${{ steps.cache.outputs.compilation-key }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          test ! -e "$COMPILATION_PATH"
+          git rev-parse HEAD HEAD:ios
+          echo "cache-key=ios-preboot-probe-v1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$LABEL-$COMPILATION_KEY" >> "$GITHUB_OUTPUT"
+          sysctl hw.ncpu hw.memsize
+      - name: Prepare locked dependencies
+        run: bash ios/scripts/ci-test.sh prepare
+      - name: Record simulator state before preboot
+        run: xcrun simctl list devices available --json > "$RUNNER_TEMP/simulator-before.json"
+      - name: Preboot the control simulator
+        if: inputs.preboot
+        run: |
+          ios_preboot_started=$SECONDS
+          python3 ios/scripts/preboot-simulator.py
+          echo "iOS cache preboot: $((SECONDS - ios_preboot_started)) seconds"
+      - name: Compile fresh products and native cache entries
+        run: |
+          vm_stat
+          bash ios/scripts/ci-test.sh compile
+          vm_stat
+      - name: Verify products and record producer identity
+        env:
+          LABEL: ${{ inputs.label }}
+          PREBOOT: ${{ inputs.preboot }}
+          CACHE_KEY: ${{ steps.identity.outputs.cache-key }}
+          TOOLCHAIN_FILE: ${{ steps.cache.outputs.toolchain-file }}
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulator-after.json"
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ["RUNNER_TEMP"])
+          products = root / "okou-ios-ci/DerivedData/Build/Products"
+          specifications = list(products.glob("*.xctestrun"))
+          if len(specifications) != 1:
+              raise ValueError("Expected exactly one complete test specification")
+          if not (products / "Debug-iphonesimulator/Okou.app/Okou").is_file():
+              raise ValueError("Missing compiled App executable")
+          result = {
+              "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "iosTree": subprocess.check_output(["git", "rev-parse", "HEAD:ios"], text=True).strip(),
+              "label": os.environ["LABEL"], "preboot": os.environ["PREBOOT"],
+              "cacheKey": os.environ["CACHE_KEY"],
+              "toolchain": json.loads(pathlib.Path(os.environ["TOOLCHAIN_FILE"]).read_text()),
+          }
+          for phase in ("before", "after"):
+              inventory = json.loads((root / f"simulator-{phase}.json").read_text())
+              result[phase] = [
+                  {"name": device["name"], "state": device["state"], "runtime": runtime}
+                  for runtime, devices in inventory["devices"].items()
+                  for device in devices if device["state"] == "Booted"
+              ]
+          (root / "warmup-identity.json").write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps(result))
+          PY
+      - name: Package the isolated native compiler cache
+        env:
+          COMPILATION_PATH: ${{ steps.cache.outputs.compilation-path }}
+        run: |
+          tar -czf "$RUNNER_TEMP/ios-compiler-cache.tar.gz" -C "$COMPILATION_PATH" .
+          (
+            cd "$RUNNER_TEMP"
+            shasum -a 256 ios-compiler-cache.tar.gz > ios-compiler-cache-sha256.txt
+          )
+      # Keep experiment transfers outside the nearly full shared cache quota.
+      - name: Transfer the cache and producer identity
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.identity.outputs.cache-key }}
+          path: |
+            ${{ runner.temp }}/ios-compiler-cache.tar.gz
+            ${{ runner.temp }}/ios-compiler-cache-sha256.txt
+            ${{ runner.temp }}/warmup-identity.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  consume:
+    name: ${{ inputs.label }}
+    if: inputs.mode == 'consume'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore dependencies without a fallback compiler cache
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          restore-compilation: "false"
+      - name: Require the matching experiment identity
+        env:
+          EXPERIMENT_KEY: ${{ inputs.cache-key }}
+          COMPILATION_KEY: ${{ steps.cache.outputs.compilation-key }}
+        run: |
+          case "$EXPERIMENT_KEY" in
+            ios-preboot-probe-v1-*"-$COMPILATION_KEY") ;;
+            *) echo "Experimental cache identity does not match this source and toolchain" >&2; exit 1 ;;
+          esac
+          git rev-parse HEAD HEAD:ios
+      - name: Receive only the selected producer artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.cache-key }}
+          path: ${{ runner.temp }}/ios-preboot-artifact
+      - name: Validate and restore the isolated compiler cache
+        env:
+          COMPILATION_PATH: ${{ steps.cache.outputs.compilation-path }}
+          EXPERIMENT_KEY: ${{ inputs.cache-key }}
+          TOOLCHAIN_FILE: ${{ steps.cache.outputs.toolchain-file }}
+        run: |
+          cd "$RUNNER_TEMP/ios-preboot-artifact"
+          shasum -a 256 -c ios-compiler-cache-sha256.txt
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          identity = json.loads(pathlib.Path("warmup-identity.json").read_text())
+          if identity["cacheKey"] != os.environ["EXPERIMENT_KEY"]:
+              raise ValueError("Producer artifact identity differs")
+          if identity["commit"] != os.environ["GITHUB_SHA"]:
+              raise ValueError("Producer source differs")
+          if identity["toolchain"] != json.loads(pathlib.Path(os.environ["TOOLCHAIN_FILE"]).read_text()):
+              raise ValueError("Producer toolchain differs")
+          print(json.dumps(identity))
+          PY
+          test ! -e "$COMPILATION_PATH"
+          mkdir -p "$COMPILATION_PATH"
+          tar -xzf ios-compiler-cache.tar.gz -C "$COMPILATION_PATH"
+      - name: Build app and run every hosted test on a fresh runner
+        run: bash ios/scripts/run-ci-tests.sh
+      - name: Retain failed native results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-preboot-test-results-${{ inputs.label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
