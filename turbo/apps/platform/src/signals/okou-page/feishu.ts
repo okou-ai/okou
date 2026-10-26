@@ -371,6 +371,7 @@ export const uninstallFeishuInstallation$ = command(
           .botUninstalled;
       }),
     );
+    set(internalUninstallInstallationId$, null);
   },
 );
 

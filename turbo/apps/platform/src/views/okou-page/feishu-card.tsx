@@ -1906,10 +1906,7 @@ function FeishuUninstallDialog({ bot }: { bot: FeishuBotInstallation | null }) {
                 return;
               }
               detach(
-                (async () => {
-                  await uninstallInstallation(installationId, signal);
-                  setUninstallInstallationId(null);
-                })(),
+                uninstallInstallation(installationId, signal),
                 Reason.DomCallback,
               );
             }}
