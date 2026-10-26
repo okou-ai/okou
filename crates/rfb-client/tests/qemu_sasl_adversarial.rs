@@ -332,14 +332,71 @@ async fn valid_server_proof_cannot_override_rejected_security_result() {
     ));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn silent_sasl_peer_respects_absolute_deadline() {
-    assert!(matches!(
-        run(Peer::Silent, Duration::from_millis(200)).await,
-        Err(Error::AuthenticationDeadlineExceeded {
-            stage: AuthenticationStage::QemuScramAuthentication
-        })
+    let (roots, acceptor) = tls_fixture();
+    let (client, server) = tokio::io::duplex(64 * 1024);
+    let (ready_tx, mut ready_rx) = oneshot::channel();
+    let peer = tokio::spawn(peer(server, acceptor, Peer::Silent, Some(ready_tx)));
+    let mut authentication = std::pin::pin!(authenticate(
+        client,
+        NAME,
+        credentials(),
+        roots,
+        Instant::now() + Duration::from_millis(200),
     ));
+    let preparation_started = std::time::Instant::now();
+    loop {
+        tokio::select! {
+            biased;
+            result = &mut authentication => {
+                panic!("authentication completed before SASL readiness: {:?}", result.err());
+            }
+            ready = &mut ready_rx => {
+                ready.expect("peer must receive SASL client-start");
+                break;
+            }
+            // SASL uses spawn_blocking. Keep this paused runtime runnable so
+            // it cannot auto-advance the deadline while that work prepares.
+            () = tokio::task::yield_now() => {
+                assert!(
+                    preparation_started.elapsed() < Duration::from_secs(5),
+                    "SASL preparation must be bounded",
+                );
+            }
+        }
+    }
+
+    tokio::time::advance(Duration::from_millis(199)).await;
+    tokio::select! {
+        biased;
+        result = &mut authentication => {
+            panic!("SASL authentication completed before its deadline: {:?}", result.err());
+        }
+        () = tokio::task::yield_now() => {}
+    }
+    tokio::time::advance(Duration::from_millis(1)).await;
+    // Poll once at expiry: awaiting could auto-advance to a later deadline.
+    let result = std::future::poll_fn(|cx| {
+        let std::task::Poll::Ready(result) = authentication.as_mut().poll(cx) else {
+            panic!("ready SASL authentication must enforce its deadline");
+        };
+        std::task::Poll::Ready(result.map(|_| ()))
+    })
+    .await;
+    assert!(
+        matches!(
+            result,
+            Err(Error::AuthenticationDeadlineExceeded {
+                stage: AuthenticationStage::QemuScramAuthentication
+            })
+        ),
+        "unexpected SASL authentication result: {result:?}",
+    );
+    timeout(Duration::from_secs(2), peer)
+        .await
+        .expect("expired SASL authentication must close the peer")
+        .unwrap();
 }
 
 #[tokio::test]
