@@ -28,7 +28,6 @@ import {
   setupConnectedDiscordActor,
   type ConnectedDiscordActor,
 } from "./helpers/discord-fixture";
-import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -40,7 +39,6 @@ const READ = 1n << 16n;
 const THREAD_SEND = 1n << 38n;
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
   await removePublicDiscordBinding(context, actor.fixture);
-  await deleteFeatureSwitchesForUser(context, actor);
 });
 
 afterEach(async () => {

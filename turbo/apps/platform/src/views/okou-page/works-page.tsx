@@ -991,9 +991,7 @@ export function WorksPage() {
         <div className="mx-auto max-w-[900px] flex flex-col gap-4">
           <SlackCard displayName={displayName} />
           <TeamsCard displayName={displayName} />
-          {features[FeatureSwitchKey.DiscordIntegration] ? (
-            <DiscordCard />
-          ) : null}
+          <DiscordCard />
           <GithubCard />
           {feishuEnabled ? <FeishuCard /> : null}
           {features[FeatureSwitchKey.LarkIntegration] ? (

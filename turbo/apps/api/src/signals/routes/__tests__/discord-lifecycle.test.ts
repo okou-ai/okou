@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -17,7 +16,6 @@ import {
   createPublicDiscordBinding,
   type DiscordActor,
 } from "./helpers/discord";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -43,21 +41,12 @@ function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
 
-async function enable(user: DiscordActor) {
-  await updateFeatureSwitchesForUser(context, user, {
-    [FeatureSwitchKey.DiscordIntegration]: true,
-  });
-}
-
 test("removes a departed member's binding only in the affected organization", async () => {
   configureDiscordApp();
   const departing = actor();
   const peer = actor({ orgId: departing.orgId, orgRole: "org:member" });
   const elsewhere = actor({ userId: departing.userId, email: departing.email });
   mockDiscordMemberships(context, [departing, peer, elsewhere]);
-  await enable(departing);
-  await enable(peer);
-  await enable(elsewhere);
   const binding = await createPublicDiscordBinding(context, {
     ...departing,
     flow: "install",
@@ -126,9 +115,6 @@ test("user deletion retains the shared installation and a surviving peer's bindi
   const installer = actor();
   const peer = actor({ orgId: installer.orgId });
   mockDiscordMemberships(context, [installer, peer]);
-  for (const user of [installer, peer]) {
-    await enable(user);
-  }
   const binding = await createPublicDiscordBinding(context, {
     ...installer,
     flow: "install",

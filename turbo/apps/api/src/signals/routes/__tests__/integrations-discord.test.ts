@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -21,7 +20,6 @@ import {
   type DiscordActor,
   type DiscordFixture,
 } from "./helpers/discord";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -73,12 +71,6 @@ function client() {
   );
 }
 
-async function enable(value: DiscordActor): Promise<void> {
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.DiscordIntegration]: true,
-  });
-}
-
 async function fixture(
   value: DiscordActor,
   options: Partial<
@@ -88,7 +80,6 @@ async function fixture(
     >
   > & { readonly flow?: "install" | "connect" } = {},
 ): Promise<DiscordFixture> {
-  await enable(value);
   const binding = await track(
     createPublicDiscordBinding(context, {
       ...value,
@@ -156,9 +147,8 @@ describe("Discord server installation links", () => {
   const invite = "https://discord.gg/example";
   const guild = { id: "1559819014036000790", name: "New server" };
 
-  async function resolve(invitation: string) {
+  function resolve(invitation: string) {
     const owner = createActors().actor();
-    await enable(owner);
     return client().installLink({
       headers: authenticate(owner),
       body: { invite: invitation },
@@ -240,61 +230,43 @@ describe("Discord server installation links", () => {
     },
   );
 
-  it("requires authentication and the Discord feature switch", async () => {
+  it("requires authentication", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
     });
-    await accept(
+    const response = await accept(
       client().installLink({ headers: {}, body: { invite } }),
       [401],
     );
-    const owner = createActors().actor();
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.DiscordIntegration]: false,
-    });
-    const response = await accept(
-      client().installLink({ headers: authenticate(owner), body: { invite } }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("FORBIDDEN");
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 });
 
 describe("Discord installation link run access", () => {
-  it.each([true, false])(
-    "honors the run's captured Discord read capability without requiring a server binding (enabled: %s)",
-    async (enabled) => {
-      const { actor, restore } = createActors();
-      const owner = actor();
-      await updateFeatureSwitchesForUser(context, owner, {
-        [FeatureSwitchKey.DiscordIntegration]: enabled,
-      });
-      const profile = createAuthOrgAgentsBddApi(context).user(owner);
-      const run = await claimPublicDiscordTestRun(context, profile);
-      // Web runs can use the CLI, but must not receive Discord-only invite guidance.
-      expect(run.claim.appendSystemPrompt).not.toContain(
-        "okou discord install-link",
-      );
-      await enable(owner);
-      restore();
-      server.use(
-        http.get("https://discord.com/api/v10/invites/example", () => {
-          return HttpResponse.json({
-            type: 0,
-            guild: { id: "1559819014036000790", name: "New server" },
-          });
-        }),
-      );
-      const result = await client().installLink({
-        headers: run.headers,
-        body: { invite: "https://discord.gg/example" },
-      });
-      expect(result.status).toBe(enabled ? 200 : 403);
-      if (result.status === 403) {
-        expect(result.body.error.message).toContain("discord:read");
-      }
-    },
-  );
+  it("grants a run Discord installation link access without requiring a server binding", async () => {
+    const { actor, restore } = createActors();
+    const owner = actor();
+    const profile = createAuthOrgAgentsBddApi(context).user(owner);
+    const run = await claimPublicDiscordTestRun(context, profile);
+    // Web runs can use the CLI, but must not receive Discord-only invite guidance.
+    expect(run.claim.appendSystemPrompt).not.toContain(
+      "okou discord install-link",
+    );
+    restore();
+    server.use(
+      http.get("https://discord.com/api/v10/invites/example", () => {
+        return HttpResponse.json({
+          type: 0,
+          guild: { id: "1559819014036000790", name: "New server" },
+        });
+      }),
+    );
+    const result = await client().installLink({
+      headers: run.headers,
+      body: { invite: "https://discord.gg/example" },
+    });
+    expect(result.status).toBe(200);
+  });
 });
 
 describe("verified Discord integration settings", () => {
@@ -325,78 +297,6 @@ describe("verified Discord integration settings", () => {
     );
     expect(withoutOrganization.status).toBe(401);
     await expectDiscordChanges([]);
-  });
-
-  it("keeps configured bindings unavailable until their owner enables the feature", async () => {
-    const { actor, restore } = createActors();
-    const owner = actor();
-    await fixture(owner);
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.DiscordIntegration]: false,
-    });
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new Error("Clerk membership unavailable"),
-    );
-
-    await expect(status(owner)).resolves.toMatchObject({
-      isAvailable: false,
-      isConnected: false,
-      guildId: null,
-      discordUserId: null,
-      contextMode: "unavailable",
-      onboarding: "oauth",
-      dmBindings: [],
-    });
-    restore();
-    await expectDiscordChanges([]);
-  });
-
-  it("lets users remove Discord data after the feature is rolled back", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const installed = await fixture(owner);
-    const peer = actor({ orgId: owner.orgId });
-    await fixture(peer, { flow: "connect", guildId: installed.guildId });
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.DiscordIntegration]: false,
-    });
-    await updateFeatureSwitchesForUser(context, peer, {
-      [FeatureSwitchKey.DiscordIntegration]: false,
-    });
-    await expect(status(owner)).resolves.toMatchObject({
-      isAvailable: false,
-      isConnected: false,
-    });
-    await accept(
-      client().setDmSelection({
-        headers: authenticate(owner),
-        body: { connectionId: installed.connectionId },
-      }),
-      [404],
-    );
-
-    await accept(
-      client().disconnect({ headers: authenticate(owner), query: {} }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId]);
-    await accept(
-      client().disconnect({ headers: authenticate(owner), query: {} }),
-      [404],
-    );
-    await expectDiscordChanges([owner.userId]);
-
-    await enable(owner);
-    await enable(peer);
-    await expect(status(owner)).resolves.toMatchObject({
-      isAvailable: true,
-      isConnected: false,
-    });
-    await expect(status(peer)).resolves.toMatchObject({
-      isConnected: true,
-    });
   });
 
   it("reports existing bindings and unavailable context when app configuration is missing", async () => {
@@ -577,7 +477,6 @@ describe("verified Discord integration settings", () => {
     ]) {
       await registerMemberCache(cachedActor);
     }
-    await enable(unconnectedAdmin);
     await expect(status(unconnectedAdmin)).resolves.toMatchObject({
       isConnected: false,
     });

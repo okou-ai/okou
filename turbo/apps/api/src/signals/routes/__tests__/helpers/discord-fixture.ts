@@ -7,7 +7,6 @@ import {
   type DiscordGatewayEnvelope,
 } from "@okouai/api-contracts/contracts/discord-gateway";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -34,7 +33,6 @@ import {
   createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./discord";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
 export const DISCORD_TEST_APPLICATION_ID = "900000000000000001";
@@ -100,11 +98,6 @@ export async function setupConnectedDiscordActor(
     });
   }
   mockDiscordMemberships(context, [{ userId, orgId, orgRole: "org:admin" }]);
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId, orgId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.DiscordIntegration]: true },
-  );
   const fixture = await createPublicDiscordBinding(context, {
     flow: options.reuseOrganization ? "connect" : "install",
     userId,

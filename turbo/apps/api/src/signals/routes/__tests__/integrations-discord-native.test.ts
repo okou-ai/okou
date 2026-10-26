@@ -6,7 +6,6 @@ import { z } from "zod";
 import { integrationsDiscordReadContract } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -27,7 +26,6 @@ import {
 } from "./helpers/discord";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { claimPublicDiscordTestRun } from "./helpers/discord-run";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const API = "https://discord.com/api/v10";
@@ -46,8 +44,7 @@ function snowflake() {
 
 async function fixture(
   options: {
-    enabled?: boolean;
-    withoutDiscordCapabilities?: boolean;
+    sandboxToken?: boolean;
     runToken?: boolean;
     messageContent?: boolean;
   } = {},
@@ -72,11 +69,6 @@ async function fixture(
   mockEnv("DISCORD_APPLICATION_ID", botUserId);
   mockEnv("DISCORD_PUBLIC_KEY", "ab".repeat(32));
   mockEnv("DISCORD_GATEWAY_SECRET", "discord-gateway-test-secret-at-least-32");
-  await updateFeatureSwitchesForUser(
-    context,
-    { orgId, userId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.DiscordIntegration]: true },
-  );
   mockDiscordMemberships(context, [{ orgId, userId }]);
   await createPublicDiscordBinding(context, {
     flow: "install",
@@ -90,21 +82,16 @@ async function fixture(
   const auth = createAuthOrgAgentsBddApi(context);
   const actor = { ...auth.user({ orgId, userId }), orgId };
   let headers: { authorization: string };
-  if (options.runToken || options.withoutDiscordCapabilities) {
-    if (options.withoutDiscordCapabilities) {
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.DiscordIntegration]: false,
-      });
-    }
-    headers = (await claimPublicDiscordTestRun(context, actor)).headers;
+  if (options.runToken || options.sandboxToken) {
+    const run = await claimPublicDiscordTestRun(context, actor);
+    headers = options.sandboxToken
+      ? { authorization: `Bearer ${run.claim.sandboxToken}` }
+      : run.headers;
   } else {
     const { token } = await auth.createCliToken(actor);
     headers = { authorization: `Bearer ${token}` };
   }
   mockDiscordMemberships(context, [{ orgId, userId }]);
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.DiscordIntegration]: options.enabled ?? true,
-  });
   const author = { id: discordUserId, username: "sender" };
   const botAuthor = { id: botUserId, username: "Okou", bot: true };
   const channels = new Map<string, DiscordChannel>([
@@ -302,11 +289,6 @@ async function bindAnotherOrganization(f: Fixture, runToken = false) {
       context.signal,
     );
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { orgId, userId: f.userId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.DiscordIntegration]: true },
-  );
   mockDiscordMemberships(context, [
     { orgId: f.orgId, userId: f.userId },
     { orgId, userId: f.userId },
@@ -904,11 +886,8 @@ describe("Discord native authorization and reads", () => {
     );
   });
 
-  it("enforces the disabled switch and token capabilities for reads and writes", async () => {
-    const f = await fixture({ enabled: false });
-    await accept(history(f), [403]);
-    await accept(send(f), [403]);
-    const limited = await fixture({ withoutDiscordCapabilities: true });
+  it("requires native read and write capabilities for sandbox requests", async () => {
+    const limited = await fixture({ sandboxToken: true });
     expect(
       (await accept(history(limited), [403])).body.error.message,
     ).toContain("discord:read");
@@ -1154,7 +1133,7 @@ describe("Discord native sends and transport failures", () => {
     ).toHaveLength(1);
   });
 
-  it.each(["binding", "feature", "channel"] as const)(
+  it.each(["binding", "channel"] as const)(
     "rechecks %s access after a rate limit before resending",
     async (revoked) => {
       const f = await fixture();
@@ -1176,12 +1155,6 @@ describe("Discord native sends and transport failures", () => {
                   query: {},
                 }),
                 [200],
-              );
-            } else if (revoked === "feature") {
-              await updateFeatureSwitchesForUser(
-                context,
-                { orgId: f.orgId, userId: f.userId, orgRole: "org:admin" },
-                { [FeatureSwitchKey.DiscordIntegration]: false },
               );
             } else {
               f.channels.get(f.channelId)!.permission_overwrites = [
