@@ -109,14 +109,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // Preserve the maintainer's access outside the staff organization.
     enabledUserHashes: ["032a75d8", "35679123"],
   },
-  [FeatureSwitchKey.ChatResourcePanel]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat resources",
-    description:
-      "Show a responsive panel of outputs and links from the current chat.",
-    enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ThreadEmailManager]: {
     maintainer: "yuma@okou.ai",
     displayName: "Thread email manager",
@@ -175,19 +167,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
     enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.CustomTemplates]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Custom templates",
-    description:
-      "Templates compiled from uploaded files, available in their own catalog and the composer slash menu.",
-    enabled: true,
-    // Retain the staff and maintainer rollout for a global-default rollback.
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    // Kept beside the org so the maintainer keeps the feature while signed
-    // into a customer workspace, where the org hash does not apply.
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
@@ -487,12 +466,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.GoogleDocsSheetsConversion]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Create editable Google Docs and Sheets from document and spreadsheet previews, preserving CSV and TSV fields as text.",
-    enabled: true,
   },
 };
 

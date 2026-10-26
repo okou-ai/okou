@@ -397,7 +397,6 @@
       "manage": "管理",
       "mobile": {
         "invite": "邀請",
-        "openArtifacts": "開啟成果面板",
         "openAutomations": "開啟自動化面板",
         "openMenu": "開啟選單"
       },
@@ -674,7 +673,6 @@
       "previewSlide": "預覽第 {{slideNumber}} 頁",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previousSlide": "預覽上一頁",
-      "renameImportedTemplate": "重新命名模板",
       "searchConnector": "搜尋模板",
       "searchConnectors": "搜尋模板",
       "selectStyle": "選擇風格 {{style}}",
@@ -713,9 +711,7 @@
       "use": "使用",
       "useThisTemplate": "使用這個模板",
       "visibility": {
-        "changeLabel": "修改模板可見範圍",
-        "privateState": "只有你能看到和使用",
-        "workspaceState": "這個工作區裡的所有人都能使用"
+        "changeLabel": "修改模板可見範圍"
       },
       "website": "網站",
       "websitePreview": "{{title}} 網站模板預覽",
@@ -2894,8 +2890,6 @@
         "website": "網站",
         "workflow": "工作流"
       },
-      "importedLoadFailed": "無法載入已上傳的模板。",
-      "importedUnavailable": "已上傳的模板暫時不可用。",
       "previewTemplate": "預覽模板 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previewWorkflow": "預覽工作流模板 {{title}}",
@@ -2926,7 +2920,6 @@
       },
       "noEmojiFound": "沒有找到表情",
       "notFound": "找不到該聊天會話",
-      "openArtifacts": "開啟成果",
       "openBrowser": "開啟瀏覽器",
       "openNamedAgent": "開啟智能體 {{name}}",
       "openNamedChat": "開啟聊天 {{title}}",

@@ -397,7 +397,6 @@
       "manage": "Verwalten",
       "mobile": {
         "invite": "Einladen",
-        "openArtifacts": "Artefakte auf dem Mobilgerät öffnen",
         "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen",
         "openMenu": "Menü öffnen"
       },
@@ -675,7 +674,6 @@
       "previewSlide": "Vorschaufolie {{slideNumber}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previousSlide": "Vorschau der vorherigen Folie",
-      "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
       "selectStyle": "Stil auswählen {{style}}",
@@ -714,9 +712,7 @@
       "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
       "visibility": {
-        "changeLabel": "Sichtbarkeit der Vorlage ändern",
-        "privateState": "Nur du kannst sie sehen und verwenden",
-        "workspaceState": "Alle in diesem Arbeitsbereich können sie verwenden"
+        "changeLabel": "Sichtbarkeit der Vorlage ändern"
       },
       "website": "Webseite",
       "websitePreview": "{{title}} Vorschau der Website-Vorlage",
@@ -2905,8 +2901,6 @@
         "website": "Webseite",
         "workflow": "Workflow"
       },
-      "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
-      "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
       "previewTemplate": "Vorschauvorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previewWorkflow": "Vorschau der Workflow-Vorlage {{title}}",
@@ -2937,7 +2931,6 @@
       },
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
-      "openArtifacts": "Artefakte öffnen",
       "openBrowser": "Browser öffnen",
       "openNamedAgent": "Agent {{name}} öffnen",
       "openNamedChat": "Chat {{title}} öffnen",

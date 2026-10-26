@@ -397,7 +397,6 @@
       "manage": "प्रबंधित करें",
       "mobile": {
         "invite": "आमंत्रित करें",
-        "openArtifacts": "मोबाइल आर्टिफ़ैक्ट्स खोलें",
         "openAutomations": "मोबाइल ऑटोमेशन खोलें",
         "openMenu": "मेनू खोलें"
       },
@@ -675,7 +674,6 @@
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
@@ -714,9 +712,7 @@
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
-        "changeLabel": "टेम्पलेट की दृश्यता बदलें",
-        "privateState": "केवल आप इसे देख और उपयोग कर सकते हैं",
-        "workspaceState": "इस वर्कस्पेस में कोई भी इसका उपयोग कर सकता है"
+        "changeLabel": "टेम्पलेट की दृश्यता बदलें"
       },
       "website": "वेबसाइट",
       "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
@@ -2905,8 +2901,6 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
-      "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
-      "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
@@ -2937,7 +2931,6 @@
       },
       "noEmojiFound": "कोई इमोजी नहीं मिला",
       "notFound": "चैट थ्रेड नहीं मिला",
-      "openArtifacts": "आर्टिफ़ैक्ट खोलें",
       "openBrowser": "खुला ब्राउज़र",
       "openNamedAgent": "ओपन एजेंट {{name}}",
       "openNamedChat": "चैट {{title}} खोलें",

@@ -9,7 +9,6 @@ import {
   Plug,
 } from "lucide-react";
 import { Button, cn, RunningIndicator } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   ChatRelationMessage,
   RelatedChat,
@@ -26,7 +25,6 @@ import {
 } from "../../i18n/format.ts";
 import { messageDocumentToDisplayText } from "../../signals/okou-page/user-message-document-codec.ts";
 import { chatThreadMetaMap$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 import {
@@ -56,9 +54,8 @@ function useAgentOrigin(thread: ChatPanelSignals): AgentSourcePart | null {
 // sources outside Okou keep a section of their own.
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const origin = useGet(thread.relations.origin$);
-  if (!enabled || origin?.kind !== "source" || origin.part.kind === "agent") {
+  if (origin?.kind !== "source" || origin.part.kind === "agent") {
     return null;
   }
   const part = origin.part;
@@ -459,7 +456,11 @@ function UnlistedOriginRow({ part }: { readonly part: AgentSourcePart }) {
   );
 }
 
-function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
+export function ChatRelationships({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
   const chatsId = `${thread.threadId}-resource-chats`;
   const { t } = useTranslation();
   const signals = thread.relations;
@@ -537,14 +538,4 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
       )}
     </section>
   );
-}
-
-export function ChatRelationships({
-  thread,
-}: {
-  readonly thread: ChatPanelSignals;
-}) {
-  return useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel] ? (
-    <RelationshipsInner thread={thread} />
-  ) : null;
 }

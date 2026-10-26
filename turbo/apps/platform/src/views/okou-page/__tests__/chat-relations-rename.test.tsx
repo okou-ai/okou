@@ -1,7 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import {
   chatThreadRenameContract,
@@ -133,7 +132,6 @@ async function setupRelationships({
     context,
     ...workspace.pageOptions,
     path: `/chats/${parent.id}?sidebar=${child.id}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   // Both panes open their resources; the child's lists the parent with From.
   const panel = await waitFor(() => {

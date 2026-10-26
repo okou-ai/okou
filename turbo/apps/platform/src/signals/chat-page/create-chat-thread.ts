@@ -1430,23 +1430,14 @@ function createArtifacts(threadId: string) {
   const resourceCatalog = createArtifactCatalogSignals({
     chatThreadId: threadId,
   });
-  const internalArtifactsReload$ = state(0);
   const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
-    get(internalArtifactsReload$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
     const result = await accept(client.list({ params: { threadId } }), [200]);
     return result.body.runs;
   });
 
-  const reloadArtifacts$ = command(({ set }) => {
-    set(resourceCatalog.reload$);
-    set(internalArtifactsReload$, (version) => {
-      return version + 1;
-    });
-  });
   return {
     artifacts$,
-    reloadArtifacts$,
     resourceCatalog,
   };
 }
@@ -3871,6 +3862,5 @@ export function createChatPanelSignals(
     subscribeChatThread$: runTracking.subscribeChatThread$,
     ...createThinkingIndicatorSignals(),
     artifacts$: messages.artifacts$,
-    reloadArtifacts$: messages.reloadArtifacts$,
   };
 }

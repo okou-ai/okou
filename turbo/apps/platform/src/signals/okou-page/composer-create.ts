@@ -1,7 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 import type { ComposerUiSignalGroups } from "./chat-composer.ts";
 
@@ -62,12 +60,7 @@ export function createComposerCreateSignals(
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
   const mode$ = computed((get) => {
-    const mode = get(internalMode$);
-    return mode === "document" &&
-      get(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] !== true &&
-      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] !== true
-      ? null
-      : mode;
+    return get(internalMode$);
   });
   const setMode$ = command(
     ({ set }, mode: ComposerCreateMode | null, focus = true) => {

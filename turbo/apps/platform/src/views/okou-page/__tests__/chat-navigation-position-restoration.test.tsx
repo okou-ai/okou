@@ -4,7 +4,6 @@ import { expect, test, describe, beforeEach, it } from "vitest";
 
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
@@ -785,7 +784,6 @@ test("Follow the Resources origin link to its parent run", async () => {
     context,
     host: APP_HOST,
     path: `/chats/${peerId}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await waitForThreadMessage(peerId, "Child message 1");
   click(buttonNamed("Resources"));

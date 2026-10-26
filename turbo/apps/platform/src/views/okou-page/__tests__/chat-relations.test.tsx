@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatRelationsContract,
   type ChatCommunication,
@@ -159,7 +158,6 @@ function installRelationsGeometry(narrow = false) {
 async function setupRelations(
   options: {
     readonly events?: MockChatEventInput[];
-    readonly enabled?: boolean;
     readonly narrow?: boolean;
     readonly mock?: () => void;
   } = {},
@@ -179,9 +177,6 @@ async function setupRelations(
   await setupPage({
     context,
     path: `/chats/${THREAD}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatResourcePanel]: options.enabled ?? true,
-    },
   });
 }
 
@@ -292,9 +287,6 @@ test("Draw the next chat's panel only once its relationships answer", async () =
     context,
     ...workspace.pageOptions,
     path: `/chats/${first.id}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatResourcePanel]: true,
-    },
   });
   const previous = await screen.findByRole("region", { name: "Resources" });
   click((await within(previous).findByText("Next related chat")).closest("a")!);
@@ -637,20 +629,6 @@ test("Keep other sections visible when a relationship list fails", async () => {
   await expect(
     within(panel).findByText("Existing planning chat"),
   ).resolves.toBeInTheDocument();
-});
-
-test("Keep resources and relationships hidden while chat resources are disabled", async () => {
-  await setupRelations({ enabled: false });
-  await screen.findByText("Plan the launch");
-  expect(
-    screen.queryByRole("region", { name: "Resources" }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("region", { name: "Chats" }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("region", { name: "From" }),
-  ).not.toBeInTheDocument();
 });
 
 test("Show artifacts without an empty related chats section", async () => {

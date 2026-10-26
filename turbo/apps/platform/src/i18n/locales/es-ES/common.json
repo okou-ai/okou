@@ -411,7 +411,6 @@
       "manage": "Gestionar",
       "mobile": {
         "invite": "Invitar",
-        "openArtifacts": "Abrir artefactos en móvil",
         "openAutomations": "Abrir automatizaciones en móvil",
         "openMenu": "Abrir menú"
       },
@@ -692,7 +691,6 @@
       "previewSlide": "Vista previa de la diapositiva {{slideNumber}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
       "previousSlide": "Vista previa de la diapositiva anterior",
-      "renameImportedTemplate": "Cambiar nombre de la plantilla",
       "searchConnector": "Buscar plantillas",
       "searchConnectors": "Buscar plantillas",
       "selectStyle": "Selecciona el estilo {{style}}",
@@ -731,9 +729,7 @@
       "use": "Usar",
       "useThisTemplate": "Usa esta plantilla",
       "visibility": {
-        "changeLabel": "Cambiar la visibilidad de la plantilla",
-        "privateState": "Solo tú puedes verla y usarla",
-        "workspaceState": "Cualquier persona de este espacio de trabajo puede usarla"
+        "changeLabel": "Cambiar la visibilidad de la plantilla"
       },
       "website": "Sitio web",
       "websitePreview": "Vista previa de la plantilla de sitio web {{title}}",
@@ -2951,8 +2947,6 @@
         "website": "Sitio web",
         "workflow": "Flujo de trabajo"
       },
-      "importedLoadFailed": "No se pudieron cargar las plantillas subidas.",
-      "importedUnavailable": "Las plantillas subidas no están disponibles temporalmente.",
       "previewTemplate": "Plantilla de vista previa {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
       "previewWorkflow": "Vista previa de la plantilla de flujo de trabajo {{title}}",
@@ -2983,7 +2977,6 @@
       },
       "noEmojiFound": "No se ha encontrado ningún emoji",
       "notFound": "Hilo de chat no encontrado",
-      "openArtifacts": "Abrir artefactos",
       "openBrowser": "Abrir navegador",
       "openNamedAgent": "Abrir agente {{name}}",
       "openNamedChat": "Abrir chat {{title}}",

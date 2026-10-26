@@ -3,11 +3,6 @@ import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx"
 import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
 import { Combobox } from "@base-ui/react/combobox";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import {
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuRadioItemIndicator,
-} from "@okouai/ui/components/ui/dropdown-menu";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
@@ -48,7 +43,6 @@ import type {
   UserTemplateCatalogEntry,
   UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   type IllustrationTemplateItem,
@@ -57,7 +51,6 @@ import {
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
   type PresentationTemplateItem,
 } from "@okouai/core/presentation-template-items";
-import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import {
   WEBSITE_TEMPLATE_ITEMS,
@@ -130,7 +123,6 @@ import {
   Image as ImageIcon,
   LayoutTemplate,
   Loader2,
-  Lock,
   Mic,
   Monitor,
   Paperclip,
@@ -145,7 +137,6 @@ import {
   Trash2,
   User,
   UserCheck,
-  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -170,7 +161,6 @@ import {
   connectorCatalogStatus$,
   withConnectorCompletion,
 } from "../../signals/external/connectors.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import {
@@ -204,16 +194,6 @@ import {
   IMAGE_TEMPLATE_IMPORT_ACCEPT,
   importPresentationTemplateDeck$,
 } from "../../signals/okou-page/presentation-template-import.ts";
-import type {
-  ImportedPresentationTemplateImageBuffers,
-  ImportedPresentationTemplateImageSignals,
-  ImportedPresentationTemplateImageSlot,
-  ImportedPresentationTemplateImageState,
-  ImportedPresentationTemplateLoadedImage,
-  ImportedPresentationTemplatePickerItem,
-  PresentationTemplateDetail,
-  PresentationTemplateSummary,
-} from "../../signals/okou-page/presentation-template-library.ts";
 import {
   defaultBuiltinConnectorAccountOptions,
   defaultCustomConnectorAccountOptions,
@@ -307,12 +287,9 @@ import {
   TEMPLATE_DETAIL_FOOTER,
   TEMPLATE_DETAIL_GRID,
   TEMPLATE_DETAIL_STAGE,
-  TemplateDetailAccess,
-  TemplateDetailDeleteButton,
   TemplateDetailFilmstrip,
   TemplateDetailSideColumn,
   TemplateDetailStageControls,
-  TemplateDetailTitle,
 } from "./template-detail-layout.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
@@ -376,7 +353,6 @@ const TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE = {
 const PRESENTATION_GALLERY_PREVIEW_BASE_URL =
   "https://static.okou.io/web/assets/presentation-gallery/2026-07-04";
 const PRESENTATION_GALLERY_SLIDE_COUNT = 15;
-const IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT = 16;
 const ILLUSTRATION_EAGER_IMAGE_COUNT = 24;
 const ILLUSTRATION_CARD_PREVIEW_SIZE = {
   width: 1024,
@@ -671,18 +647,6 @@ function isSelectedPresentationTemplate(
     value?.type === "presentation" &&
     value.selection.templateId === item.templateId
   );
-}
-
-function toImportedPresentationGenerationTemplate(
-  template: PresentationTemplateSummary,
-): GenerationTemplateRequest {
-  return {
-    type: "presentation",
-    selection: {
-      templateId: formatUserPresentationTemplateId(template.id),
-      ...(template.coverUrl === null ? {} : { previewUrl: template.coverUrl }),
-    },
-  };
 }
 
 function selectedPresentationTemplateItem(
@@ -2921,13 +2885,9 @@ function IllustrationTemplateCard({
 
 function TemplatePickerCategoryNav({
   selectedCategory,
-  customTemplatesEnabled,
-  documentTemplatesEnabled,
   onChange,
 }: {
   selectedCategory: string;
-  customTemplatesEnabled: boolean;
-  documentTemplatesEnabled: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -2943,17 +2903,13 @@ function TemplatePickerCategoryNav({
       }),
       Icon: Presentation,
     },
-    ...(documentTemplatesEnabled || customTemplatesEnabled
-      ? [
-          {
-            value: "document",
-            label: t(($) => {
-              return $.documentTemplates.title;
-            }),
-            Icon: FileText,
-          },
-        ]
-      : []),
+    {
+      value: "document",
+      label: t(($) => {
+        return $.documentTemplates.title;
+      }),
+      Icon: FileText,
+    },
     {
       value: "website",
       label: t(($) => {
@@ -2964,9 +2920,7 @@ function TemplatePickerCategoryNav({
     {
       value: "illustration",
       label: t(($) => {
-        return customTemplatesEnabled
-          ? $.artifacts.kinds.image
-          : $.artifacts.templates.illustration;
+        return $.artifacts.kinds.image;
       }),
       Icon: ImageIcon,
     },
@@ -3323,1039 +3277,6 @@ export function TemplateImportCard({
   );
 }
 
-function importedPresentationTemplateSlideIndex(
-  event: ReactMouseEvent<HTMLDivElement>,
-  slideCount: number,
-): number | null {
-  if (slideCount < 2) {
-    return null;
-  }
-  const rect = event.currentTarget.getBoundingClientRect();
-  if (rect.width <= 0) {
-    return null;
-  }
-  const offsetX = Math.min(
-    rect.width - 1,
-    Math.max(0, event.clientX - rect.left),
-  );
-  return Math.min(
-    slideCount - 1,
-    Math.round((offsetX / rect.width) * (slideCount - 1)),
-  );
-}
-
-function ImportedPptCardMediaControls({
-  template,
-  selected,
-  loading,
-  onPreview,
-  previewRef,
-  onSelect,
-}: {
-  template: PresentationTemplateSummary;
-  selected: boolean;
-  loading: boolean;
-  onPreview: () => void;
-  previewRef: RefCallback<HTMLButtonElement>;
-  onSelect: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <>
-      <TooltipTrigger
-        render={
-          <button
-            ref={previewRef}
-            data-template-preview-id={`imported:${template.id}`}
-            type="button"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.previewCurrentSlide;
-              },
-              { title: template.title },
-            )}
-            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
-            onClick={onPreview}
-          />
-        }
-      />
-      <div className={TEMPLATE_TILE_SCRIM} />
-      {selected ? (
-        <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <Check size={14} />
-        </span>
-      ) : null}
-      <button
-        type="button"
-        aria-label={t(
-          ($) => {
-            return $.artifacts.templates.selectTemplate;
-          },
-          { title: template.title },
-        )}
-        aria-pressed={selected}
-        className={TEMPLATE_TILE_USE}
-        onClick={onSelect}
-      >
-        {t(($) => {
-          return $.artifacts.templates.use;
-        })}
-      </button>
-      {loading ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-0.5 overflow-hidden bg-muted">
-          <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function importedPptImageVariant(
-  imageUrl: string | null,
-  size: TemplatePreviewImageSize,
-): string | null {
-  return imageUrl === null ? null : r2ImageTransformUrl(imageUrl, size);
-}
-
-const IMPORTED_PPT_IMAGE_SLOTS = ["a", "b"] as const;
-
-function importedPptImageLoadMatches(
-  image: ImportedPresentationTemplateLoadedImage | null,
-  desiredUrl: string,
-  sourceUrl: string,
-): boolean {
-  return image?.desiredUrl === desiredUrl && image.sourceUrl === sourceUrl;
-}
-
-function importedPptImageLoadFailed(
-  failedImages: readonly ImportedPresentationTemplateLoadedImage[],
-  desiredUrl: string,
-  sourceUrl: string,
-): boolean {
-  return failedImages.some((image) => {
-    return importedPptImageLoadMatches(image, desiredUrl, sourceUrl);
-  });
-}
-
-function importedPptImageCandidateSource(
-  state: ImportedPresentationTemplateImageState,
-  desiredUrl: string | null,
-  desiredSourceUrl: string | null,
-  previewSourceUrl: string | null,
-): string | null {
-  if (
-    desiredUrl === null ||
-    desiredSourceUrl === null ||
-    importedPptImageLoadMatches(state.active, desiredUrl, desiredSourceUrl)
-  ) {
-    return null;
-  }
-  const resolvedPreviewSourceUrl = previewSourceUrl ?? desiredSourceUrl;
-  if (state.active === null && resolvedPreviewSourceUrl !== desiredSourceUrl) {
-    return importedPptImageLoadFailed(
-      state.failed,
-      desiredUrl,
-      resolvedPreviewSourceUrl,
-    )
-      ? null
-      : resolvedPreviewSourceUrl;
-  }
-  return importedPptImageLoadFailed(state.failed, desiredUrl, desiredSourceUrl)
-    ? null
-    : desiredSourceUrl;
-}
-
-function importedPptImageForSlot({
-  active,
-  candidateSourceUrl,
-  candidateSlot,
-  desiredUrl,
-  slot,
-}: {
-  readonly active: ImportedPresentationTemplateLoadedImage | null;
-  readonly candidateSourceUrl: string | null;
-  readonly candidateSlot: ImportedPresentationTemplateImageSlot;
-  readonly desiredUrl: string | null;
-  readonly slot: ImportedPresentationTemplateImageSlot;
-}): ImportedPresentationTemplateLoadedImage | null {
-  if (active?.slot === slot) {
-    return active;
-  }
-  if (
-    candidateSourceUrl === null ||
-    desiredUrl === null ||
-    candidateSlot !== slot
-  ) {
-    return null;
-  }
-  return { desiredUrl, sourceUrl: candidateSourceUrl, slot };
-}
-
-function ImportedPptImage({
-  className,
-  fetchPriority,
-  imageSignals,
-  label,
-  loading,
-  placeholder,
-  previewSize,
-  size,
-}: {
-  readonly className: string;
-  readonly fetchPriority: "auto" | "high" | "low";
-  readonly imageSignals: ImportedPresentationTemplateImageSignals;
-  readonly label: string;
-  readonly loading: "eager" | "lazy";
-  readonly placeholder?: ReactNode;
-  readonly previewSize?: TemplatePreviewImageSize;
-  readonly size: TemplatePreviewImageSize;
-}) {
-  const desiredUrl = useLastResolved(imageSignals.desiredUrl$) ?? null;
-  const pageSignal = useGet(pageSignal$);
-  const state = useGet(imageSignals.state$);
-  const commitLoadedImage = useSet(imageSignals.commitLoadedImage$);
-  const failImageLoad = useSet(imageSignals.failImageLoad$);
-  const desiredSourceUrl = importedPptImageVariant(desiredUrl, size);
-  const previewSourceUrl = importedPptImageVariant(
-    desiredUrl,
-    previewSize ?? size,
-  );
-  const active = desiredUrl === null ? null : state.active;
-  const candidateSourceUrl = importedPptImageCandidateSource(
-    state,
-    desiredUrl,
-    desiredSourceUrl,
-    previewSourceUrl,
-  );
-  const candidateSlot = active?.slot === "a" ? "b" : "a";
-  const placeholderState =
-    active !== null
-      ? "hidden"
-      : desiredUrl === null || candidateSourceUrl === null
-        ? "error"
-        : "loading";
-  return (
-    <>
-      {IMPORTED_PPT_IMAGE_SLOTS.map((slot) => {
-        const image = importedPptImageForSlot({
-          active,
-          candidateSourceUrl,
-          candidateSlot,
-          desiredUrl,
-          slot,
-        });
-        const isActive = active?.slot === slot;
-        const isInitialCandidate = active === null && image !== null;
-        return (
-          <img
-            key={`${slot}:${image?.desiredUrl ?? "empty"}:${image?.sourceUrl ?? "empty"}`}
-            src={image?.sourceUrl}
-            alt={isActive || isInitialCandidate ? label : ""}
-            aria-hidden={isActive || isInitialCandidate ? undefined : "true"}
-            data-imported-presentation-template-image={slot}
-            data-active={isActive ? "true" : "false"}
-            data-loaded-image-url={isActive ? active.sourceUrl : undefined}
-            loading={loading}
-            decoding="async"
-            fetchPriority={fetchPriority}
-            draggable={false}
-            className={cn(
-              className,
-              "opacity-0 data-[active=true]:opacity-100",
-            )}
-            onLoad={(event) => {
-              if (image !== null && event.currentTarget.isConnected) {
-                detach(
-                  commitLoadedImage(image, pageSignal),
-                  Reason.DomCallback,
-                );
-              }
-            }}
-            onError={(event) => {
-              if (image !== null && event.currentTarget.isConnected) {
-                detach(failImageLoad(image, pageSignal), Reason.DomCallback);
-              }
-            }}
-          />
-        );
-      })}
-      {/* While the page image loads the frame stays empty; the glyph only
-          marks an image that could not be loaded. */}
-      {placeholder === undefined ? null : (
-        <div
-          hidden={placeholderState === "hidden"}
-          data-imported-presentation-template-image-placeholder=""
-          data-state={placeholderState}
-          className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-muted/60 text-muted-foreground"
-        >
-          {placeholderState === "error" ? placeholder : null}
-        </div>
-      )}
-    </>
-  );
-}
-
-function ImportedPptCardMedia({
-  template,
-  selected,
-  activeSlideIndex,
-  slideCount,
-  imageSignals,
-  loading,
-  label,
-  onRequestDetail,
-  onHover,
-  onPreview,
-  previewRef,
-  onSelect,
-}: {
-  template: PresentationTemplateSummary;
-  selected: boolean;
-  activeSlideIndex: number;
-  slideCount: number;
-  imageSignals: ImportedPresentationTemplateImageSignals;
-  loading: boolean;
-  label: string;
-  onRequestDetail: () => void;
-  onHover: (index: number | null) => void;
-  onPreview: () => void;
-  previewRef: RefCallback<HTMLButtonElement>;
-  onSelect: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        TEMPLATE_TILE_SELECTION_FRAME,
-        TEMPLATE_TILE_PREVIEW_FOCUS,
-        selected && TEMPLATE_TILE_SELECTED,
-      )}
-    >
-      <div
-        data-imported-presentation-template-media=""
-        className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}
-        onMouseEnter={() => {
-          onRequestDetail();
-          onHover(0);
-        }}
-        onMouseMove={(event) => {
-          const nextIndex = importedPresentationTemplateSlideIndex(
-            event,
-            slideCount,
-          );
-          if (nextIndex !== null && nextIndex !== activeSlideIndex) {
-            onHover(nextIndex);
-          }
-        }}
-        onMouseLeave={() => {
-          onHover(null);
-        }}
-      >
-        <ImportedPptImage
-          imageSignals={imageSignals}
-          label={label}
-          loading="eager"
-          fetchPriority="high"
-          size={TEMPLATE_CARD_PREVIEW_SIZE}
-          placeholder={<ImageIcon size={24} aria-hidden="true" />}
-          className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-        />
-        <ImportedPptCardMediaControls
-          template={template}
-          selected={selected}
-          loading={loading}
-          onPreview={onPreview}
-          previewRef={previewRef}
-          onSelect={onSelect}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ImportedPptCardCaption({
-  template,
-}: {
-  template: PresentationTemplateSummary;
-}) {
-  return (
-    <div className={TEMPLATE_TILE_CAPTION}>
-      <TooltipTrigger
-        render={
-          <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-            {template.title}
-          </p>
-        }
-      />
-    </div>
-  );
-}
-
-function ImportedPptCard({
-  imageSignals,
-  template,
-  selected,
-  onSelect,
-  onPreview,
-  signals,
-}: {
-  imageSignals: ImportedPresentationTemplateImageSignals;
-  template: PresentationTemplateSummary;
-  selected: boolean;
-  onSelect: (template: PresentationTemplateSummary) => void;
-  onPreview: (templateId: string, slideIndex: number) => void;
-  signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const restorePreviewTrigger = useSet(
-    signals.template.restoreTemplatePreviewTriggerRef$,
-  );
-  const detailLoadable = useLoadable(
-    signals.template.importedPresentationTemplateDetail$,
-  );
-  const requestedTemplateId = useGet(
-    signals.template.importedPresentationTemplateRequestedId$,
-  );
-  const hover = useGet(signals.template.importedPresentationTemplateCardHover$);
-  const requestDetail = useSet(
-    signals.template.requestImportedPresentationTemplateDetail$,
-  );
-  const setHover = useSet(
-    signals.template.setImportedPresentationTemplateCardHover$,
-  );
-  const detail =
-    detailLoadable.state === "hasData" &&
-    detailLoadable.data?.id === template.id
-      ? detailLoadable.data
-      : null;
-  const slideCount = Math.max(1, detail?.pageUrls.length ?? template.pageCount);
-  const activeSlideIndex = Math.max(
-    0,
-    Math.min(
-      hover?.templateId === template.id ? hover.index : 0,
-      slideCount - 1,
-    ),
-  );
-  const loading =
-    requestedTemplateId === template.id && detailLoadable.state === "loading";
-  const label = t(
-    ($) => {
-      return $.artifacts.templates.slidePreview;
-    },
-    {
-      title: template.title,
-    },
-  );
-  const setCardHover = (index: number | null) => {
-    setHover(index === null ? null : { templateId: template.id, index });
-  };
-  return (
-    <PresentationTemplateTitleTooltip title={template.title}>
-      <div
-        className={TEMPLATE_TILE_WRAPPER}
-        data-imported-presentation-template={template.id}
-      >
-        <ImportedPptCardMedia
-          previewRef={restorePreviewTrigger}
-          template={template}
-          selected={selected}
-          activeSlideIndex={activeSlideIndex}
-          slideCount={slideCount}
-          imageSignals={imageSignals}
-          loading={loading}
-          label={label}
-          onRequestDetail={() => {
-            requestDetail(template.id);
-          }}
-          onHover={setCardHover}
-          onPreview={() => {
-            onPreview(template.id, activeSlideIndex);
-          }}
-          onSelect={() => {
-            onSelect(template);
-          }}
-        />
-        <ImportedPptCardCaption template={template} />
-      </div>
-    </PresentationTemplateTitleTooltip>
-  );
-}
-
-/** A name wraps across lines on screen but is stored as one. */
-const IMPORTED_TEMPLATE_VISIBILITY_OPTIONS = [
-  { value: "private", Icon: Lock },
-  { value: "public", Icon: Users },
-] as const;
-
-/**
- * Visibility for an imported deck, stated as its consequence rather than as a
- * setting: a template is only ever "mine" or "everyone's here", so the two
- * words that name those states carry less than the one sentence that says what
- * they do. The sentence stays on screen and the picker moves behind `Change`,
- * because reading the current state is the common act and switching it is not.
- */
-function ImportedPresentationTemplateVisibilityControl({
-  templateId,
-  visibility,
-  updating,
-  onChange,
-}: {
-  templateId: string;
-  visibility: PresentationTemplateSummary["visibility"];
-  updating: boolean;
-  onChange: (visibility: PresentationTemplateSummary["visibility"]) => void;
-}) {
-  const { t } = useTranslation();
-  const descriptionId = `imported-template-${templateId}-visibility`;
-  const optionLabel = (value: PresentationTemplateSummary["visibility"]) => {
-    return value === "private"
-      ? t(($) => {
-          return $.workflows.common.private;
-        })
-      : t(($) => {
-          return $.settings.dialog.groups.workspace;
-        });
-  };
-  const optionState = (value: PresentationTemplateSummary["visibility"]) => {
-    return value === "private"
-      ? t(($) => {
-          return $.artifacts.templates.visibility.privateState;
-        })
-      : t(($) => {
-          return $.artifacts.templates.visibility.workspaceState;
-        });
-  };
-  return (
-    <TemplateDetailAccess
-      icon={visibility === "private" ? Lock : Users}
-      level={optionLabel(visibility)}
-      consequence={optionState(visibility)}
-      disabled={updating}
-      triggerLabel={t(($) => {
-        return $.artifacts.templates.visibility.changeLabel;
-      })}
-    >
-      <DropdownMenuRadioGroup
-        value={visibility}
-        onValueChange={(next: PresentationTemplateSummary["visibility"]) => {
-          if (next !== visibility) {
-            onChange(next);
-          }
-        }}
-        aria-label={t(($) => {
-          return $.workflows.detail.metadata.visibility;
-        })}
-      >
-        {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
-          return (
-            <DropdownMenuRadioItem
-              key={value}
-              value={value}
-              label={optionLabel(value)}
-              aria-label={optionLabel(value)}
-              aria-describedby={`${descriptionId}-${value}`}
-              closeOnClick
-              className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
-            >
-              <Icon
-                size={16}
-                className="mt-0.5 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm text-foreground">
-                  {optionLabel(value)}
-                </span>
-                <span
-                  id={`${descriptionId}-${value}`}
-                  className="block text-xs text-muted-foreground"
-                >
-                  {optionState(value)}
-                </span>
-              </span>
-              {/* Reserve the check column so descriptions do not reflow. */}
-              <span className="mt-0.5 w-4 shrink-0">
-                <DropdownMenuRadioItemIndicator>
-                  <Check
-                    size={16}
-                    className="text-foreground"
-                    aria-hidden="true"
-                  />
-                </DropdownMenuRadioItemIndicator>
-              </span>
-            </DropdownMenuRadioItem>
-          );
-        })}
-      </DropdownMenuRadioGroup>
-    </TemplateDetailAccess>
-  );
-}
-
-function ImportedPresentationTemplateUseButton({
-  template,
-  onSelect,
-}: {
-  template: PresentationTemplateSummary;
-  onSelect: (template: PresentationTemplateSummary) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Button
-      type="button"
-      aria-label={t(
-        ($) => {
-          return $.artifacts.templates.selectTemplate;
-        },
-        { title: template.title },
-      )}
-      size="lg"
-      onClick={() => {
-        onSelect(template);
-      }}
-    >
-      {t(($) => {
-        return $.artifacts.templates.useThisTemplate;
-      })}
-    </Button>
-  );
-}
-
-function ImportedPresentationTemplateDeleteControl({
-  summary,
-  signals,
-}: {
-  summary: PresentationTemplateSummary;
-  signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [deleteLoadable, deleteTemplate] = useLoadableSet(
-    signals.template.deleteImportedPresentationTemplate$,
-  );
-  return (
-    <TemplateDetailDeleteButton
-      label={t(($) => {
-        return $.chat.actions.delete;
-      })}
-      pending={deleteLoadable.state === "loading"}
-      onDelete={() => {
-        detach(deleteTemplate(summary.id, pageSignal), Reason.DomCallback);
-      }}
-    />
-  );
-}
-
-function ImportedPresentationTemplateSidebar({
-  summary,
-  detail,
-  slideCount,
-  updating,
-  onUpdate,
-}: {
-  summary: PresentationTemplateSummary;
-  detail: PresentationTemplateDetail | null;
-  slideCount: number;
-  updating: boolean;
-  onUpdate: (body: { visibility: "private" | "public" }) => void;
-}) {
-  const { t } = useTranslation();
-  const activeTemplate = detail === null ? summary : detail;
-  return (
-    <TemplateDetailSideColumn>
-      <div className="-mx-2 flex min-h-0 flex-col px-2 lg:overflow-y-auto">
-        <p className="text-sm text-muted-foreground">
-          {t(
-            ($) => {
-              return $.artifacts.templates.importedSlides;
-            },
-            { count: slideCount },
-          )}
-        </p>
-        {activeTemplate.canManage ? (
-          <div className="mt-5">
-            <ImportedPresentationTemplateVisibilityControl
-              templateId={activeTemplate.id}
-              visibility={activeTemplate.visibility}
-              updating={updating}
-              onChange={(nextVisibility) => {
-                onUpdate({ visibility: nextVisibility });
-              }}
-            />
-          </div>
-        ) : null}
-      </div>
-    </TemplateDetailSideColumn>
-  );
-}
-
-/**
- * The detail's header: the way back, then the name. Where the member can
- * rename the template, the editor sits beside the dialog's title rather than
- * inside it, so the heading that names the dialog stays plain text.
- */
-function ImportedPresentationTemplatePreviewHeader({
-  title,
-  editor,
-  onBack,
-}: {
-  title: string;
-  editor: ReactNode;
-  onBack: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <DialogHeader className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
-      <div className="flex min-w-0 max-w-full items-center gap-1.5">
-        <DialogTitle
-          className={cn(
-            "flex items-center justify-start gap-1.5 text-left text-base leading-none",
-            // Beside an editor the title holds only the way back, which must
-            // never be squeezed; alone, it is what truncates.
-            editor === null ? "min-w-0" : "shrink-0",
-          )}
-        >
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onBack}
-          >
-            {t(($) => {
-              return $.artifacts.templates.template;
-            })}
-          </button>
-          <span className="shrink-0 text-muted-foreground">/</span>
-          <span
-            className={
-              editor === null
-                ? "block min-w-0 truncate leading-none"
-                : "sr-only"
-            }
-          >
-            {title}
-          </span>
-        </DialogTitle>
-        {editor}
-      </div>
-    </DialogHeader>
-  );
-}
-
-function ImportedPresentationTemplateMainPreview({
-  title,
-  activeSlideIndex,
-  imageSignals,
-  slideCount,
-  loading,
-  onChange,
-  onKeyDown,
-  previewRef,
-}: {
-  title: string;
-  activeSlideIndex: number;
-  imageSignals: ImportedPresentationTemplateImageSignals;
-  slideCount: number;
-  loading: boolean;
-  onChange: (index: number) => void;
-  onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
-  previewRef: RefCallback<HTMLDivElement>;
-}) {
-  const { t } = useTranslation();
-  const previewLabel = t(
-    ($) => {
-      return $.artifacts.templates.slidePreview;
-    },
-    { title },
-  );
-  return (
-    <div
-      ref={previewRef}
-      role="group"
-      aria-label={previewLabel}
-      data-testid={`${title} imported detail image preview`}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      className={TEMPLATE_DETAIL_STAGE}
-    >
-      <ImportedPptImage
-        imageSignals={imageSignals}
-        label={previewLabel}
-        loading="eager"
-        fetchPriority="high"
-        size={TEMPLATE_HIGH_RESOLUTION_PREVIEW_SIZE}
-        previewSize={TEMPLATE_CARD_PREVIEW_SIZE}
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-      />
-      <TemplateDetailStageControls
-        activeSlideIndex={activeSlideIndex}
-        slideCount={slideCount}
-        onChange={onChange}
-      />
-      {loading ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-50 h-0.5 overflow-hidden bg-muted">
-          <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ImportedPresentationTemplateThumbnails({
-  pageUrls,
-  activeSlideIndex,
-  imageSignals,
-  onChange,
-  onKeyDown,
-}: {
-  pageUrls: readonly string[];
-  activeSlideIndex: number;
-  imageSignals: readonly ImportedPresentationTemplateImageSignals[];
-  onChange: (index: number) => void;
-  onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <TemplateDetailFilmstrip
-      slideCount={pageUrls.length}
-      activeSlideIndex={activeSlideIndex}
-      onChange={onChange}
-      onKeyDown={onKeyDown}
-      renderThumbnail={(index) => {
-        const slideNumber = index + 1;
-        const thumbnailImageSignals = imageSignals[index];
-        if (thumbnailImageSignals === undefined) {
-          throw new Error(
-            `Imported presentation thumbnail image state is missing: ${slideNumber.toString()}`,
-          );
-        }
-        const eagerlyLoad =
-          index < IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT;
-        return (
-          <ImportedPptImage
-            imageSignals={thumbnailImageSignals}
-            label={t(
-              ($) => {
-                return $.artifacts.templates.previewSlide;
-              },
-              { slideNumber },
-            )}
-            loading={eagerlyLoad ? "eager" : "lazy"}
-            fetchPriority={
-              index === activeSlideIndex ? "high" : eagerlyLoad ? "auto" : "low"
-            }
-            size={TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE}
-            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-          />
-        );
-      }}
-    />
-  );
-}
-
-function ImportedPresentationTemplatePreviewPage({
-  imageBuffers,
-  summary,
-  onBack,
-  onSelect,
-  signals,
-}: {
-  imageBuffers: ImportedPresentationTemplateImageBuffers;
-  summary: PresentationTemplateSummary;
-  onBack: () => void;
-  onSelect: (template: PresentationTemplateSummary) => void;
-  signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
-  // One loadable for the name and the visibility: each save writes back the
-  // whole summary, so the two run one at a time rather than racing.
-  const [updateLoadable, updateTemplate] = useLoadableSet(
-    signals.template.updateImportedPresentationTemplate$,
-  );
-  const updating = updateLoadable.state === "loading";
-  const update = (
-    body: { title: string } | { visibility: "private" | "public" },
-  ) => {
-    detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
-  };
-  const detailLoadable = useLoadable(
-    signals.template.importedPresentationTemplateDetail$,
-  );
-  const lastResolvedDetail = useLastResolved(
-    signals.template.importedPresentationTemplateDetail$,
-  );
-  const activeSlideIndexRaw = useGet(
-    signals.template.importedPresentationTemplatePreviewSlideIndex$,
-  );
-  const selectSlide = useSet(
-    signals.template.selectImportedPresentationTemplatePreviewSlide$,
-  );
-  const currentDetail =
-    detailLoadable.state === "hasData" ? detailLoadable.data : null;
-  const loadedDetail =
-    currentDetail?.id === summary.id
-      ? currentDetail
-      : detailLoadable.state === "loading" &&
-          lastResolvedDetail?.id === summary.id
-        ? lastResolvedDetail
-        : null;
-  const detail =
-    loadedDetail?.id === summary.id ? { ...loadedDetail, ...summary } : null;
-  const activeTemplate = detail === null ? summary : detail;
-  const title = activeTemplate.title;
-  const pageUrls =
-    detail === null
-      ? summary.coverUrl === null
-        ? []
-        : [summary.coverUrl]
-      : detail.pageUrls;
-  const slideCount = Math.max(1, activeTemplate.pageCount);
-  const activeSlideIndex = Math.max(
-    0,
-    Math.min(activeSlideIndexRaw, slideCount - 1),
-  );
-  const changeSlide = (index: number) => {
-    selectSlide(Math.max(0, Math.min(slideCount - 1, index)));
-  };
-  const handleSlideKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.defaultPrevented) {
-      return;
-    }
-    if (event.key === "ArrowLeft" && activeSlideIndex > 0) {
-      event.preventDefault();
-      changeSlide(activeSlideIndex - 1);
-    }
-    if (event.key === "ArrowRight" && activeSlideIndex < slideCount - 1) {
-      event.preventDefault();
-      changeSlide(activeSlideIndex + 1);
-    }
-  };
-
-  return (
-    <>
-      <ImportedPresentationTemplatePreviewHeader
-        title={title}
-        editor={
-          activeTemplate.canManage ? (
-            <TemplateDetailTitle
-              key={title}
-              title={title}
-              label={t(($) => {
-                return $.artifacts.templates.renameImportedTemplate;
-              })}
-              canEdit
-              updating={updating}
-              onRename={(nextTitle) => {
-                update({ title: nextTitle });
-              }}
-            />
-          ) : null
-        }
-        onBack={onBack}
-      />
-      <div className={TEMPLATE_DETAIL_BODY}>
-        <div className={TEMPLATE_DETAIL_GRID}>
-          <ImportedPresentationTemplateMainPreview
-            previewRef={focusPreview}
-            title={title}
-            activeSlideIndex={activeSlideIndex}
-            imageSignals={imageBuffers.detail}
-            slideCount={slideCount}
-            loading={detailLoadable.state === "loading"}
-            onChange={changeSlide}
-            onKeyDown={handleSlideKeyDown}
-          />
-          <ImportedPresentationTemplateThumbnails
-            pageUrls={pageUrls}
-            activeSlideIndex={activeSlideIndex}
-            imageSignals={imageBuffers.thumbnails}
-            onChange={changeSlide}
-            onKeyDown={handleSlideKeyDown}
-          />
-          <ImportedPresentationTemplateSidebar
-            summary={summary}
-            detail={detail}
-            slideCount={slideCount}
-            updating={updating}
-            onUpdate={update}
-          />
-        </div>
-      </div>
-      <div className={TEMPLATE_DETAIL_FOOTER}>
-        {activeTemplate.canManage ? (
-          <ImportedPresentationTemplateDeleteControl
-            summary={summary}
-            signals={signals}
-          />
-        ) : null}
-        <ImportedPresentationTemplateUseButton
-          template={activeTemplate}
-          onSelect={onSelect}
-        />
-      </div>
-    </>
-  );
-}
-
-function useImportedPresentationTemplatePickerItems(
-  signals: ComposerSignals,
-): readonly ImportedPresentationTemplatePickerItem[] {
-  const current = useLoadable(
-    signals.template.importedPresentationTemplatePickerItems$,
-  );
-  const lastResolved = useLastResolved(
-    signals.template.importedPresentationTemplatePickerItems$,
-  );
-  const items =
-    current.state === "hasData"
-      ? current.data
-      : current.state === "loading"
-        ? (lastResolved ?? [])
-        : [];
-  const deletedTemplateIds = useGet(
-    signals.template.importedPresentationTemplateDeletedIds$,
-  );
-  return deletedTemplateIds.size === 0
-    ? items
-    : items.filter((item) => {
-        return !deletedTemplateIds.has(item.template.id);
-      });
-}
-
-function ImportedPresentationTemplateLibraryStatus({
-  signals,
-}: {
-  readonly signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const templates = useLoadable(
-    signals.template.importedPresentationTemplatePickerItems$,
-  );
-  const initialization = useLoadable(
-    signals.template.presentationTemplatesInitialized$,
-  );
-  if (templates.state !== "hasError") {
-    return null;
-  }
-  let message: string;
-  if (initialization.state === "hasError") {
-    message = t(($) => {
-      return $.chat.templates.importedUnavailable;
-    });
-  } else {
-    message = t(($) => {
-      return $.chat.templates.importedLoadFailed;
-    });
-  }
-  return (
-    <div
-      className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
-      role="alert"
-    >
-      <span>{message}</span>
-    </div>
-  );
-}
-
 function ComposerPresentationSuggestion({
   title,
   children,
@@ -4392,10 +3313,7 @@ export function ComposerPresentationRecommendations({
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
-  const imported = useImportedPresentationTemplatePickerItems(signals);
   const custom = useCustomTemplateRecommendations(signals, "presentation");
-  const customTemplatesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
@@ -4419,8 +3337,7 @@ export function ComposerPresentationRecommendations({
           className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
             // This shelf is the presentation catalog's entry, so "more" opens
-            // the Presentation tab like every other type's shelf does, whether
-            // or not the member also has Custom.
+            // the Presentation tab like every other type's shelf does.
             openTemplates({ kind: "insert", category: "slides" });
           }}
         >
@@ -4473,31 +3390,6 @@ export function ComposerPresentationRecommendations({
               </ComposerPresentationSuggestion>
             );
           }),
-          ...(customTemplatesEnabled ? [] : imported).map(
-            ({ imageBuffers, template }) => {
-              return (
-                <ComposerPresentationSuggestion
-                  key={template.id}
-                  title={template.title}
-                  onSelect={() => {
-                    picker.onChange(
-                      toImportedPresentationGenerationTemplate(template),
-                    );
-                  }}
-                >
-                  <ImportedPptImage
-                    imageSignals={imageBuffers.card}
-                    label=""
-                    loading="eager"
-                    fetchPriority="high"
-                    size={TEMPLATE_CARD_PREVIEW_SIZE}
-                    placeholder={<ImageIcon size={24} aria-hidden />}
-                    className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-                  />
-                </ComposerPresentationSuggestion>
-              );
-            },
-          ),
           ...builtIn.map((item) => {
             return (
               <ComposerPresentationSuggestion
@@ -4522,60 +3414,6 @@ export function ComposerPresentationRecommendations({
   );
 }
 
-function PptTemplateGrid({
-  builtInCards,
-  importedItems,
-  value,
-  onSelectImported,
-  onPreviewImported,
-  onImported,
-  signals,
-}: {
-  builtInCards: ReactNode;
-  importedItems: readonly ImportedPresentationTemplatePickerItem[];
-  value: GenerationTemplateRequest | undefined;
-  onSelectImported: (template: PresentationTemplateSummary) => void;
-  onPreviewImported: (templateId: string, slideIndex: number) => void;
-  onImported: () => void;
-  signals: ComposerSignals;
-}) {
-  const customTemplates =
-    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
-  if (customTemplates) {
-    return (
-      <TemplateSourceSection source="builtIn">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {builtInCards}
-        </div>
-      </TemplateSourceSection>
-    );
-  }
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <ImportedPresentationTemplateLibraryStatus signals={signals} />
-      <TemplateImportCard signals={signals} onImported={onImported} />
-      {importedItems.map(({ imageBuffers, template }) => {
-        return (
-          <ImportedPptCard
-            key={template.id}
-            imageSignals={imageBuffers.card}
-            template={template}
-            selected={
-              value?.type === "presentation" &&
-              value.selection.templateId ===
-                formatUserPresentationTemplateId(template.id)
-            }
-            onSelect={onSelectImported}
-            onPreview={onPreviewImported}
-            signals={signals}
-          />
-        );
-      })}
-      {builtInCards}
-    </div>
-  );
-}
-
 function TemplatePickerDialogFrame({
   signals,
   presentationItems,
@@ -4584,22 +3422,16 @@ function TemplatePickerDialogFrame({
   onClose,
   onCloseComplete,
   handleSelectPresentation,
-  handleSelectImportedPresentation,
 }: {
   signals: ComposerSignals;
   presentationItems: readonly PresentationTemplateItem[];
-  gallery: (
-    importedItems: readonly ImportedPresentationTemplatePickerItem[],
-  ) => ReactNode;
+  gallery: () => ReactNode;
   onChange: (value: GenerationTemplateRequest | undefined) => void;
   onClose: () => void;
   onCloseComplete: () => void;
   handleSelectPresentation: (
     item: PresentationTemplateItem,
     colorSystemId?: string,
-  ) => void;
-  handleSelectImportedPresentation: (
-    template: PresentationTemplateSummary,
   ) => void;
 }) {
   const { t } = useTranslation();
@@ -4608,28 +3440,14 @@ function TemplatePickerDialogFrame({
   const initialFocus = useSet(signals.template.templatePickerInitialFocus$);
   const setPopup = useSet(signals.template.setTemplatePickerPopup$);
   const previewSlug = useGet(signals.template.openedTemplateId$);
-  const importedPreviewId = useGet(
-    signals.template.importedPresentationTemplatePreviewId$,
-  );
-  const importedTemplateItems =
-    useImportedPresentationTemplatePickerItems(signals);
   const previewItem =
     presentationItems.find((item) => {
       return item.slug === previewSlug;
     }) ?? null;
-  const importedPreviewItem =
-    importedTemplateItems.find((item) => {
-      return item.template.id === importedPreviewId;
-    }) ?? null;
   const documentPreview = useGet(signals.template.documentPreview$);
   const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
-  const closeImportedPreview = useSet(
-    signals.template.closeImportedPresentationTemplatePreview$,
-  );
   const closeDetailPreview = useSet(signals.template.closeOpenedTemplate$);
-  const isPreviewing = Boolean(
-    previewItem ?? importedPreviewItem ?? documentPreview,
-  );
+  const isPreviewing = Boolean(previewItem ?? documentPreview);
   const dialogContentClassName = cn(
     "gap-0 overflow-hidden p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0",
     "flex flex-col",
@@ -4641,10 +3459,6 @@ function TemplatePickerDialogFrame({
         if (!nextOpen) {
           if (documentPreview !== undefined) {
             closeDocumentPreview();
-            return;
-          }
-          if (importedPreviewItem !== null) {
-            closeImportedPreview();
             return;
           }
           if (previewItem !== null) {
@@ -4672,11 +3486,11 @@ function TemplatePickerDialogFrame({
         // Website and Custom open a template in a dialog of their own rather
         // than in this frame, at this frame's size. The gallery steps back
         // while one is open, so the detail reads as the same surface the
-        // built-in and imported decks open into, not as a panel over the grid.
+        // built-in decks open into, not as a panel over the grid.
         hideWhenNestedOpen
         aria-describedby={undefined}
       >
-        {!isPreviewing ? gallery(importedTemplateItems) : null}
+        {!isPreviewing ? gallery() : null}
         {documentPreview ? (
           <DocumentTemplatePreviewPage
             signals={signals}
@@ -4693,14 +3507,6 @@ function TemplatePickerDialogFrame({
               closeDetailPreview();
             }}
             onSelect={handleSelectPresentation}
-            signals={signals}
-          />
-        ) : importedPreviewItem ? (
-          <ImportedPresentationTemplatePreviewPage
-            imageBuffers={importedPreviewItem.imageBuffers}
-            summary={importedPreviewItem.template}
-            onBack={closeImportedPreview}
-            onSelect={handleSelectImportedPresentation}
             signals={signals}
           />
         ) : null}
@@ -4732,12 +3538,6 @@ function TemplatePickerDialog({
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
-  const openImportedPreview = useSet(
-    signals.template.openImportedPresentationTemplatePreview$,
-  );
-  const resetImportedTemplatePicker = useSet(
-    signals.template.resetImportedPresentationTemplatePicker$,
-  );
   const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
   const restorePresentationGridScroll = useSet(
     signals.template.restoreTemplatePickerPresentationScrollRef$,
@@ -4774,14 +3574,12 @@ function TemplatePickerDialog({
     search,
   });
 
-  const features = useGet(featureSwitch$);
-  const customTemplatesEnabled =
-    features[FeatureSwitchKey.CustomTemplates] === true;
-  const showCustomTemplates =
-    customTemplatesEnabled &&
-    ["slides", "document", "illustration"].includes(selectedCategory);
-  const showTemplatePickerSearch =
-    selectedCategory === "workflow" || showCustomTemplates;
+  const showTemplatePickerSearch = [
+    "workflow",
+    "slides",
+    "document",
+    "illustration",
+  ].includes(selectedCategory);
 
   const closeTemplatePicker = () => {
     onClose();
@@ -4790,7 +3588,6 @@ function TemplatePickerDialog({
   const completeTemplatePickerClose = () => {
     clearPresentationPreviews();
     closeDocumentPreview();
-    resetImportedTemplatePicker();
     resetCustomTemplatePicker();
     setPresentationGridScrollTop(0);
     onCloseComplete();
@@ -4801,13 +3598,6 @@ function TemplatePickerDialog({
     colorSystemId?: string,
   ) => {
     onChange(toPresentationGenerationTemplate(item, colorSystemId));
-    closeTemplatePicker();
-  };
-
-  const handleSelectImportedPresentation = (
-    template: PresentationTemplateSummary,
-  ) => {
-    onChange(toImportedPresentationGenerationTemplate(template));
     closeTemplatePicker();
   };
 
@@ -4853,24 +3643,15 @@ function TemplatePickerDialog({
     });
   };
 
-  const handlePreviewImported = (templateId: string, slideIndex: number) => {
-    openImportedPreview(templateId, Math.max(0, Math.floor(slideIndex)));
-  };
-
   // The frame mounts these controls only while showing the gallery.
   const handleCategoryChange = (nextCategory: string) => {
     setCategory(nextCategory);
-    if (customTemplatesEnabled) {
-      setSearch("");
-    }
+    setSearch("");
   };
 
   const presentationCards = presentationItems
     .filter((item) => {
-      return (
-        !customTemplatesEnabled ||
-        item.title.toLowerCase().includes(search.trim().toLowerCase())
-      );
+      return item.title.toLowerCase().includes(search.trim().toLowerCase());
     })
     .map((item) => {
       return (
@@ -4893,8 +3674,7 @@ function TemplatePickerDialog({
       onClose={closeTemplatePicker}
       onCloseComplete={completeTemplatePickerClose}
       handleSelectPresentation={handleSelectPresentation}
-      handleSelectImportedPresentation={handleSelectImportedPresentation}
-      gallery={(importedItems) => {
+      gallery={() => {
         return (
           <div className="min-h-0 flex flex-1 flex-col">
             <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:hidden">
@@ -4916,10 +3696,6 @@ function TemplatePickerDialog({
             >
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
-                customTemplatesEnabled={customTemplatesEnabled}
-                documentTemplatesEnabled={
-                  features[FeatureSwitchKey.BuiltinDocumentTemplates] === true
-                }
                 onChange={handleCategoryChange}
               />
               {/* Keep the existing single active content tree and its category
@@ -4929,57 +3705,43 @@ function TemplatePickerDialog({
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <TemplatePaidToolNotice category={selectedCategory} />
-                {selectedCategory !== "document" || showCustomTemplates ? (
-                  <div
-                    className={cn(
-                      "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                      showTemplatePickerSearch ? "flex" : "hidden sm:flex",
-                    )}
-                  >
-                    {customTemplatesEnabled ? (
-                      <TemplatePickerCategoryTitle
-                        category={selectedCategory}
-                      />
-                    ) : null}
-                    {showTemplatePickerSearch ? (
-                      <TemplatePickerSearch
-                        search={search}
-                        onSearchChange={setSearch}
-                      />
-                    ) : null}
-                  </div>
-                ) : null}
+                <div
+                  className={cn(
+                    "relative h-[68px] shrink-0 items-center px-6 pr-14",
+                    showTemplatePickerSearch ? "flex" : "hidden sm:flex",
+                  )}
+                >
+                  <TemplatePickerCategoryTitle category={selectedCategory} />
+                  {showTemplatePickerSearch ? (
+                    <TemplatePickerSearch
+                      search={search}
+                      onSearchChange={setSearch}
+                    />
+                  ) : null}
+                </div>
                 <TemplatePickerCategoryContent
                   signals={signals}
                   selectedCategory={selectedCategory}
-                  customTemplatesEnabled={customTemplatesEnabled}
                   search={search}
                   pptCards={presentationCards}
-                  importedPptItems={importedItems}
                   websiteItems={WEBSITE_TEMPLATE_ITEMS}
-                  illustrationItems={
-                    customTemplatesEnabled
-                      ? ILLUSTRATION_TEMPLATE_ITEMS.filter((item) => {
-                          return item.title
-                            .toLowerCase()
-                            .includes(search.trim().toLowerCase());
-                        })
-                      : ILLUSTRATION_TEMPLATE_ITEMS
-                  }
+                  illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS.filter(
+                    (item) => {
+                      return item.title
+                        .toLowerCase()
+                        .includes(search.trim().toLowerCase());
+                    },
+                  )}
                   workflowCatalog={workflowCatalog}
                   value={value}
                   illustrationVariantIndex={illustrationVariantIndex}
                   onPresentationScroll={setPresentationGridScrollTop}
                   onRestorePresentationScroll={restorePresentationGridScroll}
-                  onSelectImportedPresentation={
-                    handleSelectImportedPresentation
-                  }
                   onSelectDocument={(item) => {
                     onChange(toDocumentGenerationTemplate(item));
                     closeTemplatePicker();
                   }}
                   onSelectCustom={handleSelectCustom}
-                  onPreviewImportedPresentation={handlePreviewImported}
                   onImported={closeTemplatePicker}
                   onSelectWebsite={handleSelectWebsite}
                   onPreviewWebsite={handlePreviewWebsite}
@@ -5000,10 +3762,8 @@ function TemplatePickerDialog({
 function TemplatePickerCategoryContent({
   signals,
   selectedCategory,
-  customTemplatesEnabled,
   search,
   pptCards,
-  importedPptItems,
   websiteItems,
   illustrationItems,
   workflowCatalog,
@@ -5011,10 +3771,8 @@ function TemplatePickerCategoryContent({
   illustrationVariantIndex,
   onPresentationScroll,
   onRestorePresentationScroll,
-  onSelectImportedPresentation,
   onSelectCustom,
   onSelectDocument,
-  onPreviewImportedPresentation,
   onImported,
   onSelectWebsite,
   onPreviewWebsite,
@@ -5025,10 +3783,8 @@ function TemplatePickerCategoryContent({
 }: {
   signals: ComposerSignals;
   selectedCategory: string;
-  customTemplatesEnabled: boolean;
   search: string;
   pptCards: ReactNode;
-  importedPptItems: readonly ImportedPresentationTemplatePickerItem[];
   websiteItems: readonly WebsiteTemplateItem[];
   illustrationItems: readonly IllustrationTemplateItem[];
   workflowCatalog: ResolvedWorkflowTemplateCatalog;
@@ -5036,14 +3792,9 @@ function TemplatePickerCategoryContent({
   illustrationVariantIndex: Readonly<Record<string, number>>;
   onPresentationScroll: (value: number) => void;
   onRestorePresentationScroll: RefCallback<HTMLDivElement>;
-  onSelectImportedPresentation: (template: PresentationTemplateSummary) => void;
   onSelectCustom: (template: UserTemplateCatalogEntry) => void;
   onSelectDocument: (
     item: import("@okouai/core/document-template-items").DocumentTemplateItem,
-  ) => void;
-  onPreviewImportedPresentation: (
-    templateId: string,
-    slideIndex: number,
   ) => void;
   /** Both import entries leave the picker for the thread they send into. */
   onImported: () => void;
@@ -5055,7 +3806,7 @@ function TemplatePickerCategoryContent({
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
 }) {
   const customSection = (kind: UserTemplateKind) => {
-    return customTemplatesEnabled ? (
+    return (
       <CustomTemplatePickerSection
         signals={signals}
         kind={kind}
@@ -5069,7 +3820,7 @@ function TemplatePickerCategoryContent({
           />
         }
       />
-    ) : undefined;
+    );
   };
   if (selectedCategory === "document") {
     return (
@@ -5092,15 +3843,11 @@ function TemplatePickerCategoryContent({
         }}
       >
         {customSection("presentation")}
-        <PptTemplateGrid
-          builtInCards={pptCards}
-          importedItems={importedPptItems}
-          value={value}
-          onSelectImported={onSelectImportedPresentation}
-          onPreviewImported={onPreviewImportedPresentation}
-          onImported={onImported}
-          signals={signals}
-        />
+        <TemplateSourceSection source="builtIn">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {pptCards}
+          </div>
+        </TemplateSourceSection>
       </div>
     );
   }
@@ -5125,17 +3872,7 @@ function TemplatePickerCategoryContent({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
         {customSection("illustration")}
-        {customTemplatesEnabled ? (
-          <TemplateSourceSection source="builtIn">
-            <IllustrationTemplateGrid
-              items={illustrationItems}
-              value={value}
-              variantIndexBySlug={illustrationVariantIndex}
-              onSelect={onSelectIllustration}
-              onVariantChange={onIllustrationVariantChange}
-            />
-          </TemplateSourceSection>
-        ) : (
+        <TemplateSourceSection source="builtIn">
           <IllustrationTemplateGrid
             items={illustrationItems}
             value={value}
@@ -5143,7 +3880,7 @@ function TemplatePickerCategoryContent({
             onSelect={onSelectIllustration}
             onVariantChange={onIllustrationVariantChange}
           />
-        )}
+        </TemplateSourceSection>
       </div>
     );
   }
@@ -5244,9 +3981,6 @@ function selectedComposerTemplateAttachment(
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
   const category = useGet(signals.template.templatePickerCategory$);
-  const pickerFeatures = useGet(featureSwitch$);
-  const customTemplatesEnabled =
-    pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
   const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
   const templateMode = createMode === "image" ? "illustration" : createMode;
@@ -5264,8 +3998,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
           });
   const selectedCategory = resolveTemplatePickerCategory(
     templateMode === "presentation" ? "slides" : (templateMode ?? category),
-    customTemplatesEnabled,
-    pickerFeatures[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const open = () => {
     openTemplatePicker({ kind: "insert", category: selectedCategory });

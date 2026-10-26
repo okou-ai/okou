@@ -1,9 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
-import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -17,33 +15,25 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
-  createUploadedTemplate,
   expectInlineTemplate,
   openTemplatePicker,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
-const { mockPresentationTemplateLibrary, mockTemplateChat } =
-  createTemplateGalleryHelpers(context);
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
-test("Website stays usable while uploaded presentations load after switching categories", async () => {
+test("Built-in templates stay usable while custom templates load after switching categories", async () => {
   mockNow(1_785_542_400_000, context.signal);
   mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: "82000000-0000-4000-a000-000000000001",
-    title: "Launch presentation",
-  });
-  mockPresentationTemplateLibrary([uploaded]);
   const catalog = createDeferredPromise<void>(context.signal);
-  context.mocks.api(presentationTemplatesContract.list, async ({ respond }) => {
+  context.mocks.api(userTemplatesContract.list, async ({ respond }) => {
     await catalog.promise;
-    return respond(200, [uploaded]);
+    return respond(200, []);
   });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat?templatePicker=website`,
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   const dialog = await screen.findByRole("dialog");
   const website = WEBSITE_TEMPLATE_ITEMS[0]!;
@@ -59,19 +49,14 @@ test("Website stays usable while uploaded presentations load after switching cat
       `Select template ${presentation.title}`,
     ),
   ).toBeEnabled();
+  click(within(dialog).getByLabelText(`Select template ${presentation.title}`));
+  await expectInlineTemplate(presentation.title);
   catalog.resolve();
-  const uploadedChoice = await within(dialog).findByLabelText(
-    `Select template ${uploaded.title}`,
-  );
-  click(uploadedChoice);
-  await expectInlineTemplate(uploaded.title);
 });
 
 async function openPicker({
-  customEnabled = true,
   mobile = false,
 }: {
-  customEnabled?: boolean;
   mobile?: boolean;
 } = {}) {
   mockTemplateChat();
@@ -87,9 +72,6 @@ async function openPicker({
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: customEnabled,
-    },
   });
   const dialog = await openTemplatePicker(user);
   return { user, dialog };
@@ -177,26 +159,4 @@ test("Reopening the template picker focuses its current category control", async
   await waitFor(() => {
     expect(tabNamed(reopened, "Presentation")).toHaveFocus();
   });
-});
-
-test("Unavailable categories stay hidden and the ordinary picker opens the Presentation tab and panel", async () => {
-  const { dialog } = await openPicker({ customEnabled: false });
-  selectedPanel(dialog, "Presentation");
-  const list = within(dialog).getByRole("tablist", {
-    name: "Template categories",
-  });
-  expect(
-    queryAllByRoleFast("tab", list).map((tab) => {
-      return tab.textContent;
-    }),
-  ).toStrictEqual([
-    "Presentation",
-    "Document",
-    "Website",
-    "Illustration",
-    "Workflow",
-  ]);
-  expect(
-    within(dialog).getByRole("combobox", { name: "Template category" }),
-  ).toHaveTextContent("Presentation");
 });

@@ -411,7 +411,6 @@
       "manage": "Gérer",
       "mobile": {
         "invite": "Inviter",
-        "openArtifacts": "Ouvrir les artéfacts mobiles",
         "openAutomations": "Ouvrir les automatisations mobiles",
         "openMenu": "Ouvrir le menu"
       },
@@ -692,7 +691,6 @@
       "previewSlide": "Aperçu de la diapositive {{slideNumber}}",
       "previewWebsite": "Aperçu du modèle de site Web {{title}}",
       "previousSlide": "Aperçu de la diapositive précédente",
-      "renameImportedTemplate": "Renommer le modèle",
       "searchConnector": "Rechercher des modèles",
       "searchConnectors": "Rechercher des modèles",
       "selectStyle": "Sélectionner le style {{style}}",
@@ -731,9 +729,7 @@
       "use": "Utiliser",
       "useThisTemplate": "Utilisez ce modèle",
       "visibility": {
-        "changeLabel": "Modifier la visibilité du modèle",
-        "privateState": "Vous seul pouvez le voir et l'utiliser",
-        "workspaceState": "Tout le monde dans cet espace de travail peut l'utiliser"
+        "changeLabel": "Modifier la visibilité du modèle"
       },
       "website": "Site web",
       "websitePreview": "Aperçu du modèle de site web {{title}}",
@@ -2951,8 +2947,6 @@
         "website": "Site web",
         "workflow": "Workflow"
       },
-      "importedLoadFailed": "Impossible de charger les modèles importés.",
-      "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",
       "previewTemplate": "Aperçu du modèle {{title}}",
       "previewWebsite": "Aperçu du modèle de site web {{title}}",
       "previewWorkflow": "Aperçu du modèle de workflow {{title}}",
@@ -2983,7 +2977,6 @@
       },
       "noEmojiFound": "Aucun emoji trouvé",
       "notFound": "Fil de discussion introuvable",
-      "openArtifacts": "Ouvrir les artéfacts",
       "openBrowser": "Ouvrir le navigateur",
       "openNamedAgent": "Ouvrir l'agent {{name}}",
       "openNamedChat": "Ouvrir le chat {{title}}",

@@ -1293,13 +1293,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       throw new Error("Expected a chat organization");
     }
     const owner = bdd.user({ orgId });
-    for (const user of [actor, owner]) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: user.userId, orgId },
-        { [FeatureSwitchKey.CustomTemplates]: true },
-      );
-    }
     const { presentations, customs, presentationId, customId } =
       await publishPrivateChatTemplates(owner);
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];

@@ -1,6 +1,4 @@
 import { command, computed, state, type Computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
@@ -16,10 +14,6 @@ import {
 } from "../okou-page/settings/user-preferences.ts";
 import { onRef } from "../utils.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
-
-export const chatResourcePanelEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel] === true;
-});
 
 const RESOURCE_PANEL_MIN_GUTTER = 408;
 
