@@ -160,7 +160,7 @@ export function HalloweenEntry() {
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute right-3 top-3 -rotate-[12deg] text-[30px] font-bold leading-none tracking-tight text-[#FFA500] transition-opacity motion-reduce:transition-none",
+          "pointer-events-none absolute right-3 top-3 -rotate-[16deg] text-[33px] font-bold italic leading-none tracking-[-1px] text-[#e9bb65] [font-family:Georgia,serif] [-webkit-text-stroke:.5px_#8c673e] [text-shadow:1px_2px_0_#fff3d7] transition-opacity motion-reduce:transition-none",
           expanded ? "opacity-100" : "opacity-0",
         )}
       >

@@ -1,7 +1,14 @@
 import { Button, cn } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ArrowRight, ArrowUpRight, RotateCcw } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Command,
+  RotateCcw,
+  Sparkle,
+  Zap,
+} from "lucide-react";
 import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
 import { halloweenConfetti$ } from "../../signals/halloween/halloween-motion.ts";
 import {
@@ -14,16 +21,15 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { campaignButton } from "./halloween-layout.tsx";
-import { HalloweenMark, HalloweenTaskArt } from "./halloween-art.tsx";
+import { goldButton } from "./halloween-layout.tsx";
 
 function Confetti() {
   const motion = useSet(halloweenConfetti$);
   const colors = [
-    "bg-[#FFA500]",
-    "bg-[#96D82D]",
-    "bg-[#B4DEF5]",
-    "bg-[#F9E840]",
+    "bg-[#ffb640]",
+    "bg-[#a9f2d0]",
+    "bg-[#dba5ff]",
+    "bg-[#ffedb0]",
   ];
   return (
     <div
@@ -48,6 +54,7 @@ function Confetti() {
 
 function ResultTasks({ won }: { readonly won: boolean }) {
   const prepareReturn = useSet(prepareHalloweenReturn$);
+  const icons = [Sparkle, Command, Zap];
   return (
     <section className="mt-8 w-full max-w-[820px] text-left">
       <div className="mb-5 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1.5 text-center">
@@ -66,6 +73,7 @@ function ResultTasks({ won }: { readonly won: boolean }) {
       </div>
       <div className="grid gap-3 md:grid-cols-3 md:gap-4">
         {copy.tasks.map((task, index) => {
+          const Icon = icons[index]!;
           return (
             <Link
               key={task.title}
@@ -78,18 +86,20 @@ function ResultTasks({ won }: { readonly won: boolean }) {
               onClick={() => {
                 prepareReturn();
               }}
-              className="group relative flex items-center gap-4 rounded-2xl border border-[#FAF5F3] bg-[#FAF5F3] p-4 pr-9 text-left transition-all duration-200 hover:border-[#FFA500] hover:bg-[#fffaf3] motion-safe:hover:-translate-y-0.5 md:flex-col md:items-start md:gap-4 md:rounded-3xl md:p-5"
+              className="group relative flex items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[linear-gradient(145deg,#ffffff07,#ffffff02)] p-4 pr-9 text-left transition-all duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07] motion-safe:hover:-translate-y-0.5 md:flex-col md:items-start md:gap-4 md:rounded-3xl md:p-5"
             >
-              <HalloweenTaskArt index={index} />
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] text-[#dbbc89]">
+                <Icon className="size-[18px]" />
+              </span>
               <div>
-                <h3 className="mb-1.5 text-sm font-semibold tracking-[-.015em] text-[#252121]">
+                <h3 className="mb-1.5 text-sm font-medium tracking-[-.015em] text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]">
                   {task.title}
                 </h3>
-                <p className="text-xs leading-relaxed text-[#706b68]">
+                <p className="text-xs leading-relaxed text-[#92a3bb]">
                   {task.text}
                 </p>
               </div>
-              <ArrowUpRight className="absolute right-4 top-4 size-3.5 text-[#706b68] transition-colors group-hover:text-[#b75a00] md:right-5 md:top-5" />
+              <ArrowUpRight className="absolute right-4 top-4 size-3.5 text-[#71849e] transition-colors group-hover:text-[#e8c68d] md:right-5 md:top-5" />
             </Link>
           );
         })}
@@ -110,8 +120,15 @@ export function HalloweenResultScreen() {
     <>
       {won && <Confetti />}
       <main className="relative z-10 mx-auto flex w-[calc(100%-40px)] max-w-[880px] flex-1 flex-col items-center justify-center py-10 pb-12 text-center md:w-[calc(100%-96px)]">
-        <div className="mb-5 size-12 text-[#FFA500]" aria-hidden="true">
-          <HalloweenMark />
+        <div
+          className="mb-6 flex size-14 items-center justify-center rounded-full border border-[#e8c68d33] bg-[radial-gradient(circle_at_50%_0,#e8c68d15,#e8c68d03)] text-[#e8c68d] shadow-[0_0_40px_#e8c68d08]"
+          aria-hidden="true"
+        >
+          {won ? (
+            <Sparkle className="size-6" />
+          ) : (
+            <RotateCcw className="size-5" />
+          )}
         </div>
         <h1 className="mb-3 text-balance text-[35px] font-medium leading-[1.15] tracking-[-.04em] text-[#f4f1eb] md:text-[48px]">
           {won ? copy.won : copy.lost}
@@ -125,7 +142,7 @@ export function HalloweenResultScreen() {
             won ? "mt-5" : "mt-6",
           )}
         >
-          <strong className="font-medium text-[#FFA500]">
+          <strong className="font-medium text-[#e8c68d]">
             {copy.resultRewardEmphasis}
           </strong>
           {copy.resultRewardRest}
@@ -135,7 +152,7 @@ export function HalloweenResultScreen() {
           <Button
             nativeButton={false}
             render={<Link pathname="/" />}
-            className={campaignButton}
+            className={goldButton}
             onClick={() => {
               prepareReturn();
             }}
@@ -146,7 +163,7 @@ export function HalloweenResultScreen() {
           {phase === "open" && (
             <Button
               variant="quiet"
-              className="h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-sm font-medium text-[#b9c5d6] transition-all duration-200 hover:border-[#FFA50066] hover:bg-[#ffffff07] hover:text-[#FFA500]"
+              className="h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-sm font-medium text-[#b9c5d6] transition-all duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]"
               pending={operation.state === "loading"}
               onClick={() => {
                 detach(replay(signal), Reason.DomCallback);
@@ -162,7 +179,7 @@ export function HalloweenResultScreen() {
           <Button
             variant="quiet"
             size="sm"
-            className="h-auto rounded-none p-0 text-[11px] text-inherit underline decoration-[#7b8da560] underline-offset-4 hover:bg-transparent hover:text-[#FFA500]"
+            className="h-auto rounded-none p-0 text-[11px] text-inherit underline decoration-[#7b8da560] underline-offset-4 hover:bg-transparent hover:text-[#e8c68d]"
             onClick={() => {
               setRules(true);
             }}

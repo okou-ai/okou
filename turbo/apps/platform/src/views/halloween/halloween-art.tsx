@@ -1,71 +1,47 @@
 import { useSet } from "ccstate-react";
 import { cn } from "@okouai/ui";
-import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import { halloweenStageMotion$ } from "../../signals/halloween/halloween-motion.ts";
 
-// Exact four-petal path from Rudy's final October 9 brand kit.
+// Original campaign artwork, with restrained stage lighting around the content.
 export function HalloweenMark() {
   return (
-    <svg viewBox="0 0 800 803" className="h-full w-full" aria-hidden="true">
-      <path
-        d="M603.905 167.457C589.107 72.5824 507.091 0 408.052 0H391.948C292.909 0 210.893 72.5824 196.095 167.457C84.6763 187.186 0 284.43 0 401.5C0 518.57 84.6763 615.814 196.095 635.543C210.893 730.418 292.909 803 391.948 803H408.052C507.091 803 589.107 730.418 603.905 635.543C715.324 615.814 800 518.57 800 401.5C800 284.43 715.324 187.186 603.905 167.457ZM533.446 462.622C489.972 557.593 394.947 607.255 321.248 573.551C247.549 539.798 223.031 435.446 266.554 340.475C310.028 245.504 405.054 195.842 478.752 229.546C552.451 263.299 576.969 367.651 533.446 462.622Z"
-        fill="currentColor"
-      />
+    <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden="true">
+      <g fill="#F6A21B">
+        <ellipse cx="32" cy="13" rx="9" ry="11" />
+        <ellipse cx="32" cy="51" rx="9" ry="11" />
+        <ellipse cx="13" cy="32" rx="11" ry="9" />
+        <ellipse cx="51" cy="32" rx="11" ry="9" />
+        <ellipse
+          cx="18.5"
+          cy="18.5"
+          rx="10"
+          ry="8.5"
+          transform="rotate(-45 18.5 18.5)"
+        />
+        <ellipse
+          cx="45.5"
+          cy="18.5"
+          rx="10"
+          ry="8.5"
+          transform="rotate(45 45.5 18.5)"
+        />
+        <ellipse
+          cx="18.5"
+          cy="45.5"
+          rx="10"
+          ry="8.5"
+          transform="rotate(45 18.5 45.5)"
+        />
+        <ellipse
+          cx="45.5"
+          cy="45.5"
+          rx="10"
+          ry="8.5"
+          transform="rotate(-45 45.5 45.5)"
+        />
+      </g>
+      <circle cx="32" cy="32" r="7.5" fill="#fff" />
     </svg>
-  );
-}
-
-// Official illustrations retain their original pose, proportions and palette.
-const hostArt = platformStaticAssetUrl(
-  "views/halloween/assets/okou-host-20d3b8ef1be2.webp",
-);
-const doodleArt = platformStaticAssetUrl(
-  "views/halloween/assets/okou-zigzag-e39bf12f5a55.webp",
-);
-const taskArt = [
-  platformStaticAssetUrl("views/halloween/assets/okou-paint-50a18528935f.webp"),
-  platformStaticAssetUrl(
-    "views/okou-page/assets/get-started-slack-12b969d9d2a7.png",
-  ),
-  platformStaticAssetUrl(
-    "views/okou-page/assets/get-started-prompt-39ad0cd9e05f.png",
-  ),
-] as const;
-
-export function HalloweenHost({ className }: { readonly className: string }) {
-  return <img src={hostArt} alt="" aria-hidden className={className} />;
-}
-
-export function HalloweenTaskArt({ index }: { readonly index: number }) {
-  return (
-    <img
-      src={taskArt[index]}
-      alt=""
-      aria-hidden
-      className="h-20 w-20 shrink-0 object-contain md:h-[124px] md:w-full"
-    />
-  );
-}
-
-export function HalloweenHeroArt() {
-  return (
-    <div
-      className="relative order-first mx-auto flex h-[192px] w-full max-w-[420px] items-center justify-center overflow-hidden rounded-3xl bg-[#FAF5F3] md:order-last md:h-[440px] md:rounded-[32px]"
-      aria-hidden
-    >
-      <img
-        src={doodleArt}
-        alt=""
-        className="absolute inset-x-0 bottom-0 h-12 w-full bg-[#F9E840] object-cover md:h-20"
-      />
-      <div className="absolute left-5 top-5 size-8 text-[#FFA500] md:left-7 md:top-7">
-        <HalloweenMark />
-      </div>
-      <HalloweenHost className="relative h-[164px] w-auto max-w-[70%] object-contain md:h-[332px] md:max-w-[82%]" />
-      <div className="absolute bottom-8 left-5 h-14 w-12 -rotate-12 md:bottom-14 md:left-6 md:h-20 md:w-[72px]">
-        <HalloweenPumpkin />
-      </div>
-    </div>
   );
 }
 
@@ -113,14 +89,40 @@ export function HalloweenPumpkin() {
   );
 }
 
+export function HalloweenCandy() {
+  return (
+    <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden="true">
+      <ellipse cx="32" cy="32" rx="14" ry="11" fill="#F6A21B" />
+      <path d="M18 32 6 22v20zM46 32 58 22v20z" fill="#EFD9C0" />
+      <path
+        d="M22 26h20M22 32h20M22 38h20"
+        stroke="#fff"
+        strokeWidth="3"
+        strokeLinecap="round"
+        opacity=".85"
+      />
+    </svg>
+  );
+}
+
 const haunt = [
   {
     Icon: HalloweenGhost,
-    position: "bottom-[12%] left-[2%] md:left-[3%] md:w-[76px]",
+    position: "left-[2%] top-[21%] md:left-[9%] md:top-[23%] md:w-[76px]",
   },
   {
     Icon: HalloweenPumpkin,
-    position: "right-[2%] top-[15%] md:right-[4%] md:top-[15%] md:w-[84px]",
+    position: "right-[2%] top-[15%] md:right-[10%] md:top-[20%] md:w-[84px]",
+  },
+  { Icon: HalloweenCandy, position: "bottom-[18%] left-[17%] md:w-12" },
+  { Icon: HalloweenGhost, position: "bottom-[17%] right-[8%] md:w-16" },
+  {
+    Icon: HalloweenPumpkin,
+    position: "left-[5%] top-[60%] hidden md:block md:w-12",
+  },
+  {
+    Icon: HalloweenCandy,
+    position: "right-[30%] top-[13%] md:right-[28%] md:top-[13%] md:w-10",
   },
 ] as const;
 
@@ -146,9 +148,22 @@ export function HalloweenStage() {
           </div>
         );
       })}
-      <div className="absolute -bottom-20 -right-20 size-[340px] text-[#B4DEF5] opacity-[.025] md:size-[500px]">
-        <HalloweenMark />
-      </div>
+      <div
+        data-beam
+        className="absolute -top-24 left-[12%] h-[90%] w-[180px] origin-top bg-[linear-gradient(180deg,#d8e6ff10,#7ea7dd08_60%,transparent)] blur-2xl [clip-path:polygon(40%_0,60%_0,100%_100%,0_100%)] md:w-[300px]"
+      />
+      <div
+        data-beam
+        className="absolute -top-24 right-[12%] h-[90%] w-[180px] origin-top bg-[linear-gradient(180deg,#eed7ad14,#91addf08_60%,transparent)] blur-2xl [clip-path:polygon(40%_0,60%_0,100%_100%,0_100%)] md:w-[300px]"
+      />
+      <div
+        data-beam
+        className="absolute -top-40 left-[calc(50%-200px)] h-[80%] w-[400px] origin-top bg-[linear-gradient(180deg,#e8c68d0a,transparent)] blur-3xl"
+      />
+      <div className="absolute left-1/2 top-[46%] h-[660px] w-[660px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#adbfdb0c]" />
+      <div className="absolute left-1/2 top-[46%] h-[870px] w-[870px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#adbfdb08]" />
+      <div className="absolute -bottom-[220px] -left-[15%] h-[320px] w-[130%] rounded-[50%] border-t border-[#e8c68d1a] bg-[repeating-radial-gradient(ellipse_at_50%_0,transparent_0_88px,#97b9e30c_89px_90px,transparent_91px_140px)] shadow-[0_-20px_100px_#6c9ee40a] md:-bottom-[190px]" />
+      <div className="absolute left-[21%] top-[34%] size-1 rounded-full bg-[#e8c68d66] shadow-[180px_-130px_0_#e8c68d33,620px_72px_0_#e8c68d44,750px_-80px_0_#e8c68d26,90px_350px_0_#e8c68d26,550px_310px_0_#e8c68d33]" />
     </div>
   );
 }

@@ -15,19 +15,12 @@ import {
 } from "../../signals/halloween/halloween.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { campaignButton } from "./halloween-layout.tsx";
-import { HalloweenHost, HalloweenMark } from "./halloween-art.tsx";
+import { goldButton } from "./halloween-layout.tsx";
 
 function Progress({ round }: { readonly round: HalloweenRound }) {
   return (
-    <aside className="order-first flex items-center justify-between gap-5 rounded-2xl border border-[#a9c1df1c] bg-[#ffffff03] px-4 py-3 md:order-last md:rounded-3xl md:flex-col md:items-stretch md:p-5">
-      <div className="hidden h-24 items-center justify-center rounded-xl bg-[#FAF5F3] p-2 md:flex">
-        <HalloweenHost className="h-full w-auto object-contain" />
-      </div>
-      <h2 className="flex items-center gap-2 text-xs font-medium text-[#B4DEF5] md:mb-1">
-        <span className="size-4 text-[#FFA500]">
-          <HalloweenMark />
-        </span>
+    <aside className="order-first flex items-center justify-between gap-5 rounded-2xl border border-[#a9c1df1c] bg-[linear-gradient(150deg,#ffffff05,#ffffff01)] px-4 py-3 md:order-last md:rounded-3xl md:flex-col md:items-stretch md:p-5">
+      <h2 className="text-xs font-medium text-[#b2bfd0] md:mb-1">
         {copy.climb}
       </h2>
       <ol className="hidden flex-col-reverse gap-1.5 md:flex">
@@ -39,8 +32,9 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
               key={level}
               className={cn(
                 "flex h-11 items-center gap-3 rounded-lg border border-transparent px-3 text-[#8090a7]",
-                current && "border-[#FFA500] bg-[#FFA500] text-[#252121]",
-                done && "border-[#96D82D26] bg-[#96D82D0a] text-[#b9e574]",
+                current &&
+                  "border-[#eed2a0] bg-[linear-gradient(120deg,#e7c793,#d5ad70)] text-[#30291e]",
+                done && "border-[#e6c58e14] bg-[#e6c58e07] text-[#c9b28a]",
               )}
             >
               <span className="min-w-[17px] text-[11px] font-medium tabular-nums opacity-70">
@@ -90,10 +84,10 @@ function AnswerOptions({
             disabled={busy || Boolean(round.feedback)}
             aria-pressed={selected}
             className={cn(
-              "relative isolate h-auto min-h-14 w-full whitespace-normal rounded-none border-0 bg-[#8ba6c34d] px-16 py-3.5 text-center text-sm font-normal leading-relaxed text-[#dce4ef] transition-all duration-200 [clip-path:polygon(16px_0,calc(100%-16px)_0,100%_50%,calc(100%-16px)_100%,16px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[#172d46] before:[clip-path:polygon(15px_0,calc(100%-15px)_0,100%_50%,calc(100%-15px)_100%,15px_100%,0_50%)] hover:bg-[#FFA500] hover:text-[#FAF5F3] hover:before:bg-[#243d56] focus-visible:brightness-125 disabled:opacity-100 md:text-[15px]",
+              "relative isolate h-auto min-h-14 w-full whitespace-normal rounded-none border-0 bg-[#8ba6c34d] px-16 py-3.5 text-center text-sm font-normal leading-relaxed text-[#dce4ef] transition-all duration-200 [clip-path:polygon(16px_0,calc(100%-16px)_0,100%_50%,calc(100%-16px)_100%,16px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[linear-gradient(110deg,#10243b,#142b45_50%,#10243b)] before:[clip-path:polygon(15px_0,calc(100%-15px)_0,100%_50%,calc(100%-15px)_100%,15px_100%,0_50%)] hover:bg-[#d8b77f] hover:text-[#f3eadb] hover:before:bg-[linear-gradient(110deg,#1d3147,#263e58,#1d3147)] focus-visible:brightness-125 disabled:opacity-100 md:text-[15px]",
               selected &&
                 round.feedback?.correct &&
-                "bg-[#96D82D] text-[#e1f4bf] before:bg-[#253c25]",
+                "bg-[#dfc089] text-[#f7e5c5] before:bg-[linear-gradient(110deg,#343225,#4b4130,#343225)]",
               selected &&
                 !round.feedback?.correct &&
                 "bg-[#b57b8f] text-[#f5dce5] before:bg-[#432b3b] before:bg-none",
@@ -103,12 +97,12 @@ function AnswerOptions({
               onAnswer(option.id);
             }}
           >
-            <span className="absolute left-6 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#B4DEF50d] text-[11px] font-medium text-[#B4DEF5]">
+            <span className="absolute left-6 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#ffffff06] text-[11px] font-medium text-[#dbc39d]">
               {String.fromCharCode(65 + index)}
             </span>
             <span>{option.text}</span>
             {selected && round.feedback?.correct && (
-              <Check className="absolute right-6 size-4 text-[#96D82D]" />
+              <Check className="absolute right-6 size-4 text-[#e8c68d]" />
             )}
           </Button>
         );
@@ -131,7 +125,7 @@ export function HalloweenQuestionScreen() {
   return (
     <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14">
       <div className="min-w-0 text-center">
-        <p className="mb-5 text-xs font-medium tracking-[.025em] text-[#B4DEF5]">
+        <p className="mb-5 text-xs font-medium tracking-[.025em] text-[#b5a07e]">
           {copy.round} {String(round.questionNumber).padStart(2, "0")} ·{" "}
           {copy.roundTitles[round.questionNumber - 1]}
         </p>
@@ -158,7 +152,7 @@ export function HalloweenQuestionScreen() {
             <p
               className={cn(
                 "mb-1.5 text-sm font-medium",
-                round.feedback.correct ? "text-[#b9e574]" : "text-[#FFC6E2]",
+                round.feedback.correct ? "text-[#e8c68d]" : "text-[#e8afc5]",
               )}
             >
               {round.feedback.correct ? copy.correct : copy.lost}
@@ -169,7 +163,7 @@ export function HalloweenQuestionScreen() {
             {round.feedback.correct && (
               <Button
                 className={cn(
-                  campaignButton,
+                  goldButton,
                   "mx-auto min-h-11 min-w-[188px] px-6 py-3 text-[13px]",
                 )}
                 pending={nextOperation.state === "loading"}
