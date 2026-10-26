@@ -3,14 +3,9 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { fireEvent, screen, within } from "@testing-library/react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  fill,
-  setupPage as setupPlatformPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
@@ -18,20 +13,11 @@ import {
   buttonNamed,
   imageArtifactDetail,
   mockArtifactConversation,
+  openResourceArtifact,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
-
-function setupPage(options: Parameters<typeof setupPlatformPage>[0]) {
-  return setupPlatformPage({
-    ...options,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatResourcePanel]: false,
-      ...options.featureSwitches,
-    },
-  });
-}
 
 const ARTIFACT_ID = "a0000000-0000-4000-a000-000000000940";
 const IMAGE_ID = "f0000000-0000-4000-a000-000000000940";
@@ -86,8 +72,9 @@ test("Thread artifacts use authorized thumbnails and open the original image", a
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
   });
-  const openArtifacts = await screen.findByLabelText("Open artifacts");
-  click(openArtifacts);
+  await openResourceArtifact("Private chart");
+  const preview = await screen.findByTestId("artifact-sidebar");
+  click(buttonNamed("Back to all artifacts", preview));
   const sidebar = await screen.findByTestId("thread-sidebar-artifacts");
   await within(sidebar).findByText("Private chart");
   expect(
@@ -116,7 +103,7 @@ test("Workspace search uses a small authorized thumbnail for a private image", a
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
   });
-  await screen.findByLabelText("Open artifacts");
+  await screen.findByLabelText("Resources");
   fireEvent.keyDown(document.body, {
     key: "f",
     code: "KeyF",
@@ -174,7 +161,11 @@ test("Thread video cards wait for their authorized poster", async () => {
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
   });
-  click(await screen.findByLabelText("Open artifacts"));
+  await openResourceArtifact("Private movie");
+  const unavailable = await screen.findByTestId(
+    "thread-sidebar-artifact-unavailable",
+  );
+  click(buttonNamed("Back to artifacts", unavailable));
   const sidebar = await screen.findByTestId("thread-sidebar-artifacts");
   await within(sidebar).findByText("Private movie");
   expect(

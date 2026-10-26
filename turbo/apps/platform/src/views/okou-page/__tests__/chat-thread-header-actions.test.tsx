@@ -73,7 +73,6 @@ async function setupHeaderPage(
     featureSwitches: {
       [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
       [FeatureSwitchKey.ChatThreadMuting]: mutingEnabled,
-      [FeatureSwitchKey.ChatResourcePanel]: false,
     },
   });
   await screen.findByText("Review the header layout");
@@ -225,10 +224,9 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     queryAllByRoleFast("button", group).map((button) => {
       return button.getAttribute("aria-label");
     }),
-  ).toStrictEqual(["Share messages", "More actions"]);
+  ).toStrictEqual(["Share messages", "Resources", "More actions"]);
   expect(buttonNamed("Open menu")).toBeInTheDocument();
   expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Open artifacts")).not.toBeInTheDocument();
 
   click(more);
   await screen.findByRole("menu");
@@ -236,7 +234,6 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     "Pin chat",
     "Rename chat",
     "Archive chat",
-    "Artifacts",
   ]);
   click(menuItemNamed("Rename chat"));
   const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
@@ -369,7 +366,6 @@ test("Mute from the mobile header and unmute from the desktop header", async () 
     "Rename chat",
     "Mute chat",
     "Archive chat",
-    "Artifacts",
   ]);
   click(menuItemNamed("Mute chat"));
   await expect(
@@ -418,11 +414,7 @@ test("Hide header archiving when the archive switch is off", async () => {
   await setupHeaderPage([], false);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
-  expect(menuItemNames()).toStrictEqual([
-    "Pin chat",
-    "Rename chat",
-    "Artifacts",
-  ]);
+  expect(menuItemNames()).toStrictEqual(["Pin chat", "Rename chat"]);
 });
 
 test("Unarchive from the mobile header and stay in the current thread", async () => {
@@ -452,7 +444,6 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
     "Pin chat",
     "Rename chat",
     "Unarchive chat",
-    "Artifacts",
   ]);
   click(menuItemNamed("Unarchive chat"));
   click(buttonNamed("More actions"));
@@ -489,16 +480,6 @@ test("Stay in the archived thread and show the unarchive API error", async () =>
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(`/chats/${THREAD_ID}`);
   expect(screen.getByText("Review the header layout")).toBeInTheDocument();
-});
-
-test("Open artifacts from the mobile menu", async () => {
-  context.mocks.browser.matchMedia(false);
-  await setupHeaderPage();
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Artifacts"));
-  const artifacts = await screen.findByTestId("thread-sidebar-artifacts");
-  expect(artifacts).toBeVisible();
 });
 
 test("Open linked automations from the mobile menu", async () => {
@@ -538,7 +519,6 @@ test("Open linked automations from the mobile menu", async () => {
       "Rename chat",
       "Archive chat",
       "Automations",
-      "Artifacts",
     ]);
   });
   click(menuItemNamed("Automations"));

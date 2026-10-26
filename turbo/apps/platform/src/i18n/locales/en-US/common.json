@@ -399,7 +399,6 @@
       "manage": "Manage",
       "mobile": {
         "invite": "Invite",
-        "openArtifacts": "Open mobile artifacts",
         "openAutomations": "Open mobile automations",
         "openMenu": "Open menu"
       },
@@ -2956,7 +2955,6 @@
       },
       "noEmojiFound": "No emoji found",
       "notFound": "Chat thread not found",
-      "openArtifacts": "Open artifacts",
       "openBrowser": "Open browser",
       "openNamedAgent": "Open agent {{name}}",
       "openNamedChat": "Open chat {{title}}",

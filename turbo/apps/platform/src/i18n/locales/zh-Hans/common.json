@@ -399,7 +399,6 @@
       "manage": "管理",
       "mobile": {
         "invite": "邀请",
-        "openArtifacts": "打开成果面板",
         "openAutomations": "打开自动化面板",
         "openMenu": "打开菜单"
       },
@@ -2945,7 +2944,6 @@
       },
       "noEmojiFound": "没有找到表情",
       "notFound": "找不到该聊天会话",
-      "openArtifacts": "打开成果",
       "openBrowser": "打开浏览器",
       "openNamedAgent": "打开智能体 {{name}}",
       "openNamedChat": "打开聊天 {{title}}",

@@ -399,7 +399,6 @@
       "manage": "प्रबंधित करें",
       "mobile": {
         "invite": "आमंत्रित करें",
-        "openArtifacts": "मोबाइल आर्टिफ़ैक्ट्स खोलें",
         "openAutomations": "मोबाइल ऑटोमेशन खोलें",
         "openMenu": "मेनू खोलें"
       },
@@ -2956,7 +2955,6 @@
       },
       "noEmojiFound": "कोई इमोजी नहीं मिला",
       "notFound": "चैट थ्रेड नहीं मिला",
-      "openArtifacts": "आर्टिफ़ैक्ट खोलें",
       "openBrowser": "खुला ब्राउज़र",
       "openNamedAgent": "ओपन एजेंट {{name}}",
       "openNamedChat": "चैट {{title}} खोलें",

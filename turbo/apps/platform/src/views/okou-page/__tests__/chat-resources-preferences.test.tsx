@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
-import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -58,13 +57,6 @@ test("Honor a previously saved off preference on entry", async () => {
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-});
-
-test("Keep the existing artifact entry when the rollout switch is off", async () => {
-  await setupResources({ enabled: false });
-  click(buttonNamed("Open artifacts"));
-  const all = await screen.findByTestId("thread-sidebar-artifacts");
-  expect(all).toHaveAccessibleName("Artifacts");
 });
 
 test("Apply a second press while the first save is still in flight", async () => {

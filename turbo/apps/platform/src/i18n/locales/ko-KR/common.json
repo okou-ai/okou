@@ -399,7 +399,6 @@
       "manage": "관리",
       "mobile": {
         "invite": "초대",
-        "openArtifacts": "모바일 아티팩트 열기",
         "openAutomations": "모바일 자동화 열기",
         "openMenu": "메뉴 열기"
       },
@@ -2945,7 +2944,6 @@
       },
       "noEmojiFound": "이모지가 없습니다",
       "notFound": "채팅 스레드를 찾을 수 없습니다",
-      "openArtifacts": "아티팩트 열기",
       "openBrowser": "브라우저 열기",
       "openNamedAgent": "에이전트 {{name}} 열기",
       "openNamedChat": "채팅 {{title}} 열기",

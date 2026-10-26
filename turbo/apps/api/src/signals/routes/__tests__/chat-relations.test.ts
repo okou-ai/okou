@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -14,7 +13,6 @@ import {
   okouTokenFromClaim,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -34,26 +32,12 @@ function headers(actor: ApiTestUser) {
   );
   return { authorization: "Bearer clerk-session" };
 }
-async function enable(actor: ApiTestUser, enabled = true) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.ChatResourcePanel]: enabled },
-  );
-}
 async function sourceFixture() {
   const fixture = await publicChatActor(context);
   await fixture.run(() => {
     return api.ensurePersonalSubscriptionModel(fixture.actor, {
       model: "claude-fable-5-1",
     });
-  });
-  fixture.ownsFeatureSwitches();
-  await fixture.run(() => {
-    return enable(fixture.actor);
   });
   const source = await fixture.sendChatRun(fixture.actor, {
     agentId: fixture.agentId,
@@ -415,7 +399,7 @@ describe("chat relationships", () => {
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 
-  it("records implicit creation and enforces the feature, user and organization boundaries", async () => {
+  it("records implicit creation and enforces user and organization boundaries", async () => {
     const {
       actor,
       agentId,
@@ -461,7 +445,6 @@ describe("chat relationships", () => {
       { messageEventId: send.clientEventId, sourceRunId: source.runId },
     ]);
     const other = bdd.user({ orgId: actor.orgId });
-    await enable(other);
     for (const id of [source.threadId, randomUUID()]) {
       const denied = await accept(
         relations.children({
@@ -475,21 +458,12 @@ describe("chat relationships", () => {
       });
     }
     const otherOrg = bdd.user({ userId: actor.userId });
-    await enable(otherOrg);
     await accept(
       relations.communications({
         headers: headers(otherOrg),
         params: { id: source.threadId },
       }),
       [404],
-    );
-    await enable(actor, false);
-    await accept(
-      relations.children({
-        headers: headers(actor),
-        params: { id: source.threadId },
-      }),
-      [403],
     );
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });

@@ -7,7 +7,6 @@ import {
   type UpdateUserPreferencesRequest,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
@@ -70,7 +69,6 @@ export async function setupResources(
   context: TestContext,
   options: {
     readonly gutter?: number;
-    readonly enabled?: boolean;
     readonly preferred?: boolean;
     readonly desktop?: boolean;
     readonly sourceUrl?: boolean;
@@ -134,9 +132,6 @@ export async function setupResources(
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatResourcePanel]: options.enabled ?? true,
-    },
   });
   await screen.findByText("Find useful resources");
   return resize;
@@ -291,7 +286,6 @@ export async function setupOverflowResources(
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("report-1.pdf");
