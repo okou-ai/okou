@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.22](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.21...runner-provider-v0.11.22) (2026-10-26)
+
+
+### Performance Improvements
+
+* **runner-provider:** compact fragmented claim response chunks ([#43145](https://github.com/okou-ai/okou/issues/43145)) ([f5032f7](https://github.com/okou-ai/okou/commit/f5032f73745f55855280d0604a541228f064599a))
+
 ## [0.11.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.20...runner-provider-v0.11.21) (2026-10-26)
 
 
