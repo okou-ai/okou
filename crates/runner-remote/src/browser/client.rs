@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 use http_body_util::{BodyExt, Empty};
 use hyper_util::rt::TokioIo;
 use reqwest::Url;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{
     collections::HashMap,
     sync::{
@@ -25,7 +25,7 @@ use tokio_tungstenite::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{Failure, MAX_MESSAGE_BYTES, Result};
+use super::{Failure, MAX_MESSAGE_BYTES, QUEUE_BYTES, Result};
 use crate::destination::{Network, select_public_address};
 
 pub(super) type Socket = WebSocketStream<TlsStream<TcpStream>>;
@@ -189,7 +189,7 @@ impl Client {
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
         let cancel = parent.child_token();
         let (events, receive) = mpsc::channel(512);
-        let budget = Arc::new(Semaphore::new(8 * 1024 * 1024));
+        let budget = Arc::new(Semaphore::new(QUEUE_BYTES));
         let read_cancel = cancel.clone();
         let read_pending = Arc::clone(&pending);
         let read_sink = Arc::clone(&sink);
@@ -227,7 +227,8 @@ impl Client {
                         let _ = sender.send(value);
                     }
                 } else {
-                    let Ok(permit) = Arc::clone(&budget).try_acquire_many_owned(bytes.len() as u32)
+                    let Ok(permit) = Arc::clone(&budget)
+                        .try_acquire_many_owned(bytes.len().min(QUEUE_BYTES) as u32)
                     else {
                         break;
                     };
@@ -265,6 +266,23 @@ impl Client {
         params: Value,
         session: Option<&str>,
     ) -> Result<Value> {
+        let mut response = self.response(method, params, session).await?;
+        if response.get("error").is_some() {
+            return Err(Failure);
+        }
+        response
+            .as_object_mut()
+            .ok_or(Failure)?
+            .remove("result")
+            .ok_or(Failure)
+    }
+
+    pub(super) async fn response(
+        &self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+    ) -> Result<Value> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (send, receive) = oneshot::channel();
         if self.cancel.is_cancelled() {
@@ -276,28 +294,27 @@ impl Client {
             id,
         };
         let work = async {
-            let mut request = json!({"id":id,"method":method,"params":params});
+            let mut request = serde_json::Map::from_iter([
+                ("id".to_owned(), id.into()),
+                ("method".to_owned(), method.into()),
+                ("params".to_owned(), params),
+            ]);
             if let Some(session) = session {
-                request
-                    .as_object_mut()
-                    .ok_or(Failure)?
-                    .insert("sessionId".to_owned(), session.into());
+                request.insert("sessionId".to_owned(), session.into());
             }
+            let text = serde_json::to_string(&request).map_err(|_| Failure)?;
+            drop(request);
             self.sink
                 .lock()
                 .await
-                .send(Message::Text(request.to_string().into()))
+                .send(Message::Text(text.into()))
                 .await
                 .map_err(|_| Failure)?;
             receive.await.map_err(|_| Failure)
         };
         let result = tokio::select! { biased; () = self.cancel.cancelled() => Err(Failure), result = tokio::time::timeout(Duration::from_secs(30), work) => result.map_err(|_| Failure)? };
         drop(guard);
-        let value = result?;
-        if value.get("error").is_some() {
-            return Err(Failure);
-        }
-        value.get("result").cloned().ok_or(Failure)
+        result
     }
 
     pub(super) async fn shutdown(&mut self) {

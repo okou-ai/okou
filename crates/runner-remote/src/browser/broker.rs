@@ -285,7 +285,35 @@ impl Broker {
                 }
                 Value::Object(safe)
             }
-            _ => self.client.command(method, params, session).await?,
+            _ => {
+                let mut response = self.client.response(method, params, session).await?;
+                if let Some(error) = response.get("error") {
+                    if let Some(session) = session {
+                        self.window(&self.sessions.get(session).ok_or(Failure)?.target)
+                            .await?;
+                    }
+                    let mut response = denied();
+                    let safe_error = response
+                        .get_mut("error")
+                        .and_then(Value::as_object_mut)
+                        .ok_or(Failure)?;
+                    safe_error.insert(
+                        "code".to_owned(),
+                        error
+                            .get("code")
+                            .and_then(Value::as_i64)
+                            .ok_or(Failure)?
+                            .into(),
+                    );
+                    safe_error.insert("message".to_owned(), "CDP command failed".into());
+                    return Ok(response);
+                }
+                response
+                    .as_object_mut()
+                    .ok_or(Failure)?
+                    .remove("result")
+                    .ok_or(Failure)?
+            }
         };
         if let Some(session) = session {
             let page = self.sessions.get_mut(session).ok_or(Failure)?;
@@ -296,20 +324,23 @@ impl Broker {
             self.window(&self.sessions.get(session).ok_or(Failure)?.target)
                 .await?;
         }
-        let mut response = json!({"id":id,"result":result});
+        let mut response = serde_json::Map::from_iter([
+            ("id".to_owned(), id.into()),
+            ("result".to_owned(), result),
+        ]);
         self.bounded()?;
         if let Some(session) = session {
-            response
-                .as_object_mut()
-                .ok_or(Failure)?
-                .insert("sessionId".to_owned(), session.into());
+            response.insert("sessionId".to_owned(), session.into());
         }
-        Ok(response)
+        Ok(Value::Object(response))
     }
 
-    pub(super) async fn event(&mut self, event: Value) -> Result<Option<Value>> {
+    pub(super) async fn event(&mut self, mut event: Value) -> Result<Option<Value>> {
         let method = event.get("method").and_then(Value::as_str).ok_or(Failure)?;
-        let params = event.get("params").ok_or(Failure)?;
+        let params = event
+            .get("params")
+            .filter(|params| params.is_object())
+            .ok_or(Failure)?;
         if let Some(session) = event.get("sessionId").and_then(Value::as_str) {
             let Some(page) = self.sessions.get(session) else {
                 return Ok(None);
@@ -374,9 +405,14 @@ impl Broker {
                 return Ok(None);
             }
             self.bounded()?;
-            return Ok(Some(
-                json!({"method":method,"sessionId":session,"params":params}),
-            ));
+            let method = method.to_owned();
+            let session = session.to_owned();
+            let params = event.get_mut("params").ok_or(Failure)?.take();
+            return Ok(Some(Value::Object(serde_json::Map::from_iter([
+                ("method".to_owned(), method.into()),
+                ("sessionId".to_owned(), session.into()),
+                ("params".to_owned(), params),
+            ]))));
         }
         match method {
             "Target.targetCreated" | "Target.targetInfoChanged" if self.discover => {

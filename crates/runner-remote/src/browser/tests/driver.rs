@@ -127,7 +127,7 @@ async fn immutable_driver_through_actual_guest_adapter_and_runner_dispatch() {
         &mut setup,
         3,
         "Target.createTarget",
-        json!({"url":"about:blank"}),
+        json!({"url":"data:text/html,<svg width='200' height='100'><rect width='200' height='100' fill='red'/></svg>"}),
     )
     .await["targetId"]
         .as_str()
@@ -176,7 +176,7 @@ async fn immutable_driver_through_actual_guest_adapter_and_runner_dispatch() {
             &namespace,
             &[
                 "open",
-                "data:text/html,<title>Owned fixture</title><label>Name<input id=name></label>",
+                "data:text/html,<title>Owned fixture</title><label>Name<input id=name></label><script>document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter')document.body.dataset.submitted='yes'})</script>",
             ],
         )
         .await;
@@ -184,6 +184,12 @@ async fn immutable_driver_through_actual_guest_adapter_and_runner_dispatch() {
         driver(&namespace, &["fill", "#name", "synthetic fixture"]).await;
         driver(&namespace, &["press", "Control+a"]).await;
         driver(&namespace, &["press", "Tab"]).await;
+        driver(&namespace, &["press", "Control+Enter"]).await;
+        assert_eq!(driver(&namespace, &["eval", "document.body.dataset.submitted === 'yes'"]).await.trim(), "true");
+        driver(&namespace, &["set", "viewport", "900", "700"]).await;
+        assert_eq!(driver(&namespace, &["eval", "window.innerWidth === 900"]).await.trim(), "true");
+        driver(&namespace, &["set", "media", "dark"]).await;
+        assert_eq!(driver(&namespace, &["eval", "matchMedia('(prefers-color-scheme: dark)').matches"]).await.trim(), "true");
         let image = directory.path().join("capture.png");
         driver(&namespace, &["screenshot", image.to_str().unwrap()]).await;
         assert!(
@@ -195,6 +201,11 @@ async fn immutable_driver_through_actual_guest_adapter_and_runner_dispatch() {
         let tabs = driver(&namespace, &["tab"]).await;
         assert!(!tabs.contains("Foreign fixture") && !tabs.contains(&foreign));
         driver(&namespace, &["tab", "t2"]).await;
+        // The local Chromium also hangs printing text through direct CDP.
+        // A font-free vector page exercises real PDF output and scoped routing.
+        let pdf = directory.path().join("capture.pdf");
+        driver(&namespace, &["pdf", pdf.to_str().unwrap()]).await;
+        assert!(tokio::fs::read(&pdf).await.unwrap().starts_with(b"%PDF-"));
         driver(&namespace, &["close"]).await;
         driver(&namespace, &["connect", &address]).await;
         driver(&namespace, &["snapshot"]).await;

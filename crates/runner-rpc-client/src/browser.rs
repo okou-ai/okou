@@ -20,7 +20,8 @@ use tokio_tungstenite::{
     tungstenite::{Message, protocol::WebSocketConfig},
 };
 
-pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
+// Match the host and tungstenite's normal complete-message scale.
+pub const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_DURATION_MS: u64 = BROWSER_PROVIDER_TIMEOUT_MINUTES * 60 * 1000;
 
 pub async fn run() -> io::Result<bool> {

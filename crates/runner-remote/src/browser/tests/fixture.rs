@@ -194,7 +194,11 @@ impl Peer {
                                 }
                                 let result = response(method, &request, &state);
                                 if method == "Input.insertText" && state.drop_input_ack.swap(false,Ordering::SeqCst) { break; }
-                                let message = json!({"id":request["id"],"result":result});
+                                let message = if method == "Fixture.unsupported" {
+                                    json!({"id":request["id"],"error":{"code":-32601,"message":"private upstream diagnostic"}})
+                                } else {
+                                    json!({"id":request["id"],"result":result})
+                                };
                                 if socket.send(Message::Text(message.to_string().into())).await.is_err() { break; }
                                 for event in events(method, &request) {
                                     if socket.send(Message::Text(event.to_string().into())).await.is_err() { break; }
@@ -357,12 +361,25 @@ fn response(method: &str, request: &Value, state: &State) -> Value {
             json!({"result":{"type":"object","value":{"objectId":"forged-object","frameId":"forged-frame"}}})
         }
         "Page.captureScreenshot" => json!({"data":"a".repeat(100_000)}),
+        "Fixture.echo" => request["params"].clone(),
+        "DOM.performSearch" => json!({"searchId":"search-owned","resultCount":1}),
+        "DOM.getSearchResults" => json!({"nodeIds":[101]}),
+        "Network.getResponseBody" => json!({"body":"owned response","base64Encoded":false}),
         _ => json!({}),
     }
 }
 
 fn events(method: &str, request: &Value) -> Vec<Value> {
     match method {
+        "Fixture.events" => vec![
+            json!({"method":"Fixture.futureEvent","sessionId":request["sessionId"],"params":{"value":"owned"}}),
+            json!({"method":"Fixture.futureEvent","sessionId":"foreign-session","params":{"value":"foreign"}}),
+            json!({"method":"Fixture.futureEvent","sessionId":request["sessionId"],"params":{"targetId":FOREIGN,"value":"foreign"}}),
+            json!({"method":"Storage.futureEvent","sessionId":request["sessionId"],"params":{"value":"global"}}),
+            json!({"method":"Runtime.consoleAPICalled","sessionId":request["sessionId"],"params":{"type":"log","executionContextId":100,"args":[{"type":"object","objectId":"console-owned","value":{"objectId":"forged-object"}}]}}),
+            json!({"method":"CSS.styleSheetAdded","sessionId":request["sessionId"],"params":{"header":{"frameId":"frame-owned","styleSheetId":"style-owned"}}}),
+            json!({"method":"Network.responseReceived","sessionId":request["sessionId"],"params":{"frameId":"frame-owned","requestId":"request-owned","response":{"status":200}}}),
+        ],
         "Network.enable" => vec![
             json!({"method":"Network.unimplementedGlobalEvent","sessionId":request["sessionId"],"params":{"targetId":FOREIGN}}),
             json!({"method":"Network.responseReceived","sessionId":request["sessionId"],"params":{"frameId":"frame-foreign","requestId":"foreign-request"}}),

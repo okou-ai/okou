@@ -31,7 +31,9 @@ use crate::{
 };
 use broker::Broker;
 
-pub(super) const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
+// Match tungstenite's normal complete-message scale, including large captures.
+pub(super) const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+const QUEUE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DURATION_MS: u64 = BROWSER_PROVIDER_TIMEOUT_MINUTES * 60 * 1000;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Failure;
@@ -133,7 +135,7 @@ impl BrowserRuntime {
         let (read, write) = tokio::io::split(input);
         let mut output = Writer::responses(write);
         let (send, mut receive) = mpsc::channel(8);
-        let budget = Arc::new(Semaphore::new(8 * 1024 * 1024));
+        let budget = Arc::new(Semaphore::new(QUEUE_BYTES));
         let input_cancelled = stream_cancelled.clone();
         let input_ended = guest_ended.clone();
         // A single owned reader retains in-progress framing across other work.
@@ -144,7 +146,9 @@ impl BrowserRuntime {
                 match messages::read(&mut reader, MAX_MESSAGE_BYTES).await {
                     Ok(Some(messages::Message::Data(bytes))) => {
                         let Ok(permit) = Arc::clone(&budget)
-                            .acquire_many_owned(bytes.len() as u32)
+                            // One large message consumes the whole queue budget;
+                            // it must not wait for more permits than can exist.
+                            .acquire_many_owned(bytes.len().min(QUEUE_BYTES) as u32)
                             .await
                         else {
                             break;
@@ -205,6 +209,7 @@ impl BrowserRuntime {
                         return Err(Failure);
                     }
                     let message: Value = serde_json::from_slice(&bytes).map_err(|_| Failure)?;
+                    drop(bytes);
                     guard
                         .wait(self.refresh(run, &mut broker))
                         .await
@@ -218,6 +223,7 @@ impl BrowserRuntime {
                         .await
                         .ok_or(Failure)??;
                     let bytes = serde_json::to_vec(&result).map_err(|_| Failure)?;
+                    drop(result);
                     guard
                         .wait(messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES))
                         .await
@@ -238,6 +244,7 @@ impl BrowserRuntime {
                             .await
                             .ok_or(Failure)??;
                         let bytes = serde_json::to_vec(&event).map_err(|_| Failure)?;
+                        drop(event);
                         guard
                             .wait(messages::write(&mut output, &bytes, MAX_MESSAGE_BYTES))
                             .await
