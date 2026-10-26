@@ -611,19 +611,20 @@ function UsagePackCreditCard({ isAdmin }: { isAdmin: boolean }) {
 export function CreditBalanceSection() {
   const { t } = useTranslation();
   const setActiveSection = useSet(setSettingsActiveSection$);
+  const signal = useGet(pageSignal$);
   const setBillingSubPage = useSet(setBillingSubPage$);
   const requestBuyCredits = useSet(requestBuyCreditsScroll$);
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const goToComparePlans = () => {
-    setActiveSection("billing");
+    setActiveSection("billing", signal);
     setBillingSubPage(true);
   };
 
   const goToBuyCredits = () => {
     requestBuyCredits();
-    setActiveSection("billing");
+    setActiveSection("billing", signal);
   };
 
   const usagePackCreditCard = <UsagePackCreditCard isAdmin={isAdmin} />;
@@ -650,7 +651,7 @@ export function CreditBalanceSection() {
         data-testid="credit-balance-see-usage"
         className="flex w-fit items-center gap-1.5 rounded-md px-1 py-0.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
         onClick={() => {
-          setActiveSection("usage-records");
+          setActiveSection("usage-records", signal);
         }}
       >
         {t(($) => {

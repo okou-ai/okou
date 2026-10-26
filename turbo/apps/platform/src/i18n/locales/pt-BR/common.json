@@ -5841,6 +5841,9 @@
         "logo": {
           "description": "Avatar do espaço de trabalho exibido em todo o app",
           "fallbackAlt": "Espaço de trabalho",
+          "loadError": "Não foi possível carregar o logotipo do espaço de trabalho.",
+          "loading": "Carregando o logotipo do espaço de trabalho",
+          "retry": "Tentar novamente",
           "title": "Logo",
           "upload": "Enviar logo"
         },

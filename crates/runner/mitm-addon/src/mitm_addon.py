@@ -55,6 +55,7 @@ import codex_model_catalog_cache
 import connector_diagnostics
 import connector_intent
 import content_length
+import data_router
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import header_auth_response
@@ -1846,6 +1847,16 @@ async def request(flow: http.HTTPFlow) -> None:
                 auth_base_forwarder.release_forward_request_admission_from_flow(flow)
                 terminal_usage.release_tracked_flow(flow)
             elif auth_result is FirewallAuthHandlingResult.CONTINUE_UPSTREAM:
+                if allow.name == data_router.OWNER:
+                    await data_router.register_request(flow)
+                    if not _revalidate_current_firewall_authorization_for_request(
+                        flow,
+                        allow,
+                        expected_run_id=expected_run_id,
+                        expected_request=expected_request,
+                    ):
+                        terminal_usage.release_tracked_flow(flow)
+                        return
                 await _prepare_codex_catalog_request_with_upstream_revalidation(
                     flow,
                     allow,

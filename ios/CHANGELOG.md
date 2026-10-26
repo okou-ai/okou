@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.19.5](https://github.com/okou-ai/okou/compare/ios-v0.19.4...ios-v0.19.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* **ios:** preserve transcript continuity when sending ([#42937](https://github.com/okou-ai/okou/issues/42937)) ([d0565a6](https://github.com/okou-ai/okou/commit/d0565a6f4e21bf0a919e3853f613e8c75417233c))
+
+## [0.19.4](https://github.com/okou-ai/okou/compare/ios-v0.19.3...ios-v0.19.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ios:** restore custom headers and align floating controls ([#42884](https://github.com/okou-ai/okou/issues/42884)) ([e4af90e](https://github.com/okou-ai/okou/commit/e4af90e9f1fefeb1dcce25f12814fa464b889efc))
+* **ios:** retain fixture ownership across request cancellation ([#42873](https://github.com/okou-ai/okou/issues/42873)) ([2d0fa3c](https://github.com/okou-ai/okou/commit/2d0fa3c8717cd32670b03dbe64ed55b462453da0))
+* **ios:** reuse attachment thumbnails across scrolling ([#42890](https://github.com/okou-ai/okou/issues/42890)) ([18dfd26](https://github.com/okou-ai/okou/commit/18dfd2650e4a4b8b169de9e93c1ae890cdc4e3da))
+
 ## [0.19.3](https://github.com/okou-ai/okou/compare/ios-v0.19.2...ios-v0.19.3) (2026-10-25)
 
 

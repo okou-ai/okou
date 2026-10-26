@@ -1213,13 +1213,7 @@ function FeishuSetupWizard({
       return;
     }
     if (step === "tokens" && !readOnly) {
-      detach(
-        (async () => {
-          await setup(feishuSetupRequest(form, data), signal);
-          advanceStep();
-        })(),
-        Reason.DomCallback,
-      );
+      detach(setup(feishuSetupRequest(form, data), signal), Reason.DomCallback);
       return;
     }
     if (step === "publish") {
@@ -1241,13 +1235,7 @@ function FeishuSetupWizard({
       return;
     }
     if (step === "credentials" && !data) {
-      detach(
-        (async () => {
-          await checkAppId(form.appId.trim(), signal);
-          advanceStep();
-        })(),
-        Reason.DomCallback,
-      );
+      detach(checkAppId(form.appId.trim(), signal), Reason.DomCallback);
       return;
     }
     advanceStep();

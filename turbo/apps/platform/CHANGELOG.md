@@ -12,6 +12,84 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1063.0](https://github.com/okou-ai/okou/compare/app-v0.1062.0...app-v0.1063.0) (2026-10-26)
+
+
+### Features
+
+* **core:** enable custom templates for all users ([#42921](https://github.com/okou-ai/okou/issues/42921)) ([1cc417d](https://github.com/okou-ai/okou/commit/1cc417d66219754cfeefbdd01df557f84a245a02))
+
+
+### Refactoring
+
+* **data:** remove retired managed data runtime scaffolding ([#42935](https://github.com/okou-ai/okou/issues/42935)) ([b220a50](https://github.com/okou-ai/okou/commit/b220a504c5e633de162791f1216c4458188ffe72))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.1
+    * @okouai/core bumped to 8.788.0
+
+## [0.1062.0](https://github.com/okou-ai/okou/compare/app-v0.1061.0...app-v0.1062.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+
+### Bug Fixes
+
+* **browser:** allow viewer window size sync changes ([#42916](https://github.com/okou-ai/okou/issues/42916)) ([497ec0f](https://github.com/okou-ai/okou/commit/497ec0f949927f3991292972c640db0330ea48a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.0
+    * @okouai/core bumped to 8.787.1
+
+## [0.1061.0](https://github.com/okou-ai/okou/compare/app-v0.1060.1...app-v0.1061.0) (2026-10-25)
+
+
+### Features
+
+* **browser:** enable okou viewer for staff ([#42910](https://github.com/okou-ai/okou/issues/42910)) ([e45694f](https://github.com/okou-ai/okou/commit/e45694f5bbb2c30369ed48e188e6a75e9ab4b024))
+* **browser:** show cdp viewer settings menu ([#42904](https://github.com/okou-ai/okou/issues/42904)) ([b4cf1ac](https://github.com/okou-ai/okou/commit/b4cf1acf0888f0d028d92b3eae6b28d7b884d4c8))
+
+
+### Refactoring
+
+* **app:** remove json tree preview feature switch ([#42911](https://github.com/okou-ai/okou/issues/42911)) ([2ed0f18](https://github.com/okou-ai/okou/commit/2ed0f180ffd7ee1db828f447a7da171cdb6df3b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.787.0
+
+## [0.1060.1](https://github.com/okou-ai/okou/compare/app-v0.1060.0...app-v0.1060.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **platform:** make workspace logo loading recoverable ([#42872](https://github.com/okou-ai/okou/issues/42872)) ([60cea25](https://github.com/okou-ai/okou/commit/60cea259b395664d54716c6f98f592439899b797))
+* preserve new drafts when custom connector creation completes ([#42885](https://github.com/okou-ai/okou/issues/42885)) ([7fbb795](https://github.com/okou-ai/okou/commit/7fbb7958c7aa8faa9230a6cd319efe401d0c9e61))
+* preserve newer custom connector drafts after an edit ([#42883](https://github.com/okou-ai/okou/issues/42883)) ([d4e90fc](https://github.com/okou-ai/okou/commit/d4e90fc679a17bbd865e8780f736af148f54c84b))
+* preserve newer custom connector drafts after deletion ([#42886](https://github.com/okou-ai/okou/issues/42886)) ([e3d6756](https://github.com/okou-ai/okou/commit/e3d67561022e1e67830945c711960bd5da6bf92f))
+
+
+### Refactoring
+
+* **platform:** own agent creation completion in signals ([#42868](https://github.com/okou-ai/okou/issues/42868)) ([c1d72a8](https://github.com/okou-ai/okou/commit/c1d72a81ac68249c1aa19bd7801e97928daf3eb8))
+* **platform:** own connector account disconnect completion ([#42870](https://github.com/okou-ai/okou/issues/42870)) ([c1f768a](https://github.com/okou-ai/okou/commit/c1f768a4747b97262320383f331c3c40d6ce6ecd))
+* **platform:** own connector account naming completion ([#42871](https://github.com/okou-ai/okou/issues/42871)) ([29d717a](https://github.com/okou-ai/okou/commit/29d717acb22c0f27a18712d05b91661ca76e86d6))
+* **platform:** own personal account disconnect completion ([#42869](https://github.com/okou-ai/okou/issues/42869)) ([aec4206](https://github.com/okou-ai/okou/commit/aec4206cacf8a00615ca9d4f93378784c6fab6e3))
+
 ## [0.1060.0](https://github.com/okou-ai/okou/compare/app-v0.1059.2...app-v0.1060.0) (2026-10-25)
 
 

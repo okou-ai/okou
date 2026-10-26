@@ -40,6 +40,7 @@ import {
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
+import { settleDataRouterRun$ } from "./data-router-billing.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 
 type WebhookCompleteBody = z.infer<
@@ -54,6 +55,7 @@ interface CompleteAgentRunInput {
 
 export interface TerminalSideEffectsInput {
   readonly kind: "terminal";
+  readonly firstTerminalTransition: boolean;
   readonly runId: string;
   readonly orgId: string;
   readonly status: TerminalStatus;
@@ -492,6 +494,7 @@ function completionResponse(
   if (commit.transitioned || redriveTerminalChatCallback) {
     sideEffects = {
       kind: "terminal",
+      firstTerminalTransition: commit.transitioned,
       runId,
       orgId: commit.run.orgId,
       status: commit.responseStatus,
@@ -590,6 +593,19 @@ const dispatchTerminalCompleteSideEffects$ = command(
       },
     );
     signal.throwIfAborted();
+
+    if (input.firstTerminalTransition) {
+      await tapError(
+        set(settleDataRouterRun$, input.runId, signal),
+        (error) => {
+          L.error("Data Router completion billing failed; no retry scheduled", {
+            runId: input.runId,
+            error,
+          });
+        },
+      );
+      signal.throwIfAborted();
+    }
 
     await set(processOrgUsageEvents$, input.orgId, signal);
     signal.throwIfAborted();

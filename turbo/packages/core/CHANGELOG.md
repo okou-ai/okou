@@ -1,5 +1,40 @@
 # Changelog
 
+## [8.788.0](https://github.com/okou-ai/okou/compare/core-v8.787.1...core-v8.788.0) (2026-10-26)
+
+
+### Features
+
+* **core:** enable custom templates for all users ([#42921](https://github.com/okou-ai/okou/issues/42921)) ([1cc417d](https://github.com/okou-ai/okou/commit/1cc417d66219754cfeefbdd01df557f84a245a02))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.1
+
+## [8.787.1](https://github.com/okou-ai/okou/compare/core-v8.787.0...core-v8.787.1) (2026-10-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.3.0
+
+## [8.787.0](https://github.com/okou-ai/okou/compare/core-v8.786.0...core-v8.787.0) (2026-10-25)
+
+
+### Features
+
+* **browser:** enable okou viewer for staff ([#42910](https://github.com/okou-ai/okou/issues/42910)) ([e45694f](https://github.com/okou-ai/okou/commit/e45694f5bbb2c30369ed48e188e6a75e9ab4b024))
+
+
+### Refactoring
+
+* **app:** remove json tree preview feature switch ([#42911](https://github.com/okou-ai/okou/issues/42911)) ([2ed0f18](https://github.com/okou-ai/okou/commit/2ed0f180ffd7ee1db828f447a7da171cdb6df3b4))
+
 ## [8.786.0](https://github.com/okou-ai/okou/compare/core-v8.785.1...core-v8.786.0) (2026-10-25)
 
 

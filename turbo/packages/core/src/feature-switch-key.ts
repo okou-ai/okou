@@ -7,7 +7,6 @@ export enum FeatureSwitchKey {
   IosComposerConnectors = "iosComposerConnectors",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
-  JsonTreePreview = "jsonTreePreview",
   HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   HostedSiteTitleEditing = "hostedSiteTitleEditing",

@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import {
   AVAILABLE_PAID_TOOL_IDS,
   paidToolsContract,
@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
+import { command, computed, state, type Computed } from "ccstate";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../../auth.ts";
@@ -47,11 +48,22 @@ function createPaidToolsSignals(
     });
   });
   const imageModel = createImageModelSignals(createClient, assertCurrent);
-  const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
+  function createTool<T extends PaidToolId>(toolId: T, family?: PaidToolId) {
+    const familyEnabled$ = computed(async (get) => {
+      if (!family) {
+        return true;
+      }
+      const changes = get(confirmedChanges$);
+      const disabled = await get(disabledTools$);
+      return !(changes[family] ?? disabled.includes(family));
+    });
     const enabled$ = computed(async (get) => {
       const changes = get(confirmedChanges$);
       const disabledTools = await get(disabledTools$);
-      return !(changes[toolId] ?? disabledTools.includes(toolId));
+      return (
+        (await get(familyEnabled$)) &&
+        !(changes[toolId] ?? disabledTools.includes(toolId))
+      );
     });
     const update$ = command(
       async ({ set }, enabled: boolean, signal: AbortSignal) => {
@@ -82,12 +94,45 @@ function createPaidToolsSignals(
         set(reloadDisabledPaidTools$);
       },
     );
-    return { toolId, enabled$, update$ };
+    return { toolId, enabled$, familyEnabled$, update$ };
+  }
+  const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
+    return createTool(toolId);
+  });
+  const routerClient = createClient(dataRouterToolsContract, {
+    getTokenGuard: () => {
+      assertCurrent();
+      return assertCurrent;
+    },
+  });
+  const dataTools$ = computed(async (get) => {
+    get(revision$);
+    assertCurrent();
+    const response = await accept(routerClient.list(), [200]);
+    assertCurrent();
+    return response.body.tools.flatMap((tool) => {
+      const metadata = tool._meta?.["ai.okou/data"];
+      if (!metadata) {
+        return [];
+      }
+      return [
+        {
+          ...createTool(`data:${tool.name}`, metadata.family),
+          definition: {
+            name: tool.name,
+            title: tool.title ?? tool.name,
+            description: tool.description ?? "",
+            family: metadata.family,
+          },
+        },
+      ];
+    });
   });
   return {
     disabledTools$,
     retry$,
     tools,
+    dataTools$,
     imageModel,
   };
 }
@@ -202,3 +247,10 @@ export type PaidToolsSettings = ReturnType<typeof createPaidToolsSignals> & {
 };
 export type PaidToolSettings = PaidToolsSettings["tools"][number];
 export type ImageModelSettings = PaidToolsSettings["imageModel"];
+
+export type DataRouterToolSettings =
+  PaidToolsSettings["dataTools$"] extends Computed<Promise<infer Tools>>
+    ? Tools extends readonly (infer Tool)[]
+      ? Tool
+      : never
+    : never;

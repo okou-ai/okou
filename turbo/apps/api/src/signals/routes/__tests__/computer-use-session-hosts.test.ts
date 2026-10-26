@@ -266,7 +266,14 @@ describe("Native Computer Use session authentication", () => {
         [200],
       );
       const claimed = await accept(
-        client.next({ headers, params, body: generation }),
+        client.next({
+          headers,
+          params,
+          body: {
+            ...generation,
+            supportedCapabilities: runtimeBody.supportedCapabilities,
+          },
+        }),
         [200],
       );
       expect(claimed.body).toMatchObject({
@@ -382,7 +389,10 @@ describe("Native Computer Use session authentication", () => {
       client.next({
         headers,
         params: { hostId: registered.hostId },
-        body: { connectionGeneration: registered.connectionGeneration },
+        body: {
+          connectionGeneration: registered.connectionGeneration,
+          supportedCapabilities: hostBody.supportedCapabilities,
+        },
       }),
       [200],
     );
@@ -470,7 +480,10 @@ describe("Native Computer Use session authentication", () => {
         client.next({
           headers,
           params: { hostId: first.hostId },
-          body: { connectionGeneration: first.connectionGeneration },
+          body: {
+            connectionGeneration: first.connectionGeneration,
+            supportedCapabilities: runtimeBody.supportedCapabilities,
+          },
         }),
         [409],
       );
@@ -535,7 +548,14 @@ describe("Native Computer Use session authentication", () => {
         [200],
       );
       const claimed = await accept(
-        client.next({ headers, params, body }),
+        client.next({
+          headers,
+          params,
+          body: {
+            ...body,
+            supportedCapabilities: runtimeBody.supportedCapabilities,
+          },
+        }),
         [200],
       );
       expect(claimed.body).toMatchObject({
@@ -571,7 +591,17 @@ describe("Native Computer Use session authentication", () => {
           [409],
         );
       } else if (operation === "next") {
-        await accept(client.next({ headers, params, body }), [409]);
+        await accept(
+          client.next({
+            headers,
+            params,
+            body: {
+              ...body,
+              supportedCapabilities: runtimeBody.supportedCapabilities,
+            },
+          }),
+          [409],
+        );
       } else if (operation === "complete") {
         await accept(
           client.complete({
@@ -644,7 +674,10 @@ describe("Native Computer Use session authentication", () => {
       client.next({
         headers,
         params: { hostId: first.hostId },
-        body: { connectionGeneration: first.connectionGeneration },
+        body: {
+          connectionGeneration: first.connectionGeneration,
+          supportedCapabilities: runtimeBody.supportedCapabilities,
+        },
       }),
       [200],
     );
@@ -708,7 +741,10 @@ describe("Native Computer Use session authentication", () => {
         client.next({
           headers,
           params: { hostId: first.hostId },
-          body: { connectionGeneration: first.connectionGeneration },
+          body: {
+            connectionGeneration: first.connectionGeneration,
+            supportedCapabilities: hostBody.supportedCapabilities,
+          },
         }),
         [200],
       );
@@ -796,7 +832,10 @@ describe("Native Computer Use session authentication", () => {
       client.next({
         headers,
         params: { hostId: host.hostId },
-        body: { connectionGeneration: host.connectionGeneration },
+        body: {
+          connectionGeneration: host.connectionGeneration,
+          supportedCapabilities: runtimeBody.supportedCapabilities,
+        },
       }),
       [503],
     );
@@ -805,7 +844,10 @@ describe("Native Computer Use session authentication", () => {
       client.next({
         headers,
         params: { hostId: host.hostId },
-        body: { connectionGeneration: host.connectionGeneration },
+        body: {
+          connectionGeneration: host.connectionGeneration,
+          supportedCapabilities: runtimeBody.supportedCapabilities,
+        },
       }),
       [200],
     );

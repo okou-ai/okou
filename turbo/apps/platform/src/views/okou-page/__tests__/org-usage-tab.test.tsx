@@ -494,9 +494,6 @@ test("Team usage groups historical data and new enrichment while conserving non-
       `${label}${credits}`,
     );
   }
-  expect(
-    within(details).queryByText(/monid|dataforseo/iu),
-  ).not.toBeInTheDocument();
 
   await user.unhover(connectorSegment);
   const otherSegment = screen.getByTestId(

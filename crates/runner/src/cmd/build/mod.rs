@@ -617,7 +617,7 @@ async fn ensure_rootfs_under_lock(
     // staging file on disk is guaranteed to be stale — never a concurrent
     // writer's work-in-progress. This is the recovery arm of the
     // staging-rename contract; see `RootfsPaths::rootfs_staging`.
-    publish.cleanup_stale_staging_best_effort().await;
+    publish.cleanup_stale_staging_best_effort();
 
     let need_rootfs = !is_rootfs_present(input.rootfs_paths).await?;
     let mut scripts = RootfsScripts::new(rootfs_lock, None);
@@ -633,12 +633,12 @@ async fn ensure_rootfs_under_lock(
             // Commit the rootfs. Same-filesystem rename is POSIX-atomic, so
             // `rootfs.ext4` only becomes visible once customization and
             // verification have fully succeeded.
-            publish.commit().await?;
+            publish.commit()?;
             tracing::info!("rootfs committed: {}", publish.stable().display());
             Ok(())
         }
         .await;
-        publish.finish_after_result(result).await?;
+        publish.finish_after_result(result)?;
     } else {
         verify_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
         tracing::info!(

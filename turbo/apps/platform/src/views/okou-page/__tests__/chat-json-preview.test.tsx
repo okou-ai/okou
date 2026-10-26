@@ -1,6 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -17,7 +17,6 @@ const FILE_URL = "https://files.example.test/json-preview.json";
 async function openAttachment(options: {
   readonly source: string;
   readonly sidebar?: boolean;
-  readonly enabled?: boolean;
   readonly response?: ResponseInit;
 }) {
   context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
@@ -66,21 +65,13 @@ async function openAttachment(options: {
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.JsonTreePreview]: options.enabled ?? true,
       [FeatureSwitchKey.ArtifactSidebarPreview]: options.sidebar ?? true,
     },
   });
   click(await screen.findByLabelText("Open json preview for review.json"));
-  const preview = await screen.findByTestId(
+  return screen.findByTestId(
     options.sidebar === false ? "attachment-lightbox" : "artifact-sidebar",
   );
-  await waitFor(() => {
-    return expect(
-      preview.querySelector("pre") ??
-        within(preview).queryByTestId("json-preview"),
-    ).not.toBeNull();
-  });
-  return preview;
 }
 
 test.each([true, false])(
@@ -115,13 +106,4 @@ test("A ranged attachment cannot present a complete-looking JSON prefix as a ful
     "Only part of this file is loaded",
   );
   expect(tree.querySelector("pre")?.textContent).toBe(source);
-});
-
-test("The disabled feature preserves source-faithful plain JSON previews", async () => {
-  const source = '{"id":9223372036854775807,"mode":1,"mode":2}';
-  const preview = await openAttachment({ source, enabled: false });
-  expect(within(preview).queryByTestId("json-preview")).not.toBeInTheDocument();
-  await waitFor(() => {
-    return expect(preview.querySelector("pre")?.textContent).toBe(source);
-  });
 });

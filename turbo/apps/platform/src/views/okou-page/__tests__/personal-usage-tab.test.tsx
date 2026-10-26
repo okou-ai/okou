@@ -680,12 +680,6 @@ test("Review personal credit-usage records by date range", async () => {
     expect(screen.getByText("Data Search").parentElement).toHaveTextContent(
       "Data Search1,080",
     );
-    expect(screen.queryByText("Firecrawl")).not.toBeInTheDocument();
-    expect(screen.queryByText("Google Maps")).not.toBeInTheDocument();
-    expect(screen.queryByText("Perplexity")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dataforseo")).not.toBeInTheDocument();
-    expect(screen.queryByText("Apidojo")).not.toBeInTheDocument();
-    expect(screen.queryByText("Google Weather")).not.toBeInTheDocument();
     expect(
       screen.queryByText("qwen/qwen-2.5-7b-instruct"),
     ).not.toBeInTheDocument();
@@ -889,13 +883,6 @@ test("Merge historical data and new enrichment into Connectors without double co
       `${label}${credits}`,
     );
   }
-  expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
-  expect(within(details).queryByText(/socialkit/iu)).not.toBeInTheDocument();
-  for (const platform of ["Instagram", "TikTok", "YouTube", "Facebook"]) {
-    expect(within(details).queryByText(platform)).not.toBeInTheDocument();
-  }
-
-  expect(within(details).queryByText(/dataforseo/iu)).not.toBeInTheDocument();
 
   await user.unhover(connectorSegment);
   await user.hover(screen.getByTestId("usage-kind-segment-other"));

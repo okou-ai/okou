@@ -6,6 +6,7 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -87,6 +88,7 @@ test("Import a presentation deck over a saved template in an existing chat", asy
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   const picker = await openSavedPresentationPicker(template.title);
@@ -132,6 +134,7 @@ test("Import a presentation deck from a new chat", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   await importDeck(
@@ -163,6 +166,7 @@ test("The Presentation tile still offers exactly the decks it always has", async
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   await openTemplatePicker(user, "Presentation");

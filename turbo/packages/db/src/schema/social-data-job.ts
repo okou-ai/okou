@@ -1,8 +1,6 @@
 import type {
   SocialDataOperation,
   SocialDataPlatform,
-} from "@okouai/api-contracts/contracts/social-data";
-import type {
   SocialDataJobError,
   SocialDataJobProviderCursor,
   SocialDataJobCollectionProgress,
@@ -23,15 +21,6 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-export const SOCIAL_DATA_JOB_STATUSES = [
-  "pending",
-  "running",
-  "completed",
-  "failed",
-  "cancelled",
-  "unknown",
-] as const;
-
 export const socialDataJobs = pgTable(
   "social_data_jobs",
   {
@@ -48,7 +37,9 @@ export const socialDataJobs = pgTable(
       .notNull(),
     request: jsonb("request").$type<SocialDataJobRequest>().notNull(),
     status: varchar("status", { length: 16 })
-      .$type<(typeof SOCIAL_DATA_JOB_STATUSES)[number]>()
+      .$type<
+        "pending" | "running" | "completed" | "failed" | "cancelled" | "unknown"
+      >()
       .default("pending")
       .notNull(),
     providerName: text("provider_name").notNull(),

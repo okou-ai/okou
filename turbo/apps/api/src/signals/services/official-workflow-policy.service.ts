@@ -64,16 +64,6 @@ export const isOfficialWorkflowThread$ = command(
   },
 );
 
-/** Only authenticated Run identity can carry the server-owned credit policy. */
-export function creditPolicyRunId(auth: {
-  readonly tokenType: string;
-  readonly runId?: string;
-}): string | undefined {
-  return auth.tokenType === "agent" || auth.tokenType === "sandbox"
-    ? auth.runId
-    : undefined;
-}
-
 /** Resource admission expires with the Run; settlement retains the captured waiver. */
 export function officialWorkflowCreditAccessSql(owner: {
   readonly runId?: string;

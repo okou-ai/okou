@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -58,6 +58,13 @@ function getButton(name: string): HTMLButtonElement {
     throw new Error(`Button not found: ${name}`);
   }
   return button;
+}
+
+async function openViewerSizingMenu(): Promise<HTMLElement> {
+  click(screen.getByLabelText("Browser menu"));
+  const menu = await screen.findByRole("menu", { name: "Browser menu" });
+  click(within(menu).getByText("Fit to this viewer"));
+  return screen.findByRole("menu", { name: "Fit to this viewer" });
 }
 
 test("An accessible conversation without a browser can start one", async () => {
@@ -126,7 +133,28 @@ test("The viewer switch replaces the provider iframe with the interactive Okou v
   ).resolves.toBeEnabled();
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
   expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Browser menu")).not.toBeInTheDocument();
+  let sizingMenu = await openViewerSizingMenu();
+  expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  for (const label of [
+    "Do not sync automatically",
+    "Sync once on opening",
+    "Sync continuously",
+  ]) {
+    const option = within(sizingMenu).getByText(label);
+    expect(option).not.toHaveAttribute("aria-disabled", "true");
+    click(option);
+    await waitFor(() => {
+      expect(sizingMenu).not.toBeInTheDocument();
+    });
+    sizingMenu = await openViewerSizingMenu();
+    expect(within(sizingMenu).getByText(label)).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  }
 });
 
 test("A reclaimed connection shows an unavailable state without opening the provider iframe", async () => {

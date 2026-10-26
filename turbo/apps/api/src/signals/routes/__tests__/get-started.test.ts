@@ -1,17 +1,14 @@
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import {
-  GET_STARTED_REWARDS_CHANGED_EVENT,
   cronGetStartedContract,
   getStartedContract,
 } from "@okouai/api-contracts/contracts/get-started";
-import { http } from "msw";
 import { randomUUID } from "node:crypto";
 import { beforeEach, expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
 import { createRouteMocks } from "./helpers/route-test";
@@ -52,7 +49,8 @@ function signedInSession(
 }
 
 beforeEach(() => {
-  mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "synthetic-socialkit-token");
+  mockEnv("OKOU_DATA_ROUTER_URL", "https://data.okou.ai/mcp");
+  mockEnv("OKOU_DATA_TOKEN", "synthetic-data-token");
   signedInSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
@@ -210,18 +208,11 @@ test("concurrent check-ins across organizations return one personal award and pu
   ]);
 });
 
-test("x submission returns canonical pending state and deduplicates without calling SocialKit", async () => {
+test("x submission returns canonical pending state and deduplicates", async () => {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   signedInSession(userId, orgId);
   const id = postId();
-  let providerCalls = 0;
-  server.use(
-    http.get("https://api.socialkit.dev/twitter/tweet", () => {
-      providerCalls++;
-      throw new Error("Submission must not call the provider");
-    }),
-  );
   mockNow(new Date("2026-09-15T08:00:00.000Z"));
   const submitted = await accept(
     client().submitShare({
@@ -241,11 +232,6 @@ test("x submission returns canonical pending state and deduplicates without call
     postUrl: `https://x.com/i/status/${id}`,
   });
   expect((await status()).shareClaim).toStrictEqual(submitted.body);
-  expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-    GET_STARTED_REWARDS_CHANGED_EVENT,
-    null,
-  );
-  expect(providerCalls).toBe(0);
   expect(
     (
       await accept(

@@ -621,7 +621,13 @@ test("Load connector accounts progressively", async () => {
   expect(accountActions(dialog)).toHaveLength(8);
 });
 
-async function openNamedConnectorAccountRename() {
+async function openNamedConnectorAccountRename({
+  failFirstDelete = false,
+  deletionPending,
+}: {
+  failFirstDelete?: boolean;
+  deletionPending?: Promise<void>;
+} = {}) {
   const [connector] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },
   ]);
@@ -663,15 +669,28 @@ async function openNamedConnectorAccountRename() {
       });
     },
   );
-  context.mocks.api(connectorAccountsContract.delete, ({ params, respond }) => {
-    account = null;
-    context.mocks.data.connectors([]);
-    return respond(200, {
-      deletedConnectionId: params.connectionId,
-      resolvedSelectionCount: 2,
-      promotedDefaultConnectionId: null,
-    });
-  });
+  context.mocks.api(
+    connectorAccountsContract.delete,
+    async ({ params, respond }) => {
+      await deletionPending;
+      if (failFirstDelete) {
+        failFirstDelete = false;
+        return respond(500, {
+          error: {
+            message: "Disconnect failed",
+            code: "INTERNAL_SERVER_ERROR",
+          },
+        });
+      }
+      account = null;
+      context.mocks.data.connectors([]);
+      return respond(200, {
+        deletedConnectionId: params.connectionId,
+        resolvedSelectionCount: 2,
+        promotedDefaultConnectionId: null,
+      });
+    },
+  );
   await setupPage({ context, path: "/connectors?keywords=github" });
   click(
     await waitFor(() => {
@@ -711,8 +730,12 @@ test("Rename a specific connector account to a new label", async () => {
   });
 });
 
-test("Clear a connector account label and disconnect its fallback identity", async () => {
-  const manager = await openNamedConnectorAccountRename();
+test("Keep a failed connector disconnect open and finish a successful retry", async () => {
+  const deletionResponse = context.mocks.deferred<void>();
+  const manager = await openNamedConnectorAccountRename({
+    failFirstDelete: true,
+    deletionPending: deletionResponse.promise,
+  });
   await fill(await within(manager).findByLabelText("Account name"), " ");
   click(getConnectorAction("button", "Save", manager));
   await waitFor(() => {
@@ -743,8 +766,136 @@ test("Clear a connector account label and disconnect its fallback identity", asy
   ).toBeInTheDocument();
   click(getConnectorAction("button", "Disconnect account", confirmation));
   await waitFor(() => {
+    expect(
+      getConnectorAction("button", "Disconnecting...", confirmation),
+    ).toBeDisabled();
+  });
+  deletionResponse.resolve();
+  await expect(
+    screen.findByText("Disconnect failed"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      getConnectorAction("button", "Disconnect account", confirmation),
+    ).toBeEnabled();
+  });
+  expect(confirmation).toBeInTheDocument();
+  click(getConnectorAction("button", "Disconnect account", confirmation));
+  await waitFor(() => {
     expect(within(manager).getByText("No accounts found")).toBeInTheDocument();
     expect(getConnectorAction("button", "Add account", manager)).toBeEnabled();
+    expect(
+      screen.queryByRole("dialog", { name: "Disconnect octocat?" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Keep another account's confirmation open when an earlier disconnect finishes", async () => {
+  const deletionResponse = context.mocks.deferred<void>();
+  const [connector] = mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "work" },
+  ]);
+  if (!connector) {
+    throw new Error("Expected GitHub connector");
+  }
+  const work = builtinAccount({
+    id: connector.id,
+    displayName: "Work",
+    isDefault: true,
+    externalUsername: "work",
+  });
+  const personal = builtinAccount({
+    id: crypto.randomUUID(),
+    displayName: "Personal",
+    isDefault: false,
+    externalUsername: "personal",
+  });
+  let accounts = [work, personal];
+  mockSavedConnectorAccounts(context, () => {
+    return accounts;
+  });
+  context.mocks.api(
+    connectorAccountsContract.deletionImpact,
+    ({ params, respond }) => {
+      return respond(200, {
+        connectionId: params.connectionId,
+        explicitSelectionCount: 0,
+        hasSibling: accounts.length > 1,
+      });
+    },
+  );
+  context.mocks.api(
+    connectorAccountsContract.delete,
+    async ({ params, respond }) => {
+      await deletionResponse.promise;
+      accounts = accounts
+        .filter((account) => {
+          return account.id !== params.connectionId;
+        })
+        .map((account) => {
+          return { ...account, isDefault: true };
+        });
+      return respond(200, {
+        deletedConnectionId: params.connectionId,
+        resolvedSelectionCount: 0,
+        promotedDefaultConnectionId: accounts[0]?.id ?? null,
+      });
+    },
+  );
+
+  await setupAccountsPage();
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Manage GitHub accounts");
+    }),
+  );
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  const workRow = await within(manager).findByRole("group", { name: "Work" });
+  click(getConnectorAction("button", "Account actions", workRow));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("menuitem", "Disconnect");
+    }),
+  );
+  const workConfirmation = await screen.findByRole("dialog", {
+    name: "Disconnect Work?",
+  });
+  click(getConnectorAction("button", "Disconnect account", workConfirmation));
+  await waitFor(() => {
+    expect(
+      getConnectorAction("button", "Disconnecting...", workConfirmation),
+    ).toBeDisabled();
+  });
+  click(getConnectorAction("button", "Cancel", workConfirmation));
+
+  const personalRow = await within(manager).findByRole("group", {
+    name: "Personal",
+  });
+  click(getConnectorAction("button", "Account actions", personalRow));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("menuitem", "Disconnect");
+    }),
+  );
+  const personalConfirmation = await screen.findByRole("dialog", {
+    name: "Disconnect Personal?",
+  });
+  expect(
+    getConnectorAction("button", "Disconnecting...", personalConfirmation),
+  ).toBeDisabled();
+
+  deletionResponse.resolve();
+  await waitFor(() => {
+    const confirmation = screen.getByRole("dialog", {
+      name: "Disconnect Personal?",
+    });
+    expect(
+      getConnectorAction("button", "Disconnect account", confirmation),
+    ).toBeEnabled();
+    expect(within(manager).getByText("Personal")).toBeInTheDocument();
+    expect(within(manager).queryByText("Work")).not.toBeInTheDocument();
   });
 });
 

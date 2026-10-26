@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.237.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.0...runner-rs-v0.237.1) (2026-10-26)
+
+
+### Refactoring
+
+* **runner:** make local rootfs publication synchronous ([#42943](https://github.com/okou-ai/okou/issues/42943)) ([fadd1aa](https://github.com/okou-ai/okou/commit/fadd1aa020469825be4f95f4726f32a515c9d5eb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.37...runner-rs-v0.237.0) (2026-10-25)
+
+
+### Features
+
+* cut over data tools to dynamic router discovery ([#42695](https://github.com/okou-ai/okou/issues/42695)) ([28d1842](https://github.com/okou-ai/okou/commit/28d18426d6282b443344e3a3cabdec11ee13bc03))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.37](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.36...runner-rs-v0.236.37) (2026-10-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.36](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.35...runner-rs-v0.236.36) (2026-10-25)
+
 ## [0.236.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.34...runner-rs-v0.236.35) (2026-10-25)
 
 ### Release Dependencies

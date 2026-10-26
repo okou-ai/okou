@@ -4,6 +4,7 @@ import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 /** A test-owned external CDP browser; the installed viewer runs normally. */
 export function mockBrowserCdp(context: TestContext, cdpUrl: string): void {
   context.mocks.browser.canvasRendering();
+  context.mocks.browser.uint8ArrayFromBase64();
   context.mocks.browser.webSocket((data, url) => {
     if (url !== cdpUrl) {
       throw new Error("Unexpected viewer endpoint");

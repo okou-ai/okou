@@ -1,0 +1,378 @@
+import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
+import { z } from "zod";
+import {
+  hostContract,
+  type HostedSiteCompleteResponse,
+  type HostedSiteDeleteResponse,
+  type HostedSiteDeploymentsResponse,
+  type HostedSiteFilesResponse,
+  type HostedSitePrepareRequest,
+  type HostedSitePrepareResponse,
+} from "@okouai/api-contracts/contracts/host";
+
+import { setupAppWithRoutes } from "../../../../__tests__/test-app";
+import { accept, type TestContext } from "../../../../__tests__/test-context";
+import { hostRoutes } from "../../host";
+import type { ApiTestUser } from "./api-bdd";
+import { createRouteMocks } from "./route-test";
+
+interface AuthHeaders {
+  readonly authorization?: string;
+}
+
+/**
+ * Host routes accept both browser sessions and Okou run tokens, so the
+ * host helpers take either a Clerk-backed test user or a raw bearer token.
+ */
+interface BearerActor {
+  readonly bearerToken: string;
+}
+
+type HostActor = ApiTestUser | BearerActor;
+
+type HostPrepareStatus = 200 | 400 | 401 | 402 | 403 | 409 | 500;
+type HostCompleteStatus = 200 | 400 | 401 | 402 | 403 | 404 | 409 | 500;
+type HostFilesStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
+type HostDeploymentsStatus = 200 | 400 | 401 | 403 | 404 | 500;
+type HostDeleteStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
+
+interface HostedSitesS3Capture {
+  readonly puts: { readonly key: string; readonly body: string }[];
+  readonly copies: { readonly key: string; readonly copySource: string }[];
+  readonly deletes: string[];
+  readonly missingKeys: Set<string>;
+  /** Stored hosted-sites objects; seed or inspect them by key. */
+  readonly objects: Map<string, string>;
+}
+
+function isBearerActor(actor: HostActor): actor is BearerActor {
+  return "bearerToken" in actor;
+}
+
+function authenticate(
+  context: TestContext,
+  actor: HostActor | null,
+): AuthHeaders {
+  if (actor && isBearerActor(actor)) {
+    return { authorization: `Bearer ${actor.bearerToken}` };
+  }
+  if (!actor) {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    return {};
+  }
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return { authorization: "Bearer clerk-session" };
+}
+
+function commandName(command: unknown): string {
+  return typeof command === "object" && command !== null
+    ? command.constructor.name
+    : "";
+}
+
+function commandInput(command: unknown): Record<string, unknown> {
+  if (
+    typeof command === "object" &&
+    command !== null &&
+    "input" in command &&
+    typeof command.input === "object" &&
+    command.input !== null
+  ) {
+    return command.input as Record<string, unknown>;
+  }
+  return {};
+}
+
+function bodyText(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8");
+  }
+  return "";
+}
+
+function notFoundS3Error(key: string): Error {
+  const error = new Error(`Not found: ${key}`) as Error & {
+    $metadata: { httpStatusCode: number };
+  };
+  error.name = "NotFound";
+  error.$metadata = { httpStatusCode: 404 };
+  return error;
+}
+
+function objectEtag(body: string): string {
+  return `"${createHash("sha256").update(body).digest("hex")}"`;
+}
+
+function preconditionFailedS3Error(key: string): Error {
+  const error = new Error(`Precondition failed: ${key}`) as Error & {
+    $metadata: { httpStatusCode: number };
+  };
+  error.name = "PreconditionFailed";
+  error.$metadata = { httpStatusCode: 412 };
+  return error;
+}
+
+function objectPreconditionFails(
+  input: Record<string, unknown>,
+  previous: string | undefined,
+): boolean {
+  return (
+    (input.IfNoneMatch === "*" && previous !== undefined) ||
+    (typeof input.IfMatch === "string" &&
+      (previous === undefined || objectEtag(previous) !== input.IfMatch))
+  );
+}
+
+export function createHostBddApi(context: TestContext) {
+  function hostClient() {
+    return setupAppWithRoutes({
+      context,
+      routes: hostRoutes,
+      baseUrl: "https://api.okou.ai",
+    })(hostContract);
+  }
+
+  return {
+    /**
+     * Install an explicit hosted-sites S3 boundary: presigned upload URLs
+     * resolve, HeadObject reports every key uploaded except `missingKeys`,
+     * and Put/Copy/Delete commands are recorded for boundary-contract
+     * assertions.
+     * Context mocks are reset in the global afterEach, so no teardown is
+     * needed.
+     */
+    captureHostedSitesS3(): HostedSitesS3Capture {
+      const objects = new Map<string, string>();
+      const capture: HostedSitesS3Capture = {
+        puts: [],
+        copies: [],
+        deletes: [],
+        missingKeys: new Set<string>(),
+        objects,
+      };
+      context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+        const input = commandInput(command);
+        if (
+          commandName(command) === "PutObjectCommand" &&
+          typeof input.Key === "string"
+        ) {
+          objects.set(input.Key, "Hosted fixture");
+        }
+        return Promise.resolve(
+          "https://r2.example.com/hosted-sites/upload?sig=bdd",
+        );
+      });
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        const name = commandName(command);
+        const input = commandInput(command);
+        const key = typeof input.Key === "string" ? input.Key : "";
+        if (name === "HeadObjectCommand" && capture.missingKeys.has(key)) {
+          return Promise.reject(notFoundS3Error(key));
+        }
+        if (name === "GetObjectCommand") {
+          if (capture.missingKeys.has(key)) {
+            return Promise.reject(notFoundS3Error(key));
+          }
+          const body =
+            objects.get(key) ??
+            ((key.startsWith("private-sites/") || key.startsWith("sites/")) &&
+            !/\/(?:manifest|active)\.json$/u.test(key)
+              ? "Hosted fixture"
+              : undefined);
+          if (body === undefined) {
+            return Promise.reject(notFoundS3Error(key));
+          }
+          return Promise.resolve({
+            Body: Readable.from([Buffer.from(body)]),
+            ETag: objectEtag(body),
+            ContentLength: Buffer.byteLength(body),
+          });
+        }
+        if (name === "PutObjectCommand") {
+          const previous = objects.get(key);
+          if (objectPreconditionFails(input, previous)) {
+            return Promise.reject(preconditionFailedS3Error(key));
+          }
+          const body = bodyText(input.Body);
+          objects.set(key, body);
+          capture.puts.push({ key, body });
+          return Promise.resolve({ ETag: objectEtag(body) });
+        }
+        if (name === "DeleteObjectsCommand") {
+          const deleted = z
+            .object({ Objects: z.array(z.object({ Key: z.string() })) })
+            .parse(input.Delete);
+          for (const { Key } of deleted.Objects) {
+            objects.delete(Key);
+            capture.deletes.push(Key);
+          }
+        }
+        if (name === "CopyObjectCommand") {
+          capture.copies.push({
+            key,
+            copySource:
+              typeof input.CopySource === "string" ? input.CopySource : "",
+          });
+        }
+        return Promise.resolve({});
+      });
+      return capture;
+    },
+
+    async prepareHostedSite(
+      actor: HostActor,
+      body: HostedSitePrepareRequest,
+    ): Promise<HostedSitePrepareResponse> {
+      const response = await accept(
+        hostClient().prepare({
+          headers: authenticate(context, actor),
+          body,
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async requestPrepareHostedSite(
+      actor: HostActor | null,
+      body: HostedSitePrepareRequest,
+      statuses: readonly HostPrepareStatus[],
+    ) {
+      return await accept(
+        hostClient().prepare({
+          headers: authenticate(context, actor),
+          body,
+        }),
+        statuses,
+      );
+    },
+
+    async completeHostedSite(
+      actor: HostActor,
+      deploymentId: string,
+    ): Promise<HostedSiteCompleteResponse> {
+      const response = await accept(
+        hostClient().complete({
+          headers: authenticate(context, actor),
+          params: { deploymentId },
+          body: {},
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async requestCompleteHostedSite(
+      actor: HostActor | null,
+      deploymentId: string,
+      statuses: readonly HostCompleteStatus[],
+    ) {
+      return await accept(
+        hostClient().complete({
+          headers: authenticate(context, actor),
+          params: { deploymentId },
+          body: {},
+        }),
+        statuses,
+      );
+    },
+
+    async readHostedSiteFiles(
+      actor: HostActor,
+      publicSlug: string,
+      version?: number,
+    ): Promise<HostedSiteFilesResponse> {
+      const response = await accept(
+        hostClient().files({
+          headers: authenticate(context, actor),
+          params: { publicSlug },
+          query: version === undefined ? {} : { version },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async requestHostedSiteFiles(
+      actor: ApiTestUser | null,
+      publicSlug: string,
+      statuses: readonly HostFilesStatus[],
+      version?: number,
+    ) {
+      return await accept(
+        hostClient().files({
+          headers: authenticate(context, actor),
+          params: { publicSlug },
+          query: version === undefined ? {} : { version },
+        }),
+        statuses,
+      );
+    },
+
+    async readHostedSiteDeployments(
+      actor: HostActor,
+      site: string,
+    ): Promise<HostedSiteDeploymentsResponse> {
+      const response = await accept(
+        hostClient().deployments({
+          headers: authenticate(context, actor),
+          params: { site },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async requestHostedSiteDeployments(
+      actor: HostActor | null,
+      site: string,
+      statuses: readonly HostDeploymentsStatus[],
+    ) {
+      return await accept(
+        hostClient().deployments({
+          headers: authenticate(context, actor),
+          params: { site },
+        }),
+        statuses,
+      );
+    },
+
+    async deleteHostedSite(
+      actor: ApiTestUser,
+      publicSlug: string,
+    ): Promise<HostedSiteDeleteResponse> {
+      const response = await accept(
+        hostClient().deleteSite({
+          headers: authenticate(context, actor),
+          params: { publicSlug },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async requestDeleteHostedSite(
+      actor: ApiTestUser | null,
+      publicSlug: string,
+      statuses: readonly HostDeleteStatus[],
+    ) {
+      return await accept(
+        hostClient().deleteSite({
+          headers: authenticate(context, actor),
+          params: { publicSlug },
+        }),
+        statuses,
+      );
+    },
+  };
+}

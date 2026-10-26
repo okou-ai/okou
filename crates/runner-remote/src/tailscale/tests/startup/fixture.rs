@@ -2,6 +2,9 @@
 //! The synthetic Noise service is a protocol fixture, not a production stack.
 
 mod logout;
+mod tls;
+
+pub(super) use tls::accept_tls;
 
 use crate::tailscale::{Control, Failure, Work, registration::Registration};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -45,6 +48,7 @@ pub(super) struct NoiseService {
     pub(super) handshake_continue: CancellationToken,
     pub(super) streaming_map: Arc<std::sync::atomic::AtomicBool>,
     pub(super) map_updates: tokio::sync::mpsc::Sender<Vec<u8>>,
+    pub(super) stopped: CancellationToken,
     pub(super) task: tokio::task::JoinHandle<()>,
 }
 
@@ -115,18 +119,17 @@ impl NoiseService {
         let streaming = Arc::clone(&streaming_map);
         let (map_updates, updates) = tokio::sync::mpsc::channel::<Vec<u8>>(8);
         let updates = Arc::new(Mutex::new(Some(updates)));
+        let stopped = CancellationToken::new();
+        let stopping = stopped.clone();
         let task = tokio::spawn(
             async move {
-                let (socket, _) = listener.accept().await.unwrap();
                 let uses_tls = tls.is_some();
                 let socket: Box<dyn Duplex> = match tls {
-                    Some(tls) => match tokio_rustls::TlsAcceptor::from(tls).accept(socket).await {
-                        Ok(stream) => Box::new(stream),
-                        // A failed key request cancels the already-owned second
-                        // socket before its TLS handshake starts.
-                        Err(_) => return,
+                    Some(tls) => match accept_tls(&listener, tls, &stopping).await {
+                        Some(stream) => Box::new(stream),
+                        None => return,
                     },
-                    None => Box::new(socket),
+                    None => Box::new(listener.accept().await.unwrap().0),
                 };
                 let child = Arc::new(Mutex::new(None));
                 let retained_child = Arc::clone(&child);
@@ -459,6 +462,7 @@ impl NoiseService {
             handshake_continue,
             streaming_map,
             map_updates,
+            stopped,
             task,
         }
     }

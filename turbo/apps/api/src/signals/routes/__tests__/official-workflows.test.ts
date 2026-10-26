@@ -9,8 +9,9 @@ import { imageIoGenerateRoutes } from "../image-io-generate";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventsRoutes } from "../chat-events";
-import { webSearchContract } from "@okouai/api-contracts/contracts/web-search";
-import { webSearchRoutes } from "../web-search";
+import { dataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
+import { webhooksAgentDataRequestRoutes } from "../webhooks-agent-data-request";
+import { registerPublicDataUsage } from "./helpers/public-data-charge";
 import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
@@ -116,6 +117,7 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "../official-workflow-catalog-input";
 import {
   activeDefinition,
   installCatalogStorageFixture,
@@ -132,16 +134,25 @@ const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
 function createCatalogPublicationFixture() {
-  let published = false;
+  let publishedNames = new Set<string>();
   return {
     reset() {
-      published = false;
+      publishedNames = new Set();
     },
-    hasProactiveDefinition() {
-      return published;
+    hasPublishedDefinition(name: string) {
+      return publishedNames.has(name);
     },
-    recordPublished(outcome: string) {
-      published = outcome !== "rejected";
+    recordPublished(
+      outcome: string,
+      definitions: readonly { readonly name: string }[],
+    ) {
+      publishedNames = new Set(
+        outcome === "rejected"
+          ? []
+          : definitions.map(({ name }) => {
+              return name;
+            }),
+      );
     },
   };
 }
@@ -166,27 +177,28 @@ function catalog(
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
       ...definitions,
-      ...(catalogPublication.hasProactiveDefinition()
-        ? [
-            "agent-suggestions",
-            "proactive-action",
-            "proactive-jobs",
-            "proactive-learning",
-            "proactive-planning",
-          ]
-            .filter((name) => {
-              return !definitions.some((definition) => {
-                return definition.name === name;
-              });
+      ...[
+        "agent-suggestions",
+        "proactive-action",
+        "proactive-jobs",
+        "proactive-learning",
+        "proactive-planning",
+      ]
+        .filter((name) => {
+          return (
+            catalogPublication.hasPublishedDefinition(name) &&
+            !definitions.some((definition) => {
+              return definition.name === name;
             })
-            .map((name) => {
-              return {
-                name,
-                lifecycle: "retired" as const,
-                presentation: { category: "productivity" },
-              };
-            })
-        : []),
+          );
+        })
+        .map((name) => {
+          return {
+            name,
+            lifecycle: "retired" as const,
+            presentation: { category: "productivity" },
+          };
+        }),
     ],
   };
 }
@@ -224,23 +236,19 @@ function connectorDoctorDefinition(): ActiveDefinition {
   ]);
 }
 
-async function syncDeployedCatalog() {
-  await syncCatalog(
-    catalog([
-      connectorDoctorDefinition(),
-      activeDefinition("proactive-action", [
-        {
-          key: "hourly-check",
-          parameters: [],
-          desiredState: {
-            kind: "schedule",
-            schedule: { type: "cron", cronExpression: "0 * * * *" },
-          },
-        },
-      ]),
-    ]),
-  );
-  return await syncSourceCatalog();
+async function syncActiveSourceCatalog() {
+  const source = {
+    ...OFFICIAL_WORKFLOW_SOURCE_CATALOG,
+    definitions: OFFICIAL_WORKFLOW_SOURCE_CATALOG.definitions.filter(
+      ({ lifecycle }) => {
+        return lifecycle === "active";
+      },
+    ),
+  };
+  const result = await syncCatalog(source);
+  expect(["accepted", "unchanged"]).toContain(result.body.outcome);
+  catalogPublication.recordPublished(result.body.outcome, source.definitions);
+  return result;
 }
 
 /** Publishes the deployed source catalog through its production cron route. */
@@ -251,7 +259,10 @@ async function syncSourceCatalog() {
     ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
     [200],
   );
-  catalogPublication.recordPublished(result.body.outcome);
+  catalogPublication.recordPublished(
+    result.body.outcome,
+    OFFICIAL_WORKFLOW_SOURCE_CATALOG.definitions,
+  );
   return result;
 }
 
@@ -528,7 +539,7 @@ describe("Proactive nightly workflows", () => {
     const { actor } = await prepareBriefMember({
       bootstrap: false,
     });
-    await runs.grantProEntitlement(actor);
+    const { defaultAgentId } = await runs.grantProEntitlement(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
     if (!actor.orgId) {
       throw new Error("Expected organization");
@@ -545,7 +556,7 @@ describe("Proactive nightly workflows", () => {
     runs.acceptTelemetryIngest();
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
-    return { actor, runnerGroup };
+    return { actor, runnerGroup, defaultAgentId };
   }
 
   async function schedule(actor: ApiTestUser, definition: string) {
@@ -589,8 +600,7 @@ describe("Proactive nightly workflows", () => {
       routes: workflowAutomationsRoutes,
       isolatePg: true,
     });
-    const { actor, runnerGroup } = await nightlyMember();
-    const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+    const { actor, defaultAgentId } = await nightlyMember();
     if (!defaultAgentId) {
       throw new Error("Expected primary Agent");
     }
@@ -617,7 +627,6 @@ describe("Proactive nightly workflows", () => {
       )
     ).body;
     const started = await fireOfficialSchedule(actor, automation);
-    await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(started.runId);
     expect(claim.prompt).toContain("proactive-learning");
     expect(
@@ -1976,7 +1985,7 @@ async function prepareBriefMember({
   // Catalog publication and organization bootstrap own independent resources.
   // Both must finish before preference initialization can install the Brief.
   await Promise.all([
-    catalogAvailable ? syncDeployedCatalog() : Promise.resolve(),
+    catalogAvailable ? syncActiveSourceCatalog() : Promise.resolve(),
     bootstrap
       ? deliverClerkOrganizationCreated(actor, createdAt)
       : Promise.resolve(),
@@ -1988,18 +1997,12 @@ describe("Official Workflow failure recovery", () => {
   async function failScheduleOccurrence(
     actor: ApiTestUser,
     automation: WorkflowAutomationSummary,
-    runnerGroup: ReturnType<typeof runs.configureRunnerGroup>,
   ) {
     if (!automation.nextRunAt) {
       throw new Error("Expected the next schedule occurrence");
     }
     const scheduledAt = new Date(automation.nextRunAt).getTime();
-    // The scheduler and heartbeat own separate clock scopes. Complete both
-    // before claiming the same genuine scheduled Run.
-    const [fired] = await Promise.all([
-      fireOfficialSchedule(actor, automation),
-      runs.heartbeatRunner(runnerGroup),
-    ]);
+    const fired = await fireOfficialSchedule(actor, automation);
     mockNow(scheduledAt + 1000);
     const claim = await runs.claimRunnerJob(fired.runId);
     await webhooks.requestAgentComplete(
@@ -2072,8 +2075,10 @@ describe("Official Workflow failure recovery", () => {
     }
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
+    // One live Runner handles all three sequential failed occurrences.
+    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+      automation = await failScheduleOccurrence(actor, automation);
     }
     expect(automation).toMatchObject({
       enabled: false,
@@ -2193,6 +2198,77 @@ describe("Official Workflow failure recovery", () => {
     },
   );
 
+  it("completes an in-flight user schedule using its edited recurrence", async () => {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const client = (
+      await setupApp({
+        context,
+        routes: workflowAutomationsRoutes,
+        isolatePg: true,
+      })
+    )(workflowAutomationsContract);
+    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+      timezone: "UTC",
+    });
+    const workflowId = await workflowBdd.createWorkflow(actor, {
+      agentId: defaultAgentId,
+      name: "edited-in-flight-schedule",
+    });
+    const automation = (
+      await accept(
+        client.create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 600 } },
+        }),
+        [201],
+      )
+    ).body;
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const [fired] = await Promise.all([
+      fireOfficialSchedule(actor, automation),
+      runs.heartbeatRunner(runnerGroup),
+    ]);
+    const claim = await runs.claimRunnerJob(fired.runId);
+    expect(claim.cliAgentType).toBe("claude-code");
+    mockNow(new Date("2030-01-01T00:10:00.000Z"));
+    const schedule = {
+      type: "cron" as const,
+      cronExpression: "*/5 * * * *",
+      timezone: "UTC",
+    };
+    const edited = await accept(
+      client.update({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+        body: { schedule },
+      }),
+      [200],
+    );
+    expect(edited.body).toMatchObject({
+      schedule,
+      nextRunAt: "2030-01-01T00:15:00.000Z",
+    });
+    mockNow(new Date("2030-01-01T00:16:00.000Z"));
+    await createChatEventsFixture(context).completeChatRunOk(fired.runId, {
+      authorization: `Bearer ${claim.sandboxToken}`,
+    });
+    await flushWaitUntilForTest();
+    const completed = await accept(
+      client.get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect(completed.body).toMatchObject({
+      enabled: true,
+      schedule,
+      nextRunAt: "2030-01-01T00:20:00.000Z",
+    });
+  });
+
   it("keeps user-created schedules stopped after three failures", async () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     // This case executes the cross-tenant automation cron with a future clock.
@@ -2223,8 +2299,9 @@ describe("Official Workflow failure recovery", () => {
     ).body;
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
-      automation = await failScheduleOccurrence(actor, automation, runnerGroup);
+      automation = await failScheduleOccurrence(actor, automation);
     }
     expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
     mockNow(new Date("2030-01-02T00:00:00.000Z"));
@@ -2303,6 +2380,8 @@ describe("Official Workflow failure recovery", () => {
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
       new ClerkTransportTestError(503),
     );
+    // Keep both real Clerk retry waits; fix only their optional jitter.
+    onTestFinished(context.mocks.clerkRetryJitter(0));
     await accept(
       app(morningBriefPreferenceContract).retry({
         headers: authHeaders(actor),
@@ -2805,7 +2884,7 @@ describe("Morning Brief suggestion instruction rollout", () => {
       });
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture(context);
-        await syncDeployedCatalog();
+        await syncActiveSourceCatalog();
 
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
@@ -3682,7 +3761,7 @@ describe("Official schedule expiry", () => {
       });
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture(context);
-        await syncDeployedCatalog();
+        await syncActiveSourceCatalog();
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
         });
@@ -3908,7 +3987,7 @@ describe("Official Workflow credit policy", () => {
   it("settles late Official usage for free while refusing new work from completed Runs", async () => {
     const app = await setupApp({
       context,
-      routes: webSearchRoutes,
+      routes: webhooksAgentDataRequestRoutes,
       isolatePg: true,
     });
     const { actor, automation } = await enabledOfficialWorkflow();
@@ -3924,13 +4003,12 @@ describe("Official Workflow credit policy", () => {
       { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
     );
     await flushWaitUntilForTest();
-    mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "official-search-provider");
     await accept(
-      app(webSearchContract).search({
-        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
-        body: { query: "A new task after the Official Run ended", limit: 1 },
+      app(dataRouterRequestContract).register({
+        headers: { authorization: `Bearer ${claim.sandboxToken}` },
+        body: { runId: started.runId, requestId: randomUUID() },
       }),
-      [403],
+      [404],
     );
     await accept(
       setupApp({ context, routes: imageIoGenerateRoutes })(
@@ -4109,9 +4187,9 @@ describe("Official Workflow credit policy", () => {
   });
 
   it("runs models, search and image generation at zero credits and settles retries for free", async () => {
-    const app = await setupApp({
+    await setupApp({
       context,
-      routes: webSearchRoutes,
+      routes: webhooksAgentDataRequestRoutes,
       isolatePg: true,
     });
     const { actor, installation, automation, runnerGroup } =
@@ -4178,31 +4256,12 @@ describe("Official Workflow credit policy", () => {
       },
       [200],
     );
-    mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "official-search-provider");
-    server.use(
-      http.post("https://api.perplexity.ai/search", () => {
-        return HttpResponse.json({
-          results: [
-            {
-              title: "Official search",
-              url: "https://example.com/official",
-              snippet: "Verified task context",
-            },
-          ],
-        });
-      }),
+    await registerPublicDataUsage(
+      context,
+      started.runId,
+      claim.sandboxToken,
+      5,
     );
-    const searched = await accept(
-      app(webSearchContract).search({
-        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
-        body: { query: "Official briefing context", limit: 1 },
-      }),
-      [200],
-    );
-    expect(searched.body).toMatchObject({
-      creditsCharged: 0,
-      results: [{ title: "Official search" }],
-    });
     context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
     let imageRequestUrl: string | null = null;
     server.use(

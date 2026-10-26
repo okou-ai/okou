@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.4...guest-contracts-v0.27.5) (2026-10-25)
+
+
+### Performance Improvements
+
+* **runner:** borrow canonical storage manifest entries ([#42894](https://github.com/okou-ai/okou/issues/42894)) ([ee39444](https://github.com/okou-ai/okou/commit/ee39444f77ba7901fbc7e2a5319da9a168189f5e))
+
 ## [0.27.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.3...guest-contracts-v0.27.4) (2026-10-25)
 
 

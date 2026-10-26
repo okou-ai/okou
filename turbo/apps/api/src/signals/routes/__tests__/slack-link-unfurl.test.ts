@@ -24,12 +24,12 @@ import { uploadsCompleteRoutes } from "../uploads-complete";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const integrations = createBddIntegrationApi(context);
-const host = createHostMapsBddApi(context);
+const host = createHostBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const messageTs = "1791618140.315329";
 const authorSlackUserId = "U_LINK_SHARER";

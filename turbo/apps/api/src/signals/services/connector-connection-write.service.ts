@@ -3,14 +3,19 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectors } from "@okouai/db/schema/connector";
-import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import { and, eq, sql } from "drizzle-orm";
+import { QueryBuilder, type PgUpdateSetSource } from "drizzle-orm/pg-core";
 
-import type { Tx } from "../../lib/db-types";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
+
+import {
+  connectorConnectionDefaultConflict,
+  connectorConnectionIdentityValues,
+  connectorConnectionReplacementValues,
+  connectorConnectionTargetValues,
+  type ConnectorConnectionMetadataArgs,
+} from "./connector-account-mutation.service";
 
 const log = logger("api:connector-account-mutation");
 
@@ -33,57 +38,10 @@ export interface StoredConnectorConnectionRow {
   readonly updatedAt: Date;
 }
 
-type ConnectorConnectionTarget =
-  | {
-      readonly kind: "builtin";
-      readonly connectorSlug: string;
-      readonly identity:
-        | { readonly kind: "local" }
-        | {
-            readonly kind: "external";
-            readonly externalId: string;
-            readonly externalUsername: string | null;
-            readonly externalEmail: string | null;
-            readonly oauthRequestedScopes: readonly string[] | null;
-            readonly oauthGrantedScopes: readonly string[] | null;
-          };
-    }
-  | {
-      readonly kind: "custom";
-      readonly customConnectorId: string;
-      readonly oauthScopes: readonly string[] | null;
-      readonly identity:
-        | { readonly kind: "local" }
-        | {
-            readonly kind: "external";
-            readonly externalId: string;
-            readonly externalUsername: string | null;
-            readonly externalEmail: string | null;
-          };
-    };
-
-interface ConnectorCredentialWriteContext {
-  readonly db: Tx;
-  readonly connectorId: string;
-}
-
-export interface ConnectorConnectionMetadataArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly authMethod: string;
-  readonly automaticAuthType?: "none" | "oauth";
-  readonly storageVersion: number;
-  readonly tokenExpiresAt: Date | null;
-  readonly target: ConnectorConnectionTarget;
-  readonly insertConnectionId?: string;
-}
-
-interface ReplaceConnectorConnectionArgs extends ConnectorConnectionMetadataArgs {
-  readonly resolution: ReadyConnectorConnectionMutation;
-  readonly writeCredentials: (
-    context: ConnectorCredentialWriteContext,
-    signal: AbortSignal,
-  ) => Promise<void>;
+export interface ConnectorConnectionMetadataQuery {
+  returning(
+    fields: ReturnType<typeof connectorConnectionSelection>,
+  ): PromiseLike<StoredConnectorConnectionRow[]>;
 }
 
 interface ExistingConnectorConnectionRow extends StoredConnectorConnectionRow {
@@ -448,73 +406,20 @@ function connectorConnectionMutationResolution(
   );
 }
 
-export async function writeConnectorConnectionMetadataOutcome(
-  db: Tx,
-  args: ConnectorConnectionMetadataArgs & {
-    readonly resolution: ReadyConnectorConnectionMutation;
-  },
-): Promise<ConnectorConnectionWriteOutcome> {
-  const identityValues =
-    args.target.kind === "custom"
-      ? {
-          externalId:
-            args.target.identity.kind === "external"
-              ? args.target.identity.externalId
-              : null,
-          externalUsername:
-            args.target.identity.kind === "external"
-              ? args.target.identity.externalUsername
-              : null,
-          externalEmail:
-            args.target.identity.kind === "external"
-              ? args.target.identity.externalEmail
-              : null,
-          oauthScopes:
-            args.target.oauthScopes === null
-              ? null
-              : JSON.stringify(args.target.oauthScopes),
-          oauthGrantedScopes: null,
-        }
-      : args.target.identity.kind === "external"
-        ? {
-            externalId: args.target.identity.externalId,
-            externalUsername: args.target.identity.externalUsername,
-            externalEmail: args.target.identity.externalEmail,
-            oauthScopes:
-              args.target.identity.oauthRequestedScopes === null
-                ? null
-                : JSON.stringify(args.target.identity.oauthRequestedScopes),
-            oauthGrantedScopes:
-              args.target.identity.oauthGrantedScopes === null
-                ? null
-                : JSON.stringify(args.target.identity.oauthGrantedScopes),
-          }
-        : {
-            externalId: null,
-            externalUsername: null,
-            externalEmail: null,
-            oauthScopes: null,
-            oauthGrantedScopes: null,
-          };
-  const targetValues =
-    args.target.kind === "builtin"
-      ? {
-          connectorSlug: args.target.connectorSlug,
-          customConnectorId: null,
-        }
-      : {
-          connectorSlug: null,
-          customConnectorId: args.target.customConnectorId,
-        };
-  const replacementValues = {
-    authMethod: args.authMethod,
-    automaticAuthType: args.automaticAuthType ?? null,
-    storageVersion: args.storageVersion,
-    ...identityValues,
-    tokenExpiresAt: args.tokenExpiresAt,
-    needsReconnect: false,
-    reconnectReason: null,
-  };
+export type ConnectorConnectionWriteArgs = ConnectorConnectionMetadataArgs & {
+  readonly resolution: ReadyConnectorConnectionMutation;
+};
+
+function connectorConnectionMetadataValues(args: ConnectorConnectionWriteArgs) {
+  const identityValues = connectorConnectionIdentityValues(args.target);
+  const targetValues = connectorConnectionTargetValues(args.target);
+  const replacementValues = connectorConnectionReplacementValues(
+    args.authMethod,
+    args.automaticAuthType ?? null,
+    args.storageVersion,
+    identityValues,
+    args.tokenExpiresAt,
+  );
   const ownerCondition = and(
     eq(connectors.orgId, args.orgId),
     eq(connectors.userId, args.userId),
@@ -522,142 +427,166 @@ export async function writeConnectorConnectionMetadataOutcome(
       ? eq(connectors.connectorSlug, args.target.connectorSlug)
       : eq(connectors.customConnectorId, args.target.customConnectorId),
   );
-  let insert: InsertConnectorConnectionMutation;
-  if (args.resolution.kind === "update") {
-    // Exact identity: zero rows means the account was deleted after
-    // resolution.
-    const [updated] = await db
-      .update(connectors)
-      .set({
-        ...replacementValues,
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(
-        and(ownerCondition, eq(connectors.id, args.resolution.existing.id)),
-      )
-      .returning(connectorConnectionSelection());
-    if (updated) {
-      return { kind: "written", row: updated };
-    }
-    if (args.resolution.insertIfMissing === null) {
-      return { kind: "missing" };
-    }
-    insert = args.resolution.insertIfMissing;
-  } else {
-    insert = args.resolution;
-  }
-  return await insertConnectorConnection(db, {
-    target: args.target,
-    ownerCondition,
-    resolution: insert,
-    insertValues: (isDefault) => {
-      return {
-        ...(args.insertConnectionId ? { id: args.insertConnectionId } : {}),
-        orgId: args.orgId,
-        userId: args.userId,
-        displayName: insert.displayName,
-        isDefault,
-        ...targetValues,
-        ...replacementValues,
-      };
-    },
-    replacementValues,
-  });
+  return { args, targetValues, replacementValues, ownerCondition };
 }
 
-/**
- * Inserts an account without locking its siblings. The default is always
- * tried first against the target's partial default unique index
- * (idx_connectors_org_user_slug_default / _custom_connector_default): it
- * succeeds only while no committed default exists, and waits for an
- * in-flight default writer. On conflict the serialized outcome is applied:
- * an add whose external identity a concurrent create already stored updates
- * that row, a single-account target reports sibling-disabled, otherwise the
- * account becomes a non-default sibling.
- */
-async function insertConnectorConnection(
-  db: Tx,
-  args: {
-    readonly target: ConnectorConnectionTarget;
-    readonly ownerCondition: ReturnType<typeof and>;
-    readonly resolution: InsertConnectorConnectionMutation;
-    readonly insertValues: (
-      isDefault: boolean,
-    ) => typeof connectors.$inferInsert;
-    readonly replacementValues: Partial<typeof connectors.$inferInsert>;
-  },
-): Promise<ConnectorConnectionWriteOutcome> {
-  const [inserted] = await db
-    .insert(connectors)
-    .values(args.insertValues(true))
-    .onConflictDoNothing(
-      args.target.kind === "builtin"
-        ? {
-            target: [
-              connectors.orgId,
-              connectors.userId,
-              connectors.connectorSlug,
-            ],
-            where: sql`${connectors.connectorSlug} IS NOT NULL AND ${connectors.isDefault} = true`,
-          }
-        : {
-            target: [
-              connectors.orgId,
-              connectors.userId,
-              connectors.customConnectorId,
-            ],
-            where: sql`${connectors.customConnectorId} IS NOT NULL AND ${connectors.isDefault} = true`,
-          },
-    )
-    .returning(connectorConnectionSelection());
-  if (inserted) {
-    return { kind: "written", row: inserted };
-  }
+type ConnectorConnectionMetadataValues = ReturnType<
+  typeof connectorConnectionMetadataValues
+>;
 
-  const matchExternalId = args.resolution.matchExternalId;
-  if (matchExternalId !== null) {
-    const sameIdentity = and(
-      args.ownerCondition,
-      eq(connectors.externalId, matchExternalId),
-    );
-    const [updated] = await db
-      .update(connectors)
-      .set({ ...args.replacementValues, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          sameIdentity,
-          eq(
-            connectors.id,
-            db
-              .select({ id: connectors.id })
-              .from(connectors)
-              .where(sameIdentity)
-              .orderBy(connectors.id)
-              .limit(1),
-          ),
-        ),
-      )
-      .returning(connectorConnectionSelection());
-    if (updated) {
-      return { kind: "written", row: updated };
+type ConnectorConnectionMetadataWrite = {
+  readonly context: ConnectorConnectionMetadataValues;
+  readonly insert: InsertConnectorConnectionMutation | null;
+} & (
+  | {
+      readonly kind: "update";
+      readonly phase: "existing" | "identity";
+      readonly values: PgUpdateSetSource<typeof connectors>;
+      readonly where: ReturnType<typeof and>;
     }
+  | {
+      readonly kind: "insert";
+      readonly phase: "default" | "sibling";
+      readonly values: typeof connectors.$inferInsert;
+      readonly conflict: ReturnType<
+        typeof connectorConnectionDefaultConflict
+      > | null;
+    }
+);
+
+function connectorConnectionMetadataInsert(
+  context: ConnectorConnectionMetadataValues,
+  insert: InsertConnectorConnectionMutation,
+  isDefault: boolean,
+): ConnectorConnectionMetadataWrite {
+  const { args, targetValues, replacementValues } = context;
+  return {
+    kind: "insert",
+    phase: isDefault ? "default" : "sibling",
+    context,
+    insert,
+    values: {
+      ...(args.insertConnectionId ? { id: args.insertConnectionId } : {}),
+      orgId: args.orgId,
+      userId: args.userId,
+      displayName: insert.displayName,
+      isDefault,
+      ...targetValues,
+      ...replacementValues,
+    },
+    conflict: isDefault
+      ? connectorConnectionDefaultConflict(args.target.kind)
+      : null,
+  };
+}
+
+/** The default unique index arbitrates every insertion before sibling creation. */
+export function connectorConnectionMetadataWritePlan(
+  args: ConnectorConnectionWriteArgs,
+): ConnectorConnectionMetadataWrite {
+  const context = connectorConnectionMetadataValues(args);
+  if (args.resolution.kind === "update") {
+    return {
+      kind: "update",
+      phase: "existing",
+      context,
+      insert: args.resolution.insertIfMissing,
+      values: {
+        ...context.replacementValues,
+        updatedAt: sql`clock_timestamp()`,
+      },
+      where: and(
+        context.ownerCondition,
+        eq(connectors.id, args.resolution.existing.id),
+      ),
+    };
   }
-  if (!args.resolution.allowSiblings) {
-    log.debug("Concurrent first connector account create lost", {
-      targetKind: args.target.kind,
-    });
-    return { kind: "sibling-disabled" };
+  return connectorConnectionMetadataInsert(context, args.resolution, true);
+}
+
+function connectorConnectionIdentityWrite(
+  context: ConnectorConnectionMetadataValues,
+  insert: InsertConnectorConnectionMutation,
+  matchExternalId: string,
+): ConnectorConnectionMetadataWrite {
+  const sameIdentity = and(
+    context.ownerCondition,
+    eq(connectors.externalId, matchExternalId),
+  );
+  return {
+    kind: "update",
+    phase: "identity",
+    context,
+    insert,
+    values: {
+      ...context.replacementValues,
+      updatedAt: sql`clock_timestamp()`,
+    },
+    where: and(
+      sameIdentity,
+      eq(
+        connectors.id,
+        new QueryBuilder()
+          .select({ id: connectors.id })
+          .from(connectors)
+          .where(sameIdentity)
+          .orderBy(connectors.id)
+          .limit(1),
+      ),
+    ),
+  };
+}
+
+type ConnectorConnectionMetadataWriteResult =
+  | { readonly kind: "write"; readonly write: ConnectorConnectionMetadataWrite }
+  | {
+      readonly kind: "resolved";
+      readonly outcome: ConnectorConnectionWriteOutcome;
+    };
+
+/** Each miss advances once through the existing arbitration, never retries. */
+export function connectorConnectionMetadataWriteResult(
+  write: ConnectorConnectionMetadataWrite,
+  row: StoredConnectorConnectionRow | undefined,
+): ConnectorConnectionMetadataWriteResult {
+  if (row) {
+    return { kind: "resolved", outcome: { kind: "written", row } };
   }
-  const [sibling] = await db
-    .insert(connectors)
-    .values(args.insertValues(false))
-    .returning(connectorConnectionSelection());
-  if (!sibling) {
+  const { context, insert } = write;
+  if (insert === null) {
+    return { kind: "resolved", outcome: { kind: "missing" } };
+  }
+  if (write.phase === "existing") {
+    return {
+      kind: "write",
+      write: connectorConnectionMetadataInsert(context, insert, true),
+    };
+  }
+  if (write.phase === "sibling") {
     throw new Error(
-      `Failed to write ${args.target.kind === "builtin" ? "Builtin" : "Custom"} connector connection`,
+      `Failed to write ${context.args.target.kind === "builtin" ? "Builtin" : "Custom"} connector connection`,
     );
   }
-  return { kind: "written", row: sibling };
+  if (write.phase === "default" && insert.matchExternalId !== null) {
+    return {
+      kind: "write",
+      write: connectorConnectionIdentityWrite(
+        context,
+        insert,
+        insert.matchExternalId,
+      ),
+    };
+  }
+  if (!insert.allowSiblings) {
+    log.debug("Concurrent first connector account create lost", {
+      targetKind: context.args.target.kind,
+    });
+    return { kind: "resolved", outcome: { kind: "sibling-disabled" } };
+  }
+  return {
+    kind: "write",
+    write: connectorConnectionMetadataInsert(context, insert, false),
+  };
 }
 
 export function connectorConnectionWrittenRow(
@@ -669,37 +598,8 @@ export function connectorConnectionWrittenRow(
   return outcome.row;
 }
 
-export async function replaceConnectorConnectionOutcome(
-  db: Tx,
-  args: ReplaceConnectorConnectionArgs,
-  signal: AbortSignal,
-): Promise<ConnectorConnectionWriteOutcome> {
-  const outcome = await writeConnectorConnectionMetadataOutcome(db, args);
-  signal.throwIfAborted();
-  if (outcome.kind !== "written") {
-    return outcome;
-  }
-  const connection = outcome.row;
-
-  const credentialDeletion = { connectorId: connection.id };
-  await db
-    .delete(secrets)
-    .where(eq(secrets.connectorId, credentialDeletion.connectorId));
-  signal.throwIfAborted();
-  await db
-    .delete(variables)
-    .where(eq(variables.connectorId, credentialDeletion.connectorId));
-  signal.throwIfAborted();
-  await db
-    .delete(builtinConnectorAccountOauthBindings)
-    .where(
-      eq(
-        builtinConnectorAccountOauthBindings.connectorAccountId,
-        connection.id,
-      ),
-    );
-  await args.writeCredentials({ db, connectorId: connection.id }, signal);
-  signal.throwIfAborted();
-
-  return outcome;
+export async function awaitConnectorConnectionRow(
+  outcome: Promise<ConnectorConnectionWriteOutcome>,
+): Promise<StoredConnectorConnectionRow> {
+  return connectorConnectionWrittenRow(await outcome);
 }

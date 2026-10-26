@@ -623,7 +623,7 @@ function ArtifactDialogTextBody({
           return (
             <ArtifactDialogStage scrollable={false}>
               <ArtifactDialogCard fillHeight>
-                <JsonPreview preview={preview} maxCharacters={maxCharacters} />
+                <JsonPreview preview={preview} />
               </ArtifactDialogCard>
             </ArtifactDialogStage>
           );

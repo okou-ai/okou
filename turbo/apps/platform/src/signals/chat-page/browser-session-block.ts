@@ -5,6 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { WindowSizeSync } from "cdp-viewer";
 import {
   command,
   computed,
@@ -47,6 +48,8 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
       readonly cdpUrl: string;
     } | null>
   >;
+  readonly viewerWindowSizeSync$: Computed<WindowSizeSync>;
+  readonly setViewerWindowSizeSync$: Command<void, [WindowSizeSync]>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -374,6 +377,13 @@ export function createBrowserSessionSignals(
     href: `/browsers/${threadId}`,
   };
   const reloadVersion$ = state(0);
+  const internalViewerWindowSizeSync$ = state<WindowSizeSync>("live");
+  const viewerWindowSizeSync$ = computed((get) => {
+    return get(internalViewerWindowSizeSync$);
+  });
+  const setViewerWindowSizeSync$ = command(({ set }, mode: WindowSizeSync) => {
+    set(internalViewerWindowSizeSync$, mode);
+  });
   const screenshotImageLoad = createImageLoadSignals();
   const sessionOverride$ = state<BrowserSession | null | undefined>(undefined);
   const session$ = computed(async (get): Promise<BrowserSession | null> => {
@@ -474,6 +484,8 @@ export function createBrowserSessionSignals(
     session$,
     panelSession$: session$,
     viewerConnection$,
+    viewerWindowSizeSync$,
+    setViewerWindowSizeSync$,
     ...startSignals,
     ...closeSignals,
     reload$,

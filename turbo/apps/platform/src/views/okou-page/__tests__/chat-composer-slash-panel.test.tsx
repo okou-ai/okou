@@ -275,7 +275,7 @@ test("Clicking Illustration opens the picker on its own tab", async () => {
   await waitFor(() => {
     return screen.getByRole("dialog");
   });
-  expect(tabByText("Illustration")).toHaveAttribute("aria-selected", "true");
+  expect(tabByText("Image")).toHaveAttribute("aria-selected", "true");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
@@ -759,6 +759,6 @@ test.each(COMPOSER_PATHS)(
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     await user.click(slashButton("Illustration"));
     await screen.findByRole("dialog");
-    expect(tabByText("Illustration")).toHaveAttribute("aria-selected", "true");
+    expect(tabByText("Image")).toHaveAttribute("aria-selected", "true");
   },
 );

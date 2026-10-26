@@ -1,4 +1,8 @@
 import {
+  connectorCredentialDeletion,
+  connectorCredentialDeletionKinds,
+} from "./connector-account-mutation.service";
+import {
   completedGetStartedQuestSql,
   memberRewardWalletQuery,
 } from "./get-started-member-reward";
@@ -71,12 +75,16 @@ import { customConnectorDefinitionSelection } from "./custom-connector-definitio
 import type { StoredCustomConnectorOAuthState } from "./connector-oauth-state.service";
 import {
   type ConnectorConnectionMutationResolution,
-  connectorConnectionWrittenRow,
+  awaitConnectorConnectionRow,
   existingConnectorConnectionSelection,
-  replaceConnectorConnectionOutcome,
-  connectorConnectionMutationReadPlan,
-  connectorConnectionMutationReadResult,
+  connectorConnectionMutationReadPlan as connectionMutationReadPlan,
+  connectorConnectionMutationReadResult as connectionMutationReadResult,
   type ConnectorConnectionMutationArgs,
+  connectorConnectionMetadataWritePlan as connectionMetadataWritePlan,
+  connectorConnectionMetadataWriteResult as connectionMetadataWriteResult,
+  connectorConnectionSelection as connectionSelection,
+  type ConnectorConnectionMetadataQuery,
+  type ConnectorConnectionWriteArgs,
 } from "./connector-connection-write.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -117,6 +125,7 @@ import {
 } from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import {
+  customConnectorOAuthBindingDeletionPlan as customOAuthBindingDeletion,
   customConnectorOAuthStartFromRow,
   customConnectorOAuthStartResultSchema,
   customConnectorOAuthStartSql,
@@ -983,10 +992,6 @@ type AutomaticNoAuthConnector = CustomConnectorRow & {
   readonly oauthConfig: null;
 };
 
-type CustomConnectorReplacementArgs = Parameters<
-  typeof replaceConnectorConnectionOutcome
->[1];
-
 interface AutomaticNoAuthPersistenceContext {
   readonly connector: AutomaticNoAuthConnector;
   readonly args: StartCustomConnectorOAuth2Args;
@@ -1004,7 +1009,7 @@ function automaticNoAuthCredentialContractRef(
   };
 }
 
-function automaticNoAuthConnectionWriteValues(
+function noAuthWriteArgs(
   args: StartCustomConnectorOAuth2Args,
   connector: AutomaticNoAuthConnector,
   resolution: Extract<ConnectorConnectionMutationResolution, { kind: "ready" }>,
@@ -1038,6 +1043,19 @@ function automaticNoAuthConnectionResponse(
   };
 }
 
+function automaticNoAuthWakeupFailure(
+  wakeup: NonNullable<ReturnType<typeof automaticNoAuthWakeup>>,
+  error: unknown,
+) {
+  return {
+    orgId: wakeup.scope.orgId,
+    scopedToUser: wakeup.scope.userId !== undefined,
+    scopedToAgent: wakeup.scope.agentId !== undefined,
+    targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+    error,
+  };
+}
+
 const commitAutomaticNoAuthConnection$ = command(
   function persistAutomaticNoAuthConnection(
     { set },
@@ -1048,12 +1066,11 @@ const commitAutomaticNoAuthConnection$ = command(
     const db = set(writeDb$);
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0139; new non-billing transactions are prohibited.
     const transaction = db.transaction(async (tx) => {
-      const credentialContractDb = tx;
       const contractRef = automaticNoAuthCredentialContractRef(args, connector);
       await (async () => {
         const plan =
           customConnectorOAuth2CredentialContractReadPlan(contractRef);
-        const rows = await credentialContractDb
+        const rows = await tx
           .select(plan.columns)
           .from(plan.from)
           .leftJoin(plan.join.table, plan.join.on)
@@ -1065,24 +1082,17 @@ const commitAutomaticNoAuthConnection$ = command(
           contractRef,
         );
       })();
-      const mutationReadDb = tx;
-      const mutationReadArgs: ConnectorConnectionMutationArgs = {
-        orgId: args.orgId,
-        userId: args.userId,
-        target: { kind: "custom", customConnectorId: connector.id },
-        mutation: args.account,
-        allowSiblings: true,
-      };
+      const mutationReadArgs = automaticNoAuthMutation(args, connector);
       const resolution = await (async () => {
-        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        let read = connectionMutationReadPlan(mutationReadArgs);
         for (;;) {
-          const rows = await mutationReadDb
+          const rows = await tx
             .select(read.columns)
             .from(read.from)
             .where(read.where)
             .orderBy(...read.orderBy)
             .limit(read.limit);
-          const result = connectorConnectionMutationReadResult(
+          const result = connectionMutationReadResult(
             mutationReadArgs,
             read,
             rows,
@@ -1096,41 +1106,60 @@ const commitAutomaticNoAuthConnection$ = command(
       if (resolution.kind !== "ready") {
         return { resolution, connection: null };
       }
-      const connectionDb = tx;
-      const connectionArgs: CustomConnectorReplacementArgs = {
-        ...automaticNoAuthConnectionWriteValues(args, connector, resolution),
-        writeCredentials: async ({ db: credentialDb, connectorId }) => {
-          await credentialDb
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-        },
-      };
-      const connectionSignal = signal;
-      const connection = await (async () => {
-        return connectorConnectionWrittenRow(
-          await replaceConnectorConnectionOutcome(
-            connectionDb,
-            connectionArgs,
-            connectionSignal,
-          ),
-        );
-      })();
+
+      const connectionArgs = noAuthWriteArgs(args, connector, resolution);
+
+      const connection = await awaitConnectorConnectionRow(
+        (async () => {
+          const outcome = await (async () => {
+            let write = connectionMetadataWritePlan(connectionArgs);
+            for (;;) {
+              const query: ConnectorConnectionMetadataQuery =
+                write.kind === "update"
+                  ? tx.update(connectors).set(write.values).where(write.where)
+                  : write.conflict
+                    ? tx
+                        .insert(connectors)
+                        .values(write.values)
+                        .onConflictDoNothing(write.conflict)
+                    : tx.insert(connectors).values(write.values);
+              const [row] = await query.returning(connectionSelection());
+              const result = connectionMetadataWriteResult(write, row);
+              if (result.kind === "resolved") {
+                return write.phase === "existing"
+                  ? result.outcome
+                  : await Promise.resolve(result.outcome);
+              }
+              write = result.write;
+            }
+          })();
+          signal.throwIfAborted();
+          if (outcome.kind !== "written") {
+            return outcome;
+          }
+          const connection = outcome.row;
+
+          for (const kind of connectorCredentialDeletionKinds) {
+            const deletion = connectorCredentialDeletion(kind, connection);
+            await tx.delete(deletion.from).where(deletion.where);
+            if (kind !== "builtin-oauth") {
+              signal.throwIfAborted();
+            }
+          }
+          const connectorId = connection.id;
+          await (async () => {
+            const deletion = customOAuthBindingDeletion(connectorId);
+            await tx.delete(deletion.from).where(deletion.where);
+          })();
+          signal.throwIfAborted();
+          return outcome;
+        })(),
+      );
       return { resolution, connection };
     });
     return (async () => {
       const result = await transaction;
-      const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =
-        result.connection
-          ? {
-              scope: { orgId: args.orgId, userId: args.userId },
-              targets: [{ kind: "custom", customConnectorId: connector.id }],
-            }
-          : undefined;
+      const wakeup = automaticNoAuthWakeup(args, connector, result.connection);
       if (wakeup) {
         await (async () => {
           const result = await settle(
@@ -1151,13 +1180,9 @@ const commitAutomaticNoAuthConnection$ = command(
             })(),
           );
           if (!result.ok) {
-            reportConnectorRuntimeWakeupDiscoveryFailure({
-              orgId: wakeup.scope.orgId,
-              scopedToUser: wakeup.scope.userId !== undefined,
-              scopedToAgent: wakeup.scope.agentId !== undefined,
-              targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
-              error: result.error,
-            });
+            reportConnectorRuntimeWakeupDiscoveryFailure(
+              automaticNoAuthWakeupFailure(wakeup, result.error),
+            );
           }
         })();
       }
@@ -1861,15 +1886,24 @@ function customOAuthConnectionMutationValues(
   };
 }
 
+function customOAuthTokenRows(
+  args: StoreCustomConnectorOAuth2ConnectionArgs,
+  connectionId: string,
+  encrypted: Awaited<ReturnType<typeof encryptTokenValues>>,
+) {
+  return connectionTokenRows({ ...args, connectionId, encrypted });
+}
+
+type StoreCustomConnectorOAuth2ConnectionResult =
+  | { readonly kind: "stored"; readonly connectionId: string }
+  | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" };
+
 export const storeCustomConnectorOAuth2Connection$ = command(
   async function storeCustomConnectorOAuth2Connection(
     { set },
     args: StoreCustomConnectorOAuth2ConnectionArgs,
     signal: AbortSignal,
-  ): Promise<
-    | { readonly kind: "stored"; readonly connectionId: string }
-    | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" }
-  > {
+  ): Promise<StoreCustomConnectorOAuth2ConnectionResult> {
     const db = set(writeDb$);
     const encrypted = await encryptTokenValues(args);
     signal.throwIfAborted();
@@ -1887,12 +1921,11 @@ export const storeCustomConnectorOAuth2Connection$ = command(
           .values(slackRewardWalletEntitlement(args.orgId))
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
-      const credentialContractDb = tx;
       const contractRef = customOAuth2CredentialContractRef(args);
       const contract = await (async () => {
         const plan =
           customConnectorOAuth2CredentialContractReadPlan(contractRef);
-        const rows = await credentialContractDb
+        const rows = await tx
           .select(plan.columns)
           .from(plan.from)
           .leftJoin(plan.join.table, plan.join.on)
@@ -1905,19 +1938,18 @@ export const storeCustomConnectorOAuth2Connection$ = command(
         );
       })();
       signal.throwIfAborted();
-      const mutationReadDb = tx;
       const mutationReadArgs: ConnectorConnectionMutationArgs =
         customOAuthConnectionMutationValues(args, contract);
       const resolution = await (async () => {
-        let read = connectorConnectionMutationReadPlan(mutationReadArgs);
+        let read = connectionMutationReadPlan(mutationReadArgs);
         for (;;) {
-          const rows = await mutationReadDb
+          const rows = await tx
             .select(read.columns)
             .from(read.from)
             .where(read.where)
             .orderBy(...read.orderBy)
             .limit(read.limit);
-          const result = connectorConnectionMutationReadResult(
+          const result = connectionMutationReadResult(
             mutationReadArgs,
             read,
             rows,
@@ -1932,61 +1964,67 @@ export const storeCustomConnectorOAuth2Connection$ = command(
       if (resolution.kind !== "ready") {
         return resolution;
       }
-      const connectionDb = tx;
-      const connectionArgs: CustomConnectorReplacementArgs = {
-        orgId: args.orgId,
-        userId: args.userId,
-        authMethod: "oauth",
-        storageVersion: args.storageVersion,
-        tokenExpiresAt: args.token.expiresAt,
-        target: customOAuthConnectionTarget(args.connectorId, args.token),
-        resolution: resolution.mutation,
-        insertConnectionId: args.insertConnectionId,
-        writeCredentials: async ({ db, connectorId }) => {
-          await db.insert(secrets).values(
-            connectionTokenRows({
-              ...args,
-              connectionId: connectorId,
-              encrypted,
-            }),
-          );
-          await db
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-          if (args.automaticOAuthBinding) {
-            await db.insert(customConnectorAccountOauthBindings).values({
-              connectorAccountId: connectorId,
-              customConnectorId: args.connectorId,
-              ...args.automaticOAuthBinding,
-            });
+
+      const connectionArgs = customOAuthWriteArgs(args, resolution);
+
+      const connection = await awaitConnectorConnectionRow(
+        (async () => {
+          const outcome = await (async () => {
+            let write = connectionMetadataWritePlan(connectionArgs);
+            for (;;) {
+              const query: ConnectorConnectionMetadataQuery =
+                write.kind === "update"
+                  ? tx.update(connectors).set(write.values).where(write.where)
+                  : write.conflict
+                    ? tx
+                        .insert(connectors)
+                        .values(write.values)
+                        .onConflictDoNothing(write.conflict)
+                    : tx.insert(connectors).values(write.values);
+              const [row] = await query.returning(connectionSelection());
+              const result = connectionMetadataWriteResult(write, row);
+              if (result.kind === "resolved") {
+                return write.phase === "existing"
+                  ? result.outcome
+                  : await Promise.resolve(result.outcome);
+              }
+              write = result.write;
+            }
+          })();
+          signal.throwIfAborted();
+          if (outcome.kind !== "written") {
+            return outcome;
           }
-        },
-      };
-      const connectionSignal = signal;
-      const connection = await (async () => {
-        return connectorConnectionWrittenRow(
-          await replaceConnectorConnectionOutcome(
-            connectionDb,
-            connectionArgs,
-            connectionSignal,
-          ),
-        );
-      })();
+          const connection = outcome.row;
+
+          for (const kind of connectorCredentialDeletionKinds) {
+            const deletion = connectorCredentialDeletion(kind, connection);
+            await tx.delete(deletion.from).where(deletion.where);
+            if (kind !== "builtin-oauth") {
+              signal.throwIfAborted();
+            }
+          }
+          const connectorId = connection.id;
+          await (async () => {
+            await tx
+              .insert(secrets)
+              .values(customOAuthTokenRows(args, connectorId, encrypted));
+            const deletion = customOAuthBindingDeletion(connectorId);
+            await tx.delete(deletion.from).where(deletion.where);
+            if (args.automaticOAuthBinding) {
+              await tx.insert(customConnectorAccountOauthBindings).values({
+                connectorAccountId: connectorId,
+                customConnectorId: args.connectorId,
+                ...args.automaticOAuthBinding,
+              });
+            }
+          })();
+          signal.throwIfAborted();
+          return outcome;
+        })(),
+      );
       await tx.execute(
-        completedGetStartedQuestSql(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            questKey: "connector",
-            sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-          },
-          nowDate(),
-        ),
+        completedGetStartedQuestSql(customOAuthQuest(args), nowDate()),
       );
       return { kind: "stored", connectionId: connection.id };
     });
@@ -2680,3 +2718,56 @@ export const resolveCurrentCustomConnectorOAuth2AccessToken$ = command(
     return await set(resolve, { ...args, connector }, signal);
   },
 );
+
+function customOAuthWriteArgs(
+  args: StoreCustomConnectorOAuth2ConnectionArgs,
+  resolution: Extract<ConnectorConnectionMutationResolution, { kind: "ready" }>,
+): ConnectorConnectionWriteArgs {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    authMethod: "oauth",
+    storageVersion: args.storageVersion,
+    tokenExpiresAt: args.token.expiresAt,
+    target: customOAuthConnectionTarget(args.connectorId, args.token),
+    resolution: resolution.mutation,
+    insertConnectionId: args.insertConnectionId,
+  };
+}
+
+function automaticNoAuthMutation(
+  args: StartCustomConnectorOAuth2Args,
+  connector: AutomaticNoAuthConnector,
+): ConnectorConnectionMutationArgs {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "custom", customConnectorId: connector.id },
+    mutation: args.account,
+    allowSiblings: true,
+  };
+}
+
+function automaticNoAuthWakeup(
+  args: StartCustomConnectorOAuth2Args,
+  connector: AutomaticNoAuthConnector,
+  connection: { readonly id: string } | null,
+): ConnectorRuntimeWakeupBusinessArgs | undefined {
+  return connection
+    ? {
+        scope: { orgId: args.orgId, userId: args.userId },
+        targets: [{ kind: "custom", customConnectorId: connector.id }],
+      }
+    : undefined;
+}
+
+function customOAuthQuest(
+  args: Pick<StoreCustomConnectorOAuth2ConnectionArgs, "orgId" | "userId">,
+) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    questKey: "connector" as const,
+    sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
+  };
+}

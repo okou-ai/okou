@@ -105,8 +105,7 @@ import {
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
 import {
-  releaseNeverStartedRunSlots,
-  transitionAgentRunsToTerminal,
+  commitFailedQueuedRun$,
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
@@ -1323,80 +1322,6 @@ function poisonJobErrorResponse(result: FailedPoisonJobResult) {
   return notFound("Run not found");
 }
 
-async function failPoisonQueuedJob(
-  db: Db,
-  runId: string,
-  errorMessage: string,
-  signal: AbortSignal,
-): Promise<PoisonJobResult> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0022; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const runPreflightDb = tx;
-    const runPreflightId = runId;
-    const run = await (async (): Promise<
-      { readonly id: string; readonly status: string } | undefined
-    > => {
-      const [run] = await runPreflightDb
-        .select({
-          id: agentRuns.id,
-          status: agentRuns.status,
-        })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, runPreflightId))
-        .for("update");
-      return run;
-    })();
-    signal.throwIfAborted();
-    if (!run) {
-      return { status: "run-not-found" };
-    }
-    if (run.status !== "pending") {
-      await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
-      signal.throwIfAborted();
-      return { status: "run-not-found" };
-    }
-
-    const jobPreflightDb = tx;
-    const jobPreflightId = runId;
-    const job = await (async (): Promise<
-      { readonly runId: string; readonly isExpired: boolean } | undefined
-    > => {
-      const [row] = await jobPreflightDb
-        .select({
-          runId: runnerJobQueue.runId,
-          isExpired: runnerJobQueueExpiredCondition().mapWith(pgBooleanDecoder),
-        })
-        .from(runnerJobQueue)
-        .where(eq(runnerJobQueue.runId, jobPreflightId))
-        .for("update");
-      return row;
-    })();
-    signal.throwIfAborted();
-    if (!job || job.isExpired) {
-      return { status: "job-not-found" };
-    }
-
-    const failedAt = nowDate();
-    const transitions = await transitionAgentRunsToTerminal(tx, {
-      values: {
-        status: "failed",
-        completedAt: failedAt,
-        error: errorMessage,
-      },
-      conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
-    });
-    signal.throwIfAborted();
-    if (transitions.length === 0) {
-      throw new Error("Locked pending run was not failed");
-    }
-
-    await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
-    signal.throwIfAborted();
-    const releasedSlots = await releaseNeverStartedRunSlots(tx, transitions);
-    return { status: "failed" as const, releasedSlots };
-  });
-}
-
 type PreparedSecretValuesResult =
   | {
       readonly status: "resolved";
@@ -2014,6 +1939,7 @@ const scheduleClaimFailedSideEffects$ = command(
           dispatchCompleteSideEffects$,
           {
             kind: "terminal",
+            firstTerminalTransition: true,
             runId: args.runId,
             orgId: args.orgId,
             status: "failed",
@@ -2032,99 +1958,109 @@ const scheduleClaimFailedSideEffects$ = command(
   },
 );
 
-async function failClaimForInvalidStoredExecutionContext(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly orgId: string;
-    readonly scheduleFailedSideEffects: (
-      args: ClaimFailedSideEffectArgs,
-    ) => void;
-  },
-  signal: AbortSignal,
-) {
-  const poisonResult = await failPoisonQueuedJob(
-    args.db,
-    args.runId,
-    INVALID_EXECUTION_CONTEXT_ERROR,
-    signal,
-  );
-  if (poisonResult.status !== "failed") {
-    return poisonJobErrorResponse(poisonResult);
-  }
-  args.scheduleFailedSideEffects({
-    runId: args.runId,
-    orgId: args.orgId,
-    error: INVALID_EXECUTION_CONTEXT_ERROR,
-    releasedSlots: poisonResult.releasedSlots,
-  });
-  return badRequestMessage("Job missing execution context");
-}
-
-async function resolveStoredExecutionContextForClaim(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly orgId: string;
-    readonly executionContext: unknown;
-    readonly capabilities: RunnerClaimCapabilities;
-    readonly timing: ClaimRouteTimingCollector;
-    readonly scheduleFailedSideEffects: (
-      args: ClaimFailedSideEffectArgs,
-    ) => void;
-  },
-  signal: AbortSignal,
-) {
-  const contextParseStartedAt = now();
-  const storedContextResult =
-    claimCompatibleStoredExecutionContextSchema.safeParse(
-      args.executionContext,
-    );
-  args.timing.recordElapsed(
-    "claim_route_context_parse",
-    "top_level",
-    contextParseStartedAt,
-  );
-  signal.throwIfAborted();
-  if (!storedContextResult.success) {
-    warnInvalidStoredExecutionContext(
-      args.runId,
-      storedContextResult.error.issues,
-    );
-    return {
-      compatible: false as const,
-      response: await failClaimForInvalidStoredExecutionContext(args, signal),
-    };
-  }
-  const piModelConfigResolution = resolvePiModelConfigForClaim({
-    cliAgentType: storedContextResult.data.cliAgentType,
-    modelConfig: storedContextResult.data.piModelConfig,
-    capabilities: args.capabilities,
-  });
-  if (piModelConfigResolution.status === "unsupported") {
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
-  if (piModelConfigResolution.status === "invalid") {
-    warnInvalidStoredExecutionContext(
-      args.runId,
-      piModelConfigResolution.error.issues,
-    );
-    return {
-      compatible: false as const,
-      response: await failClaimForInvalidStoredExecutionContext(args, signal),
-    };
-  }
-  return {
-    compatible: true as const,
-    value: {
-      ...storedContextResult.data,
-      piModelConfig: piModelConfigResolution.modelConfig,
+const failClaimForInvalidStoredExecutionContext$ = command(
+  async function failClaimForInvalidStoredExecutionContext(
+    { set },
+    args: {
+      readonly runId: string;
+      readonly orgId: string;
     },
-  };
-}
+    signal: AbortSignal,
+  ) {
+    const poisonResult = await set(
+      commitFailedQueuedRun$,
+      args.runId,
+      INVALID_EXECUTION_CONTEXT_ERROR,
+      signal,
+    );
+    if (poisonResult.status !== "failed") {
+      return poisonJobErrorResponse(poisonResult);
+    }
+    set(
+      scheduleClaimFailedSideEffects$,
+      {
+        runId: args.runId,
+        orgId: args.orgId,
+        error: INVALID_EXECUTION_CONTEXT_ERROR,
+        releasedSlots: poisonResult.releasedSlots,
+      },
+      signal,
+    );
+    return badRequestMessage("Job missing execution context");
+  },
+);
+
+const resolveStoredExecutionContextForClaim$ = command(
+  async function resolveStoredExecutionContextForClaim(
+    { set },
+    args: {
+      readonly runId: string;
+      readonly orgId: string;
+      readonly executionContext: unknown;
+      readonly capabilities: RunnerClaimCapabilities;
+      readonly timing: ClaimRouteTimingCollector;
+    },
+    signal: AbortSignal,
+  ) {
+    const contextParseStartedAt = now();
+    const storedContextResult =
+      claimCompatibleStoredExecutionContextSchema.safeParse(
+        args.executionContext,
+      );
+    args.timing.recordElapsed(
+      "claim_route_context_parse",
+      "top_level",
+      contextParseStartedAt,
+    );
+    signal.throwIfAborted();
+    if (!storedContextResult.success) {
+      warnInvalidStoredExecutionContext(
+        args.runId,
+        storedContextResult.error.issues,
+      );
+      return {
+        compatible: false as const,
+        response: await set(
+          failClaimForInvalidStoredExecutionContext$,
+          args,
+          signal,
+        ),
+      };
+    }
+    const piModelConfigResolution = resolvePiModelConfigForClaim({
+      cliAgentType: storedContextResult.data.cliAgentType,
+      modelConfig: storedContextResult.data.piModelConfig,
+      capabilities: args.capabilities,
+    });
+    if (piModelConfigResolution.status === "unsupported") {
+      return {
+        compatible: false as const,
+        response: notFound("Job not found in queue"),
+      };
+    }
+    if (piModelConfigResolution.status === "invalid") {
+      warnInvalidStoredExecutionContext(
+        args.runId,
+        piModelConfigResolution.error.issues,
+      );
+      return {
+        compatible: false as const,
+        response: await set(
+          failClaimForInvalidStoredExecutionContext$,
+          args,
+          signal,
+        ),
+      };
+    }
+    return {
+      compatible: true as const,
+      value: {
+        ...storedContextResult.data,
+        piModelConfig: piModelConfigResolution.modelConfig,
+      },
+    };
+  },
+);
 
 const claimAuthorizedJob$ = command(
   async (
@@ -2145,17 +2081,14 @@ const claimAuthorizedJob$ = command(
     const { db, runId, jobWithRun, claimRouteTiming } = args;
     const run = jobWithRun.run;
 
-    const storedContextResult = await resolveStoredExecutionContextForClaim(
+    const storedContextResult = await set(
+      resolveStoredExecutionContextForClaim$,
       {
-        db,
         runId,
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
         timing: claimRouteTiming,
-        scheduleFailedSideEffects(failedArgs) {
-          set(scheduleClaimFailedSideEffects$, failedArgs, signal);
-        },
       },
       signal,
     );

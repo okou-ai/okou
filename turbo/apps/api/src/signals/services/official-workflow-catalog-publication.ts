@@ -16,8 +16,9 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages } from "@okouai/db/schema/storage";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, exists, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import {
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   type AcceptedOfficialWorkflowCatalog,
@@ -360,18 +361,21 @@ function preparedStorageCondition(artifact: OfficialWorkflowArtifactReference) {
   );
 }
 /** Publish the owned volume and its exact immutable definition together. */
-export function preparedDefinitionPublicationSql(
+export function preparedDefinitionPublicationPlan(
   prepared: PreparedOfficialWorkflowDefinition,
   publishedAt: Date,
+  admitted: SQL,
+  namespace: string,
 ) {
   const volume = preparedVolumePublicationPlan(
     prepared.volume,
     publishedAt,
-    preparedStorageCondition(prepared.artifact),
+    and(preparedStorageCondition(prepared.artifact), admitted),
+    namespace,
   );
   const query = new QueryBuilder();
   const table = officialWorkflowDefinitionRevisions;
-  const registered = query.$with("registered_definition", {
+  const registered = query.$with(`${namespace}registered_definition`, {
     definitionName: table.definitionName,
   }).as(sql`INSERT INTO ${table}
       (definition_name, revision, payload, storage_name, storage_id, storage_version)
@@ -387,11 +391,7 @@ export function preparedDefinitionPublicationSql(
       AND ${table.storageId} = EXCLUDED.storage_id
       AND ${table.storageVersion} = EXCLUDED.storage_version
     RETURNING definition_name`);
-  return query
-    .with(...volume.ctes, registered)
-    .select({ definitionName: registered.definitionName })
-    .from(registered)
-    .getSQL();
+  return { ctes: [...volume.ctes, registered], registered };
 }
 
 export function changedWorkflowDefinitions(
@@ -522,11 +522,160 @@ export function assertCatalogReleasePayload(
     throw new OfficialWorkflowCatalogRegistrationError();
   }
 }
-export function assertPublishedDefinitionCount(
-  published: number | null,
+
+function catalogRepairWorkSql(
   definitionName: string,
-): void {
-  if (published !== 1) {
-    throw new OfficialWorkflowCatalogRegistrationError(definitionName);
-  }
+  releaseId: string,
+  at: Date,
+  admitted: SQL,
+) {
+  const v = reconciliationWorkValues(definitionName, releaseId, at);
+  const u = reconciliationWorkResetValues(releaseId, at);
+  const t = officialWorkflowReconciliationWork;
+  return sql`INSERT INTO ${t}
+    (definition_name, requested_release_id, cursor_workflow_id, state, lease_id,
+     lease_expires_at, available_at, attempt_count, last_error, created_at, updated_at)
+    SELECT ${v.definitionName}, ${v.requestedReleaseId}, ${sql.param(v.cursorWorkflowId, t.cursorWorkflowId)}, ${v.state},
+      ${sql.param(v.leaseId, t.leaseId)}, ${sql.param(v.leaseExpiresAt, t.leaseExpiresAt)},
+      ${sql.param(v.availableAt, t.availableAt)}, ${v.attemptCount}, ${v.lastError},
+      ${sql.param(v.createdAt, t.createdAt)}, ${sql.param(v.updatedAt, t.updatedAt)}
+    WHERE ${admitted}
+    ON CONFLICT (definition_name) DO UPDATE SET
+      requested_release_id = ${u.requestedReleaseId}, cursor_workflow_id = ${sql.param(u.cursorWorkflowId, t.cursorWorkflowId)},
+      state = ${u.state}, lease_id = ${sql.param(u.leaseId, t.leaseId)},
+      lease_expires_at = ${sql.param(u.leaseExpiresAt, t.leaseExpiresAt)},
+      available_at = ${sql.param(u.availableAt, t.availableAt)}, attempt_count = ${u.attemptCount},
+      last_error = ${u.lastError}, updated_at = ${sql.param(u.updatedAt, t.updatedAt)}
+    RETURNING definition_name`;
+}
+
+/** Claim the existing accepted-pointer version before publishing dependent rows. */
+export function catalogActivationSql(
+  input: CatalogCandidatePublication,
+  current: AcceptedOfficialWorkflowCatalog | null,
+  plan: Extract<
+    ReturnType<typeof catalogPublicationPlan>,
+    { readonly outcome: "publish" }
+  >,
+  publishedAt: Date,
+) {
+  const query = new QueryBuilder();
+  const state = officialWorkflowCatalogState;
+  const stateValues = catalogStateValues(plan.releaseId, publishedAt);
+  const admitted = query
+    .$with("catalog_activation_authority", { authority: state.authority })
+    .as(
+      current
+        ? query
+            .select({ authority: state.authority })
+            .from(state)
+            .where(catalogPublicationCondition(current.releaseId))
+            .for("update")
+            .getSQL()
+        : query
+            .select({
+              authority:
+                sql`${sql.param(stateValues.authority, state.authority)}`
+                  .mapWith(state.authority)
+                  .as("authority"),
+            })
+            .from(sql`(SELECT 1) AS initial_catalog_authority`)
+            .getSQL(),
+    );
+  const releases = officialWorkflowCatalogReleases;
+  const release = query
+    .$with("registered_catalog_release", { id: releases.id })
+    .as(
+      sql`INSERT INTO ${releases} (id, payload, hidden_thread_definition_names)
+      SELECT ${plan.releaseId}, ${sql.param(plan.payload, releases.payload)},
+        ${sql.param(plan.hiddenThreadDefinitionNames, releases.hiddenThreadDefinitionNames)}
+      FROM ${admitted} WHERE true
+      ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
+      WHERE ${and(eq(releases.payload, sql`EXCLUDED.payload`), eq(releases.hiddenThreadDefinitionNames, sql`EXCLUDED.hidden_thread_definition_names`))}
+      RETURNING id`,
+    );
+  const publication = current
+    ? sql`UPDATE ${state} SET accepted_release_id = ${plan.releaseId},
+        updated_at = ${sql.param(publishedAt, state.updatedAt)}
+      WHERE ${and(catalogPublicationCondition(current.releaseId), exists(query.select({ id: release.id }).from(release)))}
+      RETURNING authority`
+    : sql`INSERT INTO ${state} (authority, accepted_release_id, updated_at)
+      SELECT ${admitted.authority}, ${release.id}, ${sql.param(publishedAt, state.updatedAt)}
+      FROM ${release} CROSS JOIN ${admitted}
+      ON CONFLICT (authority) DO NOTHING RETURNING authority`;
+  const published = query
+    .$with("published_catalog_pointer", { authority: state.authority })
+    .as(publication);
+  const commitAuthority = exists(
+    query.select({ authority: published.authority }).from(published),
+  );
+  let ready = commitAuthority;
+  const definitions = [...input.preparedByName.values()].map(
+    (prepared, index) => {
+      const definition = preparedDefinitionPublicationPlan(
+        prepared,
+        publishedAt,
+        ready,
+        `catalog_definition_${index}_`,
+      );
+      ready = exists(
+        query
+          .select({ name: definition.registered.definitionName })
+          .from(definition.registered),
+      );
+      return definition;
+    },
+  );
+  const retired = retiredBlueprintDefinitions(plan.payload).map(
+    (definition, index) => {
+      return query
+        .$with(`retired_catalog_repair_${index}`, {
+          definitionName: officialWorkflowReconciliationWork.definitionName,
+        })
+        .as(
+          sql`DELETE FROM ${officialWorkflowReconciliationWork}
+        WHERE ${and(reconciliationDefinitionCondition(definition.name), ready)} RETURNING definition_name`,
+        );
+    },
+  );
+  const changed = changedWorkflowDefinitions(current, plan).map(
+    (definition, index) => {
+      return query
+        .$with(`changed_catalog_repair_${index}`, {
+          definitionName: officialWorkflowReconciliationWork.definitionName,
+        })
+        .as(
+          catalogRepairWorkSql(
+            definition.name,
+            plan.releaseId,
+            publishedAt,
+            ready,
+          ),
+        );
+    },
+  );
+  const required = definitions.map((definition) => {
+    return sql`(${query.select({ count: count() }).from(definition.registered)}) = 1`;
+  });
+  // Even an empty/lost pointer emits the aggregate. A failed publication raises
+  // inside this statement, rolling back release, pointer, resources and work.
+  return query
+    .with(
+      admitted,
+      release,
+      published,
+      ...definitions.flatMap((definition) => {
+        return definition.ctes;
+      }),
+      ...retired,
+      ...changed,
+    )
+    .select({
+      guard:
+        sql`(1 / CASE WHEN ${count(published.authority)} = 1 AND ${and(sql`(${query.select({ count: count() }).from(release)}) = 1`, ...required)} THEN 1 ELSE 0 END)::int`
+          .mapWith(pgIntegerDecoder)
+          .as("guard"),
+    })
+    .from(published)
+    .getSQL();
 }

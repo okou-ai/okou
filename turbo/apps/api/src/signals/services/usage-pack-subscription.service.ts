@@ -50,6 +50,9 @@ import {
   asc,
   desc,
   eq,
+  exists,
+  count,
+  sql,
   inArray,
   isNotNull,
   isNull,
@@ -60,6 +63,8 @@ import {
 } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
+import { safeSqlStateCode } from "../../lib/pg-errors";
+import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -2278,129 +2283,200 @@ function usagePackCheckoutRoot(
   return subscription;
 }
 
+interface UsagePackCheckoutPublication {
+  readonly orgId: string;
+  readonly usagePackSubscriptionId: string;
+  readonly checkoutSessionId: string;
+  readonly customerId: string;
+  readonly subscription: UsagePackSubscriptionInput;
+}
+
+function assertUsagePackCheckoutPendingCount(
+  guard: { readonly pendingSnapshotCount: number } | undefined,
+  before: number,
+): void {
+  if (guard ? guard.pendingSnapshotCount !== before : before !== 0) {
+    throw new Error("Usage pack pending snapshot guard requires repair");
+  }
+}
+
+function usagePackCheckoutPublicationShape(
+  context: UsagePackContext,
+  args: UsagePackCheckoutPublication,
+) {
+  validateUsagePackSubscriptionCorrelation(
+    context,
+    args.subscription,
+    args.usagePackSubscriptionId,
+  );
+  if (
+    context.subscription.stripeCustomerId !== args.customerId ||
+    (context.subscription.stripeCheckoutSessionId &&
+      context.subscription.stripeCheckoutSessionId !== args.checkoutSessionId)
+  ) {
+    throw new Error(
+      `Checkout Session ${args.checkoutSessionId} does not match the local usage pack snapshot`,
+    );
+  }
+  return requireUsagePackSubscriptionShape(context, args.subscription);
+}
+
+function usagePackCheckoutPublicationValues(
+  args: UsagePackCheckoutPublication,
+  shape: ValidatedSubscriptionShape,
+  updatedAt: Date,
+) {
+  const cancelAtPeriodEnd = usagePackSubscriptionWillCancel(args.subscription);
+  return {
+    root: {
+      tier: shape.tier,
+      stripePlanPriceId: shape.planPriceId,
+      stripeSubscriptionId: args.subscription.id,
+      subscriptionStatus: args.subscription.status,
+      stripeCheckoutSessionId: args.checkoutSessionId,
+      cancelAtPeriodEnd,
+      updatedAt,
+    },
+    org: {
+      subscriptionStatus: args.subscription.status,
+      cancelAtPeriodEnd,
+      updatedAt,
+    },
+  };
+}
+
 const publishUsagePackCheckoutState$ = command(
   async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly usagePackSubscriptionId: string;
-      readonly checkoutSessionId: string;
-      readonly customerId: string;
-      readonly subscription: UsagePackSubscriptionInput;
-    },
+    { get, set },
+    args: UsagePackCheckoutPublication,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
+    const readDb = get(db$);
     const { subscription } = args;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0303; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // Conditioned on the root state this decision was made from.
-      const roots = await tx
-        .select()
-        .from(usagePackSubscriptions)
+    const roots = await readDb
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        or(
+          eq(usagePackSubscriptions.orgId, args.orgId),
+          eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+        ),
+      )
+      .orderBy(asc(usagePackSubscriptions.id));
+    signal.throwIfAborted();
+    const localSubscription = usagePackCheckoutRoot(
+      roots,
+      args.orgId,
+      args.usagePackSubscriptionId,
+    );
+    const [guard] = await readDb
+      .select()
+      .from(usagePackPendingSnapshotGuards)
+      .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
+    signal.throwIfAborted();
+    const counts = checkoutPendingSnapshotCounts(
+      roots,
+      args.usagePackSubscriptionId,
+      subscription.status,
+    );
+    assertUsagePackCheckoutPendingCount(guard, counts.before);
+    const allocations = await readDb
+      .select()
+      .from(usagePackAllocations)
+      .where(
+        eq(
+          usagePackAllocations.usagePackSubscriptionId,
+          args.usagePackSubscriptionId,
+        ),
+      );
+    signal.throwIfAborted();
+    const shape = usagePackCheckoutPublicationShape(
+      { subscription: localSubscription, allocations },
+      args,
+    );
+    const values = usagePackCheckoutPublicationValues(args, shape, nowDate());
+    const db = set(writeDb$);
+    const published = db
+      .$with("published_usage_pack_checkout")
+      .as(
+        db
+          .update(usagePackSubscriptions)
+          .set(values.root)
+          .where(unchangedSubscriptionRootWhere(localSubscription))
+          .returning({ id: usagePackSubscriptions.id }),
+      );
+    const projected = db.$with("projected_usage_pack_checkout").as(
+      db
+        .update(orgMetadata)
+        .set(values.org)
         .where(
-          or(
-            eq(usagePackSubscriptions.orgId, args.orgId),
-            eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+          and(
+            eq(orgMetadata.orgId, args.orgId),
+            eq(orgMetadata.stripeSubscriptionId, subscription.id),
+            shape.projectsOrgPlan ? undefined : sql`false`,
+            exists(db.select({ id: published.id }).from(published)),
           ),
         )
-        .orderBy(asc(usagePackSubscriptions.id));
-      const localSubscription = usagePackCheckoutRoot(
-        roots,
-        args.orgId,
-        args.usagePackSubscriptionId,
-      );
-      await tx
+        .returning({ orgId: orgMetadata.orgId }),
+    );
+    // The existing count condition arbitrates both bootstrap and publication.
+    // Only the actual root winner can create or advance the guard.
+    const publishedCount = db.$with("published_checkout_pending_count").as(
+      db
         .insert(usagePackPendingSnapshotGuards)
-        .values({ orgId: args.orgId, pendingSnapshotCount: 0 })
-        .onConflictDoNothing();
-      const [guard] = await tx
-        .select()
-        .from(usagePackPendingSnapshotGuards)
-        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
-      const counts = checkoutPendingSnapshotCounts(
-        roots,
-        args.usagePackSubscriptionId,
-        subscription.status,
-      );
-      if (!guard || guard.pendingSnapshotCount !== counts.before) {
-        throw new Error("Usage pack pending snapshot guard requires repair");
-      }
-      const allocations = await tx
-        .select()
-        .from(usagePackAllocations)
-        .where(
-          eq(
-            usagePackAllocations.usagePackSubscriptionId,
-            args.usagePackSubscriptionId,
+        .select(
+          db
+            .select({
+              orgId: sql`${args.orgId}`
+                .mapWith(usagePackPendingSnapshotGuards.orgId)
+                .as("org_id"),
+              pendingSnapshotCount: sql`${counts.after}::int`
+                .mapWith(usagePackPendingSnapshotGuards.pendingSnapshotCount)
+                .as("pending_snapshot_count"),
+            })
+            .from(published)
+            .where(eq(published.id, args.usagePackSubscriptionId)),
+        )
+        .onConflictDoUpdate({
+          target: usagePackPendingSnapshotGuards.orgId,
+          set: { pendingSnapshotCount: counts.after },
+          setWhere: eq(
+            usagePackPendingSnapshotGuards.pendingSnapshotCount,
+            counts.before,
           ),
-        );
-      signal.throwIfAborted();
-      const context = { subscription: localSubscription, allocations };
-      validateUsagePackSubscriptionCorrelation(
-        context,
-        subscription,
-        args.usagePackSubscriptionId,
-      );
-      if (
-        localSubscription.stripeCustomerId !== args.customerId ||
-        (localSubscription.stripeCheckoutSessionId &&
-          localSubscription.stripeCheckoutSessionId !== args.checkoutSessionId)
-      ) {
-        throw new Error(
-          `Checkout Session ${args.checkoutSessionId} does not match the local usage pack snapshot`,
-        );
-      }
-      const shape = requireUsagePackSubscriptionShape(context, subscription);
-      const updatedAt = nowDate();
-      const cancelAtPeriodEnd = usagePackSubscriptionWillCancel(subscription);
-      const [published] = await tx
-        .update(usagePackSubscriptions)
-        .set({
-          tier: shape.tier,
-          stripePlanPriceId: shape.planPriceId,
-          stripeSubscriptionId: subscription.id,
-          subscriptionStatus: subscription.status,
-          stripeCheckoutSessionId: args.checkoutSessionId,
-          cancelAtPeriodEnd,
-          updatedAt,
         })
-        .where(unchangedSubscriptionRootWhere(localSubscription))
-        .returning({ id: usagePackSubscriptions.id });
-      if (!published) {
-        throw new Error("Usage pack snapshot changed during publication");
-      }
-      if (shape.projectsOrgPlan) {
-        await tx
-          .update(orgMetadata)
-          .set({
-            subscriptionStatus: subscription.status,
-            cancelAtPeriodEnd,
-            updatedAt,
+        .returning({ orgId: usagePackPendingSnapshotGuards.orgId }),
+    );
+    const publication = await settleIncludingAbort(
+      (async () => {
+        // An aggregate emits even for a lost root. A lost count publication
+        // instead raises 22012 and rolls back the root and optional projection.
+        return await db
+          .with(published, projected, publishedCount)
+          .select({
+            roots: count(published.id),
+            guard:
+              sql`(CASE WHEN ${count(published.id)} = 0 THEN 1 ELSE 1 / ${count(publishedCount.orgId)} END)::int`.mapWith(
+                pgIntegerDecoder,
+              ),
           })
-          .where(
-            and(
-              eq(orgMetadata.orgId, args.orgId),
-              eq(orgMetadata.stripeSubscriptionId, subscription.id),
-            ),
-          );
+          .from(published)
+          .leftJoin(publishedCount, eq(publishedCount.orgId, args.orgId));
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!publication.ok) {
+      if (safeSqlStateCode(publication.error) === "22012") {
+        throw new UsagePackPendingSnapshotConflict(
+          "Usage pack pending snapshot count changed during publication",
+          { cause: publication.error },
+        );
       }
-      // Migration 1132 retired the pending-count trigger. Publish only the
-      // actual count transition with the subscription's business writes.
-      const countWrite = usagePackPendingSnapshotCountWrite(
-        args.orgId,
-        counts.before,
-        counts.after,
-      );
-      if (countWrite) {
-        const [publishedCount] = await tx
-          .update(usagePackPendingSnapshotGuards)
-          .set(countWrite.values)
-          .where(countWrite.condition)
-          .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
-        assertPendingSnapshotPublished(publishedCount);
-      }
-    });
+      throw publication.error;
+    }
+    if (publication.value[0]?.roots !== 1) {
+      throw new Error("Usage pack snapshot changed during publication");
+    }
   },
 );
 
@@ -3558,128 +3634,168 @@ interface ReconcileUsagePackSubscriptionResult {
   readonly orgIds: readonly string[];
 }
 
+interface RetireReconciledUsagePackSnapshotArgs {
+  readonly orgId: string;
+  readonly usagePackSubscriptionId: string;
+  readonly expiredCheckoutSessionId: string | null;
+  readonly staleBefore: Date;
+}
+
+function reconciledSnapshotRetirementWhere(
+  args: RetireReconciledUsagePackSnapshotArgs,
+) {
+  return and(
+    eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+    eq(usagePackSubscriptions.orgId, args.orgId),
+    inArray(usagePackSubscriptions.subscriptionStatus, [
+      ...USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES,
+    ]),
+    isNull(usagePackSubscriptions.stripeSubscriptionId),
+    args.expiredCheckoutSessionId === null
+      ? and(
+          isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+          lte(usagePackSubscriptions.updatedAt, args.staleBefore),
+        )
+      : eq(
+          usagePackSubscriptions.stripeCheckoutSessionId,
+          args.expiredCheckoutSessionId,
+        ),
+  );
+}
+
+function reconciledSnapshotPendingCount(
+  roots: readonly {
+    readonly orgId: string;
+    readonly status: string;
+  }[],
+  orgId: string,
+): number {
+  if (
+    roots.some((root) => {
+      return root.orgId !== orgId;
+    })
+  ) {
+    throw new Error("Usage pack subscription moved outside its locked scope");
+  }
+  return roots.filter((root) => {
+    return (
+      root.status === "checkout_pending" || root.status === "purchase_pending"
+    );
+  }).length;
+}
+
 const retireReconciledUsagePackSnapshot$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly usagePackSubscriptionId: string;
-      readonly expiredCheckoutSessionId: string | null;
-      readonly staleBefore: Date;
-    },
+    args: RetireReconciledUsagePackSnapshotArgs,
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0306; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // The retirement below is a conditional status transition.
-      const roots = await tx
-        .select({
-          id: usagePackSubscriptions.id,
-          orgId: usagePackSubscriptions.orgId,
-          status: usagePackSubscriptions.subscriptionStatus,
-        })
-        .from(usagePackSubscriptions)
-        .where(
-          or(
-            eq(usagePackSubscriptions.orgId, args.orgId),
-            eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
-          ),
-        )
-        .orderBy(asc(usagePackSubscriptions.id));
-      if (
-        roots.some((root) => {
-          return root.orgId !== args.orgId;
-        })
-      ) {
-        throw new Error(
-          "Usage pack subscription moved outside its locked scope",
-        );
-      }
-      await tx
-        .insert(usagePackPendingSnapshotGuards)
-        .values({
-          orgId: args.orgId,
-          pendingSnapshotCount: 0,
-        })
-        .onConflictDoNothing();
-      const [guard] = await tx
-        .select()
-        .from(usagePackPendingSnapshotGuards)
-        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
-      const pendingCount = roots.filter((root) => {
-        return (
-          root.status === "checkout_pending" ||
-          root.status === "purchase_pending"
-        );
-      }).length;
-      if (!guard || guard.pendingSnapshotCount !== pendingCount) {
-        throw new Error("Usage pack pending snapshot guard requires repair");
-      }
-      signal.throwIfAborted();
-      const updatedAt = nowDate();
-      const retired = await tx
-        .update(usagePackSubscriptions)
-        .set({ subscriptionStatus: "checkout_expired", updatedAt })
-        .where(
-          and(
-            eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
-            eq(usagePackSubscriptions.orgId, args.orgId),
-            inArray(usagePackSubscriptions.subscriptionStatus, [
-              ...USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES,
-            ]),
-            isNull(usagePackSubscriptions.stripeSubscriptionId),
-            args.expiredCheckoutSessionId === null
-              ? and(
-                  isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-                  lte(usagePackSubscriptions.updatedAt, args.staleBefore),
-                )
-              : eq(
-                  usagePackSubscriptions.stripeCheckoutSessionId,
-                  args.expiredCheckoutSessionId,
-                ),
-          ),
-        )
-        .returning({ id: usagePackSubscriptions.id });
-      if (retired.length > 0) {
-        await tx
+    const roots = await db
+      .select({
+        orgId: usagePackSubscriptions.orgId,
+        status: usagePackSubscriptions.subscriptionStatus,
+      })
+      .from(usagePackSubscriptions)
+      .where(
+        or(
+          eq(usagePackSubscriptions.orgId, args.orgId),
+          eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+        ),
+      )
+      .orderBy(asc(usagePackSubscriptions.id));
+    signal.throwIfAborted();
+    const pendingCount = reconciledSnapshotPendingCount(roots, args.orgId);
+    const [guard] = await db
+      .select()
+      .from(usagePackPendingSnapshotGuards)
+      .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
+    signal.throwIfAborted();
+    assertUsagePackCheckoutPendingCount(guard, pendingCount);
+    const updatedAt = nowDate();
+    // Only the actual retirement can deactivate allocations and decrement the
+    // existing pending count. All three writes share this one statement.
+    const retired = db
+      .$with("retired_reconciled_usage_pack_snapshot")
+      .as(
+        db
+          .update(usagePackSubscriptions)
+          .set({ subscriptionStatus: "checkout_expired", updatedAt })
+          .where(reconciledSnapshotRetirementWhere(args))
+          .returning({ id: usagePackSubscriptions.id }),
+      );
+    const deactivated = db
+      .$with("deactivated_reconciled_usage_pack_snapshot")
+      .as(
+        db
           .update(usagePackAllocations)
           .set({ status: "inactive", updatedAt })
           .where(
-            eq(
-              usagePackAllocations.usagePackSubscriptionId,
-              args.usagePackSubscriptionId,
-            ),
-          );
-      }
-      const publicationOrgId = args.orgId;
-      const publicationBefore = pendingCount;
-      const publicationAfter = pendingCount - retired.length;
-      await (async (): Promise<void> => {
-        if (publicationBefore === publicationAfter) {
-          return;
-        }
-        const [published] = await tx
-          .update(usagePackPendingSnapshotGuards)
-          .set({ pendingSnapshotCount: publicationAfter })
-          .where(
             and(
-              eq(usagePackPendingSnapshotGuards.orgId, publicationOrgId),
               eq(
-                usagePackPendingSnapshotGuards.pendingSnapshotCount,
-                publicationBefore,
+                usagePackAllocations.usagePackSubscriptionId,
+                args.usagePackSubscriptionId,
               ),
+              exists(db.select({ id: retired.id }).from(retired)),
             ),
           )
+          .returning({ id: usagePackAllocations.id }),
+      );
+    const after = sql`${pendingCount} - (${db.select({ count: count() }).from(retired)})`;
+    const countWrite = guard
+      ? db
+          .update(usagePackPendingSnapshotGuards)
+          .set({ pendingSnapshotCount: after })
+          .where(
+            and(
+              eq(usagePackPendingSnapshotGuards.orgId, args.orgId),
+              eq(
+                usagePackPendingSnapshotGuards.pendingSnapshotCount,
+                pendingCount,
+              ),
+              exists(db.select({ id: retired.id }).from(retired)),
+            ),
+          )
+          .returning({ orgId: usagePackPendingSnapshotGuards.orgId })
+      : db
+          .insert(usagePackPendingSnapshotGuards)
+          .values({ orgId: args.orgId, pendingSnapshotCount: after })
+          .onConflictDoUpdate({
+            target: usagePackPendingSnapshotGuards.orgId,
+            set: { pendingSnapshotCount: after },
+            setWhere: eq(
+              usagePackPendingSnapshotGuards.pendingSnapshotCount,
+              pendingCount,
+            ),
+          })
           .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
-        if (!published) {
-          throw new UsagePackPendingSnapshotConflict(
-            "Usage pack pending snapshot count changed during publication",
-          );
-        }
-      })();
-    });
+    const published = db
+      .$with("published_reconciled_snapshot_count")
+      .as(countWrite);
+    // The aggregate also runs for an empty retirement. A lost count write raises
+    // 22012, rolling back every CTE, including a newly bootstrapped zero guard.
+    const publication = await settleIncludingAbort(
+      db
+        .with(retired, deactivated, published)
+        .select({
+          guard:
+            sql`(CASE WHEN ${count(retired.id)} = 0 AND ${guard !== undefined} THEN 1 ELSE 1 / (${db.select({ count: count() }).from(published)}) END)::int`.mapWith(
+              pgIntegerDecoder,
+            ),
+        })
+        .from(retired),
+    );
+    signal.throwIfAborted();
+    if (!publication.ok) {
+      if (safeSqlStateCode(publication.error) === "22012") {
+        throw new UsagePackPendingSnapshotConflict(
+          "Usage pack pending snapshot count changed during publication",
+          { cause: publication.error },
+        );
+      }
+      throw publication.error;
+    }
   },
 );
 

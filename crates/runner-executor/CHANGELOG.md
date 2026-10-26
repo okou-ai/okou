@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.31](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.30...runner-executor-v0.15.31) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner-executor:** size decoded storage batches without input copies ([#42934](https://github.com/okou-ai/okou/issues/42934)) ([1269306](https://github.com/okou-ai/okou/commit/1269306b4437ac222d6bc78adc9a2c46e745b40f))
+
+## [0.15.30](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.29...runner-executor-v0.15.30) (2026-10-25)
+
+## [0.15.29](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.28...runner-executor-v0.15.29) (2026-10-25)
+
 ## [0.15.28](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.27...runner-executor-v0.15.28) (2026-10-25)
 
 ## [0.15.27](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.26...runner-executor-v0.15.27) (2026-10-25)

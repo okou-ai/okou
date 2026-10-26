@@ -217,7 +217,6 @@ impl ChildOutputTasks {
                     StreamOutputPolicy::Diagnostic {
                         max_bytes: output_policy.diagnostic_stderr_max_bytes,
                     },
-                    None,
                 ))))
             }
             StdoutOutputPolicy::Semantic { max_bytes } => {
@@ -227,15 +226,16 @@ impl ChildOutputTasks {
                 Ok(Self::StdoutAndStderr {
                     stdout: tokio::spawn(read_child_output(
                         stdout,
-                        StreamOutputPolicy::Semantic { max_bytes },
-                        Some(semantic_stdout_overflow_tx),
+                        StreamOutputPolicy::Semantic {
+                            max_bytes,
+                            overflow: semantic_stdout_overflow_tx,
+                        },
                     )),
                     stderr: tokio::spawn(read_child_output(
                         stderr,
                         StreamOutputPolicy::Diagnostic {
                             max_bytes: output_policy.diagnostic_stderr_max_bytes,
                         },
-                        None,
                     )),
                     semantic_stdout_overflow: semantic_stdout_overflow_rx,
                 })
@@ -313,30 +313,34 @@ impl Drop for ChildOutputTasks {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 enum StreamOutputPolicy {
-    Diagnostic { max_bytes: usize },
-    Semantic { max_bytes: usize },
+    Diagnostic {
+        max_bytes: usize,
+    },
+    Semantic {
+        max_bytes: usize,
+        overflow: oneshot::Sender<usize>,
+    },
 }
 
 impl StreamOutputPolicy {
-    fn max_bytes(self) -> usize {
+    fn max_bytes(&self) -> usize {
         match self {
-            Self::Diagnostic { max_bytes } | Self::Semantic { max_bytes } => max_bytes,
+            Self::Diagnostic { max_bytes } | Self::Semantic { max_bytes, .. } => *max_bytes,
         }
     }
 }
 
 #[derive(Debug)]
-struct CapturedChildOutput {
-    bytes: Vec<u8>,
-    semantic_overflow: Option<usize>,
+enum CapturedChildOutput {
+    Bytes(Vec<u8>),
+    SemanticOverflow { limit: usize },
 }
 
 async fn read_child_output<R>(
     mut reader: R,
     output_policy: StreamOutputPolicy,
-    semantic_stdout_overflow: Option<oneshot::Sender<usize>>,
 ) -> io::Result<CapturedChildOutput>
 where
     R: tokio::io::AsyncRead + Unpin,
@@ -362,35 +366,26 @@ where
         output.extend_from_slice(chunk);
         if keep < read {
             match output_policy {
-                StreamOutputPolicy::Semantic { max_bytes } => {
-                    if let Some(sender) = semantic_stdout_overflow {
-                        let _ = sender.send(max_bytes);
-                    }
-                    return Ok(CapturedChildOutput {
-                        bytes: output,
-                        semantic_overflow: Some(max_bytes),
-                    });
+                StreamOutputPolicy::Semantic {
+                    max_bytes,
+                    overflow,
+                } => {
+                    let _ = overflow.send(max_bytes);
+                    return Ok(CapturedChildOutput::SemanticOverflow { limit: max_bytes });
                 }
                 StreamOutputPolicy::Diagnostic { .. } => truncated = true,
             }
         }
     }
 
-    let semantic_overflow = match output_policy {
-        StreamOutputPolicy::Diagnostic { .. } if truncated => {
-            if !output.is_empty() {
-                output.push(b'\n');
-            }
-            output.extend_from_slice(OUTPUT_TRUNCATION_MARKER);
-            None
+    if matches!(output_policy, StreamOutputPolicy::Diagnostic { .. }) && truncated {
+        if !output.is_empty() {
+            output.push(b'\n');
         }
-        StreamOutputPolicy::Diagnostic { .. } | StreamOutputPolicy::Semantic { .. } => None,
-    };
+        output.extend_from_slice(OUTPUT_TRUNCATION_MARKER);
+    }
 
-    Ok(CapturedChildOutput {
-        bytes: output,
-        semantic_overflow,
-    })
+    Ok(CapturedChildOutput::Bytes(output))
 }
 
 async fn wait_child_output_task(
@@ -421,9 +416,11 @@ fn captured_child_output_bytes(
     stream: &'static str,
     output: CapturedChildOutput,
 ) -> Result<Vec<u8>, BoundedCommandError> {
-    match output.semantic_overflow {
-        Some(limit) => Err(BoundedCommandError::OutputTooLarge { stream, limit }),
-        None => Ok(output.bytes),
+    match output {
+        CapturedChildOutput::SemanticOverflow { limit } => {
+            Err(BoundedCommandError::OutputTooLarge { stream, limit })
+        }
+        CapturedChildOutput::Bytes(bytes) => Ok(bytes),
     }
 }
 
@@ -805,17 +802,11 @@ mod tests {
     async fn output_tasks_share_one_cleanup_deadline() {
         let stdout = tokio::spawn(async {
             tokio::time::sleep(Duration::from_millis(1_500)).await;
-            Ok(CapturedChildOutput {
-                bytes: Vec::new(),
-                semantic_overflow: None,
-            })
+            Ok(CapturedChildOutput::Bytes(Vec::new()))
         });
         let stderr = tokio::spawn(async {
             tokio::time::sleep(Duration::from_secs(60)).await;
-            Ok(CapturedChildOutput {
-                bytes: Vec::new(),
-                semantic_overflow: None,
-            })
+            Ok(CapturedChildOutput::Bytes(Vec::new()))
         });
         let (_, semantic_stdout_overflow) = oneshot::channel();
         let mut tasks = ChildOutputTasks::StdoutAndStderr {
@@ -838,10 +829,7 @@ mod tests {
         let stdout = tokio::spawn(async { Err(io::Error::other("read failed")) });
         let stderr = tokio::spawn(async {
             tokio::time::sleep(Duration::from_secs(60)).await;
-            Ok(CapturedChildOutput {
-                bytes: Vec::new(),
-                semantic_overflow: None,
-            })
+            Ok(CapturedChildOutput::Bytes(Vec::new()))
         });
         let (_, semantic_stdout_overflow) = oneshot::channel();
         let mut tasks = ChildOutputTasks::StdoutAndStderr {

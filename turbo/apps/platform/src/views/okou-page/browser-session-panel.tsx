@@ -139,6 +139,8 @@ function BrowserCdpViewer({
   readonly liveUrl: string;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
+  const windowSizeSync = useGet(signals.viewerWindowSizeSync$);
+  const setWindowSizeSync = useSet(signals.setViewerWindowSizeSync$);
   const theme = useGet(theme$);
   if (connection.state === "loading") {
     return <BrowserSessionLoading />;
@@ -156,8 +158,9 @@ function BrowserCdpViewer({
       <CdpViewer
         cdpUrl={connection.data.cdpUrl}
         interactive
-        showSettingsMenu={false}
-        windowSizeSync="live"
+        showSettingsMenu
+        windowSizeSync={windowSizeSync}
+        onWindowSizeSyncChange={setWindowSizeSync}
         extensions={[browserUse()]}
         colorScheme={theme}
         className="w-full flex-1"

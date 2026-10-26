@@ -398,24 +398,24 @@ describe("Axiom log source field", () => {
     "lifts sanitized provider-unavailable fields for %s / %s",
     (providerStatus, failureClass) => {
       const log = logger("provider-unavailable-test");
-      log.error("Clerk read unavailable during scrape authentication", {
+      log.error("Clerk read unavailable during Data history authentication", {
         type: "provider_unavailable",
         provider: "clerk",
         provider_status: providerStatus,
         failure_class: failureClass,
         method: "POST",
-        route: "/api/scrape",
+        route: "/api/data/router/requests",
       });
 
       expect(axiomLogging.error).toHaveBeenCalledWith(
-        "Clerk read unavailable during scrape authentication",
+        "Clerk read unavailable during Data history authentication",
         {
           type: "provider_unavailable",
           provider: "clerk",
           provider_status: providerStatus,
           failure_class: failureClass,
           method: "POST",
-          route: "/api/scrape",
+          route: "/api/data/router/requests",
           context: "provider-unavailable-test",
           [EVENT]: {
             source: "api",
@@ -424,7 +424,7 @@ describe("Axiom log source field", () => {
             provider_status: providerStatus,
             failure_class: failureClass,
             method: "POST",
-            route: "/api/scrape",
+            route: "/api/data/router/requests",
           },
         },
       );
@@ -447,7 +447,7 @@ describe("Axiom log source field", () => {
         provider_status: providerStatus,
         failure_class: failureClass,
         method: "POST",
-        route: "/api/scrape",
+        route: "/api/data/router/requests",
       });
 
       expect(axiomLogging.error).toHaveBeenCalledWith("provider error", {
@@ -456,7 +456,7 @@ describe("Axiom log source field", () => {
         provider_status: providerStatus,
         failure_class: failureClass,
         method: "POST",
-        route: "/api/scrape",
+        route: "/api/data/router/requests",
         context: "malformed-provider-unavailable-test",
         [EVENT]: { source: "api" },
       });

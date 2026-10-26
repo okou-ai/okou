@@ -59,6 +59,20 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
     },
     {
       code: `${preamble}
+        import { usageEvent } from "@okouai${"/db/runtime/usage-event"}";
+        import { sql } from "drizzle-orm";
+        db.select({ createdAt: sql\`max(\${usageEvent.createdAt})\`.mapWith(usageEvent.createdAt) }).from(usageEvent);
+      `,
+    },
+    {
+      code: `${preamble}
+        import { usagePricing } from "@okouai${"/db/runtime/usage-pricing"}";
+        import { sql } from "drizzle-orm";
+        db.select({ unitPrice: sql\`\${usagePricing.unitPrice} + 0\`.mapWith(usagePricing.unitPrice) }).from(usagePricing);
+      `,
+    },
+    {
+      code: `${preamble}
         import { count, sql } from "drizzle-orm";
         db.select({
           id: users.id,

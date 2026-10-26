@@ -7,7 +7,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createHostBddApi } from "./helpers/api-bdd-host";
 
 /*
 FILE-01 hosted-site soft deletion through `DELETE /api/host/sites/:publicSlug`.
@@ -35,7 +35,7 @@ function siteBody(site: string, html: string) {
 describe("FILE-01: hosted-site deletion through host APIs", () => {
   it("takes every version offline and restores the address as a new version on redeploy [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const actor = bdd.user();
     const outsider = bdd.user();
     const capture = api.captureHostedSitesS3();
@@ -148,7 +148,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
 
   it("lets only the site owner delete [HOST-D]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const owner = bdd.user();
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:admin" });
     const capture = api.captureHostedSitesS3();
@@ -173,7 +173,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
 
   it("rejects a delayed completion after deletion and preserves a new redeploy [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const owner = bdd.user();
     const capture = api.captureHostedSitesS3();
     const site = `bdd-delayed-${randomUUID().slice(0, 8)}`;
@@ -245,7 +245,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
 
   it("takes an overlapping publication offline before accepting a new version [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const owner = bdd.user();
     const capture = api.captureHostedSitesS3();
     const site = `bdd-overlap-${randomUUID().slice(0, 8)}`;
@@ -315,7 +315,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
 
   it("retries a partial remote deletion without losing version history or the site address [HOST-A]", async () => {
     const bdd = createBddApi(context);
-    const api = createHostMapsBddApi(context);
+    const api = createHostBddApi(context);
     const owner = bdd.user();
     const capture = api.captureHostedSitesS3();
     const site = `bdd-partial-${randomUUID().slice(0, 8)}`;

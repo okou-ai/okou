@@ -1,5 +1,5 @@
 import { isAutoRunPreset } from "@okouai/core/auto-run-model";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { logger } from "../../lib/log";
 import { usageUnderbillingFields } from "../usage-underbilling";
 import type { CreditLowBalanceAlertArgs } from "./credit-low-balance-alert.service";
@@ -37,9 +37,6 @@ export interface UsageEventRecord {
   readonly provider: string;
   readonly category: string;
   readonly quantity: number;
-  readonly pricingUnitPrice: number | null;
-  readonly pricingUnitSize: number | null;
-  readonly pricingCreditsLimit: number | null;
   readonly createdAt: Date;
 }
 type UsagePricingRecord = typeof usagePricing.$inferSelect;
@@ -60,28 +57,23 @@ export function priceUsageEvents(
   const pricingByKey = usagePricingByKey(pricingRecords);
   const pricedEvents: PricedUsageEvent[] = [];
   for (const record of records) {
+    // Data Router has already priced these credits; the main wallet settles 1:1.
     if (
-      record.pricingUnitPrice !== null &&
-      record.pricingUnitSize !== null &&
-      record.pricingCreditsLimit !== null
+      record.kind === "data-search" &&
+      record.provider === "data-router" &&
+      record.category === "credits"
     ) {
-      const numerator =
-        BigInt(record.quantity) * BigInt(record.pricingUnitPrice);
-      const denominator = BigInt(record.pricingUnitSize);
-      const credits = (numerator + denominator - 1n) / denominator;
-      const limit = BigInt(record.pricingCreditsLimit);
       pricedEvents.push({
         record,
-        grossCredits: Number(credits < limit ? credits : limit),
+        grossCredits: record.quantity,
         billingError: null,
       });
       continue;
     }
-    const lookupProvider = record.provider;
     const lookup = findUsagePricing(
       pricingByKey,
       record.kind,
-      lookupProvider,
+      record.provider,
       record.category,
     );
 

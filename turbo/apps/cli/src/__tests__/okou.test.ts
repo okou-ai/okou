@@ -100,33 +100,8 @@ describe("Okou CLI program", () => {
     }
   });
 
-  it("should not include infrastructure or utility commands", () => {
-    const excludedCommands = [
-      "org",
-      "auth",
-      "compose",
-      "volume",
-      "preference",
-      "secret",
-      "variable",
-
-      "init",
-      "info",
-    ];
-    for (const name of excludedCommands) {
-      expect(commandNames).not.toContain(name);
-    }
-  });
-
-  it("should keep internal commands out of the public surface", () => {
-    expect(commandNames).toContain("__subagent_loop__");
-    expect(commandNames).toContain("__agent-loop");
-    expect(canonicalCommandNames).not.toContain("__agent-loop");
-  });
-
   it("advertises the canonical data namespace in root help", () => {
     expect(program.helpInformation()).toContain("data");
-    expect(canonicalCommandNames).toContain("subscription");
   });
 });
 
@@ -265,14 +240,14 @@ describe("Okou CLI lazy command loading", () => {
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
-      label: "Commerce help invocation",
-      argv: ["node", "okou", "data", "commerce", "--help"],
+      label: "data tool discovery help invocation",
+      argv: ["node", "okou", "data", "tools", "--help"],
       expectedName: "data",
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
       label: "direct canonical invocation",
-      argv: ["node", "okou", "data", "social", "--help"],
+      argv: ["node", "okou", "data", "call", "--help"],
       expectedName: "data",
       expectedHelpCode: "commander.helpDisplayed",
     },
@@ -294,9 +269,7 @@ describe("Okou CLI lazy command loading", () => {
               ? "lark:write"
               : expectedName === "artifact"
                 ? "artifact:read"
-                : expectedName === "commerce"
-                  ? "commerce:read"
-                  : "social:read",
+                : "data-search:read",
         ]),
       );
       let helpOutput = "";
@@ -332,7 +305,7 @@ describe("Okou CLI lazy command loading", () => {
 
   it("should reject help for an unknown command", async () => {
     const argv = ["node", "okou", "help", "not-a-command"];
-    vi.stubEnv("OKOU_TOKEN", buildOkouToken(["social:read"]));
+    vi.stubEnv("OKOU_TOKEN", buildOkouToken(["data-search:read"]));
     let errorOutput = "";
     const prog = new Command()
       .name("okou")

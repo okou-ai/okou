@@ -1,4 +1,4 @@
-import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 

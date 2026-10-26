@@ -4100,23 +4100,17 @@ function CreateGoogleFormsResponseSubmittedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                const warning = await createAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "google-forms",
-                      event: "response_submitted",
-                      formUrl,
-                    },
+              createAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "google-forms",
+                    event: "response_submitted",
+                    formUrl,
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-                if (warning) {
-                  toast.warning(warning);
-                }
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4196,20 +4190,17 @@ function CreateGoogleMeetTranscriptGeneratedAutomationDialog({
           onSubmit={(event) => {
             event.preventDefault();
             detach(
-              (async () => {
-                await createGoogleMeetAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "google-meet",
-                      event: "transcript_generated",
-                      scope: { type: "organizer_user" },
-                    },
+              createGoogleMeetAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "google-meet",
+                    event: "transcript_generated",
+                    scope: { type: "organizer_user" },
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4383,10 +4374,7 @@ function CreateChatRunFinishedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createAutomation({ workflowId, eventConfig }, pageSignal);
-                onOpenChange(false);
-              })(),
+              createAutomation({ workflowId, eventConfig }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -4642,20 +4630,17 @@ function CreateNotionDatabaseItemAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createNotionAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "notion",
-                      event: "database_item_created",
-                      databaseUrl,
-                    },
+              createNotionAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "notion",
+                    event: "database_item_created",
+                    databaseUrl,
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4871,16 +4856,13 @@ function CreateNotionPageContentUpdatedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createNotionAutomation(
-                  {
-                    workflowId,
-                    eventConfig,
-                  },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createNotionAutomation(
+                {
+                  workflowId,
+                  eventConfig,
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -4954,20 +4936,17 @@ function CreateNotionChildPageAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createNotionAutomation(
-                  {
-                    workflowId,
-                    eventConfig: {
-                      provider: "notion",
-                      event: "child_page_created",
-                      parentPageUrl,
-                    },
+              createNotionAutomation(
+                {
+                  workflowId,
+                  eventConfig: {
+                    provider: "notion",
+                    event: "child_page_created",
+                    parentPageUrl,
                   },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -5060,13 +5039,7 @@ function CreateIntervalAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createScheduleAutomation(
-                  { workflowId, schedule },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createScheduleAutomation({ workflowId, schedule }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -5145,13 +5118,7 @@ function CreateScheduledAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createScheduleAutomation(
-                  { workflowId, schedule },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createScheduleAutomation({ workflowId, schedule }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -5235,13 +5202,7 @@ function CreateOnceAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createScheduleAutomation(
-                  { workflowId, schedule },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createScheduleAutomation({ workflowId, schedule }, pageSignal),
               Reason.DomCallback,
             );
           }}
@@ -6037,16 +5998,13 @@ function CreateGmailNewMessageAutomationDialog({
             event.preventDefault();
             const form = new FormData(event.currentTarget);
             detach(
-              (async () => {
-                await createGmailAutomation(
-                  {
-                    workflowId,
-                    eventConfig: buildGmailNewMessageEventConfig(form),
-                  },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createGmailAutomation(
+                {
+                  workflowId,
+                  eventConfig: buildGmailNewMessageEventConfig(form),
+                },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -6136,13 +6094,10 @@ function CreateGmailLabelAppliedAutomationDialog({
               return;
             }
             detach(
-              (async () => {
-                await createGmailLabelAutomation(
-                  { workflowId, eventConfig },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createGmailLabelAutomation(
+                { workflowId, eventConfig },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -7087,13 +7042,10 @@ function CreateGithubWorkflowRunCompletedAutomationDialog({
               new FormData(event.currentTarget),
             );
             detach(
-              (async () => {
-                await createGithubWorkflowRunAutomation(
-                  { workflowId, eventConfig },
-                  pageSignal,
-                );
-                onOpenChange(false);
-              })(),
+              createGithubWorkflowRunAutomation(
+                { workflowId, eventConfig },
+                pageSignal,
+              ),
               Reason.DomCallback,
             );
           }}
@@ -7261,7 +7213,6 @@ function CreateGithubWebhookAutomationDialog({
                     pageSignal,
                   );
                 }
-                onOpenChange(false);
               })(),
               Reason.DomCallback,
             );
@@ -7402,7 +7353,6 @@ function CreateGoogleCalendarEventAutomationDialog({
                     pageSignal,
                   );
                 }
-                onOpenChange(false);
               })(),
               Reason.DomCallback,
             );
@@ -7500,15 +7450,7 @@ function CreateWebhookAutomationDialog({
             }}
             onCreate={() => {
               detach(
-                (async () => {
-                  const automation = await createWebhookAutomation(
-                    { workflowId },
-                    pageSignal,
-                  );
-                  if (automation) {
-                    setCreatedAutomation(automation);
-                  }
-                })(),
+                createWebhookAutomation({ workflowId }, pageSignal),
                 Reason.DomCallback,
               );
             }}

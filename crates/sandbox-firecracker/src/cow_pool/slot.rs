@@ -247,11 +247,10 @@ impl PreparedCowSlot {
     /// `target_workspace`.
     ///
     /// Before target-workspace rollback can run, the caller must preserve that
-    /// workspace, recover the cleanup-only slot with
-    /// [`PreparedCowCheckoutError::into_slot`], and finalize it with
-    /// [`destroy_prepared_slot_async`]. Target files may be deleted only when
-    /// the returned cleanup outcome reports that backing files are safe to
-    /// delete.
+    /// workspace and consume the error with
+    /// [`PreparedCowCheckoutError::start_cleanup`]. Target files may be deleted
+    /// only when the returned cleanup outcome reports that backing files are
+    /// safe to delete.
     pub(crate) fn checkout_to(
         mut self,
         target_workspace: &Path,
@@ -372,7 +371,7 @@ impl std::fmt::Debug for PreparedCowSlot {
 ///
 /// Because checkout is non-transactional, the slot may be partially moved into
 /// the caller's target workspace. It is retained for explicit cleanup through
-/// [`Self::into_slot`] and [`destroy_prepared_slot_async`], not for reuse.
+/// [`Self::start_cleanup`], without exposing the slot for reuse.
 #[derive(Debug)]
 pub(crate) struct PreparedCowCheckoutError {
     operation: &'static str,
@@ -389,14 +388,20 @@ impl PreparedCowCheckoutError {
         }
     }
 
-    /// Returns the partially checked-out slot for explicit cleanup.
+    /// Starts cleanup of the partially checked-out slot.
     ///
-    /// Do not reuse the slot or call [`PreparedCowSlot::checkout_to`] on it
-    /// again. Keep target-workspace cleanup disabled until
-    /// [`destroy_prepared_slot_async`] reports that backing files are safe to
-    /// delete.
-    pub(crate) fn into_slot(self) -> PreparedCowSlot {
-        *self.slot
+    /// The cleanup task starts before this returns. Creation rollback custody
+    /// belongs to that physical producer, including accepted blocking removal,
+    /// rather than to the returned completion observer.
+    ///
+    /// This does not take ownership of the caller's target workspace. Keep
+    /// target-workspace cleanup disabled until the returned outcome reports
+    /// that backing files are safe to delete.
+    pub(crate) fn start_cleanup(
+        self,
+        custody: Option<sandbox::SandboxCreateCustody>,
+    ) -> impl std::future::Future<Output = CowCleanupOutcome> {
+        start_prepared_slot_cleanup(*self.slot, custody)
     }
 }
 
@@ -436,23 +441,13 @@ pub(super) fn destroy_slot_async(slot: PrewarmedSlot) -> impl std::future::Futur
 /// waiter cannot cancel device finalization or move directory deletion into
 /// [`PreparedCowSlot::drop`].
 ///
-/// For a slot recovered from [`PreparedCowCheckoutError`], this cleanup does
-/// not take ownership of the caller's target workspace. The returned outcome
-/// tells that owner whether the device lifecycle makes target files safe to
-/// delete.
+/// Like [`PreparedCowCheckoutError::start_cleanup`], this does not take ownership
+/// of the caller's target workspace. The returned outcome tells that owner
+/// whether the device lifecycle makes target files safe to delete.
 pub(crate) fn destroy_prepared_slot_async(
     slot: PreparedCowSlot,
 ) -> impl std::future::Future<Output = CowCleanupOutcome> {
     start_prepared_slot_cleanup(slot, None)
-}
-
-/// Creation rollback custody belongs to the eager physical producer, not to
-/// its completion observer. Accepted blocking removal retains it separately.
-pub(crate) fn destroy_prepared_slot_with_custody_async(
-    slot: PreparedCowSlot,
-    custody: sandbox::SandboxCreateCustody,
-) -> impl std::future::Future<Output = CowCleanupOutcome> {
-    start_prepared_slot_cleanup(slot, Some(custody))
 }
 
 fn start_prepared_slot_cleanup(

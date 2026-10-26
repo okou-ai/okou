@@ -10,7 +10,10 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { openThreadArtifacts$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import {
+  closeThreadMailDraft$,
+  openThreadArtifacts$,
+} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ThreadSidebarArtifactSource,
@@ -467,7 +470,10 @@ function ThreadMailDraftPanel({
   readonly signals: MailDraftSignals;
   readonly fromMailList?: true;
 }) {
-  const close = useSet(thread.sidebar.close$);
+  const closeDraft = useSet(closeThreadMailDraft$);
+  const close = () => {
+    closeDraft(thread, signals);
+  };
   const backLinkRef = useSet(thread.mail.backLinkRef$);
   const listOpen = useGet(thread.mail.open$);
   const managerEnabled =

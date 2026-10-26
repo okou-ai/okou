@@ -227,6 +227,13 @@ function liveBrowserSidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Live browser" });
 }
 
+async function openViewerSizingMenu(): Promise<HTMLElement> {
+  click(buttonByName("Browser menu"));
+  const menu = await screen.findByRole("menu", { name: "Browser menu" });
+  click(within(menu).getByText("Fit to this viewer"));
+  return screen.findByRole("menu", { name: "Fit to this viewer" });
+}
+
 interface ViewportGeometry {
   readonly resizeTo: (width: number, height: number) => void;
 }
@@ -282,6 +289,41 @@ function installViewportGeometry(
   };
 }
 
+test("The embedded Okou viewer retains its sizing preference when the menu reopens", async () => {
+  mockWideScreen();
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  );
+  mockBrowserApi(liveBrowserSession());
+  const cdpUrl = "wss://cdp.browser-use.com/sidebar";
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  await openConversation(completedConversationEvents(), true);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const address = await screen.findByDisplayValue("https://example.com");
+  expect(address).toBeEnabled();
+  const sizingMenu = await openViewerSizingMenu();
+  expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  click(within(sizingMenu).getByText("Do not sync automatically"));
+  await waitFor(() => {
+    expect(sizingMenu).not.toBeInTheDocument();
+  });
+  const updatedSizingMenu = await openViewerSizingMenu();
+  expect(
+    within(updatedSizingMenu).getByText("Do not sync automatically"),
+  ).toHaveAttribute("aria-checked", "true");
+  click(buttonByName("Browser menu"));
+  await waitFor(() => {
+    expect(updatedSizingMenu).not.toBeInTheDocument();
+  });
+});
+
 test("The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts", async () => {
   const user = userEvent.setup({ delay: null });
   mockWideScreen();
@@ -299,8 +341,6 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   click(buttonByName("Open browser"));
   const address = await screen.findByDisplayValue("https://example.com");
   expect(address).toBeEnabled();
-  expect(screen.queryByLabelText("Browser menu")).not.toBeInTheDocument();
-
   await user.click(address);
   expect(address).toHaveFocus();
   await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
