@@ -7,7 +7,6 @@ import {
   cacheRowsFromProjection,
   type ExecutionStorageCacheRows,
 } from "./execution-storage-cache-read.service";
-import type { ReadonlyDb } from "../external/db";
 import type { ExecutionStorageRequest } from "./execution-storage.service";
 
 export interface StorageLookup {
@@ -88,17 +87,14 @@ function requestedVersionCacheKeySql() {
   });
 }
 
-/** Shared fixed-shape loader for Agent prefetch and thread/request-owned mounts. */
-export async function readStorageBaseIndex(
-  db: ReadonlyDb,
-  requests: readonly StorageRequest[],
-): Promise<StorageIndex> {
+/** Shared query policy for Agent prefetch and thread/request-owned mounts. */
+export function storageBaseIndexReadPlan(requests: readonly StorageRequest[]) {
   const unique = uniqueStorageRequests(requests);
   if (unique.length === 0) {
-    return new Map();
+    return null;
   }
-  const rows = await db
-    .select({
+  return {
+    columns: {
       orgId: storages.orgId,
       userId: storages.userId,
       name: storages.name,
@@ -117,10 +113,9 @@ export async function readStorageBaseIndex(
       cacheScope: systemStoragePresignedUrlCache.scope,
       presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
       expiresAt: systemStoragePresignedUrlCache.expiresAt,
-    })
-    .from(storages)
-    .innerJoin(
-      sql`unnest(
+    },
+    from: storages,
+    requested: sql`unnest(
     ${sql.param(
       unique.map((request) => {
         return request.lookup.orgId;
@@ -142,30 +137,53 @@ export async function readStorageBaseIndex(
       }),
     )}::varchar(64)[]
   ) AS requested(org_id, user_id, name, version_id)`,
-      and(
-        eq(storages.orgId, sql`requested.org_id`),
-        eq(storages.userId, sql`requested.user_id`),
-        eq(storages.name, sql`requested.name`),
-      ),
-    )
-    .leftJoin(head, eq(storages.headVersionId, head.id))
-    .leftJoin(
-      exact,
-      and(
-        eq(
-          exact.id,
-          sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
-        ),
-        eq(exact.storageId, storages.id),
-      ),
-    )
-    .leftJoin(
-      systemStoragePresignedUrlCache,
+    requestedCondition: and(
+      eq(storages.orgId, sql`requested.org_id`),
+      eq(storages.userId, sql`requested.user_id`),
+      eq(storages.name, sql`requested.name`),
+    ),
+    head,
+    headCondition: eq(storages.headVersionId, head.id),
+    exact,
+    exactCondition: and(
       eq(
-        systemStoragePresignedUrlCache.cacheKey,
-        requestedVersionCacheKeySql(),
+        exact.id,
+        sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
       ),
-    );
+      eq(exact.storageId, storages.id),
+    ),
+    cache: systemStoragePresignedUrlCache,
+    cacheCondition: eq(
+      systemStoragePresignedUrlCache.cacheKey,
+      requestedVersionCacheKeySql(),
+    ),
+  };
+}
+
+interface StorageBaseIndexRow {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly name: string;
+  readonly storageId: string;
+  readonly headVersionId: string | null;
+  readonly s3Prefix: string;
+  readonly headId: string | null;
+  readonly headS3Key: string | null;
+  readonly headArchiveSize: number | null;
+  readonly headFileCount: number | null;
+  readonly exactId: string | null;
+  readonly exactS3Key: string | null;
+  readonly exactArchiveSize: number | null;
+  readonly exactFileCount: number | null;
+  readonly cacheKey: string | null;
+  readonly cacheScope: string | null;
+  readonly presignedUrl: string | null;
+  readonly expiresAt: Date | null;
+}
+
+export function storageBaseIndexFromRows(
+  rows: readonly StorageBaseIndexRow[],
+): StorageIndex {
   const versions = new Map<string, Map<string, StorageVersionIndexEntry>>();
   for (const row of rows) {
     if (

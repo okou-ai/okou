@@ -49,13 +49,12 @@ import {
   cacheRowsFromProjection,
   storageVersionCacheKeySql,
 } from "./execution-storage-cache-read.service";
-import {
-  readStorageBaseIndex,
-  type StorageIndex,
-  type StorageIndexEntry,
-  type StorageLookup,
-  type StorageRequest,
-  type StorageVersionIndexEntry,
+import type {
+  StorageIndex,
+  StorageIndexEntry,
+  StorageLookup,
+  StorageRequest,
+  StorageVersionIndexEntry,
 } from "./storage-index.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type {
@@ -1353,26 +1352,6 @@ type RunStorageExecution = Pick<
   ResolvedRunExecution,
   "orgId" | "additionalVolumes"
 >;
-
-/**
- * Shared storage index read: storage rows with their HEAD and exact requested
- * versions in one fixed-shape statement. Prefix versions are a separate read
- * ({@link withStoragePrefixVersions}) so callers can depend on this snapshot.
- */
-export async function loadStorageBaseIndex(
-  db: ReadonlyDb,
-  requests: readonly StorageRequest[],
-  timing: ApiDispatchTimingCollector | undefined,
-): Promise<StorageIndex> {
-  return await measureApiDispatchTiming(
-    timing,
-    "api_dispatch_prepare_storage_manifest_load_storage_index",
-    "nested",
-    () => {
-      return readStorageBaseIndex(db, requests);
-    },
-  );
-}
 
 /** Resolve requested version prefixes against an already loaded index. */
 export async function withStoragePrefixVersions(
