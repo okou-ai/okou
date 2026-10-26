@@ -1,10 +1,98 @@
 import { command } from "ccstate";
 import { onRef, settle, detach, Reason } from "../utils.ts";
 import { halloweenSound$ } from "./halloween.ts";
+import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 
 export const focusHalloweenHeading$ = onRef<HTMLElement>(
   command((_store, element: HTMLElement) => {
     element.focus({ preventScroll: true });
+  }),
+);
+
+function ownAnimations(animations: readonly Animation[], signal: AbortSignal) {
+  for (const animation of animations) {
+    detach(animation.finished, Reason.DomCallback);
+  }
+  const cancel = () => {
+    for (const animation of animations) {
+      animation.cancel();
+    }
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) {
+    cancel();
+  }
+}
+
+export const halloweenStageMotion$ = onRef(
+  command((_store, element: HTMLElement, signal: AbortSignal) => {
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !element.animate
+    ) {
+      return;
+    }
+    const beams = Array.from(
+      element.querySelectorAll<HTMLElement>("[data-beam]"),
+    ).map((beam, index) => {
+      return beam.animate(
+        [{ transform: "rotate(-18deg)" }, { transform: "rotate(18deg)" }],
+        {
+          duration: index === 2 ? 12_500 : 9000,
+          delay: -index * 5000,
+          direction: index === 1 ? "alternate-reverse" : "alternate",
+          iterations: Infinity,
+          easing: "ease-in-out",
+        },
+      );
+    });
+    const silhouettes = Array.from(
+      element.querySelectorAll<HTMLElement>("[data-haunt]"),
+    ).map((art, index) => {
+      return art.animate(
+        [
+          { transform: "translate(-8px, 12px) rotate(-9deg)" },
+          { transform: "translate(14px, -20px) rotate(10deg)" },
+        ],
+        {
+          duration: 9000 + (index % 3) * 1500,
+          delay: -index * 1800,
+          direction: "alternate",
+          iterations: Infinity,
+          easing: "ease-in-out",
+        },
+      );
+    });
+    ownAnimations([...beams, ...silhouettes], signal);
+  }),
+);
+
+export const halloweenConfetti$ = onRef(
+  command((_store, element: HTMLElement, signal: AbortSignal) => {
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !element.animate
+    ) {
+      return;
+    }
+    const animations = Array.from(element.children).map((piece, index) => {
+      return piece.animate(
+        [
+          { transform: "translateY(-20px) rotate(0deg)", opacity: 1 },
+          {
+            transform: `translate(${((index % 7) - 3) * 35}px, ${element.clientHeight + 40}px) rotate(${index * 73}deg)`,
+            opacity: 0,
+          },
+        ],
+        {
+          duration: 2200 + (index % 4) * 350,
+          delay: (index % 5) * 90,
+          easing: "ease-in",
+          fill: "both",
+        },
+      );
+    });
+    ownAnimations(animations, signal);
   }),
 );
 
@@ -27,17 +115,34 @@ export const halloweenCandyBurst$ = onRef(
         },
       );
     });
-    signal.addEventListener(
-      "abort",
-      () => {
-        for (const animation of animations) {
-          animation.cancel();
-        }
-      },
-      { once: true },
-    );
+    ownAnimations(animations, signal);
   }),
 );
+
+const bubbleArtwork = Object.freeze([
+  "B01-round-bd983d0e16.png",
+  "B02-round-ae72e312bc.png",
+  "B03-round-eeec0f4878.png",
+  "B04-round-55d5d4f89f.png",
+  "B05-round-bb2e5d493c.png",
+  "B06-round-c642d056d2.png",
+  "B07-round-e0bba08bba.png",
+  "B10-round-3980ce12a3.png",
+  "B01-round-bd983d0e16.png",
+  "B06-round-c642d056d2.png",
+]);
+const bubbleSizes = Object.freeze([
+  "h-[62px] w-[62px]",
+  "h-[54px] w-[54px]",
+  "h-12 w-12",
+  "h-14 w-14",
+  "h-[50px] w-[50px]",
+  "h-[58px] w-[58px]",
+  "h-[46px] w-[46px]",
+  "h-[52px] w-[52px]",
+  "h-[60px] w-[60px]",
+  "h-12 w-12",
+]);
 
 // Each bubble gets a single ascent and a smooth, bounded horizontal swing.
 // The element's left/right inset leaves room for its complete sway on phones.
@@ -56,6 +161,10 @@ export const HALLOWEEN_BUBBLES = Object.freeze(
   ].map((bubble, index) => {
     return {
       ...bubble,
+      size: bubbleSizes[index],
+      image: platformStaticAssetUrl(
+        `views/halloween/assets/${bubbleArtwork[index]}`,
+      ),
       ref$: onRef(
         command((_store, element: HTMLElement, signal: AbortSignal) => {
           if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -90,14 +199,7 @@ export const HALLOWEEN_BUBBLES = Object.freeze(
               easing: "ease-in-out",
             },
           );
-          signal.addEventListener(
-            "abort",
-            () => {
-              rise.cancel();
-              sway?.cancel();
-            },
-            { once: true },
-          );
+          ownAnimations(sway ? [rise, sway] : [rise], signal);
         }),
       ),
     };

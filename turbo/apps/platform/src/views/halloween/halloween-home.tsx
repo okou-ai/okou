@@ -1,5 +1,5 @@
-import { Button } from "@okouai/ui";
-import { Candy, Ghost, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
+import { Candy, Volume2, VolumeX } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
@@ -26,7 +26,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
-import { HalloweenGhost } from "./halloween-page.tsx";
+import { HalloweenGhost } from "./halloween-art.tsx";
 
 export function HalloweenHomeSound({
   mobileOnly = false,
@@ -47,12 +47,14 @@ export function HalloweenHomeSound({
       size="sm"
       aria-label={sound ? copy.soundOn : copy.soundOff}
       aria-pressed={sound}
+      className="h-auto gap-1 rounded-full border border-[#a9bbd54d] bg-[#172234e8] px-[13px] py-[9px] text-[11px] font-semibold text-[#e7f1ff] hover:bg-[#2b3c55] hover:text-[#e7f1ff]"
       onClick={() => {
         toggle();
         detach(play(signal), Reason.DomCallback);
       }}
     >
       {sound ? <Volume2 /> : <VolumeX />}
+      {sound ? copy.soundOn : copy.soundOff}
     </Button>
   );
   return mobileOnly ? (
@@ -112,7 +114,9 @@ export function HalloweenEntry() {
       pathname="/halloween"
       aria-label={copy.nudgeLabel}
       onMouseEnter={() => {
-        expand();
+        if (window.matchMedia("(hover: hover)").matches) {
+          expand();
+        }
       }}
       onMouseLeave={() => {
         collapse();
@@ -140,14 +144,34 @@ export function HalloweenEntry() {
           expand();
         }
       }}
-      className="relative my-2 mr-4 z-20 flex shrink-0 self-end items-center gap-2 rounded-2xl bg-background/95 px-3 py-2 transition-colors hover:bg-state-hover sm:absolute sm:bottom-10 sm:right-8 sm:my-0 sm:mr-0"
-    >
-      {expanded && (
-        <span className="whitespace-pre-line text-right text-xs font-medium">
-          {copy.nudges[greeting]}
-        </span>
+      className={cn(
+        "pointer-events-auto absolute bottom-[76px] right-0 z-20 block h-[136px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
+        expanded ? "w-[330px]" : "w-12",
       )}
-      <span className="h-14 w-14">
+    >
+      <span
+        className={cn(
+          "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-sm font-semibold leading-[1.5] text-[#573a21] transition-all duration-300 motion-reduce:transition-none",
+          expanded ? "translate-x-0 opacity-100" : "translate-x-3 opacity-0",
+        )}
+      >
+        {copy.nudges[greeting]}
+      </span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute right-[9px] top-2 -rotate-[23deg] -skew-x-[10deg] text-[37px] font-black italic leading-none tracking-[-2px] text-[#ffb12d] [font-family:Georgia,serif] [-webkit-text-stroke:1px_#6a361f] [text-shadow:2px_3px_0_#fff3d7,3px_5px_0_#6a361f33] transition-opacity motion-reduce:transition-none",
+          expanded ? "opacity-100" : "opacity-0",
+        )}
+      >
+        {copy.boo}
+      </span>
+      <span
+        className={cn(
+          "absolute top-12 h-[72px] w-[68px] origin-right drop-shadow-[0_5px_9px_#62401725] transition-all duration-500 motion-reduce:transition-none",
+          expanded ? "right-3 scale-100" : "-right-[25px] scale-80",
+        )}
+      >
         <HalloweenGhost />
       </span>
     </Link>
@@ -162,7 +186,6 @@ function HalloweenBubble({ index }: { index: number }) {
   const [, enter] = useLoadableSet(enterHalloweenFromBubble$);
   const playSound = useSet(playHalloweenClick$);
   const burst = useSet(halloweenCandyBurst$);
-  const Icon = index % 3 === 0 ? Ghost : index % 3 === 1 ? Candy : Sparkles;
   return (
     <div
       ref={ref}
@@ -173,7 +196,10 @@ function HalloweenBubble({ index }: { index: number }) {
           pathname="/halloween"
           aria-label={copy.nudgeLabel}
           tabIndex={-1}
-          className="relative pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-background/90 text-brand-text shadow-sm hover:bg-primary/10"
+          className={cn(
+            "relative pointer-events-auto flex items-center justify-center rounded-full bg-transparent transition-transform hover:scale-105 hover:shadow-[inset_0_0_0_2px_#b697ea]",
+            bubble.size,
+          )}
           onClick={(event) => {
             if (!shouldHandleLinkClick(event)) {
               return;
@@ -183,7 +209,12 @@ function HalloweenBubble({ index }: { index: number }) {
             detach(enter(index, signal), Reason.DomCallback);
           }}
         >
-          <Icon className="h-6 w-6" aria-hidden="true" />
+          <img
+            src={bubble.image}
+            alt=""
+            draggable={false}
+            className="h-full w-full object-contain"
+          />
           {transition === index && (
             <span
               ref={burst}

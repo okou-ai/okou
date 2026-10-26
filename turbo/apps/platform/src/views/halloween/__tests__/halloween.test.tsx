@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import {
   halloweenContract,
@@ -84,6 +84,22 @@ beforeEach(() => {
   context.mocks.api(halloweenContract.start, ({ body, respond }) => {
     return respond(200, round(body.id));
   });
+});
+
+test("a touch-generated mouseenter does not skip the ghost's first-tap greeting", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(hover: none)";
+  });
+  await setupPage({ context, path: "/" });
+  const entry = await waitFor(() => {
+    return control("link", "Play the Halloween quiz");
+  });
+  fireEvent.mouseEnter(entry);
+  await click(entry);
+  expect(entry).toBeInTheDocument();
+  expect(screen.queryByText("Let’s play")).not.toBeInTheDocument();
+  await click(entry);
+  await expect(screen.findByText("Let’s play")).resolves.toBeInTheDocument();
 });
 
 test("returns to the existing homepage and retries the same result after association fails", async () => {
@@ -193,10 +209,10 @@ test("wrong answers show a locked state then the failure screen with optional ta
   expect(control("button", /Goku/)).toBeDisabled();
   await waitForResult();
   expect(
-    screen.getByText(
-      "7 days of Okou Pro, subject to review. No credits included.",
-    ),
-  ).toBeInTheDocument();
+    screen.getByText(/subject to review\. No credits included\./),
+  ).toHaveTextContent(
+    "7 days of Okou Pro, subject to review. No credits included.",
+  );
   expect(control("link", /Create a Halloween image/)).toHaveAttribute(
     "href",
     expect.stringContaining("prompt=Create"),
