@@ -30,9 +30,9 @@ impl MemoryObservationSource for Source {
 }
 
 #[tokio::test]
-async fn startup_prefetch_recovers_during_real_reactor_and_preserves_fitting_job() {
+async fn guarded_prefetch_recovers_beside_real_reactor_and_preserves_fitting_job() {
     const MIB: u64 = 1024 * 1024;
-    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let meminfo = env._temp_dir.path().join("optional-meminfo");
     tokio::fs::write(&meminfo, "MemAvailable: 12288 kB\n")
         .await
@@ -77,7 +77,7 @@ async fn startup_prefetch_recovers_during_real_reactor_and_preserves_fitting_job
         },
     })
     .unwrap();
-    let (prefetch, mut latest) = MemoryPrefetchTasks::spawn_guarded(
+    let (mut prefetch, mut latest) = MemoryPrefetchTasks::spawn_guarded(
         [MemoryPrefetchCandidate {
             path: snapshot.clone(),
             memory_mb: 1,
@@ -89,7 +89,6 @@ async fn startup_prefetch_recovers_during_real_reactor_and_preserves_fitting_job
         },
     )
     .unwrap();
-    config.shutdown.memory_prefetch = prefetch;
     let runner = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(5)).await;
     assert_eq!(latest.borrow().accepted, 0);
@@ -131,6 +130,7 @@ async fn startup_prefetch_recovers_during_real_reactor_and_preserves_fitting_job
         (1, 8192, 0)
     );
     assert_eq!(tokio::fs::read(snapshot).await.unwrap(), vec![7; 8192]);
+    prefetch.drain().await;
     pressure.shutdown().await.unwrap();
     tracker.close_and_wait().await;
     shutdown(&env, runner).await;

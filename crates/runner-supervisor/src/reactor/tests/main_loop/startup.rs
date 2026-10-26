@@ -92,22 +92,12 @@ enum EarlyStartupFailure {
     PruneBind,
 }
 
-async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFailure) {
+async fn assert_early_startup_failure_joins_owners(failure: EarlyStartupFailure) {
     struct ReleaseOnDrop(Arc<tokio::sync::Semaphore>);
 
     impl Drop for ReleaseOnDrop {
         fn drop(&mut self) {
             self.0.add_permits(1);
-        }
-    }
-
-    struct ReleaseReaderOnDrop(Option<std::sync::mpsc::Sender<()>>);
-
-    impl Drop for ReleaseReaderOnDrop {
-        fn drop(&mut self) {
-            if let Some(release) = self.0.take() {
-                let _ = release.send(());
-            }
         }
     }
 
@@ -148,66 +138,16 @@ async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFail
         handler_task: Some(SignalHandlerTask::new(handler_task)),
     });
 
-    let memory_path = env._temp_dir.path().join("startup-memory.bin");
-    let original_bytes = vec![37; 2 * 1024 * 1024 + 17];
-    tokio::fs::write(&memory_path, &original_bytes)
-        .await
-        .unwrap();
-    let (read_tx, read_rx) = tokio::sync::oneshot::channel();
-    let read_tx = Mutex::new(Some(read_tx));
-    let (release_tx, release_rx) = std::sync::mpsc::channel();
-    let release_rx = Mutex::new(release_rx);
-    let release_reader = ReleaseReaderOnDrop(Some(release_tx));
-    config.shutdown.memory_prefetch =
-        prefetch::MemoryPrefetchTasks::spawn_with_read_checkpoint_for_test(
-            [prefetch::MemoryPrefetchCandidate {
-                path: memory_path.clone(),
-                memory_mb: 3,
-            }],
-            3,
-            Arc::new(move |bytes| {
-                if let Some(read_tx) = read_tx.lock().unwrap().take() {
-                    let _ = read_tx.send(bytes);
-                }
-                release_rx
-                    .lock()
-                    .unwrap()
-                    .recv()
-                    .map_err(std::io::Error::other)
-            }),
-        );
-    let prefetch_cancel = config.shutdown.memory_prefetch.cancellation_for_test();
-    let consumed = tokio::time::timeout(Duration::from_secs(5), read_rx)
-        .await
-        .expect("startup reader should consume actual File bytes")
-        .unwrap();
-    assert!(consumed > 0, "accepted reader must hold actual File IO");
     let run_handle = tokio::spawn(run(config));
-
-    tokio::time::timeout(Duration::from_secs(5), prefetch_cancel.cancelled())
-        .await
-        .expect("startup failure should cancel prefetch");
-    assert!(!run_handle.is_finished(), "startup must join prefetch");
-    assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 0);
-    assert!(dropped.try_acquire().is_err());
-    if matches!(failure, EarlyStartupFailure::PruneBind) {
-        assert_eq!(
-            status_mode_if_exists(&status_path).await.as_deref(),
-            Some("starting")
-        );
-    }
-
-    drop(release_reader);
     let error = tokio::time::timeout(Duration::from_secs(5), run_handle)
         .await
-        .expect("startup should return after prefetch drains")
+        .expect("startup should return after joining its owners")
         .unwrap()
         .expect_err("filesystem obstruction must fail startup");
     assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 1);
     assert_eq!(factory_creates.load(Ordering::SeqCst), 0);
     assert_eq!(env.handle.startup_readiness_calls(), 0);
     assert_eq!(env.handle.discover_started_count(), 0);
-    assert_eq!(tokio::fs::read(memory_path).await.unwrap(), original_bytes);
     let _permit = dropped
         .try_acquire()
         .expect("startup must join the aborted signal handler");
@@ -238,13 +178,13 @@ async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFail
 }
 
 #[tokio::test]
-async fn initial_status_failure_drains_prefetch_and_joins_startup_owners() {
-    assert_early_startup_failure_drains_and_joins(EarlyStartupFailure::InitialStatus).await;
+async fn initial_status_failure_joins_startup_owners() {
+    assert_early_startup_failure_joins_owners(EarlyStartupFailure::InitialStatus).await;
 }
 
 #[tokio::test]
-async fn prune_bind_failure_drains_prefetch_and_joins_startup_owners() {
-    assert_early_startup_failure_drains_and_joins(EarlyStartupFailure::PruneBind).await;
+async fn prune_bind_failure_joins_startup_owners() {
+    assert_early_startup_failure_joins_owners(EarlyStartupFailure::PruneBind).await;
 }
 
 #[tokio::test]

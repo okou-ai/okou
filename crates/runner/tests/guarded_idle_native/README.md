@@ -3,6 +3,8 @@
 Unguarded startup-reader cases below retain a test-support-only experimental
 baseline. The admitting production startup performs no eager snapshot warming;
 guarded runtime installation and measured policy remain P4 acceptance gates.
+The production reactor carries no startup prefetch owner; these fixture readers
+are owned and joined by their callers.
 
 ## Original-file open-permission controls
 

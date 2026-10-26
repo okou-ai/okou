@@ -130,17 +130,6 @@ impl MemoryPrefetchTasks {
         }
     }
 
-    /// No optional reads have been accepted; shutdown uses the same owner.
-    pub fn empty() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
-            handles: Vec::new(),
-            physical_io: TaskTracker::new(),
-            #[cfg(any(test, feature = "test-support"))]
-            startup_observer: None,
-        }
-    }
-
     pub fn cancel(&self) {
         self.cancel.cancel();
     }

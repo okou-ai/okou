@@ -346,7 +346,6 @@ fn build_mock_run_config_with_runtime(
         shutdown: ShutdownHandles {
             kmsg_handle: kmsg_log::KmsgHandle::noop(),
             dns_handle: crate::dns::DnsProxy::noop(),
-            memory_prefetch: prefetch::MemoryPrefetchTasks::empty(),
         },
         usage_flush_tx,
         usage_flush_rx,

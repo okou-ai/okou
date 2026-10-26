@@ -56,7 +56,6 @@ use crate::network_log_drain::DrainableLineReaderExit;
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 #[cfg(test)]
 use crate::network_log_manager::NetworkLogManager;
-use crate::prefetch;
 use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
@@ -315,7 +314,6 @@ pub struct ProxyState {
 pub struct ShutdownHandles {
     pub kmsg_handle: kmsg_log::KmsgHandle,
     pub dns_handle: dns::DnsProxy,
-    pub memory_prefetch: prefetch::MemoryPrefetchTasks,
 }
 
 pub struct SignalState {
@@ -1021,7 +1019,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     ShutdownHandles {
                         mut kmsg_handle,
                         mut dns_handle,
-                        mut memory_prefetch,
                     },
             },
         signal:
@@ -1609,8 +1606,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // -----------------------------------------------------------------------
     let teardown = TeardownTimer::start();
     drop(prune_listener);
-    memory_prefetch.cancel();
-    teardown.event("memory_prefetch_cancelled");
 
     // Discovery may complete with None on cancellation before the mode-change
     // branch wins. Publish Stopping before any prolonged teardown in that case.
@@ -1786,9 +1781,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         .test_observer
         .notify_destroy_tasks_drain_completed();
     teardown.phase_complete("destroy_tasks_drain", phase);
-    let phase = teardown.phase_start("memory_prefetch_drain");
-    memory_prefetch.drain().await;
-    teardown.phase_complete("memory_prefetch_drain", phase);
     let phase = teardown.phase_start("fresh_archive_delivery_shutdown");
     exec_config.fresh_archive_delivery.shutdown().await;
     teardown.phase_complete("fresh_archive_delivery_shutdown", phase);

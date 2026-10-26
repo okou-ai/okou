@@ -81,55 +81,6 @@ async fn discovery_end_publishes_stopping_without_cancelling_active_job() {
 }
 
 #[tokio::test]
-async fn shutdown_drains_memory_prefetch_before_stopped() {
-    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    let status_path = env._temp_dir.path().join("status.json");
-    let prefetch_cancel = tokio_util::sync::CancellationToken::new();
-    let task_cancel = prefetch_cancel.clone();
-    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let handle = tokio::spawn(async move {
-        task_cancel.cancelled().await;
-        let _ = cancelled_tx.send(());
-        let _ = release_rx.await;
-    });
-    config.shutdown.memory_prefetch =
-        crate::prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, handle);
-    let run_handle = tokio::spawn(run(config));
-
-    wait_discover_entered(&env, Duration::from_secs(2)).await;
-    env.drain();
-    env.cancel.cancel();
-    tokio::time::timeout(Duration::from_secs(5), cancelled_rx)
-        .await
-        .expect("memory prefetch should be cancelled during teardown")
-        .expect("memory prefetch task should report cancellation");
-
-    assert!(
-        !run_handle.is_finished(),
-        "runner shutdown should wait for memory prefetch drain before returning",
-    );
-    let raw_status = tokio::fs::read_to_string(&status_path).await.unwrap();
-    let status: serde_json::Value = serde_json::from_str(&raw_status).unwrap();
-    assert_ne!(
-        status.get("mode").and_then(serde_json::Value::as_str),
-        Some("stopped"),
-        "runner must not write stopped status before memory prefetch drain finishes",
-    );
-
-    release_tx
-        .send(())
-        .expect("runner should still be waiting for prefetch release");
-    assert_run_exits_within(
-        run_handle,
-        Duration::from_secs(5),
-        "run should finish after memory prefetch drains",
-    )
-    .await;
-    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
-}
-
-#[tokio::test]
 async fn shutdown_joins_accepted_fresh_archive_before_stopped() {
     use tokio::io::AsyncReadExt;
 
@@ -740,37 +691,29 @@ async fn prolonged_teardown_warns_without_completing_or_abandoning_cleanup() {
     use tracing_subscriber::prelude::*;
     use tracing_test_support::CapturedEvents;
 
+    struct ReleaseReapOnDrop(Arc<tokio::sync::Semaphore>);
+
+    impl Drop for ReleaseReapOnDrop {
+        fn drop(&mut self) {
+            self.0.add_permits(1);
+        }
+    }
+
     let captured = CapturedEvents::default();
     let _subscriber =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     tracing::callsite::rebuild_interest_cache();
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    let cancel = CancellationToken::new();
-    let child_cancel = cancel.clone();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let task = tokio::spawn(async move {
-        child_cancel.cancelled().await;
-        release_rx.await.unwrap();
-    });
-    config.shutdown.memory_prefetch =
-        crate::prefetch::MemoryPrefetchTasks::from_test_handle(cancel, task);
+    let (_stdin, pid, starttime) = install_controllable_dns(&mut config).await;
+    let reap_gate = crate::test_fixtures::ReapGate::new();
+    let release_reap = ReleaseReapOnDrop(reap_gate.release.clone());
+    config.shutdown.dns_handle.set_reap_gate(reap_gate.clone());
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
     env.trigger_stopping().await;
-    tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            if captured.entries().iter().any(|event| {
-                event.fields.get("message").map(String::as_str) == Some("teardown phase started")
-                    && event.fields.get("phase").map(String::as_str)
-                        == Some("memory_prefetch_drain")
-            }) {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), reap_gate.entered.notified())
+        .await
+        .expect("DNS teardown must reach its retained process wait");
     tokio::time::pause();
     tokio::task::yield_now().await;
     tokio::time::advance(Duration::from_secs(31)).await;
@@ -781,7 +724,7 @@ async fn prolonged_teardown_warns_without_completing_or_abandoning_cleanup() {
         .find(|event| {
             event.fields.get("message").map(String::as_str)
                 == Some("required cleanup still pending")
-                && event.fields.get("phase").map(String::as_str) == Some("memory_prefetch_drain")
+                && event.fields.get("phase").map(String::as_str) == Some("dns_stop")
         })
         .expect("held teardown must identify its pending phase");
     assert_eq!(warning.level, tracing::Level::WARN);
@@ -792,13 +735,14 @@ async fn prolonged_teardown_warns_without_completing_or_abandoning_cleanup() {
     assert!(warning.fields.contains_key("elapsed_ms"));
     assert!(!run_handle.is_finished());
     tokio::time::resume();
-    release_tx.send(()).unwrap();
+    drop(release_reap);
     assert_run_exits_within(
         run_handle,
         Duration::from_secs(2),
         "cleanup completion should finish teardown",
     )
     .await;
+    assert_child_reaped("dns", pid, starttime).await;
     captured.clear();
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(31)).await;

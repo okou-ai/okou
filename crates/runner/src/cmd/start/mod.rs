@@ -58,7 +58,7 @@ use crate::network_log_manager::NetworkLogManager;
 use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::resource_budget::ResourceBudget;
 use crate::status::{StatusTracker, remove_stale_status_file};
-use crate::{deps, dns, kmsg_log, prefetch, proxy};
+use crate::{deps, dns, kmsg_log, proxy};
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use runner_host::runner_process_identity::load_runner_process_identity;
 use runner_host::{host, lock};
@@ -310,8 +310,8 @@ async fn run_start_with_observer(
     load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
     signals: EarlySignals,
 ) -> RunnerResult<()> {
-    // This passive owner surrounds every fallible startup/reactor return. It starts
-    // before optional warming and never depends on heartbeat, pool or status locks.
+    // This passive owner surrounds every fallible startup/reactor return and
+    // never depends on heartbeat, pool or status locks.
     let observer = runner_supervisor::host_memory::HostMemoryObserver::spawn();
     // Construct startup inside this boundary to retain a single startup await slot.
     let result = run_start_observed(args, runtime_provider, load_home, signals).await;
@@ -782,10 +782,6 @@ async fn run_start_observed(
 
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
-    // Eager snapshot warming needs the shared physical-memory authority before
-    // it can start optional IO. Keep startup empty until that policy is installed;
-    // snapshot restore still demand-pages the same locked memory file.
-    let memory_prefetch = prefetch::MemoryPrefetchTasks::empty();
     let config = RunConfig {
         sandbox_op_reporter: host_telemetry
             .as_ref()
@@ -833,7 +829,6 @@ async fn run_start_observed(
         shutdown: ShutdownHandles {
             kmsg_handle,
             dns_handle,
-            memory_prefetch,
         },
         usage_flush_tx,
         usage_flush_rx,
