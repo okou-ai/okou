@@ -12,11 +12,11 @@ from typing import Callable
 import batch_aba_report as batch
 import claim_producer_report as retained
 import cleanup_report as cleanup
-import foreground_report as foreground
+import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
-from startup_report import exact
+from snapshot_report import exact
 
 
 @dataclass(frozen=True)

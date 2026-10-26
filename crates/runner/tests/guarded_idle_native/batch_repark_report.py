@@ -10,7 +10,7 @@ import uuid
 import batch_aba_report as batch
 import pressure_report as pressure
 import report
-from startup_report import exact
+from snapshot_report import exact
 
 PREFIX = "NATIVE_BATCH_REPARK_WITNESS "
 CASES = {f"BatchRepark-{mode}" for mode in ("fresh", "snapshot")}

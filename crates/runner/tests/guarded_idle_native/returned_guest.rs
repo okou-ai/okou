@@ -70,7 +70,7 @@ pub async fn exercise(
     probe: &Arc<Probe>,
 ) -> TestResult<()> {
     let _release = Release(probe);
-    let original = startup::original(&context.budget, inputs, proof).await?;
+    let original = snapshot_inputs::original(&context.budget, inputs, proof).await?;
     probe.bind(&context)?;
     let admission = PreSpawnAdmission::new(2)?;
     let mut heartbeat = foreground_probe::Probe::new(

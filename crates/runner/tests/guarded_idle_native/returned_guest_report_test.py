@@ -10,15 +10,15 @@ import sys
 import unittest
 import uuid
 
-import read_cancellation_report_test
+import snapshot_report_fixture
 import report
 import returned_guest_report as returned
-import startup_report as startup
+import snapshot_report as startup
 
 
 class ReturnedGuestTests(unittest.TestCase):
     def setUp(self):
-        read_cancellation_report_test.ReadCancellationTests.setUp(self)
+        snapshot_report_fixture.prepare(self)
         raw = json.dumps(self.inputs)
         self.collector["metadata"].update(native_returned_guest_policy_json=json.dumps(self.policy),
             native_returned_guest_inputs_json=raw, native_returned_guest_snapshot_bytes=startup.BYTES)

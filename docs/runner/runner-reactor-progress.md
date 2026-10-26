@@ -317,30 +317,14 @@ not establish production pressure, IO or startup performance.
 
 Production startup schedules no eager snapshot reads and carries no prefetch
 owner through the reactor. Snapshot restore reads its File backend on demand.
-Pressure-guarded readers and the experimental test-support baseline carry each
-declared profile-byte bound into the actual blocking File reader. They share
-opened-file size validation, a remaining-byte cap on every read and unchanged-size
-completion checks. An oversized or growing snapshot cannot consume past its
-declared bound or report a truncated read as complete. Refusing optional warming
-leaves the snapshot contents intact; the read-byte bound is separate from kernel
-readahead and a whole-host physical-memory envelope.
+The explicit operator benchmark retains its synchronous snapshot warming step.
 
-Supplied-policy optional consumers share the pressure controller's current
+Optional preparation uses the pressure controller's current
 observation state and global cadence through a restricted capability bound to
 its original physical-memory authority. Notifications carry no cached
 permission. Revalidate an opportunity after outside-lock admission waits;
 Critical/Unknown/stale/wave/stop transitions revoke the original offer even
 after a later recovery. No pressure-state lock survives IO or provider work.
-
-The concrete prefetch owner moves the physical operation and tracking token
-into accepted blocking reads. Dropped receivers/coordinators cannot make its
-drain finish while that producer remains active. Each caller owns cancellation
-of future optional work and joins actual IO before dependent cache/factory teardown.
-Positive phase settlement still requires a fresh fenced observation; producer
-loss retains uncertainty. Cancellation, completed reads and declared file bounds
-are not resident-cache, released-byte or production memory-saving proof.
-
-- [Supplied-envelope prefetch fixture](../../crates/runner/tests/guarded_prefetch_native/README.md)
 
 ## Other retained work
 

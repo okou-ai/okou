@@ -9,7 +9,7 @@ import struct
 import claim_producer_report as retained
 import guest_preparation_report as preparation
 import pressure_report as pressure
-from startup_report import exact
+from snapshot_report import exact
 
 
 def terminal(value, sequence=None):

@@ -8,11 +8,11 @@ import pathlib
 import re
 
 import create_cancellation_report as create
-import foreground_report as foreground
+import progress_report as foreground
 import pressure_report as pressure
-import read_cancellation_report as reads
+import observation_report as reads
 import report
-import startup_report as startup
+import snapshot_report as startup
 
 PREFIX = "NATIVE_RETURNED_GUEST_WITNESS "
 STAGES = ("start", "mount", "park")

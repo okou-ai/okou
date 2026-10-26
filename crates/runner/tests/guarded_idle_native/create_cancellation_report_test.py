@@ -11,14 +11,14 @@ import unittest
 import uuid
 
 import create_cancellation_report as create
-import read_cancellation_report_test
+import snapshot_report_fixture
 import report
-import startup_report as startup
+import snapshot_report as startup
 
 
 class CreateCancellationTests(unittest.TestCase):
     def setUp(self):
-        read_cancellation_report_test.ReadCancellationTests.setUp(self)
+        snapshot_report_fixture.prepare(self)
         raw=json.dumps(self.inputs)
         self.collector["metadata"].update(native_create_cancellation_policy_json=json.dumps(self.policy),
             native_create_cancellation_inputs_json=raw,native_create_cancellation_snapshot_bytes=startup.BYTES)

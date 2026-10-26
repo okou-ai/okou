@@ -221,7 +221,7 @@ pub async fn exercise(
     let _release_on_drop = ReleaseOnDrop(&probe.gate);
     let proof =
         proof.ok_or_else(|| io::Error::other("create cancellation needs measured owners"))?;
-    let original = startup::original(&context.budget, inputs, proof).await?;
+    let original = snapshot_inputs::original(&context.budget, inputs, proof).await?;
     probe
         .state
         .lock()

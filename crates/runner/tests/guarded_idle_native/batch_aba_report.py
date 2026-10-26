@@ -5,13 +5,13 @@ import argparse
 import json
 import pathlib
 
-import foreground_report as foreground
+import progress_report as foreground
 import pressure_report as pressure
 import report
 import status_failure_report as failure
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
 from later_parking_report import current_status
-from startup_report import exact
+from snapshot_report import exact
 
 PREFIX = "NATIVE_BATCH_ABA_WITNESS "
 CASES = {f"BatchAba-{mode}" for mode in ("fresh", "snapshot")}
