@@ -1,8 +1,8 @@
 {
   "turbo/packages/core": "8.790.0",
   "turbo/apps/cli": "10.2.3",
-  "turbo/apps/api": "2.8.0",
-  "turbo/apps/platform": "0.1064.0",
+  "turbo/apps/api": "2.9.0",
+  "turbo/apps/platform": "0.1064.1",
   "turbo/apps/app-worker": "1.10.53",
   "turbo/apps/host-worker": "1.8.14",
   "turbo/packages/api-contracts": "2.5.0",
@@ -16,7 +16,7 @@
   "crates/process-control-ipc": "0.5.35",
   "crates/process-launch": "0.1.2",
   "crates/guest-agent": "0.109.7",
-  "crates/guest-agent-tests": "0.1.69",
+  "crates/guest-agent-tests": "0.1.70",
   "crates/guest-contracts": "0.27.6",
   "crates/guest-tool-exec": "0.3.33",
   "crates/guest-task-exec": "0.2.35",
@@ -54,5 +54,5 @@
   "crates/rfb-client": "0.24.1",
   "ios": "0.19.5",
   "crates/kerberos-credentials": "0.2.0",
-  "desktop": "0.54.5"
+  "desktop": "0.54.6"
 }
