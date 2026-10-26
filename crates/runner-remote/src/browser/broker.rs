@@ -110,6 +110,7 @@ impl Broker {
             .client
             .command("Page.getFrameTree", json!({}), Some(session))
             .await?;
+        self.window(&page.target).await?;
         let page = self.sessions.get_mut(session).ok_or(Failure)?;
         page.frames(tree.get("frameTree").ok_or(Failure)?)
     }

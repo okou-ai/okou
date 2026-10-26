@@ -498,17 +498,33 @@ impl Page {
             | "DOM.childNodeInserted"
             | "DOM.childNodeRemoved"
             | "DOM.documentUpdated" => return Ok(false),
-            _ if method.starts_with("Network.")
-                || matches!(
-                    method,
-                    "Page.loadEventFired"
-                        | "Page.domContentEventFired"
-                        | "Page.lifecycleEvent"
-                        | "Page.frameStartedLoading"
-                        | "Page.frameStoppedLoading"
-                        | "Page.javascriptDialogOpening"
-                        | "Page.javascriptDialogClosed"
-                ) =>
+            _ if matches!(
+                method,
+                "Network.dataReceived"
+                    | "Network.eventSourceMessageReceived"
+                    | "Network.loadingFailed"
+                    | "Network.loadingFinished"
+                    | "Network.requestServedFromCache"
+                    | "Network.requestWillBeSent"
+                    | "Network.requestWillBeSentExtraInfo"
+                    | "Network.resourceChangedPriority"
+                    | "Network.responseReceived"
+                    | "Network.responseReceivedExtraInfo"
+                    | "Network.webSocketCreated"
+                    | "Network.webSocketWillSendHandshakeRequest"
+                    | "Network.webSocketHandshakeResponseReceived"
+                    | "Network.webSocketFrameError"
+                    | "Network.webSocketFrameReceived"
+                    | "Network.webSocketFrameSent"
+                    | "Network.webSocketClosed"
+                    | "Page.loadEventFired"
+                    | "Page.domContentEventFired"
+                    | "Page.lifecycleEvent"
+                    | "Page.frameStartedLoading"
+                    | "Page.frameStoppedLoading"
+                    | "Page.javascriptDialogOpening"
+                    | "Page.javascriptDialogClosed"
+            ) =>
             {
                 if let Some(id) = params.get("frameId").and_then(Value::as_str)
                     && !self.frames.contains(id)

@@ -34,6 +34,7 @@ pub(super) const FOREIGN: &str = "page-foreign";
 pub(super) struct State {
     pub moved: AtomicBool,
     pub navigated: AtomicBool,
+    pub move_on_tree: AtomicBool,
     pub move_on_metadata: AtomicBool,
     pub move_after_window_check: AtomicBool,
     pub window_checks: AtomicUsize,
@@ -329,6 +330,9 @@ fn response(method: &str, request: &Value, state: &State) -> Value {
             json!({"frameTree":{"frame":{"id":"frame-child","loaderId":"loader","url":"https://owned.example/child"}}})
         }
         "Page.getFrameTree" => {
+            if state.move_on_tree.swap(false, Ordering::SeqCst) {
+                state.moved.store(true, Ordering::SeqCst);
+            }
             json!({"frameTree":{"frame":{"id":"frame-owned","loaderId":if state.navigated.load(Ordering::SeqCst) { "next-loader" } else { "loader" },"url":"https://owned.example/"},"childFrames":[{"frame":{"id":"frame-child","parentId":"frame-owned","loaderId":"child-loader","url":"https://owned.example/child"}}]}})
         }
         "Page.navigate" => {
@@ -359,6 +363,11 @@ fn response(method: &str, request: &Value, state: &State) -> Value {
 
 fn events(method: &str, request: &Value) -> Vec<Value> {
     match method {
+        "Network.enable" => vec![
+            json!({"method":"Network.unimplementedGlobalEvent","sessionId":request["sessionId"],"params":{"targetId":FOREIGN}}),
+            json!({"method":"Network.responseReceived","sessionId":request["sessionId"],"params":{"frameId":"frame-foreign","requestId":"foreign-request"}}),
+            json!({"method":"Network.loadingFinished","sessionId":request["sessionId"],"params":{"requestId":"owned-request","encodedDataLength":10}}),
+        ],
         "Runtime.enable" => vec![
             json!({"method":"Runtime.executionContextCreated","sessionId":request["sessionId"],"params":{"context":{"id":100,"uniqueId":"context-owned","auxData":{"frameId":"frame-owned"}}}}),
             json!({"method":"Runtime.executionContextCreated","sessionId":request["sessionId"],"params":{"context":{"id":200,"uniqueId":"context-foreign","auxData":{"frameId":"frame-foreign"}}}}),

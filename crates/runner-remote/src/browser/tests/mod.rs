@@ -284,6 +284,106 @@ async fn native_metadata_races_and_invalid_window_replies_cannot_release_results
 }
 
 #[tokio::test]
+async fn network_events_require_implemented_methods_and_owned_frames() {
+    let peer = Peer::new().await;
+    let harness = Harness::new(&peer).await;
+    let mut socket = harness.connect().await;
+    command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut socket,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    command(
+        &mut socket,
+        3,
+        "Network.enable",
+        json!({}),
+        Some("session-owned"),
+    )
+    .await;
+    let methods = tokio::time::timeout(Duration::from_secs(3), async {
+        let mut methods = Vec::new();
+        loop {
+            let value: Value =
+                serde_json::from_str(&socket.next().await.unwrap().unwrap().into_text().unwrap())
+                    .unwrap();
+            let method = value["method"].as_str().unwrap().to_owned();
+            methods.push(method.clone());
+            if method == "Network.loadingFinished" {
+                return methods;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(methods, ["Network.loadingFinished"]);
+    socket.close(None).await.unwrap();
+    harness.shutdown().await;
+    peer.wait_closed().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
+async fn moving_a_page_during_frame_validation_denies_the_following_edit() {
+    let peer = Peer::new().await;
+    let harness = Harness::new(&peer).await;
+    let mut socket = harness.connect().await;
+    command(&mut socket, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut socket,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    peer.state.move_on_tree.store(true, Ordering::SeqCst);
+    socket.send(Message::Text(json!({"id":3,"method":"Input.insertText","sessionId":"session-owned","params":{"text":"A"}}).to_string().into())).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while socket
+            .next()
+            .await
+            .is_some_and(|message| message.is_ok_and(|message| !message.is_close()))
+        {}
+    })
+    .await
+    .unwrap();
+    peer.wait_closed().await;
+    // Move it back and read through a freshly authorized connection, rather
+    // than inferring absence of an edit from a missing acknowledgement.
+    peer.state.moved.store(false, Ordering::SeqCst);
+    let mut next = harness.connect().await;
+    command(&mut next, 1, "Target.getTargets", json!({}), None).await;
+    command(
+        &mut next,
+        2,
+        "Target.attachToTarget",
+        json!({"targetId":OWNED,"flatten":true}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        command(
+            &mut next,
+            3,
+            "Runtime.evaluate",
+            json!({"expression":"inserted","returnByValue":true}),
+            Some("session-owned")
+        )
+        .await["result"]["result"]["value"],
+        ""
+    );
+    next.close(None).await.unwrap();
+    harness.shutdown().await;
+    peer.wait_closed().await;
+    peer.shutdown().await;
+}
+
+#[tokio::test]
 async fn cancelled_setup_retains_host_capacity_until_its_resolver_finishes() {
     use tokio::io::AsyncReadExt;
     let peer = Peer::new().await;
