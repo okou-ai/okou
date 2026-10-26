@@ -52,9 +52,20 @@
 //! terminal-result wait. If the terminal result is already available or
 //! dispatch wins the race before cancellation reaches the write boundary,
 //! cancel-and-wait returns that original terminal result instead.
-//! [`SupervisedExecCancelHandle::cancel`] sends only the cancel frame and
-//! leaves terminal result ownership with the paired
-//! [`SupervisedExecHandle`].
+//! Once the cancel frame is sent, only
+//! `guest_control_proto::ExecTermination::Cancelled` is returned successfully;
+//! any other terminal state, including exit code 0, becomes an
+//! [`io::ErrorKind::Other`] error without the complete terminal result, captured
+//! stdout/stderr, or diagnostic. This mapping error still follows observed
+//! terminal proof and does not itself poison the connection; timeout and
+//! transport failures have separate consequences described by the method.
+//! To retain the eventual terminal result regardless of termination, use
+//! [`SupervisedExecHandle::take_cancel_handle`] and
+//! [`SupervisedExecCancelHandle::cancel`], then
+//! [`SupervisedExecHandle::wait`] with bounded timeouts (and the remaining time
+//! when sharing one total budget). Handle cancel-send errors separately while
+//! still attempting to wait; a write or transport failure can also prevent
+//! `wait` from returning a terminal result.
 //!
 //! Streaming exec operations expose a bounded receiver through
 //! `take_stream_receiver`. Guest-side stream or capture truncation is reported
