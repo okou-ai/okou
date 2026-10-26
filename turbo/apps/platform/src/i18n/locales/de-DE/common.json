@@ -4285,7 +4285,7 @@
         "teamTitle": "Teammitglied einladen"
       },
       "prompt": {
-        "connectorsDescription": "Wähle unten eine empfohlene App, um dein Konto zu verbinden. Du kannst das auch später tun.",
+        "connectorsDescription": "Verbinde deine Tools, damit Okou deinen Arbeitskontext versteht und Aufgaben passend zu deinen Bedürfnissen erledigt. Du kannst das auch später tun.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
         "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."
       },
