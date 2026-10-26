@@ -2,7 +2,7 @@ import { command, computed } from "ccstate";
 import { integrationsTeamsDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import { object } from "zod";
 
 import { inferMimetype } from "../../lib/mimetype";
 import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
@@ -25,7 +25,7 @@ import {
 } from "../services/teams-message-target.service";
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
-const teamsChatCallbackPayloadSchema = z.object({
+const teamsChatCallbackPayloadSchema = object({
   teamsDelivery: teamsDeliveryTargetSchema.optional(),
 });
 

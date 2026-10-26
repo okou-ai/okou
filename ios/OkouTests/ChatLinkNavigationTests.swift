@@ -2,6 +2,7 @@ import ChatData
 import ChatDataTestSupport
 import ChatDomain
 import SwiftUI
+import Synchronization
 import XCTest
 
 @testable import Okou
@@ -140,6 +141,96 @@ final class ChatLinkNavigationTests: XCTestCase {
     XCTAssertEqual(store.chatLinkError, "This chat is no longer available in this workspace.")
   }
 
+  func testSelectingAChatPublishesDurableHistoryBeforeNetworkCatchUpCompletes() async throws {
+    let holdNetwork = Mutex(false)
+    let started = expectation(description: "Conversation catch-up is held")
+    let gate = ModelResponseGate()
+    defer { gate.open() }
+    let fixture = ChatLinkFixture(beforeEventRows: { _ in
+      if holdNetwork.withLock({ $0 }) {
+        started.fulfill()
+        await gate.wait()
+      }
+    })
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
+    let previous = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    await previous.refresh()
+    previous.selectChat(ChatLinkFixture.sourceID)
+    await previous.selectedConversation?.refresh()
+    previous.close()
+
+    holdNetwork.withLock { $0 = true }
+    let store = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    defer { store.close() }
+    await store.list.restoreCached()
+    store.selectChat(ChatLinkFixture.sourceID)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    let refreshing = Task { await conversation.refresh() }
+    addTeardownBlock {
+      refreshing.cancel()
+      gate.open()
+      await refreshing.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    XCTAssertEqual(conversation.messages.first?.id, ChatLinkFixture.eventID(1))
+    XCTAssertEqual(conversation.messages.last?.id, ChatLinkFixture.eventID(59))
+    gate.open()
+    await refreshing.value
+    XCTAssertNil(conversation.error)
+  }
+
+  func testRunLinkShowsCachedChatWhileResolvingANewRunAndAllowsLeavingIt() async throws {
+    let holdNetwork = Mutex(false)
+    let eventCount = Mutex(60)
+    let started = expectation(description: "New run catch-up is held")
+    let gate = ModelResponseGate()
+    defer { gate.open() }
+    let fixture = ChatLinkFixture(
+      beforeEventRows: { _ in
+        if holdNetwork.withLock({ $0 }) {
+          started.fulfill()
+          await gate.wait()
+        }
+      }, eventCount: { eventCount.withLock { $0 } })
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
+    let previous = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    await previous.refresh()
+    let seeded = await previous.openChatLink(
+      .thread(id: ChatLinkFixture.sourceID, runID: ChatLinkFixture.runID(1)))
+    XCTAssertTrue(seeded)
+    previous.close()
+
+    eventCount.withLock { $0 = 90 }
+    holdNetwork.withLock { $0 = true }
+    let store = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    defer { store.close() }
+    await store.list.restoreCached()
+    store.selectChat(ChatLinkFixture.homeID)
+    let opening = Task {
+      await store.openChatLink(
+        .thread(id: ChatLinkFixture.sourceID, runID: ChatLinkFixture.runID(21)))
+    }
+    addTeardownBlock {
+      opening.cancel()
+      gate.open()
+      _ = await opening.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.sourceID)
+    XCTAssertEqual(store.selectedConversation?.messages.first?.id, ChatLinkFixture.eventID(1))
+    store.selectChat(ChatLinkFixture.homeID)
+    gate.open()
+    let opened = await opening.value
+    XCTAssertFalse(opened)
+    XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.homeID)
+  }
+
   func testLeavingOrClosingTheWorkspaceCancelsAPendingSourceNavigation() async throws {
     for close in [false, true] {
       let started = expectation(description: "Workflow source lookup started")
@@ -204,7 +295,11 @@ final class ChatLinkFixture: Sendable {
   let requests = HistoryRequests()
   let http: ChatHTTPFixture
 
-  init(workflow: ChatHTTPFixture.Handler? = nil) {
+  init(
+    workflow: ChatHTTPFixture.Handler? = nil,
+    beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
+    eventCount: @escaping @Sendable () -> Int = { 60 }
+  ) {
     let requests = requests
     http = ChatHTTPFixture { request in
       requests.values.withLock {
@@ -244,14 +339,16 @@ final class ChatLinkFixture: Sendable {
           status: 404,
           body: #"{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"No snapshot"}}"#)
       case "/api/chat-threads/\(Self.sourceID)/event-rows":
+        try await beforeEventRows?(request)
         let after =
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-        let end = min(60, after + 50)
+        let count = eventCount()
+        let end = min(count, after + 50)
         let rows = after < end ? ((after + 1)...end).map(Self.row).joined(separator: ",") : ""
         return ChatHTTPResponse(
           body: """
-            {"rows":[\(rows)],"cursor":{"lastEventId":"\(Self.eventID(end))","lastSeqId":\(end)},"hasMore":\(end < 60)}
+            {"rows":[\(rows)],"cursor":{"lastEventId":"\(Self.eventID(end))","lastSeqId":\(end)},"hasMore":\(end < count)}
             """)
       case "/api/chat-threads/\(Self.sourceID)":
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
@@ -261,10 +358,10 @@ final class ChatLinkFixture: Sendable {
   }
 
   @MainActor
-  func workspace(conversationLimit: Int = 8) -> WorkspaceStore {
+  func workspace(conversationLimit: Int = 8, cache: ChatCache? = nil) -> WorkspaceStore {
     WorkspaceStore(
       client: http.client, webURL: URL(string: "https://app.example.invalid")!,
-      conversationLimit: conversationLimit)
+      cache: cache, conversationLimit: conversationLimit)
   }
 
   static func eventID(_ sequence: Int) -> String {

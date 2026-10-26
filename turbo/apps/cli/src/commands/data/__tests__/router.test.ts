@@ -1,7 +1,14 @@
 import { Command } from "commander";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import {
+  number,
+  object,
+  record,
+  string,
+  union,
+  unknown as zUnknown,
+} from "zod";
 import type { DataRouterTool } from "@okouai/api-contracts/contracts/data-router-tools";
 import { server } from "../../../mocks/server";
 import { registerRequestedCommand } from "../../../okou";
@@ -21,10 +28,10 @@ const futureTool: DataRouterTool = {
   },
   _meta: { "ai.okou/data": { family: "data-search" } },
 };
-const rpcSchema = z.object({
-  id: z.union([z.string(), z.number()]).optional(),
-  method: z.string(),
-  params: z.record(z.string(), z.unknown()).optional(),
+const rpcSchema = object({
+  id: union([string(), number()]).optional(),
+  method: string(),
+  params: record(string(), zUnknown()).optional(),
 });
 let pages: { tools: DataRouterTool[]; nextCursor?: string }[];
 let calls: unknown[];

@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
 import {
   artifactDeliveryKey,
@@ -38,7 +38,7 @@ interface Owner {
 export type HostedSiteUrlResult =
   | {
       readonly status: "ok";
-      readonly body: z.infer<typeof hostedSiteUrlSchema>;
+      readonly body: zInfer<typeof hostedSiteUrlSchema>;
     }
   | { readonly status: "not_found"; readonly message: string }
   | { readonly status: "conflict"; readonly message: string };
@@ -55,7 +55,7 @@ function ownedSiteCondition(owner: Owner) {
 function siteUrl(
   site: Site,
   isActive = true,
-): z.infer<typeof hostedSiteUrlSchema> {
+): zInfer<typeof hostedSiteUrlSchema> {
   return {
     siteId: site.id,
     publicSlug: site.publicSlug,

@@ -441,10 +441,10 @@ pub(super) async fn sparse_copy_pinned(
     retained_target: &mut Option<StagingFile>,
     after_create: impl FnOnce() -> LifecycleResult<()>,
 ) -> LifecycleResult<PinnedImage> {
-    if retained_target.is_none() {
-        *retained_target = Some(StagingFile::create(dst)?);
-    }
-    let target = retained_target.as_ref().unwrap();
+    let target = match retained_target {
+        Some(target) => target,
+        slot @ None => slot.insert(StagingFile::create(dst)?),
+    };
     target.validate_path(dst)?;
     after_create()?;
     use std::os::fd::AsRawFd;

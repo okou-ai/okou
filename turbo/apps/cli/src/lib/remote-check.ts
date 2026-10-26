@@ -1,5 +1,14 @@
 import { Command, Option } from "commander";
-import { z } from "zod";
+import {
+  literal,
+  strictObject,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { decodeSandboxTokenPayload } from "./api/sandbox-token";
 import { withErrorHandler } from "./command/with-error-handler";
 import { diagnosticTextSchema } from "./diagnostic-text";
@@ -11,14 +20,14 @@ import {
   type RunnerRpcResponseReader,
 } from "./runner-rpc";
 
-const checkSchema = z.strictObject({
-  type: z.literal("active_check"),
-  status: z.enum(["passed", "failed", "blocked"]),
-  message: diagnosticTextSchema.pipe(z.string()),
+const checkSchema = strictObject({
+  type: literal("active_check"),
+  status: zEnum(["passed", "failed", "blocked"]),
+  message: diagnosticTextSchema.pipe(string()),
 });
-type Check = z.infer<typeof checkSchema>;
-const envelope = z.union([
-  z.strictObject({ type: z.literal("result"), data: checkSchema }),
+type Check = zInfer<typeof checkSchema>;
+const envelope = union([
+  strictObject({ type: literal("result"), data: checkSchema }),
   rpcErrorSchema,
 ]);
 
@@ -106,8 +115,8 @@ export function createCheckCommand(protocol: "ssh" | "vnc") {
     .addHelpText(
       "after",
       protocol === "ssh"
-        ? "\nRequires SSH execution access and enabled diagnostics. Opens a fresh physical SSH connection, performs normal host-key trust/TOFU and authentication, then closes it without any command, shell or file operation. Initial native provisioning can occur under existing policy. Passing verifies authentication at that time, not later command health. Previous operational failure remains available through ssh diagnose. Never retry automatically."
-        : "\nRequires VNC execution access and enabled diagnostics. Initializes and closes one temporary session under normal capacity/security policy; no screenshot or input is performed. Shared/exclusive mode can affect other viewers; exclusive requests can disconnect them or be refused. Kerberos can acquire tickets through the configured independent KDC. Foreground sessions are never closed to make room. Passing verifies initialization at that time, not framebuffer/input health. Previous operational failure remains available through vnc diagnose. Never retry or switch modes automatically.",
+        ? "\nRequires SSH execution access. Opens a fresh physical SSH connection, performs normal host-key trust/TOFU and authentication, then closes it without any command, shell or file operation. Initial native provisioning can occur under existing policy. Passing verifies authentication at that time, not later command health. Previous operational failure remains available through ssh diagnose. Never retry automatically."
+        : "\nRequires VNC execution access. Initializes and closes one temporary session under normal capacity/security policy; no screenshot or input is performed. Shared/exclusive mode can affect other viewers; exclusive requests can disconnect them or be refused. Kerberos can acquire tickets through the configured independent KDC. Foreground sessions are never closed to make room. Passing verifies initialization at that time, not framebuffer/input health. Previous operational failure remains available through vnc diagnose. Never retry or switch modes automatically.",
     );
   if (protocol === "vnc")
     command.addOption(
@@ -129,7 +138,7 @@ export function createCheckCommand(protocol: "ssh" | "vnc") {
           throw new Error(
             `Active ${protocol.toUpperCase()} checks require a Run token with ${protocol}:write. Passive read access cannot authorize a login.`,
           );
-        if (!z.uuid().safeParse(connectionId).success)
+        if (!uuid().safeParse(connectionId).success)
           throw new Error(`Use an exact UUID from ${protocol} host list.`);
         const params =
           protocol === "vnc"

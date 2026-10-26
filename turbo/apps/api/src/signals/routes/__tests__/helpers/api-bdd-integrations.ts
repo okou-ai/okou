@@ -59,6 +59,7 @@ import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
+import type { SlackFixtureIdentity } from "../../../../__tests__/mocks";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import type { ApiTestUser, ApiTestUserOptions } from "./api-bdd";
 import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
@@ -88,6 +89,33 @@ import { slackEventsRoutes } from "../../slack-events";
 import { slackInteractiveRoutes } from "../../slack-interactive";
 import { slackOauthRoutes } from "../../slack-oauth";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
+
+export function mockSlackIdentityLookup(
+  context: TestContext,
+  identity?: SlackFixtureIdentity,
+): void {
+  const users = context.mocks.slack.users.identities;
+  if (identity) {
+    users.set(identity.id, identity);
+  }
+  context.mocks.slack.users.info.mockImplementation((...args: unknown[]) => {
+    const request = args[0];
+    if (
+      typeof request !== "object" ||
+      request === null ||
+      !("user" in request) ||
+      typeof request.user !== "string"
+    ) {
+      throw new Error("Expected Slack user identity request");
+    }
+    const user = users.get(request.user);
+    return Promise.resolve(
+      user
+        ? { ok: true, user: { tz: "UTC", ...user } }
+        : { ok: false, error: "user_not_found" },
+    );
+  });
+}
 
 const TEST_APP_ROUTES = Object.freeze([
   ...githubOauthRoutes,
@@ -936,16 +964,7 @@ export function createBddIntegrationApi(context: TestContext) {
         ok: true,
         channel: { id: "D-bdd" },
       });
-      context.mocks.slack.users.info.mockResolvedValue({
-        ok: true,
-        user: {
-          profile: {
-            display_name: "Slack User",
-            email: "slack@example.com",
-          },
-          tz: "UTC",
-        },
-      });
+      mockSlackIdentityLookup(context);
       context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
       context.mocks.slack.views.open.mockResolvedValue({
         ok: true,
@@ -1032,6 +1051,13 @@ export function createBddIntegrationApi(context: TestContext) {
       const installerSlackUserId =
         options.installerSlackUserId ?? `U_INSTALL_${randomUUID().slice(0, 8)}`;
       const botUserId = `UBOT_${randomUUID().slice(0, 8)}`;
+      mockSlackIdentityLookup(context, {
+        id: botUserId,
+        team_id: teamId,
+        real_name: "Slack User",
+        profile: { display_name: "Slack User" },
+        is_bot: true,
+      });
       if (actor && !actor.orgId) {
         throw new Error("Slack install actor must have an organization");
       }
@@ -1070,14 +1096,11 @@ export function createBddIntegrationApi(context: TestContext) {
         ...(grantedBotScopes === null ? {} : { scope: grantedBotScopes }),
       };
       if (actor) {
-        context.mocks.slack.users.info.mockResolvedValueOnce({
-          ok: true,
-          user: {
-            id: installerSlackUserId,
-            team_id: teamId,
-            real_name: "Slack Installer",
-            profile: { email: actor.email },
-          },
+        mockSlackIdentityLookup(context, {
+          id: installerSlackUserId,
+          team_id: teamId,
+          real_name: "Slack Installer",
+          profile: { email: actor.email, display_name: "Slack User" },
         });
       }
       if (options.run) {
@@ -1158,6 +1181,12 @@ export function createBddIntegrationApi(context: TestContext) {
         context,
         routes: [...slackConnectRoutes, ...slackOauthRoutes],
       });
+      mockSlackIdentityLookup(context, {
+        id: body.slackUserId,
+        team_id: body.workspaceId,
+        real_name: "Slack User",
+        profile: { email: actor.email, display_name: "Slack User" },
+      });
       const pending = await run(() => {
         return accept(
           clients(slackConnectContract).connect({
@@ -1198,15 +1227,6 @@ export function createBddIntegrationApi(context: TestContext) {
           scope: userScopes,
         },
       };
-      const userInfo = {
-        ok: true,
-        user: {
-          id: body.slackUserId,
-          team_id: body.workspaceId,
-          real_name: "Slack User",
-          profile: { email: actor.email },
-        },
-      };
       if (options.run) {
         let exchanged = false;
         context.mocks.slack.oauth.v2.access.mockImplementation(
@@ -1225,26 +1245,8 @@ export function createBddIntegrationApi(context: TestContext) {
             return Promise.resolve(exchange);
           },
         );
-        let inspected = false;
-        context.mocks.slack.users.info.mockImplementation(
-          (...args: unknown[]) => {
-            const request = args[0];
-            if (
-              inspected ||
-              typeof request !== "object" ||
-              request === null ||
-              !("user" in request) ||
-              request.user !== body.slackUserId
-            ) {
-              throw new Error("Unexpected Slack member lookup");
-            }
-            inspected = true;
-            return Promise.resolve(userInfo);
-          },
-        );
       } else {
         context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(exchange);
-        context.mocks.slack.users.info.mockResolvedValueOnce(userInfo);
       }
       const completed = await run(() => {
         return accept(

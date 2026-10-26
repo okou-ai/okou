@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -20,26 +20,24 @@ url.pathname = `/${databaseName}`;
 const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
 const sensitiveValue = "diagnostic-private-value";
 
-const eventsSchema = z.array(
-  z.object({
-    event: z.string(),
-    file: z.string(),
-    sqlstate: z.string().nullable().optional(),
-    batch: z.number().nullable().optional(),
-    plan: z
-      .object({
-        executionMs: z.number(),
-        nodes: z.array(
-          z.object({
-            parent: z.number().nullable(),
-            measurements: z.object({
-              "Node Type": z.string(),
-              "Actual Rows": z.number().optional(),
-            }),
+const eventsSchema = array(
+  object({
+    event: string(),
+    file: string(),
+    sqlstate: string().nullable().optional(),
+    batch: number().nullable().optional(),
+    plan: object({
+      executionMs: number(),
+      nodes: array(
+        object({
+          parent: number().nullable(),
+          measurements: object({
+            "Node Type": string(),
+            "Actual Rows": number().optional(),
           }),
-        ),
-      })
-      .optional(),
+        }),
+      ),
+    }).optional(),
   }),
 );
 

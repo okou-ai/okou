@@ -112,7 +112,6 @@ async function page(
   path = "/connectors?scope=remote-control",
   enabled = true,
   role?: "admin" | "member",
-  capabilities: { vnc?: boolean } = {},
   userId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
 ) {
   if (role) {
@@ -138,7 +137,6 @@ async function page(
     },
     featureSwitches: {
       [FeatureSwitchKey.RemoteControlGuidedSetup]: enabled,
-      [FeatureSwitchKey.VncAccess]: capabilities.vnc ?? true,
     },
   });
 }
@@ -155,20 +153,10 @@ async function selectConnectionNetwork(
   click(await screen.findByRole("combobox", { name: "Connection method" }));
   click(await screen.findByRole("option", { name: `${name} · ${provider}` }));
 }
-test.each([
-  ["ssh", false],
-  ["vnc", false],
-  ["ssh", true],
-  ["vnc", true],
-] as const)(
-  "The new deep link %s keeps the existing experience when guided is off and VNC=%s",
-  async (protocol, vncEnabled) => {
-    await page(
-      `/connectors?scope=remote-control&setup=${protocol}`,
-      false,
-      undefined,
-      { vnc: vncEnabled },
-    );
+test.each(["ssh", "vnc"] as const)(
+  "The new deep link %s keeps the existing experience when guided is off",
+  async (protocol) => {
+    await page(`/connectors?scope=remote-control&setup=${protocol}`, false);
     await waitFor(() => {
       expect(getAction("button", "Add host")).toBeInTheDocument();
     });
@@ -184,7 +172,7 @@ test.each([
 ])(
   "The empty remote directory lets %s start setup with only its empty-state action",
   async (userId) => {
-    await page("/connectors?scope=remote-control", true, undefined, {}, userId);
+    await page("/connectors?scope=remote-control", true, undefined, userId);
     await screen.findByRole("heading", { name: "No devices added yet" });
     expect(
       screen.getByText("Let Okou work on a computer or server you choose."),
@@ -311,12 +299,11 @@ test("Computer use opens its download guide from the parallel connection choices
   ).resolves.toBeInTheDocument();
 });
 
-test("A Computer use URL restores the guide without SSH or VNC capabilities", async () => {
+test("A Computer use URL restores the installation guide", async () => {
   await page(
     "/connectors?scope=remote-control&setup=computer-use&computerUseStep=install",
     true,
     undefined,
-    { vnc: false },
   );
   const dialog = await screen.findByRole("dialog", {
     name: "Install and sign in",
@@ -731,7 +718,6 @@ test.each(["staff-colleague", "external-user"])(
       "/connectors?scope=remote-control&setup=vnc",
       true,
       "member",
-      { vnc: true },
       userId,
     );
     await expect(
@@ -749,7 +735,6 @@ test("An opted-in account can open its network list and count dialog", async () 
     `/connectors?scope=private-network&networkConnections=tailscale:${network.id}`,
     true,
     "member",
-    {},
     "other-account",
   );
   await expect(
@@ -821,32 +806,11 @@ test("A delayed feature response cannot enable remote UI for the next account", 
     screen.queryByRole("heading", { name: "Add remote connection" }),
   ).toBeNull();
 });
-test("The UI switch does not expose disabled VNC setup", async () => {
-  await page("/connectors?scope=remote-control", true, undefined, {
-    vnc: false,
-  });
-  await screen.findByRole("heading", { name: "No devices added yet" });
-  click(getAction("button", "Add connection"));
-  await screen.findByRole("heading", { name: "Add remote connection" });
-  expect(
-    screen.queryByText(
-      "Control the device’s screen with a mouse and keyboard.",
-    ),
-  ).toBeNull();
-  expect(queryAction("button", "Back")).toBeNull();
-  click(screen.getByText("Run commands on the device."));
-  await screen.findByLabelText("SSH username");
-  click(getAction("button", "Back"));
-  await screen.findByRole("heading", { name: "Add remote connection" });
-  expect(queryAction("button", "Back")).toBeNull();
-});
-test("Saved Tailscale networks can be managed when VNC is disabled", async () => {
+test("Saved Tailscale networks can be managed", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, { configs: [network] });
   });
-  await page("/connectors?scope=private-network", true, undefined, {
-    vnc: false,
-  });
+  await page("/connectors?scope=private-network", true, undefined);
   await screen.findByText(network.name);
   click(getAction("link", `Manage ${network.name}`));
   await screen.findByRole("heading", { name: network.name });
@@ -932,10 +896,7 @@ test.each(["ssh", "vnc"] as const)(
     await screen.findByRole("heading", { name: "Add remote connection" });
   },
 );
-async function setupWithSavedNetworks(
-  provider: "tailscale" | "cloudflare",
-  capabilities: { vnc?: boolean } = {},
-) {
+async function setupWithSavedNetworks(provider: "tailscale" | "cloudflare") {
   const otherNetwork = {
     id: "a0000000-0000-4000-8000-000000000002",
     name: "Another network",
@@ -956,12 +917,7 @@ async function setupWithSavedNetworks(
           : [],
     });
   });
-  await page(
-    "/connectors?scope=remote-control&setup=ssh",
-    true,
-    undefined,
-    capabilities,
-  );
+  await page("/connectors?scope=remote-control&setup=ssh", true);
   await screen.findByRole("heading", { name: "Add remote connection" });
 }
 
@@ -1050,13 +1006,8 @@ test.each(["tailscale", "cloudflare"] as const)(
     await screen.findByRole("heading", { name: "No devices added yet" });
   },
 );
-test("Manual setup respects disabled VNC and clears the chosen network when leaving for the remote directory", async () => {
-  await setupWithSavedNetworks("cloudflare", { vnc: false });
-  expect(
-    screen.queryByText(
-      "Control the device’s screen with a mouse and keyboard.",
-    ),
-  ).toBeNull();
+test("Manual setup clears the chosen network when leaving for the remote directory", async () => {
+  await setupWithSavedNetworks("cloudflare");
   click(screen.getByText("Run commands on the device."));
   await screen.findByLabelText("Connection method");
   await selectConnectionNetwork("Cloudflare Access");
@@ -1073,7 +1024,7 @@ test("Manual setup respects disabled VNC and clears the chosen network when leav
   expect(queryAction("button", "Back")).toBeNull();
 });
 test("Manual VNC can select a saved Tailscale network", async () => {
-  await setupWithSavedNetworks("tailscale", { vnc: true });
+  await setupWithSavedNetworks("tailscale");
   click(
     screen.getByText("Control the device’s screen with a mouse and keyboard."),
   );
@@ -3218,23 +3169,6 @@ test.each(["ssh", "vnc"] as const)(
     expect(getAction("button", "Add credential")).toBeEnabled();
   },
 );
-
-test("The credentials page respects the VNC capability gate on direct navigation", async () => {
-  await page(
-    "/connectors?scope=remote-control&remoteView=credentials&type=vnc",
-    true,
-    undefined,
-    { vnc: false },
-  );
-  await screen.findByRole("heading", { name: "Credentials", level: 1 });
-  await screen.findByText(
-    "No SSH credentials yet. Add a private key or password to reuse across hosts.",
-  );
-  expect(queryAction("radio", "VNC")).toBeNull();
-  click(getAction("button", "Add credential"));
-  const dialog = await screen.findByRole("dialog", { name: "Add credential" });
-  expect(within(dialog).getByLabelText("SSH username")).toBeInTheDocument();
-});
 
 test("The legacy credentials view remains available with the guided switch off", async () => {
   await page(

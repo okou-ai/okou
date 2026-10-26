@@ -42,14 +42,6 @@ export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 export const CLAUDE_SUBSCRIPTION_PROVIDER_ID =
   "00000000-0000-4000-a000-000000000002";
 
-export function expectTextBefore(firstText: string, secondText: string): void {
-  const first = screen.getByText(firstText);
-  const second = screen.getByText(secondText);
-  expect(
-    first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-}
-
 function queryTabByText(text: string): HTMLElement | null {
   return (
     queryAllByRoleFast("tab").find((candidate) => {
@@ -64,19 +56,6 @@ export function tabByText(text: string): HTMLElement {
     throw new Error(`${text} tab not found`);
   }
   return tab;
-}
-
-export function buttonContainingText(
-  text: string,
-  container: ParentNode = document.body,
-) {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.textContent?.replace(/\s+/g, " ").trim().includes(text);
-  });
-  if (!button) {
-    throw new Error(`${text} button not found`);
-  }
-  return button;
 }
 
 function billingStatus(

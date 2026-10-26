@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { z } from "zod";
+import { array, object, string, tuple } from "zod";
 
 async function rejectsObservation(
   databaseUrl: string,
@@ -9,9 +9,9 @@ async function rejectsObservation(
   parameters: string[],
   observationSql: string,
 ): Promise<void> {
-  const [day, type, id] = z
-    .tuple([z.string(), z.string(), z.string()])
-    .parse(parameters);
+  const [day, type, id] = tuple([string(), string(), string()]).parse(
+    parameters,
+  );
   const pgClient = new Client({ connectionString: databaseUrl });
   const failures: unknown[] = [];
   let ownedKeys: string[][] = [];
@@ -22,8 +22,7 @@ async function rejectsObservation(
     await pgClient.connect();
     await pgClient.query("SET TIME ZONE 'Asia/Shanghai'");
     const probe = await pgClient.query(readSql, parameters);
-    ownedKeys = z
-      .array(z.object({ resource_id: z.string() }))
+    ownedKeys = array(object({ resource_id: string() }))
       .parse(probe.rows)
       .map((row) => {
         return [day, type, row.resource_id];
@@ -41,14 +40,13 @@ async function rejectsObservation(
       pgClient.query(observationSql, parameters).then((result) => {
         // Both writes project their actual full keys, including the date's
         // explicit text representation, even if a broken CHECK accepts them.
-        ownedKeys = z
-          .array(
-            z.object({
-              utc_day: z.string(),
-              resource_type: z.string(),
-              resource_id: z.string(),
-            }),
-          )
+        ownedKeys = array(
+          object({
+            utc_day: string(),
+            resource_type: string(),
+            resource_id: string(),
+          }),
+        )
           .parse(result.rows)
           .map((row) => {
             return [row.utc_day, row.resource_type, row.resource_id];
@@ -101,8 +99,8 @@ export async function validateXResourceUsageSchema(
   const client = new Client({ connectionString: databaseUrl });
   const failures: unknown[] = [];
   const ownedKeys: string[][] = [];
-  const readKeySchema = z.tuple([z.string(), z.string(), z.string()]);
-  const readRowSchema = z.object({ resource_id: z.string() });
+  const readKeySchema = tuple([string(), string(), string()]);
+  const readRowSchema = object({ resource_id: string() });
   let ownedReceipt: { id: string; source: string } | undefined;
   try {
     await client.connect();
@@ -239,7 +237,7 @@ export async function validateXResourceUsageSchema(
     const receipt = await client.query(legacySql, legacy);
     if (receipt.rowCount === 1) {
       ownedReceipt = {
-        id: z.object({ id: z.string().uuid() }).parse(receipt.rows[0]).id,
+        id: object({ id: string().uuid() }).parse(receipt.rows[0]).id,
         source,
       };
     }

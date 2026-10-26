@@ -1,8 +1,8 @@
 import type { unifiedRunRequestSchema } from "@okouai/api-contracts/contracts/runs";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
-export type RunRequestBody = z.infer<typeof unifiedRunRequestSchema>;
+export type RunRequestBody = zInfer<typeof unifiedRunRequestSchema>;
 
 export function pendingOkouTokenSecrets(secrets: RunRequestBody["secrets"]) {
   return {

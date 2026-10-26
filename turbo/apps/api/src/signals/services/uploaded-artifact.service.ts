@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
-import { z } from "zod";
+import { uuid } from "zod";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   RUN_UPLOADED_FILE_SOURCES,
@@ -77,7 +77,7 @@ export const uploadedArtifactPreviewImageUrl$ = command(
       inArray(runUploadedFiles.source, [...RUN_UPLOADED_FILE_SOURCES]),
       eq(runUploadedFiles.externalId, args.id),
     );
-    const identityMatches = z.uuid().safeParse(args.id).success
+    const identityMatches = uuid().safeParse(args.id).success
       ? or(eq(runUploadedFiles.id, args.id), externalIdMatches)
       : externalIdMatches;
     const [row] = await get(db$)

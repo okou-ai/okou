@@ -32,13 +32,13 @@ import {
   CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS,
   CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS,
-  CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS,
-  CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
+  CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
+  CHAT_THREAD_RESPONSE_LINE_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
@@ -116,21 +116,24 @@ function groupSharedMessages(
   return groups;
 }
 
-function SharedAssistantAvatar({
+function SharedAssistantNameLine({
   assistantName,
 }: {
   readonly assistantName: string;
 }) {
   return (
     <div
-      data-shared-assistant-avatar=""
-      className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}
+      data-shared-assistant-name-line=""
+      className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}
     >
-      <AvatarFromUrl
-        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-        alt={assistantName}
-        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
-      />
+      <span className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}>
+        <AvatarFromUrl
+          avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+          alt=""
+          className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
+        />
+      </span>
+      <span className="min-w-0 truncate">{assistantName}</span>
     </div>
   );
 }
@@ -193,7 +196,6 @@ function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
             )}
           >
             <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
-              <div className="hidden @[900px]:block @[900px]:h-9 @[900px]:w-9 @[900px]:shrink-0" />
               <div className="flex w-full flex-col items-end">
                 <ChatUserMessageBubble>
                   <div className="flex flex-col gap-3 px-4 py-3">
@@ -244,18 +246,13 @@ function SharedAssistantGroup({
       className={CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS}
     >
       <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
-        <SharedAssistantAvatar assistantName={assistantName} />
-        <div
-          className={cn(
-            "relative flex min-w-0 flex-col gap-2",
-            CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
-          )}
-        >
+        <SharedAssistantNameLine assistantName={assistantName} />
+        <div className="relative flex min-w-0 flex-col gap-2">
           {group.messages.map((message) => {
             return (
               <ChatAssistantMessageBody
                 key={message.messageIndex}
-                className="@[900px]:h-auto @[900px]:min-h-9 @[900px]:py-[calc((2.25rem-1lh)/2)] @[900px]:leading-[1.59375rem]"
+                className={CHAT_THREAD_RESPONSE_LINE_CLASS}
               >
                 {message.tree === undefined && richContent !== undefined ? (
                   <SharedRichMessageBody
@@ -274,15 +271,12 @@ function SharedAssistantGroup({
           })}
         </div>
       </div>
-      <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS}>
-        <div className="hidden @[900px]:block" />
-        <div
-          data-shared-message-actions="assistant"
-          className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}
-        >
-          <div className="-ml-1.5 flex items-center gap-1">
-            <SharedMessageCopyButton content={content} />
-          </div>
+      <div
+        data-shared-message-actions="assistant"
+        className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}
+      >
+        <div className="-ml-1.5 flex items-center gap-1">
+          <SharedMessageCopyButton content={content} />
         </div>
       </div>
     </div>

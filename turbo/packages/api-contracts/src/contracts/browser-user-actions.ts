@@ -1,4 +1,17 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -27,7 +40,7 @@ export const BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES = 1_500_000;
 
-export const browserUserActionStateSchema = z.enum([
+export const browserUserActionStateSchema = zEnum([
   "pending",
   "applying",
   "succeeded",
@@ -35,7 +48,7 @@ export const browserUserActionStateSchema = z.enum([
   "stale",
   "uncertain",
 ]);
-export const browserUserActionFieldKindSchema = z.enum([
+export const browserUserActionFieldKindSchema = zEnum([
   "text",
   "username",
   "password",
@@ -51,38 +64,33 @@ export const browserUserActionFieldKindSchema = z.enum([
 ]);
 
 const boundedNonblank = (maximum: number) => {
-  return z.string().trim().min(1).max(maximum);
+  return string().trim().min(1).max(maximum);
 };
 
-export const browserUserActionInputFieldCreateSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    label: boundedNonblank(BROWSER_USER_ACTION_MAX_LABEL_LENGTH),
-    description: z
-      .string()
-      .trim()
-      .max(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
-      .optional(),
-    fieldKind: browserUserActionFieldKindSchema,
-    required: z.boolean(),
-    backendNodeId: z.number().int().positive().safe(),
-  })
-  .strict();
+export const browserUserActionInputFieldCreateSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  label: boundedNonblank(BROWSER_USER_ACTION_MAX_LABEL_LENGTH),
+  description: string()
+    .trim()
+    .max(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
+    .optional(),
+  fieldKind: browserUserActionFieldKindSchema,
+  required: boolean(),
+  backendNodeId: number().int().positive().safe(),
+}).strict();
 
-const inputCreateSchema = z
-  .object({
-    kind: z.literal("input"),
-    title: boundedNonblank(BROWSER_USER_ACTION_MAX_TITLE_LENGTH),
-    reason: boundedNonblank(BROWSER_USER_ACTION_MAX_REASON_LENGTH),
-    callbackPrompt: boundedNonblank(
-      BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
-    ),
-    pageTargetId: boundedNonblank(BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH),
-    fields: z
-      .array(browserUserActionInputFieldCreateSchema)
-      .min(1)
-      .max(BROWSER_USER_ACTION_MAX_FIELDS),
-  })
+const inputCreateSchema = object({
+  kind: literal("input"),
+  title: boundedNonblank(BROWSER_USER_ACTION_MAX_TITLE_LENGTH),
+  reason: boundedNonblank(BROWSER_USER_ACTION_MAX_REASON_LENGTH),
+  callbackPrompt: boundedNonblank(
+    BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
+  ),
+  pageTargetId: boundedNonblank(BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH),
+  fields: array(browserUserActionInputFieldCreateSchema)
+    .min(1)
+    .max(BROWSER_USER_ACTION_MAX_FIELDS),
+})
   .strict()
   .superRefine((value, context) => {
     const keys = new Set<string>();
@@ -109,25 +117,21 @@ const inputCreateSchema = z
 
 export const browserUserActionCreateRequestSchema = inputCreateSchema;
 
-const browserUserActionScalarValueSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    value: z.string().max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
-  })
-  .strict();
-const selectOptionIndexSchema = z
-  .number()
+const browserUserActionScalarValueSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  value: string().max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH),
+}).strict();
+const selectOptionIndexSchema = number()
   .int()
   .min(0)
   .max(BROWSER_USER_ACTION_MAX_OPTIONS - 1);
-const browserUserActionSelectValueSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    optionIndexes: z
-      .array(selectOptionIndexSchema)
-      .max(BROWSER_USER_ACTION_MAX_OPTIONS),
-    optionSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
-  })
+const browserUserActionSelectValueSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  optionIndexes: array(selectOptionIndexSchema).max(
+    BROWSER_USER_ACTION_MAX_OPTIONS,
+  ),
+  optionSetFingerprint: string().regex(/^[0-9a-f]{64}$/u),
+})
   .strict()
   .superRefine((value, context) => {
     if (new Set(value.optionIndexes).size !== value.optionIndexes.length) {
@@ -137,85 +141,56 @@ const browserUserActionSelectValueSchema = z
       });
     }
   });
-const browserUserActionRangeValueSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    observedValue: z
-      .string()
-      .min(1)
-      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
-    observedMin: z
-      .string()
-      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
-      .optional(),
-    observedMax: z
-      .string()
-      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
-      .optional(),
-    observedStep: z
-      .string()
-      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
-      .optional(),
-    value: z
-      .string()
-      .min(1)
-      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
-  })
-  .strict();
-const browserUserActionColorValueSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    observedColor: z.string().regex(/^#[0-9a-f]{6}$/u),
-    value: z.string().regex(/^#[0-9a-f]{6}$/u),
-  })
-  .strict();
-const browserUserActionCheckboxValueSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    checked: z.boolean(),
-    observedChecked: z.boolean(),
-  })
-  .strict();
-const browserUserActionRadioValueSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    memberIndex: z
-      .number()
-      .int()
-      .min(-1)
-      .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
-    observedSelectedIndex: z
-      .number()
-      .int()
-      .min(-1)
-      .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
-    groupFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
-  })
-  .strict();
-const browserUserActionFileValueSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    observedFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
-    operation: z.enum(["keep", "replace", "clear"]),
-    files: z
-      .array(
-        z
-          .object({
-            name: z
-              .string()
-              .min(1)
-              .max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
-            type: z.string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
-            size: z
-              .number()
-              .int()
-              .min(0)
-              .max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
-          })
-          .strict(),
-      )
-      .max(BROWSER_USER_ACTION_MAX_FILES),
-  })
+const browserUserActionRangeValueSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  observedValue: string()
+    .min(1)
+    .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
+  observedMin: string()
+    .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+    .optional(),
+  observedMax: string()
+    .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+    .optional(),
+  observedStep: string()
+    .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+    .optional(),
+  value: string().min(1).max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
+}).strict();
+const browserUserActionColorValueSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  observedColor: string().regex(/^#[0-9a-f]{6}$/u),
+  value: string().regex(/^#[0-9a-f]{6}$/u),
+}).strict();
+const browserUserActionCheckboxValueSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  checked: boolean(),
+  observedChecked: boolean(),
+}).strict();
+const browserUserActionRadioValueSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  memberIndex: number()
+    .int()
+    .min(-1)
+    .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+  observedSelectedIndex: number()
+    .int()
+    .min(-1)
+    .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+  groupFingerprint: string().regex(/^[0-9a-f]{64}$/u),
+}).strict();
+const browserUserActionFileValueSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  observedFingerprint: string().regex(/^[0-9a-f]{64}$/u),
+  operation: zEnum(["keep", "replace", "clear"]),
+  files: array(
+    object({
+      name: string().min(1).max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
+      type: string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
+      size: number().int().min(0).max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
+    }).strict(),
+  ).max(BROWSER_USER_ACTION_MAX_FILES),
+})
   .strict()
   .superRefine((value, context) => {
     if ((value.operation === "replace") !== value.files.length > 0) {
@@ -232,7 +207,7 @@ const browserUserActionFileValueSchema = z
       });
     }
   });
-export const browserUserActionSubmittedValueSchema = z.union([
+export const browserUserActionSubmittedValueSchema = union([
   browserUserActionScalarValueSchema,
   browserUserActionRangeValueSchema,
   browserUserActionColorValueSchema,
@@ -242,12 +217,11 @@ export const browserUserActionSubmittedValueSchema = z.union([
   browserUserActionFileValueSchema,
 ]);
 
-export const browserUserActionApplyRequestSchema = z
-  .object({
-    values: z
-      .array(browserUserActionSubmittedValueSchema)
-      .max(BROWSER_USER_ACTION_MAX_FIELDS),
-  })
+export const browserUserActionApplyRequestSchema = object({
+  values: array(browserUserActionSubmittedValueSchema).max(
+    BROWSER_USER_ACTION_MAX_FIELDS,
+  ),
+})
   .strict()
   .superRefine((value, context) => {
     const keys = new Set<string>();
@@ -263,219 +237,170 @@ export const browserUserActionApplyRequestSchema = z
     }
   });
 
-export const browserUserActionDisplayFieldSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    label: boundedNonblank(BROWSER_USER_ACTION_MAX_LABEL_LENGTH),
-    description: z
-      .string()
-      .max(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
+export const browserUserActionDisplayFieldSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  label: boundedNonblank(BROWSER_USER_ACTION_MAX_LABEL_LENGTH),
+  description: string()
+    .max(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
+    .optional(),
+  fieldKind: browserUserActionFieldKindSchema,
+  required: boolean(),
+  control: object({
+    tagName: zEnum(["INPUT", "TEXTAREA", "SELECT"]),
+    inputType: zEnum([
+      "textarea",
+      "text",
+      "search",
+      "email",
+      "tel",
+      "url",
+      "password",
+      "number",
+      "range",
+      "color",
+      "date",
+      "time",
+      "datetime-local",
+      "month",
+      "week",
+      "select-one",
+      "select-multiple",
+      "checkbox",
+      "radio",
+      "file",
+    ]),
+    siteRequired: boolean().optional(),
+    accept: string().max(BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH).optional(),
+    fileSetFingerprint: string()
+      .regex(/^[0-9a-f]{64}$/u)
       .optional(),
-    fieldKind: browserUserActionFieldKindSchema,
-    required: z.boolean(),
-    control: z
-      .object({
-        tagName: z.enum(["INPUT", "TEXTAREA", "SELECT"]),
-        inputType: z.enum([
-          "textarea",
-          "text",
-          "search",
-          "email",
-          "tel",
-          "url",
-          "password",
-          "number",
-          "range",
-          "color",
-          "date",
-          "time",
-          "datetime-local",
-          "month",
-          "week",
-          "select-one",
-          "select-multiple",
-          "checkbox",
-          "radio",
-          "file",
-        ]),
-        siteRequired: z.boolean().optional(),
-        accept: z
-          .string()
-          .max(BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH)
-          .optional(),
-        fileSetFingerprint: z
-          .string()
-          .regex(/^[0-9a-f]{64}$/u)
-          .optional(),
-        files: z
-          .array(
-            z
-              .object({
-                name: z
-                  .string()
-                  .min(1)
-                  .max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
-                type: z.string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
-                size: z
-                  .number()
-                  .int()
-                  .min(0)
-                  .max(BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES),
-              })
-              .strict(),
-          )
-          .max(BROWSER_USER_ACTION_MAX_FILES)
-          .optional(),
-        checked: z.boolean().optional(),
-        radioGroupFingerprint: z
-          .string()
-          .regex(/^[0-9a-f]{64}$/u)
-          .optional(),
-        radioOptions: z
-          .array(
-            z
-              .object({
-                index: z
-                  .number()
-                  .int()
-                  .min(0)
-                  .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
-                label: z
-                  .string()
-                  .min(1)
-                  .max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
-                disabled: z.boolean(),
-                selected: z.boolean(),
-              })
-              .strict(),
-          )
-          .min(1)
-          .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS)
-          .optional(),
-        multiple: z.boolean().optional(),
-        optionSetFingerprint: z
-          .string()
-          .regex(/^[0-9a-f]{64}$/u)
-          .optional(),
-        options: z
-          .array(
-            z
-              .object({
-                index: selectOptionIndexSchema,
-                label: z
-                  .string()
-                  .max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
-                disabled: z.boolean(),
-                selected: z.boolean(),
-                empty: z.boolean(),
-              })
-              .strict(),
-          )
-          .max(BROWSER_USER_ACTION_MAX_OPTIONS)
-          .optional(),
-        minLength: z
-          .number()
+    files: array(
+      object({
+        name: string().min(1).max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
+        type: string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
+        size: number()
           .int()
           .min(0)
-          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
-          .optional(),
-        maxLength: z
-          .number()
+          .max(BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES),
+      }).strict(),
+    )
+      .max(BROWSER_USER_ACTION_MAX_FILES)
+      .optional(),
+    checked: boolean().optional(),
+    radioGroupFingerprint: string()
+      .regex(/^[0-9a-f]{64}$/u)
+      .optional(),
+    radioOptions: array(
+      object({
+        index: number()
           .int()
           .min(0)
-          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
-          .optional(),
-        pattern: z.string().max(512).optional(),
-        rangeValue: z
-          .string()
-          .min(1)
-          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
-          .optional(),
-        colorValue: z
-          .string()
-          .regex(/^#[0-9a-f]{6}$/u)
-          .optional(),
-        colorMode: z.literal("opaque-srgb").optional(),
-        min: z
-          .string()
-          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
-          .optional(),
-        max: z
-          .string()
-          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
-          .optional(),
-        step: z
-          .string()
-          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
-          .optional(),
-      })
-      .strict(),
-  })
-  .strict();
+          .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS - 1),
+        label: string().min(1).max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
+        disabled: boolean(),
+        selected: boolean(),
+      }).strict(),
+    )
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_RADIO_MEMBERS)
+      .optional(),
+    multiple: boolean().optional(),
+    optionSetFingerprint: string()
+      .regex(/^[0-9a-f]{64}$/u)
+      .optional(),
+    options: array(
+      object({
+        index: selectOptionIndexSchema,
+        label: string().max(BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH),
+        disabled: boolean(),
+        selected: boolean(),
+        empty: boolean(),
+      }).strict(),
+    )
+      .max(BROWSER_USER_ACTION_MAX_OPTIONS)
+      .optional(),
+    minLength: number()
+      .int()
+      .min(0)
+      .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+      .optional(),
+    maxLength: number()
+      .int()
+      .min(0)
+      .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+      .optional(),
+    pattern: string().max(512).optional(),
+    rangeValue: string()
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    colorValue: string()
+      .regex(/^#[0-9a-f]{6}$/u)
+      .optional(),
+    colorMode: literal("opaque-srgb").optional(),
+    min: string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    max: string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    step: string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+  }).strict(),
+}).strict();
 
-const callbackIdsSchema = z
-  .object({
-    success: z
-      .object({
-        clientEventId: z.uuid(),
-        chatThreadSortEventId: z.uuid(),
-      })
-      .strict(),
-    cancellation: z
-      .object({
-        clientEventId: z.uuid(),
-        chatThreadSortEventId: z.uuid(),
-      })
-      .strict(),
-  })
-  .strict();
+const callbackIdsSchema = object({
+  success: object({
+    clientEventId: uuid(),
+    chatThreadSortEventId: uuid(),
+  }).strict(),
+  cancellation: object({
+    clientEventId: uuid(),
+    chatThreadSortEventId: uuid(),
+  }).strict(),
+}).strict();
 
-const responseBaseSchema = z.object({
-  requestToken: z.string().min(1),
+const responseBaseSchema = object({
+  requestToken: string().min(1),
   state: browserUserActionStateSchema,
-  completedAt: z.iso.datetime().nullable(),
-  agentId: z.uuid(),
-  threadId: z.uuid(),
+  completedAt: iso.datetime().nullable(),
+  agentId: uuid(),
+  threadId: uuid(),
   callbackIds: callbackIdsSchema,
-  callbackDelivered: z.boolean().optional(),
+  callbackDelivered: boolean().optional(),
 });
 
 export const browserUserActionResponseSchema = responseBaseSchema
   .extend({
-    kind: z.literal("input"),
+    kind: literal("input"),
     // Historical requests remain readable without a task explanation.
     title: boundedNonblank(BROWSER_USER_ACTION_MAX_TITLE_LENGTH).optional(),
     reason: boundedNonblank(BROWSER_USER_ACTION_MAX_REASON_LENGTH).optional(),
-    siteOrigin: z.url(),
-    fields: z
-      .array(browserUserActionDisplayFieldSchema)
+    siteOrigin: url(),
+    fields: array(browserUserActionDisplayFieldSchema)
       .min(1)
       .max(BROWSER_USER_ACTION_MAX_FIELDS),
   })
   .strict();
 
-export const browserUserActionCreateResponseSchema = z
-  .object({
-    actionUrl: z.url(),
-    action: browserUserActionResponseSchema,
-  })
-  .strict();
+export const browserUserActionCreateResponseSchema = object({
+  actionUrl: url(),
+  action: browserUserActionResponseSchema,
+}).strict();
 
-const requestTokenParamsSchema = z
-  .object({ requestToken: z.string().min(1).max(512) })
-  .strict();
-const browserFileUploadPrepareSchema = z
-  .object({
-    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
-    index: z
-      .number()
-      .int()
-      .min(0)
-      .max(BROWSER_USER_ACTION_MAX_FILES - 1),
-    size: z.number().int().min(0).max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
-  })
-  .strict();
-const emptyBodySchema = z.object({}).strict();
+const requestTokenParamsSchema = object({
+  requestToken: string().min(1).max(512),
+}).strict();
+const browserFileUploadPrepareSchema = object({
+  key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+  index: number()
+    .int()
+    .min(0)
+    .max(BROWSER_USER_ACTION_MAX_FILES - 1),
+  size: number().int().min(0).max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
+}).strict();
+const emptyBodySchema = object({}).strict();
 const commonErrors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
@@ -520,11 +445,9 @@ export const browserUserActionsContract = c.router({
     pathParams: requestTokenParamsSchema,
     body: browserFileUploadPrepareSchema,
     responses: {
-      200: z
-        .object({
-          uploadUrl: z.url(),
-        })
-        .strict(),
+      200: object({
+        uploadUrl: url(),
+      }).strict(),
       ...commonErrors,
     },
     summary: "Prepare a temporary direct upload for a Browser file input",
@@ -549,22 +472,22 @@ export const browserUserActionsContract = c.router({
   },
 });
 
-export type BrowserUserActionState = z.infer<
+export type BrowserUserActionState = zInfer<
   typeof browserUserActionStateSchema
 >;
-export type BrowserUserActionFieldKind = z.infer<
+export type BrowserUserActionFieldKind = zInfer<
   typeof browserUserActionFieldKindSchema
 >;
-export type BrowserUserActionCreateRequest = z.infer<
+export type BrowserUserActionCreateRequest = zInfer<
   typeof browserUserActionCreateRequestSchema
 >;
-export type BrowserUserActionApplyRequest = z.infer<
+export type BrowserUserActionApplyRequest = zInfer<
   typeof browserUserActionApplyRequestSchema
 >;
-export type BrowserUserActionPrepareFileUploadRequest = z.infer<
+export type BrowserUserActionPrepareFileUploadRequest = zInfer<
   typeof browserFileUploadPrepareSchema
 >;
-export type BrowserUserActionResponse = z.infer<
+export type BrowserUserActionResponse = zInfer<
   typeof browserUserActionResponseSchema
 >;
 export type BrowserUserActionsContract = typeof browserUserActionsContract;

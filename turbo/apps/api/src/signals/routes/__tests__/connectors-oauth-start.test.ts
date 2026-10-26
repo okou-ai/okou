@@ -5,7 +5,7 @@ import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/conn
 import { builtinConnectorOauthStartResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
 import { http, HttpResponse, type JsonBodyType } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import { record, string, uuid } from "zod";
 
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -634,7 +634,7 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
   },
 ];
 
-const jsonTokenRequestSchema = z.record(z.string(), z.string());
+const jsonTokenRequestSchema = record(string(), string());
 
 function launchGatedTokenRequestParams(
   providerCase: LaunchGatedDirectOkouCase,
@@ -1362,7 +1362,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     const startBody = builtinConnectorOauthStartResponseSchema.parse(
       await response.json(),
     );
-    const connectionId = z.uuid().parse(startBody.connectionId);
+    const connectionId = uuid().parse(startBody.connectionId);
     const authorizationUrl = new URL(startBody.authorizationUrl);
     expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
       "https://airtable.com/oauth2/v1/authorize",
@@ -2226,9 +2226,9 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         expectedCodeVerifier,
       );
       if (providerCase.pkce === true) {
-        const codeVerifier = z
-          .string()
-          .parse(tokenBodies[0]?.get("code_verifier"));
+        const codeVerifier = string().parse(
+          tokenBodies[0]?.get("code_verifier"),
+        );
         expect(authorizationUrl.searchParams.get("code_challenge")).toBe(
           createHash("sha256").update(codeVerifier).digest("base64url"),
         );

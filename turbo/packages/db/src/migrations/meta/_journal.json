@@ -2710,6 +2710,13 @@
       "when": 1792998030968,
       "tag": "1465_retire_managed_data_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1466,
+      "version": "7",
+      "when": 1793008393949,
+      "tag": "1466_discard_suggestions_for_options",
+      "breakpoints": true
     }
   ]
 }

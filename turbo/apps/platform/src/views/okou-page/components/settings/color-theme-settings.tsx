@@ -123,9 +123,9 @@ export function ColorThemeSettings() {
                 updateColorTheme(value);
               }}
               className={cn(
-                "flex min-w-0 items-center gap-2 rounded-lg border bg-background/80 p-2 text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex min-w-0 items-center gap-2 rounded-lg border bg-background/80 p-2 text-left transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 selected
-                  ? "border-[hsl(var(--ring))] bg-[var(--okou-color-theme-selected)] shadow-[0_0_0_1px_hsl(var(--ring)/0.18)]"
+                  ? "border-[hsl(var(--ring))]"
                   : "border-border hover:border-[hsl(var(--gray-500))] hover:bg-accent",
               )}
             >

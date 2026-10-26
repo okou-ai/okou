@@ -6,7 +6,7 @@ import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { randomInt, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import { literal, object, string } from "zod";
 
 import {
   integrationsTelegramMessageContract,
@@ -125,12 +125,11 @@ async function sendOfficialModelMessage(token: string, actor: ApiTestUser) {
     http.post(
       `${apiBase}${OFFICIAL_BOT_TOKEN}/sendMessage`,
       async ({ request }) => {
-        const body = z
-          .object({
-            chat_id: z.string(),
-            text: z.string(),
-            parse_mode: z.literal("HTML"),
-          })
+        const body = object({
+          chat_id: string(),
+          text: string(),
+          parse_mode: literal("HTML"),
+        })
           .strict()
           .parse(await request.json());
         telegramBody = body;
@@ -378,12 +377,11 @@ describe("POST /api/integrations/telegram/message", () => {
       http.post(
         `${apiBase}${OFFICIAL_BOT_TOKEN}/sendMessage`,
         async ({ request }) => {
-          const body = z
-            .object({
-              chat_id: z.string(),
-              text: z.string(),
-              parse_mode: z.literal("HTML"),
-            })
+          const body = object({
+            chat_id: string(),
+            text: string(),
+            parse_mode: literal("HTML"),
+          })
             .strict()
             .parse(await request.json());
           telegramBody = body;
@@ -444,9 +442,7 @@ function publicMessageActors() {
     http.post(
       `${apiBase}${OFFICIAL_BOT_TOKEN}/sendMessage`,
       async ({ request }) => {
-        const body = z
-          .object({ chat_id: z.string() })
-          .parse(await request.json());
+        const body = object({ chat_id: string() }).parse(await request.json());
         telegramPosts.push(body.chat_id);
         return HttpResponse.json({
           ok: true,
@@ -529,9 +525,9 @@ describe("official Telegram self delivery", () => {
         http.post(
           `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
           async ({ request }) => {
-            const body = z
-              .object({ chat_id: z.string() })
-              .parse(await request.json());
+            const body = object({ chat_id: string() }).parse(
+              await request.json(),
+            );
             posts.push(body.chat_id);
             return HttpResponse.json({
               ok: true,

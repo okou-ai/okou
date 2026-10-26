@@ -1,21 +1,22 @@
-import { z } from "zod";
+import { boolean, object, string, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const slackOrgStatusSchema = z.object({
-  isConnected: z.boolean(),
-  isInstalled: z.boolean().optional(),
-  workspaceName: z.string().nullable().optional(),
-  isAdmin: z.boolean(),
-  installUrl: z.string().nullable().optional(),
-  connectUrl: z.string().nullable().optional(),
-  defaultAgentName: z.string().nullable().optional(),
+const slackOrgStatusSchema = object({
+  isConnected: boolean(),
+  isInstalled: boolean().optional(),
+  workspaceName: string().nullable().optional(),
+  isAdmin: boolean(),
+  installUrl: string().nullable().optional(),
+  connectUrl: string().nullable().optional(),
+  defaultAgentName: string().nullable().optional(),
   /** True when the installation's granted scopes are outdated (admin-only). */
-  scopeMismatch: z.boolean().optional(),
+  scopeMismatch: boolean().optional(),
   /** OAuth install URL for re-authorization (admin-only, when scopeMismatch). */
-  reinstallUrl: z.string().nullable().optional(),
+  reinstallUrl: string().nullable().optional(),
 });
 
 /**
@@ -38,11 +39,11 @@ export const integrationsSlackContract = c.router({
     path: "/api/integrations/slack",
     headers: authHeadersSchema,
     body: c.noBody(),
-    query: z.object({
-      action: z.string().optional(),
+    query: object({
+      action: string().optional(),
     }),
     responses: {
-      200: z.object({ ok: z.boolean() }),
+      200: object({ ok: boolean() }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -52,5 +53,5 @@ export const integrationsSlackContract = c.router({
 });
 
 export type IntegrationsSlackContract = typeof integrationsSlackContract;
-export type SlackOrgStatus = z.infer<typeof slackOrgStatusSchema>;
+export type SlackOrgStatus = zInfer<typeof slackOrgStatusSchema>;
 export { slackOrgStatusSchema };

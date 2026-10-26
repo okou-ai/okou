@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -47,7 +46,6 @@ async function page(path = "/connectors") {
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/connectors",
-  "version": "3.16.13",
+  "version": "3.16.14",
   "private": true,
   "type": "module",
   "exports": {
@@ -121,6 +121,7 @@
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
+    "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "@types/node": "^24.3.0",
     "@types/tr46": "5.0.1",

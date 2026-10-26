@@ -22,7 +22,15 @@ import {
   QueryBuilder,
   type WithSubqueryWithSelection,
 } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
@@ -65,36 +73,32 @@ const log = logger("service:user-export-source");
 const CHAT_PAGE_SIZE = 100;
 const CHAT_PAGE_ESTIMATED_BYTES = 2 * 1024 * 1024;
 const CHAT_ROW_MAX_PAYLOAD_BYTES = 32 * 1024 * 1024;
-const checkpointSchema = z.object({
-  phase: z
-    .enum([
-      "init",
-      "threads",
-      "messages",
-      "agents",
-      "workflows",
-      "memory",
-      "discord",
-      "done",
-    ])
-    .default("init"),
-  startedAt: z.string().datetime().optional(),
-  orgIds: z.array(z.string()).default([]),
-  cursor: z.string().optional(),
+const checkpointSchema = object({
+  phase: zEnum([
+    "init",
+    "threads",
+    "messages",
+    "agents",
+    "workflows",
+    "memory",
+    "discord",
+    "done",
+  ]).default("init"),
+  startedAt: string().datetime().optional(),
+  orgIds: array(string()).default([]),
+  cursor: string().optional(),
   discordKind: discordExportKindSchema.optional(),
-  thread: z
-    .object({
-      id: z.string().uuid(),
-      upperSeqId: z.number().int().nonnegative(),
-      afterSeqId: z.number().int().nonnegative(),
-      snapshotKey: z.string().nullable(),
-      snapshotPath: z.string().nullable(),
-      physicalCoverage: z.number().int().nonnegative(),
-    })
-    .optional(),
+  thread: object({
+    id: string().uuid(),
+    upperSeqId: number().int().nonnegative(),
+    afterSeqId: number().int().nonnegative(),
+    snapshotKey: string().nullable(),
+    snapshotPath: string().nullable(),
+    physicalCoverage: number().int().nonnegative(),
+  }).optional(),
 });
 
-type SourceCheckpoint = z.infer<typeof checkpointSchema>;
+type SourceCheckpoint = zInfer<typeof checkpointSchema>;
 
 export interface UserExportSourceEntry {
   readonly path: string;
@@ -997,10 +1001,10 @@ const collectDiscord$ = command(
     { set },
     args: SourceArgs,
     checkpoint: SourceCheckpoint,
-    initialKind: z.infer<typeof discordExportKindSchema>,
+    initialKind: zInfer<typeof discordExportKindSchema>,
     signal: AbortSignal,
   ) => {
-    let kind: z.infer<typeof discordExportKindSchema> | undefined = initialKind;
+    let kind: zInfer<typeof discordExportKindSchema> | undefined = initialKind;
     let cursor = checkpoint.cursor;
     while (kind) {
       const rows = await set(

@@ -399,7 +399,6 @@
       "manage": "管理",
       "mobile": {
         "invite": "招待する",
-        "openArtifacts": "モバイルでアーティファクトを開く",
         "openAutomations": "モバイルでオートメーションを開く",
         "openMenu": "メニューを開く"
       },
@@ -678,7 +677,6 @@
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previousSlide": "前のスライドをプレビューする",
-      "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
       "selectStyle": "スタイル {{style}} を選択してください",
@@ -717,9 +715,7 @@
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
       "visibility": {
-        "changeLabel": "テンプレートの公開範囲を変更",
-        "privateState": "自分だけが表示・使用できます",
-        "workspaceState": "このワークスペースの全員が使用できます"
+        "changeLabel": "テンプレートの公開範囲を変更"
       },
       "website": "ウェブサイト",
       "websitePreview": "{{title}} Web サイト テンプレートのプレビュー",
@@ -1562,8 +1558,7 @@
         "whatsCooking": "{{userName}}、料理は何ですか?",
         "whatsOnYourMind": "{{userName}} さん、何を考えていますか?",
         "whatsTheMove": "{{userName}} さん、どうしますか?"
-      },
-      "viewAgentProfile": "エージェントのプロフィールを表示する"
+      }
     },
     "agentSuggestions": {
       "dismiss": "非表示にする",
@@ -2919,15 +2914,12 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
-      "importedLoadFailed": "アップロード済みテンプレートを読み込めませんでした。",
-      "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
       "previewTemplate": "プレビュー テンプレート {{title}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previewWorkflow": "ワークフロー テンプレートのプレビュー {{title}}",
       "removeTemplate": "テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
-      "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します",
-      "retry": "再試行"
+      "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します"
     },
     "thread": {
       "ariaLabel": "チャットスレッド",
@@ -2949,7 +2941,6 @@
       "icon": "チャットスレッドアイコン",
       "noEmojiFound": "絵文字が見つかりませんでした",
       "notFound": "チャットスレッドが見つかりません",
-      "openArtifacts": "オープンアーティファクト",
       "openBrowser": "ブラウザを開く",
       "openNamedAgent": "エージェント {{name}} を開く",
       "openNamedChat": "チャットを開く {{title}}",
@@ -3667,7 +3658,6 @@
         "createCodeError": "接続コードを作成できませんでした。もう一度お試しください。",
         "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
-        "destination": "iMessage または SMS で",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
@@ -4193,46 +4183,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "コーチング・研修",
           "name": "コーチング・研修",
           "summary": "コーチング、講座、研修"
         },
         "consulting": {
+          "mobileName": "独立コンサルティング",
           "name": "独立コンサルティング",
           "summary": "経営・人事・IT のアドバイザリー"
         },
         "design": {
+          "mobileName": "デザイン・クリエイティブ",
           "name": "デザイン・クリエイティブ",
           "summary": "グラフィック、Web、クリエイティブ制作"
         },
         "finance": {
+          "mobileName": "会計・記帳",
           "name": "会計・記帳",
           "summary": "帳簿、レポート、消し込み"
         },
         "investing": {
+          "mobileName": "投資・市場調査",
           "name": "投資・市場調査",
           "summary": "投資、マーケット、ポートフォリオ"
         },
         "marketing": {
+          "mobileName": "マーケティング・コンテンツ",
           "name": "マーケティング・コンテンツ",
           "summary": "SNS、コンテンツ、ブランド"
         },
         "operations": {
+          "mobileName": "経営・オペレーション",
           "name": "経営・オペレーション",
           "summary": "経営者、アシスタント、オペレーション"
         },
         "other": {
+          "mobileName": "その他 / 検討中",
           "name": "その他 / 検討中",
           "summary": "別の分野、またはまだ検討中"
         },
         "research": {
+          "mobileName": "リサーチ・学習",
           "name": "リサーチ・学習",
           "summary": "調査、学習、勉強"
         },
         "sales": {
+          "mobileName": "営業・顧客開拓",
           "name": "営業・顧客開拓",
           "summary": "見込み客開拓、営業、顧客の拡大"
         },
         "software": {
+          "mobileName": "ソフトウェア・アプリ",
           "name": "ソフトウェア・アプリ",
           "summary": "アプリ、ゲーム、開発"
         }
@@ -4240,6 +4241,30 @@
       "industry": {
         "copy": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。分野を選ぶと、合った最初のタスクを提案します。",
         "title": "どんな仕事をしていますか？"
+      },
+      "mobile": {
+        "channelsCopy": "いつものチャットで Okou に依頼。",
+        "channelsTitle": "チャットアプリを選ぶ",
+        "connect": "接続",
+        "copyImportPrompt": "インポート用プロンプトをコピー",
+        "existingPlan": "自分の {{provider}} プランを使う",
+        "experienceTitle": "始め方を選ぶ",
+        "industryCopy": "仕事に合う最初のタスクを提案します。",
+        "industryTitle": "仕事の分野を選ぶ",
+        "instructions": "手順を見る",
+        "newCopy": "最初のタスクをお手伝い。",
+        "newTitle": "Okou で始める",
+        "pasteIntoProvider": "{{provider}} に貼り付けて送信。",
+        "permissionsLabel": "権限とプライバシー",
+        "planCopy": "契約中のプランでタスクを実行。",
+        "promptTitle": "何をしたいですか？",
+        "readyTitle": "最初のタスクを始める",
+        "skillsCopy": "パソコンで {{provider}} を使用します。",
+        "skillsTitle": "スキルをインポート",
+        "sourcesCopy": "最初のタスク用に1つ接続。",
+        "startTask": "タスクを開始",
+        "teamCopy": "同じワークスペースで共同作業。",
+        "teamTitle": "メンバーを招待"
       },
       "prompt": {
         "intro": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。"

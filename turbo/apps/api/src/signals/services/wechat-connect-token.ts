@@ -1,15 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
+import { number, object, uuid } from "zod";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import { safeJsonParse } from "../utils";
 
 const MAX_AGE_MS = 10 * 60_000;
-const payloadSchema = z.object({
-  connectionId: z.uuid(),
-  generation: z.uuid(),
-  issuedAt: z.number().int(),
+const payloadSchema = object({
+  connectionId: uuid(),
+  generation: uuid(),
+  issuedAt: number().int(),
 });
 
 function sign(payload: string) {

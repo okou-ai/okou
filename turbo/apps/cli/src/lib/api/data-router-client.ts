@@ -2,7 +2,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { z } from "zod";
+import { json, number, object, record, string, unknown as zUnknown } from "zod";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { dataRouterHistoryContract } from "@okouai/api-contracts/contracts/data-router";
 import {
@@ -15,10 +15,10 @@ import {
   handleError,
 } from "./core/client-factory";
 
-const envelopeSchema = z.object({
-  data: z.object({ status: z.number().int(), body: z.unknown() }),
+const envelopeSchema = object({
+  data: object({ status: number().int(), body: zUnknown() }),
 });
-const argumentsSchema = z.record(z.string(), z.json());
+const argumentsSchema = record(string(), json());
 interface RequestOptions {
   signal: AbortSignal;
   timeout: number;
@@ -100,7 +100,7 @@ export async function listDataRouterTools(): Promise<DataRouterTool[]> {
   return withDataRouter(discoverTools);
 }
 
-/** The privileged MITM injects authentication and a managed request ID. */
+/** MITM injects authentication and records the billing identity returned by Router. */
 export async function callDataRouterTool(
   name: string,
   input: Record<string, unknown>,

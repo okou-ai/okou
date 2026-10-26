@@ -1,4 +1,16 @@
-import { z } from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { ApiError } from "../lib/api-error.ts";
 import { SharedDatabaseHttpError } from "./http-error.ts";
 import { computedKeySchema } from "./computed-key.ts";
@@ -7,123 +19,104 @@ import {
   sharedDatabaseQuerySchema,
 } from "./data-key.ts";
 
-const requestIdSchema = z.string().min(1);
+const requestIdSchema = string().min(1);
 
-export const sharedDatabaseRealtimeScopeSchema = z.enum([
+export const sharedDatabaseRealtimeScopeSchema = zEnum([
   "credential",
   "org",
   "user",
   "run-output",
 ]);
 
-export type SharedDatabaseRealtimeScope = z.infer<
+export type SharedDatabaseRealtimeScope = zInfer<
   typeof sharedDatabaseRealtimeScopeSchema
 >;
 
-export const sharedDatabaseRealtimeMessageSchema = z.object({
-  name: z.string(),
-  data: z.unknown(),
+export const sharedDatabaseRealtimeMessageSchema = object({
+  name: string(),
+  data: zUnknown(),
 });
 
-export type SharedDatabaseRealtimeMessage = z.infer<
+export type SharedDatabaseRealtimeMessage = zInfer<
   typeof sharedDatabaseRealtimeMessageSchema
 >;
 
-const sharedDatabaseErrorSchema = z
-  .object({
-    name: z.string(),
-    message: z.string(),
-    status: z.number().int().optional(),
-    code: z.string().optional(),
-  })
-  .strict();
+const sharedDatabaseErrorSchema = object({
+  name: string(),
+  message: string(),
+  status: number().int().optional(),
+  code: string().optional(),
+}).strict();
 
-type SerializedSharedDatabaseError = z.infer<typeof sharedDatabaseErrorSchema>;
+type SerializedSharedDatabaseError = zInfer<typeof sharedDatabaseErrorSchema>;
 
-const registerTabMessageSchema = z
-  .object({ type: z.literal("register-tab") })
-  .strict();
+const registerTabMessageSchema = object({
+  type: literal("register-tab"),
+}).strict();
 
-const heartbeatMessageSchema = z
-  .object({ type: z.literal("heartbeat") })
-  .strict();
+const heartbeatMessageSchema = object({ type: literal("heartbeat") }).strict();
 
-const tabVisibilityMessageSchema = z
-  .object({
-    type: z.literal("tab-visibility"),
-    visibility: z.enum(["visible", "hidden"]),
-  })
-  .strict();
+const tabVisibilityMessageSchema = object({
+  type: literal("tab-visibility"),
+  visibility: zEnum(["visible", "hidden"]),
+}).strict();
 
-const queryRequestSchema = z
-  .object({
-    type: z.literal("query"),
-    requestId: requestIdSchema,
-    query: sharedDatabaseQuerySchema,
-  })
-  .strict();
+const queryRequestSchema = object({
+  type: literal("query"),
+  requestId: requestIdSchema,
+  query: sharedDatabaseQuerySchema,
+}).strict();
 
-const getComputedRequestSchema = z
-  .object({
-    type: z.literal("get-computed"),
-    requestId: requestIdSchema,
-    computedKey: computedKeySchema,
-    refresh: z.boolean().optional(),
-  })
-  .strict();
+const getComputedRequestSchema = object({
+  type: literal("get-computed"),
+  requestId: requestIdSchema,
+  computedKey: computedKeySchema,
+  refresh: boolean().optional(),
+}).strict();
 
-const tokenResultMessageSchema = z
-  .object({
-    type: z.literal("token-result"),
-    requestId: requestIdSchema,
-    token: z.string().min(1).nullable(),
-  })
-  .strict();
+const tokenResultMessageSchema = object({
+  type: literal("token-result"),
+  requestId: requestIdSchema,
+  token: string().min(1).nullable(),
+}).strict();
 
-const tokenErrorMessageSchema = z
-  .object({
-    type: z.literal("token-error"),
-    requestId: requestIdSchema,
-    error: sharedDatabaseErrorSchema,
-  })
-  .strict();
+const tokenErrorMessageSchema = object({
+  type: literal("token-error"),
+  requestId: requestIdSchema,
+  error: sharedDatabaseErrorSchema,
+}).strict();
 
-const reloadComputedMessageSchema = z
-  .object({
-    type: z.literal("reload-computed"),
-    computedKey: computedKeySchema,
-  })
-  .strict();
+const reloadComputedMessageSchema = object({
+  type: literal("reload-computed"),
+  computedKey: computedKeySchema,
+}).strict();
 
-const disconnectRequestSchema = z
-  .object({ type: z.literal("disconnect") })
-  .strict();
+const disconnectRequestSchema = object({
+  type: literal("disconnect"),
+}).strict();
 
 // Channel access belongs to the authenticated Worker identity and Ably token.
 // Event names are filters within those channels, not a transport registry.
-const realtimeSubscribeRequestSchema = z
-  .object({
-    type: z.literal("realtime-subscribe"),
-    subscriptionId: requestIdSchema,
-    scope: sharedDatabaseRealtimeScopeSchema,
-    topic: z.string().min(1),
-  })
+const realtimeSubscribeRequestSchema = object({
+  type: literal("realtime-subscribe"),
+  subscriptionId: requestIdSchema,
+  scope: sharedDatabaseRealtimeScopeSchema,
+  topic: string().min(1),
+})
   .strict()
   .refine(
     ({ scope, topic }) => {
-      return scope !== "run-output" || z.uuid().safeParse(topic).success;
+      return scope !== "run-output" || uuid().safeParse(topic).success;
     },
     { message: "Run-output subscriptions require a run UUID" },
   );
 
-const realtimeUnsubscribeRequestSchema = z
-  .object({
-    type: z.literal("realtime-unsubscribe"),
-    subscriptionId: requestIdSchema,
-  })
-  .strict();
+const realtimeUnsubscribeRequestSchema = object({
+  type: literal("realtime-unsubscribe"),
+  subscriptionId: requestIdSchema,
+}).strict();
 
-export const sharedDatabaseClientMessageSchema = z.discriminatedUnion("type", [
+export const sharedDatabaseClientMessageSchema = discriminatedUnion("type", [
   registerTabMessageSchema,
   heartbeatMessageSchema,
   tabVisibilityMessageSchema,
@@ -136,7 +129,7 @@ export const sharedDatabaseClientMessageSchema = z.discriminatedUnion("type", [
   realtimeUnsubscribeRequestSchema,
 ]);
 
-export type SharedDatabaseClientMessage = z.infer<
+export type SharedDatabaseClientMessage = zInfer<
   typeof sharedDatabaseClientMessageSchema
 >;
 
@@ -187,95 +180,75 @@ export function deserializeSharedDatabaseError(
   return result;
 }
 
-const resultMessageSchema = z
-  .object({
-    type: z.literal("result"),
-    requestId: requestIdSchema,
-    value: z.unknown(),
-  })
-  .strict();
+const resultMessageSchema = object({
+  type: literal("result"),
+  requestId: requestIdSchema,
+  value: zUnknown(),
+}).strict();
 
-const errorMessageSchema = z
-  .object({
-    type: z.literal("error"),
-    requestId: requestIdSchema,
-    error: sharedDatabaseErrorSchema,
-  })
-  .strict();
+const errorMessageSchema = object({
+  type: literal("error"),
+  requestId: requestIdSchema,
+  error: sharedDatabaseErrorSchema,
+}).strict();
 
-const invalidateMessageSchema = z
-  .object({
-    type: z.literal("invalidate"),
-    dataKey: sharedDatabaseDataKeySchema,
-  })
-  .strict();
+const invalidateMessageSchema = object({
+  type: literal("invalidate"),
+  dataKey: sharedDatabaseDataKeySchema,
+}).strict();
 
-const getTokenRequestSchema = z
-  .object({
-    type: z.literal("get-token"),
-    requestId: requestIdSchema,
-  })
-  .strict();
+const getTokenRequestSchema = object({
+  type: literal("get-token"),
+  requestId: requestIdSchema,
+}).strict();
 
-export const sharedDatabaseWorkerUnavailableReasonSchema = z.enum([
+export const sharedDatabaseWorkerUnavailableReasonSchema = zEnum([
   "force-upgrade-required",
   "indexeddb-version-changed",
 ]);
 
-export type SharedDatabaseWorkerUnavailableReason = z.infer<
+export type SharedDatabaseWorkerUnavailableReason = zInfer<
   typeof sharedDatabaseWorkerUnavailableReasonSchema
 >;
 
-const workerUnavailableMessageSchema = z
-  .object({
-    type: z.literal("worker-unavailable"),
-    reason: sharedDatabaseWorkerUnavailableReasonSchema,
-  })
-  .strict();
+const workerUnavailableMessageSchema = object({
+  type: literal("worker-unavailable"),
+  reason: sharedDatabaseWorkerUnavailableReasonSchema,
+}).strict();
 
-const chatThreadReadCursorUpdatedMessageSchema = z
-  .object({
-    type: z.literal("chat-thread-read-cursor-updated"),
-    payload: z.unknown(),
-  })
-  .strict();
+const chatThreadReadCursorUpdatedMessageSchema = object({
+  type: literal("chat-thread-read-cursor-updated"),
+  payload: zUnknown(),
+}).strict();
 
-const realtimeSubscribedMessageSchema = z
-  .object({
-    type: z.literal("realtime-subscribed"),
-    subscriptionId: requestIdSchema,
-  })
-  .strict();
+const realtimeSubscribedMessageSchema = object({
+  type: literal("realtime-subscribed"),
+  subscriptionId: requestIdSchema,
+}).strict();
 
 /**
  * Ably reported a continuity gap for this subscription. The Worker owns the
  * channel, so it is the only side that sees `ChannelStateChange.resumed`; the
  * tab reacts exactly as it would to an unseen event on the topic.
  */
-const realtimeResyncMessageSchema = z
-  .object({
-    type: z.literal("realtime-resync"),
-    subscriptionId: requestIdSchema,
-  })
-  .strict();
+const realtimeResyncMessageSchema = object({
+  type: literal("realtime-resync"),
+  subscriptionId: requestIdSchema,
+}).strict();
 
-const realtimeEventMessageSchema = z
-  .object({
-    type: z.literal("realtime-event"),
-    subscriptionId: requestIdSchema,
-    message: sharedDatabaseRealtimeMessageSchema,
-  })
-  .strict();
+const realtimeEventMessageSchema = object({
+  type: literal("realtime-event"),
+  subscriptionId: requestIdSchema,
+  message: sharedDatabaseRealtimeMessageSchema,
+}).strict();
 
-const realtimeSubscriptionErrorMessageSchema = z
-  .object({
-    type: z.literal("realtime-subscription-error"),
-    subscriptionId: requestIdSchema,
-    error: sharedDatabaseErrorSchema,
-  })
-  .strict();
+const realtimeSubscriptionErrorMessageSchema = object({
+  type: literal("realtime-subscription-error"),
+  subscriptionId: requestIdSchema,
+  error: sharedDatabaseErrorSchema,
+}).strict();
 
-export const sharedDatabaseWorkerMessageSchema = z.discriminatedUnion("type", [
+export const sharedDatabaseWorkerMessageSchema = discriminatedUnion("type", [
   resultMessageSchema,
   errorMessageSchema,
   invalidateMessageSchema,
@@ -289,6 +262,6 @@ export const sharedDatabaseWorkerMessageSchema = z.discriminatedUnion("type", [
   realtimeSubscriptionErrorMessageSchema,
 ]);
 
-export type SharedDatabaseWorkerMessage = z.infer<
+export type SharedDatabaseWorkerMessage = zInfer<
   typeof sharedDatabaseWorkerMessageSchema
 >;

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { string, type infer as zInfer } from "zod";
 
 import { initContract } from "./base";
 import {
@@ -10,7 +10,7 @@ const c = initContract();
 
 export const teamsOauthCallbackQuerySchema =
   integrationOAuthCallbackQuerySchema.extend({
-    error_description: z.string().optional(),
+    error_description: string().optional(),
   });
 
 export const teamsOauthCallbackContract = c.router({
@@ -23,6 +23,6 @@ export const teamsOauthCallbackContract = c.router({
   },
 });
 
-export type TeamsOauthCallbackQuery = z.infer<
+export type TeamsOauthCallbackQuery = zInfer<
   typeof teamsOauthCallbackQuerySchema
 >;

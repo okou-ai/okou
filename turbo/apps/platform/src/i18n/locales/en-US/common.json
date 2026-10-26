@@ -399,7 +399,6 @@
       "manage": "Manage",
       "mobile": {
         "invite": "Invite",
-        "openArtifacts": "Open mobile artifacts",
         "openAutomations": "Open mobile automations",
         "openMenu": "Open menu"
       },
@@ -679,7 +678,6 @@
       "previewSlide": "Preview slide {{slideNumber}}",
       "previewWebsite": "Preview website template {{title}}",
       "previousSlide": "Preview previous slide",
-      "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
       "selectStyle": "Select style {{style}}",
@@ -718,9 +716,7 @@
       "use": "Use",
       "useThisTemplate": "Use this template",
       "visibility": {
-        "changeLabel": "Change template visibility",
-        "privateState": "Only you can see and use it",
-        "workspaceState": "Anyone in this workspace can use it"
+        "changeLabel": "Change template visibility"
       },
       "website": "Website",
       "websitePreview": "{{title}} website template preview",
@@ -1564,8 +1560,7 @@
         "whatsCooking": "What's cooking, {{userName}}?",
         "whatsOnYourMind": "What's on your mind, {{userName}}?",
         "whatsTheMove": "What's the move, {{userName}}?"
-      },
-      "viewAgentProfile": "View agent profile"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Dismiss",
@@ -2930,15 +2925,12 @@
         "website": "Website",
         "workflow": "Workflow"
       },
-      "importedLoadFailed": "Couldn't load uploaded templates.",
-      "importedUnavailable": "Uploaded templates are temporarily unavailable.",
       "previewTemplate": "Preview template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
       "previewWorkflow": "Preview workflow template {{title}}",
       "removeTemplate": "Remove template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
-      "removeWorkflow": "Remove workflow template {{title}}",
-      "retry": "Retry"
+      "removeWorkflow": "Remove workflow template {{title}}"
     },
     "thread": {
       "ariaLabel": "Chat thread",
@@ -2960,7 +2952,6 @@
       "icon": "Chat thread icon",
       "noEmojiFound": "No emoji found",
       "notFound": "Chat thread not found",
-      "openArtifacts": "Open artifacts",
       "openBrowser": "Open browser",
       "openNamedAgent": "Open agent {{name}}",
       "openNamedChat": "Open chat {{title}}",
@@ -3680,7 +3671,6 @@
         "createCodeError": "Couldn't create a connection code. Try again.",
         "creatingCode": "Creating connection code…",
         "description": "Text-message access to {{assistantName}}",
-        "destination": "iMessage or SMS to",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
@@ -4206,46 +4196,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching & training",
           "name": "Coaching & training",
           "summary": "Coaching, courses & training"
         },
         "consulting": {
+          "mobileName": "Consulting",
           "name": "Independent consulting",
           "summary": "Business, HR & IT advisory"
         },
         "design": {
+          "mobileName": "Design & creative",
           "name": "Design & creative",
           "summary": "Graphics, websites & creative work"
         },
         "finance": {
+          "mobileName": "Accounting & finance",
           "name": "Accounting & bookkeeping",
           "summary": "Books, reports & reconciliation"
         },
         "investing": {
+          "mobileName": "Investment research",
           "name": "Investment & market research",
           "summary": "Investments, markets & portfolios"
         },
         "marketing": {
+          "mobileName": "Marketing & content",
           "name": "Marketing & content",
           "summary": "Social media, content & brand"
         },
         "operations": {
+          "mobileName": "Business & operations",
           "name": "Business & operations",
           "summary": "Business owners, assistants & operators"
         },
         "other": {
+          "mobileName": "Other / still exploring",
           "name": "Other / still exploring",
           "summary": "A different field, or still exploring"
         },
         "research": {
+          "mobileName": "Research & learning",
           "name": "Research & learning",
           "summary": "Research, study & learning"
         },
         "sales": {
+          "mobileName": "Sales & customers",
           "name": "Sales & customer development",
           "summary": "Prospecting, sales & client growth"
         },
         "software": {
+          "mobileName": "Software & apps",
           "name": "Software & apps",
           "summary": "Apps, games & development"
         }
@@ -4253,6 +4254,30 @@
       "industry": {
         "copy": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
         "title": "What kind of work do you do?"
+      },
+      "mobile": {
+        "channelsCopy": "Message Okou where you already work.",
+        "channelsTitle": "Choose a chat app",
+        "connect": "Connect",
+        "copyImportPrompt": "Copy import prompt",
+        "existingPlan": "Use my {{provider}} plan",
+        "experienceTitle": "Choose how to start",
+        "industryCopy": "We’ll suggest a first task that fits.",
+        "industryTitle": "Choose your work",
+        "instructions": "Instructions",
+        "newCopy": "Get help with your first task.",
+        "newTitle": "Start with Okou",
+        "pasteIntoProvider": "Paste into {{provider}} and send.",
+        "permissionsLabel": "Permissions and privacy",
+        "planCopy": "Use your subscription for tasks.",
+        "promptTitle": "What would you like done?",
+        "readyTitle": "Start your first task",
+        "skillsCopy": "Use {{provider}} on your computer.",
+        "skillsTitle": "Import your skills",
+        "sourcesCopy": "Choose one for your first task.",
+        "startTask": "Start task",
+        "teamCopy": "Work together in one workspace.",
+        "teamTitle": "Invite a teammate"
       },
       "prompt": {
         "intro": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud."

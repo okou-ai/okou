@@ -8,7 +8,6 @@ import {
   BellOff,
   Clock,
   Ellipsis,
-  Package,
   Pencil,
   Pin,
   PinOff,
@@ -34,7 +33,6 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
-import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
 export function ChatThreadPinButton({
   thread,
@@ -165,26 +163,6 @@ function MobileMuteMenuItem({ thread }: { readonly thread: ChatPanelSignals }) {
   );
 }
 
-function MobileArtifactsMenuItem({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
-  const reloadArtifacts = useSet(thread.reloadArtifacts$);
-  const openArtifacts = useOpenThreadArtifacts(thread);
-  return (
-    <DropdownMenuItem
-      className="min-h-11"
-      onClick={() => {
-        reloadArtifacts();
-        openArtifacts();
-      }}
-    >
-      <Package size={16} />
-      {t(($) => {
-        return $.appShell.sidebar.navigation.artifacts;
-      })}
-    </DropdownMenuItem>
-  );
-}
-
 export function MobileChatThreadMoreMenu({
   thread,
 }: {
@@ -198,8 +176,6 @@ export function MobileChatThreadMoreMenu({
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  const resourcesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const archived = useGet(thread.threadMeta$)?.archived === true;
   const [archiveLoadable, archive] = useLoadableSet(
     setChatThreadArchivedWithFeedback$,
@@ -285,9 +261,7 @@ export function MobileChatThreadMoreMenu({
                 })}
           </DropdownMenuItem>
         )}
-        {(!resourcesEnabled || (automations && automations.length > 0)) && (
-          <DropdownMenuSeparator />
-        )}
+        {automations && automations.length > 0 && <DropdownMenuSeparator />}
         {automations && automations.length > 0 && (
           <DropdownMenuItem
             className="min-h-11"
@@ -302,7 +276,6 @@ export function MobileChatThreadMoreMenu({
             })}
           </DropdownMenuItem>
         )}
-        {!resourcesEnabled && <MobileArtifactsMenuItem thread={thread} />}
       </DropdownMenuContent>
     </DropdownMenu>
   );

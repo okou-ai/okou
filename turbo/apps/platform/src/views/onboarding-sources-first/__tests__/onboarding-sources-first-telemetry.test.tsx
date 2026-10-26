@@ -225,100 +225,106 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   expect(JSON.stringify(posthog.events)).not.toContain(TEAMMATE_EMAIL);
 });
 
-test("A source card starts OAuth directly and reports a successful connect", async () => {
-  const posthog = context.mocks.posthog();
-  mockOnboardingNeeded();
-  mockCatalog();
-  const completedAttempts = mockOAuthCompletions(context);
-  const authWindow = context.mocks.browser.authWindow();
-  authWindow.closed = true;
-  Object.defineProperty(authWindow, "location", {
-    value: { href: "" },
-    configurable: true,
-  });
-  context.mocks.browser.open(authWindow);
-  const oauthAttemptId = crypto.randomUUID();
-  const connectionId = "11111111-1111-4111-8111-111111111112";
-  let started = false;
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    ({ body, params, respond }) => {
-      started = true;
-      expect(params.connectorSlug).toBe("notion");
-      expect(body.authMethod).toBe("oauth");
-      expect(body.account).toStrictEqual({ intent: "add" });
-      completedAttempts.set(oauthAttemptId, connectionId);
-      context.mocks.data.connectors([
-        {
-          id: connectionId,
-          slug: "notion",
-          authMethod: "oauth",
-          externalId: "notion-user-1",
-          externalUsername: null,
-          externalEmail: null,
-          oauthScopes: [],
-          connectionStatus: "connected",
-          reconnectReason: null,
-          tokenExpiresAt: null,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ]);
-      context.mocks.ably.trigger("connector:changed", {
-        connectorSlug: "notion",
-      });
-      return respond(200, {
-        authorizationUrl: "https://oauth.test/notion/authorize",
-        oauthAttemptId,
-      });
-    },
-  );
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingSources,
-    host: "app.okou.ai",
-  });
-  await expect(
-    screen.findByRole("heading", { name: SOURCES_QUESTION }),
-  ).resolves.toBeInTheDocument();
-
-  click(getButtonByName("Connect Notion"));
-
-  await waitFor(() => {
-    expect(started).toBeTruthy();
-    expect(authWindow.location.href).toBe(
-      "https://oauth.test/notion/authorize",
+test.each([false, true])(
+  "A source card starts OAuth directly and reports a successful connect (mobile=%s)",
+  async (mobile) => {
+    context.mocks.browser.matchMedia((query) => {
+      return mobile && query === "(width < 640px)";
+    });
+    const posthog = context.mocks.posthog();
+    mockOnboardingNeeded();
+    mockCatalog();
+    const completedAttempts = mockOAuthCompletions(context);
+    const authWindow = context.mocks.browser.authWindow();
+    authWindow.closed = true;
+    Object.defineProperty(authWindow, "location", {
+      value: { href: "" },
+      configurable: true,
+    });
+    context.mocks.browser.open(authWindow);
+    const oauthAttemptId = crypto.randomUUID();
+    const connectionId = "11111111-1111-4111-8111-111111111112";
+    let started = false;
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ body, params, respond }) => {
+        started = true;
+        expect(params.connectorSlug).toBe("notion");
+        expect(body.authMethod).toBe("oauth");
+        expect(body.account).toStrictEqual({ intent: "add" });
+        completedAttempts.set(oauthAttemptId, connectionId);
+        context.mocks.data.connectors([
+          {
+            id: connectionId,
+            slug: "notion",
+            authMethod: "oauth",
+            externalId: "notion-user-1",
+            externalUsername: null,
+            externalEmail: null,
+            oauthScopes: [],
+            connectionStatus: "connected",
+            reconnectReason: null,
+            tokenExpiresAt: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ]);
+        context.mocks.ably.trigger("connector:changed", {
+          connectorSlug: "notion",
+        });
+        return respond(200, {
+          authorizationUrl: "https://oauth.test/notion/authorize",
+          oauthAttemptId,
+        });
+      },
     );
-  });
-  expect(
-    screen.queryByRole("dialog", { name: "Notion" }),
-  ).not.toBeInTheDocument();
-  expect(posthog.events).toStrictEqual(
-    expect.arrayContaining([
-      onboardingEvent("SourceConnectStarted", {
-        connector_slug: "notion",
-        source_origin: "grid",
-      }),
-    ]),
-  );
 
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
-  expect(getButtonByName("Continue")).toBeEnabled();
+    await setupPage({
+      context,
+      locale: "en-US",
+      path: ROUTES.onboardingSources,
+      host: "app.okou.ai",
+    });
+    await expect(
+      screen.findByRole("heading", { name: SOURCES_QUESTION }),
+    ).resolves.toBeInTheDocument();
 
-  await waitFor(() => {
+    click(getButtonByName("Connect Notion"));
+
+    await waitFor(() => {
+      expect(started).toBeTruthy();
+      expect(authWindow.location.href).toBe(
+        "https://oauth.test/notion/authorize",
+      );
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Notion" }),
+    ).not.toBeInTheDocument();
     expect(posthog.events).toStrictEqual(
       expect.arrayContaining([
-        onboardingEvent("SourceConnected", {
-          step_key: "sources",
+        onboardingEvent("SourceConnectStarted", {
           connector_slug: "notion",
           source_origin: "grid",
         }),
       ]),
     );
-  });
-});
+
+    await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+    expect(getButtonByName("Continue")).toBeEnabled();
+
+    await waitFor(() => {
+      expect(posthog.events).toStrictEqual(
+        expect.arrayContaining([
+          onboardingEvent("SourceConnected", {
+            step_key: "sources",
+            connector_slug: "notion",
+            source_origin: "grid",
+          }),
+        ]),
+      );
+    });
+  },
+);
 
 test("The starting prompt reports its length, never the request itself", async () => {
   const posthog = context.mocks.posthog();

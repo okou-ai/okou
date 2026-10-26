@@ -6,7 +6,6 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -26,8 +25,7 @@ import {
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
-const IMPORT_PROMPT =
-  "Analyse this deck and save its visual language as a reusable presentation template.";
+const IMPORT_PROMPT = "Analyse this file and save it as a reusable template.";
 
 function mockDeckImportChat() {
   const capture = mockTemplateChat();
@@ -88,7 +86,6 @@ test("Import a presentation deck over a saved template in an existing chat", asy
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   const picker = await openSavedPresentationPicker(template.title);
@@ -108,14 +105,11 @@ test("Import a presentation deck over a saved template in an existing chat", asy
   expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
   expect(capture.runClientThreadIds).toStrictEqual([undefined]);
   expect(capture.selectedTemplates).toStrictEqual([]);
-  // This entry adds nothing the member cannot see. How to reach the guide is
-  // already in every run's tools prompt, and the catalog needs no correction
-  // here, so the deck is sent with the sentence and nothing behind it.
   expect(
-    capture.sentMessages[0]!.parts.filter((part) => {
-      return part.type === "additional_info";
+    capture.sentMessages[0]!.parts.flatMap((part) => {
+      return part.type === "additional_info" ? [part.text] : [];
     }),
-  ).toStrictEqual([]);
+  ).toStrictEqual([expect.stringContaining("okou user-template publish")]);
 });
 
 test("Import a presentation deck from a new chat", async () => {
@@ -134,7 +128,6 @@ test("Import a presentation deck from a new chat", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   await importDeck(
@@ -166,13 +159,10 @@ test("The Presentation tile still offers exactly the decks it always has", async
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
 
   await openTemplatePicker(user, "Presentation");
-  // This tile publishes to the presentation catalog, which has no notion of a
-  // document. Widening it because a second catalog learned to take one would
-  // accept a file this path cannot compile.
+  // The Presentation tile accepts decks; Document and Image have their own inputs.
   expect(
     screen.getByLabelText("Import your own deck").getAttribute("accept"),
   ).toBe(".pptx,.ppt,.pdf");

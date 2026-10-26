@@ -1,11 +1,18 @@
-import { z } from "zod";
+import {
+  array,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
 export const desktopUpgradeRequiredSchema = apiErrorSchema.extend({
-  minimumSupportedVersion: z.string().regex(/^\d+\.\d+\.\d+$/u),
+  minimumSupportedVersion: string().regex(/^\d+\.\d+\.\d+$/u),
 });
 
 /**
@@ -23,35 +30,35 @@ const DESKTOP_UPDATE_LINES = [
   DESKTOP_UPDATE_LINE_OKOU,
 ] as const;
 
-const desktopUpdateChannelSchema = z.enum(["stable"]);
-const desktopUpdatePlatformSchema = z.enum(["darwin"]);
-const desktopUpdateArchitectureSchema = z.enum(["arm64"]);
-const desktopUpdateLineSchema = z.enum(DESKTOP_UPDATE_LINES);
+const desktopUpdateChannelSchema = zEnum(["stable"]);
+const desktopUpdatePlatformSchema = zEnum(["darwin"]);
+const desktopUpdateArchitectureSchema = zEnum(["arm64"]);
+const desktopUpdateLineSchema = zEnum(DESKTOP_UPDATE_LINES);
 
-export type DesktopUpdateChannel = z.infer<typeof desktopUpdateChannelSchema>;
-export type DesktopUpdatePlatform = z.infer<typeof desktopUpdatePlatformSchema>;
-export type DesktopUpdateArchitecture = z.infer<
+export type DesktopUpdateChannel = zInfer<typeof desktopUpdateChannelSchema>;
+export type DesktopUpdatePlatform = zInfer<typeof desktopUpdatePlatformSchema>;
+export type DesktopUpdateArchitecture = zInfer<
   typeof desktopUpdateArchitectureSchema
 >;
-export type DesktopUpdateLine = z.infer<typeof desktopUpdateLineSchema>;
+export type DesktopUpdateLine = zInfer<typeof desktopUpdateLineSchema>;
 
-const squirrelMacReleaseSchema = z.object({
-  version: z.string(),
-  updateTo: z.object({
-    name: z.string(),
-    version: z.string(),
-    pub_date: z.string(),
-    url: z.string().url(),
-    notes: z.string(),
+const squirrelMacReleaseSchema = object({
+  version: string(),
+  updateTo: object({
+    name: string(),
+    version: string(),
+    pub_date: string(),
+    url: string().url(),
+    notes: string(),
   }),
 });
 
-const squirrelMacReleasesSchema = z.object({
-  currentRelease: z.string(),
-  releases: z.array(squirrelMacReleaseSchema),
+const squirrelMacReleasesSchema = object({
+  currentRelease: string(),
+  releases: array(squirrelMacReleaseSchema),
 });
 
-export type SquirrelMacReleases = z.infer<typeof squirrelMacReleasesSchema>;
+export type SquirrelMacReleases = zInfer<typeof squirrelMacReleasesSchema>;
 
 /**
  * Native appcast and release/download routes read the same upstream release-asset
@@ -67,9 +74,8 @@ export const desktopUpdatesContract = c.router({
     method: "GET",
     path: "/api/desktop/compatibility",
     responses: {
-      200: z.object({
-        minimumSupportedVersion: z
-          .string()
+      200: object({
+        minimumSupportedVersion: string()
           .regex(/^\d+\.\d+\.\d+$/u)
           .nullable(),
       }),
@@ -80,7 +86,7 @@ export const desktopUpdatesContract = c.router({
   productAppcast: {
     method: "GET",
     path: "/api/desktop/updates/:product/:channel/:platform/:arch/appcast.xml",
-    pathParams: z.object({
+    pathParams: object({
       product: desktopUpdateLineSchema,
       channel: desktopUpdateChannelSchema,
       platform: desktopUpdatePlatformSchema,
@@ -89,7 +95,7 @@ export const desktopUpdatesContract = c.router({
     responses: {
       200: c.otherResponse({
         contentType: "application/rss+xml",
-        body: z.string(),
+        body: string(),
       }),
       404: apiErrorSchema,
       503: apiErrorSchema,
@@ -99,7 +105,7 @@ export const desktopUpdatesContract = c.router({
   releasePage: {
     method: "GET",
     path: "/api/desktop/updates/:channel/:platform/:arch/release",
-    pathParams: z.object({
+    pathParams: object({
       channel: desktopUpdateChannelSchema,
       platform: desktopUpdatePlatformSchema,
       arch: desktopUpdateArchitectureSchema,
@@ -114,7 +120,7 @@ export const desktopUpdatesContract = c.router({
   dmgDownload: {
     method: "GET",
     path: "/api/desktop/updates/:channel/:platform/:arch/dmg",
-    pathParams: z.object({
+    pathParams: object({
       channel: desktopUpdateChannelSchema,
       platform: desktopUpdatePlatformSchema,
       arch: desktopUpdateArchitectureSchema,
@@ -129,7 +135,7 @@ export const desktopUpdatesContract = c.router({
   productReleasePage: {
     method: "GET",
     path: "/api/desktop/updates/:product/:channel/:platform/:arch/release",
-    pathParams: z.object({
+    pathParams: object({
       product: desktopUpdateLineSchema,
       channel: desktopUpdateChannelSchema,
       platform: desktopUpdatePlatformSchema,
@@ -145,7 +151,7 @@ export const desktopUpdatesContract = c.router({
   productDmgDownload: {
     method: "GET",
     path: "/api/desktop/updates/:product/:channel/:platform/:arch/dmg",
-    pathParams: z.object({
+    pathParams: object({
       product: desktopUpdateLineSchema,
       channel: desktopUpdateChannelSchema,
       platform: desktopUpdatePlatformSchema,
@@ -161,7 +167,7 @@ export const desktopUpdatesContract = c.router({
   productFeed: {
     method: "GET",
     path: "/api/desktop/updates/:product/:channel/:platform/:arch/RELEASES.json",
-    pathParams: z.object({
+    pathParams: object({
       product: desktopUpdateLineSchema,
       channel: desktopUpdateChannelSchema,
       platform: desktopUpdatePlatformSchema,

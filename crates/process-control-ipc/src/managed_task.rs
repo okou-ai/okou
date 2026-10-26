@@ -208,7 +208,23 @@ mod tests {
     }
 
     #[test]
-    fn invalid_frames_fail_before_allocation_or_payload_read() {
+    fn unsupported_versions_are_rejected_for_otherwise_valid_requests() {
+        let mut frame = Vec::new();
+        write_request(&mut frame, &TaskRequest::Launch {}).unwrap();
+        assert_eq!(frame[4], 1);
+        assert!(matches!(
+            read_request(&mut frame.as_slice()).unwrap(),
+            TaskRequest::Launch {}
+        ));
+
+        frame[4] = 2;
+        let error = read_request(&mut frame.as_slice()).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(error.to_string(), "unsupported task protocol version");
+    }
+
+    #[test]
+    fn invalid_sizes_payloads_and_oversized_replies_are_rejected() {
         for size in [0_u32, 1, MAX_FRAME as u32 + 1, u32::MAX] {
             assert_eq!(
                 read_request(&mut size.to_be_bytes().as_slice())
@@ -217,8 +233,8 @@ mod tests {
                 io::ErrorKind::InvalidData
             );
         }
-        assert!(read_request(&mut b"\0\0\0\x02\x02{}".as_slice()).is_err());
         for payload in [
+            "{",
             r#"{"op":"launch","path":"/runtime"}"#,
             r#"{"op":"stop","handle":"1"}"#,
             r#"{"op":"unknown"}"#,

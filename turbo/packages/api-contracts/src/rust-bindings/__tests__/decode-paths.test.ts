@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  record,
+  string,
+  union,
+  unknown as zUnknown,
+  type ZodType,
+} from "zod";
+
 import {
   normalizeDecodePathBindings,
   renderRustDecodePaths,
@@ -20,7 +31,7 @@ const expectedBindings = [
 ] as const;
 
 function binding(
-  schema: z.ZodType,
+  schema: ZodType,
   overrides: Partial<RustDecodePathBinding> = {},
 ): RustDecodePathBinding {
   return {
@@ -32,7 +43,7 @@ function binding(
   };
 }
 
-function normalizedNode(schema: z.ZodType): DecodePathNode {
+function normalizedNode(schema: ZodType): DecodePathNode {
   const normalized = normalizeDecodePathBindings([binding(schema)]).at(0);
   if (!normalized) {
     throw new Error("Expected one normalized decode-path binding");
@@ -67,14 +78,14 @@ describe("Rust decode-path bindings", () => {
 
   it("normalizes fixed objects, arrays, nullable objects, and unions", () => {
     const node = normalizedNode(
-      z.object({
-        entries: z.array(
-          z.union([
-            z.object({ kind: z.literal("one"), value: z.string() }),
-            z.object({ kind: z.literal("two"), reason: z.string() }),
+      object({
+        entries: array(
+          union([
+            object({ kind: literal("one"), value: string() }),
+            object({ kind: literal("two"), reason: string() }),
           ]),
         ),
-        nested: z.object({ enabled: z.boolean() }).nullable(),
+        nested: object({ enabled: boolean() }).nullable(),
       }),
     );
 
@@ -108,10 +119,10 @@ describe("Rust decode-path bindings", () => {
 
   it("retains typed map value fields after the dynamic key boundary", () => {
     const node = normalizedNode(
-      z.object({
-        policies: z.record(
-          z.string(),
-          z.object({ allow: z.array(z.string()), mode: z.string() }),
+      object({
+        policies: record(
+          string(),
+          object({ allow: array(string()), mode: string() }),
         ),
       }),
     );
@@ -141,7 +152,7 @@ describe("Rust decode-path bindings", () => {
 
   it("keeps opaque map values without printable descendants", () => {
     const node = normalizedNode(
-      z.object({ catalog: z.record(z.string(), z.unknown()) }),
+      object({ catalog: record(string(), zUnknown()) }),
     );
 
     expect(node).toEqual({
@@ -158,23 +169,20 @@ describe("Rust decode-path bindings", () => {
   it("rejects duplicate generated roots", () => {
     expect(() => {
       normalizeDecodePathBindings([
-        binding(z.object({ first: z.string() })),
-        binding(z.object({ second: z.string() })),
+        binding(object({ first: string() })),
+        binding(object({ second: string() })),
       ]);
     }).toThrow("duplicate Rust decode-path binding");
   });
 
   it("rejects permissive and incompatible traversable shapes", () => {
     expect(() => {
-      normalizedNode(z.object({ fixed: z.string() }).passthrough());
+      normalizedNode(object({ fixed: string() }).passthrough());
     }).toThrow("mixes fixed fields with dynamic decode-path fields");
 
     expect(() => {
       normalizedNode(
-        z.union([
-          z.object({ fixed: z.string() }),
-          z.record(z.string(), z.string()),
-        ]),
+        union([object({ fixed: string() }), record(string(), string())]),
       );
     }).toThrow("mixes incompatible decode-path shapes");
   });

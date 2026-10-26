@@ -14,7 +14,7 @@ import {
   officialWorkflowCatalogState,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { command } from "ccstate";
-import { z } from "zod";
+import { literal, object } from "zod";
 import { eq } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
@@ -321,7 +321,7 @@ const prepareDefinitions$ = command(
   },
 );
 
-const activationGuardRow = z.object({ guard: z.literal(1) });
+const activationGuardRow = object({ guard: literal(1) });
 
 const activateCandidate$ = command(
   async (

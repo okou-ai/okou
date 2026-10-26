@@ -10,7 +10,17 @@ import {
   type AnyPgColumn,
   type PgTable,
 } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  date,
+  int,
+  object,
+  string,
+  union,
+  type output,
+} from "zod";
+
 import {
   pgInt8ToSafeIntegerSchema,
   pgTimestampWithoutTimezoneToDateSchema,
@@ -33,50 +43,50 @@ import type {
 } from "./storage-write.service";
 
 const ACTIVE_SANDBOX_STORAGE_RUN_STATUSES = ["pending", "running"] as const;
-const integerRow = z.union([z.int(), pgInt8ToSafeIntegerSchema]);
-const dateRow = z.union([z.date(), pgTimestampWithoutTimezoneToDateSchema]);
-const mountRow = z.object({
-  storageId: z.string(),
-  orgId: z.string(),
-  userId: z.string(),
-  name: z.string(),
-  writeback: z.boolean().optional(),
+const integerRow = union([int(), pgInt8ToSafeIntegerSchema]);
+const dateRow = union([date(), pgTimestampWithoutTimezoneToDateSchema]);
+const mountRow = object({
+  storageId: string(),
+  orgId: string(),
+  userId: string(),
+  name: string(),
+  writeback: boolean().optional(),
 });
-const runRow = z.object({
-  status: z.string(),
-  storageMounts: z.array(mountRow).nullable(),
+const runRow = object({
+  status: string(),
+  storageMounts: array(mountRow).nullable(),
 });
-const storageRow = z.object({
-  id: z.string(),
-  userId: z.string(),
-  name: z.string(),
-  orgId: z.string(),
-  s3Prefix: z.string(),
+const storageRow = object({
+  id: string(),
+  userId: string(),
+  name: string(),
+  orgId: string(),
+  s3Prefix: string(),
   size: integerRow,
-  fileCount: z.int(),
-  headVersionId: z.string().nullable(),
+  fileCount: int(),
+  headVersionId: string().nullable(),
   createdAt: dateRow,
   updatedAt: dateRow,
 });
-const versionRow = z.object({
-  id: z.string(),
-  storageId: z.string(),
-  s3Key: z.string(),
+const versionRow = object({
+  id: string(),
+  storageId: string(),
+  s3Key: string(),
   size: integerRow,
   archiveSize: integerRow,
-  fileCount: z.int(),
-  message: z.string().nullable(),
-  createdBy: z.string(),
+  fileCount: int(),
+  message: string().nullable(),
+  createdBy: string(),
   createdAt: dateRow,
 });
-export const storageCommitPublicationRow = z.object({
+export const storageCommitPublicationRow = object({
   run: runRow.nullable(),
   storage: storageRow.nullable(),
   version: versionRow.nullable(),
-  admitted: z.boolean(),
-  inserted: z.boolean(),
-  indexed: z.boolean(),
-  memoryConflict: z.boolean(),
+  admitted: boolean(),
+  inserted: boolean(),
+  indexed: boolean(),
+  memoryConflict: boolean(),
 });
 
 function memoryParentVersion(input: CommitStorageForStorageInput) {
@@ -410,7 +420,7 @@ export function storageCommitPublicationStatement(
 }
 
 export function storageCommitPublicationResult(
-  row: z.output<typeof storageCommitPublicationRow> | undefined,
+  row: output<typeof storageCommitPublicationRow> | undefined,
   input: CommitStorageForStorageInput,
 ): CommitStorageResponse {
   if (!row) {

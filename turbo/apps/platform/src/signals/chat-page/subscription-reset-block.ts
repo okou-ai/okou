@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { uuid } from "zod";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import {
   personalSubscriptionsContract,
@@ -44,10 +44,10 @@ export function parseSubscriptionResetUrl(
   if (!url || !match) {
     return { status: "unrelated" };
   }
-  const accountId = z.uuid().safeParse(match[1]);
-  const idempotencyKey = z
-    .uuid()
-    .safeParse(url.searchParams.get("idempotencyKey"));
+  const accountId = uuid().safeParse(match[1]);
+  const idempotencyKey = uuid().safeParse(
+    url.searchParams.get("idempotencyKey"),
+  );
   if (
     !accountId.success ||
     !idempotencyKey.success ||

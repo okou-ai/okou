@@ -19,12 +19,20 @@ const JOB_LOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 3600);
 /// per-job logs and runner instance logs.
 /// Returns the successfully removed or predicted files and their freed bytes.
 pub(super) async fn gc_job_logs(home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport> {
+    gc_job_logs_with_clock(home, dry_run, SystemTime::now).await
+}
+
+async fn gc_job_logs_with_clock(
+    home: &HomePaths,
+    dry_run: bool,
+    clock: impl FnOnce() -> SystemTime,
+) -> RunnerResult<GcReport> {
     let logs_dir = home.logs_dir();
     let Some(mut entries) = read_dir_or_missing(&logs_dir).await? else {
         return Ok(GcReport::default());
     };
 
-    let now = SystemTime::now();
+    let now = clock();
     let mut removed = 0u64;
     let mut freed = 0u64;
 
@@ -157,29 +165,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gc_job_logs_keeps_at_boundary() {
-        use std::fs::FileTimes;
-        use std::time::Duration;
-
+    async fn gc_job_logs_respects_age_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let home = test_home(dir.path());
         let logs_dir = home.logs_dir();
         std::fs::create_dir_all(&logs_dir).unwrap();
 
-        // File just under 7 days old — should be kept (age <= MAX_AGE).
-        // Subtract 1 second less than max age to avoid race between set_times and check.
         let boundary = logs_dir.join("network-11111111-1111-1111-1111-111111111111.jsonl");
         std::fs::write(&boundary, r#"{"timestamp":"2026-02-11T00:00:00"}"#).unwrap();
-        let boundary_time = SystemTime::now() - JOB_LOG_MAX_AGE + Duration::from_secs(1);
-        std::fs::File::open(&boundary)
-            .unwrap()
-            .set_times(FileTimes::new().set_modified(boundary_time))
-            .unwrap();
+        // Derive the fixed reference from the mtime the filesystem actually stored.
+        let mtime = std::fs::metadata(&boundary).unwrap().modified().unwrap();
+        let now = mtime + JOB_LOG_MAX_AGE;
 
-        let report = gc_job_logs(&home, false).await.unwrap();
+        let report = gc_job_logs_with_clock(&home, false, || now).await.unwrap();
         assert_eq!(report.activity_count, 0);
         assert!(boundary.exists(), "file at max age should be kept");
+
+        // Advance only the reference, avoiding another mtime write and its rounding.
+        let report = gc_job_logs_with_clock(&home, false, || now + Duration::from_nanos(1))
+            .await
+            .unwrap();
+        assert_eq!(report.activity_count, 1);
+        assert!(
+            !boundary.exists(),
+            "file older than max age should be deleted"
+        );
     }
+
     #[tokio::test]
     async fn gc_job_logs_dry_run() {
         use std::fs::FileTimes;

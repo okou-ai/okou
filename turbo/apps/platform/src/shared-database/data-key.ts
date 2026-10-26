@@ -4,42 +4,46 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import { z } from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
-export const sharedDatabaseIdentitySchema = z
-  .object({
-    userId: z.string().min(1),
-    orgId: z.string().min(1),
-  })
-  .strict();
+export const sharedDatabaseIdentitySchema = object({
+  userId: string().min(1),
+  orgId: string().min(1),
+}).strict();
 
-export type SharedDatabaseIdentity = z.infer<
+export type SharedDatabaseIdentity = zInfer<
   typeof sharedDatabaseIdentitySchema
 >;
 
-export const chatEventDataKeySchema = z
-  .object({
-    kind: z.literal("chat-event"),
-    threadId: z.string().min(1),
-  })
-  .strict();
+export const chatEventDataKeySchema = object({
+  kind: literal("chat-event"),
+  threadId: string().min(1),
+}).strict();
 
-export const chatThreadEventDataKeySchema = z
-  .object({
-    kind: z.literal("chat-thread-event"),
-  })
-  .strict();
+export const chatThreadEventDataKeySchema = object({
+  kind: literal("chat-thread-event"),
+}).strict();
 
-export const sharedDatabaseDataKeySchema = z.discriminatedUnion("kind", [
+export const sharedDatabaseDataKeySchema = discriminatedUnion("kind", [
   chatEventDataKeySchema,
   chatThreadEventDataKeySchema,
 ]);
 
-export type ChatEventDataKey = z.infer<typeof chatEventDataKeySchema>;
-export type ChatThreadEventDataKey = z.infer<
+export type ChatEventDataKey = zInfer<typeof chatEventDataKeySchema>;
+export type ChatThreadEventDataKey = zInfer<
   typeof chatThreadEventDataKeySchema
 >;
-export type SharedDatabaseDataKey = z.infer<typeof sharedDatabaseDataKeySchema>;
+export type SharedDatabaseDataKey = zInfer<typeof sharedDatabaseDataKeySchema>;
 
 export type ScopedChatEventDataKey = ChatEventDataKey &
   Pick<SharedDatabaseIdentity, "userId" | "orgId">;
@@ -48,19 +52,17 @@ export type ScopedChatThreadEventDataKey = ChatThreadEventDataKey &
 export type ScopedSharedDatabaseDataKey =
   ScopedChatEventDataKey | ScopedChatThreadEventDataKey;
 
-const sharedDatabaseConsistencySchema = z.enum(["cache-only", "catch-up"]);
+const sharedDatabaseConsistencySchema = zEnum(["cache-only", "catch-up"]);
 
-export type SharedDatabaseConsistency = z.infer<
+export type SharedDatabaseConsistency = zInfer<
   typeof sharedDatabaseConsistencySchema
 >;
 
-export const sharedDatabaseQuerySchema = z
-  .object({
-    dataKey: sharedDatabaseDataKeySchema,
-    afterSeqId: z.number().int().nonnegative().nullable(),
-    consistency: sharedDatabaseConsistencySchema,
-  })
-  .strict();
+export const sharedDatabaseQuerySchema = object({
+  dataKey: sharedDatabaseDataKeySchema,
+  afterSeqId: number().int().nonnegative().nullable(),
+  consistency: sharedDatabaseConsistencySchema,
+}).strict();
 
 export interface SharedDatabaseQuery<TKey extends SharedDatabaseDataKey> {
   readonly dataKey: TKey;
@@ -70,25 +72,23 @@ export interface SharedDatabaseQuery<TKey extends SharedDatabaseDataKey> {
 
 // SharedWorker and IndexedDB hold materialized thread data, never a URL that
 // expires independently of their cache lifetime.
-const chatThreadSnapshotSchema = z.object({
-  chatThreads: z.array(chatThreadSnapshotProjectionSchema),
-  latestEventId: z.string().uuid().nullable(),
-  latestSeqId: z.number().int().positive().nullable(),
+const chatThreadSnapshotSchema = object({
+  chatThreads: array(chatThreadSnapshotProjectionSchema),
+  latestEventId: string().uuid().nullable(),
+  latestSeqId: number().int().positive().nullable(),
 });
 export const chatThreadIndicatorsSchema =
   chatThreadsContract.indicators.responses[200].extend({
-    unreadAt: z.record(z.string().uuid(), z.string().datetime()),
+    unreadAt: record(string().uuid(), string().datetime()),
   });
-export type ChatThreadIndicators = z.infer<typeof chatThreadIndicatorsSchema>;
+export type ChatThreadIndicators = zInfer<typeof chatThreadIndicatorsSchema>;
 
-export const chatThreadEventQueryResultSchema = z
-  .object({
-    snapshot: chatThreadSnapshotSchema.nullable(),
-    events: z.array(chatThreadEventSchema),
-  })
-  .strict();
+export const chatThreadEventQueryResultSchema = object({
+  snapshot: chatThreadSnapshotSchema.nullable(),
+  events: array(chatThreadEventSchema),
+}).strict();
 
-export type ChatThreadEventQueryResult = z.infer<
+export type ChatThreadEventQueryResult = zInfer<
   typeof chatThreadEventQueryResultSchema
 >;
 

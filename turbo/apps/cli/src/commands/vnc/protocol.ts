@@ -1,4 +1,14 @@
-import { z } from "zod";
+import {
+  array,
+  literal,
+  number,
+  strictObject,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 
 export const VNC_LIMITS = {
@@ -17,7 +27,7 @@ export type VncMethod =
   | "vnc.capture"
   | "vnc.input";
 
-const reasonSchema = z.enum([
+const reasonSchema = zEnum([
   "unavailable",
   "authority_failure",
   "configuration_changed",
@@ -40,7 +50,7 @@ const reasonSchema = z.enum([
   "kerberos_renewal_exhausted",
 ]);
 export type VncReason =
-  | z.infer<typeof reasonSchema>
+  | zInfer<typeof reasonSchema>
   | "permission_denied"
   | "unsupported_runner"
   | "helper_unavailable"
@@ -50,44 +60,44 @@ export type VncReason =
   | "not_regular_file"
   | "local_io"
   | "invalid_path";
-const integer = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const sessionSchema = z.strictObject({
-  sessionId: z.uuid(),
-  connectionId: z.uuid(),
-  mode: z.enum(["shared", "exclusive"]),
+const integer = number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const sessionSchema = strictObject({
+  sessionId: uuid(),
+  connectionId: uuid(),
+  mode: zEnum(["shared", "exclusive"]),
 });
-const captureSchema = z.strictObject({
-  kind: z.literal("capture"),
-  mimeType: z.literal("image/png"),
+const captureSchema = strictObject({
+  kind: literal("capture"),
+  mimeType: literal("image/png"),
   bytes: integer.min(1).max(VNC_LIMITS.imageBytes),
   width: integer.min(1).max(65535),
   height: integer.min(1).max(65535),
-  geometry: z.strictObject({ sessionId: z.uuid(), epoch: integer }),
+  geometry: strictObject({ sessionId: uuid(), epoch: integer }),
   updateSequence: integer,
   capturedAt: integer,
 });
-const resultSchema = z.union([
-  z.strictObject({ outcome: z.literal("started"), session: sessionSchema }),
-  z.strictObject({
-    outcome: z.literal("listed"),
-    sessions: z.array(sessionSchema).max(2),
+const resultSchema = union([
+  strictObject({ outcome: literal("started"), session: sessionSchema }),
+  strictObject({
+    outcome: literal("listed"),
+    sessions: array(sessionSchema).max(2),
   }),
-  z.strictObject({ outcome: z.literal("status"), session: sessionSchema }),
-  z.strictObject({ outcome: z.literal("closed") }),
-  z.strictObject({ outcome: z.literal("captured"), bytes: integer.min(1) }),
-  z.strictObject({ outcome: z.literal("sent") }),
-  z.strictObject({
-    outcome: z.enum(["not_started", "unknown", "failed"]),
+  strictObject({ outcome: literal("status"), session: sessionSchema }),
+  strictObject({ outcome: literal("closed") }),
+  strictObject({ outcome: literal("captured"), bytes: integer.min(1) }),
+  strictObject({ outcome: literal("sent") }),
+  strictObject({
+    outcome: zEnum(["not_started", "unknown", "failed"]),
     reason: reasonSchema,
     diagnostic_text: diagnosticTextSchema,
   }),
 ]);
-const envelopeSchema = z.union([
-  z.strictObject({ type: z.literal("event"), data: captureSchema }),
-  z.strictObject({ type: z.literal("result"), data: resultSchema }),
-  z.strictObject({
-    type: z.literal("error"),
-    code: z.enum([
+const envelopeSchema = union([
+  strictObject({ type: literal("event"), data: captureSchema }),
+  strictObject({ type: literal("result"), data: resultSchema }),
+  strictObject({
+    type: literal("error"),
+    code: zEnum([
       "invalid_request",
       "unknown_method",
       "unavailable",
@@ -96,12 +106,12 @@ const envelopeSchema = z.union([
       "timed_out",
       "resource_exhausted",
     ]),
-    delivery: z.enum(["not_dispatched", "unknown"]),
+    delivery: zEnum(["not_dispatched", "unknown"]),
     diagnostic_text: diagnosticTextSchema,
   }),
 ]);
-type CaptureMetadata = z.infer<typeof captureSchema>;
-type Result = z.infer<typeof resultSchema>;
+type CaptureMetadata = zInfer<typeof captureSchema>;
+type Result = zInfer<typeof resultSchema>;
 const methodOutcomes: Record<VncMethod, readonly Result["outcome"][]> = {
   "vnc.session.start": ["started"],
   "vnc.session.list": ["listed"],
@@ -111,7 +121,7 @@ const methodOutcomes: Record<VncMethod, readonly Result["outcome"][]> = {
   "vnc.input": ["sent", "not_started", "unknown"],
 };
 export type VncTerminal = Exclude<
-  z.infer<typeof envelopeSchema>,
+  zInfer<typeof envelopeSchema>,
   { type: "event" }
 >;
 export type VncOutcome = (

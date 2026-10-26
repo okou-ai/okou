@@ -5,13 +5,13 @@ import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { xResourceReads } from "@okouai/db/schema/x-resource-usage";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import type { z } from "zod";
+import type { output } from "zod";
 import {
   nullableDriverValueDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 
-export type UsageBody = z.output<typeof webhookUsageEventContract.send.body>;
+export type UsageBody = output<typeof webhookUsageEventContract.send.body>;
 type UsageObservation = UsageBody["events"][number];
 type Owner = {
   readonly orgId: string;

@@ -252,6 +252,11 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
  * lands in the top-right corner — the position the invite button has always
  * held, and the one the menu's `align="end"` is drawn against. It stays outside
  * the page's flex layout so loading it cannot shift the home content.
+ *
+ * It paints no background and reserves no band of its own: the home scroller
+ * runs under it to the top of the page, and content that scrolls up passes
+ * beneath the controls instead of being cut flat on an edge 56px down. The
+ * scroller keeps that distance clear at rest with its own top padding.
  */
 function CornerHeader({ children }: { children: ReactNode }) {
   return (
@@ -299,15 +304,9 @@ export function GrowthEntryHeader() {
   // entry and a member's corner stays empty.
   const showGrowthEntry = isAdmin && !getStartedShown;
   return (
-    <>
-      {/* Match the former in-flow header's 16px + 32px + 8px height. The
-          slot exists from the first render so async role and entry resolution
-          cannot move the home content. The corner controls stay absolute. */}
-      <div aria-hidden className="hidden h-14 shrink-0 md:block" />
-      <CornerHeader>
-        <GetStartedEntry />
-        {showGrowthEntry ? <AdminGrowthEntry /> : null}
-      </CornerHeader>
-    </>
+    <CornerHeader>
+      <GetStartedEntry />
+      {showGrowthEntry ? <AdminGrowthEntry /> : null}
+    </CornerHeader>
   );
 }

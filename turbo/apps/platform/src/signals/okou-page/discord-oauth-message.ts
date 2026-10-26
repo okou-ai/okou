@@ -1,16 +1,22 @@
-import { z } from "zod";
+import {
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
-export const discordOauthResultSchema = z.object({
-  type: z.literal("discord-oauth-result"),
-  state: z.string(),
-  status: z.enum(["connected", "error"]),
+export const discordOauthResultSchema = object({
+  type: literal("discord-oauth-result"),
+  state: string(),
+  status: zEnum(["connected", "error"]),
 });
 
-export type DiscordOauthResult = z.infer<typeof discordOauthResultSchema>;
+export type DiscordOauthResult = zInfer<typeof discordOauthResultSchema>;
 
-const discordOauthReadySchema = z.object({
-  type: z.literal("discord-oauth-ready"),
-  state: z.string(),
+const discordOauthReadySchema = object({
+  type: literal("discord-oauth-ready"),
+  state: string(),
 });
 
 /** Retain a terminal result until the consent page has installed its listener. */

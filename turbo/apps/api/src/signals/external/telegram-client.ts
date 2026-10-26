@@ -1,7 +1,7 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { settle } from "../utils";
 import { optionalEnv } from "../../lib/env";
-import { z } from "zod";
+import { boolean, number, object, enum as zEnum } from "zod";
 
 const DEFAULT_TELEGRAM_API_BASE = "https://api.telegram.org/bot";
 
@@ -125,19 +125,17 @@ export async function getFile(
   return result.result;
 }
 
-const telegramChatAccessSchema = z.object({
-  id: z.number().int(),
-  type: z.enum(["private", "group", "supergroup", "channel"]),
-  permissions: z
-    .object({
-      can_send_messages: z.boolean().optional(),
-      can_send_documents: z.boolean().optional(),
-    })
-    .optional(),
+const telegramChatAccessSchema = object({
+  id: number().int(),
+  type: zEnum(["private", "group", "supergroup", "channel"]),
+  permissions: object({
+    can_send_messages: boolean().optional(),
+    can_send_documents: boolean().optional(),
+  }).optional(),
 });
-const telegramMemberAccessSchema = z.object({
-  user: z.object({ id: z.number().int() }),
-  status: z.enum([
+const telegramMemberAccessSchema = object({
+  user: object({ id: number().int() }),
+  status: zEnum([
     "creator",
     "administrator",
     "member",
@@ -145,10 +143,10 @@ const telegramMemberAccessSchema = z.object({
     "left",
     "kicked",
   ]),
-  is_member: z.boolean().optional(),
-  can_post_messages: z.boolean().optional(),
-  can_send_messages: z.boolean().optional(),
-  can_send_documents: z.boolean().optional(),
+  is_member: boolean().optional(),
+  can_post_messages: boolean().optional(),
+  can_send_messages: boolean().optional(),
+  can_send_documents: boolean().optional(),
 });
 
 /** Resolve aliases before authorizing both principals against the actual chat. */

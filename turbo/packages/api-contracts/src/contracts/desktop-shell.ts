@@ -1,4 +1,14 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -6,22 +16,26 @@ import {
   desktopShellKindSchema,
 } from "./computer-use";
 
-export const desktopShellRequestSchema = z
-  .object({
-    kind: desktopShellKindSchema,
-    sessionId: z.uuid().optional(),
-    command: z.string().min(1).max(64_000).optional(),
-    input: z.string().min(1).max(16_384).optional(),
-    key: z
-      .enum(["Ctrl+C", "Ctrl+D", "Ctrl+Z", "Enter", "Escape", "Tab"])
-      .optional(),
-    newSession: z.boolean().optional(),
-    cwd: z.string().startsWith("/").max(4096).optional(),
-    cursor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
-    waitMs: z.number().int().min(1000).max(30_000).default(10_000),
-    all: z.boolean().optional(),
-    realtime: z.boolean().optional(),
-  })
+export const desktopShellRequestSchema = object({
+  kind: desktopShellKindSchema,
+  sessionId: uuid().optional(),
+  command: string().min(1).max(64_000).optional(),
+  input: string().min(1).max(16_384).optional(),
+  key: zEnum([
+    "Ctrl+C",
+    "Ctrl+D",
+    "Ctrl+Z",
+    "Enter",
+    "Escape",
+    "Tab",
+  ]).optional(),
+  newSession: boolean().optional(),
+  cwd: string().startsWith("/").max(4096).optional(),
+  cursor: number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  waitMs: number().int().min(1000).max(30_000).default(10_000),
+  all: boolean().optional(),
+  realtime: boolean().optional(),
+})
   .superRefine((body, ctx) => {
     const invalid = (message: string) => {
       return ctx.addIssue({ code: "custom", message });
@@ -64,40 +78,38 @@ export const desktopShellRequestSchema = z
       invalid("all requires shell.close");
   });
 
-export const desktopShellSessionSchema = z.object({
-  id: z.uuid(),
-  state: z.enum(["open", "closed"]),
-  initialCwd: z.string(),
-  cwd: z.string(),
-  commandState: z.enum(["unknown", "running", "completed"]),
-  exitCode: z.number().int().nullable(),
-  shellExitCode: z.number().int().nullable(),
-  shellExitSignal: z.number().int().nullable(),
-  closeReason: z.string().nullable(),
-  oldestCursor: z.number().int().nonnegative(),
-  endCursor: z.number().int().nonnegative(),
-  idleRemainingSeconds: z.number().nonnegative(),
-  cols: z.number().int().positive(),
-  rows: z.number().int().positive(),
+export const desktopShellSessionSchema = object({
+  id: uuid(),
+  state: zEnum(["open", "closed"]),
+  initialCwd: string(),
+  cwd: string(),
+  commandState: zEnum(["unknown", "running", "completed"]),
+  exitCode: number().int().nullable(),
+  shellExitCode: number().int().nullable(),
+  shellExitSignal: number().int().nullable(),
+  closeReason: string().nullable(),
+  oldestCursor: number().int().nonnegative(),
+  endCursor: number().int().nonnegative(),
+  idleRemainingSeconds: number().nonnegative(),
+  cols: number().int().positive(),
+  rows: number().int().positive(),
 });
 
-export const desktopShellResultSchema = z.object({
+export const desktopShellResultSchema = object({
   session: desktopShellSessionSchema.optional(),
-  sessions: z.array(desktopShellSessionSchema).optional(),
-  closed: z.boolean().optional(),
-  outputBase64: z.string().max(45_000).optional(),
-  nextCursor: z.number().int().nonnegative().optional(),
-  lostBytes: z.number().int().nonnegative().optional(),
-  moreAvailable: z.boolean().optional(),
-  reason: z
-    .enum([
-      "command_completed",
-      "output_idle",
-      "output_limit",
-      "wait_elapsed",
-      "session_closed",
-    ])
-    .optional(),
+  sessions: array(desktopShellSessionSchema).optional(),
+  closed: boolean().optional(),
+  outputBase64: string().max(45_000).optional(),
+  nextCursor: number().int().nonnegative().optional(),
+  lostBytes: number().int().nonnegative().optional(),
+  moreAvailable: boolean().optional(),
+  reason: zEnum([
+    "command_completed",
+    "output_idle",
+    "output_limit",
+    "wait_elapsed",
+    "session_closed",
+  ]).optional(),
 });
 
 export const desktopShellContract = initContract().router({
@@ -119,4 +131,4 @@ export const desktopShellContract = initContract().router({
   },
 });
 
-export type DesktopShellRequest = z.infer<typeof desktopShellRequestSchema>;
+export type DesktopShellRequest = zInfer<typeof desktopShellRequestSchema>;

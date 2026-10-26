@@ -23,7 +23,6 @@ import {
   MessageCircle,
   ReceiptText,
   SlidersHorizontal,
-  Sparkles,
   Users,
   Wrench,
   Wallet,
@@ -55,7 +54,6 @@ import { ModelSection } from "./sections/model-section.tsx";
 import { ToolsSection } from "./sections/paid-tools-section.tsx";
 import { PeopleSection } from "./sections/people-section.tsx";
 import { PreferenceSection } from "./sections/preference-section.tsx";
-import { ProactiveAgentSection } from "./sections/proactive-agent-section.tsx";
 import { WalletSection } from "./sections/wallet-section.tsx";
 import { UsageRecordsSection } from "./sections/usage-records-section.tsx";
 
@@ -80,7 +78,6 @@ interface SidebarGroup {
 
 const SECTION_COMPONENTS = {
   preference: PreferenceSection,
-  "proactive-agent": ProactiveAgentSection,
   chat: ChatSection,
   tools: ToolsSection,
   model: ModelSection,
@@ -160,17 +157,8 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
-  const showProactiveAgent = features[FeatureSwitchKey.ProactiveAgent] ?? false;
 
   const sectionMeta = {
-    "proactive-agent": {
-      title: t(($) => {
-        return $.settings.dialog.sections.proactiveAgent.title;
-      }),
-      description: t(($) => {
-        return $.settings.dialog.sections.proactiveAgent.description;
-      }),
-    },
     preference: {
       title: t(($) => {
         return $.settings.dialog.sections.preference.title;
@@ -275,11 +263,6 @@ function SettingsDialog({
       icon: SlidersHorizontal,
     },
     {
-      id: "proactive-agent",
-      label: sectionMeta["proactive-agent"].title,
-      icon: Sparkles,
-    },
-    {
       id: "chat",
       label: sectionMeta.chat.title,
       icon: MessageCircle,
@@ -296,10 +279,7 @@ function SettingsDialog({
       return $.settings.dialog.groups.personal;
     }),
     items: personalItems.filter((item) => {
-      return (
-        (item.id !== "debug" || showDebug) &&
-        (item.id !== "proactive-agent" || showProactiveAgent)
-      );
+      return item.id !== "debug" || showDebug;
     }),
   };
   const workspaceGroup: SidebarGroup = {
@@ -373,7 +353,6 @@ function SettingsDialog({
   // If the user lost admin while the dialog is open, fall back to a safe section
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
-    proactiveAgentAvailable: showProactiveAgent,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"

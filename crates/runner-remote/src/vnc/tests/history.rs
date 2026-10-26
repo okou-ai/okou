@@ -11,66 +11,57 @@ use std::sync::{Arc, atomic::Ordering};
 use tokio::sync::Semaphore;
 
 #[tokio::test]
-async fn installation_requires_trusted_agent_token_and_feature_without_disrupting_vnc() {
-    for (feature_enabled, trusted_token_present) in [(true, false), (false, true)] {
-        let mut h = Harness::new().await;
-        let token = crate::test_fixtures::check_token(h.run.id, &["vnc:read", "vnc:write"]);
-        let mut context =
-            crate::test_fixtures::execution_context::diagnostic_context_for_test(h.run.id, &token);
-        context.sandbox_token = token.clone();
-        context
-            .environment
-            .as_mut()
-            .unwrap()
-            .insert("OKOU_TOKEN".into(), token);
-        context
-            .feature_flags
-            .as_mut()
-            .unwrap()
-            .insert("remoteConnectionDiagnostics".into(), feature_enabled);
-        if !trusted_token_present {
-            context.platform_environment.remove("OKOU_TOKEN");
-        }
-        h.run.install_context(&h.runtime, &context).await;
-        let inventory = h
-            .api
-            .mock_async(|when, then| {
-                when.method("GET").path("/api/vnc/hosts");
-                then.status(200)
-                    .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
-            })
-            .await;
-        let resolve = h.resolve().await;
-        let recheck = h.check("valid", 200).await;
-        assert_eq!(
-            h.run.passive("vnc.diagnose", json!({})).await["status"],
-            "unavailable"
-        );
-        let denied = h
-            .run
-            .request(
-                "vnc.check",
-                json!({"connectionId":CONNECTION,"mode":"shared"}),
-            )
-            .await;
-        assert_eq!(
-            denied.controls,
-            vec![json!({"type":"error","code":"unavailable","delivery":"not_dispatched"})]
-        );
-        inventory.assert_calls_async(0).await;
-        resolve.assert_calls_async(0).await;
-        recheck.assert_calls_async(0).await;
-        assert!(h.network.attempts.lock().unwrap().is_empty());
-        let session = h.start("shared").await.session();
-        mode(&h, 1).await;
-        h.run
-            .request("vnc.session.close", json!({"sessionId":session}))
-            .await;
-        closed(&h).await;
-        resolve.assert_calls_async(1).await;
-        recheck.assert_calls_async(1).await;
-        h.run.shutdown().await;
-    }
+async fn installation_requires_trusted_agent_token_without_disrupting_vnc() {
+    let mut h = Harness::new().await;
+    let token = crate::test_fixtures::check_token(h.run.id, &["vnc:read", "vnc:write"]);
+    let mut context =
+        crate::test_fixtures::execution_context::diagnostic_context_for_test(h.run.id, &token);
+    context.sandbox_token = token.clone();
+    context
+        .environment
+        .as_mut()
+        .unwrap()
+        .insert("OKOU_TOKEN".into(), token);
+    context.platform_environment.remove("OKOU_TOKEN");
+    h.run.install_context(&h.runtime, &context).await;
+    let inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/vnc/hosts");
+            then.status(200)
+                .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
+        })
+        .await;
+    let resolve = h.resolve().await;
+    let recheck = h.check("valid", 200).await;
+    assert_eq!(
+        h.run.passive("vnc.diagnose", json!({})).await["status"],
+        "unavailable"
+    );
+    let denied = h
+        .run
+        .request(
+            "vnc.check",
+            json!({"connectionId":CONNECTION,"mode":"shared"}),
+        )
+        .await;
+    assert_eq!(
+        denied.controls,
+        vec![json!({"type":"error","code":"unavailable","delivery":"not_dispatched"})]
+    );
+    inventory.assert_calls_async(0).await;
+    resolve.assert_calls_async(0).await;
+    recheck.assert_calls_async(0).await;
+    assert!(h.network.attempts.lock().unwrap().is_empty());
+    let session = h.start("shared").await.session();
+    mode(&h, 1).await;
+    h.run
+        .request("vnc.session.close", json!({"sessionId":session}))
+        .await;
+    closed(&h).await;
+    resolve.assert_calls_async(1).await;
+    recheck.assert_calls_async(1).await;
+    h.run.shutdown().await;
 }
 
 #[tokio::test]

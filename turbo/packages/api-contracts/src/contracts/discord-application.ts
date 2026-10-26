@@ -1,12 +1,11 @@
-import { z } from "zod";
+import { number, object, string, type infer as zInfer } from "zod";
 
 /** Discord's application metadata, not a guild or channel authorization grant. */
-export const discordApplicationSchema = z
-  .object({
-    id: z.string().regex(/^[1-9]\d{0,19}$/u),
-    flags: z.number().int().nonnegative().max(0x7fffffff).optional(),
-    flags_new: z.string().regex(/^\d+$/u).optional(),
-  })
+export const discordApplicationSchema = object({
+  id: string().regex(/^[1-9]\d{0,19}$/u),
+  flags: number().int().nonnegative().max(0x7fffffff).optional(),
+  flags_new: string().regex(/^\d+$/u).optional(),
+})
   .refine((application) => {
     return (
       application.flags !== undefined || application.flags_new !== undefined
@@ -22,4 +21,4 @@ export const discordApplicationSchema = z
     };
   });
 
-export type DiscordApplication = z.infer<typeof discordApplicationSchema>;
+export type DiscordApplication = zInfer<typeof discordApplicationSchema>;

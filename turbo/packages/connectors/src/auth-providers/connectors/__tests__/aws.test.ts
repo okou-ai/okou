@@ -4,7 +4,15 @@ import { createHash, generateKeyPairSync } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
 
 import { resolveConnectorAuthClient } from "../../../connector-auth-method";
 import { isOAuthProviderHttpError } from "../../oauth/error";
@@ -30,45 +38,45 @@ const {
   method: AWS_PROVIDER_METHOD,
 });
 
-const awsTokenRequestSchema = z.object({
-  clientId: z.literal("arn:aws:signin:::devtools/cross-device"),
-  grantType: z.enum(["authorization_code", "refresh_token"]),
-  code: z.string().optional(),
-  codeVerifier: z.string().optional(),
-  redirectUri: z.string().optional(),
-  refreshToken: z.string().optional(),
+const awsTokenRequestSchema = object({
+  clientId: literal("arn:aws:signin:::devtools/cross-device"),
+  grantType: zEnum(["authorization_code", "refresh_token"]),
+  code: string().optional(),
+  codeVerifier: string().optional(),
+  redirectUri: string().optional(),
+  refreshToken: string().optional(),
 });
 
-const awsProviderStateSchema = z.object({
-  version: z.literal(1),
-  state: z.string(),
-  codeVerifier: z.string(),
-  dpopKey: z.string(),
-  redirectUri: z.string(),
-  signinRegion: z.string(),
-  runtimeRegion: z.string(),
+const awsProviderStateSchema = object({
+  version: literal(1),
+  state: string(),
+  codeVerifier: string(),
+  dpopKey: string(),
+  redirectUri: string(),
+  signinRegion: string(),
+  runtimeRegion: string(),
 });
 
-const awsDpopHeaderSchema = z.object({
-  typ: z.literal("dpop+jwt"),
-  alg: z.literal("ES256"),
-  jwk: z.object({
-    kty: z.literal("EC"),
-    crv: z.literal("P-256"),
-    x: z.string().min(1),
-    y: z.string().min(1),
+const awsDpopHeaderSchema = object({
+  typ: literal("dpop+jwt"),
+  alg: literal("ES256"),
+  jwk: object({
+    kty: literal("EC"),
+    crv: literal("P-256"),
+    x: string().min(1),
+    y: string().min(1),
   }),
 });
 
-const awsDpopPayloadSchema = z.object({
-  htm: z.literal("POST"),
-  htu: z.literal(AWS_TOKEN_URL),
-  iat: z.number().int().positive(),
-  jti: z.string().uuid(),
+const awsDpopPayloadSchema = object({
+  htm: literal("POST"),
+  htu: literal(AWS_TOKEN_URL),
+  iat: number().int().positive(),
+  jti: string().uuid(),
 });
 
 const server = setupServer();
-const tokenRequests: z.infer<typeof awsTokenRequestSchema>[] = [];
+const tokenRequests: zInfer<typeof awsTokenRequestSchema>[] = [];
 const dpopHeaders: string[] = [];
 let stsCalls = 0;
 
@@ -109,7 +117,7 @@ function parseProviderState(providerState: string) {
 }
 
 function awsVerificationCode(args: {
-  readonly providerState: z.infer<typeof awsProviderStateSchema>;
+  readonly providerState: zInfer<typeof awsProviderStateSchema>;
   readonly code?: string;
   readonly state?: string;
 }): string {
@@ -152,12 +160,12 @@ function expectAwsDpopHeader(value: string | undefined): void {
   expect(signature).toMatch(/^[A-Za-z0-9_-]+$/);
 }
 
-function expectJsonWebTokenPart<T>(schema: z.ZodType<T>, value: string): T {
+function expectJsonWebTokenPart<T>(schema: ZodType<T>, value: string): T {
   return schema.parse(JSON.parse(Buffer.from(value, "base64url").toString()));
 }
 
 function awsTokenEndpointResponseBody(
-  body: z.infer<typeof awsTokenRequestSchema>,
+  body: zInfer<typeof awsTokenRequestSchema>,
   options: {
     readonly expiresIn?: number;
     readonly tokenType?: string;

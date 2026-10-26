@@ -1,66 +1,70 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  record,
+  string,
+  tuple,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { SVG_PICTURE, SVG_RENDERER } from "./svg";
 
-const colorSchema = z.object({
-  color: z.string().regex(/^[\dA-F]{6}$/u),
-  alpha: z.number().min(0).max(1),
+const colorSchema = object({
+  color: string().regex(/^[\dA-F]{6}$/u),
+  alpha: number().min(0).max(1),
 });
-const fillSchema = z.object({
-  kind: z.enum(["solid", "linear", "radial"]),
-  angle: z.number().finite().optional(),
-  center: z.tuple([z.number(), z.number()]).optional(),
-  radius: z.tuple([z.number().positive(), z.number().positive()]).optional(),
-  stops: z
-    .array(colorSchema.extend({ position: z.number().min(0).max(1) }))
-    .min(1),
+const fillSchema = object({
+  kind: zEnum(["solid", "linear", "radial"]),
+  angle: number().finite().optional(),
+  center: tuple([number(), number()]).optional(),
+  radius: tuple([number().positive(), number().positive()]).optional(),
+  stops: array(colorSchema.extend({ position: number().min(0).max(1) })).min(1),
 });
-const paintSchema = z.object({
+const paintSchema = object({
   fill: fillSchema.optional(),
   textFill: fillSchema.optional(),
-  textStroke: colorSchema
-    .extend({ width: z.number().nonnegative() })
-    .optional(),
-  noTextFill: z.boolean().optional(),
-  grayscale: z.boolean().optional(),
-  resolvedFonts: z.boolean().optional(),
-  textSource: z
-    .object({
-      line: z.string(),
-      runs: z.array(
-        z.object({
-          text: z.string(),
-          family: z.string().min(1),
-          weight: z.number().int().min(1).max(1000),
-          italic: z.boolean(),
-        }),
-      ),
-    })
-    .optional(),
-  crop: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
-  cells: z.array(z.array(fillSchema.nullable())).optional(),
-  mathGroup: z.number().int().nonnegative().optional(),
-  shadowGroup: z.number().int().nonnegative().optional(),
-  svgGroup: z.number().int().nonnegative().optional(),
+  textStroke: colorSchema.extend({ width: number().nonnegative() }).optional(),
+  noTextFill: boolean().optional(),
+  grayscale: boolean().optional(),
+  resolvedFonts: boolean().optional(),
+  textSource: object({
+    line: string(),
+    runs: array(
+      object({
+        text: string(),
+        family: string().min(1),
+        weight: number().int().min(1).max(1000),
+        italic: boolean(),
+      }),
+    ),
+  }).optional(),
+  crop: tuple([number(), number(), number(), number()]).optional(),
+  cells: array(array(fillSchema.nullable())).optional(),
+  mathGroup: number().int().nonnegative().optional(),
+  shadowGroup: number().int().nonnegative().optional(),
+  svgGroup: number().int().nonnegative().optional(),
   svgStroke: colorSchema
     .extend({
-      width: z.number().positive(),
-      cap: z.enum(["butt", "round", "square"]),
-      join: z.enum(["miter", "round", "bevel"]),
-      miterLimit: z.number().positive(),
+      width: number().positive(),
+      cap: zEnum(["butt", "round", "square"]),
+      join: zEnum(["miter", "round", "bevel"]),
+      miterLimit: number().positive(),
     })
     .optional(),
 });
-export const nativePaintSchema = z.record(
-  z.string(),
-  z.record(z.string(), paintSchema),
+export const nativePaintSchema = record(
+  string(),
+  record(string(), paintSchema),
 );
-export type NativePaint = z.infer<typeof nativePaintSchema>;
+export type NativePaint = zInfer<typeof nativePaintSchema>;
 
-function colorXml(color: z.infer<typeof colorSchema>): string {
+function colorXml(color: zInfer<typeof colorSchema>): string {
   return `<a:srgbClr val="${color.color}"><a:alpha val="${Math.round(color.alpha * 100_000)}"/></a:srgbClr>`;
 }
-function fillXml(fill: z.infer<typeof fillSchema>): string {
+function fillXml(fill: zInfer<typeof fillSchema>): string {
   const first = fill.stops[0];
   if (first === undefined) throw new Error("Native fill has no color stops");
   if (fill.kind === "solid")
@@ -91,8 +95,8 @@ function fillXml(fill: z.infer<typeof fillSchema>): string {
  */
 function radialFrame(
   shape: string,
-  fill: z.infer<typeof fillSchema>,
-): { shape: string; fill: z.infer<typeof fillSchema> } {
+  fill: zInfer<typeof fillSchema>,
+): { shape: string; fill: zInfer<typeof fillSchema> } {
   if (fill.kind !== "radial" || !fill.radius || !shape.includes("<a:custGeom>"))
     return { shape, fill };
   const transform =
@@ -213,7 +217,7 @@ function replaceFill(
 }
 
 function svgStrokeXml(
-  stroke: NonNullable<z.infer<typeof paintSchema>["svgStroke"]>,
+  stroke: NonNullable<zInfer<typeof paintSchema>["svgStroke"]>,
   scale: number,
 ): string {
   const cap = { butt: "flat", round: "rnd", square: "sq" }[stroke.cap];

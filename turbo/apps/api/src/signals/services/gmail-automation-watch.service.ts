@@ -6,7 +6,15 @@ import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, getTableColumns, inArray, ne, sql } from "drizzle-orm";
-import { z } from "zod";
+import {
+  array,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
@@ -34,14 +42,14 @@ export const GMAIL_EVENT_TYPES = [
   "gmail-label-applied",
 ] as const;
 
-const gmailWatchResponseSchema = z.object({
-  historyId: z.string(),
-  expiration: z.string(),
+const gmailWatchResponseSchema = object({
+  historyId: string(),
+  expiration: string(),
 });
 
-const gmailProfileResponseSchema = z.object({
-  emailAddress: z.string(),
-  historyId: z.string().optional(),
+const gmailProfileResponseSchema = object({
+  emailAddress: string(),
+  historyId: string().optional(),
 });
 
 export interface GmailAccess {
@@ -204,7 +212,7 @@ export const resolveGmailAccess$ = command(
 );
 
 export async function gmailFetchJson<T>(
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   accessToken: string,
   url: string,
   init: RequestInit,
@@ -254,7 +262,7 @@ export async function gmailFetchJson<T>(
 async function fetchGmailProfile(
   accessToken: string,
   signal: AbortSignal,
-): Promise<GmailFetchResult<z.infer<typeof gmailProfileResponseSchema>>> {
+): Promise<GmailFetchResult<zInfer<typeof gmailProfileResponseSchema>>> {
   return await gmailFetchJson(
     gmailProfileResponseSchema,
     accessToken,
@@ -270,7 +278,7 @@ async function watchGmailMailbox(
     readonly topicName: string;
   },
   signal: AbortSignal,
-): Promise<GmailFetchResult<z.infer<typeof gmailWatchResponseSchema>>> {
+): Promise<GmailFetchResult<zInfer<typeof gmailWatchResponseSchema>>> {
   return await gmailFetchJson(
     gmailWatchResponseSchema,
     args.accessToken,
@@ -368,7 +376,7 @@ interface GmailWatchPublicationInput {
   readonly accessToken: string;
 }
 
-const gmailWatchPublicationRowSchema = z.object({ id: z.uuid() });
+const gmailWatchPublicationRowSchema = object({ id: uuid() });
 
 /** Publish one usable consumer's watch and renew its active physical peers. */
 function gmailWatchPublicationSql(
@@ -767,19 +775,19 @@ export const reconcileGmailWatchesForUser$ = command(
   },
 );
 
-const gmailLabelSchema = z.object({
-  id: z.string(),
-  name: z.string(),
+const gmailLabelSchema = object({
+  id: string(),
+  name: string(),
 });
 
-const gmailLabelsResponseSchema = z.object({
-  labels: z.array(gmailLabelSchema).optional(),
+const gmailLabelsResponseSchema = object({
+  labels: array(gmailLabelSchema).optional(),
 });
 
 async function fetchGmailLabels(
   accessToken: string,
   signal: AbortSignal,
-): Promise<GmailFetchResult<z.infer<typeof gmailLabelsResponseSchema>>> {
+): Promise<GmailFetchResult<zInfer<typeof gmailLabelsResponseSchema>>> {
   return await gmailFetchJson(
     gmailLabelsResponseSchema,
     accessToken,

@@ -393,38 +393,37 @@ const validateSlackWorkspace$ = command(
     signal: AbortSignal,
   ): Promise<Response | null> => {
     const { context } = args;
-    if (context.accountConnection) {
-      return null;
-    }
     const db = set(writeDb$);
-    const [installation] = await db
-      .select({ orgId: slackOrgInstallations.orgId })
-      .from(slackOrgInstallations)
-      .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (
-      (installation?.orgId && installation.orgId !== context.orgId) ||
-      (context.flow !== "install" &&
-        (!installation ||
-          (installation.orgId === null && args.role !== "admin")))
-    ) {
-      return failed(
-        "This Slack workspace is unavailable for your organization.",
-        context,
-      );
-    }
-    const [otherInstallation] = await db
-      .select({ id: slackOrgInstallations.slackWorkspaceId })
-      .from(slackOrgInstallations)
-      .where(eq(slackOrgInstallations.orgId, context.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (otherInstallation && otherInstallation.id !== args.workspaceId) {
-      return failed(
-        "Your organization is connected to a different Slack workspace.",
-        context,
-      );
+    if (!context.accountConnection) {
+      const [installation] = await db
+        .select({ orgId: slackOrgInstallations.orgId })
+        .from(slackOrgInstallations)
+        .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (
+        (installation?.orgId && installation.orgId !== context.orgId) ||
+        (context.flow !== "install" &&
+          (!installation ||
+            (installation.orgId === null && args.role !== "admin")))
+      ) {
+        return failed(
+          "This Slack workspace is unavailable for your organization.",
+          context,
+        );
+      }
+      const [otherInstallation] = await db
+        .select({ id: slackOrgInstallations.slackWorkspaceId })
+        .from(slackOrgInstallations)
+        .where(eq(slackOrgInstallations.orgId, context.orgId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (otherInstallation && otherInstallation.id !== args.workspaceId) {
+        return failed(
+          "Your organization is connected to a different Slack workspace.",
+          context,
+        );
+      }
     }
     const [connection] = await db
       .select({ userId: slackOrgConnections.userId })
@@ -442,6 +441,9 @@ const validateSlackWorkspace$ = command(
         "This Slack account is already connected to another user.",
         context,
       );
+    }
+    if (context.accountConnection) {
+      return null;
     }
     const [currentConnection] = await db
       .select({ slackUserId: slackOrgConnections.slackUserId })

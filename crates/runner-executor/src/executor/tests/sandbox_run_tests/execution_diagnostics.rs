@@ -1513,6 +1513,20 @@ async fn execute_inner_nonzero_records_agent_execute_error() {
 
 #[tokio::test]
 async fn execute_inner_reports_a_broken_oom_evidence_envelope_without_leaking_it() {
+    use guest_contracts::oom_evidence::OomEvidence;
+
+    let evidence: OomEvidence = serde_json::from_str(include_str!(
+        "../../../../../guest-contracts/tests/fixtures/oom-evidence-v1.json"
+    ))
+    .unwrap();
+    let json = serde_json::to_string(&evidence).unwrap();
+    // Valid JSON isolates the byte guard from deserialization failures.
+    let oversized = format!("{json}{}", " ".repeat(49_153 - json.len()));
+    assert_eq!(oversized.len(), 49_153);
+    assert_eq!(
+        serde_json::from_str::<OomEvidence>(&oversized).unwrap(),
+        evidence
+    );
     let diagnostic = FailureDiagnostic::new(
         FailureClass::CliExecutionError,
         AgentFramework::Codex,
@@ -1520,10 +1534,7 @@ async fn execute_inner_reports_a_broken_oom_evidence_envelope_without_leaking_it
     )
     .with_cli_exit_code(EXIT_SIGKILL)
     .with_cli_observed_exit(CliObservedExitDiagnostic::from_signal(libc::SIGKILL));
-    for payload in [
-        "not json".to_string(),
-        "x".repeat(guest_contracts::oom_evidence::MAX_EVIDENCE_BYTES + 1),
-    ] {
+    for payload in ["not json".to_string(), oversized] {
         let dir = tempfile::tempdir().unwrap();
         let config = test_executor_config(dir.path()).await;
         let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());

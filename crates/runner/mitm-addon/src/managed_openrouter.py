@@ -20,7 +20,9 @@ from dataclasses import dataclass
 
 from mitmproxy import http
 
+import content_encoding
 import content_length
+import http_header_syntax
 import managed_upload
 from logging_utils import NETWORK_LOG_MAX_SAFE_SIZE
 from request_authority import AuthorityValidationError, get_trusted_authority
@@ -33,6 +35,10 @@ _MAX_JSON_WORK = 262_144
 _TOOL_ITEM_DEPTH = 2
 _TOOL_TYPE_DEPTH = 3
 _HTTPS_PORT = 443
+# Addon admission limits, not native request-head buffering limits. Even otherwise
+# supported values padded beyond 512 raw bytes are rejected.
+_MAX_CONTENT_TYPE_FIELDS = 2048
+_MAX_CONTENT_TYPE_BYTES = 512
 _PRESET = re.compile(r"@preset/[A-Za-z0-9_.-]{1,504}\Z")
 _CAPTURED_POLICY = "_managed_openrouter_captured_policy"
 _HEADERS = frozenset(
@@ -175,15 +181,27 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
         normalized = name.decode("ascii", errors="replace").lower()
         if normalized not in _HEADERS and not normalized.startswith("x-stainless-"):
             raise RequestRejectedError("header")
-    media_types = flow.request.headers.get_all("Content-Type")
-    if len(media_types) != 1 or media_types[0].lower().replace(" ", "") not in (
+    media_type = http_header_syntax.single_header_value(
+        flow.request.headers.fields,
+        b"content-type",
+        max_fields=_MAX_CONTENT_TYPE_FIELDS,
+        max_value_bytes=_MAX_CONTENT_TYPE_BYTES,
+        strip_chars=b" ",
+    )
+    if media_type is None or media_type.decode("utf-8", "surrogateescape").lower().replace(
+        " ", ""
+    ) not in (
         "application/json",
         "application/json;charset=utf-8",
         'application/json;charset="utf-8"',
     ):
         raise RequestRejectedError("content_type")
-    encodings = flow.request.headers.get_all("Content-Encoding")
-    if encodings and (len(encodings) != 1 or encodings[0].lower().strip() != "identity"):
+    # New managed admission limit: 8 KiB of raw values, including folded separators.
+    # Reject oversized padding before conversion; native head buffering is separate.
+    encodings = content_encoding.read_values(flow.request.headers)
+    if encodings is None or (
+        encodings and (len(encodings) != 1 or encodings[0].lower().strip() != "identity")
+    ):
         raise RequestRejectedError("content_encoding")
     if flow.request.headers.get_all("Transfer-Encoding"):
         raise RequestRejectedError("transfer_encoding")

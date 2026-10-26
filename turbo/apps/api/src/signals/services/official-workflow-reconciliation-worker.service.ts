@@ -2,7 +2,7 @@ import { officialWorkflowReconciliationWork } from "@okouai/db/schema/official-w
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, asc, eq, gt, lte, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import { int, object, string, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 
@@ -35,12 +35,12 @@ interface OfficialWorkflowReconciliationWorkerResult {
   readonly installations: number;
 }
 
-const claimedWorkRowSchema = z.object({
-  definition_name: z.string(),
-  requested_release_id: z.string(),
-  cursor_workflow_id: z.uuid().nullable(),
-  lease_id: z.uuid(),
-  attempt_count: z.int().nonnegative(),
+const claimedWorkRowSchema = object({
+  definition_name: string(),
+  requested_release_id: string(),
+  cursor_workflow_id: uuid().nullable(),
+  lease_id: uuid(),
+  attempt_count: int().nonnegative(),
 });
 
 const claimReconciliationWork$ = command(

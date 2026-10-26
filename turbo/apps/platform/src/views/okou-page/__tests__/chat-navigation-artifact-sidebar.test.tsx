@@ -2,10 +2,9 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  artifactCatalogContract,
-  type ArtifactCatalogListQuery,
-  type ArtifactDetail,
+import type {
+  ArtifactCatalogListQuery,
+  ArtifactDetail,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -16,7 +15,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
-  setupPage as setupPlatformPage,
+  setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
   testContext,
@@ -32,20 +31,11 @@ import {
   hostedSiteArtifactDetail,
   imageArtifactDetail,
   mockArtifactConversation,
+  openResourceArtifact,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
-
-function setupPage(options: Parameters<typeof setupPlatformPage>[0]) {
-  return setupPlatformPage({
-    ...options,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatResourcePanel]: false,
-      ...options.featureSwitches,
-    },
-  });
-}
 
 const EMPTY_CSV_ID = "a0000000-0000-4000-a000-000000000930";
 const UNAVAILABLE_CSV_ID = "a0000000-0000-4000-a000-000000000931";
@@ -83,8 +73,8 @@ function artifactPreview(): HTMLElement {
   return screen.getByTestId("artifact-sidebar");
 }
 
-function openArtifactsControl(): HTMLElement {
-  return buttonNamed("Open artifacts");
+function resourcesControl(): HTMLElement {
+  return buttonNamed("Resources");
 }
 
 function menuItemNamed(name: string): HTMLElement {
@@ -478,20 +468,7 @@ test("Explain empty and unavailable CSV previews", async () => {
     host: "app.okou.ai",
   });
 
-  await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
-  });
-  click(openArtifactsControl());
-  await waitFor(() => {
-    expect(
-      buttonNamed("Preview Empty export.csv", artifactList()),
-    ).toBeVisible();
-    expect(
-      buttonNamed("Preview Unavailable export.csv", artifactList()),
-    ).toBeVisible();
-  });
-
-  click(buttonNamed("Preview Empty export.csv", artifactList()));
+  await openResourceArtifact("Empty export.csv");
   await waitFor(() => {
     expect(within(artifactPreview()).getByText("Empty CSV.")).toBeVisible();
   });
@@ -550,16 +527,7 @@ test("Expand diagram", async () => {
     host: "app.okou.ai",
   });
 
-  await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
-  });
-  click(openArtifactsControl());
-  await waitFor(() => {
-    expect(
-      buttonNamed("Preview Architecture notes.md", artifactList()),
-    ).toBeVisible();
-  });
-  click(buttonNamed("Preview Architecture notes.md", artifactList()));
+  await openResourceArtifact("Architecture notes.md");
   await waitFor(() => {
     expect(buttonNamed("Expand diagram", artifactPreview())).toBeEnabled();
     expect(
@@ -639,13 +607,10 @@ test("Preview site", async () => {
     host: "app.okou.ai",
   });
 
-  await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
-  });
-  click(openArtifactsControl());
-  await waitFor(() => {
-    expect(buttonNamed("Preview Launch site", artifactList())).toBeVisible();
-  });
+  await openResourceArtifact("Launch site");
+  await screen.findByTitle("Launch site preview");
+  click(buttonNamed("Back to all artifacts", artifactPreview()));
+  await screen.findByTestId("thread-sidebar-artifacts");
   click(buttonNamed("Enter fullscreen", artifactList()));
   await waitFor(() => {
     expect(buttonNamed("Exit fullscreen", artifactList())).toBeInTheDocument();
@@ -698,7 +663,7 @@ test("Preview site", async () => {
   await waitFor(() => {
     expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-    expect(openArtifactsControl()).toBeVisible();
+    expect(resourcesControl()).toBeVisible();
   });
 });
 
@@ -731,14 +696,7 @@ test("Image zoom reset", async () => {
     host: "app.okou.ai",
   });
 
-  await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
-  });
-  click(openArtifactsControl());
-  await waitFor(() => {
-    expect(buttonNamed("Preview Launch graphic", artifactList())).toBeVisible();
-  });
-  click(buttonNamed("Preview Launch graphic", artifactList()));
+  await openResourceArtifact("Launch graphic");
 
   await waitFor(() => {
     expect(
@@ -832,19 +790,7 @@ test("Keep PWA navigation and clean up an artifact when leaving the mobile pane"
       [FeatureSwitchKey.PwaNavigation]: true,
     },
   });
-  await waitFor(() => {
-    expect(buttonNamed("More actions")).toBeVisible();
-  });
-  click(buttonNamed("More actions"));
-  click(
-    await waitFor(() => {
-      return menuItemNamed("Artifacts");
-    }),
-  );
-  await waitFor(() => {
-    expect(buttonNamed("Preview Launch site", artifactList())).toBeVisible();
-  });
-  click(buttonNamed("Preview Launch site", artifactList()));
+  await openResourceArtifact("Launch site");
   await waitFor(() => {
     expect(screen.getByTitle("Launch site preview")).toBeVisible();
     expect(
@@ -887,17 +833,15 @@ test("Show artifacts that belong to the current thread", async () => {
   });
 
   await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
+    expect(resourcesControl()).toBeVisible();
   });
-  click(openArtifactsControl());
+  click(resourcesControl());
 
+  const resources = await screen.findByRole("region", { name: "Resources" });
   await waitFor(() => {
-    expect(artifactList()).toBeVisible();
+    expect(resources).toBeVisible();
     expect(
-      within(artifactList()).getByText("Thread release notes.txt"),
-    ).toBeVisible();
-    expect(
-      buttonNamed("Preview Thread release notes.txt", artifactList()),
+      within(resources).getByText("Thread release notes.txt"),
     ).toBeVisible();
     expect(listQueries).toContainEqual(
       expect.objectContaining({
@@ -921,16 +865,7 @@ test("Return to the artifact list when a preview is unavailable", async () => {
     host: "app.okou.ai",
   });
 
-  await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
-  });
-  click(openArtifactsControl());
-  await waitFor(() => {
-    expect(
-      buttonNamed("Preview Deleted report.txt", artifactList()),
-    ).toBeVisible();
-  });
-  click(buttonNamed("Preview Deleted report.txt", artifactList()));
+  await openResourceArtifact("Deleted report.txt");
 
   await waitFor(() => {
     const unavailable = screen.getByTestId(
@@ -954,77 +889,4 @@ test("Return to the artifact list when a preview is unavailable", async () => {
       buttonNamed("Preview Deleted report.txt", artifactList()),
     ).toBeVisible();
   });
-});
-
-test("The artifact sidebar refreshes its catalog when reopened after a failed read", async () => {
-  useWideScreen();
-  let failed = true;
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents: [
-      {
-        id: "sidebar-retry-user",
-        role: "user",
-        content: "Create the report",
-        runId: "sidebar-retry-work",
-        seqId: 1,
-        createdAt: "2026-09-01T12:00:00.000Z",
-      },
-      {
-        id: "sidebar-retry-artifact",
-        role: "assistant",
-        content: "![report.pdf](/f/navigation/retry/report.pdf)",
-        runId: "sidebar-retry-work",
-        runEventId: "sidebar-retry-artifact-event",
-        sequenceNumber: 1,
-        seqId: 2,
-        createdAt: "2026-09-01T12:00:01.000Z",
-      },
-    ],
-  });
-  // Registered after the conversation helper so this handler owns the catalog
-  // response for the sidebar's own instance of the signals.
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    if (failed) {
-      return respond(500, {
-        error: { code: "INTERNAL", message: "Catalog unavailable" },
-      });
-    }
-    return respond(200, {
-      artifacts: [
-        artifactSummary(
-          "a0000000-0000-4000-a000-000000000940",
-          "file",
-          "sidebar-recovered.pdf",
-        ),
-      ],
-      nextCursor: null,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  click(openArtifactsControl());
-
-  const panel = await screen.findByTestId("thread-sidebar-artifacts");
-  await within(panel).findByText("Couldn't load artifacts.");
-  expect(within(panel).getByRole("status")).toHaveTextContent(
-    "Couldn't load artifacts.",
-  );
-
-  click(buttonNamed("Close artifacts", panel));
-  await waitFor(() => {
-    expect(panel).not.toBeInTheDocument();
-  });
-
-  failed = false;
-  click(openArtifactsControl());
-
-  const reopenedPanel = await screen.findByTestId("thread-sidebar-artifacts");
-  await expect(
-    within(reopenedPanel).findByText("sidebar-recovered.pdf"),
-  ).resolves.toBeInTheDocument();
 });

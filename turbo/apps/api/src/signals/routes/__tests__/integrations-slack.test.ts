@@ -16,6 +16,7 @@ import { SlackFileFetchError } from "../../external/slack-file-fetcher";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -303,11 +304,20 @@ describe("DELETE /api/integrations/slack", () => {
     });
   });
 
-  it("deletes only the current user's connection and refreshes App Home", async () => {
+  it("keeps disabled-identity disconnect scoped and refreshes App Home", async () => {
     const fixture = createDeleteFixture();
     await fixture.run(async () => {
       const install = await fixture.install();
       const other = await fixture.connect(install);
+      const orgId = install.actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected the Slack installation's organization");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...install.actor, orgId },
+        { slackWorkspaceIdentity: false },
+      );
       context.mocks.slack.views.publish.mockClear();
       context.mocks.ably.publish.mockClear();
       context.mocks.ably.channelGet.mockClear();
@@ -439,7 +449,7 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
     });
   });
 
-  it("publishes uninstalled App Home then deletes installation and connections", async () => {
+  it("publishes uninstalled App Home while preserving account connections", async () => {
     const fixture = createDeleteFixture();
     await fixture.run(async () => {
       const install = await fixture.install();
@@ -492,13 +502,13 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
           }),
         );
       }
-      // The installation and every member connection are gone.
+      // Removing the installation preserves independently connected identities.
       await expect(
         readSlackStatus(install.actor, "org:admin"),
-      ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: true });
       await expect(
         readSlackStatus(other.member, "org:member"),
-      ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: true });
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(
         "slack:changed",
         null,
@@ -509,6 +519,20 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
         );
       }
 
+      mocks.clerk.session(install.actor.userId, orgId, "org:admin");
+      await accept(
+        slackClient().disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [200],
+      );
+      await expect(
+        readSlackStatus(install.actor, "org:admin"),
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
+      await expect(
+        readSlackStatus(other.member, "org:member"),
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: true });
       await flushWaitUntilForTest();
       const viewCount = context.mocks.slack.views.publish.mock.calls.length;
       const notificationCount = context.mocks.ably.publish.mock.calls.length;

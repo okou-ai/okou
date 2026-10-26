@@ -1,38 +1,40 @@
 import { modelProviderTypeSchema } from "./model-providers";
 import type { RunFailureReasonToken } from "./run-failure-reasons";
-import { z } from "zod";
+import {
+  literal,
+  number,
+  object,
+  string,
+  tuple,
+  union,
+  unknown as zUnknown,
+} from "zod";
 
 export const PROVIDER_INSUFFICIENT_CREDITS_MESSAGE =
   "Your connected subscription account has insufficient balance.";
 export const MODEL_UNAVAILABLE_MESSAGE = "The current model is unavailable.";
 
-const providerErrorSchema = z.object({
-  type: z.string().optional(),
-  code: z.union([z.string(), z.number()]).optional(),
-  message: z.string().optional(),
+const providerErrorSchema = object({
+  type: string().optional(),
+  code: union([string(), number()]).optional(),
+  message: string().optional(),
 });
-const providerErrorBodySchema = z.union([
-  z.object({ error: providerErrorSchema }).transform((body) => {
+const providerErrorBodySchema = union([
+  object({ error: providerErrorSchema }).transform((body) => {
     return body.error;
   }),
-  z
-    .object({
-      type: z.literal("response.failed"),
-      response: z.object({ error: providerErrorSchema }),
-    })
-    .transform((body) => {
-      return body.response.error;
-    }),
-  providerErrorSchema.extend({ type: z.literal("error") }),
-  z
-    .object({
-      choices: z
-        .tuple([z.object({ error: providerErrorSchema })])
-        .rest(z.unknown()),
-    })
-    .transform((body) => {
-      return body.choices[0].error;
-    }),
+  object({
+    type: literal("response.failed"),
+    response: object({ error: providerErrorSchema }),
+  }).transform((body) => {
+    return body.response.error;
+  }),
+  providerErrorSchema.extend({ type: literal("error") }),
+  object({
+    choices: tuple([object({ error: providerErrorSchema })]).rest(zUnknown()),
+  }).transform((body) => {
+    return body.choices[0].error;
+  }),
 ]);
 const BILLING_CODES = new Set([
   "billing",

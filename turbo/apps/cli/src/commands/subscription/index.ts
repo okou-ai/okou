@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Command, InvalidArgumentError } from "commander";
-import { z } from "zod";
+import { uuid } from "zod";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 
 import {
@@ -15,7 +15,7 @@ const SWITCH_EFFECT =
   "This changes the default subscription for this provider in the current organization. It applies to subsequent runs that do not explicitly pin an account; running runs keep their captured subscription. The model and other providers are unchanged.";
 
 function subscriptionId(value: string): string {
-  const result = z.uuid().safeParse(value);
+  const result = uuid().safeParse(value);
   if (!result.success) {
     throw new InvalidArgumentError(
       "Use an exact subscription ID from `okou subscription list`.",

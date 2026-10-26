@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
@@ -22,13 +21,11 @@ import {
 import {
   AGENT_ID,
   THREAD_ID,
-  createUploadedTemplate,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
-const { mockPresentationTemplateLibrary, mockTemplateChat } =
-  createTemplateGalleryHelpers(context);
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 function button(
   label: string,
@@ -492,100 +489,6 @@ test("A presentation suggestion inserts a canonical template and preserves the p
     type: "additional_info",
     text: expect.stringContaining("- Slide count: 16-20"),
   });
-});
-
-test("Uploaded presentation suggestions use the existing template reference when custom templates are disabled", async () => {
-  const capture = mockTemplateChat();
-  const deck = createUploadedTemplate({
-    id: "81000000-0000-4000-a000-000000000022",
-    title: "My brand deck",
-    canManage: true,
-  });
-  mockPresentationTemplateLibrary([
-    deck,
-    ...[24, 25, 26].map((index) => {
-      return createUploadedTemplate({
-        id: `81000000-0000-4000-a000-0000000000${index}`,
-        title: `My brand deck ${index}`,
-        canManage: true,
-      });
-    }),
-  ]);
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
-  });
-  const editor = await findComposerEditor();
-  click(
-    button(
-      "Presentation",
-      screen.getByRole("group", { name: "Choose a task" }),
-    ),
-  );
-  const templates = await screen.findByRole("group", {
-    name: "Presentation templates",
-  });
-  await within(templates).findByText("My brand deck");
-  // Every uploaded deck reaches the rail, ahead of the built-in catalog.
-  expect(
-    queryAllByRoleFast("button", templates).filter((item) => {
-      return item.textContent?.trim().startsWith("My brand deck");
-    }),
-  ).toHaveLength(4);
-  click(button("My brand deck", templates));
-  await waitFor(() => {
-    expect(editor).toHaveTextContent("My brand deck");
-  });
-  await waitFor(() => {
-    expect(button("Send")).toBeEnabled();
-  });
-  click(button("Send"));
-  await waitFor(() => {
-    expect(capture.selectedTemplates).toHaveLength(1);
-  });
-  expect(capture.selectedTemplates[0]).toMatchObject({
-    type: "presentation",
-    selection: { templateId: `user-template:${deck.id}` },
-  });
-});
-
-test("Importing a deck uses the existing analysis flow when custom templates are disabled", async () => {
-  const capture = mockTemplateChat();
-  context.mocks.upload.success({
-    id: "81000000-0000-4000-a000-000000000023",
-    filename: "brand.pdf",
-    contentType: "application/pdf",
-    size: 5,
-    url: "https://cdn.example.test/brand.pdf",
-  });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
-  });
-  await findComposerEditor();
-  click(
-    button(
-      "Presentation",
-      screen.getByRole("group", { name: "Choose a task" }),
-    ),
-  );
-  const input = await screen.findByLabelText("Import your own deck");
-  await user.upload(
-    input,
-    new File(["brand"], "brand.pdf", { type: "application/pdf" }),
-  );
-  await waitFor(() => {
-    expect(capture.sentMessages).toHaveLength(1);
-  });
-  expect(capture.runPrompts).toStrictEqual([
-    "Analyse this deck and save its visual language as a reusable presentation template.",
-  ]);
-  expect(capture.sentMessages[0]?.parts).toContainEqual(
-    expect.objectContaining({ type: "file", filenameSnapshot: "brand.pdf" }),
-  );
 });
 
 test("Browsing the catalog opens the existing library in the matching category", async () => {

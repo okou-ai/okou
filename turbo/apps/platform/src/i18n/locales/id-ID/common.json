@@ -399,7 +399,6 @@
       "manage": "Kelola",
       "mobile": {
         "invite": "Undang",
-        "openArtifacts": "Buka artifact mobile",
         "openAutomations": "Buka otomatisasi mobile",
         "openMenu": "Buka menu"
       },
@@ -678,7 +677,6 @@
       "previewSlide": "Pratinjau slide {{slideNumber}}",
       "previewWebsite": "Pratinjau template website {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
-      "renameImportedTemplate": "Ganti nama templat",
       "searchConnector": "Cari templat",
       "searchConnectors": "Cari templat",
       "selectStyle": "Pilih gaya {{style}}",
@@ -717,9 +715,7 @@
       "use": "Gunakan",
       "useThisTemplate": "Gunakan template ini",
       "visibility": {
-        "changeLabel": "Ubah visibilitas templat",
-        "privateState": "Hanya Anda yang dapat melihat dan menggunakannya",
-        "workspaceState": "Siapa pun di ruang kerja ini dapat menggunakannya"
+        "changeLabel": "Ubah visibilitas templat"
       },
       "website": "Website",
       "websitePreview": "pratinjau template website {{title}}",
@@ -1562,8 +1558,7 @@
         "whatsCooking": "Ada apa, {{userName}}?",
         "whatsOnYourMind": "Apa yang ada di pikiranmu, {{userName}}?",
         "whatsTheMove": "Mau ngapain, {{userName}}?"
-      },
-      "viewAgentProfile": "Lihat profil agen"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Abaikan",
@@ -2919,15 +2914,12 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
-      "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
-      "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",
       "previewWorkflow": "Pratinjau template alur kerja {{title}}",
       "removeTemplate": "Hapus template {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
-      "removeWorkflow": "Hapus template alur kerja {{title}}",
-      "retry": "Coba lagi"
+      "removeWorkflow": "Hapus template alur kerja {{title}}"
     },
     "thread": {
       "ariaLabel": "Thread chat",
@@ -2949,7 +2941,6 @@
       "icon": "Ikon thread chat",
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
-      "openArtifacts": "Buka artefak",
       "openBrowser": "Buka browser",
       "openNamedAgent": "Buka agen {{name}}",
       "openNamedChat": "Buka chat {{title}}",
@@ -3667,7 +3658,6 @@
         "createCodeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
         "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
-        "destination": "iMessage atau SMS ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
@@ -4193,46 +4183,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "Coaching & pelatihan",
           "name": "Coaching & pelatihan",
           "summary": "Coaching, kursus & pelatihan"
         },
         "consulting": {
+          "mobileName": "Konsultan independen",
           "name": "Konsultan independen",
           "summary": "Penasihat bisnis, SDM & TI"
         },
         "design": {
+          "mobileName": "Desain & kreatif",
           "name": "Desain & kreatif",
           "summary": "Grafis, situs web & karya kreatif"
         },
         "finance": {
+          "mobileName": "Akuntansi & pembukuan",
           "name": "Akuntansi & pembukuan",
           "summary": "Pembukuan, laporan & rekonsiliasi"
         },
         "investing": {
+          "mobileName": "Investasi & riset pasar",
           "name": "Investasi & riset pasar",
           "summary": "Investasi, pasar & portofolio"
         },
         "marketing": {
+          "mobileName": "Marketing & konten",
           "name": "Marketing & konten",
           "summary": "Media sosial, konten & brand"
         },
         "operations": {
+          "mobileName": "Bisnis & operasional",
           "name": "Bisnis & operasional",
           "summary": "Pemilik bisnis, asisten & operasional"
         },
         "other": {
+          "mobileName": "Lainnya / masih menjajaki",
           "name": "Lainnya / masih menjajaki",
           "summary": "Bidang lain, atau masih menjajaki"
         },
         "research": {
+          "mobileName": "Riset & pembelajaran",
           "name": "Riset & pembelajaran",
           "summary": "Riset, studi & pembelajaran"
         },
         "sales": {
+          "mobileName": "Sales & pengembangan pelanggan",
           "name": "Sales & pengembangan pelanggan",
           "summary": "Prospek, penjualan & pertumbuhan klien"
         },
         "software": {
+          "mobileName": "Software & aplikasi",
           "name": "Software & aplikasi",
           "summary": "Aplikasi, game & pengembangan"
         }
@@ -4240,6 +4241,30 @@
       "industry": {
         "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
         "title": "Pekerjaan Anda seperti apa?"
+      },
+      "mobile": {
+        "channelsCopy": "Hubungi Okou lewat aplikasi yang biasa Anda gunakan.",
+        "channelsTitle": "Pilih aplikasi chat",
+        "connect": "Hubungkan",
+        "copyImportPrompt": "Salin prompt impor",
+        "existingPlan": "Gunakan paket {{provider}} saya",
+        "experienceTitle": "Pilih cara memulai",
+        "industryCopy": "Kami akan menyarankan tugas pertama yang sesuai.",
+        "industryTitle": "Pilih bidang kerja",
+        "instructions": "Petunjuk",
+        "newCopy": "Dapatkan bantuan untuk tugas pertama.",
+        "newTitle": "Mulai dengan Okou",
+        "pasteIntoProvider": "Tempel di {{provider}} lalu kirim.",
+        "permissionsLabel": "Izin dan privasi",
+        "planCopy": "Jalankan tugas dengan langganan Anda.",
+        "promptTitle": "Apa yang ingin diselesaikan?",
+        "readyTitle": "Mulai tugas pertama",
+        "skillsCopy": "Gunakan {{provider}} di komputer.",
+        "skillsTitle": "Impor keterampilan",
+        "sourcesCopy": "Hubungkan satu alat untuk tugas pertama.",
+        "startTask": "Mulai tugas",
+        "teamCopy": "Bekerja bersama di satu ruang kerja.",
+        "teamTitle": "Undang rekan tim"
       },
       "prompt": {
         "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."

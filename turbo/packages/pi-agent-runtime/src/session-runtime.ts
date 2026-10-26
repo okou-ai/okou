@@ -17,7 +17,7 @@ import {
 import { join } from "node:path";
 import { createPiMemoryReader } from "./memory-reader-node";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
-import { resolvePiAgentModel } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import {
   buildOkouHarnessSystemPrompt,
   type OkouHarnessToolPrompt,

@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises";
-import { z } from "zod";
+import type { output, ZodType } from "zod";
 import { ApiRequestError } from "./api/core/client-factory";
 
 const MAX_INPUT_BYTES = 1_048_576;
 
 /** Credential-bearing input is never included in validation errors. */
-export async function readManagementInput<T extends z.ZodType>(
+export async function readManagementInput<T extends ZodType>(
   source: string,
   schema: T,
-): Promise<z.output<T>> {
+): Promise<output<T>> {
   let text: string;
   if (source === "-") {
     const chunks: Buffer[] = [];

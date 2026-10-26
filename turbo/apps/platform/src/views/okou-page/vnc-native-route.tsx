@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useLoadable } from "ccstate-react";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import type { vncTransportMetadataSchema } from "@okouai/api-contracts/contracts/vnc-transport";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
@@ -9,7 +9,7 @@ import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 export function VncNativeRoute({
   transport,
 }: {
-  readonly transport: z.infer<typeof vncTransportMetadataSchema> | undefined;
+  readonly transport: zInfer<typeof vncTransportMetadataSchema> | undefined;
 }) {
   const { t } = useTranslation();
   const cloudflare = useLoadable(cloudflareAccessConfigs$);

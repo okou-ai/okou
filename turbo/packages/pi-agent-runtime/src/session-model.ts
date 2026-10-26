@@ -4,7 +4,8 @@ import {
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 
 export function initializePiSessionResourceRegistry(): void {

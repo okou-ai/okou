@@ -7,10 +7,8 @@ import {
   type RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 
@@ -77,9 +75,6 @@ function createResourceChats(
   communications: ChatRelationList<ChatCommunication>,
 ) {
   const data$ = computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel]) {
-      return { items: [], failed: false };
-    }
     const [created, exchanged] = await Promise.allSettled([
       get(children.data$),
       get(communications.data$),

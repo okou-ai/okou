@@ -1,24 +1,23 @@
-import { z } from "zod";
+import { boolean, number, object, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
 export const voiceIoQuotaErrorSchema = apiErrorSchema.extend({
-  quota: z
-    .object({
-      count: z.number(),
-      limit: z.number().nullable(),
-    })
-    .optional(),
+  quota: object({
+    count: number(),
+    limit: number().nullable(),
+  }).optional(),
 });
 
-export const audioInputQuotaResponseSchema = z.object({
-  allowed: z.boolean(),
-  count: z.number().int().nonnegative(),
-  limit: z.number().int().nonnegative().nullable(),
+export const audioInputQuotaResponseSchema = object({
+  allowed: boolean(),
+  count: number().int().nonnegative(),
+  limit: number().int().nonnegative().nullable(),
 });
-export type AudioInputQuotaResponse = z.infer<
+export type AudioInputQuotaResponse = zInfer<
   typeof audioInputQuotaResponseSchema
 >;
 

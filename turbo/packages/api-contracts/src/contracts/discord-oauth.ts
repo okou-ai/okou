@@ -1,10 +1,9 @@
-import { z } from "zod";
+import { literal, object, strictObject, string, url, enum as zEnum } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { discordSnowflakeSchema } from "./integrations-discord-read";
 
-const proofSchema = z
-  .string()
+const proofSchema = string()
   .length(43)
   .regex(/^[A-Za-z0-9_-]+$/u);
 
@@ -16,14 +15,14 @@ export const discordOauthContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/oauth/start",
     headers: authHeadersSchema,
-    body: z.strictObject({
+    body: strictObject({
       guildId: discordSnowflakeSchema.optional(),
       // Current Connect actions omit this: a guild ID means connect, otherwise install.
-      flow: z.enum(["install", "connect"]).optional(),
+      flow: zEnum(["install", "connect"]).optional(),
     }),
     responses: {
-      200: z.object({
-        authorizationUrl: z.url().max(8192),
+      200: object({
+        authorizationUrl: url().max(8192),
         completionToken: proofSchema,
       }),
       400: apiErrorSchema,
@@ -39,9 +38,9 @@ export const discordOauthContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/oauth/approve",
     headers: authHeadersSchema,
-    body: z.strictObject({ state: proofSchema, approvalProof: proofSchema }),
+    body: strictObject({ state: proofSchema, approvalProof: proofSchema }),
     responses: {
-      200: z.object({ approved: z.literal(true) }),
+      200: object({ approved: literal(true) }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -55,9 +54,9 @@ export const discordOauthContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/oauth/complete",
     headers: authHeadersSchema,
-    body: z.strictObject({ state: proofSchema, completionToken: proofSchema }),
+    body: strictObject({ state: proofSchema, completionToken: proofSchema }),
     responses: {
-      200: z.object({ status: z.literal("connected") }),
+      200: object({ status: literal("connected") }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -71,9 +70,9 @@ export const discordOauthContract = c.router({
   callback: {
     method: "GET",
     path: "/api/integrations/discord/oauth/callback",
-    query: z.object({
-      code: z.string().min(1).max(2048).optional(),
-      error: z.string().min(1).max(128).optional(),
+    query: object({
+      code: string().min(1).max(2048).optional(),
+      error: string().min(1).max(128).optional(),
       state: proofSchema.optional(),
       guild_id: discordSnowflakeSchema.optional(),
     }),

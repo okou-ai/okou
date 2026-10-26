@@ -1,77 +1,80 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  union,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { builtInGenerationAcceptedResponseSchema } from "./built-in-generation";
 
 const c = initContract();
-const stringOrStringArraySchema = z.union([
-  z.string(),
-  z.array(z.string()).readonly(),
-]);
-const numberOrStringSchema = z.union([z.number(), z.string()]);
+const stringOrStringArraySchema = union([string(), array(string()).readonly()]);
+const numberOrStringSchema = union([number(), string()]);
 
-export const imageIoGenerateRequestSchema = z
-  .object({
-    /** Fail before creating bytes when private artifact creation is unavailable. */
-    requirePrivateArtifact: z.boolean().optional(),
-    prompt: z.string().optional(),
-    size: z.string().optional(),
-    quality: z.string().optional(),
-    background: z.string().optional(),
-    outputFormat: z.string().optional(),
-    outputCompression: numberOrStringSchema.optional(),
-    moderation: z.string().optional(),
-    seed: numberOrStringSchema.optional(),
-    safetyTolerance: z.string().optional(),
-    enhancePrompt: z.boolean().optional(),
-    imageUrl: stringOrStringArraySchema.optional(),
-    image_url: stringOrStringArraySchema.optional(),
-    imageUrls: stringOrStringArraySchema.optional(),
-    image_urls: stringOrStringArraySchema.optional(),
-    maskImageUrl: z.string().optional(),
-    mask_image_url: z.string().optional(),
-    inputFidelity: z.string().optional(),
-    input_fidelity: z.string().optional(),
-    imagePromptStrength: numberOrStringSchema.optional(),
-    image_prompt_strength: numberOrStringSchema.optional(),
-  })
-  .passthrough();
+export const imageIoGenerateRequestSchema = object({
+  /** Fail before creating bytes when private artifact creation is unavailable. */
+  requirePrivateArtifact: boolean().optional(),
+  prompt: string().optional(),
+  size: string().optional(),
+  quality: string().optional(),
+  background: string().optional(),
+  outputFormat: string().optional(),
+  outputCompression: numberOrStringSchema.optional(),
+  moderation: string().optional(),
+  seed: numberOrStringSchema.optional(),
+  safetyTolerance: string().optional(),
+  enhancePrompt: boolean().optional(),
+  imageUrl: stringOrStringArraySchema.optional(),
+  image_url: stringOrStringArraySchema.optional(),
+  imageUrls: stringOrStringArraySchema.optional(),
+  image_urls: stringOrStringArraySchema.optional(),
+  maskImageUrl: string().optional(),
+  mask_image_url: string().optional(),
+  inputFidelity: string().optional(),
+  input_fidelity: string().optional(),
+  imagePromptStrength: numberOrStringSchema.optional(),
+  image_prompt_strength: numberOrStringSchema.optional(),
+}).passthrough();
 
-export const imageIoGenerateResponseSchema = z.object({
-  id: z.string(),
-  filename: z.string(),
-  contentType: z.string(),
-  size: z.number(),
-  url: z.string(),
-  privateArtifacts: z.boolean().optional(),
+export const imageIoGenerateResponseSchema = object({
+  id: string(),
+  filename: string(),
+  contentType: string(),
+  size: number(),
+  url: string(),
+  privateArtifacts: boolean().optional(),
   // Private outputs omit this; public outputs retain their optimized CDN URL.
-  embedUrl: z.string().optional(),
-  creditsCharged: z.number(),
-  model: z.string(),
-  provider: z.string(),
-  imageSize: z.string(),
-  quality: z.string(),
-  background: z.string(),
-  outputFormat: z.string(),
-  outputCompression: z.number().optional(),
-  moderation: z.string().optional(),
-  safetyTolerance: z.string().optional(),
-  revisedPrompt: z.string().optional(),
-  billingCategory: z.string().optional(),
-  billingQuantity: z.number().optional(),
-  sourceUrl: z.string().optional(),
-  seed: z.number().optional(),
-  sourceImageUrls: z.array(z.string()).optional(),
-  maskImageUrl: z.string().optional(),
-  inputFidelity: z.string().optional(),
-  imagePromptStrength: z.number().optional(),
+  embedUrl: string().optional(),
+  creditsCharged: number(),
+  model: string(),
+  provider: string(),
+  imageSize: string(),
+  quality: string(),
+  background: string(),
+  outputFormat: string(),
+  outputCompression: number().optional(),
+  moderation: string().optional(),
+  safetyTolerance: string().optional(),
+  revisedPrompt: string().optional(),
+  billingCategory: string().optional(),
+  billingQuantity: number().optional(),
+  sourceUrl: string().optional(),
+  seed: number().optional(),
+  sourceImageUrls: array(string()).optional(),
+  maskImageUrl: string().optional(),
+  inputFidelity: string().optional(),
+  imagePromptStrength: number().optional(),
 });
 
-export type ImageIoGenerateRequest = z.infer<
+export type ImageIoGenerateRequest = zInfer<
   typeof imageIoGenerateRequestSchema
 >;
-export type ImageIoGenerateResponse = z.infer<
+export type ImageIoGenerateResponse = zInfer<
   typeof imageIoGenerateResponseSchema
 >;
 

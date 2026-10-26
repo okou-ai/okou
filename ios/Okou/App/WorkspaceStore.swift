@@ -126,10 +126,12 @@ final class WorkspaceStore {
         realtime = nil
       }
     }
-    // Match the web bootstrap: resolve visibility rules before publishing cached chats.
-    await refreshNavigation()
-    guard canContinueStartup(generation) else { return }
     await list.restoreCached()
+    guard canContinueStartup(generation) else { return }
+    if selectedAgentID == nil {
+      selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
+    }
+    await refreshNavigation()
     guard canContinueStartup(generation) else { return }
     let realtime = RealtimeService(
       userID: userID, workspaceID: workspaceID,
@@ -377,6 +379,11 @@ final class WorkspaceStore {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return }
     chatLinkRequestID = UUID()
     chatLinkThreadID = nil
+    presentChat(thread)
+  }
+
+  private func presentChat(_ thread: ChatThread) {
+    let id = thread.id
     let reselected = selectedThreadID == id
     selectedThreadID = id
     selectedAgentID = thread.agentID
@@ -418,6 +425,8 @@ final class WorkspaceStore {
         id = threadID
         runID = nil
       }
+      await list.restoreCached()
+      guard ownsRequest() else { return false }
       if !list.threads.contains(where: { $0.id == id }) {
         await list.refresh(waitForCurrent: true)
         guard ownsRequest(), list.error == nil else { return false }
@@ -429,6 +438,9 @@ final class WorkspaceStore {
         chatLinkError = "This chat is no longer available in this workspace."
         return false
       }
+      presentChat(conversation.thread)
+      await conversation.restoreCached()
+      guard ownsRequest() else { return false }
       if let runID {
         if !conversation.revealRun(runID) {
           await conversation.refresh(waitForCurrent: true)
@@ -437,7 +449,6 @@ final class WorkspaceStore {
         }
       }
       guard ownsRequest() else { return false }
-      selectChat(id)
       return true
     } catch is CancellationError {
       return false

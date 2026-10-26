@@ -9,7 +9,7 @@ import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/ru
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
-import { z } from "zod";
+import { strictObject, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -56,9 +56,9 @@ function profileProvider(beforeResponse?: () => Promise<void>) {
   }
   const handlers = [
     http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-      const { name } = z
-        .strictObject({ name: z.string() })
-        .parse(await request.json());
+      const { name } = strictObject({ name: string() }).parse(
+        await request.json(),
+      );
       const id = randomUUID();
       profiles.set(id, { id, name });
       createdIds.push(id);
@@ -585,22 +585,39 @@ describe("official Runner Browser connections", () => {
         expect(JSON.stringify(result.body)).not.toContain(privateDetail);
         expect(JSON.stringify(result.body)).not.toContain(RUNNER_CDP_URL);
       }
-      let redirected = false;
+    });
+  });
+
+  it("returns the exact connection after a provider redirect", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const instance = await allocate(chat);
+      await admit(chat, instance.id, 0);
+      const identity = authorization(instance, 0);
+      const redirectedUrl = `${PROVIDER_URL}/connections/${identity.providerSessionId}`;
       server.use(
         http.get(`${PROVIDER_URL}/browsers/:id`, () => {
-          return HttpResponse.redirect(
-            "https://foreign.example/connection",
-            302,
+          return HttpResponse.redirect(redirectedUrl, 302);
+        }),
+        http.get(redirectedUrl, () => {
+          return HttpResponse.json(
+            connectionSession(identity.providerSessionId),
           );
         }),
-        http.get("https://foreign.example/connection", () => {
-          redirected = true;
-          return HttpResponse.json(session);
-        }),
       );
-      const redirect = await accept(chat.connect(identity), [502]);
-      expect(redirect.body.error.code).toBe("BROWSER_USE_ERROR");
-      expect(redirected).toBeFalsy();
+      const result = await accept(chat.connect(identity), [200]);
+      expect(result.body).toStrictEqual({
+        outcome: "accepted",
+        connection: {
+          instanceId: instance.id,
+          providerSessionId: identity.providerSessionId,
+          primaryWindowId: 0,
+          cdpUrl: RUNNER_CDP_URL,
+          expiresAt: START + 10 * MINUTE,
+          chatThreadId: chat.threadId,
+        },
+      });
     });
   });
 

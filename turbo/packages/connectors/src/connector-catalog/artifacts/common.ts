@@ -1,20 +1,18 @@
-import { z } from "zod";
+import { string } from "zod";
 
 import { connectorSlugSchema } from "../../connector-identity";
 
 export { connectorSlugSchema };
 
-export const digestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
+export const digestSchema = string().regex(/^sha256:[a-f0-9]{64}$/u);
 
-export const privateNameSchema = z.string().regex(/^[A-Z][A-Z0-9_]*$/u);
+export const privateNameSchema = string().regex(/^[A-Z][A-Z0-9_]*$/u);
 
-export const connectorCatalogVersionSchema = z
-  .string()
+export const connectorCatalogVersionSchema = string()
   .max(255)
   .regex(/^[a-z0-9][a-z0-9._-]*$/u);
 
-export const artifactKeySchema = z
-  .string()
+export const artifactKeySchema = string()
   .min(1)
   .refine((key) => {
     const segments = key.split("/");

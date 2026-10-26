@@ -271,7 +271,7 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   expect(queryAction("button", "Connect", telegramCard)).toBeNull();
 });
 
-test("The shared phone card and connect dialog display digits instead of a vanity number", async () => {
+test("The phone card describes messaging and the connect dialog displays the destination number", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.data.agentPhoneIntegration({
     linked: false,
@@ -291,7 +291,8 @@ test("The shared phone card and connect dialog display digits instead of a vanit
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
   });
-  expect(phoneCard).toHaveTextContent("+1 (314) 438-6568");
+  expect(phoneCard).toHaveTextContent("Text-message access to Okou");
+  expect(phoneCard).not.toHaveTextContent("+1 (314) 438-6568");
   click(getAction("button", "Connect phone", phoneCard));
   const dialog = await screen.findByRole("dialog", {
     name: "Text Okou from your iPhone",
@@ -330,7 +331,7 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
   });
-  expect(phoneCard).toHaveTextContent("iMessage or SMS to+1 (903) 985-3128");
+  expect(phoneCard).toHaveTextContent("Text-message access to Okou");
   click(getAction("button", "Connect phone", phoneCard));
 
   const dialog = await screen.findByRole("dialog", {

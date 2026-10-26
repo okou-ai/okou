@@ -39,7 +39,16 @@ import {
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
-import { z } from "zod";
+import {
+  object,
+  toJSONSchema,
+  ZodNumber,
+  ZodPipe,
+  type output,
+  type input as zInput,
+  type ZodType,
+} from "zod";
+
 import { requestValidationError } from "@okouai/api-contracts/contracts/errors";
 import { onRejection, settleIncludingAbort } from "../utils";
 
@@ -63,7 +72,7 @@ const writeAnnotations = Object.freeze({
   idempotentHint: false,
   openWorldHint: true,
 });
-const emptyInput = z.object({});
+const emptyInput = object({});
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -220,14 +229,11 @@ function assertJsonRepresentable(type: string): void {
   }
 }
 
-function inlineZodSchema<Schema extends z.ZodType>(
+function inlineZodSchema<Schema extends ZodType>(
   schema: Schema,
-): StandardSchemaWithJSON<z.input<Schema>, z.output<Schema>> {
+): StandardSchemaWithJSON<zInput<Schema>, output<Schema>> {
   const standard = (
-    schema as unknown as StandardSchemaWithJSON<
-      z.input<Schema>,
-      z.output<Schema>
-    >
+    schema as unknown as StandardSchemaWithJSON<zInput<Schema>, output<Schema>>
   )["~standard"];
   return {
     "~standard": {
@@ -239,7 +245,7 @@ function inlineZodSchema<Schema extends z.ZodType>(
       jsonSchema: {
         input: (options) => {
           return inlineJsonSchema(
-            z.toJSONSchema(schema, {
+            toJSONSchema(schema, {
               target: options.target,
               io: "input",
               unrepresentable: "any",
@@ -251,12 +257,12 @@ function inlineZodSchema<Schema extends z.ZodType>(
                   jsonSchema.not = {};
                 }
                 if (
-                  (zodSchema instanceof z.ZodNumber && zodSchema.def.coerce) ||
-                  (zodSchema instanceof z.ZodPipe &&
-                    zodSchema.in instanceof z.ZodNumber &&
+                  (zodSchema instanceof ZodNumber && zodSchema.def.coerce) ||
+                  (zodSchema instanceof ZodPipe &&
+                    zodSchema.in instanceof ZodNumber &&
                     zodSchema.in.def.coerce)
                 ) {
-                  const normalized = z.toJSONSchema(zodSchema, {
+                  const normalized = toJSONSchema(zodSchema, {
                     target: options.target,
                     io: "output",
                   });
@@ -269,7 +275,7 @@ function inlineZodSchema<Schema extends z.ZodType>(
         },
         output: (options) => {
           return inlineJsonSchema(
-            z.toJSONSchema(schema, {
+            toJSONSchema(schema, {
               target: options.target,
               io: "output",
               unrepresentable: "any",
@@ -288,7 +294,7 @@ function inlineZodSchema<Schema extends z.ZodType>(
 }
 
 function uncheckedInputSchema<Input extends Record<string, unknown>>(
-  schema: z.ZodType<Input>,
+  schema: ZodType<Input>,
 ): StandardSchemaWithJSON<unknown, unknown> {
   return {
     "~standard": {
@@ -371,24 +377,20 @@ async function requestWebApi(
   return await access.requestWebApi(request, signal);
 }
 
-interface WebToolConfig<
-  InputSchema extends z.ZodType<Record<string, unknown>>,
-> {
+interface WebToolConfig<InputSchema extends ZodType<Record<string, unknown>>> {
   readonly name: string;
   readonly scope: string;
   readonly description: string;
   readonly inputSchema: InputSchema;
-  readonly outputSchema?: z.ZodType<Record<string, unknown>>;
+  readonly outputSchema?: ZodType<Record<string, unknown>>;
   readonly annotations: ToolAnnotations;
   readonly operation: (
-    input: z.output<InputSchema>,
+    input: output<InputSchema>,
     signal: AbortSignal,
   ) => Promise<Response | CallToolResult>;
 }
 
-function registerWebTool<
-  InputSchema extends z.ZodType<Record<string, unknown>>,
->(
+function registerWebTool<InputSchema extends ZodType<Record<string, unknown>>>(
   server: McpServer,
   access: McpChatAccess,
   config: WebToolConfig<InputSchema>,
@@ -432,7 +434,7 @@ function registerWebTool<
 
 async function getThreadSnapshot(
   access: McpChatAccess,
-  input: z.output<typeof mcpGetChatThreadInputSchema>,
+  input: output<typeof mcpGetChatThreadInputSchema>,
   signal: AbortSignal,
 ): Promise<CallToolResult> {
   const snapshotResponse = await requestWebApi(
@@ -474,7 +476,7 @@ async function getThreadSnapshot(
 
 async function getMessageSnapshot(
   access: McpChatAccess,
-  input: z.output<typeof mcpGetChatMessagesInputSchema>,
+  input: output<typeof mcpGetChatMessagesInputSchema>,
   signal: AbortSignal,
 ): Promise<CallToolResult> {
   const pathParams = { threadId: input.threadId };
@@ -484,7 +486,7 @@ async function getMessageSnapshot(
     { pathParams },
     signal,
   );
-  let snapshot: z.output<
+  let snapshot: output<
     (typeof chatThreadEventsContract.snapshot.responses)[200]
   > | null = null;
   if (snapshotResponse.ok) {

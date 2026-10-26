@@ -1,67 +1,72 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { SETTLE } from "./shared";
 
-const boxSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
-  w: z.number().positive(),
-  h: z.number().positive(),
+const boxSchema = object({
+  x: number().finite(),
+  y: number().finite(),
+  w: number().positive(),
+  h: number().positive(),
 });
 
 const textBoxSchema = boxSchema.extend({
-  eastAsianFont: z.string(),
-  complexFont: z.string(),
-  strike: z.boolean(),
-  underlineColor: z.string(),
-  underlineWidth: z.number().nonnegative(),
+  eastAsianFont: string(),
+  complexFont: string(),
+  strike: boolean(),
+  underlineColor: string(),
+  underlineWidth: number().nonnegative(),
 });
 
-const roundedTextSchema = z.object({
+const roundedTextSchema = object({
   rendered: boxSchema,
   measured: boxSchema,
-  singleLine: z.boolean(),
+  singleLine: boolean(),
 });
 
 const tableSchema = boxSchema.extend({
-  rows: z.array(z.number().positive()),
-  fills: z.array(z.array(z.string())),
+  rows: array(number().positive()),
+  fills: array(array(string())),
 });
 
 const orderedListSchema = boxSchema.extend({
-  numbers: z.array(z.number().int().min(1).max(32_767)),
-  markers: z.array(
-    z.object({
-      color: z.string(),
-      font: z.string(),
-      size: z.number().positive(),
-      gap: z.number().positive(),
-      offset: z.number().finite(),
-      leading: z.number().nonnegative(),
+  numbers: array(number().int().min(1).max(32_767)),
+  markers: array(
+    object({
+      color: string(),
+      font: string(),
+      size: number().positive(),
+      gap: number().positive(),
+      offset: number().finite(),
+      leading: number().nonnegative(),
     }),
   ),
 });
 
-export const layoutSchema = z.object({
-  pages: z.array(
-    z.object({
-      width: z.number().positive(),
-      height: z.number().positive(),
-      tables: z.array(tableSchema),
-      orderedLists: z.array(orderedListSchema),
-      textBoxes: z.array(textBoxSchema),
-      roundedTextShapes: z.array(roundedTextSchema),
-      texts: z.array(z.string()),
-      clippedSource: z.array(
-        z.object({ original: z.string(), visible: z.string() }),
-      ),
+export const layoutSchema = object({
+  pages: array(
+    object({
+      width: number().positive(),
+      height: number().positive(),
+      tables: array(tableSchema),
+      orderedLists: array(orderedListSchema),
+      textBoxes: array(textBoxSchema),
+      roundedTextShapes: array(roundedTextSchema),
+      texts: array(string()),
+      clippedSource: array(object({ original: string(), visible: string() })),
     }),
   ),
-  activated: z.number().int().nonnegative(),
-  fragmented: z.number().int().nonnegative(),
+  activated: number().int().nonnegative(),
+  fragmented: number().int().nonnegative(),
 });
 
-export type Layout = z.infer<typeof layoutSchema>;
+export type Layout = zInfer<typeof layoutSchema>;
 
 const RESTORABLE = String.raw`
   const undo = [];

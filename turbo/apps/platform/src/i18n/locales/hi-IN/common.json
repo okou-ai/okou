@@ -399,7 +399,6 @@
       "manage": "प्रबंधित करें",
       "mobile": {
         "invite": "आमंत्रित करें",
-        "openArtifacts": "मोबाइल आर्टिफ़ैक्ट्स खोलें",
         "openAutomations": "मोबाइल ऑटोमेशन खोलें",
         "openMenu": "मेनू खोलें"
       },
@@ -679,7 +678,6 @@
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
@@ -718,9 +716,7 @@
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
-        "changeLabel": "टेम्पलेट की दृश्यता बदलें",
-        "privateState": "केवल आप इसे देख और उपयोग कर सकते हैं",
-        "workspaceState": "इस वर्कस्पेस में कोई भी इसका उपयोग कर सकता है"
+        "changeLabel": "टेम्पलेट की दृश्यता बदलें"
       },
       "website": "वेबसाइट",
       "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
@@ -1564,8 +1560,7 @@
         "whatsCooking": "क्या पक रहा है, {{userName}}?",
         "whatsOnYourMind": "आपके मन में क्या है, {{userName}}?",
         "whatsTheMove": "क्या चाल है, {{userName}}?"
-      },
-      "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
+      }
     },
     "agentSuggestions": {
       "dismiss": "खारिज करें",
@@ -2930,15 +2925,12 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
-      "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
-      "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "removeTemplate": "टेम्प्लेट {{title}} हटाएँ",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
-      "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ",
-      "retry": "फिर से कोशिश करें"
+      "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ"
     },
     "thread": {
       "ariaLabel": "चैट थ्रेड",
@@ -2960,7 +2952,6 @@
       "icon": "चैट थ्रेड आइकन",
       "noEmojiFound": "कोई इमोजी नहीं मिला",
       "notFound": "चैट थ्रेड नहीं मिला",
-      "openArtifacts": "आर्टिफ़ैक्ट खोलें",
       "openBrowser": "खुला ब्राउज़र",
       "openNamedAgent": "ओपन एजेंट {{name}}",
       "openNamedChat": "चैट {{title}} खोलें",
@@ -3682,7 +3673,6 @@
         "createCodeError": "कनेक्शन कोड नहीं बनाया जा सका। फिर से कोशिश करें।",
         "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
         "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
-        "destination": "iMessage या SMS को",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",
@@ -4208,46 +4198,57 @@
       },
       "industries": {
         "coaching": {
+          "mobileName": "कोचिंग और ट्रेनिंग",
           "name": "कोचिंग और ट्रेनिंग",
           "summary": "कोचिंग, कोर्स और ट्रेनिंग"
         },
         "consulting": {
+          "mobileName": "स्वतंत्र कंसल्टिंग",
           "name": "स्वतंत्र कंसल्टिंग",
           "summary": "बिज़नेस, HR और IT सलाह"
         },
         "design": {
+          "mobileName": "डिज़ाइन और क्रिएटिव",
           "name": "डिज़ाइन और क्रिएटिव",
           "summary": "ग्राफ़िक्स, वेबसाइट और क्रिएटिव काम"
         },
         "finance": {
+          "mobileName": "अकाउंटिंग और बहीखाता",
           "name": "अकाउंटिंग और बहीखाता",
           "summary": "खाते, रिपोर्ट और मिलान"
         },
         "investing": {
+          "mobileName": "निवेश और बाज़ार शोध",
           "name": "निवेश और बाज़ार शोध",
           "summary": "निवेश, बाज़ार और पोर्टफ़ोलियो"
         },
         "marketing": {
+          "mobileName": "मार्केटिंग और कंटेंट",
           "name": "मार्केटिंग और कंटेंट",
           "summary": "सोशल मीडिया, कंटेंट और ब्रांड"
         },
         "operations": {
+          "mobileName": "बिज़नेस और ऑपरेशंस",
           "name": "बिज़नेस और ऑपरेशंस",
           "summary": "बिज़नेस मालिक, असिस्टेंट और ऑपरेशंस"
         },
         "other": {
+          "mobileName": "अन्य / अभी तय नहीं",
           "name": "अन्य / अभी तय नहीं",
           "summary": "कोई और क्षेत्र, या अभी तय नहीं"
         },
         "research": {
+          "mobileName": "शोध और अध्ययन",
           "name": "शोध और अध्ययन",
           "summary": "शोध, अध्ययन और सीखना"
         },
         "sales": {
+          "mobileName": "सेल्स और ग्राहक विकास",
           "name": "सेल्स और ग्राहक विकास",
           "summary": "प्रॉस्पेक्टिंग, सेल्स और ग्राहक वृद्धि"
         },
         "software": {
+          "mobileName": "सॉफ़्टवेयर और ऐप्स",
           "name": "सॉफ़्टवेयर और ऐप्स",
           "summary": "ऐप्स, गेम्स और डेवलपमेंट"
         }
@@ -4255,6 +4256,30 @@
       "industry": {
         "copy": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है। अपने लिए सही पहला टास्क पाने के लिए अपना क्षेत्र चुनें।",
         "title": "आप किस तरह का काम करते हैं?"
+      },
+      "mobile": {
+        "channelsCopy": "अपने पसंदीदा चैट ऐप में Okou से बात करें।",
+        "channelsTitle": "चैट ऐप चुनें",
+        "connect": "कनेक्ट करें",
+        "copyImportPrompt": "इंपोर्ट प्रॉम्प्ट कॉपी करें",
+        "existingPlan": "मेरा {{provider}} प्लान इस्तेमाल करें",
+        "experienceTitle": "शुरू करने का तरीका चुनें",
+        "industryCopy": "हम आपके लिए उपयुक्त पहला काम सुझाएँगे।",
+        "industryTitle": "अपना कार्यक्षेत्र चुनें",
+        "instructions": "निर्देश",
+        "newCopy": "पहले काम में मदद पाएँ।",
+        "newTitle": "Okou से शुरू करें",
+        "pasteIntoProvider": "{{provider}} में पेस्ट करके भेजें।",
+        "permissionsLabel": "अनुमतियाँ और गोपनीयता",
+        "planCopy": "अपने सब्सक्रिप्शन से काम चलाएँ।",
+        "promptTitle": "आप क्या करवाना चाहते हैं?",
+        "readyTitle": "अपना पहला काम शुरू करें",
+        "skillsCopy": "कंप्यूटर पर {{provider}} इस्तेमाल करें।",
+        "skillsTitle": "अपनी स्किल इंपोर्ट करें",
+        "sourcesCopy": "पहले काम के लिए एक टूल जोड़ें।",
+        "startTask": "काम शुरू करें",
+        "teamCopy": "एक ही वर्कस्पेस में साथ काम करें।",
+        "teamTitle": "टीम के सदस्य को बुलाएँ"
       },
       "prompt": {
         "intro": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है।"

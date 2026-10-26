@@ -1,22 +1,22 @@
-import { z } from "zod";
+import { literal, object, string, url } from "zod";
 
 import { initContract } from "./base";
 
 const c = initContract();
 
-const jsonErrorSchema = z.object({ error: z.string() });
+const jsonErrorSchema = object({ error: string() });
 
-export const feishuOauthConnectQuerySchema = z.object({
-  callbackTarget: z.literal("app").optional(),
-  state: z.string().optional(),
+export const feishuOauthConnectQuerySchema = object({
+  callbackTarget: literal("app").optional(),
+  state: string().optional(),
 });
 
-export const feishuOauthCallbackQuerySchema = z.object({
-  code: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-  responseMode: z.literal("json").optional(),
-  state: z.string().optional(),
+export const feishuOauthCallbackQuerySchema = object({
+  code: string().optional(),
+  error: string().optional(),
+  error_description: string().optional(),
+  responseMode: literal("json").optional(),
+  state: string().optional(),
 });
 
 export const feishuOauthContract = c.router({
@@ -35,7 +35,7 @@ export const feishuOauthContract = c.router({
     path: "/api/integrations/feishu/oauth/callback",
     query: feishuOauthCallbackQuerySchema,
     responses: {
-      200: z.object({ redirectUrl: z.url() }),
+      200: object({ redirectUrl: url() }),
       307: c.noBody(),
       400: jsonErrorSchema,
     },

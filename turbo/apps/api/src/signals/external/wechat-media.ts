@@ -12,7 +12,8 @@ import {
   createHash,
   randomBytes,
 } from "node:crypto";
-import { z } from "zod";
+import { object, string, type infer as zInfer } from "zod";
+
 import type { WechatAttachment } from "@okouai/db/jsonb-contracts/wechat";
 import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
 import { wechatItemSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
@@ -21,7 +22,7 @@ import {
   wechatSendReceiptSchema,
 } from "@okouai/core/wechat-client";
 
-type Item = z.infer<typeof wechatItemSchema>;
+type Item = zInfer<typeof wechatItemSchema>;
 export class WechatMediaDownloadError extends Error {
   constructor(
     readonly code: "invalid-media" | "too-large" | "download-failed",
@@ -302,30 +303,28 @@ export async function uploadWechatMedia(
   const encrypted = Buffer.concat([cipher.update(args.bytes), cipher.final()]);
   const image = args.contentType.startsWith("image/");
   const video = args.contentType.startsWith("video/");
-  const target = z
-    .object({
-      upload_full_url: z.string().optional(),
-      upload_param: z.string().optional(),
-    })
-    .parse(
-      await wechatRequest(
-        args.baseUrl,
-        "/ilink/bot/getuploadurl",
-        {
-          filekey,
-          media_type: image ? 1 : video ? 2 : 3,
-          to_user_id: args.senderId,
-          rawsize: args.bytes.byteLength,
-          rawfilemd5: createHash("md5").update(args.bytes).digest("hex"),
-          filesize: encrypted.byteLength,
-          no_need_thumb: true,
-          aeskey: key.toString("hex"),
-          base_info: { channel_version: "2.4.10", bot_agent: "Okou" },
-        },
-        args.token,
-        signal,
-      ),
-    );
+  const target = object({
+    upload_full_url: string().optional(),
+    upload_param: string().optional(),
+  }).parse(
+    await wechatRequest(
+      args.baseUrl,
+      "/ilink/bot/getuploadurl",
+      {
+        filekey,
+        media_type: image ? 1 : video ? 2 : 3,
+        to_user_id: args.senderId,
+        rawsize: args.bytes.byteLength,
+        rawfilemd5: createHash("md5").update(args.bytes).digest("hex"),
+        filesize: encrypted.byteLength,
+        no_need_thumb: true,
+        aeskey: key.toString("hex"),
+        base_info: { channel_version: "2.4.10", bot_agent: "Okou" },
+      },
+      args.token,
+      signal,
+    ),
+  );
   const downloadParam = await uploadEncryptedMedia(
     cdnUrl(
       target.upload_full_url?.trim(),

@@ -361,18 +361,21 @@ impl ResourceBudget {
                     .is_some_and(|owner| std::ptr::eq(owner.as_ref(), self)),
                 "substituted leases must belong to the target resource budget"
             );
-            remaining.running_vcpu = remaining
-                .running_vcpu
-                .checked_sub(lease.vcpu)
-                .expect("substituted vCPU exceeds resource budget allocation");
-            remaining.running_memory_mb = remaining
-                .running_memory_mb
-                .checked_sub(lease.memory_mb)
-                .expect("substituted memory exceeds resource budget allocation");
-            remaining.running_count = remaining
-                .running_count
-                .checked_sub(1)
-                .expect("substituted lease count exceeds resource budget allocation");
+            assert!(
+                remaining.running_vcpu >= lease.vcpu,
+                "substituted vCPU exceeds resource budget allocation"
+            );
+            remaining.running_vcpu -= lease.vcpu;
+            assert!(
+                remaining.running_memory_mb >= lease.memory_mb,
+                "substituted memory exceeds resource budget allocation"
+            );
+            remaining.running_memory_mb -= lease.memory_mb;
+            assert!(
+                remaining.running_count > 0,
+                "substituted lease count exceeds resource budget allocation"
+            );
+            remaining.running_count -= 1;
         }
         remaining
     }

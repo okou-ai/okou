@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { unknown as zUnknown } from "zod";
 
 import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
@@ -880,7 +880,7 @@ describe("runner storage manifest contract", () => {
   it("keeps prepared readers compatible with omitted stored fields", () => {
     const preparedStoredExecutionContextSchema =
       storedExecutionContextSchema.extend({
-        storageManifest: z.unknown().nullable().optional(),
+        storageManifest: zUnknown().nullable().optional(),
       });
 
     expect(preparedStoredExecutionContextSchema.parse(storedContext)).toEqual(

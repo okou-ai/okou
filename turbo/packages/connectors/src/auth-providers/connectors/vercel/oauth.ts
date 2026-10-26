@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -63,16 +63,14 @@ export async function exchangeVercelCode(
     await throwOAuthError("Vercel", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      token_type: z.string().optional(),
-      team_id: z.string().nullable().optional(),
-      installation_id: z.string().nullable().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    token_type: string().optional(),
+    team_id: string().nullable().optional(),
+    installation_id: string().nullable().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -108,15 +106,13 @@ async function fetchVercelUserInfo(
     throw new Error(`Vercel user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      user: z.object({
-        id: z.string(),
-        username: z.string().nullable().optional(),
-        email: z.string().nullable().optional(),
-      }),
-    })
-    .parse(await response.json());
+  const data = object({
+    user: object({
+      id: string(),
+      username: string().nullable().optional(),
+      email: string().nullable().optional(),
+    }),
+  }).parse(await response.json());
 
   return {
     id: data.user.id,

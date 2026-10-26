@@ -130,7 +130,7 @@ test("Attachment-only prompts remain visible and active content is a file link",
   expect(within(link).queryByRole("img")).not.toBeInTheDocument();
 });
 
-test("A shared website without a cover stays static and preserves its destination", async () => {
+test("A shared website without a cover previews in an iframe and preserves its destination", async () => {
   const siteUrl = "https://launch-plan-review.okou.app/";
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(
@@ -155,10 +155,8 @@ test("A shared website without a cover stays static and preserves its destinatio
   expect(card).toHaveAttribute("target", "_blank");
   expect(card).toHaveAttribute("rel", "noopener noreferrer");
   expect(within(card).getByText("Launch plan review")).toBeInTheDocument();
-  expect(
-    within(card).getByTestId("attachment-preview-site-placeholder"),
-  ).toBeInTheDocument();
-  expect(card.querySelector("iframe")).toBeNull();
+  await within(card).findByTestId("attachment-preview-html-viewport");
+  expect(card.querySelector("iframe")).toHaveAttribute("src", siteUrl);
   expect(within(card).queryByRole("img")).not.toBeInTheDocument();
   expect(
     screen.queryByTestId("markdown-image-preview-loading"),

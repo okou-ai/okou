@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { BatchPublishSpec } from "ably";
 import { MsgPack } from "ably/modular";
 import { http, HttpResponse } from "msw";
-import { z } from "zod";
+import { array, object, string } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -379,20 +379,18 @@ describe("connector runtime wakeups", () => {
               await request.arrayBuffer(),
             );
             received.push(decoded);
-            const specs = z
-              .array(
-                z.object({
-                  channels: z.array(z.string()),
-                  messages: z.array(
-                    z.object({
-                      name: z.string(),
-                      data: z.string(),
-                      encoding: z.string(),
-                    }),
-                  ),
-                }),
-              )
-              .parse(decoded);
+            const specs = array(
+              object({
+                channels: array(string()),
+                messages: array(
+                  object({
+                    name: string(),
+                    data: string(),
+                    encoding: string(),
+                  }),
+                ),
+              }),
+            ).parse(decoded);
             expect(specs).toStrictEqual([
               {
                 channels: [`runner-group:${runnerGroup}`],

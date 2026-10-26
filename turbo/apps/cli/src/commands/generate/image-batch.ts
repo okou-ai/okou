@@ -12,7 +12,14 @@ import {
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { Command, InvalidArgumentError } from "commander";
-import { z } from "zod";
+import {
+  array,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { artifactUrlSchema } from "@okouai/api-contracts/contracts/artifact-references";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import {
@@ -42,22 +49,22 @@ const BATCH_PRESENTATION_CONTEXT =
   "asset identifies the material for authored HTML; local paths are relative to the batch directory and are only available inside the agent runtime. Use each item's stable artifact reference for chat. " +
   ARTIFACT_PRESENTATION_CONTEXT;
 
-const imageBatchArtifactsSchema = z.object({
-  resultsPath: z.string(),
-  artifacts: z.array(
-    z.object({
-      assetId: z.string(),
-      asset: z.string(),
+const imageBatchArtifactsSchema = object({
+  resultsPath: string(),
+  artifacts: array(
+    object({
+      assetId: string(),
+      asset: string(),
       url: artifactUrlSchema,
       ownerUrl: artifactUrlSchema.optional(),
-      visibility: z.enum(["only-me", "org", "public"]).optional(),
-      inlineMarkdownLink: z.string(),
-      previewMarkdownBlock: z.string(),
+      visibility: zEnum(["only-me", "org", "public"]).optional(),
+      inlineMarkdownLink: string(),
+      previewMarkdownBlock: string(),
     }),
   ),
-  artifactPresentationContext: z.string(),
+  artifactPresentationContext: string(),
 });
-type ImageBatchArtifact = z.infer<
+type ImageBatchArtifact = zInfer<
   typeof imageBatchArtifactsSchema
 >["artifacts"][number];
 

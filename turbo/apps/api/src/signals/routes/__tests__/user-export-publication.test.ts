@@ -19,7 +19,7 @@ import {
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
 import AdmZip from "adm-zip";
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -85,7 +85,7 @@ function initialize(
   mockClerkUsers(context, profiles);
   context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
     (params: unknown) => {
-      const { userId } = z.object({ userId: z.string() }).parse(params);
+      const { userId } = object({ userId: string() }).parse(params);
       const user = users.find((candidate) => {
         return candidate.userId === userId;
       });

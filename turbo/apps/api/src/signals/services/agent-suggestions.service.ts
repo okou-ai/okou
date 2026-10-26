@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { z } from "zod";
+import { array, union } from "zod";
 import { command } from "ccstate";
 import { and, eq, not, sql } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -35,9 +35,7 @@ interface Owner {
   readonly userId: string;
   readonly orgId: string;
 }
-const entriesSchema = z.array(
-  z.union([suggestionSchema, suggestionReceiptSchema]),
-);
+const entriesSchema = array(union([suggestionSchema, suggestionReceiptSchema]));
 
 function scope(owner: Owner) {
   return and(
@@ -76,7 +74,7 @@ export const suggestionAccess$ = command(
     );
     signal.throwIfAborted();
     if (
-      !isFeatureEnabled(FeatureSwitchKey.ProactiveAgent, {
+      !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, {
         userId: auth.userId,
         orgId: auth.orgId,
         overrides,

@@ -1,4 +1,12 @@
-import { z } from "zod";
+import {
+  array,
+  httpUrl,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  undefined as zUndefined,
+} from "zod";
 
 import { apiErrorSchema, type ApiErrorResponse } from "./errors";
 import { authHeadersSchema, initContract } from "./base";
@@ -137,66 +145,59 @@ interface DeleteSharedThreadRouteTypes extends AnyRouteTypeSlots {
     | ApiErrorRouteResponse<404>;
 }
 
-const sharedMessageZodSchema = z
-  .object({
-    messageIndex: z.number().int().nonnegative(),
-    role: z.enum(["user", "assistant"]),
-    content: z.string(),
-    attachments: z
-      .array(
-        z
-          .object({
-            filename: z.string().min(1),
-            contentType: z.string().min(1),
-            size: z.number().int().nonnegative(),
-            url: z.httpUrl(),
-          })
-          .strict(),
-      )
-      .optional(),
-    runIndex: z.number().int().nonnegative().optional(),
-  })
-  .strict();
+const sharedMessageZodSchema = object({
+  messageIndex: number().int().nonnegative(),
+  role: zEnum(["user", "assistant"]),
+  content: string(),
+  attachments: array(
+    object({
+      filename: string().min(1),
+      contentType: string().min(1),
+      size: number().int().nonnegative(),
+      url: httpUrl(),
+    }).strict(),
+  ).optional(),
+  runIndex: number().int().nonnegative().optional(),
+}).strict();
 export const sharedMessageSchema: ZodLikeSchema<SharedMessage> =
   sharedMessageZodSchema;
 
 const sharedThreadIdPathParamsSchema: ZodSchema<
   SharedThreadIdPathParams,
   SharedThreadIdPathParams
-> = z.object({
-  id: z.string().uuid(),
+> = object({
+  id: string().uuid(),
 });
 
 const createSharedThreadPathParamsSchema: ZodSchema<
   CreateSharedThreadPathParams,
   CreateSharedThreadPathParams
-> = z.object({
-  threadId: z.string().uuid(),
+> = object({
+  threadId: string().uuid(),
 });
 
 const createSharedThreadBodySchema: ZodSchema<
   CreateSharedThreadBody,
   CreateSharedThreadBody
-> = z.object({
-  eventIds: z.array(z.string().uuid()).min(1),
-  id: z.string().uuid().optional(),
+> = object({
+  eventIds: array(string().uuid()).min(1),
+  id: string().uuid().optional(),
 });
 
 const createSharedThreadResponseSchema: ZodLikeSchema<CreateSharedThreadResponse> =
-  z.object({
-    id: z.string().uuid(),
+  object({
+    id: string().uuid(),
   });
 
-const sharedThreadResponseSchema: ZodLikeSchema<SharedThreadResponse> =
-  z.object({
-    id: z.string().uuid(),
-    title: z.string(),
-    messages: z.array(sharedMessageZodSchema),
-  });
+const sharedThreadResponseSchema: ZodLikeSchema<SharedThreadResponse> = object({
+  id: string().uuid(),
+  title: string(),
+  messages: array(sharedMessageZodSchema),
+});
 
 const sharedThreadMetaResponseSchema: ZodLikeSchema<SharedThreadMetaResponse> =
-  z.object({
-    title: z.string(),
+  object({
+    title: string(),
   });
 
 const sharedThreadApiErrorSchema: ZodLikeSchema<ApiErrorResponse> =
@@ -213,7 +214,7 @@ const sharedThreadsRuntimeSpec = {
     headers: sharedThreadAuthHeadersSchema,
     pathParams: sharedThreadIdPathParamsSchema,
     responses: {
-      204: z.undefined(),
+      204: zUndefined(),
       401: sharedThreadApiErrorSchema,
       403: sharedThreadApiErrorSchema,
       404: sharedThreadApiErrorSchema,

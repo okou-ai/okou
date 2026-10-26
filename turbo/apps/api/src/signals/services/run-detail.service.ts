@@ -8,7 +8,13 @@ import {
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import {
+  number,
+  object,
+  string,
+  record as zRecord,
+  unknown as zUnknown,
+} from "zod";
 
 import { db$ } from "../external/db";
 import { getDatasetName, queryAxiom } from "../external/axiom";
@@ -156,11 +162,11 @@ interface AgentEventsParams {
   order: "asc" | "desc";
 }
 
-const axiomAgentEventSchema = z.object({
-  _time: z.string(),
-  sequenceNumber: z.number().int(),
-  eventType: z.string(),
-  eventData: z.record(z.string(), z.unknown()),
+const axiomAgentEventSchema = object({
+  _time: string(),
+  sequenceNumber: number().int(),
+  eventType: string(),
+  eventData: zRecord(string(), zUnknown()),
 });
 
 export function runAgentEvents(

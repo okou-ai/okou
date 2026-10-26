@@ -1,5 +1,74 @@
 # Changelog
 
+## [10.3.4](https://github.com/okou-ai/okou/compare/cli-v10.3.3...cli-v10.3.4) (2026-10-26)
+
+
+### Refactoring
+
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.8.2
+    * @okouai/connectors bumped to 3.16.14
+    * @okouai/core bumped to 8.791.3
+    * @okouai/pi-agent-runtime bumped to 1.50.80
+
+## [10.3.3](https://github.com/okou-ai/okou/compare/cli-v10.3.2...cli-v10.3.3) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.791.2
+    * @okouai/pi-agent-runtime bumped to 1.50.79
+
+## [10.3.2](https://github.com/okou-ai/okou/compare/cli-v10.3.1...cli-v10.3.2) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.8.1
+    * @okouai/core bumped to 8.791.1
+    * @okouai/pi-agent-runtime bumped to 1.50.78
+
+## [10.3.1](https://github.com/okou-ai/okou/compare/cli-v10.3.0...cli-v10.3.1) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.791.0
+    * @okouai/pi-agent-runtime bumped to 1.50.77
+
+## [10.3.0](https://github.com/okou-ai/okou/compare/cli-v10.2.5...cli-v10.3.0) (2026-10-26)
+
+
+### Features
+
+* add expanded action options to homepage suggestions ([#43104](https://github.com/okou-ai/okou/issues/43104)) ([fdf92c5](https://github.com/okou-ai/okou/commit/fdf92c5beea97015267ae6dbb74e7db58ce0a344))
+
+
+### Refactoring
+
+* **data:** drop retired managed data storage ([#42942](https://github.com/okou-ai/okou/issues/42942)) ([c9b25eb](https://github.com/okou-ai/okou/commit/c9b25eb26d18dab6cb01c60453fa4729fdd50247))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.8.0
+    * @okouai/core bumped to 8.790.3
+    * @okouai/pi-agent-runtime bumped to 1.50.76
+
 ## [10.2.5](https://github.com/okou-ai/okou/compare/cli-v10.2.4...cli-v10.2.5) (2026-10-26)
 
 

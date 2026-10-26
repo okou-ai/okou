@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { record, string } from "zod";
 import { Command, Option } from "commander";
 import chalk from "chalk";
 import {
@@ -33,7 +33,7 @@ function collectValue(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-const valuesSchema = z.record(z.string().min(1), z.string());
+const valuesSchema = record(string().min(1), string());
 
 async function builtinAccountMutation(
   connectorSlug: string,

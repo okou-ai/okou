@@ -1,4 +1,11 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { throwOAuthError } from "../../oauth/error";
 import type { OAuthRefreshResult } from "../../oauth/types";
@@ -18,75 +25,67 @@ const POST_TOKEN_LOOKUP_FAILED_DESCRIPTION =
   "Unable to load Slock account metadata after authorization.";
 const SLOCK_SERVER_ID_SECRET_NAME = "SLOCK_SERVER_ID";
 
-const deviceAuthResponseSchema = z.object({
-  deviceCode: z.string(),
-  userCode: z.string(),
-  verificationUri: z.string(),
-  verificationUriComplete: z.string().optional(),
-  expiresIn: z.number().optional(),
-  interval: z.number().optional(),
+const deviceAuthResponseSchema = object({
+  deviceCode: string(),
+  userCode: string(),
+  verificationUri: string(),
+  verificationUriComplete: string().optional(),
+  expiresIn: number().optional(),
+  interval: number().optional(),
 });
 
-const tokenResponseSchema = z.object({
-  accessToken: z.string().optional(),
-  refreshToken: z.string().nullable().optional(),
-  expiresIn: z.number().optional(),
-  userId: z.string().optional(),
+const tokenResponseSchema = object({
+  accessToken: string().optional(),
+  refreshToken: string().nullable().optional(),
+  expiresIn: number().optional(),
+  userId: string().optional(),
 });
 
-const jwtPayloadSchema = z.object({
-  exp: z.number(),
+const jwtPayloadSchema = object({
+  exp: number(),
 });
 
-const tokenErrorResponseSchema = z
-  .object({
-    code: z.string().optional(),
-    error: z.string().optional(),
-    message: z.string().optional(),
-    errorDescription: z.string().optional(),
-    error_description: z.string().optional(),
-  })
-  .passthrough();
+const tokenErrorResponseSchema = object({
+  code: string().optional(),
+  error: string().optional(),
+  message: string().optional(),
+  errorDescription: string().optional(),
+  error_description: string().optional(),
+}).passthrough();
 
-const userInfoResponseSchema = z
-  .object({
-    id: z.string().optional(),
-    userId: z.string().optional(),
-    email: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    displayName: z.string().nullable().optional(),
-  })
-  .passthrough();
+const userInfoResponseSchema = object({
+  id: string().optional(),
+  userId: string().optional(),
+  email: string().nullable().optional(),
+  name: string().nullable().optional(),
+  displayName: string().nullable().optional(),
+}).passthrough();
 
-const serverSchema = z
-  .object({
-    id: z.string(),
-    name: z.string().optional(),
-    slug: z.string().optional(),
-    isDefault: z.boolean().optional(),
-    isCurrent: z.boolean().optional(),
-    default: z.boolean().optional(),
-    current: z.boolean().optional(),
-  })
-  .passthrough();
+const serverSchema = object({
+  id: string(),
+  name: string().optional(),
+  slug: string().optional(),
+  isDefault: boolean().optional(),
+  isCurrent: boolean().optional(),
+  default: boolean().optional(),
+  current: boolean().optional(),
+}).passthrough();
 
-type SlockServer = z.infer<typeof serverSchema>;
+type SlockServer = zInfer<typeof serverSchema>;
 type SlockServerCollection = {
   readonly servers: readonly SlockServer[];
   readonly preferredServerId: string | undefined;
 };
-const serverArraySchema = z.array(serverSchema);
-const serversObjectResponseSchema = z
-  .object({
-    servers: serverArraySchema,
-    currentServerId: z.string().optional(),
-    defaultServerId: z.string().optional(),
-    selectedServerId: z.string().optional(),
-  })
-  .passthrough();
-const nestedServersObjectResponseSchema = z
-  .object({ data: serversObjectResponseSchema })
-  .passthrough();
+const serverArraySchema = array(serverSchema);
+const serversObjectResponseSchema = object({
+  servers: serverArraySchema,
+  currentServerId: string().optional(),
+  defaultServerId: string().optional(),
+  selectedServerId: string().optional(),
+}).passthrough();
+const nestedServersObjectResponseSchema = object({
+  data: serversObjectResponseSchema,
+}).passthrough();
 
 async function safeJson(response: Response): Promise<unknown> {
   return await response.json().catch(() => {
@@ -166,7 +165,7 @@ function pollErrorFromPayload(payload: unknown): {
 }
 
 function requireAccessToken(
-  data: z.infer<typeof tokenResponseSchema>,
+  data: zInfer<typeof tokenResponseSchema>,
   operation: string,
 ): string {
   if (!data.accessToken) {

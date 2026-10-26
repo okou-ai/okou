@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { hostedSiteDeliveryPointerSchema } from "@okouai/api-contracts/contracts/host";
 
 /**
@@ -7,4 +7,4 @@ import { hostedSiteDeliveryPointerSchema } from "@okouai/api-contracts/contracts
  */
 export const hostedSitePointerSchema = hostedSiteDeliveryPointerSchema;
 
-export type HostedSitePointer = z.infer<typeof hostedSitePointerSchema>;
+export type HostedSitePointer = zInfer<typeof hostedSitePointerSchema>;

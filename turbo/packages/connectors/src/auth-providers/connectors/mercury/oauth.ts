@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -185,16 +185,14 @@ export async function exchangeMercuryCode(
     await throwOAuthError("Mercury", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -248,16 +246,14 @@ export async function refreshMercuryToken(
     await throwOAuthError("Mercury", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -296,14 +292,12 @@ async function fetchMercuryUserInfo(
     throw new Error(`Mercury organization fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      organization: z.object({
-        id: z.string(),
-        legalBusinessName: z.string().nullable().optional(),
-      }),
-    })
-    .parse(await response.json());
+  const data = object({
+    organization: object({
+      id: string(),
+      legalBusinessName: string().nullable().optional(),
+    }),
+  }).parse(await response.json());
 
   // Mercury OAuth grants organization resources, so use the documented organization ID instead of a pagination-dependent first account. Ref: https://docs.mercury.com/reference/getorganization
   return {

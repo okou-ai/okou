@@ -12,7 +12,7 @@ import { File, Image, Loader2, Video } from "lucide-react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
-import { z } from "zod";
+import { iso } from "zod";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { cn } from "@okouai/ui";
 
@@ -47,7 +47,7 @@ import {
   shouldUseNativeAnchorNavigation,
   SitePreviewCard,
   SitePreviewContent,
-  SitePreviewPlaceholder,
+  SitePreviewViewport,
 } from "../okou-page/attachment-preview.tsx";
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
@@ -419,7 +419,7 @@ function MarkdownSitePreview({ site }: { readonly site: HostedSiteCard }) {
       openInNewTab
       title={title}
     >
-      <SitePreviewPlaceholder title={title} />
+      <SitePreviewViewport src={site.url} title={title} />
     </SitePreviewCard>
   );
 }
@@ -582,6 +582,7 @@ export function SharedThreadArtifactCard({
         </span>
       ) : signals.kind === "html" ? (
         <SitePreviewContent
+          resourceUrl$={signals.resourceUrl$}
           title={title}
           previewImageLoad={signals.previewImageLoad}
           previewImagePending={previewImage.state === "loading"}
@@ -705,7 +706,7 @@ function MarkdownSpanRenderer(props: MarkdownSpanProps) {
   return <span {...omitMarkdownNodeProp(rest)}>{children}</span>;
 }
 
-const markdownDateTimeSchema = z.iso.datetime({ offset: true });
+const markdownDateTimeSchema = iso.datetime({ offset: true });
 
 function MarkdownTimeRenderer({
   children,

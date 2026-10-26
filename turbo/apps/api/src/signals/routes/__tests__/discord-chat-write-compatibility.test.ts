@@ -17,7 +17,6 @@ import {
   setupConnectedDiscordActor,
   type ConnectedDiscordActor,
 } from "./helpers/discord-fixture";
-import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -116,9 +115,6 @@ describe("Discord chat-write rollout compatibility", () => {
         flushWaitUntilForTest,
         async () => {
           await removePublicDiscordBinding(context, actor.fixture);
-        },
-        async () => {
-          await deleteFeatureSwitchesForUser(context, actor);
         },
       );
     },

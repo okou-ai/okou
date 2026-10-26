@@ -7,7 +7,7 @@ import {
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { aroundEach, it, describe, beforeEach, onTestFinished } from "vitest";
-import { z } from "zod";
+import { object, uuid, unknown as zUnknown } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -446,9 +446,9 @@ describe("workflow queue", () => {
     if (!firstIdentityBlock) {
       throw new Error("Expected the first automation's source identity");
     }
-    const identitySchema = z.object({
-      automationId: z.uuid(),
-      automationEventId: z.uuid(),
+    const identitySchema = object({
+      automationId: uuid(),
+      automationEventId: uuid(),
     });
     const firstIdentityData: unknown = JSON.parse(firstIdentityBlock);
     const firstIdentity = identitySchema.parse(firstIdentityData);
@@ -652,7 +652,7 @@ describe("workflow queue", () => {
         throw new Error("Expected the Runner's public automation event data");
       }
       const parsedEvent: unknown = JSON.parse(eventData);
-      const event = z.object({ parsedJson: z.unknown() }).parse(parsedEvent);
+      const event = object({ parsedJson: zUnknown() }).parse(parsedEvent);
       // Structural equality ignores object key order; compare exact JSON.
       expect(JSON.stringify(event.parsedJson)).toBe(JSON.stringify(body));
       expect(claim.prompt).not.toContain(automation.secret);

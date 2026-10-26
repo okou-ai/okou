@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.38](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.37...sandbox-firecracker-v0.53.38) (2026-10-26)
+
+
+### Bug Fixes
+
+* **sandbox-firecracker:** back off control socket accept errors ([#43105](https://github.com/okou-ai/okou/issues/43105)) ([fcfc225](https://github.com/okou-ai/okou/commit/fcfc225d1879f2239d73c1127e60f0a2db504af9))
+
 ## [0.53.37](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.36...sandbox-firecracker-v0.53.37) (2026-10-26)
 
 ## [0.53.36](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.35...sandbox-firecracker-v0.53.36) (2026-10-26)

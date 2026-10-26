@@ -2,7 +2,7 @@ import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { randomUUID } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { string } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 
 import { now } from "../../../lib/time";
@@ -354,7 +354,7 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(JSON.stringify(claim)).not.toContain(externalAccountId);
       expect(JSON.stringify(claim)).not.toContain(refreshToken);
 
-      const encryptedSecrets = z.string().parse(claim.encryptedSecrets);
+      const encryptedSecrets = string().parse(claim.encryptedSecrets);
       const sandboxCredential = await firewall.requestFirewallAuth(
         sandboxHeaders,
         {
@@ -378,9 +378,9 @@ describe("CHAT-02: run-level model overrides", () => {
       // The expired access token is refreshed once for the Sandbox request.
       expect(oauth.oauthToken).toHaveLength(2);
       expect(oauth.oauthToken[1]?.get("grant_type")).toBe("refresh_token");
-      const refreshedAccessToken = z
-        .string()
-        .parse(oauth.oauthTokenResponses[1]?.access_token);
+      const refreshedAccessToken = string().parse(
+        oauth.oauthTokenResponses[1]?.access_token,
+      );
       expect(sandboxCredential.body.headers.Authorization).toBe(
         `Bearer ${refreshedAccessToken}`,
       );

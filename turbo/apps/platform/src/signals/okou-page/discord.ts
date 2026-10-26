@@ -2,11 +2,9 @@ import { command, computed, state } from "ccstate";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { resetSignal, settle, waitLoopUntil, withCleanup } from "../utils.ts";
 import { createDiscordOauthResultNotifier } from "./discord-oauth-message.ts";
@@ -14,9 +12,6 @@ import { createDiscordOauthResultNotifier } from "./discord-oauth-message.ts";
 const reloadVersion$ = state(0);
 
 export const discordOrgData$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
-    return null;
-  }
   // Retain the authenticated owner's status across navigation, like Slack.
   // The route-owned subscription refreshes it on re-entry and live changes.
   get(reloadVersion$);
@@ -67,9 +62,6 @@ export const startDiscordAuthorization$ = command(
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
-      return;
-    }
     const flowSignal = set(resetDiscordAuthorization$, signal);
     // Preserve the click's browser activation before awaiting authenticated HTTP.
     const popup = window.open("about:blank", "_blank");
@@ -221,9 +213,6 @@ export const selectDiscordDmBinding$ = command(
 
 export const watchDiscordConnection$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
-      return;
-    }
     // Attach even if the cached read failed, so returning to the page can
     // recover through the subscription's fresh status read.
     set(

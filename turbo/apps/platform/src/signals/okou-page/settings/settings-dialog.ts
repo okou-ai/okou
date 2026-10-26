@@ -4,8 +4,6 @@ import {
   refreshWalletConnection$,
 } from "./wallet.ts";
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { isOrgAdmin$ } from "../../org.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
@@ -37,7 +35,6 @@ import {
 // used to live at the bottom of it.
 export const SETTINGS_SECTIONS = [
   "preference",
-  "proactive-agent",
   "chat",
   "tools",
   "model",
@@ -72,12 +69,8 @@ export function resolveAvailableSettingsSection(
   section: SettingsSection,
   options: {
     readonly isAdmin: boolean;
-    readonly proactiveAgentAvailable?: boolean;
   },
 ): SettingsSection {
-  if (section === "proactive-agent" && !options.proactiveAgentAvailable) {
-    return "preference";
-  }
   if (!options.isAdmin && isAdminOnlySettingsSection(section)) {
     return "preference";
   }
@@ -370,8 +363,6 @@ export const checkUnifiedSettingsParam$ = command(
 
     const resolved = resolveAvailableSettingsSection(section, {
       isAdmin,
-      proactiveAgentAvailable:
-        get(featureSwitch$)[FeatureSwitchKey.ProactiveAgent] ?? false,
     });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");
