@@ -31,15 +31,13 @@ def original_inputs(metadata, artifacts, prefix):
         raise ValueError("invalid startup supplied policy")
     protected = policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"]
     if (protected > policy["recovery_available_bytes"] or not isinstance(inputs, dict)
-            or set(inputs) != {"snapshot_path", "snapshot_memory_mb", "prefetch_overhead_bytes"}
+            or set(inputs) != {"snapshot_path", "snapshot_memory_mb"}
             or not isinstance(inputs["snapshot_path"], str)
             or not pathlib.PurePosixPath(inputs["snapshot_path"]).is_absolute()
             or pathlib.PurePosixPath(inputs["snapshot_path"]).name != "memory.bin"
             or ".." in pathlib.PurePosixPath(inputs["snapshot_path"]).parts
             or type(inputs["snapshot_memory_mb"]) is not int or inputs["snapshot_memory_mb"] != 4096
-            or not pressure_report.integer(inputs["prefetch_overhead_bytes"], 1024**2)
-            or protected + BYTES + inputs["prefetch_overhead_bytes"] > policy["host_total_bytes"]
             or type(metadata[prefix+"_snapshot_bytes"]) is not int
             or metadata[prefix+"_snapshot_bytes"] != BYTES):
         raise ValueError("invalid startup original input/shape/bounds")
-    return policy, inputs, raw_inputs
+    return policy, raw_inputs

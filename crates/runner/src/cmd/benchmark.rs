@@ -15,7 +15,6 @@ use crate::deps::MITMPROXY_VERSION;
 use crate::error::{RunnerError, RunnerResult};
 use crate::executor;
 use crate::home_mount::ensure_home_drive_mounted;
-use crate::prefetch;
 use crate::proxy;
 use runner_host::paths::{HomePaths, RunnerPaths};
 
@@ -178,12 +177,6 @@ pub async fn run_benchmark(
     let resource_locks =
         config::lock_and_validate_profile_image_artifacts(profile_name, profile_config, &home)
             .await?;
-
-    // Block until memory.bin is in page cache so benchmark numbers are stable.
-    {
-        let path = resource_locks.snapshot_paths().memory();
-        let _ = tokio::task::spawn_blocking(move || prefetch::prefetch_memory(&path)).await;
-    }
 
     // 2. Start proxy (unconditional — benchmark always uses proxy)
     let t = Instant::now();

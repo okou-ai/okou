@@ -15,7 +15,6 @@ mod io_limits;
 use runner_executor::pre_spawn_admission;
 use runner_host::live_runner_instances;
 use runner_lifecycle::lifecycle;
-use runner_lifecycle::prefetch;
 mod profile;
 use runner_lifecycle::resource_budget;
 mod run_resolution;

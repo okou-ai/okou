@@ -36,7 +36,7 @@ def accounting(value, growth, uncertain=False):
 def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
-    policy, inputs, raw = startup.original_inputs(collector["metadata"], result["artifacts"], "native_create_cancellation")
+    policy, raw = startup.original_inputs(collector["metadata"], result["artifacts"], "native_create_cancellation")
     witnesses = {case:[] for case in CASES}
     for line in (directory/"stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX): continue
@@ -62,7 +62,7 @@ def validate(directory):
         growth = startup.BYTES+preparation
         startup.exact(initial,{"policy":policy,"inputs_sha256":hashlib.sha256(raw.encode()).hexdigest(),
             "snapshot_sha256":result["artifacts"]["snapshot_files"]["memory.bin"],"snapshot_bytes":startup.BYTES,
-            "prefetch_overhead_bytes":inputs["prefetch_overhead_bytes"],"preparation_bytes":preparation,
+            "preparation_bytes":preparation,
             "allocated":[2,4096,1],"checkpoint_models_stalled_storage":False},"actual create inputs/full original lease changed")
         created = accepted.get("created")
         if not isinstance(created,dict): raise ValueError("actual formatted home absent")

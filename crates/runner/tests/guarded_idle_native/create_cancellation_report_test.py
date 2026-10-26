@@ -37,7 +37,7 @@ class CreateCancellationTests(unittest.TestCase):
             values=[
                 {"policy":self.policy,"inputs_sha256":hashlib.sha256(raw.encode()).hexdigest(),
                  "snapshot_sha256":self.artifacts["snapshot_files"]["memory.bin"],"snapshot_bytes":startup.BYTES,
-                 "prefetch_overhead_bytes":1024**2,"preparation_bytes":self.policy["replacement_preparation_bytes"],
+                 "preparation_bytes":self.policy["replacement_preparation_bytes"],
                  "allocated":[2,4096,1],"checkpoint_models_stalled_storage":False},
                 {"created":{"home_path":path,"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
                     "superblock_hex":block.hex(),"superblock_sha256":hashlib.sha256(block).hexdigest(),"held_ns":clock(490)},

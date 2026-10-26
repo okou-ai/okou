@@ -1,11 +1,5 @@
 # Guarded idle terminal fixture
 
-Unguarded startup-reader cases below retain a test-support-only experimental
-baseline. The admitting production startup performs no eager snapshot warming;
-guarded runtime installation and measured policy remain P4 acceptance gates.
-The production reactor carries no startup prefetch owner; these fixture readers
-are owned and joined by their callers.
-
 ## Original-file open-permission controls
 
 [The owned Linux permission gate](FILE_OPEN_PERMISSION.md) holds actual original
@@ -1161,7 +1155,7 @@ original immutable snapshot/home, exact backing exit, durable 64 MiB tail,
 restored original data and all provider/factory/runtime joins remain required.
 
 Set `OKOU_TEST_OPTIONAL_MEMORY_POLICY` to a JSON file containing the original
-`snapshot_path`, `snapshot_memory_mb` and `prefetch_overhead_bytes` inputs.
+`snapshot_path` and `snapshot_memory_mb` inputs.
 Supply exact raw metadata fields
 `native_create_cancellation_policy_json`,
 `native_create_cancellation_inputs_json`,

@@ -77,7 +77,7 @@ class ReturnedGuestTests(unittest.TestCase):
             values = [
                 {"policy": self.policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
                  "snapshot_sha256": self.artifacts["snapshot_files"]["memory.bin"], "snapshot_bytes": startup.BYTES,
-                 "prefetch_overhead_bytes": 1024**2, "stage": stage, "allocated": [2,4096,1], "checkpoint_models_stalled_io": False},
+                 "stage": stage, "allocated": [2,4096,1], "checkpoint_models_stalled_io": False},
                 {"pool_pending_ns": clock(20), "foreground_acquired_ns": clock(30), "joined_ns": clock(40),
                  "pool_released_ns": clock(80), "wait_pending": True, "wait_dropped": True, "no_provider_create": True,
                  "result": {"finished": True, "prepared": False, "published": False, "retained_resource": False,

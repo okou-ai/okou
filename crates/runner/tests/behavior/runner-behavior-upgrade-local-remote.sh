@@ -93,8 +93,7 @@ wait_for_exit() {
   # Budget must exceed the 10s heartbeat tick — drain can only
   # complete on a tick boundary, so anything <10s has no headroom
   # for real teardown work (idle pool + namespace cleanup
-  # + mitm/dns/kmsg shutdown) and slow shutdown tails like
-  # background memory prefetch. Shared metal-host contention can also make
+  # + mitm/dns/kmsg shutdown). Shared metal-host contention can also make
   # namespace cleanup exceed 30s while it is still making progress, so allow
   # six heartbeat ticks before treating the drain as stuck. See issues #10869
   # and #13688.

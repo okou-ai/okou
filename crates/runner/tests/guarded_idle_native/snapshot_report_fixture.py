@@ -23,7 +23,7 @@ def prepare(self):
         "pressure_optional_start_interval_millis": 100, "pressure_max_wave_entries": 1,
     }
     self.inputs = {"snapshot_path": "/synthetic/snapshot/memory.bin",
-                   "snapshot_memory_mb": 4096, "prefetch_overhead_bytes": 1024**2}
+                   "snapshot_memory_mb": 4096}
     raw_policy = json.dumps(self.policy)
     self.artifacts["policy_sha256"] = hashlib.sha256(raw_policy.encode()).hexdigest()
     self.events, self.samples = self.events[:12], self.samples[:12]
