@@ -122,7 +122,9 @@ async function initializeWorkers(t) {
         scriptPath: resolve(directory, `${name}.js`),
       }),
     );
-    t.after(() => runtime.dispose());
+    t.after(() => {
+      return runtime.dispose();
+    });
     workers.set(name, { fetch: runtime.dispatchFetch });
   }
   // Use HTTP dispatch rather than the SDK's /cdn-cgi proxy, whose Origin
@@ -175,12 +177,13 @@ test(
           const path = new URL(item.path, "https://api.example.invalid")
             .pathname;
           const owner =
-            manifest.find(
-              (route) =>
+            manifest.find((route) => {
+              return (
                 route.path === path &&
                 route.method ===
-                  (item.method === "HEAD" ? "GET" : (item.method ?? "GET")),
-            )?.domain ?? "core";
+                  (item.method === "HEAD" ? "GET" : (item.method ?? "GET"))
+              );
+            })?.domain ?? "core";
           const actual = await responseOf(
             workers.get(owner),
             item.path,

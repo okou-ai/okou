@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { test } from "node:test";
+import { URL } from "node:url";
 import { build } from "esbuild";
 import {
   apiRoot,
@@ -24,7 +25,9 @@ test(
   { timeout: 30_000 },
   async (t) => {
     const directory = await mkdtemp(resolve(tmpdir(), "okou-worker-sentry-"));
-    t.after(() => rm(directory, { recursive: true, force: true }));
+    t.after(() => {
+      return rm(directory, { recursive: true, force: true });
+    });
     const options = workerBuildOptions({
       entryPoint: "src/worker.ts",
       outputDirectory: directory,
@@ -100,7 +103,9 @@ test(
         },
       }),
     );
-    t.after(() => mf.dispose());
+    t.after(() => {
+      return mf.dispose();
+    });
 
     const manual = await mf.dispatchFetch("https://api.example.invalid/manual");
     assert.equal(manual.status, 200);
