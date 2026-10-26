@@ -130,6 +130,16 @@ describe("independent finalizing resource source", () => {
           runnerPreference: preference,
         }),
       );
+      const claim = await f.owned.claimRunnerRun(next.runId);
+      // A ready resource's producer is distinct from a confirmed native
+      // generation. First-start publication must not change captured intent.
+      expect(claim.nativeContinuation).toMatchObject({
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: expect.stringContaining(
+          "okou chat messages --output-dir threads",
+        ),
+      });
       await f.owned.run(async () => {
         await f.api.requestCancelRun(f.actor, next.runId, [200]);
         await flushWaitUntilForTest();
