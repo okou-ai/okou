@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Advance the R2-owned manifest, then export its verified bytes for the GitHub
-# compatibility mirror. Requires AWS CLI, jq, Python 3, Node.js and R2 credentials.
+# Advance the R2-owned manifest and export the verified publication bytes.
+# Requires AWS CLI, jq, Python 3, Node.js and R2 credentials.
 if (( $# != 6 )) || [[ ! "$4" =~ ^[0-9a-f]{40}$ ]]; then
   echo "usage: $0 <r2-endpoint> <bucket> <verified-manifest-file> <publication-sha> <version> <zip-url>" >&2
   exit 2
