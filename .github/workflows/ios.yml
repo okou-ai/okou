@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      sparse_checkout:
+        description: Compare scoped iOS checkout with the unchanged full checkout
+        type: boolean
+        default: false
       sample_xcode_startup:
         description: Sample the compile-phase Xcode startup
         type: boolean
@@ -127,6 +131,18 @@ jobs:
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            ${{ inputs.sparse_checkout && '/ios/' || '' }}
+            ${{ inputs.sparse_checkout && '/.github/' || '' }}
+            ${{ inputs.sparse_checkout && '/release-please-config.json' || '' }}
+          sparse-checkout-cone-mode: false
+      - name: Record checkout footprint
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git rev-parse HEAD HEAD:ios
+          git count-objects -v
+          git ls-files -t | awk '$1 != "S" { count++ } END { print "materialized files:", count }'
       - name: Run isolated Swift package tests
         run: bash ios/scripts/ci-package-test.sh
       - name: Capture package test inputs
@@ -150,6 +166,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            ${{ inputs.sparse_checkout && '/ios/' || '' }}
+            ${{ inputs.sparse_checkout && '/.github/' || '' }}
+            ${{ inputs.sparse_checkout && '/release-please-config.json' || '' }}
+          sparse-checkout-cone-mode: false
+      - name: Record checkout footprint
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git rev-parse HEAD HEAD:ios
+          git count-objects -v
+          git ls-files -t | awk '$1 != "S" { count++ } END { print "materialized files:", count }'
       - name: Fetch locked package revisions
         id: sources
         run: |
@@ -183,6 +211,17 @@ jobs:
         with:
           # Keep the bounded squash-group ancestry, not the entire repository history.
           fetch-depth: 32
+          sparse-checkout: |
+            ${{ inputs.sparse_checkout && '/ios/' || '' }}
+            ${{ inputs.sparse_checkout && '/.github/' || '' }}
+            ${{ inputs.sparse_checkout && '/release-please-config.json' || '' }}
+          sparse-checkout-cone-mode: false
+      - name: Record checkout footprint
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git rev-parse HEAD HEAD:ios
+          git count-objects -v
+          git ls-files -t | awk '$1 != "S" { count++ } END { print "materialized files:", count }'
       - name: Configure archive workspace
         run: |
           echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
