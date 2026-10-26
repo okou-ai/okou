@@ -166,6 +166,11 @@ class PassThrough:
 
 
 @dataclass(frozen=True)
+class NativeRejected:
+    kind: Literal["native_rejected"] = field(init=False, default="native_rejected")
+
+
+@dataclass(frozen=True)
 class RegistryUnavailable:
     registry_unavailable: registry.RegistryUnavailable
     kind: Literal["registry_unavailable"] = field(init=False, default="registry_unavailable")
@@ -288,6 +293,7 @@ BlockingRequestClassification = (
 RequestClassification = (
     NoClientIp
     | PassThrough
+    | NativeRejected
     | BlockingRequestClassification
     | ApiAllow
     | BrowserAllow
@@ -527,6 +533,12 @@ def _classify_request(
         try:
             trusted_authority = get_trusted_authority(flow)
         except AuthorityValidationError as e:
+            if flow.error is not None:
+                # Native rejection owns the response, but error logging still
+                # needs the same diagnostic target as authority denial.
+                flow.metadata[metadata_keys.ORIGINAL_URL] = e.fallback_url
+                http_network_log.set_target_from_url(flow, e.fallback_url)
+                return NativeRejected()
             return AuthorityDenied(
                 sandbox_info=sandbox_info,
                 authority_error=e,
@@ -539,6 +551,11 @@ def _classify_request(
         host=trusted_authority.host,
         port=trusted_authority.port,
     )
+
+    if flow.error is not None:
+        # Register native-rejected flows without inspecting body framing or
+        # selecting a permission/credential owner for a request that cannot run.
+        return NativeRejected()
 
     intent = connector_intent.from_flow(flow)
     platform_connector_api_fallback: ApiAllow | None = None

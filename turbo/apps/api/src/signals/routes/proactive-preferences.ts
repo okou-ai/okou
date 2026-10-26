@@ -1,11 +1,8 @@
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
-import {
-  proactiveLearningContract,
-  proactivePlanningContract,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import type {
   ProactivePreference,
   ProactiveWorkflowKind,
@@ -32,30 +29,36 @@ const PREFERENCE_CONTRACTS = {
   jobs: proactiveJobsContract,
   suggestions: proactiveSuggestionsContract,
   learning: proactiveLearningContract,
-  planning: proactivePlanningContract,
 } as const;
+
+type ProactivePreferenceKind = Exclude<ProactiveWorkflowKind, "planning">;
 
 const PREFERENCE_FIELDS = {
   jobs: "proactiveJobsEnabled",
   suggestions: "proactiveSuggestionsEnabled",
   learning: "proactiveLearningEnabled",
-  planning: "proactivePlanningEnabled",
 } as const;
 
 const readProactivePreference$ = command(
   async (
     { get, set },
     owner: ProactiveWorkflowOwner,
-    kind: ProactiveWorkflowKind,
+    kind: ProactivePreferenceKind,
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {
-    const definition = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
+    const definitions =
+      kind === "jobs"
+        ? [
+            PROACTIVE_WORKFLOW_DEFINITIONS.planning,
+            PROACTIVE_WORKFLOW_DEFINITIONS.jobs,
+          ]
+        : [PROACTIVE_WORKFLOW_DEFINITIONS[kind]];
     const eligibility = await set(
       loadProactiveWorkflowsEligibility$,
       owner,
       signal,
     );
-    const [automation] = await get(db$)
+    const automations = await get(db$)
       .select({
         enabled: workflowAutomations.enabled,
         failures: workflowAutomations.consecutiveFailures,
@@ -67,39 +70,52 @@ const readProactivePreference$ = command(
         and(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
-          eq(workflows.officialDefinitionName, definition.name),
+          or(
+            ...definitions.map((definition) => {
+              return and(
+                eq(workflows.officialDefinitionName, definition.name),
+                eq(
+                  workflowAutomations.officialBlueprintKey,
+                  definition.blueprintKey,
+                ),
+              );
+            }),
+          ),
           eligibility.agentId === null
             ? undefined
             : eq(workflows.agentId, eligibility.agentId),
-          eq(workflowAutomations.officialBlueprintKey, definition.blueprintKey),
         ),
-      )
-      .limit(1);
+      );
     signal.throwIfAborted();
+    const unavailableReason =
+      eligibility.agentId === null
+        ? "missing-default-agent"
+        : (kind === "learning" || kind === "jobs") &&
+            eligibility.timezone === null
+          ? "missing-timezone"
+          : null;
     return {
       enabled: eligibility[kind].enabled,
       status: !eligibility[kind].active
         ? "paused"
-        : automation?.status === "failed" || automation?.failures
+        : automations.some((automation) => {
+              return automation.status === "failed" || automation.failures;
+            })
           ? "error"
-          : automation?.enabled &&
-              automation.status === "current" &&
-              eligibility.agentId !== null
+          : unavailableReason === null &&
+              automations.length === definitions.length &&
+              automations.every((automation) => {
+                return automation.enabled && automation.status === "current";
+              })
             ? "enabled"
             : "preparing",
-      unavailableReason:
-        eligibility.agentId === null
-          ? "missing-default-agent"
-          : (kind === "learning" || kind === "planning") &&
-              eligibility.timezone === null
-            ? "missing-timezone"
-            : null,
+      unavailableReason,
     };
   },
 );
 
 function createProactivePreferenceRoutes(
-  kind: ProactiveWorkflowKind,
+  kind: ProactivePreferenceKind,
 ): readonly RouteEntry[] {
   const contract = PREFERENCE_CONTRACTS[kind];
   const preferenceRoute$ = command(
@@ -112,7 +128,7 @@ function createProactivePreferenceRoutes(
         signal,
       );
       if (!eligibility[kind].available) {
-        return resourceUnavailable("Proactive Agent is not enabled.");
+        return resourceUnavailable("Proactive is not enabled.");
       }
       if (update) {
         const body = await get(bodyResultOf(contract.update));
@@ -177,5 +193,3 @@ export const proactiveSuggestionsRoutes =
 export const proactiveJobsRoutes = createProactivePreferenceRoutes("jobs");
 export const proactiveLearningRoutes =
   createProactivePreferenceRoutes("learning");
-export const proactivePlanningRoutes =
-  createProactivePreferenceRoutes("planning");

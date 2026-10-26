@@ -88,10 +88,7 @@ beforeEach(() => {
   });
 });
 
-async function page(
-  enabled = true,
-  path = "/connectors?scope=remote-control&type=ssh",
-) {
+async function page(path = "/connectors?scope=remote-control&type=ssh") {
   context.mocks.data.org({
     id: "org_tailscale_ssh",
     name: "Engineering",
@@ -102,7 +99,6 @@ async function page(
     auth,
     path,
     featureSwitches: {
-      [FeatureSwitchKey.TailscaleAccess]: enabled,
       [FeatureSwitchKey.VncAccess]: true,
     },
   });
@@ -501,22 +497,6 @@ test("A retained Tailscale host requires an explicit network selection to rebind
   ).toHaveValue(host.host);
 });
 
-test("The default-off UI preserves existing Tailscale metadata and its reader-only edit restriction", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [host] });
-  });
-  await page(false);
-  await screen.findByRole("heading", { name: host.displayName });
-  expect(getAction("button", "Edit host")).toBeDisabled();
-  click(getAction("button", "Add host"));
-  const dialog = await screen.findByRole("dialog");
-  await userEvent.click(
-    within(dialog).getByRole("combobox", { name: "Connection" }),
-  );
-  expect(screen.queryByRole("option", { name: "Tailscale" })).toBeNull();
-  expect(screen.queryByRole("option", { name: "Tailscale SSH" })).toBeNull();
-});
-
 test("Changing carriers preserves endpoint drafts and the independently selected network", async () => {
   await page();
   const dialog = await addHost();
@@ -630,10 +610,7 @@ test.each(["tailscale", "cloudflare_access"] as const)(
     context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
       return respond(200, { credentials: [] });
     });
-    await page(
-      type === "tailscale",
-      "/connectors?scope=remote-control&type=vnc",
-    );
+    await page("/connectors?scope=remote-control&type=vnc");
     const heading = await screen.findByRole("heading", {
       name: "Private desktop",
     });

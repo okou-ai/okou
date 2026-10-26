@@ -5138,8 +5138,8 @@
           "title": "Einstellungen"
         },
         "proactiveAgent": {
-          "description": "Festlegen, wie Okou lernt, plant, Tasks bearbeitet und nächste Schritte vorschlägt.",
-          "title": "Proactive Agent"
+          "description": "Wähle, wie Okou proaktiv arbeitet.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "Tools"
@@ -5545,16 +5545,6 @@
         "retryMessage": "Die Morning-Brief-Einstellungen konnten nicht geladen oder aktualisiert werden. Versuchen Sie es erneut.",
         "title": "Morgenbrief"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "Aktivitäten nachts überprüfen und persönliche Erinnerungen verbessern.",
         "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
@@ -5565,15 +5555,15 @@
         "retryMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden. Erneut versuchen.",
         "title": "Lernen"
       },
-      "proactivePlanning": {
-        "description": "Nächste Schritte im ausdrücklich übertragenen Rahmen planen und Tasks pflegen. Bei aktivierten Tasks kann neue Arbeit sofort beginnen.",
+      "proactivePlanningAction": {
+        "description": "Okou plant und erledigt deine übertragenen Aufgaben und benachrichtigt dich, wenn deine Eingabe nötig ist.",
         "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar. Okou versucht es erneut.",
         "preparing": "Dieser Workflow wird vorbereitet.",
         "retry": "Retry",
         "retryMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden. Erneut versuchen.",
-        "title": "Planung"
+        "title": "Planung & Ausführung"
       },
       "proactiveSuggestions": {
         "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
@@ -5583,7 +5573,7 @@
         "preparing": "Stündliche Vorschläge werden vorbereitet. Du kannst sie jederzeit deaktivieren.",
         "retry": "Erneut versuchen",
         "retryMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden. Versuche es erneut.",
-        "title": "Proaktive Vorschläge"
+        "title": "Vorschläge"
       },
       "send": {
         "cmdEnter": "⌘ Enter",
@@ -5990,8 +5980,6 @@
     "tailscale": {
       "authenticationFailed": "Die Tailscale-SSH-Authentifizierung ist fehlgeschlagen. Prüfe den Systembenutzernamen, aktiviere Tailscale SSH auf dem getaggten Zielgerät und erlaube diese Anmeldung in der SSH-accept-Richtlinie des Tailnets.",
       "deleteHelp": "Diesen Host löschen? Agents sehen diesen Host dann nicht mehr im Live-Inventar.",
-      "editUnavailable": "Dieser Host verwendet jetzt Tailscale. Das Bearbeiten und erneute Zuordnen von Tailscale ist hier noch nicht verfügbar. Brich diese Bearbeitung ab, um die gespeicherte Verbindungsart beizubehalten.",
-      "needsRebind": "Dieser Host benötigt eine neue Tailscale-Konfiguration. Die Einrichtung und erneute Zuordnung von Tailscale sind hier noch nicht verfügbar.",
       "sshDocs": "Tailscale SSH-Dokumentation",
       "sshHelp": "Authentifiziert über die Identität des ausgewählten Tailscale-Netzwerks, ohne SSH-Passwort oder privaten Schlüssel. Aktiviere Tailscale SSH auf einem getaggten Zielgerät und erlaube diesen Systembenutzernamen in einer SSH-accept-Richtlinie.",
       "sshTitle": "Tailscale SSH",
@@ -6369,7 +6357,6 @@
       "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Ein Chat kann diese Route nur nutzen, wenn dieser SSH-Host dort ebenfalls aktiviert ist.",
       "sshNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Cloudflare-Access-Zuordnung. Verknüpfe ihn in den SSH-Einstellungen erneut oder wähle dort ausdrücklich Direkt, bevor du dich verbindest.",
       "sshNeedsRebindStatus": "SSH muss neu verknüpft werden",
-      "sshTailscaleNeedsRebind": "Der SSH-Host dieser VNC-Verbindung benötigt eine neue Tailscale-Konfiguration. Tailscale-Einrichtung und erneute Verknüpfung sind hier noch nicht verfügbar.",
       "title": "Verbindungsroute",
       "unavailable": "SSH-Einstellungen sind für dieses Konto nicht verfügbar.",
       "via": "SSH-Host:"

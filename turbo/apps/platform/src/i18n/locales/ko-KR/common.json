@@ -5122,8 +5122,8 @@
           "title": "환경설정"
         },
         "proactiveAgent": {
-          "description": "Okou의 학습, 계획, Tasks 실행과 제안을 설정합니다.",
-          "title": "Proactive Agent"
+          "description": "Okou가 능동적으로 일하는 방식을 선택하세요.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "도구"
@@ -5528,16 +5528,6 @@
         "retryMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다. 계속하려면 다시 시도하세요.",
         "title": "모닝 브리프"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "밤에 활동을 검토하고 개인 기억과 이해를 갱신합니다.",
         "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
@@ -5548,15 +5538,15 @@
         "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
         "title": "학습"
       },
-      "proactivePlanning": {
-        "description": "명확히 위임한 범위에서 계획하고 Tasks를 관리합니다. Tasks가 켜져 있으면 새 작업을 시작할 수 있습니다.",
+      "proactivePlanningAction": {
+        "description": "위임한 업무를 계획하고 실행하며, 입력이 필요할 때 알려드립니다.",
         "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다. Okou가 다시 시도합니다.",
         "preparing": "워크플로를 준비하고 있습니다.",
         "retry": "Retry",
         "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
-        "title": "계획"
+        "title": "계획 및 실행"
       },
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
@@ -5566,7 +5556,7 @@
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
         "retry": "다시 시도",
         "retryMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
-        "title": "선제적 제안"
+        "title": "제안"
       },
       "send": {
         "cmdEnter": "⌘ Enter",
@@ -5970,8 +5960,6 @@
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 인증에 실패했습니다. 시스템 사용자 이름을 확인하고, 태그가 지정된 대상에서 Tailscale SSH를 활성화한 뒤 tailnet의 SSH accept 정책에서 이 로그인을 허용하세요.",
       "deleteHelp": "이 호스트를 삭제할까요? 에이전트의 실시간 인벤토리에 이 호스트가 더 이상 표시되지 않습니다.",
-      "editUnavailable": "이 호스트는 이제 Tailscale을 사용합니다. 여기서는 아직 Tailscale 편집 및 재연결을 사용할 수 없습니다. 저장된 연결 방식을 유지하려면 이 편집을 취소하세요.",
-      "needsRebind": "이 호스트에는 새 Tailscale 구성이 필요합니다. 여기서는 아직 Tailscale 설정 및 재바인딩을 지원하지 않습니다.",
       "sshDocs": "Tailscale SSH 공식 문서",
       "sshHelp": "선택한 Tailscale 네트워크 ID로 인증하므로 SSH 비밀번호나 개인 키가 필요하지 않습니다. 태그가 지정된 대상에서 Tailscale SSH를 활성화하고 SSH accept 정책에서 이 시스템 사용자 이름을 허용하세요.",
       "sshTitle": "Tailscale SSH",
@@ -6345,7 +6333,6 @@
       "sshHelp": "SSH는 Runner에서 SSH 서버까지의 구간을 보호합니다. 해당 서버에서 RFB 대상에 연결할 수 있어야 합니다. 채팅에서 이 경로를 사용하려면 해당 SSH 호스트도 사용하도록 설정되어 있어야 합니다.",
       "sshNeedsRebind": "이 VNC 연결의 SSH 호스트는 Cloudflare Access에 다시 연결해야 합니다. 연결하기 전에 SSH 설정에서 다시 연결하거나 명시적으로 직접 연결을 선택하세요.",
       "sshNeedsRebindStatus": "SSH 재연결 필요",
-      "sshTailscaleNeedsRebind": "이 VNC 연결의 SSH 호스트에는 새로운 Tailscale 구성이 필요합니다. 여기서는 Tailscale 설정과 재연결을 아직 사용할 수 없습니다.",
       "title": "연결 경로",
       "unavailable": "이 계정에서는 SSH 설정을 사용할 수 없습니다.",
       "via": "SSH 호스트:"

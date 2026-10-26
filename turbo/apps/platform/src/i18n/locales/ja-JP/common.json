@@ -5122,8 +5122,8 @@
           "title": "好み"
         },
         "proactiveAgent": {
-          "description": "Okou の学習、計画、Tasks の実行、提案を設定します。",
-          "title": "Proactive Agent"
+          "description": "Okou が先回りして行う作業を設定します。",
+          "title": "Proactive"
         },
         "tools": {
           "title": "ツール"
@@ -5528,16 +5528,6 @@
         "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
         "title": "モーニングブリーフ"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "設定でタイムゾーンを指定してください。",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "夜間に活動を振り返り、個人の記憶と理解を更新します。",
         "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
@@ -5548,15 +5538,15 @@
         "retryMessage": "設定を読み込むか更新できませんでした。再試行してください。",
         "title": "学習"
       },
-      "proactivePlanning": {
-        "description": "明確に依頼された範囲で計画し、Tasks を更新します。Tasks が有効なら新しい仕事を開始できます。",
+      "proactivePlanningAction": {
+        "description": "依頼された作業を計画・実行し、あなたの対応が必要なときに通知します。",
         "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "このワークフローは一時的に利用できません。Okou が再試行します。",
         "preparing": "ワークフローを準備しています。",
         "retry": "Retry",
         "retryMessage": "設定を読み込むか更新できませんでした。再試行してください。",
-        "title": "計画"
+        "title": "計画と実行"
       },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
@@ -5566,7 +5556,7 @@
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
         "retry": "再試行",
         "retryMessage": "提案の設定を読み込みまたは更新できませんでした。再試行してください。",
-        "title": "先回りの提案"
+        "title": "提案"
       },
       "send": {
         "cmdEnter": "⌘ 入力してください",
@@ -5970,8 +5960,6 @@
     "tailscale": {
       "authenticationFailed": "Tailscale SSH の認証に失敗しました。システムユーザー名を確認し、タグ付きの接続先で Tailscale SSH を有効にして、tailnet の SSH accept ポリシーでこのログインを許可してください。",
       "deleteHelp": "このホストを削除しますか？エージェントはリアルタイムのインベントリでこのホストを確認できなくなります。",
-      "editUnavailable": "このホストは現在 Tailscale を使用しています。ここでは Tailscale の編集と再紐付けはまだ利用できません。保存された接続方式を維持するには、この編集をキャンセルしてください。",
-      "needsRebind": "このホストには新しい Tailscale 設定が必要です。Tailscale のセットアップと再紐付けは、ここではまだ利用できません。",
       "sshDocs": "Tailscale SSH の公式ドキュメント",
       "sshHelp": "選択した Tailscale ネットワークのマシン ID で認証するため、SSH パスワードや秘密鍵は不要です。タグ付きの接続先で Tailscale SSH を有効にし、SSH の accept ポリシーでこのシステムユーザー名を許可してください。",
       "sshTitle": "Tailscale SSH",
@@ -6345,7 +6333,6 @@
       "sshHelp": "SSHはRunnerからSSHサーバーまでを保護します。そのサーバーからRFB接続先へ到達できる必要があります。チャットでこのルートを使用するには、そのSSHホストも有効にする必要があります。",
       "sshNeedsRebind": "この VNC 接続の SSH ホストは Cloudflare Access の再設定が必要です。接続する前に SSH 設定で再紐付けするか、明示的に直接接続を選んでください。",
       "sshNeedsRebindStatus": "SSH の再紐付けが必要",
-      "sshTailscaleNeedsRebind": "この VNC 接続の SSH ホストには新しい Tailscale 設定が必要です。ここでは Tailscale の設定と再紐付けはまだ利用できません。",
       "title": "接続ルート",
       "unavailable": "このアカウントではSSH設定を利用できません。",
       "via": "SSHホスト:"

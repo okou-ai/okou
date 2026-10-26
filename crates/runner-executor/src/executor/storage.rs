@@ -66,46 +66,76 @@ pub(super) async fn apply_workflow_skill_documents(
     Ok(())
 }
 
-pub(super) async fn apply_agent_instructions(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-) -> RunnerResult<()> {
-    let Some(content) = context.agent_instructions.as_deref() else {
-        return Ok(());
-    };
-    let runtime_dir = super::guest_runtime_dir(context.run_id)?;
-    let source = format!("{runtime_dir}/agent-instructions");
-    sandbox
-        .write_private_files(&[sandbox::WriteFileEntry {
-            path: &source,
-            content: content.as_bytes(),
-        }])
-        .await?;
-    let framework = super::cli_framework::normalized_cli_agent_type(&context.cli_agent_type);
-    // All arguments are framework constants or the UUID-derived private run path.
-    let command = format!("{STORAGE_APPLY_PATH} --instructions {framework} {source}");
-    let run_id = context.run_id.to_string();
-    let env = guest_storage_apply_env(&run_id, &runtime_dir);
-    let result = sandbox
-        .exec_with_diagnostic_label(
-            &ExecRequest {
-                cmd: &command,
-                timeout: DEFAULT_EXEC_TIMEOUT,
-                env: &env,
-                sudo: false,
-                expected_exit_codes: &[],
-                stdin_bytes: None,
-                output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
-            },
-            "agent-instructions",
-        )
-        .await?;
-    if !helper_exec_succeeded(&result) {
-        return Err(RunnerError::Internal(
-            "required Agent instruction write failed".into(),
-        ));
+pub(super) struct AgentInstructionSource<'a> {
+    path: String,
+    content: &'a str,
+}
+
+impl<'a> AgentInstructionSource<'a> {
+    pub(super) fn prepare(context: &'a ExecutionContext) -> RunnerResult<Option<Self>> {
+        context
+            .agent_instructions
+            .as_deref()
+            .map(|content| {
+                let runtime_dir = guest_runtime_dir(context.run_id)?;
+                Ok(Self {
+                    path: format!("{runtime_dir}/agent-instructions"),
+                    content,
+                })
+            })
+            .transpose()
     }
-    Ok(())
+
+    pub(super) fn entry(&self) -> sandbox::WriteFileEntry<'_> {
+        sandbox::WriteFileEntry {
+            path: &self.path,
+            content: self.content.as_bytes(),
+        }
+    }
+
+    pub(super) async fn publish_and_apply(
+        &self,
+        sandbox: &dyn Sandbox,
+        context: &ExecutionContext,
+    ) -> RunnerResult<()> {
+        sandbox.write_private_files(&[self.entry()]).await?;
+        self.apply(sandbox, context).await
+    }
+
+    /// Apply only after this source's private publication has succeeded.
+    pub(super) async fn apply(
+        &self,
+        sandbox: &dyn Sandbox,
+        context: &ExecutionContext,
+    ) -> RunnerResult<()> {
+        let runtime_dir = guest_runtime_dir(context.run_id)?;
+        let source = &self.path;
+        let framework = super::cli_framework::normalized_cli_agent_type(&context.cli_agent_type);
+        // All arguments are framework constants or the UUID-derived private run path.
+        let command = format!("{STORAGE_APPLY_PATH} --instructions {framework} {source}");
+        let run_id = context.run_id.to_string();
+        let env = guest_storage_apply_env(&run_id, &runtime_dir);
+        let result = sandbox
+            .exec_with_diagnostic_label(
+                &ExecRequest {
+                    cmd: &command,
+                    timeout: DEFAULT_EXEC_TIMEOUT,
+                    env: &env,
+                    sudo: false,
+                    expected_exit_codes: &[],
+                    stdin_bytes: None,
+                    output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
+                },
+                "agent-instructions",
+            )
+            .await?;
+        if !helper_exec_succeeded(&result) {
+            return Err(RunnerError::Internal(
+                "required Agent instruction write failed".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 // Runner-local INFO only. Keep API keys when cache delivery uses file://;

@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use guest_contracts::file_write::WRITE_FILE_REQUEST_DEADLINE;
+pub use guest_contracts::file_write::WRITE_FILES_BATCH_CONTENT_LIMIT;
 use guest_control_proto::{
     ExecTermination, MSG_ERROR, MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES_RESULT,
 };
@@ -23,15 +24,12 @@ use super::{file_exec_exit_code, normalize_file_exec_stderr, validate_guest_file
 
 /// Maximum content per write_file message. Leaves headroom below
 /// [`guest_control_proto::MAX_MESSAGE_SIZE`] for the path and frame overhead.
-pub(super) const WRITE_FILE_CHUNK_LIMIT: usize = 15 * 1024 * 1024;
+pub(super) const WRITE_FILE_CHUNK_LIMIT: usize = WRITE_FILES_BATCH_CONTENT_LIMIT;
 const WRITE_FILE_TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_WRITE_FILE_RESULT];
 const WRITE_FILES_TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_WRITE_FILES_RESULT];
 
 /// Maximum number of files in one write_files request.
 pub const WRITE_FILES_BATCH_FILE_LIMIT: usize = 64;
-
-/// Maximum total file content bytes in one write_files request.
-pub const WRITE_FILES_BATCH_CONTENT_LIMIT: usize = WRITE_FILE_CHUNK_LIMIT;
 
 /// Timeout (ms) for short helper commands (mv, rm) used during chunked writes.
 const HELPER_EXEC_TIMEOUT_MS: u32 = 5000;

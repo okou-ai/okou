@@ -5136,8 +5136,8 @@
           "title": "Preference"
         },
         "proactiveAgent": {
-          "description": "Choose how Okou learns, plans, advances Tasks and suggests next steps.",
-          "title": "Proactive Agent"
+          "description": "Choose how Okou works proactively.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "Tools"
@@ -5543,16 +5543,6 @@
         "retryMessage": "Morning Brief settings could not be loaded or updated. Retry to continue.",
         "title": "Morning brief"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "Set your time zone in Preferences.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "Review your activity overnight and improve personal memory.",
         "missingDefaultAgent": "Choose an available default Agent.",
@@ -5563,15 +5553,15 @@
         "retryMessage": "Could not load or update this setting. Retry.",
         "title": "Learning"
       },
-      "proactivePlanning": {
-        "description": "Plan within your explicit delegations and maintain Tasks. New work can start when Tasks is on.",
+      "proactivePlanningAction": {
+        "description": "Plan and carry out your delegated work, and notify you when your input is needed.",
         "missingDefaultAgent": "Choose an available default Agent.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "This workflow is temporarily unavailable. Okou will retry.",
         "preparing": "Preparing this workflow.",
         "retry": "Retry",
         "retryMessage": "Could not load or update this setting. Retry.",
-        "title": "Planning"
+        "title": "Planning & action"
       },
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
@@ -5581,7 +5571,7 @@
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
         "retry": "Retry",
         "retryMessage": "Proactive Suggestions settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive Suggestions"
+        "title": "Suggestions"
       },
       "send": {
         "cmdEnter": "⌘ Enter",
@@ -5988,8 +5978,6 @@
     "tailscale": {
       "authenticationFailed": "Tailscale SSH authentication failed. Check the system username, enable Tailscale SSH on the tagged destination and allow this login in the tailnet's SSH accept policy.",
       "deleteHelp": "Delete this host? Agents will no longer see this host in the live inventory.",
-      "editUnavailable": "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
-      "needsRebind": "This host needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
       "sshDocs": "Tailscale SSH documentation",
       "sshHelp": "Uses your selected Tailscale network identity without an SSH password or private key. Enable Tailscale SSH on a tagged destination and allow this system username in an SSH accept policy.",
       "sshTitle": "Tailscale SSH",
@@ -6367,7 +6355,6 @@
       "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. A chat can use this route only when that SSH host is also enabled.",
       "sshNeedsRebind": "The SSH host for this VNC connection needs a new Cloudflare Access binding. Rebind it or explicitly choose Direct in SSH settings before connecting.",
       "sshNeedsRebindStatus": "SSH needs rebind",
-      "sshTailscaleNeedsRebind": "The SSH host for this VNC connection needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
       "title": "Connection route",
       "unavailable": "SSH settings are not available for this account.",
       "via": "SSH host:"

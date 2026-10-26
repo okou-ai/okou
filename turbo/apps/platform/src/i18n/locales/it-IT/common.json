@@ -5198,8 +5198,8 @@
           "title": "Preferenza"
         },
         "proactiveAgent": {
-          "description": "Scegli come Okou impara, pianifica, porta avanti Tasks e propone prossimi passi.",
-          "title": "Proactive Agent"
+          "description": "Scegli come Okou lavora in modo proattivo.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "Strumenti"
@@ -5608,16 +5608,6 @@
         "retryMessage": "Non è stato possibile caricare o aggiornare le impostazioni di Morning Brief. Riprova per continuare.",
         "title": "Riepilogo mattutino"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "Imposta il fuso orario nelle preferenze.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "Rivedi le attività durante la notte e migliora la memoria personale.",
         "missingDefaultAgent": "Scegli un Agent predefinito disponibile.",
@@ -5628,15 +5618,15 @@
         "retryMessage": "Impossibile caricare o aggiornare questa impostazione. Riprova.",
         "title": "Apprendimento"
       },
-      "proactivePlanning": {
-        "description": "Pianifica entro le deleghe esplicite e aggiorna Tasks. Il nuovo lavoro può iniziare se Tasks è attivo.",
+      "proactivePlanningAction": {
+        "description": "Pianifica e svolge il lavoro che deleghi e ti avvisa quando è necessario il tuo intervento.",
         "missingDefaultAgent": "Scegli un Agent predefinito disponibile.",
         "missingTimezone": "Imposta il fuso orario nelle preferenze.",
         "preparationFailed": "Questo flusso non è temporaneamente disponibile. Okou riproverà.",
         "preparing": "Preparazione del flusso di lavoro.",
         "retry": "Retry",
         "retryMessage": "Impossibile caricare o aggiornare questa impostazione. Riprova.",
-        "title": "Pianificazione"
+        "title": "Pianificazione e azione"
       },
       "proactiveSuggestions": {
         "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
@@ -5646,7 +5636,7 @@
         "preparing": "Preparazione dei suggerimenti orari. Puoi disattivarli in qualsiasi momento.",
         "retry": "Riprova",
         "retryMessage": "Impossibile caricare o aggiornare le impostazioni. Riprova.",
-        "title": "Suggerimenti proattivi"
+        "title": "Suggerimenti"
       },
       "send": {
         "cmdEnter": "⌘ Invio",
@@ -6057,8 +6047,6 @@
     "tailscale": {
       "authenticationFailed": "Autenticazione Tailscale SSH non riuscita. Controlla il nome utente di sistema, abilita Tailscale SSH sulla destinazione con tag e autorizza questo accesso nella policy SSH accept della tailnet.",
       "deleteHelp": "Eliminare questo host? Gli agenti non lo vedranno più nell’inventario in tempo reale.",
-      "editUnavailable": "Questo host ora usa Tailscale. La modifica e il ricollegamento di Tailscale non sono ancora disponibili qui. Annulla questa modifica per mantenere il trasporto salvato.",
-      "needsRebind": "Questo host richiede una nuova configurazione di Tailscale. La configurazione e il ricollegamento di Tailscale non sono ancora disponibili qui.",
       "sshDocs": "Documentazione di Tailscale SSH",
       "sshHelp": "Usa l'identità della rete Tailscale selezionata, senza password SSH né chiave privata. Abilita Tailscale SSH su un dispositivo di destinazione con tag e autorizza questo nome utente di sistema in una policy SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6444,7 +6432,6 @@
       "sshHelp": "SSH protegge il tratto dal Runner al server SSH. Il server deve poter raggiungere la destinazione RFB. Una chat può usare questo percorso solo se anche quell’host SSH è abilitato nella chat.",
       "sshNeedsRebind": "L’host SSH di questa connessione VNC deve essere ricollegato a Cloudflare Access. Ricollegalo nelle impostazioni SSH o scegli esplicitamente Diretto lì prima di connetterti.",
       "sshNeedsRebindStatus": "SSH da ricollegare",
-      "sshTailscaleNeedsRebind": "L’host SSH di questa connessione VNC richiede una nuova configurazione Tailscale. La configurazione e il collegamento di Tailscale non sono ancora disponibili qui.",
       "title": "Percorso di connessione",
       "unavailable": "Le impostazioni SSH non sono disponibili per questo account.",
       "via": "Host SSH:"

@@ -34,7 +34,7 @@ use super::diagnostics::{
 };
 use super::env::{
     PreparedRunPayload, RequiredAgentFiles, build_env_json_for_run, build_user_env_json,
-    write_required_agent_files,
+    prepare_required_agent_files,
 };
 use super::guest_state::{restore_guest_state, sync_guest_timezone};
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
@@ -1105,17 +1105,36 @@ impl AgentBootstrapInputs {
             let started = Instant::now();
             let result = prefetch
                 .race(run_pre_spawn_phase(cancel, &owner, async {
-                    // Storage reconciliation already finished. Both operations
-                    // replace fixed inputs and have no agent execution effects.
-                    super::storage::apply_agent_instructions(sandbox, context).await?;
-                    super::storage::apply_workflow_skill_documents(sandbox, context).await?;
-                    write_required_agent_files(
-                        sandbox,
+                    // Storage reconciliation already finished. Prepare from
+                    // captured inputs within this timed, cancellable owner.
+                    let files = prepare_required_agent_files(
                         context,
                         &mut self.user_env_map,
                         &self.run_payload,
-                    )
-                    .await
+                    )?;
+                    let instructions = super::storage::AgentInstructionSource::prepare(context)?;
+                    let batch = instructions
+                        .as_ref()
+                        .and_then(|source| files.batch_with(source.entry()));
+                    if let Some(batch) = batch {
+                        // Bootstrap files now exist before required helpers.
+                        // A failed batch can leave a prefix, but never applies
+                        // its source or crosses the Agent spawn boundary.
+                        sandbox.write_private_files(&batch).await?;
+                        if let Some(source) = &instructions {
+                            source.apply(sandbox, context).await?;
+                        }
+                        super::storage::apply_workflow_skill_documents(sandbox, context).await?;
+                    } else {
+                        // Retain the original grouping outside batch admission;
+                        // never retry an uncertain combined mutation separately.
+                        if let Some(source) = &instructions {
+                            source.publish_and_apply(sandbox, context).await?;
+                        }
+                        super::storage::apply_workflow_skill_documents(sandbox, context).await?;
+                        sandbox.write_private_files(&files.entries()).await?;
+                    }
+                    RunnerResult::Ok(files.into_paths())
                 }))
                 .await;
             let error = match result {

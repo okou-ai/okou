@@ -5122,8 +5122,8 @@
           "title": "偏好设置"
         },
         "proactiveAgent": {
-          "description": "选择 Okou 如何学习、规划、推进任务和提供建议。",
-          "title": "Proactive Agent"
+          "description": "选择 Okou 主动工作的方式。",
+          "title": "Proactive"
         },
         "tools": {
           "title": "工具"
@@ -5528,16 +5528,6 @@
         "retryMessage": "晨报设置无法加载或更新，请重试以继续。",
         "title": "晨报"
       },
-      "proactiveJobs": {
-        "description": "自动推进你的任务，在需要你处理或任务完成时提醒你。",
-        "missingDefaultAgent": "请先选择可用的默认 Agent。",
-        "missingTimezone": "请在偏好设置中设置时区。",
-        "preparationFailed": "任务暂时无法推进；如果工作已暂停，可关闭后重新开启以重试。",
-        "preparing": "正在准备任务，你可以随时关闭。",
-        "retry": "重试",
-        "retryMessage": "无法读取或更新任务设置，请重试。",
-        "title": "自动推进任务"
-      },
       "proactiveLearning": {
         "description": "夜间回顾你的信息和工作，整理个人记忆、更新理解。",
         "missingDefaultAgent": "请先选择可用的默认 Agent。",
@@ -5548,15 +5538,15 @@
         "retryMessage": "无法加载或更新此设置，请重试。",
         "title": "主动学习"
       },
-      "proactivePlanning": {
-        "description": "在你明确交办的范围内规划并维护任务。开启 Tasks 后，新任务可立即推进。",
+      "proactivePlanningAction": {
+        "description": "在你交办的范围内规划并推进任务，需要你处理时提醒你。",
         "missingDefaultAgent": "请先选择可用的默认 Agent。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "此工作流暂不可用，Okou 会重试。",
         "preparing": "正在准备此工作流。",
         "retry": "重试",
         "retryMessage": "无法加载或更新此设置，请重试。",
-        "title": "主动规划"
+        "title": "规划与执行"
       },
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
@@ -5566,7 +5556,7 @@
         "preparing": "正在准备每小时建议，你可以随时关闭。",
         "retry": "重试",
         "retryMessage": "无法加载或更新主动建议设置，请重试。",
-        "title": "主动建议"
+        "title": "建议"
       },
       "send": {
         "cmdEnter": "⌘ Enter",
@@ -5970,8 +5960,6 @@
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 身份认证失败。请检查系统用户名，在带标签的目标设备上启用 Tailscale SSH，并在 tailnet 的 SSH accept 策略中允许此登录。",
       "deleteHelp": "确定删除该主机？智能体将不再在可用主机列表中看到它。",
-      "editUnavailable": "此主机现已使用 Tailscale。此处尚未提供 Tailscale 编辑和重新绑定功能。请取消此次编辑以保留已保存的传输方式。",
-      "needsRebind": "此主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。",
       "sshDocs": "Tailscale SSH 官方文档",
       "sshHelp": "使用所选 Tailscale 网络的身份认证，无需 SSH 密码或私钥。请在带标签的目标设备上启用 Tailscale SSH，并通过 SSH accept 策略允许此系统用户名。",
       "sshTitle": "Tailscale SSH",
@@ -6345,7 +6333,6 @@
       "sshHelp": "SSH 仅保护 Runner 到 SSH 服务器这一跳。该服务器必须能够访问 RFB 目标。只有在聊天中同时启用该 SSH 主机，才能使用此路由。",
       "sshNeedsRebind": "此 VNC 连接使用的 SSH 主机需要重新绑定 Cloudflare Access。请先在 SSH 设置中重新绑定，或明确选择直连，再尝试连接。",
       "sshNeedsRebindStatus": "SSH 需要重新绑定",
-      "sshTailscaleNeedsRebind": "此 VNC 连接使用的 SSH 主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。",
       "title": "连接路由",
       "unavailable": "此账户无法使用 SSH 设置。",
       "via": "SSH 主机："

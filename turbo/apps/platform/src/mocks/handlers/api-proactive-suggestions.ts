@@ -5,10 +5,7 @@ import {
 import type { ProactivePreference } from "@okouai/api-contracts/contracts/proactive";
 import { mockApi } from "../msw-contract.ts";
 import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
-import {
-  proactiveLearningContract,
-  proactivePlanningContract,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 
 let preference: ProactiveSuggestionsPreference = {
   enabled: false,
@@ -25,23 +22,14 @@ let learning: ProactivePreference = {
   status: "paused",
   unavailableReason: null,
 };
-let planning: ProactivePreference = {
-  enabled: false,
-  status: "paused",
-  unavailableReason: null,
-};
 export function resetMockProactiveSuggestions(): void {
   preference = { enabled: false, status: "paused", unavailableReason: null };
   jobs = { enabled: false, status: "paused", unavailableReason: null };
   learning = { enabled: false, status: "paused", unavailableReason: null };
-  planning = { enabled: false, status: "paused", unavailableReason: null };
 }
 export const apiProactiveSuggestionsHandlers = [
   mockApi(proactiveLearningContract.get, ({ respond }) =>
     respond(200, learning),
-  ),
-  mockApi(proactivePlanningContract.get, ({ respond }) =>
-    respond(200, planning),
   ),
   mockApi(proactiveLearningContract.update, ({ body, respond }) => {
     learning = {
@@ -50,14 +38,6 @@ export const apiProactiveSuggestionsHandlers = [
       status: body.enabled ? "enabled" : "paused",
     };
     return respond(200, learning);
-  }),
-  mockApi(proactivePlanningContract.update, ({ body, respond }) => {
-    planning = {
-      ...planning,
-      enabled: body.enabled,
-      status: body.enabled ? "enabled" : "paused",
-    };
-    return respond(200, planning);
   }),
   mockApi(proactiveJobsContract.get, ({ respond }) => respond(200, jobs)),
   mockApi(proactiveJobsContract.update, ({ body, respond }) => {

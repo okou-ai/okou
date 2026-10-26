@@ -4,7 +4,6 @@ import {
   type TailscaleImpactPreview,
 } from "@okouai/api-contracts/contracts/tailscale";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -61,7 +60,6 @@ async function page() {
       },
     },
     path: "/connectors?scope=private-network",
-    featureSwitches: { [FeatureSwitchKey.TailscaleAccess]: true },
   });
   const section = await screen.findByRole("region", { name: "Tailscale" });
   await within(section).findByText(config.name);

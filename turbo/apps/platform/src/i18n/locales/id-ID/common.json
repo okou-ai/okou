@@ -5122,8 +5122,8 @@
           "title": "Preferensi"
         },
         "proactiveAgent": {
-          "description": "Pilih cara Okou belajar, merencanakan, mengerjakan Tasks, dan menyarankan langkah berikutnya.",
-          "title": "Proactive Agent"
+          "description": "Pilih cara Okou bekerja secara proaktif.",
+          "title": "Proactive"
         },
         "tools": {
           "title": "Alat"
@@ -5528,16 +5528,6 @@
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
-      "proactiveJobs": {
-        "description": "Automatically work on your tasks and notify you when your input is needed or a task is complete.",
-        "missingDefaultAgent": "Choose a usable default Agent to work on your tasks.",
-        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Tasks could not advance. If work is paused, turn this off and on to retry.",
-        "preparing": "Preparing your tasks. You can turn this off at any time.",
-        "retry": "Retry",
-        "retryMessage": "Task settings could not be loaded or updated. Retry to continue.",
-        "title": "Proactive tasks"
-      },
       "proactiveLearning": {
         "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
@@ -5548,15 +5538,15 @@
         "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
         "title": "Pembelajaran"
       },
-      "proactivePlanning": {
-        "description": "Rencanakan dalam lingkup pekerjaan yang Anda delegasikan dan perbarui Tasks. Pekerjaan baru dapat dimulai saat Tasks aktif.",
+      "proactivePlanningAction": {
+        "description": "Rencanakan dan kerjakan tugas yang Anda delegasikan, serta beri tahu saat masukan Anda diperlukan.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia. Okou akan mencoba lagi.",
         "preparing": "Menyiapkan alur kerja ini.",
         "retry": "Retry",
         "retryMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui. Coba lagi.",
-        "title": "Perencanaan"
+        "title": "Perencanaan & tindakan"
       },
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
@@ -5566,7 +5556,7 @@
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
         "retryMessage": "Pengaturan tidak dapat dimuat atau diperbarui. Coba lagi.",
-        "title": "Saran proaktif"
+        "title": "Saran"
       },
       "send": {
         "cmdEnter": "⌘ Enter",
@@ -5970,8 +5960,6 @@
     "tailscale": {
       "authenticationFailed": "Autentikasi Tailscale SSH gagal. Periksa nama pengguna sistem, aktifkan Tailscale SSH pada tujuan yang memiliki tag, dan izinkan login ini dalam kebijakan SSH accept tailnet.",
       "deleteHelp": "Hapus host ini? Agen tidak akan lagi melihat host ini di inventaris langsung.",
-      "editUnavailable": "Host ini kini menggunakan Tailscale. Pengeditan dan pengikatan ulang Tailscale belum tersedia di sini. Batalkan pengeditan ini untuk mempertahankan transport yang tersimpan.",
-      "needsRebind": "Host ini memerlukan konfigurasi Tailscale baru. Penyiapan dan pengikatan ulang Tailscale belum tersedia di sini.",
       "sshDocs": "Dokumentasi Tailscale SSH",
       "sshHelp": "Menggunakan identitas jaringan Tailscale yang dipilih, tanpa kata sandi SSH atau kunci privat. Aktifkan Tailscale SSH pada perangkat tujuan yang memiliki tag dan izinkan nama pengguna sistem ini dalam kebijakan SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6345,7 +6333,6 @@
       "sshHelp": "SSH melindungi jalur Runner ke server SSH. Server tersebut harus dapat menjangkau tujuan RFB. Chat hanya dapat menggunakan rute ini jika host SSH tersebut juga diaktifkan di chat itu.",
       "sshNeedsRebind": "Host SSH untuk koneksi VNC ini perlu ditautkan kembali ke Cloudflare Access. Tautkan kembali di pengaturan SSH atau pilih Direct secara eksplisit di sana sebelum menyambung.",
       "sshNeedsRebindStatus": "SSH perlu ditautkan kembali",
-      "sshTailscaleNeedsRebind": "Host SSH untuk koneksi VNC ini memerlukan konfigurasi Tailscale baru. Pengaturan dan penautan ulang Tailscale belum tersedia di sini.",
       "title": "Rute koneksi",
       "unavailable": "Pengaturan SSH tidak tersedia untuk akun ini.",
       "via": "Host SSH:"
