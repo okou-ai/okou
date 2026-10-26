@@ -399,7 +399,6 @@
       "manage": "Manage",
       "mobile": {
         "invite": "Invite",
-        "openArtifacts": "Open mobile artifacts",
         "openAutomations": "Open mobile automations",
         "openMenu": "Open menu"
       },
@@ -679,7 +678,6 @@
       "previewSlide": "Preview slide {{slideNumber}}",
       "previewWebsite": "Preview website template {{title}}",
       "previousSlide": "Preview previous slide",
-      "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
       "selectStyle": "Select style {{style}}",
@@ -718,9 +716,7 @@
       "use": "Use",
       "useThisTemplate": "Use this template",
       "visibility": {
-        "changeLabel": "Change template visibility",
-        "privateState": "Only you can see and use it",
-        "workspaceState": "Anyone in this workspace can use it"
+        "changeLabel": "Change template visibility"
       },
       "website": "Website",
       "websitePreview": "{{title}} website template preview",
@@ -2929,15 +2925,12 @@
         "website": "Website",
         "workflow": "Workflow"
       },
-      "importedLoadFailed": "Couldn't load uploaded templates.",
-      "importedUnavailable": "Uploaded templates are temporarily unavailable.",
       "previewTemplate": "Preview template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
       "previewWorkflow": "Preview workflow template {{title}}",
       "removeTemplate": "Remove template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
-      "removeWorkflow": "Remove workflow template {{title}}",
-      "retry": "Retry"
+      "removeWorkflow": "Remove workflow template {{title}}"
     },
     "thread": {
       "ariaLabel": "Chat thread",
@@ -2962,7 +2955,6 @@
       },
       "noEmojiFound": "No emoji found",
       "notFound": "Chat thread not found",
-      "openArtifacts": "Open artifacts",
       "openBrowser": "Open browser",
       "openNamedAgent": "Open agent {{name}}",
       "openNamedChat": "Open chat {{title}}",

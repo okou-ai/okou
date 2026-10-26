@@ -8,7 +8,19 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import postgres from "postgres";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import {
   prepareWorkflowAttachmentBundle,
   readLegacyWorkflowAttachments,
@@ -20,53 +32,51 @@ import {
 import { workflowAttachmentsSchema } from "@okouai/api-contracts/contracts/workflow-attachments";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 
-const rowSchema = z.object({
-  id: z.uuid(),
-  orgId: z.string(),
-  agentId: z.uuid(),
-  ownerUserId: z.string(),
-  visibility: z.enum(["private", "public"]),
-  updatedAt: z.string(),
-  instructionHash: z.string(),
+const rowSchema = object({
+  id: uuid(),
+  orgId: string(),
+  agentId: uuid(),
+  ownerUserId: string(),
+  visibility: zEnum(["private", "public"]),
+  updatedAt: string(),
+  instructionHash: string(),
   attachments: workflowAttachmentsSchema.nullable(),
-  storageId: z.uuid().nullable(),
-  storagePrefix: z.string().nullable(),
-  storageUpdatedAt: z.string().nullable(),
-  unpublished: z.boolean(),
-  versionId: z.string().nullable(),
-  s3Key: z.string().nullable(),
-  pending: z.boolean(),
+  storageId: uuid().nullable(),
+  storagePrefix: string().nullable(),
+  storageUpdatedAt: string().nullable(),
+  unpublished: boolean(),
+  versionId: string().nullable(),
+  s3Key: string().nullable(),
+  pending: boolean(),
 });
-type Source = z.infer<typeof rowSchema>;
-const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
-const emptySourceSchema = z.object({
-  workflowId: z.uuid(),
-  storageId: z.uuid(),
-  archiveKey: z.string(),
+type Source = zInfer<typeof rowSchema>;
+const hashSchema = string().regex(/^[a-f0-9]{64}$/);
+const emptySourceSchema = object({
+  workflowId: uuid(),
+  storageId: uuid(),
+  archiveKey: string(),
   archiveSha256: hashSchema,
 });
-type EmptySource = z.infer<typeof emptySourceSchema>;
-const evidenceSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("registered"),
+type EmptySource = zInfer<typeof emptySourceSchema>;
+const evidenceSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("registered"),
     manifestSha256: hashSchema,
-    manifestVersion: z.string(),
+    manifestVersion: string(),
   }),
   emptySourceSchema.omit({ archiveSha256: true }).extend({
-    kind: z.literal("unpublished-empty"),
+    kind: literal("unpublished-empty"),
   }),
 ]);
-const readySchema = z.object({
+const readySchema = object({
   source: rowSchema,
   evidence: evidenceSchema,
   archiveSha256: hashSchema,
-  files: z.array(
-    z.object({ path: z.string(), size: z.number(), sha256: z.string() }),
-  ),
+  files: array(object({ path: string(), size: number(), sha256: string() })),
 });
-const planSchema = z.object({
-  schemaVersion: z.literal(2),
-  rows: z.array(readySchema).max(100),
+const planSchema = object({
+  schemaVersion: literal(2),
+  rows: array(readySchema).max(100),
 });
 class SourceUnavailable extends Error {
   override name = "SourceUnavailable";
@@ -82,12 +92,10 @@ async function readReviewedEmptySources(
   const emptySources = new Map<string, EmptySource>();
   if (path !== undefined) {
     if (migrate) throw new Error("ApplyUsesReviewedPlanOnly");
-    const reviewed = z
-      .object({
-        schemaVersion: z.literal(1),
-        sources: z.array(emptySourceSchema).max(100),
-      })
-      .parse(JSON.parse(await readFile(path, "utf8")));
+    const reviewed = object({
+      schemaVersion: literal(1),
+      sources: array(emptySourceSchema).max(100),
+    }).parse(JSON.parse(await readFile(path, "utf8")));
     for (const source of reviewed.sources) {
       if (emptySources.has(source.workflowId))
         throw new Error("DuplicateEmptySource");
@@ -115,12 +123,11 @@ async function main(): Promise<void> {
   const limit = Number(values.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error("InvalidBatchLimit");
-  const after =
-    values.after === undefined ? null : z.uuid().parse(values.after);
+  const after = values.after === undefined ? null : uuid().parse(values.after);
   const workflowId =
     values["workflow-id"] === undefined
       ? null
-      : z.uuid().parse(values["workflow-id"]);
+      : uuid().parse(values["workflow-id"]);
   if (
     values.migrate &&
     (!values["writers-drained"] ||
@@ -229,14 +236,10 @@ async function main(): Promise<void> {
       return readUnpublishedEmptySource(source, emptySource);
     }
     const manifestBytes = await readObject(`${source.s3Key}/manifest.json`);
-    const manifest = z
-      .object({
-        version: z.string(),
-        files: z.array(
-          z.object({ path: z.string(), hash: z.string(), size: z.number() }),
-        ),
-      })
-      .parse(JSON.parse(manifestBytes.toString("utf8")));
+    const manifest = object({
+      version: string(),
+      files: array(object({ path: string(), hash: string(), size: number() })),
+    }).parse(JSON.parse(manifestBytes.toString("utf8")));
     // Some retained manifests have an obsolete version label. The owned
     // Storage's namespaced content hash must still bind their exact file list
     // to HEAD; archive/file integrity checks below remain mandatory. Retire
@@ -281,7 +284,7 @@ async function main(): Promise<void> {
     };
   };
   const readRows = async () => {
-    return z.array(rowSchema).parse(
+    return array(rowSchema).parse(
       await db`
       SELECT w.id, w.org_id AS "orgId", w.agent_id AS "agentId", w.owner_user_id AS "ownerUserId",
         w.visibility, w.updated_at::text AS "updatedAt", w.attachments,
@@ -367,7 +370,7 @@ async function main(): Promise<void> {
     let alreadyCurrent = 0;
     let legacyManifestLabels = 0;
     let reviewedEmptySources = 0;
-    const ready: z.infer<typeof readySchema>[] = [];
+    const ready: zInfer<typeof readySchema>[] = [];
     const blocked: { workflowId: string; classification: string }[] = [];
     for (const source of rows) {
       try {

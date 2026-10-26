@@ -13,7 +13,7 @@ import {
   type CustomConnectorSlug,
   customConnectorManagedStatusSchema,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { z } from "zod";
+import { uuid } from "zod";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
@@ -140,7 +140,7 @@ export const directedConnectAccountTarget$ = computed(
     if (connectionId === undefined) {
       return { kind: "default" };
     }
-    const parsed = z.uuid().safeParse(connectionId);
+    const parsed = uuid().safeParse(connectionId);
     return parsed.success
       ? { kind: "exact", connectionId: parsed.data }
       : { kind: "invalid" };

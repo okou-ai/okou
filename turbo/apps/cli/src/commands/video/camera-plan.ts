@@ -1,4 +1,14 @@
-import { z } from "zod";
+import {
+  array,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 /**
  * Click-driven camera, second algorithm.
@@ -75,205 +85,178 @@ const FRAMED_ROLES = new Set([
   "AXRow",
 ]);
 
-const normalizedPointSchema = z.object({
-  x: z.number().min(0).max(1),
-  y: z.number().min(0).max(1),
+const normalizedPointSchema = object({
+  x: number().min(0).max(1),
+  y: number().min(0).max(1),
 });
 
-const normalizedRectSchema = z.object({
-  x: z.number().min(0).max(1),
-  y: z.number().min(0).max(1),
-  width: z.number().min(0).max(1),
-  height: z.number().min(0).max(1),
+const normalizedRectSchema = object({
+  x: number().min(0).max(1),
+  y: number().min(0).max(1),
+  width: number().min(0).max(1),
+  height: number().min(0).max(1),
 });
 
-const clickElementSchema = z
-  .object({
-    role: z.string(),
-    normalized: normalizedRectSchema,
-  })
-  .passthrough();
+const clickElementSchema = object({
+  role: string(),
+  normalized: normalizedRectSchema,
+}).passthrough();
 
-const trackedPointerEventSchema = z
-  .object({
-    tMs: z.number().int().nonnegative(),
-    kind: z.enum(["click", "move"]),
-    normalized: normalizedPointSchema,
-    element: clickElementSchema.optional(),
-  })
-  .passthrough();
+const trackedPointerEventSchema = object({
+  tMs: number().int().nonnegative(),
+  kind: zEnum(["click", "move"]),
+  normalized: normalizedPointSchema,
+  element: clickElementSchema.optional(),
+}).passthrough();
 
-const trackedClickSchema = z
-  .object({
-    tMs: z.number().int().nonnegative(),
-    normalized: normalizedPointSchema,
-    element: clickElementSchema.optional(),
-  })
-  .passthrough();
+const trackedClickSchema = object({
+  tMs: number().int().nonnegative(),
+  normalized: normalizedPointSchema,
+  element: clickElementSchema.optional(),
+}).passthrough();
 
-const typingBurstSchema = z.object({
-  startMs: z.number().int().nonnegative(),
-  endMs: z.number().int().nonnegative(),
+const typingBurstSchema = object({
+  startMs: number().int().nonnegative(),
+  endMs: number().int().nonnegative(),
 });
 
-const pixelRectSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  width: z.number().positive(),
-  height: z.number().positive(),
+const pixelRectSchema = object({
+  x: number(),
+  y: number(),
+  width: number().positive(),
+  height: number().positive(),
 });
 
-const desktopInputTrackSchema = z
-  .object({
-    version: z.literal(1),
-    recording: z
-      .object({
-        durationMs: z.number().int().positive(),
-        video: z
-          .object({
-            width: z.number().int().positive(),
-            height: z.number().int().positive(),
-            frameRate: z.number().positive(),
-          })
-          .passthrough(),
-        content: z
-          .object({ pixelRect: pixelRectSchema.optional() })
-          .passthrough()
-          .optional(),
-      })
-      .passthrough(),
-    clicks: z.array(trackedClickSchema).default([]),
-    pointerEvents: z.array(trackedPointerEventSchema).optional(),
-    typingBursts: z.array(typingBurstSchema).optional(),
-  })
-  .passthrough();
+const desktopInputTrackSchema = object({
+  version: literal(1),
+  recording: object({
+    durationMs: number().int().positive(),
+    video: object({
+      width: number().int().positive(),
+      height: number().int().positive(),
+      frameRate: number().positive(),
+    }).passthrough(),
+    content: object({ pixelRect: pixelRectSchema.optional() })
+      .passthrough()
+      .optional(),
+  }).passthrough(),
+  clicks: array(trackedClickSchema).default([]),
+  pointerEvents: array(trackedPointerEventSchema).optional(),
+  typingBursts: array(typingBurstSchema).optional(),
+}).passthrough();
 
-const demoCaptureTrackSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    session: z
-      .object({
-        recording: z
-          .object({
-            durationMs: z.number().positive(),
-            goOffsetMs: z.number().default(0),
-            width: z.number().int().positive(),
-            height: z.number().int().positive(),
-            frameRate: z.number().positive(),
-          })
-          .passthrough(),
-      })
-      .passthrough(),
-    events: z.array(z.unknown()),
-  })
-  .passthrough();
+const demoCaptureTrackSchema = object({
+  schemaVersion: literal(1),
+  session: object({
+    recording: object({
+      durationMs: number().positive(),
+      goOffsetMs: number().default(0),
+      width: number().int().positive(),
+      height: number().int().positive(),
+      frameRate: number().positive(),
+    }).passthrough(),
+  }).passthrough(),
+  events: array(zUnknown()),
+}).passthrough();
 
-export const inputTrackSchema = z.union([
+export const inputTrackSchema = union([
   desktopInputTrackSchema,
   demoCaptureTrackSchema,
 ]);
 
-const demoPointerSampleSchema = z
-  .object({
-    type: z.enum(["pointermove", "pointerdown", "click"]),
-    t: z.number().nonnegative(),
-    nx: z.number().min(0).max(1),
-    ny: z.number().min(0).max(1),
-  })
-  .passthrough();
+const demoPointerSampleSchema = object({
+  type: zEnum(["pointermove", "pointerdown", "click"]),
+  t: number().nonnegative(),
+  nx: number().min(0).max(1),
+  ny: number().min(0).max(1),
+}).passthrough();
 
-const viewportSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  width: z.number().positive(),
+const viewportSchema = object({
+  x: number(),
+  y: number(),
+  width: number().positive(),
 });
 
-const cameraKeySchema = z.object({
-  id: z.string().min(1),
-  startMs: z.number().int(),
-  durationMs: z.number().int().positive(),
+const cameraKeySchema = object({
+  id: string().min(1),
+  startMs: number().int(),
+  durationMs: number().int().positive(),
   rect: viewportSchema,
-  reason: z.string(),
-  clickMs: z.number().int().nonnegative().optional(),
+  reason: string(),
+  clickMs: number().int().nonnegative().optional(),
 });
 
-const cameraShotSchema = z
-  .object({
-    id: z.string().min(1),
-    startMs: z.number().int().nonnegative(),
-    endMs: z.number().int().positive(),
-    baseZoom: z.number().min(1).max(4),
-    keys: z.array(cameraKeySchema).min(1),
-  })
-  .refine(
-    (shot) => {
-      return shot.endMs > shot.startMs;
-    },
-    { message: "Camera shot endMs must be greater than startMs" },
-  );
+const cameraShotSchema = object({
+  id: string().min(1),
+  startMs: number().int().nonnegative(),
+  endMs: number().int().positive(),
+  baseZoom: number().min(1).max(4),
+  keys: array(cameraKeySchema).min(1),
+}).refine(
+  (shot) => {
+    return shot.endMs > shot.startMs;
+  },
+  { message: "Camera shot endMs must be greater than startMs" },
+);
 
-export const cameraPlanSchema = z
-  .object({
-    version: z.literal(2),
-    algorithm: z.literal("click-camera-v2"),
-    source: z.object({
-      durationMs: z.number().int().positive(),
-      width: z.number().int().positive(),
-      height: z.number().int().positive(),
-      frameRate: z.number().positive().max(240),
+export const cameraPlanSchema = object({
+  version: literal(2),
+  algorithm: literal("click-camera-v2"),
+  source: object({
+    durationMs: number().int().positive(),
+    width: number().int().positive(),
+    height: number().int().positive(),
+    frameRate: number().positive().max(240),
+  }),
+  content: pixelRectSchema,
+  shots: array(cameraShotSchema),
+  /** The clicks the plan serves, so a review can check them against whatever the plan became. */
+  clicks: array(
+    object({
+      tMs: number().int().nonnegative(),
+      x: number(),
+      y: number(),
+      elementRole: string().optional(),
+      /** Share of the picture that changed within `REACTION_DELAY_MS` of the click. */
+      reaction: number().min(0).max(1).optional(),
     }),
-    content: pixelRectSchema,
-    shots: z.array(cameraShotSchema),
-    /** The clicks the plan serves, so a review can check them against whatever the plan became. */
-    clicks: z
-      .array(
-        z.object({
-          tMs: z.number().int().nonnegative(),
-          x: z.number(),
-          y: z.number(),
-          elementRole: z.string().optional(),
-          /** Share of the picture that changed within `REACTION_DELAY_MS` of the click. */
-          reaction: z.number().min(0).max(1).optional(),
-        }),
-      )
-      .default([]),
-  })
-  .superRefine((plan, context) => {
-    let previousEndMs = 0;
-    for (const [shotIndex, shot] of plan.shots.entries()) {
-      if (shot.startMs < previousEndMs) {
-        context.addIssue({
-          code: "custom",
-          path: ["shots", shotIndex, "startMs"],
-          message: "Camera shots must be ordered and must not overlap",
-        });
-      }
-      if (shot.endMs > plan.source.durationMs) {
-        context.addIssue({
-          code: "custom",
-          path: ["shots", shotIndex, "endMs"],
-          message: "Camera shot exceeds the source duration",
-        });
-      }
-      let previousKeyMs = Number.NEGATIVE_INFINITY;
-      for (const [keyIndex, key] of shot.keys.entries()) {
-        if (key.startMs < previousKeyMs) {
-          context.addIssue({
-            code: "custom",
-            path: ["shots", shotIndex, "keys", keyIndex, "startMs"],
-            message: "Camera keys must be ordered inside their shot",
-          });
-        }
-        previousKeyMs = key.startMs;
-      }
-      previousEndMs = shot.endMs;
+  ).default([]),
+}).superRefine((plan, context) => {
+  let previousEndMs = 0;
+  for (const [shotIndex, shot] of plan.shots.entries()) {
+    if (shot.startMs < previousEndMs) {
+      context.addIssue({
+        code: "custom",
+        path: ["shots", shotIndex, "startMs"],
+        message: "Camera shots must be ordered and must not overlap",
+      });
     }
-  });
+    if (shot.endMs > plan.source.durationMs) {
+      context.addIssue({
+        code: "custom",
+        path: ["shots", shotIndex, "endMs"],
+        message: "Camera shot exceeds the source duration",
+      });
+    }
+    let previousKeyMs = Number.NEGATIVE_INFINITY;
+    for (const [keyIndex, key] of shot.keys.entries()) {
+      if (key.startMs < previousKeyMs) {
+        context.addIssue({
+          code: "custom",
+          path: ["shots", shotIndex, "keys", keyIndex, "startMs"],
+          message: "Camera keys must be ordered inside their shot",
+        });
+      }
+      previousKeyMs = key.startMs;
+    }
+    previousEndMs = shot.endMs;
+  }
+});
 
-type DesktopInputTrack = z.infer<typeof desktopInputTrackSchema>;
-type DemoCaptureTrack = z.infer<typeof demoCaptureTrackSchema>;
-type InputTrack = z.infer<typeof inputTrackSchema>;
-export type CameraPlan = z.infer<typeof cameraPlanSchema>;
+type DesktopInputTrack = zInfer<typeof desktopInputTrackSchema>;
+type DemoCaptureTrack = zInfer<typeof demoCaptureTrackSchema>;
+type InputTrack = zInfer<typeof inputTrackSchema>;
+export type CameraPlan = zInfer<typeof cameraPlanSchema>;
 
 export interface VideoSource {
   readonly durationMs: number;

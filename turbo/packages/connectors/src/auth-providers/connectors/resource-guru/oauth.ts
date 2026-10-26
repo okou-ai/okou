@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -34,14 +34,14 @@ interface ResourceGuruRefreshResult {
   readonly scopes: string[] | null;
 }
 
-const tokenResponseSchema = z.object({
-  access_token: z.string().optional(),
-  refresh_token: z.string().nullable().optional(),
-  expires_in: z.number().optional(),
-  scope: z.string().optional(),
-  token_type: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
+const tokenResponseSchema = object({
+  access_token: string().optional(),
+  refresh_token: string().nullable().optional(),
+  expires_in: number().optional(),
+  scope: string().optional(),
+  token_type: string().optional(),
+  error: string().optional(),
+  error_description: string().optional(),
 });
 
 /** Build the Resource Guru OAuth authorization URL. */
@@ -171,14 +171,12 @@ async function fetchResourceGuruUserInfo(
     throw new Error(`Resource Guru user info fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      id: z.number().int().positive(),
-      first_name: z.string(),
-      last_name: z.string(),
-      email: z.string(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: number().int().positive(),
+    first_name: string(),
+    last_name: string(),
+    email: string(),
+  }).parse(await response.json());
 
   const name = [data.first_name, data.last_name]
     .map((part) => {

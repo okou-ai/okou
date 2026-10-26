@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import type { ZodType } from "zod";
 import { authContract } from "../contracts/auth";
 import { computerUseSessionHostsContract } from "../contracts/computer-use";
 import {
@@ -10,7 +10,7 @@ import { featureSwitchesResponseSchema } from "../contracts/feature-switches";
 import { orgResponseSchema } from "../contracts/orgs";
 
 export interface SwiftTypeBinding {
-  readonly schema: z.ZodType;
+  readonly schema: ZodType;
   readonly swiftTypeName: string;
   readonly doc: readonly string[];
 }

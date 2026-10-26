@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { uuid as zUuid } from "zod";
 
 export type ConnectorSelectorIdentity =
   | { readonly kind: "builtin"; readonly slug: string; readonly label: string }
@@ -39,7 +39,7 @@ export function findConnectorBySelector<T>(
   identityOf: (connector: T) => ConnectorSelectorIdentity,
 ): T | undefined {
   const { kind, value } = parseConnectorSelector(selector);
-  const uuid = z.uuid().safeParse(value);
+  const uuid = zUuid().safeParse(value);
   const canonical = uuid.success ? uuid.data.toLowerCase() : value;
   const candidates = connectors
     .map((connector) => {

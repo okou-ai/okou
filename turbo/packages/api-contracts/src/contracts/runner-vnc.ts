@@ -1,4 +1,16 @@
-import { z } from "zod";
+import {
+  array,
+  base64,
+  discriminatedUnion,
+  int,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { vncConnectionFailureReasonSchema } from "./vnc-connection-observations";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -25,43 +37,35 @@ import {
 
 const c = initContract();
 
-const generationSchema = z.int().positive().max(2_147_483_647);
+const generationSchema = int().positive().max(2_147_483_647);
 
 /** VNC-only eviction; an explicit null selects every VNC connection in the Run. */
-export const runnerVncInvalidateSchema = z
-  .object({
-    runId: z.uuid(),
-    connectionId: z.uuid().nullable(),
-  })
-  .strict();
+export const runnerVncInvalidateSchema = object({
+  runId: uuid(),
+  connectionId: uuid().nullable(),
+}).strict();
 
-export type RunnerVncInvalidate = z.infer<typeof runnerVncInvalidateSchema>;
+export type RunnerVncInvalidate = zInfer<typeof runnerVncInvalidateSchema>;
 
-const sshTransportSnapshotSchema = z
-  .object({
-    type: z.literal("ssh"),
-    connectionId: z.uuid(),
-    generation: generationSchema,
-  })
-  .strict();
-const directTransportSnapshotSchema = z
-  .object({ type: z.literal("direct") })
-  .strict();
-const accessTransportSnapshotSchema = z
-  .object({
-    type: z.literal("cloudflare_access"),
-    configId: z.uuid(),
-    generation: generationSchema,
-  })
-  .strict();
-const tailscaleTransportSnapshotSchema = z
-  .object({
-    type: z.literal("tailscale"),
-    configId: z.uuid(),
-    generation: generationSchema,
-  })
-  .strict();
-const transportSnapshotSchema = z.discriminatedUnion("type", [
+const sshTransportSnapshotSchema = object({
+  type: literal("ssh"),
+  connectionId: uuid(),
+  generation: generationSchema,
+}).strict();
+const directTransportSnapshotSchema = object({
+  type: literal("direct"),
+}).strict();
+const accessTransportSnapshotSchema = object({
+  type: literal("cloudflare_access"),
+  configId: uuid(),
+  generation: generationSchema,
+}).strict();
+const tailscaleTransportSnapshotSchema = object({
+  type: literal("tailscale"),
+  configId: uuid(),
+  generation: generationSchema,
+}).strict();
+const transportSnapshotSchema = discriminatedUnion("type", [
   directTransportSnapshotSchema,
   sshTransportSnapshotSchema,
   accessTransportSnapshotSchema,
@@ -77,13 +81,13 @@ const resolvedTailscaleTransportSchema =
     credentials: tailscaleCredentialsSchema,
     tags: tailscaleTagsSchema,
   });
-const resolvedKdcTransportSchema = z.discriminatedUnion("type", [
+const resolvedKdcTransportSchema = discriminatedUnion("type", [
   directTransportSnapshotSchema,
   sshTransportSnapshotSchema,
   resolvedAccessKdcTransportSchema,
   resolvedTailscaleTransportSchema,
 ]);
-const resolvedTransportSchema = z.discriminatedUnion("type", [
+const resolvedTransportSchema = discriminatedUnion("type", [
   directTransportSnapshotSchema,
   sshTransportSnapshotSchema,
   resolvedAccessKdcTransportSchema.extend({
@@ -91,136 +95,121 @@ const resolvedTransportSchema = z.discriminatedUnion("type", [
   }),
   resolvedTailscaleTransportSchema,
 ]);
-const kdcSnapshotSchema = z
-  .object({
-    host: z.string().min(1).max(253),
-    port: z.int().min(1).max(65_535),
-    transport: resolvedKdcTransportSchema,
-    ticketLifetimeSeconds: z.int().min(1).max(7200),
-    renewableLifetimeSeconds: z.int().min(0).max(7200),
-  })
-  .strict();
+const kdcSnapshotSchema = object({
+  host: string().min(1).max(253),
+  port: int().min(1).max(65_535),
+  transport: resolvedKdcTransportSchema,
+  ticketLifetimeSeconds: int().min(1).max(7200),
+  renewableLifetimeSeconds: int().min(0).max(7200),
+}).strict();
 
-const runnerVncKerberosSecuritySchema = z
-  .object({
-    type: z.literal("qemu_x509_gssapi"),
-    trust: vncTrustSchema,
-    service: kerberosServicePrincipalSchema,
-    kdc: kdcSnapshotSchema.nullable(),
-  })
-  .strict();
-export const runnerVncSecuritySchema = z.discriminatedUnion("type", [
+const runnerVncKerberosSecuritySchema = object({
+  type: literal("qemu_x509_gssapi"),
+  trust: vncTrustSchema,
+  service: kerberosServicePrincipalSchema,
+  kdc: kdcSnapshotSchema.nullable(),
+}).strict();
+export const runnerVncSecuritySchema = discriminatedUnion("type", [
   ...vncRsaAesSecuritySchema.options,
-  z.object({ type: z.literal("x509_vnc"), trust: vncTrustSchema }).strict(),
-  z.object({ type: z.literal("x509_plain"), trust: vncTrustSchema }).strict(),
-  z.object({ type: z.literal("x509_none"), trust: vncTrustSchema }).strict(),
-  z
-    .object({ type: z.literal("qemu_x509_sasl"), trust: vncTrustSchema })
-    .strict(),
-  z.object({ type: z.literal("apple_vnc_password") }).strict(),
-  z.object({ type: z.literal("apple_dh") }).strict(),
-  z.object({ type: z.literal("apple_srp") }).strict(),
-  z.object({ type: z.literal("apple_rsa_srp") }).strict(),
+  object({ type: literal("x509_vnc"), trust: vncTrustSchema }).strict(),
+  object({ type: literal("x509_plain"), trust: vncTrustSchema }).strict(),
+  object({ type: literal("x509_none"), trust: vncTrustSchema }).strict(),
+  object({ type: literal("qemu_x509_sasl"), trust: vncTrustSchema }).strict(),
+  object({ type: literal("apple_vnc_password") }).strict(),
+  object({ type: literal("apple_dh") }).strict(),
+  object({ type: literal("apple_srp") }).strict(),
+  object({ type: literal("apple_rsa_srp") }).strict(),
   runnerVncKerberosSecuritySchema,
 ]);
 
 const clientIdentityWire = {
-  certificateChainDer: z.array(z.base64()).min(1).max(8),
-  privateKeyPkcs8Der: z.base64(),
+  certificateChainDer: array(base64()).min(1).max(8),
+  privateKeyPkcs8Der: base64(),
 } as const;
 
-const runnerX509AuthenticationSchema = z.discriminatedUnion("method", [
+const runnerX509AuthenticationSchema = discriminatedUnion("method", [
   ...vncKerberosAuthenticationSchema.options,
   ...vncLegacyAuthenticationSchema.options,
   // The sensitive generator shares username/password wire fields. Owner/API
   // plaintext validation and the native engine enforce the exact 255-byte RSA bounds.
-  z
-    .object({
-      method: z.literal("rsa_aes_password"),
-      password: vncUsernamePasswordAuthenticationSchema.shape.password,
-    })
-    .strict(),
-  z
-    .object({
-      method: z.literal("rsa_aes_username_password"),
-      username: vncUsernamePasswordAuthenticationSchema.shape.username,
-      password: vncUsernamePasswordAuthenticationSchema.shape.password,
-    })
-    .strict(),
+  object({
+    method: literal("rsa_aes_password"),
+    password: vncUsernamePasswordAuthenticationSchema.shape.password,
+  }).strict(),
+  object({
+    method: literal("rsa_aes_username_password"),
+    username: vncUsernamePasswordAuthenticationSchema.shape.username,
+    password: vncUsernamePasswordAuthenticationSchema.shape.password,
+  }).strict(),
   // Generated private DTOs share a username/password field shape. The owner
   // contract and API post-KMS validation enforce stricter SCRAM ASCII bounds;
   // the Runner validates again before opening a socket.
-  z
-    .object({
-      method: z.literal("qemu_scram_sha256"),
-      username: vncUsernamePasswordAuthenticationSchema.shape.username,
-      password: vncUsernamePasswordAuthenticationSchema.shape.password,
-    })
-    .strict(),
-  z.object({ method: z.literal("none") }).strict(),
-  z
-    .object({ method: z.literal("client_certificate"), ...clientIdentityWire })
-    .strict(),
-  z
-    .object({
-      method: z.literal("client_certificate_vnc_password"),
-      ...clientIdentityWire,
-      password: z.string().min(1).max(8),
-    })
-    .strict(),
+  object({
+    method: literal("qemu_scram_sha256"),
+    username: vncUsernamePasswordAuthenticationSchema.shape.username,
+    password: vncUsernamePasswordAuthenticationSchema.shape.password,
+  }).strict(),
+  object({ method: literal("none") }).strict(),
+  object({
+    method: literal("client_certificate"),
+    ...clientIdentityWire,
+  }).strict(),
+  object({
+    method: literal("client_certificate_vnc_password"),
+    ...clientIdentityWire,
+    password: string().min(1).max(8),
+  }).strict(),
 ]);
 
-const commonRequestSchema = z
-  .object({
-    connectionId: z.uuid(),
-    runnerIdentity: z
-      .object({
-        runnerId: z.uuid(),
-        heartbeatGeneration: runnerHeartbeatGenerationSchema,
-      })
-      .strict(),
-  })
-  .strict();
+const commonRequestSchema = object({
+  connectionId: uuid(),
+  runnerIdentity: object({
+    runnerId: uuid(),
+    heartbeatGeneration: runnerHeartbeatGenerationSchema,
+  }).strict(),
+}).strict();
 
-const supportedProfileFieldsSchema = z
-  .object({
-    authMethod: z.enum([
-      "none",
-      "vnc_password",
-      "username_password",
-      "qemu_scram_sha256",
-      "qemu_kerberos_ticket",
-      "qemu_kerberos_keytab",
-      "qemu_kerberos_password",
-      "rsa_aes_password",
-      "rsa_aes_username_password",
-      "apple_dh_username_password",
-      "apple_srp_username_password",
-      "apple_rsa_srp_username_password",
-      "client_certificate",
-      "client_certificate_vnc_password",
-    ]),
-    securityType: z.enum([
-      "x509_none",
-      "x509_vnc",
-      "x509_plain",
-      "qemu_x509_sasl",
-      "qemu_x509_gssapi",
-      "rsa_aes_ra2",
-      "rsa_aes_ra2_256",
-      "rsa_aes_ra2ne",
-      "rsa_aes_ra2ne_256",
-      "apple_vnc_password",
-      "apple_dh",
-      "apple_srp",
-      "apple_rsa_srp",
-    ]),
-    transportType: z.enum(["direct", "ssh", "cloudflare_access", "tailscale"]),
-    kdcTransportType: z
-      .enum(["none", "direct", "ssh", "cloudflare_access", "tailscale"])
-      .optional(),
-  })
-  .strict();
+const supportedProfileFieldsSchema = object({
+  authMethod: zEnum([
+    "none",
+    "vnc_password",
+    "username_password",
+    "qemu_scram_sha256",
+    "qemu_kerberos_ticket",
+    "qemu_kerberos_keytab",
+    "qemu_kerberos_password",
+    "rsa_aes_password",
+    "rsa_aes_username_password",
+    "apple_dh_username_password",
+    "apple_srp_username_password",
+    "apple_rsa_srp_username_password",
+    "client_certificate",
+    "client_certificate_vnc_password",
+  ]),
+  securityType: zEnum([
+    "x509_none",
+    "x509_vnc",
+    "x509_plain",
+    "qemu_x509_sasl",
+    "qemu_x509_gssapi",
+    "rsa_aes_ra2",
+    "rsa_aes_ra2_256",
+    "rsa_aes_ra2ne",
+    "rsa_aes_ra2ne_256",
+    "apple_vnc_password",
+    "apple_dh",
+    "apple_srp",
+    "apple_rsa_srp",
+  ]),
+  transportType: zEnum(["direct", "ssh", "cloudflare_access", "tailscale"]),
+  kdcTransportType: zEnum([
+    "none",
+    "direct",
+    "ssh",
+    "cloudflare_access",
+    "tailscale",
+  ]).optional(),
+}).strict();
 
 const exactSecurityByAuth = {
   none: "x509_none",
@@ -238,12 +227,12 @@ const exactSecurityByAuth = {
   apple_srp_username_password: "apple_srp",
   apple_rsa_srp_username_password: "apple_rsa_srp",
 } as const satisfies Record<
-  z.infer<typeof supportedProfileFieldsSchema>["authMethod"],
-  z.infer<typeof supportedProfileFieldsSchema>["securityType"]
+  zInfer<typeof supportedProfileFieldsSchema>["authMethod"],
+  zInfer<typeof supportedProfileFieldsSchema>["securityType"]
 >;
 
 function matchesSupportedVncProfile(
-  profile: z.infer<typeof supportedProfileFieldsSchema>,
+  profile: zInfer<typeof supportedProfileFieldsSchema>,
 ): boolean {
   if (isVncKerberosMethod(profile.authMethod)) {
     return (
@@ -286,98 +275,82 @@ const supportedProfileSchema = supportedProfileFieldsSchema.refine(
 );
 
 const resolveRequestSchema = commonRequestSchema.extend({
-  supportedProfiles: z.array(supportedProfileSchema).max(128),
+  supportedProfiles: array(supportedProfileSchema).max(128),
 });
-const unavailableSchema = z
-  .object({ outcome: z.literal("unavailable") })
-  .strict();
-const configurationChangedSchema = z
-  .object({ outcome: z.literal("configuration_changed") })
-  .strict();
+const unavailableSchema = object({ outcome: literal("unavailable") }).strict();
+const configurationChangedSchema = object({
+  outcome: literal("configuration_changed"),
+}).strict();
 
-const resolveResponseSchema = z.discriminatedUnion("outcome", [
+const resolveResponseSchema = discriminatedUnion("outcome", [
   unavailableSchema,
-  z.object({ outcome: z.literal("unsupported_profile") }).strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_transport"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      serverName: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      transport: resolvedTransportSchema,
-      authentication: runnerX509AuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_apple_vnc_password"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      transport: resolvedTransportSchema,
-      authentication: runnerX509AuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_apple_dh"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      transport: resolvedTransportSchema,
-      authentication: runnerX509AuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_apple_srp"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      transport: resolvedTransportSchema,
-      authentication: runnerX509AuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_apple_rsa_srp"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      transport: resolvedTransportSchema,
-      authentication: runnerX509AuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_rsa_aes"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      transport: resolvedTransportSchema,
-      authentication: runnerX509AuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("resolved_kerberos"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      credentialRevision: generationSchema,
-      serverName: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      transport: resolvedTransportSchema,
-      authentication: runnerX509AuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
+  object({ outcome: literal("unsupported_profile") }).strict(),
+  object({
+    outcome: literal("resolved_transport"),
+    host: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    port: int().min(1).max(65_535),
+    generation: generationSchema,
+    serverName: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    transport: resolvedTransportSchema,
+    authentication: runnerX509AuthenticationSchema,
+    security: runnerVncSecuritySchema,
+  }).strict(),
+  object({
+    outcome: literal("resolved_apple_vnc_password"),
+    host: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    port: int().min(1).max(65_535),
+    generation: generationSchema,
+    transport: resolvedTransportSchema,
+    authentication: runnerX509AuthenticationSchema,
+    security: runnerVncSecuritySchema,
+  }).strict(),
+  object({
+    outcome: literal("resolved_apple_dh"),
+    host: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    port: int().min(1).max(65_535),
+    generation: generationSchema,
+    transport: resolvedTransportSchema,
+    authentication: runnerX509AuthenticationSchema,
+    security: runnerVncSecuritySchema,
+  }).strict(),
+  object({
+    outcome: literal("resolved_apple_srp"),
+    host: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    port: int().min(1).max(65_535),
+    generation: generationSchema,
+    transport: resolvedTransportSchema,
+    authentication: runnerX509AuthenticationSchema,
+    security: runnerVncSecuritySchema,
+  }).strict(),
+  object({
+    outcome: literal("resolved_apple_rsa_srp"),
+    host: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    port: int().min(1).max(65_535),
+    generation: generationSchema,
+    transport: resolvedTransportSchema,
+    authentication: runnerX509AuthenticationSchema,
+    security: runnerVncSecuritySchema,
+  }).strict(),
+  object({
+    outcome: literal("resolved_rsa_aes"),
+    host: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    port: int().min(1).max(65_535),
+    generation: generationSchema,
+    transport: resolvedTransportSchema,
+    authentication: runnerX509AuthenticationSchema,
+    security: runnerVncSecuritySchema,
+  }).strict(),
+  object({
+    outcome: literal("resolved_kerberos"),
+    host: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    port: int().min(1).max(65_535),
+    generation: generationSchema,
+    credentialRevision: generationSchema,
+    serverName: string().min(1).max(VNC_HOST_MAX_LENGTH),
+    transport: resolvedTransportSchema,
+    authentication: runnerX509AuthenticationSchema,
+    security: runnerVncSecuritySchema,
+  }).strict(),
 ]);
 
 const checkRequestSchema = commonRequestSchema.extend({
@@ -386,19 +359,19 @@ const checkRequestSchema = commonRequestSchema.extend({
   expectedKdcTransport: transportSnapshotSchema.optional(),
   expectedCredentialRevision: generationSchema.optional(),
 });
-const checkResponseSchema = z.discriminatedUnion("outcome", [
-  z.object({ outcome: z.literal("valid") }).strict(),
+const checkResponseSchema = discriminatedUnion("outcome", [
+  object({ outcome: literal("valid") }).strict(),
   unavailableSchema,
   configurationChangedSchema,
 ]);
 
 const observationRequestSchema = checkRequestSchema.extend({
-  expectedCreatedAt: z.string().datetime(),
-  observedAt: z.string().datetime(),
+  expectedCreatedAt: string().datetime(),
+  observedAt: string().datetime(),
   failureReason: vncConnectionFailureReasonSchema.nullable(),
 });
 
-const pathParams = z.object({ runId: z.uuid() }).strict();
+const pathParams = object({ runId: uuid() }).strict();
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
@@ -414,9 +387,9 @@ export const runnerVncContract = c.router({
     headers: authHeadersSchema,
     body: observationRequestSchema,
     responses: {
-      200: z
-        .object({ outcome: z.enum(["recorded", "ignored", "unavailable"]) })
-        .strict(),
+      200: object({
+        outcome: zEnum(["recorded", "ignored", "unavailable"]),
+      }).strict(),
       ...errors,
     },
     summary: "Record connection evidence from the winning official VNC Runner",
@@ -442,10 +415,10 @@ export const runnerVncContract = c.router({
   },
 });
 
-export type RunnerVncResolveRequest = z.infer<typeof resolveRequestSchema>;
-export type RunnerVncResolveResponse = z.infer<typeof resolveResponseSchema>;
-export type RunnerVncCheckRequest = z.infer<typeof checkRequestSchema>;
-export type RunnerVncCheckResponse = z.infer<typeof checkResponseSchema>;
-export type RunnerVncObservationRequest = z.infer<
+export type RunnerVncResolveRequest = zInfer<typeof resolveRequestSchema>;
+export type RunnerVncResolveResponse = zInfer<typeof resolveResponseSchema>;
+export type RunnerVncCheckRequest = zInfer<typeof checkRequestSchema>;
+export type RunnerVncCheckResponse = zInfer<typeof checkResponseSchema>;
+export type RunnerVncObservationRequest = zInfer<
   typeof observationRequestSchema
 >;

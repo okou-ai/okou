@@ -16,7 +16,7 @@ import {
 } from "@okouai/api-contracts/contracts/webhooks";
 import type StripeSDK from "stripe";
 import { Webhook } from "svix";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 
 import { createApp } from "../../../../app-factory";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
@@ -48,26 +48,26 @@ const TEST_APP_ROUTES = Object.freeze([
   ...emailInboundRoutes,
 ]);
 
-type AgentEventsBody = z.infer<(typeof webhookEventsContract.send)["body"]>;
-type AgentCompleteBody = z.infer<
+type AgentEventsBody = zInfer<(typeof webhookEventsContract.send)["body"]>;
+type AgentCompleteBody = zInfer<
   (typeof webhookCompleteContract.complete)["body"]
 >;
-type AgentRunOutputsBody = z.infer<typeof runCompletionMetadataSchema> & {
+type AgentRunOutputsBody = zInfer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
-type AgentHeartbeatBody = z.infer<
+type AgentHeartbeatBody = zInfer<
   (typeof webhookHeartbeatContract.send)["body"]
 >;
-type AgentTelemetryBody = z.infer<
+type AgentTelemetryBody = zInfer<
   (typeof webhookTelemetryContract.send)["body"]
 >;
-type AgentUsageEventBody = z.infer<
+type AgentUsageEventBody = zInfer<
   (typeof webhookUsageEventContract.send)["body"]
 >;
-type AgentStoragePrepareBody = z.infer<
+type AgentStoragePrepareBody = zInfer<
   (typeof webhookStoragesPrepareContract.prepare)["body"]
 >;
-type AgentStorageCommitBody = z.infer<
+type AgentStorageCommitBody = zInfer<
   (typeof webhookStoragesCommitContract.commit)["body"]
 >;
 interface EventConsumerSignatureHeaders {

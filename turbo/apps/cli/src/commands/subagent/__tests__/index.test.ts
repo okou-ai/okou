@@ -23,7 +23,14 @@ import {
   it,
   vi,
 } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
 
 import { createSubagentCommand } from "../index";
 import {
@@ -68,22 +75,20 @@ vi.mock("node:child_process", async (importOriginal) => {
 const fixture = fileURLToPath(
   new URL("../../../test/fixtures/pi-subagent-child.ts", import.meta.url),
 );
-const requestSchema = z
-  .object({
-    model: z.string(),
-    messages: z.array(z.object({ role: z.string() }).passthrough()),
-  })
-  .passthrough();
-const inspectionSchema = z.object({
-  id: z.string(),
-  pid: z.number(),
-  running: z.boolean(),
-  stdout: z.string(),
-  stderr: z.string(),
+const requestSchema = object({
+  model: string(),
+  messages: array(object({ role: string() }).passthrough()),
+}).passthrough();
+const inspectionSchema = object({
+  id: string(),
+  pid: number(),
+  running: boolean(),
+  stdout: string(),
+  stderr: string(),
 });
 
 interface ProviderRequest {
-  readonly body: z.infer<typeof requestSchema>;
+  readonly body: zInfer<typeof requestSchema>;
   readonly authorization: string | undefined;
   readonly response: ServerResponse;
 }
@@ -447,9 +452,9 @@ describe("okou subagent", () => {
     await waitForFile(item.stdout, (text) => {
       return Boolean(text?.includes("toolPid"));
     });
-    const toolPid = z
-      .object({ toolPid: z.number() })
-      .parse(JSON.parse((await readFile(item.stdout, "utf8")).trim())).toolPid;
+    const toolPid = object({ toolPid: number() }).parse(
+      JSON.parse((await readFile(item.stdout, "utf8")).trim()),
+    ).toolPid;
     await run("kill", item.id);
     await expect(access(dirname(item.stdout))).rejects.toThrow();
     const stat = await readFile(`/proc/${toolPid}/stat`, "utf8").catch(() => {

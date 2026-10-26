@@ -1051,9 +1051,11 @@ async def fetch_firewall_headers(
 
 
 async def post_platform_json(url: str, body: bytes, sandbox_token: str) -> None:
-    """Perform one bounded authenticated registration using the shared transport.
+    """Register a Router-assigned response ID using the shared bounded transport.
 
-    No retry: upstream is not admitted unless registration is acknowledged.
+    The caller awaits this after the upstream response, before response-hook
+    completion releases Run drain tracking. Registration is not retried; an error
+    does not establish non-execution, and the upstream request is not replayed.
     """
     req = platform_api.make_api_request(url, body, sandbox_token)
     plan = _build_connection_plan(req)

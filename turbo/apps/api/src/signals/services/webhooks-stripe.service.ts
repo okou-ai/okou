@@ -57,7 +57,7 @@ import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { now, nowDate, nowDateSql } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { z } from "zod";
+import { boolean, object } from "zod";
 import { clerk$ } from "../external/clerk";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -1314,7 +1314,7 @@ const grantAtomMemberCredits$ = command(
     // after the wallet lock, including a wait; nowDateSql retains mock clocks.
     // A newly visible plan can require a webhook retry, never an unpaid grant.
     const results = parseRawRows(
-      z.object({ eligible: z.boolean(), granted: z.boolean() }).strict(),
+      object({ eligible: boolean(), granted: boolean() }).strict(),
       await db.execute(sql`WITH atom_member_wallet AS MATERIALIZED (${wallet.getSQL()}),
         atom_member_clock AS MATERIALIZED (
           SELECT ${nowDateSql()} AS admitted_at

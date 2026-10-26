@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { object } from "zod";
 import { oomEvidenceSchema } from "../oom-evidence";
 import { webhookTelemetryContract } from "../webhooks";
 
@@ -17,24 +17,22 @@ const fixture: unknown = JSON.parse(
 
 // Compared against production collector output by the Rust test
 // collector_output_matches_api_fixture; paths are never normalized by tests.
-const collector = z
-  .object({
-    initial: oomEvidenceSchema,
-    sample: oomEvidenceSchema,
-    cleanup: oomEvidenceSchema,
-    tasks: oomEvidenceSchema,
-  })
-  .parse(
-    JSON.parse(
-      readFileSync(
-        new URL(
-          "../../../../../../crates/guest-control-server/tests/fixtures/oom-evidence-collector.json",
-          import.meta.url,
-        ),
-        "utf8",
+const collector = object({
+  initial: oomEvidenceSchema,
+  sample: oomEvidenceSchema,
+  cleanup: oomEvidenceSchema,
+  tasks: oomEvidenceSchema,
+}).parse(
+  JSON.parse(
+    readFileSync(
+      new URL(
+        "../../../../../../crates/guest-control-server/tests/fixtures/oom-evidence-collector.json",
+        import.meta.url,
       ),
+      "utf8",
     ),
-  );
+  ),
+);
 
 const workload = collector.tasks.groups[0].cgroup;
 const taskDomain = `${workload}/tools/task-00000000-0000-0000-0000-000000000001`;

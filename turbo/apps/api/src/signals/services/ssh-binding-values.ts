@@ -5,7 +5,7 @@ import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { and, eq, ne, or, sql, type SQL, type Subquery } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { literal } from "zod";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -195,7 +195,7 @@ export function sshConnectionCreationSource(
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("tailscale_id"),
       connectionMode: sql`${connectionMode}`
-        .mapWith(zodDriverValueDecoder(z.literal(connectionMode)))
+        .mapWith(zodDriverValueDecoder(literal(connectionMode)))
         .as("transport"),
       learnedHostKeyAlgorithm: sql`NULL`
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))

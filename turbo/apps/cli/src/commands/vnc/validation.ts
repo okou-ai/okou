@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { array, number, strictObject, tuple, uuid } from "zod";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 
 export class VncCommandError extends Error {
@@ -23,7 +23,7 @@ function invalid(message: string): never {
 }
 
 export function vncId(value: string): string {
-  if (!z.uuid().safeParse(value).success)
+  if (!uuid().safeParse(value).success)
     invalid("Use an exact UUID from vnc host list or vnc session list.");
   return value.toLowerCase();
 }
@@ -44,11 +44,11 @@ function json(value: string | undefined, limit: number): unknown {
   }
 }
 
-const geometrySchema = z.strictObject({
-  sessionId: z.uuid().transform((value) => {
+const geometrySchema = strictObject({
+  sessionId: uuid().transform((value) => {
     return value.toLowerCase();
   }),
-  epoch: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  epoch: number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
 
 export function vncGeometry(value: string | undefined) {
@@ -75,13 +75,9 @@ export function vncCoordinate(value: string | undefined): number {
   return integer(value, 0, 65535);
 }
 
-const pointsSchema = z
-  .array(
-    z.tuple([
-      z.number().int().min(0).max(65535),
-      z.number().int().min(0).max(65535),
-    ]),
-  )
+const pointsSchema = array(
+  tuple([number().int().min(0).max(65535), number().int().min(0).max(65535)]),
+)
   .min(2)
   .max(256);
 

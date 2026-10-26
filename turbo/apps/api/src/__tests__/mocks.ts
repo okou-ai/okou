@@ -10,7 +10,14 @@ import { ws } from "msw";
 import { Buffer } from "node:buffer";
 import type StripeSDK from "stripe";
 import { vi, type Mock } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+} from "zod";
 
 import { mockStripeClient } from "../signals/external/stripe-client";
 
@@ -645,11 +652,11 @@ vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
   );
 });
 
-const browserUseCdpCommandSchema = z.object({
-  id: z.number().int(),
-  method: z.string(),
-  params: z.record(z.string(), z.unknown()),
-  sessionId: z.string().optional(),
+const browserUseCdpCommandSchema = object({
+  id: number().int(),
+  method: string(),
+  params: record(string(), zUnknown()),
+  sessionId: string().optional(),
 });
 
 function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
@@ -1408,8 +1415,7 @@ export function mockAxiomSdkTelemetryFailure(
         (typeof dataset === "string" && datasets.includes(dataset));
       const matchesEvent =
         eventTypes === undefined ||
-        z
-          .array(z.object({ type: z.string().optional() }))
+        array(object({ type: string().optional() }))
           .parse(events)
           .some((entry) => {
             return entry.type !== undefined && eventTypes.includes(entry.type);

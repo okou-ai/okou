@@ -43,7 +43,7 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import { array, string } from "zod";
 import {
   completedGetStartedQuestSql,
   memberRewardWalletQuery,
@@ -190,7 +190,7 @@ import {
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 
 const log = logger("api:connector-data");
-const oauthScopesSchema = z.array(z.string());
+const oauthScopesSchema = array(string());
 const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS = 15 * 60;
 interface ExternalUserInfo {
   readonly id: string;

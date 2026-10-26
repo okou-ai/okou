@@ -1,7 +1,7 @@
-import { z } from "zod";
+import { array, object, string } from "zod";
 import { seal, unseal } from "./crypto";
 import type { EncryptedValue, Pending, ReceiverState, Updates } from "./types";
-const encryptedSchema = z.object({ iv: z.string(), data: z.string() });
+const encryptedSchema = object({ iv: string(), data: string() });
 /** Chunk ciphertext below SQLite's row limit; stream it across the RPC size limit. */
 export async function saveReceiver(
   storage: DurableObjectStorage,
@@ -56,11 +56,9 @@ export async function decodePendingBatch(
   connectionId: string,
   stream: ReadableStream,
 ) {
-  const parts = z
-    .array(encryptedSchema)
-    .parse(await new Response(stream).json());
+  const parts = array(encryptedSchema).parse(await new Response(stream).json());
   const decoded: string[] = [];
   for (const part of parts)
-    decoded.push(z.string().parse(await unseal(secret, connectionId, part)));
+    decoded.push(string().parse(await unseal(secret, connectionId, part)));
   return JSON.parse(decoded.join("")) as unknown;
 }

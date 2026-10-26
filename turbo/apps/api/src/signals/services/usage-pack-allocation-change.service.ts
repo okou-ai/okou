@@ -89,7 +89,7 @@ import {
   refundSourceMatches,
 } from "./usage-pack-credit-refund.service";
 
-import { z } from "zod";
+import { literal, object, record, string, unknown as zUnknown } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
 import { subscriptionSchedulePhasesEndingAt } from "./stripe-subscription-schedules.service";
@@ -103,7 +103,7 @@ import {
   isUsagePackPlanPriceId,
   usagePackUsdForKnownPriceId,
 } from "./billing-checkout.service";
-const retainedMutationRowSchema = z.record(z.string(), z.unknown());
+const retainedMutationRowSchema = record(string(), zUnknown());
 
 const PREVIEW_TTL_MS = 15 * 60 * 1000;
 const CHANGE_RECONCILIATION_DELAY_MS = 5 * 60 * 1000;
@@ -1421,8 +1421,8 @@ function allocationChangePreviewSource(
   };
 }
 
-const usagePackPreviewRetirementFailure = z.object({
-  code: z.literal("22012"),
+const usagePackPreviewRetirementFailure = object({
+  code: literal("22012"),
 });
 
 const persistUsagePackChangePreview$ = command(
@@ -3224,7 +3224,7 @@ function changesReflectedBySubscription(
   return reflected;
 }
 
-const reflectedUsagePackBatchFailure = z.object({ code: z.literal("22012") });
+const reflectedUsagePackBatchFailure = object({ code: literal("22012") });
 
 const commitReflectedUsagePackChanges$ = command(
   async function commitReflectedUsagePackChanges(
@@ -3503,7 +3503,7 @@ function canceledUsagePackChangeValues(
   };
 }
 
-const canceledUsagePackBatchFailure = z.object({ code: z.literal("22012") });
+const canceledUsagePackBatchFailure = object({ code: literal("22012") });
 
 const finalizeCanceledUsagePackChanges$ = command(
   async function finalizeCanceledUsagePackChanges(
@@ -4127,7 +4127,7 @@ const prepareUpgradeInvoicePublication$ = command(
     let grantCreatedAt: string | null = null;
     if (positive) {
       const clocks = parseRawRows(
-        z.object({ created_at: z.string() }).strict(),
+        object({ created_at: string() }).strict(),
         await db.execute(
           sql`SELECT transaction_timestamp()::timestamp::text AS created_at`,
         ),

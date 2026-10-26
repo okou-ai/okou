@@ -1,5 +1,4 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -7,7 +6,9 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   buttonNamed,
+  artifactSummary,
   mockArtifactConversation,
+  openResourceArtifact,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
@@ -33,14 +34,25 @@ async function openResizableSidebar(): Promise<{
       query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
     );
   });
-  mockArtifactConversation(context, { catalog: [] });
+  mockArtifactConversation(context, {
+    catalog: [
+      artifactSummary(
+        "a0000000-0000-4000-a000-000000000950",
+        "file",
+        "Resize report.txt",
+      ),
+    ],
+  });
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: false },
   });
-  click(buttonNamed("Open artifacts"));
+  await openResourceArtifact("Resize report.txt");
+  const unavailable = await screen.findByTestId(
+    "thread-sidebar-artifact-unavailable",
+  );
+  click(buttonNamed("Back to artifacts", unavailable));
   const handle = await screen.findByRole("separator", {
     name: "Resize sidebar",
   });
@@ -82,7 +94,7 @@ test.each(["pointerup", "pointercancel", "lostpointercapture"] as const)(
     );
     click(
       buttonNamed(
-        "Close artifacts",
+        "Close resources",
         screen.getByTestId("thread-sidebar-artifacts"),
       ),
     );
@@ -121,7 +133,7 @@ test("Closing the sidebar during a resize removes its blocking mask", async () =
 
   // Keyboard activation can close the panel while the pointer is still held.
   const close = buttonNamed(
-    "Close artifacts",
+    "Close resources",
     screen.getByTestId("thread-sidebar-artifacts"),
   );
   close.focus();
@@ -132,7 +144,7 @@ test("Closing the sidebar during a resize removes its blocking mask", async () =
   expect(resizeMask()).toBeNull();
   expect(handle.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
 
-  click(buttonNamed("Open artifacts"));
+  await openResourceArtifact("Resize report.txt");
   await expect(
     screen.findByRole("separator", { name: "Resize sidebar" }),
   ).resolves.toBeInTheDocument();

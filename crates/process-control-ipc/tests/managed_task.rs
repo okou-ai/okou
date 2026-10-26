@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 use std::os::unix::net::UnixStream;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 
@@ -7,30 +8,51 @@ use process_control_ipc::managed_task::{self as ipc, TaskReply, TaskRequest};
 
 #[test]
 fn partial_task_frames_cannot_renew_the_read_deadline() {
-    let mut frame = Vec::new();
-    ipc::write_request(&mut frame, &TaskRequest::Launch {}).unwrap();
-    let (server, mut client) = UnixStream::pair().unwrap();
-    let budget = Duration::from_millis(100);
-    server.set_read_timeout(Some(budget)).unwrap();
-    let writer = thread::spawn(move || {
-        // This external peer delivers each byte inside the idle timeout, but
-        // the complete frame exceeds the budget. Real socket deadlines are
-        // the behavior under test; no elapsed-time performance assertion.
-        for byte in frame {
-            if client.write_all(&[byte]).is_err() {
-                break;
+    for reader_delay in [Duration::ZERO, Duration::from_secs(1)] {
+        let mut frame = Vec::new();
+        ipc::write_request(&mut frame, &TaskRequest::Launch {}).unwrap();
+        let (server, mut client) = UnixStream::pair().unwrap();
+        let budget = Duration::from_millis(100);
+        let original = Some(Duration::from_secs(2));
+        server.set_read_timeout(original).unwrap();
+        let observer = server.try_clone().unwrap();
+        let (finished, completion) = mpsc::channel::<()>();
+        let writer = thread::spawn(move || -> io::Result<()> {
+            // The reader installs a distinct timeout after starting its frame
+            // deadline. A pre-call barrier would still allow early delivery.
+            while observer.read_timeout()? == original {
+                // The read may finish and restore its timeout before this peer
+                // observes it. Completion also releases that missed admission.
+                match completion.recv_timeout(Duration::from_millis(1)) {
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Ok(()) | Err(RecvTimeoutError::Disconnected) => return Ok(()),
+                }
             }
-            thread::sleep(Duration::from_millis(20));
-        }
-    });
-    let result = ipc::read_request_with_timeout(&server, budget);
-    assert_eq!(server.read_timeout().unwrap(), Some(budget));
-    drop(server);
-    writer.join().unwrap();
-    assert!(
-        matches!(&result, Err(error) if error.kind() == io::ErrorKind::TimedOut),
-        "partial input must exhaust one frame deadline: {result:?}"
-    );
+            // Do not keep the reader's socket alive during writer teardown.
+            drop(observer);
+            // Each byte arrives inside the idle timeout, but the complete
+            // frame exceeds the budget. Real socket deadlines are under test.
+            for byte in frame {
+                if client.write_all(&[byte]).is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(())
+        });
+        // Model descheduling before the production reader starts its deadline.
+        thread::sleep(reader_delay);
+        let result = ipc::read_request_with_timeout(&server, budget);
+        let restored = server.read_timeout();
+        drop(finished);
+        drop(server);
+        writer.join().unwrap().unwrap();
+        assert_eq!(restored.unwrap(), original);
+        assert!(
+            matches!(&result, Err(error) if error.kind() == io::ErrorKind::TimedOut),
+            "partial input must exhaust one frame deadline after {reader_delay:?}: {result:?}"
+        );
+    }
 }
 
 #[test]

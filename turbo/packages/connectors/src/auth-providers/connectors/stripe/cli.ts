@@ -1,4 +1,11 @@
-import { z } from "zod";
+import {
+  boolean,
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import type { ConnectorDeviceAuthStartOptions } from "@okouai/connectors/connector-config";
 import type {
@@ -17,37 +24,37 @@ const STRIPE_CLI_KEY_EXPIRES_IN_SECONDS = 90 * 24 * 60 * 60;
 const STRIPE_CLI_AUTH_RESPONSE_MAX_BYTES = 16 * 1024;
 const STRIPE_CLI_DEVICE_CODE = "stripe-cli-dashboard-auth";
 
-const stripeCliModeSchema = z.enum(["test", "live"]);
+const stripeCliModeSchema = zEnum(["test", "live"]);
 
-const stripeCliStartResponseSchema = z.object({
-  browser_url: z.string().min(1),
-  poll_url: z.string().min(1),
-  verification_code: z.string().min(1),
+const stripeCliStartResponseSchema = object({
+  browser_url: string().min(1),
+  poll_url: string().min(1),
+  verification_code: string().min(1),
 });
 
-const stripeCliPollResponseSchema = z.object({
-  redeemed: z.boolean(),
-  account_id: z.string().nullish(),
-  account_display_name: z.string().nullish(),
-  livemode_key_secret: z.string().nullish(),
-  livemode_key_publishable: z.string().nullish(),
-  testmode_key_secret: z.string().nullish(),
-  testmode_key_publishable: z.string().nullish(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
+const stripeCliPollResponseSchema = object({
+  redeemed: boolean(),
+  account_id: string().nullish(),
+  account_display_name: string().nullish(),
+  livemode_key_secret: string().nullish(),
+  livemode_key_publishable: string().nullish(),
+  testmode_key_secret: string().nullish(),
+  testmode_key_publishable: string().nullish(),
+  error: string().optional(),
+  error_description: string().optional(),
 });
 
-const stripeCliPollStateSchema = z.object({
-  version: z.literal(1),
+const stripeCliPollStateSchema = object({
+  version: literal(1),
   mode: stripeCliModeSchema,
-  pollUrl: z.string().min(1),
+  pollUrl: string().min(1),
 });
 
-type StripeCliMode = z.infer<typeof stripeCliModeSchema>;
+type StripeCliMode = zInfer<typeof stripeCliModeSchema>;
 
-type StripeCliPollState = z.infer<typeof stripeCliPollStateSchema>;
+type StripeCliPollState = zInfer<typeof stripeCliPollStateSchema>;
 
-type StripeCliPollResponse = z.infer<typeof stripeCliPollResponseSchema>;
+type StripeCliPollResponse = zInfer<typeof stripeCliPollResponseSchema>;
 
 function redactStripeCliDashboardAuthText(value: string): string {
   return value

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { uuid } from "zod";
 
 export function customConnectorIdFromSelector(
   selector: string | undefined,
@@ -6,7 +6,7 @@ export function customConnectorIdFromSelector(
   if (!selector?.startsWith("custom:")) {
     return undefined;
   }
-  const id = z.uuid().safeParse(selector.slice("custom:".length));
+  const id = uuid().safeParse(selector.slice("custom:".length));
   if (!id.success) {
     throw new Error(
       "Custom connector selectors must use custom:<uuid>. Run okou connector custom list to find the connector ID.",

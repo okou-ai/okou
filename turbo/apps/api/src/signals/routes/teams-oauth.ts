@@ -2,7 +2,7 @@ import { accept } from "@okouai/connectors/accept";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command } from "ccstate";
 import { teamsOauthContract } from "@okouai/api-contracts/contracts/teams-oauth";
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -185,14 +185,12 @@ async function fetchMicrosoftMe(
     [200],
   );
 
-  const data = z
-    .object({
-      id: z.string().min(1),
-      displayName: z.string().nullable().optional(),
-      userPrincipalName: z.string().nullable().optional(),
-      mail: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: string().min(1),
+    displayName: string().nullable().optional(),
+    userPrincipalName: string().nullable().optional(),
+    mail: string().nullable().optional(),
+  }).parse(await response.json());
 
   return {
     id: data.id,
@@ -227,14 +225,12 @@ async function exchangeMicrosoftTeamsOAuthCode(
     [200],
   );
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      id_token: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    id_token: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);

@@ -9,7 +9,7 @@ import {
   type PiModelConfig,
   type RunnerClaimCapabilities,
 } from "@okouai/api-contracts/contracts/runners";
-import { z } from "zod";
+import type { ZodError } from "zod";
 
 type PiModelConfigClaimResolution =
   | {
@@ -17,7 +17,7 @@ type PiModelConfigClaimResolution =
       readonly modelConfig: PiModelConfig | undefined;
     }
   | { readonly status: "unsupported" }
-  | { readonly status: "invalid"; readonly error: z.ZodError };
+  | { readonly status: "invalid"; readonly error: ZodError };
 
 function configuredGeneration(value: unknown): number | null {
   if (typeof value !== "object" || value === null) {

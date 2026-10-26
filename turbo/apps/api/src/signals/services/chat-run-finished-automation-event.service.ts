@@ -13,7 +13,7 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-import { z } from "zod";
+import { array, uuid } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
@@ -190,7 +190,7 @@ const loadAdmittedChatRunFinishedAutomations$ = command(
       .select({
         automationIds:
           sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`.mapWith(
-            zodDriverValueDecoder(z.array(z.uuid())),
+            zodDriverValueDecoder(array(uuid())),
           ),
       })
       .from(agentRunCallbacks)

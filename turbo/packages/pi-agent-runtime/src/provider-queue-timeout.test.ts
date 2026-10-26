@@ -16,7 +16,8 @@ import {
   onTestFinished,
 } from "vitest";
 import { piModelFailureReason } from "./model-request-diagnostics";
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 
 const queueTimeout =

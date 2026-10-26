@@ -1,6 +1,7 @@
 import { getTableColumns, is, sql, SQL, type Column } from "drizzle-orm";
 import { PgDialect, PgColumn, type PgTable } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { date, tuple, type output, type ZodType } from "zod";
+
 import { contextProjectionSchema } from "./context-rowset";
 
 export type UsagePackRetainedStep =
@@ -20,12 +21,12 @@ export type UsagePackRetainedFinancialPlan<T> = Generator<
   readonly unknown[]
 >;
 /** These plans produce only SQL/data. Their command alone executes each step. */
-export function* usagePackSqlRows<S extends z.ZodType>(
+export function* usagePackSqlRows<S extends ZodType>(
   query: SQL,
   schema: S,
 ): Generator<
   { readonly kind: "read"; readonly sql: SQL },
-  z.output<S>[],
+  output<S>[],
   readonly unknown[]
 > {
   return schema.array().parse(yield { kind: "read", sql: query });
@@ -44,7 +45,7 @@ export function* usagePackSqlClock(): Generator<
   Date,
   readonly unknown[]
 > {
-  return z.tuple([z.date()]).parse(yield { kind: "timestamp" })[0];
+  return tuple([date()]).parse(yield { kind: "timestamp" })[0];
 }
 export function* usagePackSqlAbortCheck(): UsagePackRetainedPlan<void> {
   yield { kind: "abort-check" };

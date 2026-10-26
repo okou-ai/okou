@@ -1,62 +1,63 @@
 import { settle } from "../utils";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import type { SlidesTextStyle } from "./google-slides-import.service";
 
 const PRESENTATIONS = "https://slides.googleapis.com/v1/presentations";
-const dimension = z.object({
-  magnitude: z.number(),
-  unit: z.enum(["EMU", "PT"]),
+const dimension = object({
+  magnitude: number(),
+  unit: zEnum(["EMU", "PT"]),
 });
-const textStyle = z.object({
-  weightedFontFamily: z
-    .object({ fontFamily: z.string(), weight: z.number().optional() })
-    .optional(),
-  fontFamily: z.string().optional(),
-  bold: z.boolean().optional(),
-  italic: z.boolean().optional(),
+const textStyle = object({
+  weightedFontFamily: object({
+    fontFamily: string(),
+    weight: number().optional(),
+  }).optional(),
+  fontFamily: string().optional(),
+  bold: boolean().optional(),
+  italic: boolean().optional(),
 });
-const elementSchema = z.object({
-  objectId: z.string(),
-  size: z.object({ width: dimension, height: dimension }).optional(),
-  transform: z
-    .object({
-      scaleX: z.number().optional(),
-      scaleY: z.number().optional(),
-      shearX: z.number().optional(),
-      shearY: z.number().optional(),
-      translateX: z.number().optional(),
-      translateY: z.number().optional(),
-      unit: z.enum(["EMU", "PT"]),
-    })
-    .optional(),
-  shape: z
-    .object({
-      text: z
-        .object({
-          textElements: z
-            .array(
-              z.object({
-                startIndex: z.number().optional(),
-                endIndex: z.number().optional(),
-                textRun: z
-                  .object({ content: z.string(), style: textStyle.optional() })
-                  .optional(),
-              }),
-            )
-            .optional(),
-        })
-        .optional(),
-    })
-    .optional(),
+const elementSchema = object({
+  objectId: string(),
+  size: object({ width: dimension, height: dimension }).optional(),
+  transform: object({
+    scaleX: number().optional(),
+    scaleY: number().optional(),
+    shearX: number().optional(),
+    shearY: number().optional(),
+    translateX: number().optional(),
+    translateY: number().optional(),
+    unit: zEnum(["EMU", "PT"]),
+  }).optional(),
+  shape: object({
+    text: object({
+      textElements: array(
+        object({
+          startIndex: number().optional(),
+          endIndex: number().optional(),
+          textRun: object({
+            content: string(),
+            style: textStyle.optional(),
+          }).optional(),
+        }),
+      ).optional(),
+    }).optional(),
+  }).optional(),
 });
-const presentationSchema = z.object({
-  revisionId: z.string(),
-  slides: z.array(
-    z.object({ pageElements: z.array(elementSchema).optional() }),
-  ),
+const presentationSchema = object({
+  revisionId: string(),
+  slides: array(object({ pageElements: array(elementSchema).optional() })),
 });
-type Element = z.infer<typeof elementSchema>;
+type Element = zInfer<typeof elementSchema>;
 
 function content(element: Element): string {
   return (element.shape?.text?.textElements ?? [])
@@ -104,7 +105,7 @@ function matches(element: Element, expected: SlidesTextStyle): boolean {
 }
 
 function faceMatches(
-  style: z.infer<typeof textStyle> | undefined,
+  style: zInfer<typeof textStyle> | undefined,
   face: SlidesTextStyle["runs"][number]["face"],
 ): boolean {
   const family = style?.weightedFontFamily?.fontFamily ?? style?.fontFamily;

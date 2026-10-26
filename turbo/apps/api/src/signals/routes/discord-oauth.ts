@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, gt, isNotNull, lte } from "drizzle-orm";
-import { z } from "zod";
+import { object, string } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
@@ -453,9 +453,9 @@ const approveDiscordOauth$ = command(
   },
 );
 
-const evidenceSchema = z.object({
+const evidenceSchema = object({
   guildId: discordSnowflakeSchema,
-  guildName: z.string(),
+  guildName: string(),
   discordUserId: discordSnowflakeSchema,
   botUserId: discordSnowflakeSchema,
 });

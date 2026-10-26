@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
+    "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.0",

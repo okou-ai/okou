@@ -1,4 +1,16 @@
-import { z } from "zod";
+import {
+  array,
+  discriminatedUnion,
+  int,
+  literal,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -8,44 +20,36 @@ export const SSH_PRIVATE_KEY_MAX_LENGTH = 65_536;
 export const SSH_PASSPHRASE_MAX_LENGTH = 4_096;
 export const SSH_PASSWORD_MAX_LENGTH = 4_096;
 
-export const sshAuthenticationSchema = z.discriminatedUnion("method", [
-  z
-    .object({
-      method: z.literal("private_key"),
-      privateKey: z.string().min(1).max(SSH_PRIVATE_KEY_MAX_LENGTH),
-      passphrase: z
-        .string()
-        .min(1)
-        .max(SSH_PASSPHRASE_MAX_LENGTH)
-        .nullable()
-        .default(null),
-    })
-    .strict(),
-  z
-    .object({
-      method: z.literal("password"),
-      password: z.string().min(1).max(SSH_PASSWORD_MAX_LENGTH),
-    })
-    .strict(),
+export const sshAuthenticationSchema = discriminatedUnion("method", [
+  object({
+    method: literal("private_key"),
+    privateKey: string().min(1).max(SSH_PRIVATE_KEY_MAX_LENGTH),
+    passphrase: string()
+      .min(1)
+      .max(SSH_PASSPHRASE_MAX_LENGTH)
+      .nullable()
+      .default(null),
+  }).strict(),
+  object({
+    method: literal("password"),
+    password: string().min(1).max(SSH_PASSWORD_MAX_LENGTH),
+  }).strict(),
 ]);
-const nameSchema = z.string().trim().min(1).max(SSH_DISPLAY_NAME_MAX_LENGTH);
-const usernameSchema = z.string().trim().min(1).max(SSH_USERNAME_MAX_LENGTH);
-const revisionSchema = z.int().positive().max(2_147_483_647);
+const nameSchema = string().trim().min(1).max(SSH_DISPLAY_NAME_MAX_LENGTH);
+const usernameSchema = string().trim().min(1).max(SSH_USERNAME_MAX_LENGTH);
+const revisionSchema = int().positive().max(2_147_483_647);
 
-export const createSshCredentialRequestSchema = z
-  .object({
-    name: nameSchema,
-    username: usernameSchema,
-    authentication: sshAuthenticationSchema,
-  })
-  .strict();
-export const updateSshCredentialRequestSchema = z
-  .object({
-    expectedRevision: revisionSchema,
-    name: nameSchema.optional(),
-    username: usernameSchema.optional(),
-    authentication: sshAuthenticationSchema.optional(),
-  })
+export const createSshCredentialRequestSchema = object({
+  name: nameSchema,
+  username: usernameSchema,
+  authentication: sshAuthenticationSchema,
+}).strict();
+export const updateSshCredentialRequestSchema = object({
+  expectedRevision: revisionSchema,
+  name: nameSchema.optional(),
+  username: usernameSchema.optional(),
+  authentication: sshAuthenticationSchema.optional(),
+})
   .strict()
   .refine(
     (value) => {
@@ -58,24 +62,20 @@ export const updateSshCredentialRequestSchema = z
     { message: "At least one SSH credential field must be updated" },
   );
 
-export const sshCredentialSelectionSchema = z.union([
-  z.object({ id: z.uuid() }).strict(),
-  z.object({ create: createSshCredentialRequestSchema }).strict(),
+export const sshCredentialSelectionSchema = union([
+  object({ id: uuid() }).strict(),
+  object({ create: createSshCredentialRequestSchema }).strict(),
 ]);
-export const sshCredentialResponseSchema = z
-  .object({
-    id: z.uuid(),
-    name: z.string(),
-    username: z.string(),
-    authMethod: z.enum(["private_key", "password"]),
-    revision: revisionSchema,
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-    hosts: z.array(
-      z.object({ id: z.uuid(), displayName: z.string() }).strict(),
-    ),
-  })
-  .strict();
+export const sshCredentialResponseSchema = object({
+  id: uuid(),
+  name: string(),
+  username: string(),
+  authMethod: zEnum(["private_key", "password"]),
+  revision: revisionSchema,
+  createdAt: string().datetime(),
+  updatedAt: string().datetime(),
+  hosts: array(object({ id: uuid(), displayName: string() }).strict()),
+}).strict();
 const c = initContract();
 const errors = {
   400: apiErrorSchema,
@@ -85,16 +85,14 @@ const errors = {
   409: apiErrorSchema,
   500: apiErrorSchema,
 };
-const pathParams = z.object({ credentialId: z.uuid() }).strict();
+const pathParams = object({ credentialId: uuid() }).strict();
 export const sshCredentialsContract = c.router({
   list: {
     method: "GET",
     path: "/api/ssh/credentials",
     headers: authHeadersSchema,
     responses: {
-      200: z
-        .object({ credentials: z.array(sshCredentialResponseSchema) })
-        .strict(),
+      200: object({ credentials: array(sshCredentialResponseSchema) }).strict(),
       ...errors,
     },
     summary: "List owned SSH credentials without secrets",
@@ -103,7 +101,7 @@ export const sshCredentialsContract = c.router({
     method: "POST",
     path: "/api/ssh/credentials",
     headers: authHeadersSchema,
-    body: createSshCredentialRequestSchema.extend({ id: z.uuid() }),
+    body: createSshCredentialRequestSchema.extend({ id: uuid() }),
     responses: { 201: sshCredentialResponseSchema, 204: c.noBody(), ...errors },
     summary: "Create a reusable SSH credential",
   },
@@ -121,19 +119,19 @@ export const sshCredentialsContract = c.router({
     path: "/api/ssh/credentials/:credentialId",
     headers: authHeadersSchema,
     pathParams,
-    body: z.object({ expectedRevision: revisionSchema }).strict(),
+    body: object({ expectedRevision: revisionSchema }).strict(),
     responses: { 204: c.noBody(), ...errors },
     summary: "Delete an unused SSH credential",
   },
 });
-export type SshAuthentication = z.infer<typeof sshAuthenticationSchema>;
-export type CreateSshCredentialRequest = z.infer<
+export type SshAuthentication = zInfer<typeof sshAuthenticationSchema>;
+export type CreateSshCredentialRequest = zInfer<
   typeof createSshCredentialRequestSchema
 >;
-export type UpdateSshCredentialRequest = z.infer<
+export type UpdateSshCredentialRequest = zInfer<
   typeof updateSshCredentialRequestSchema
 >;
-export type SshCredentialSelection = z.infer<
+export type SshCredentialSelection = zInfer<
   typeof sshCredentialSelectionSchema
 >;
-export type SshCredentialResponse = z.infer<typeof sshCredentialResponseSchema>;
+export type SshCredentialResponse = zInfer<typeof sshCredentialResponseSchema>;

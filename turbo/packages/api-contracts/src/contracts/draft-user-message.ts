@@ -1,11 +1,11 @@
-import type { z } from "zod";
+import type { RefinementCtx } from "zod";
 
 export function requireUserMessageForDraftAttachments(
   draft: {
     readonly draftUserMessage: unknown;
     readonly draftAttachments?: readonly unknown[] | null;
   },
-  context: z.RefinementCtx,
+  context: RefinementCtx,
 ): void {
   if (
     (draft.draftAttachments?.length ?? 0) > 0 &&

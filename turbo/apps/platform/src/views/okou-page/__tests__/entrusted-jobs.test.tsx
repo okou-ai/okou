@@ -386,7 +386,7 @@ test("hides home Tasks when Planning and action is off and restores saved Tasks 
   });
   await setupPage({
     context,
-    path: `/agents/${agentId}/chat?settings=proactive-agent`,
+    path: `/agents/${agentId}/chat?settings=preference`,
     featureSwitches: {
       [FeatureSwitchKey.ProactiveAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: true,
@@ -414,7 +414,6 @@ test("hides home Tasks when Planning and action is off and restores saved Tasks 
   click(within(rail).getByLabelText("Test User"));
   click(within(await screen.findByRole("menu")).getByText("Settings"));
   const reopened = await screen.findByRole("dialog", { name: "Settings" });
-  click(control("Proactive", "button", reopened));
   const planning = await within(reopened).findByRole("switch", {
     name: "Planning & action",
   });

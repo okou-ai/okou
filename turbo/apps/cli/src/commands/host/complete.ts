@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { z } from "zod";
+import { uuid } from "zod";
 import { completeHostedSite } from "../../lib/api/domains/host";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
@@ -20,7 +20,7 @@ export const completeHostedSiteCommand = new Command("complete")
         command: Command,
       ) => {
         const options = command.optsWithGlobals<{ readonly json?: boolean }>();
-        const result = await completeHostedSite(z.uuid().parse(deploymentId));
+        const result = await completeHostedSite(uuid().parse(deploymentId));
         console.log(
           options.json
             ? JSON.stringify(result)

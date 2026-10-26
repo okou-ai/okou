@@ -241,7 +241,8 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertNil(store.list.navigationError)
   }
 
-  func testStartupAppliesArchiveVisibilityBeforeShowingCachedChats() async throws {
+  func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
+  {
     for archivingEnabled in [true, false] {
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         UUID().uuidString)
@@ -307,7 +308,9 @@ final class WorkspaceStoreTests: XCTestCase {
       store.startNewChat(agentID: storeAgentID)
       let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
       await fulfillment(of: [switchesStarted], timeout: 2)
-      XCTAssertTrue(store.list.threads(agentID: storeAgentID, archived: false).isEmpty)
+      XCTAssertEqual(
+        store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
+        ["Recent cached chat"])
 
       releaseSwitches.open()
       await fulfillment(of: [catchUpStarted], timeout: 2)
@@ -326,6 +329,84 @@ final class WorkspaceStoreTests: XCTestCase {
       }
       XCTAssertNil(store.list.error)
     }
+  }
+
+  func testStartupRestoresNavigationAndChatsBeforeNetworkAndPersistsFreshNavigation() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let updated = Mutex(false)
+    let started = expectation(description: "Fresh navigation is held after cache restore")
+    let gate = HTTPResponseGate()
+    defer { gate.open() }
+    let otherAgent = "40000000-0000-4000-8000-000000000005"
+    let fixture = ChatHTTPFixture { request in
+      let fresh = updated.withLock { $0 }
+      switch request.url?.path {
+      case "/api/agents":
+        if fresh {
+          started.fulfill()
+          await gate.wait()
+        }
+        return ChatHTTPResponse(
+          body: """
+            [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"\(fresh ? "Fresh assistant" : "Cached assistant")"},
+            {"agentId":"\(otherAgent)","isDefaultAgent":false,"displayName":"Other assistant"}]
+            """)
+      case "/api/user-preferences":
+        return ChatHTTPResponse(
+          body: "{\"pinnedAgentIds\":\(fresh ? "[]" : "[\"\(otherAgent)\"]")}")
+      case "/api/feature-switches":
+        return ChatHTTPResponse(
+          body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":\(!fresh)}}")
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case "/api/indicators":
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      case "/api/realtime/token":
+        return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"No live updates"}}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")
+    let previous = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL,
+      cache: ChatCache(scope: scope, directory: directory))
+    await previous.start(userID: "user", workspaceID: "workspace")
+    previous.close()
+    updated.withLock { $0 = true }
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL,
+      cache: ChatCache(scope: scope, directory: directory))
+    defer { store.close() }
+    let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
+    addTeardownBlock {
+      startup.cancel()
+      gate.open()
+      await startup.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    XCTAssertEqual(store.currentAgentName, "Cached assistant")
+    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID, otherAgent])
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Cached chat"])
+    XCTAssertTrue(store.list.canArchiveChats)
+    gate.open()
+    await startup.value
+    XCTAssertEqual(store.currentAgentName, "Fresh assistant")
+    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID])
+    XCTAssertFalse(store.list.canArchiveChats)
+    store.close()
+
+    let reopened = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL,
+      cache: ChatCache(scope: scope, directory: directory))
+    defer { reopened.close() }
+    await reopened.list.restoreCached()
+    XCTAssertEqual(reopened.list.agents.first?.displayName, "Fresh assistant")
+    XCTAssertEqual(reopened.list.visiblePinnedAgents.map(\.agentId), [storeAgentID])
+    XCTAssertFalse(reopened.list.canArchiveChats)
   }
 
   func testNavigationFailureKeepsArchiveVisibilityUntilFeaturesRefreshSuccessfully() async {
@@ -384,12 +465,12 @@ final class WorkspaceStoreTests: XCTestCase {
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Recent chat"])
   }
 
-  func testClosingOrCancellingStartupStopsReadsDuringNavigation() async throws {
+  func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationReads() async throws {
     for cancelStartup in [false, true] {
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "okou-startup-tests-\(UUID().uuidString)", isDirectory: true)
       defer { try? FileManager.default.removeItem(at: directory) }
-      let navigationStarted = expectation(description: "Cached chats wait for navigation")
+      let navigationStarted = expectation(description: "Navigation loads after cached chats")
       let releaseNavigation = HTTPResponseGate()
       defer { releaseNavigation.open() }
       let requests = Mutex<[String]>([])
@@ -421,7 +502,7 @@ final class WorkspaceStoreTests: XCTestCase {
       defer { store.close() }
       let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
       await fulfillment(of: [navigationStarted], timeout: 2)
-      XCTAssertTrue(store.list.threads.isEmpty)
+      XCTAssertEqual(store.list.threads.map(\.title), ["Cached chat"])
 
       if cancelStartup {
         startup.cancel()
@@ -431,7 +512,7 @@ final class WorkspaceStoreTests: XCTestCase {
       releaseNavigation.open()
       await startup.value
 
-      XCTAssertTrue(store.list.threads.isEmpty)
+      XCTAssertEqual(store.list.threads.map(\.title), ["Cached chat"])
       XCTAssertTrue(store.list.agents.isEmpty)
       XCTAssertNil(store.list.navigationError)
       XCTAssertTrue(

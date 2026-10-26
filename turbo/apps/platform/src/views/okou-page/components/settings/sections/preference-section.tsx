@@ -9,13 +9,13 @@ import {
   type ThemePreference,
 } from "../../../../../signals/theme.ts";
 import { TimezoneSettings } from "../timezone-settings.tsx";
-import { MorningBriefSettings } from "../morning-brief-settings.tsx";
 import { EmailSubscriptionSettings } from "../email-subscription-settings.tsx";
 import { SettingsSectionHeading } from "../settings-section-heading.tsx";
 import { AccountSection } from "./account-section.tsx";
 import { LanguageSettings } from "../language-settings.tsx";
 import { ColorThemeSettings } from "../color-theme-settings.tsx";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
+import { ProactiveSection } from "./proactive-section.tsx";
 
 const THEME_OPTIONS: readonly {
   value: ThemePreference;
@@ -114,9 +114,10 @@ export function PreferenceSection() {
           })}
         >
           <EmailSubscriptionSettings />
-          <MorningBriefSettings />
         </div>
       </section>
+
+      <ProactiveSection />
 
       <section className="flex flex-col gap-3">
         <SettingsSectionHeading

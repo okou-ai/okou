@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import { ProviderHttpError } from "../../provider-error";
 import { parseProviderTokenResponse } from "../../token-response";
@@ -38,10 +38,10 @@ export async function refreshNetSuiteAccessToken(
   }
   const data = await parseProviderTokenResponse(
     response,
-    z.object({
-      access_token: z.string().min(1),
-      refresh_token: z.string().min(1).optional(),
-      expires_in: z.number().positive().optional(),
+    object({
+      access_token: string().min(1),
+      refresh_token: string().min(1).optional(),
+      expires_in: number().positive().optional(),
     }),
     "Invalid NetSuite token response",
   );

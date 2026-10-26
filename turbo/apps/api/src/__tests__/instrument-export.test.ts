@@ -11,7 +11,7 @@ import {
 } from "@opentelemetry/api";
 import { http, HttpResponse, passthrough } from "msw";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { z } from "zod";
+import { array, object, string, unknown as zUnknown } from "zod";
 
 import { mockEnv } from "../lib/env";
 import { server } from "../mocks/server";
@@ -23,27 +23,25 @@ import { testContext } from "./test-context";
 
 // Numeric callback fixtures can occur in SDK timestamps and random IDs. Keep
 // their assertions on content, preserving arbitrary nested payloads in full.
-const attributeContent = z.object({ attributes: z.unknown().optional() });
-const namedContent = attributeContent.extend({ name: z.string() });
-const traceContent = z.object({
-  resourceSpans: z.array(
-    z.object({
+const attributeContent = object({ attributes: zUnknown().optional() });
+const namedContent = attributeContent.extend({ name: string() });
+const traceContent = object({
+  resourceSpans: array(
+    object({
       resource: attributeContent.optional(),
-      scopeSpans: z.array(
-        z.object({
+      scopeSpans: array(
+        object({
           scope: attributeContent.optional(),
-          spans: z.array(
+          spans: array(
             namedContent.extend({
-              traceState: z.string().nullish(),
-              events: z.array(namedContent).optional(),
-              links: z
-                .array(
-                  attributeContent.extend({
-                    traceState: z.string().optional(),
-                  }),
-                )
-                .optional(),
-              status: z.object({ message: z.string().optional() }).optional(),
+              traceState: string().nullish(),
+              events: array(namedContent).optional(),
+              links: array(
+                attributeContent.extend({
+                  traceState: string().optional(),
+                }),
+              ).optional(),
+              status: object({ message: string().optional() }).optional(),
             }),
           ),
         }),
@@ -51,48 +49,43 @@ const traceContent = z.object({
     }),
   ),
 });
-const errorContent = z.object({
-  message: z.string().optional(),
-  logentry: z.unknown().optional(),
-  request: z.unknown().optional(),
-  exception: z.unknown().optional(),
-  threads: z.unknown().optional(),
-  extra: z.unknown().optional(),
-  user: z.unknown().optional(),
-  tags: z.unknown().optional(),
-  contexts: z
-    .object({
-      trace: z
-        .object({
-          op: z.string().optional(),
-          description: z.string().optional(),
-          data: z.unknown().optional(),
-          tags: z.unknown().optional(),
-          links: z.array(attributeContent).optional(),
-        })
-        .optional(),
-    })
-    .catchall(z.unknown())
+const errorContent = object({
+  message: string().optional(),
+  logentry: zUnknown().optional(),
+  request: zUnknown().optional(),
+  exception: zUnknown().optional(),
+  threads: zUnknown().optional(),
+  extra: zUnknown().optional(),
+  user: zUnknown().optional(),
+  tags: zUnknown().optional(),
+  contexts: object({
+    trace: object({
+      op: string().optional(),
+      description: string().optional(),
+      data: zUnknown().optional(),
+      tags: zUnknown().optional(),
+      links: array(attributeContent).optional(),
+    }).optional(),
+  })
+    .catchall(zUnknown())
     .optional(),
-  breadcrumbs: z
-    .array(
-      z.object({
-        type: z.string().optional(),
-        category: z.string().optional(),
-        message: z.string().optional(),
-        data: z.unknown().optional(),
-      }),
-    )
-    .optional(),
-  transaction: z.string().optional(),
-  logger: z.string().optional(),
-  fingerprint: z.unknown().optional(),
+  breadcrumbs: array(
+    object({
+      type: string().optional(),
+      category: string().optional(),
+      message: string().optional(),
+      data: zUnknown().optional(),
+    }),
+  ).optional(),
+  transaction: string().optional(),
+  logger: string().optional(),
+  fingerprint: zUnknown().optional(),
 });
 
 function exportedCallbackContent(traces: unknown[], errors: unknown[]): string {
   return JSON.stringify({
-    traces: z.array(traceContent).parse(traces),
-    errors: z.array(errorContent).parse(errors),
+    traces: array(traceContent).parse(traces),
+    errors: array(errorContent).parse(errors),
   });
 }
 

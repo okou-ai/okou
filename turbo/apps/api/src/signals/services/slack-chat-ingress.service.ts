@@ -5,7 +5,7 @@ import {
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, exists, sql } from "drizzle-orm";
-import { z } from "zod";
+import { object, string, uuid } from "zod";
 
 import { db$, writeDb$ } from "../external/db";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -110,25 +110,23 @@ const ROUTE_COLUMNS = {
   chatThreadId: slackChatThreadRoutes.chatThreadId,
 } as const;
 
-const insertedSlackRouteSchema = z
-  .object({
-    id: z.uuid(),
-    connection_id: z.uuid(),
-    channel_id: z.string(),
-    thread_ts: z.string(),
-    user_id: z.string(),
-    chat_thread_id: z.uuid(),
-  })
-  .transform((route): SlackChatThreadRouteBinding => {
-    return {
-      id: route.id,
-      connectionId: route.connection_id,
-      channelId: route.channel_id,
-      threadTs: route.thread_ts,
-      userId: route.user_id,
-      chatThreadId: route.chat_thread_id,
-    };
-  });
+const insertedSlackRouteSchema = object({
+  id: uuid(),
+  connection_id: uuid(),
+  channel_id: string(),
+  thread_ts: string(),
+  user_id: string(),
+  chat_thread_id: uuid(),
+}).transform((route): SlackChatThreadRouteBinding => {
+  return {
+    id: route.id,
+    connectionId: route.connection_id,
+    channelId: route.channel_id,
+    threadTs: route.thread_ts,
+    userId: route.user_id,
+    chatThreadId: route.chat_thread_id,
+  };
+});
 
 function requireSlackDmDestination(rows: readonly { channelId: string }[]) {
   const [updated] = rows;

@@ -12,6 +12,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1066.3](https://github.com/okou-ai/okou/compare/app-v0.1066.2...app-v0.1066.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** enable pin shortcuts in editable controls ([#43153](https://github.com/okou-ai/okou/issues/43153)) ([bccc5dd](https://github.com/okou-ai/okou/commit/bccc5dd3c4cb0f9be3fe36ea31db956238fbe91d))
+* **app:** let the chat home scroll under the corner controls ([#43144](https://github.com/okou-ai/okou/issues/43144)) ([8b7b8b1](https://github.com/okou-ai/okou/commit/8b7b8b1a67ddd257bf7544562717e174193785fd))
+
+
+### Refactoring
+
+* remove chat resource panel feature switch ([#43157](https://github.com/okou-ai/okou/issues/43157)) ([4b47789](https://github.com/okou-ai/okou/commit/4b477894060640e8ea0a5ef50a23a56f8f83fe2a))
+* remove custom templates feature switch ([#43162](https://github.com/okou-ai/okou/issues/43162)) ([6909a01](https://github.com/okou-ai/okou/commit/6909a011d4b2d60d5afc3fe6f5f0698d269aad28))
+* remove google docs and sheets conversion switch ([#43154](https://github.com/okou-ai/okou/issues/43154)) ([be0a3ca](https://github.com/okou-ai/okou/commit/be0a3ca522cd5edd2748912bcbecf4c07d76ff38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.791.2
+
 ## [0.1066.2](https://github.com/okou-ai/okou/compare/app-v0.1066.1...app-v0.1066.2) (2026-10-26)
 
 

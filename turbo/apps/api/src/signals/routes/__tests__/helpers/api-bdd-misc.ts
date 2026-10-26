@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
-import type { z } from "zod";
+import type { input as zInput } from "zod";
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
@@ -53,11 +53,11 @@ interface AuthHeaders {
   readonly authorization?: string;
 }
 
-type UpdateUserPreferencesInput = z.input<
+type UpdateUserPreferencesInput = zInput<
   typeof updateUserPreferencesRequestSchema
 >;
 
-type LogsListQuery = z.input<(typeof logsListContract.list)["query"]>;
+type LogsListQuery = zInput<(typeof logsListContract.list)["query"]>;
 
 interface ClerkOrg {
   readonly imageUrl: string | null;

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { uuid } from "zod";
 
 export interface ChatActionContext {
   readonly agentId: string;
@@ -10,7 +10,7 @@ export type ChatActionParseResult<T> =
   | { readonly status: "invalid"; readonly originalUrl: string }
   | { readonly status: "valid"; readonly descriptor: T };
 
-const chatActionIdSchema = z.uuid();
+const chatActionIdSchema = uuid();
 
 export function chatActionIdMatches(
   claimedId: string,

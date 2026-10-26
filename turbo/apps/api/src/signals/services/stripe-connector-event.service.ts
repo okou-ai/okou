@@ -1,23 +1,30 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import {
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  unknown as zUnknown,
+} from "zod";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 
-const eventTypeSchema = z.object({ type: z.string().trim().min(1).max(255) });
-const deauthorizationSchema = z.object({
-  id: z.string().trim().min(1).max(255),
-  type: z.literal("account.application.deauthorized"),
-  account: z.string().trim().min(1).max(255).optional(),
-  livemode: z.boolean(),
-  created: z.number().int().nonnegative().max(8_640_000_000_000),
-  data: z.object({ object: z.unknown() }),
+const eventTypeSchema = object({ type: string().trim().min(1).max(255) });
+const deauthorizationSchema = object({
+  id: string().trim().min(1).max(255),
+  type: literal("account.application.deauthorized"),
+  account: string().trim().min(1).max(255).optional(),
+  livemode: boolean(),
+  created: number().int().nonnegative().max(8_640_000_000_000),
+  data: object({ object: zUnknown() }),
 });
 const liveDeauthorizationSchema = deauthorizationSchema.extend({
-  account: z.string().trim().min(1).max(255),
-  livemode: z.literal(true),
+  account: string().trim().min(1).max(255),
+  livemode: literal(true),
 });
 
 export const dispatchStripeConnectorEvent$ = command(

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { accept } from "../../lib/accept.ts";
@@ -14,7 +14,7 @@ import {
   type DiscordOauthResult,
 } from "./discord-oauth-message.ts";
 
-type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
+type DiscordApprovalProof = zInfer<typeof discordOauthContract.approve.body>;
 
 // Private, ephemeral consent-browser memory. Nothing is exposed to the opener,
 // browser storage, logging, analytics, or a callback query parameter.

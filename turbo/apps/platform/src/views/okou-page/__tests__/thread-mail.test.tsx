@@ -1,5 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   mailContract,
   type MailDraft,
@@ -22,6 +23,10 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import {
+  artifactSummary,
+  openResourceArtifact,
+} from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000801";
@@ -234,7 +239,6 @@ async function openChat(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.ThreadEmailManager]: enabled,
-      [FeatureSwitchKey.ChatResourcePanel]: false,
     },
   });
   await waitFor(() => {
@@ -576,6 +580,23 @@ describe("thread email manager", () => {
 
   it("restores mail history ahead of another pane's utility sidebar", async () => {
     installMails();
+    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+      return respond(200, {
+        artifacts: [
+          artifactSummary(
+            "a0000000-0000-4000-a000-000000000803",
+            "file",
+            "Proposal notes",
+          ),
+        ],
+        nextCursor: null,
+      });
+    });
+    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+      return respond(404, {
+        error: { code: "ARTIFACT_NOT_FOUND", message: "Artifact not found" },
+      });
+    });
     const params = new URLSearchParams({
       sidebar: RIGHT_THREAD_ID,
       mailThread: RIGHT_THREAD_ID,
@@ -596,8 +617,8 @@ describe("thread email manager", () => {
     if (!leftPane) {
       throw new Error("Missing left chat pane");
     }
-    click(await button("Open artifacts", leftPane));
-    await screen.findByTestId("thread-sidebar-artifacts");
+    await openResourceArtifact("Proposal notes", leftPane);
+    await screen.findByTestId("thread-sidebar-artifact-unavailable");
     act(() => {
       window.history.back();
     });
@@ -607,7 +628,7 @@ describe("thread email manager", () => {
     });
     await screen.findByRole("dialog", { name: "Emails" });
     expect(
-      screen.queryByTestId("thread-sidebar-artifacts"),
+      screen.queryByTestId("thread-sidebar-artifact-unavailable"),
     ).not.toBeInTheDocument();
   });
 

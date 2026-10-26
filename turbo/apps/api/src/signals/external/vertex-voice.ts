@@ -1,4 +1,11 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { logger } from "../../lib/log";
 import {
@@ -122,27 +129,21 @@ async function vertexIo<T>(
   });
 }
 
-const responseSchema = z.object({
-  promptFeedback: z.object({ blockReason: z.string().optional() }).optional(),
-  usageMetadata: z.unknown().optional(),
-  modelVersion: z.unknown().optional(),
-  candidates: z
-    .array(
-      z.object({
-        finishReason: z.string(),
-        content: z
-          .object({
-            parts: z.array(
-              z.object({ text: z.string(), thought: z.boolean().optional() }),
-            ),
-          })
-          .optional(),
-      }),
-    )
-    .optional(),
+const responseSchema = object({
+  promptFeedback: object({ blockReason: string().optional() }).optional(),
+  usageMetadata: zUnknown().optional(),
+  modelVersion: zUnknown().optional(),
+  candidates: array(
+    object({
+      finishReason: string(),
+      content: object({
+        parts: array(object({ text: string(), thought: boolean().optional() })),
+      }).optional(),
+    }),
+  ).optional(),
 });
 
-type VertexVoiceResponse = z.infer<typeof responseSchema>;
+type VertexVoiceResponse = zInfer<typeof responseSchema>;
 
 function safeTokenCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0

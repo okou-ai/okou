@@ -1,4 +1,14 @@
-import { z } from "zod";
+import {
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -6,26 +16,26 @@ import { modelProviderResponseSchema } from "./model-providers";
 
 const c = initContract();
 
-export const claudeCodeDeviceAuthScopeSchema = z.literal("personal");
-export const claudeCodeDeviceAuthModeSchema = z.enum(["add", "reconnect"]);
+export const claudeCodeDeviceAuthScopeSchema = literal("personal");
+export const claudeCodeDeviceAuthModeSchema = zEnum(["add", "reconnect"]);
 
-const claudeCodeDeviceAuthStartResponseSchema = z.object({
-  sessionToken: z.string(),
-  type: z.literal("claude-code"),
-  status: z.literal("pending"),
+const claudeCodeDeviceAuthStartResponseSchema = object({
+  sessionToken: string(),
+  type: literal("claude-code"),
+  status: literal("pending"),
   scope: claudeCodeDeviceAuthScopeSchema,
-  browserUrl: z.url(),
-  expiresIn: z.number().int().positive(),
+  browserUrl: url(),
+  expiresIn: number().int().positive(),
 });
 
-const claudeCodeDeviceAuthCompleteResponseSchema = z.object({
-  status: z.literal("complete"),
+const claudeCodeDeviceAuthCompleteResponseSchema = object({
+  status: literal("complete"),
   provider: modelProviderResponseSchema,
-  created: z.boolean(),
+  created: boolean(),
 });
 
-const claudeCodeDeviceAuthCancelResponseSchema = z.object({
-  status: z.literal("cancelled"),
+const claudeCodeDeviceAuthCancelResponseSchema = object({
+  status: literal("cancelled"),
 });
 
 /**
@@ -38,10 +48,10 @@ export const claudeCodeDeviceAuthContract = c.router({
     method: "POST",
     path: "/api/model-providers/claude-code/device-auth/sessions",
     headers: authHeadersSchema,
-    body: z.object({
+    body: object({
       scope: claudeCodeDeviceAuthScopeSchema,
       mode: claudeCodeDeviceAuthModeSchema.optional(),
-      modelProviderId: z.uuid().optional(),
+      modelProviderId: uuid().optional(),
     }),
     responses: {
       200: claudeCodeDeviceAuthStartResponseSchema,
@@ -56,9 +66,9 @@ export const claudeCodeDeviceAuthContract = c.router({
     method: "POST",
     path: "/api/model-providers/claude-code/device-auth/sessions/complete",
     headers: authHeadersSchema,
-    body: z.object({
-      sessionToken: z.string().min(1),
-      authorizationCode: z.string().min(1),
+    body: object({
+      sessionToken: string().min(1),
+      authorizationCode: string().min(1),
     }),
     responses: {
       200: claudeCodeDeviceAuthCompleteResponseSchema,
@@ -74,7 +84,7 @@ export const claudeCodeDeviceAuthContract = c.router({
     method: "POST",
     path: "/api/model-providers/claude-code/device-auth/sessions/cancel",
     headers: authHeadersSchema,
-    body: z.object({ sessionToken: z.string().min(1) }),
+    body: object({ sessionToken: string().min(1) }),
     responses: {
       200: claudeCodeDeviceAuthCancelResponseSchema,
       400: apiErrorSchema,
@@ -86,10 +96,10 @@ export const claudeCodeDeviceAuthContract = c.router({
   },
 });
 
-export type ClaudeCodeDeviceAuthScope = z.infer<
+export type ClaudeCodeDeviceAuthScope = zInfer<
   typeof claudeCodeDeviceAuthScopeSchema
 >;
-export type ClaudeCodeDeviceAuthMode = z.infer<
+export type ClaudeCodeDeviceAuthMode = zInfer<
   typeof claudeCodeDeviceAuthModeSchema
 >;
 export type ClaudeCodeDeviceAuthContract = typeof claudeCodeDeviceAuthContract;

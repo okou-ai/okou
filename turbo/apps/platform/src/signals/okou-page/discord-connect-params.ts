@@ -1,8 +1,8 @@
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
-import { z } from "zod";
+import { enum as zEnum } from "zod";
 
 // Presentation only. These values never authorize approval or completion.
-const discordCallbackErrorSchema = z.enum([
+const discordCallbackErrorSchema = zEnum([
   "cancelled",
   "unavailable",
   "forbidden",

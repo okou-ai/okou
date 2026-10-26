@@ -1,4 +1,4 @@
-import { desktopResponseTransforms } from "@okouai/api-contracts/client-transforms/desktop";
+import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
 import { selectClientResponseTransforms } from "@okouai/api-contracts/client-transforms/select";
 import {
   CLIENT_TYPE_HEADER,
@@ -14,7 +14,7 @@ import type { ContentfulStatusCode, StatusCode } from "hono/utils/http-status";
 
 import { monotonicNow, now } from "../../lib/time";
 import { logger } from "../../lib/log";
-import { initHono$ } from "./hono";
+import { initHono$, type RequestBodyPolicy } from "./hono";
 import { requestValidation$ } from "./request";
 import { setRootSignal$ } from "./root";
 import { safeSync } from "../utils";
@@ -34,6 +34,8 @@ export type JsonResponseObserver = (
 ) => void;
 
 interface HonoSignalHandlerOptions {
+  readonly requestBodyPolicy?: RequestBodyPolicy;
+  readonly responseTransforms?: readonly ClientResponseTransform[];
   readonly initializeServices$: Command<void, []>;
 
   readonly observeJsonResponse?: JsonResponseObserver;
@@ -124,6 +126,8 @@ export function honoSignalHandler(
   signal: AbortSignal,
   {
     initializeServices$,
+    responseTransforms = [],
+    requestBodyPolicy,
 
     observeJsonResponse,
   }: HonoSignalHandlerOptions,
@@ -132,7 +136,7 @@ export function honoSignalHandler(
     const apiStartTime = now();
     const store = createStore();
     store.set(setRootSignal$, signal);
-    store.set(initHono$, context, contract, apiStartTime);
+    store.set(initHono$, context, contract, apiStartTime, requestBodyPolicy);
     store.set(initializeServices$);
 
     // Mirror the contract client order: path/query validation
@@ -177,7 +181,7 @@ export function honoSignalHandler(
     // contract by design, so it is not validated again. Both serialization
     // paths below send, and observe, the transformed body.
     const body = selectClientResponseTransforms({
-      transforms: desktopResponseTransforms,
+      transforms: responseTransforms,
       client: context.req.header(CLIENT_TYPE_HEADER),
       version: context.req.header(CLIENT_VERSION_HEADER),
       method: contract.method,

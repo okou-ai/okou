@@ -1,7 +1,21 @@
 import { command } from "ccstate";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/client";
 import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  date,
+  intersection,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  null as zNull,
+  type infer as zInfer,
+} from "zod";
+
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   type CustomConnectorAutomaticOAuthErrorCode,
@@ -31,44 +45,42 @@ import {
   type McpAutomaticOAuthDcrRegistrationInput,
 } from "./mcp-automatic-oauth.service";
 
-const oauthHttpsUrlSchema = z
-  .string()
+const oauthHttpsUrlSchema = string()
   .url()
   .refine((value) => {
     return new URL(value).protocol === "https:";
   });
 
-const tokenEndpointAuthMethodSchema = z.enum([
+const tokenEndpointAuthMethodSchema = zEnum([
   "none",
   "client_secret_basic",
   "client_secret_post",
 ]);
 
-const automaticOAuthBindingBaseSchema = z.object({
-  connectorAccountId: z.string().uuid(),
-  customConnectorId: z.string().uuid(),
+const automaticOAuthBindingBaseSchema = object({
+  connectorAccountId: string().uuid(),
+  customConnectorId: string().uuid(),
   issuer: oauthHttpsUrlSchema,
   resource: oauthHttpsUrlSchema,
   resourceMetadataUrl: oauthHttpsUrlSchema.nullable(),
   tokenEndpoint: oauthHttpsUrlSchema,
-  clientId: z.string().min(1),
+  clientId: string().min(1),
   tokenEndpointAuthMethod: tokenEndpointAuthMethodSchema,
 });
 
-const dcrRegistrationSchema = z
-  .object({
-    id: z.string().uuid(),
-    customConnectorId: z.string().uuid(),
-    issuer: oauthHttpsUrlSchema,
-    clientId: z.string().min(1),
-    tokenEndpointAuthMethod: tokenEndpointAuthMethodSchema,
-    hasClientSecret: z.boolean(),
-    encryptedClientSecret: z.string().min(1).nullable(),
-    registeredScopes: z.array(z.string().min(1)),
-    redirectUri: oauthHttpsUrlSchema,
-    issuedAt: z.date(),
-    expiresAt: z.date().nullable(),
-  })
+const dcrRegistrationSchema = object({
+  id: string().uuid(),
+  customConnectorId: string().uuid(),
+  issuer: oauthHttpsUrlSchema,
+  clientId: string().min(1),
+  tokenEndpointAuthMethod: tokenEndpointAuthMethodSchema,
+  hasClientSecret: boolean(),
+  encryptedClientSecret: string().min(1).nullable(),
+  registeredScopes: array(string().min(1)),
+  redirectUri: oauthHttpsUrlSchema,
+  issuedAt: date(),
+  expiresAt: date().nullable(),
+})
   .refine((registration) => {
     return registration.tokenEndpointAuthMethod === "none"
       ? !registration.hasClientSecret &&
@@ -83,15 +95,15 @@ const dcrRegistrationSchema = z
     );
   });
 
-const customConnectorAutomaticOAuthBindingSchema = z.union([
+const customConnectorAutomaticOAuthBindingSchema = union([
   automaticOAuthBindingBaseSchema.extend({
-    registrationMethod: z.literal("cimd"),
-    dcrRegistration: z.null(),
-    tokenEndpointAuthMethod: z.literal("none"),
+    registrationMethod: literal("cimd"),
+    dcrRegistration: zNull(),
+    tokenEndpointAuthMethod: literal("none"),
   }),
   automaticOAuthBindingBaseSchema
     .extend({
-      registrationMethod: z.literal("dcr"),
+      registrationMethod: literal("dcr"),
       dcrRegistration: dcrRegistrationSchema,
     })
     .refine((binding) => {
@@ -106,20 +118,19 @@ const customConnectorAutomaticOAuthBindingSchema = z.union([
     }),
 ]);
 
-export type CustomConnectorAutomaticOAuthBinding = z.infer<
+export type CustomConnectorAutomaticOAuthBinding = zInfer<
   typeof customConnectorAutomaticOAuthBindingSchema
 >;
 
-const automaticOAuthBindingPersistenceSchema = z
-  .intersection(
-    z.object({
-      accountAuthMethod: z.literal("oauth"),
-      accountStorageVersion: z.number().int().positive(),
-      connectorAuthMode: z.literal("automatic"),
-      connectorStorageVersion: z.number().int().positive(),
-    }),
-    customConnectorAutomaticOAuthBindingSchema,
-  )
+const automaticOAuthBindingPersistenceSchema = intersection(
+  object({
+    accountAuthMethod: literal("oauth"),
+    accountStorageVersion: number().int().positive(),
+    connectorAuthMode: literal("automatic"),
+    connectorStorageVersion: number().int().positive(),
+  }),
+  customConnectorAutomaticOAuthBindingSchema,
+)
   .refine((row) => {
     return row.accountStorageVersion === row.connectorStorageVersion;
   })

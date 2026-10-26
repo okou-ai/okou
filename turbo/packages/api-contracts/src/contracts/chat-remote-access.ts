@@ -1,42 +1,47 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
-const protocolSchema = z.enum(["ssh", "vnc"]);
-export const initialRemoteAccessOverrideSchema = z
-  .object({
-    protocol: protocolSchema,
-    connectionId: z.uuid(),
-    enabled: z.boolean(),
-  })
-  .strict();
-export type InitialRemoteAccessOverride = z.infer<
+const protocolSchema = zEnum(["ssh", "vnc"]);
+export const initialRemoteAccessOverrideSchema = object({
+  protocol: protocolSchema,
+  connectionId: uuid(),
+  enabled: boolean(),
+}).strict();
+export type InitialRemoteAccessOverride = zInfer<
   typeof initialRemoteAccessOverrideSchema
 >;
-const hostParamsSchema = z
-  .object({ protocol: protocolSchema, connectionId: z.uuid() })
-  .strict();
-const threadParamsSchema = z.object({ threadId: z.uuid() }).strict();
+const hostParamsSchema = object({
+  protocol: protocolSchema,
+  connectionId: uuid(),
+}).strict();
+const threadParamsSchema = object({ threadId: uuid() }).strict();
 const threadHostParamsSchema = threadParamsSchema.extend(
   hostParamsSchema.shape,
 );
-const enabledBodySchema = z.object({ enabled: z.boolean() }).strict();
+const enabledBodySchema = object({ enabled: boolean() }).strict();
 
-export const remoteHostDefaultSchema = z
-  .object({
-    connectionId: z.uuid(),
-    displayName: z.string(),
-    defaultEnabled: z.boolean(),
-  })
-  .strict();
+export const remoteHostDefaultSchema = object({
+  connectionId: uuid(),
+  displayName: string(),
+  defaultEnabled: boolean(),
+}).strict();
 
 export const threadRemoteHostAccessSchema = remoteHostDefaultSchema
   .extend({
-    overrideEnabled: z.boolean().nullable(),
-    enabled: z.boolean(),
-    source: z.enum(["default", "override"]),
+    overrideEnabled: boolean().nullable(),
+    enabled: boolean(),
+    source: zEnum(["default", "override"]),
   })
   .strict();
 
@@ -54,12 +59,10 @@ export const chatRemoteAccessContract = c.router({
     path: "/api/remote-access/hosts",
     headers: authHeadersSchema,
     responses: {
-      200: z
-        .object({
-          ssh: z.array(remoteHostDefaultSchema),
-          vnc: z.array(remoteHostDefaultSchema),
-        })
-        .strict(),
+      200: object({
+        ssh: array(remoteHostDefaultSchema),
+        vnc: array(remoteHostDefaultSchema),
+      }).strict(),
       ...errors,
     },
     summary: "List owned SSH and VNC host defaults",
@@ -79,12 +82,10 @@ export const chatRemoteAccessContract = c.router({
     headers: authHeadersSchema,
     pathParams: threadParamsSchema,
     responses: {
-      200: z
-        .object({
-          ssh: z.array(threadRemoteHostAccessSchema),
-          vnc: z.array(threadRemoteHostAccessSchema),
-        })
-        .strict(),
+      200: object({
+        ssh: array(threadRemoteHostAccessSchema),
+        vnc: array(threadRemoteHostAccessSchema),
+      }).strict(),
       ...errors,
     },
     summary: "List effective SSH and VNC access for a chat thread",
@@ -108,8 +109,8 @@ export const chatRemoteAccessContract = c.router({
   },
 });
 
-export type RemoteAccessProtocol = z.infer<typeof protocolSchema>;
-export type RemoteHostDefault = z.infer<typeof remoteHostDefaultSchema>;
-export type ThreadRemoteHostAccess = z.infer<
+export type RemoteAccessProtocol = zInfer<typeof protocolSchema>;
+export type RemoteHostDefault = zInfer<typeof remoteHostDefaultSchema>;
+export type ThreadRemoteHostAccess = zInfer<
   typeof threadRemoteHostAccessSchema
 >;

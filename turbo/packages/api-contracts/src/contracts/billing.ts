@@ -1,4 +1,20 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  null as zNull,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -8,155 +24,155 @@ const c = initContract();
 // Response schemas
 // ---------------------------------------------------------------------------
 
-const autoRechargeSchema = z.object({
-  enabled: z.boolean(),
-  threshold: z.number().nullable(),
-  amount: z.number().nullable(),
+const autoRechargeSchema = object({
+  enabled: boolean(),
+  threshold: number().nullable(),
+  amount: number().nullable(),
 });
 
-const creditExpirySchema = z.object({
-  expiringNextCycle: z.number(),
-  nextExpiryDate: z.string().nullable(),
+const creditExpirySchema = object({
+  expiringNextCycle: number(),
+  nextExpiryDate: string().nullable(),
 });
 
-const creditBreakdownSegmentSchema = z.object({
-  category: z.enum(["plan", "free", "promotional", "payAsYouGo"]),
-  label: z.string(),
-  credits: z.number(),
+const creditBreakdownSegmentSchema = object({
+  category: zEnum(["plan", "free", "promotional", "payAsYouGo"]),
+  label: string(),
+  credits: number(),
   // Only set on `plan` segments. Lets the UI decide whether a segment
   // represents the current plan or leftover credits from a previous plan
   // without round-tripping through the `label` string.
-  tier: z.enum(["pro", "team"]).optional(),
+  tier: zEnum(["pro", "team"]).optional(),
 });
 
-const creditGrantSchema = z.object({
-  id: z.string(),
-  source: z.string(),
-  label: z.string(),
-  amount: z.number(),
-  remaining: z.number(),
-  createdAt: z.string(),
-  expiresAt: z.string(),
+const creditGrantSchema = object({
+  id: string(),
+  source: string(),
+  label: string(),
+  amount: number(),
+  remaining: number(),
+  createdAt: string(),
+  expiresAt: string(),
 });
 
-const scheduledBillingChangeSchema = z.object({
-  type: z.enum(["cancel", "downgrade"]),
-  targetTier: z.enum(["limited-free-1", "pro", "team"]).nullable(),
-  effectiveDate: z.string().nullable(),
+const scheduledBillingChangeSchema = object({
+  type: zEnum(["cancel", "downgrade"]),
+  targetTier: zEnum(["limited-free-1", "pro", "team"]).nullable(),
+  effectiveDate: string().nullable(),
 });
 
-const concurrencySubscriptionSchema = z.object({
-  id: z.string(),
-  quantity: z.number().int().nonnegative(),
-  currentPeriodEnd: z.string().nullable(),
-  cancelAtPeriodEnd: z.boolean(),
-  canReduce: z.boolean().optional(),
+const concurrencySubscriptionSchema = object({
+  id: string(),
+  quantity: number().int().nonnegative(),
+  currentPeriodEnd: string().nullable(),
+  cancelAtPeriodEnd: boolean(),
+  canReduce: boolean().optional(),
   // Emitted for every subscription that is not cancelling, like `canReduce`.
   // It stays optional so a new app reaching a draining older API still parses
   // the response; no client branches on its absence since #26152.
-  canChangeInApp: z.boolean().optional(),
+  canChangeInApp: boolean().optional(),
   // The API omits both fields whenever no concurrency change is scheduled
   // (billing-status.service.ts spreads them only for a scheduled change), so
   // they are genuinely optional rather than a rollout tolerance.
-  scheduledQuantity: z.number().int().positive().nullable().optional(),
-  scheduledChangeAt: z.string().nullable().optional(),
+  scheduledQuantity: number().int().positive().nullable().optional(),
+  scheduledChangeAt: string().nullable().optional(),
 });
 
-const billingStatusResponseSchema = z.object({
-  tier: z.string(),
-  status: z.enum(["active", "suspended"]),
-  canBuyConcurrency: z.boolean(),
+const billingStatusResponseSchema = object({
+  tier: string(),
+  status: zEnum(["active", "suspended"]),
+  canBuyConcurrency: boolean(),
   // The current API omits the amount when the configured Stripe Price is
   // unavailable.
-  concurrencyUnitAmountCents: z.number().int().positive().optional(),
-  concurrencyPurchaseReviewAvailable: z.boolean(),
-  canBuyCredits: z.boolean(),
-  showUsagePack: z.boolean(),
-  autoRechargeAllowed: z.boolean(),
-  restrictedBuiltInModels: z.boolean(),
-  workflowWebhookAutomationAllowed: z.boolean(),
-  credits: z.number(),
-  onboardingPaymentPending: z.boolean(),
-  subscriptionStatus: z.string().nullable(),
-  currentPeriodEnd: z.string().nullable(),
-  cancelAtPeriodEnd: z.boolean(),
+  concurrencyUnitAmountCents: number().int().positive().optional(),
+  concurrencyPurchaseReviewAvailable: boolean(),
+  canBuyCredits: boolean(),
+  showUsagePack: boolean(),
+  autoRechargeAllowed: boolean(),
+  restrictedBuiltInModels: boolean(),
+  workflowWebhookAutomationAllowed: boolean(),
+  credits: number(),
+  onboardingPaymentPending: boolean(),
+  subscriptionStatus: string().nullable(),
+  currentPeriodEnd: string().nullable(),
+  cancelAtPeriodEnd: boolean(),
   scheduledChange: scheduledBillingChangeSchema.nullable(),
-  canRestorePlan: z.boolean(),
-  hasSubscription: z.boolean(),
+  canRestorePlan: boolean(),
+  hasSubscription: boolean(),
   autoRecharge: autoRechargeSchema,
   creditExpiry: creditExpirySchema,
-  creditBreakdown: z.array(creditBreakdownSegmentSchema),
-  creditGrants: z.array(creditGrantSchema),
-  concurrencyLimit: z.number().int().nonnegative(),
-  concurrencySubscriptions: z.array(concurrencySubscriptionSchema),
+  creditBreakdown: array(creditBreakdownSegmentSchema),
+  creditGrants: array(creditGrantSchema),
+  concurrencyLimit: number().int().nonnegative(),
+  concurrencySubscriptions: array(concurrencySubscriptionSchema),
 });
 
-const checkoutResponseSchema = z.object({
-  url: z.string(),
+const checkoutResponseSchema = object({
+  url: string(),
 });
 
-const subscriptionPurchasePreviewBaseSchema = z.object({
-  status: z.literal("preview"),
-  tier: z.enum(["pro", "team"]),
-  immediateAmountCents: z.number().int().nonnegative(),
-  nextRecurringAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  expiresAt: z.iso.datetime(),
-  previewToken: z.string().min(1),
+const subscriptionPurchasePreviewBaseSchema = object({
+  status: literal("preview"),
+  tier: zEnum(["pro", "team"]),
+  immediateAmountCents: number().int().nonnegative(),
+  nextRecurringAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  expiresAt: iso.datetime(),
+  previewToken: string().min(1),
 });
 
 const planPurchasePreviewResponseSchema =
   subscriptionPurchasePreviewBaseSchema.extend({
-    purchaseType: z.literal("plan"),
-    trialDays: z.literal(7).optional(),
+    purchaseType: literal("plan"),
+    trialDays: literal(7).optional(),
   });
 
 const usagePackPurchasePreviewResponseSchema =
   subscriptionPurchasePreviewBaseSchema.extend({
-    purchaseType: z.literal("usage_pack"),
+    purchaseType: literal("usage_pack"),
   });
 
-const billingPurchaseConfirmResponseSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("completed"),
-    hostedInvoiceUrl: z.null(),
+const billingPurchaseConfirmResponseSchema = discriminatedUnion("status", [
+  object({
+    status: literal("completed"),
+    hostedInvoiceUrl: zNull(),
   }),
-  z.object({
-    status: z.literal("pending_payment"),
-    hostedInvoiceUrl: z.string().url(),
+  object({
+    status: literal("pending_payment"),
+    hostedInvoiceUrl: string().url(),
   }),
-  z.object({
-    status: z.literal("checkout_required"),
-    checkoutUrl: z.string().url(),
+  object({
+    status: literal("checkout_required"),
+    checkoutUrl: string().url(),
   }),
 ]);
 
-const checkoutCompleteResponseSchema = z.object({
-  completed: z.boolean(),
+const checkoutCompleteResponseSchema = object({
+  completed: boolean(),
 });
 
-const redeemCodeResponseSchema = z.object({
-  redeemed: z.literal(true),
+const redeemCodeResponseSchema = object({
+  redeemed: literal(true),
 });
 
-const portalResponseSchema = z.object({
-  url: z.string(),
+const portalResponseSchema = object({
+  url: string(),
 });
 
-const redeemResponseSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("ready"),
-    checkoutUrl: z.string().url(),
+const redeemResponseSchema = discriminatedUnion("status", [
+  object({
+    status: literal("ready"),
+    checkoutUrl: string().url(),
   }),
-  z.object({
-    status: z.literal("already_granted"),
+  object({
+    status: literal("already_granted"),
   }),
-  z.object({
-    status: z.literal("processing"),
+  object({
+    status: literal("processing"),
   }),
-  z.object({
-    status: z.literal("error"),
-    reason: z.enum([
+  object({
+    status: literal("error"),
+    reason: zEnum([
       "campaign_misconfigured",
       "admin_required",
       "billing_unavailable",
@@ -168,85 +184,83 @@ const redeemResponseSchema = z.discriminatedUnion("status", [
 // Request schemas
 // ---------------------------------------------------------------------------
 
-const stripeRedirectUrlSchema = z.string().url().max(5000);
+const stripeRedirectUrlSchema = string().url().max(5000);
 
-const checkoutRequestSchema = z.object({
-  tier: z.enum(["pro", "team"]),
-  supportsInAppPreview: z.boolean().optional(),
-  previewToken: z.string().min(1).optional(),
+const checkoutRequestSchema = object({
+  tier: zEnum(["pro", "team"]),
+  supportsInAppPreview: boolean().optional(),
+  previewToken: string().min(1).optional(),
   successUrl: stripeRedirectUrlSchema,
   cancelUrl: stripeRedirectUrlSchema,
-  trialDays: z.literal(7).optional(),
+  trialDays: literal(7).optional(),
 });
 
 export const USAGE_PACKS_USD = [20, 50, 100, 200] as const;
 export type UsagePackUsd = (typeof USAGE_PACKS_USD)[number];
 
-export const usagePackUsdSchema: z.ZodType<UsagePackUsd> = z.union([
-  z.literal(20),
-  z.literal(50),
-  z.literal(100),
-  z.literal(200),
+export const usagePackUsdSchema: ZodType<UsagePackUsd> = union([
+  literal(20),
+  literal(50),
+  literal(100),
+  literal(200),
 ]);
 
-const usagePackCatalogItemSchema = z.object({
+const usagePackCatalogItemSchema = object({
   usagePackUsd: usagePackUsdSchema,
-  priceUsd: z.number().positive(),
-  purchasedCredits: z.number().int().positive(),
-  bonusCredits: z.number().int().positive(),
-  totalCredits: z.number().int().positive(),
+  priceUsd: number().positive(),
+  purchasedCredits: number().int().positive(),
+  bonusCredits: number().int().positive(),
+  totalCredits: number().int().positive(),
 });
 
-const usagePackCatalogResponseSchema = z.object({
-  usagePacks: z.array(usagePackCatalogItemSchema),
-  supportsFreeMembers: z.literal(true),
+const usagePackCatalogResponseSchema = object({
+  usagePacks: array(usagePackCatalogItemSchema),
+  supportsFreeMembers: literal(true),
 });
 
-const usagePackCreditBalanceSchema = z.object({
-  totalCredits: z.number().int().nonnegative(),
-  purchasedCredits: z.number().int().nonnegative(),
-  bonusCredits: z.number().int().nonnegative(),
-  creditGrants: z.array(
-    z.object({
-      id: z.string(),
-      grantType: z.enum(["purchased", "bonus"]),
-      amount: z.number().int().positive(),
-      remaining: z.number().int().positive(),
-      createdAt: z.string(),
-      expiresAt: z.string(),
+const usagePackCreditBalanceSchema = object({
+  totalCredits: number().int().nonnegative(),
+  purchasedCredits: number().int().nonnegative(),
+  bonusCredits: number().int().nonnegative(),
+  creditGrants: array(
+    object({
+      id: string(),
+      grantType: zEnum(["purchased", "bonus"]),
+      amount: number().int().positive(),
+      remaining: number().int().positive(),
+      createdAt: string(),
+      expiresAt: string(),
     }),
   ),
 });
 
 const usagePackCreditsResponseSchema = usagePackCreditBalanceSchema.extend({
-  hasUsagePack: z.boolean().optional(),
-  memberCredits: z
-    .array(
-      usagePackCreditBalanceSchema.extend({
-        memberId: z.string().min(1),
-      }),
-    )
-    .optional(),
+  hasUsagePack: boolean().optional(),
+  memberCredits: array(
+    usagePackCreditBalanceSchema.extend({
+      memberId: string().min(1),
+    }),
+  ).optional(),
 });
 
-const memberUsagePackSchema = z.object({
-  memberId: z.string().min(1),
+const memberUsagePackSchema = object({
+  memberId: string().min(1),
   // Free members have no paid allocation or Stripe usage pack item.
-  usagePackUsd: z.union([z.literal(0), usagePackUsdSchema]),
+  usagePackUsd: union([literal(0), usagePackUsdSchema]),
 });
-export type MemberUsagePack = z.infer<typeof memberUsagePackSchema>;
-export type UsagePackCatalogItem = z.infer<typeof usagePackCatalogItemSchema>;
+export type MemberUsagePack = zInfer<typeof memberUsagePackSchema>;
+export type UsagePackCatalogItem = zInfer<typeof usagePackCatalogItemSchema>;
 
-const usagePackCheckoutRequestSchema = z.object({
-  tier: z.enum(["pro", "team"]),
-  supportsInAppPreview: z.boolean().optional(),
-  previewToken: z.string().min(1).optional(),
-  memberUsagePacks: z.array(memberUsagePackSchema).min(1).max(1000),
-  successUrl: z.string().url(),
-  cancelUrl: z.string().url(),
+const usagePackCheckoutRequestSchema = object({
+  tier: zEnum(["pro", "team"]),
+  supportsInAppPreview: boolean().optional(),
+  previewToken: string().min(1).optional(),
+  memberUsagePacks: array(memberUsagePackSchema).min(1).max(1000),
+  successUrl: string().url(),
+  cancelUrl: string().url(),
 });
 
-const usagePackChangeStatusSchema = z.enum([
+const usagePackChangeStatusSchema = zEnum([
   "previewed",
   "applying",
   "pending_payment",
@@ -254,270 +268,265 @@ const usagePackChangeStatusSchema = z.enum([
   "applied",
 ]);
 
-const usagePackPendingChangeSchema = z.object({
-  id: z.uuid(),
-  kind: z.enum(["addition", "upgrade", "downgrade", "removal"]),
+const usagePackPendingChangeSchema = object({
+  id: uuid(),
+  kind: zEnum(["addition", "upgrade", "downgrade", "removal"]),
   status: usagePackChangeStatusSchema,
   targetUsagePackUsd: usagePackUsdSchema.nullable(),
-  effectiveAt: z.iso.datetime().nullable(),
+  effectiveAt: iso.datetime().nullable(),
 });
 
-const managedUsagePackAllocationSchema = z.object({
-  id: z.uuid(),
-  memberId: z.string().min(1),
+const managedUsagePackAllocationSchema = object({
+  id: uuid(),
+  memberId: string().min(1),
   usagePackUsd: usagePackUsdSchema,
-  currentPeriodEnd: z.iso.datetime().nullable(),
+  currentPeriodEnd: iso.datetime().nullable(),
   pendingChange: usagePackPendingChangeSchema.nullable(),
 });
 
-const usagePackManagementResponseSchema = z.object({
-  tier: z.enum(["pro", "team"]),
-  currentPeriodEnd: z.iso.datetime().nullable(),
-  supportsMemberAdditions: z.boolean().optional(),
-  supportsFreeMembers: z.literal(true),
-  allocations: z.array(managedUsagePackAllocationSchema),
+const usagePackManagementResponseSchema = object({
+  tier: zEnum(["pro", "team"]),
+  currentPeriodEnd: iso.datetime().nullable(),
+  supportsMemberAdditions: boolean().optional(),
+  supportsFreeMembers: literal(true),
+  allocations: array(managedUsagePackAllocationSchema),
 });
 
-const usagePackChangePreviewRequestSchema = z.object({
-  memberId: z.string().min(1),
+const usagePackChangePreviewRequestSchema = object({
+  memberId: string().min(1),
   targetUsagePackUsd: usagePackUsdSchema,
-  supportsInAppPreview: z.boolean().optional(),
+  supportsInAppPreview: boolean().optional(),
   returnUrl: stripeRedirectUrlSchema.optional(),
 });
 
-const usagePackChangePreviewResponseSchema = z.object({
-  changeId: z.uuid(),
-  kind: z.enum(["upgrade", "downgrade"]),
+const usagePackChangePreviewResponseSchema = object({
+  changeId: uuid(),
+  kind: zEnum(["upgrade", "downgrade"]),
   sourceUsagePackUsd: usagePackUsdSchema,
   targetUsagePackUsd: usagePackUsdSchema,
-  immediateAmountCents: z.number().int().nonnegative(),
-  nextRecurringAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  effectiveAt: z.iso.datetime().nullable(),
-  prorationDate: z.iso.datetime(),
-  expiresAt: z.iso.datetime(),
-  paymentMethodPreviewToken: z.string().min(1).optional(),
-  checkoutUrl: z.string().url().optional(),
+  immediateAmountCents: number().int().nonnegative(),
+  nextRecurringAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  effectiveAt: iso.datetime().nullable(),
+  prorationDate: iso.datetime(),
+  expiresAt: iso.datetime(),
+  paymentMethodPreviewToken: string().min(1).optional(),
+  checkoutUrl: string().url().optional(),
 });
 
-const usagePackChangeConfirmResponseSchema = z.union([
-  z.object({
-    status: z.enum(["processing", "pending_payment", "scheduled", "completed"]),
-    effectiveAt: z.iso.datetime().nullable(),
-    hostedInvoiceUrl: z.string().url().nullable(),
+const usagePackChangeConfirmResponseSchema = union([
+  object({
+    status: zEnum(["processing", "pending_payment", "scheduled", "completed"]),
+    effectiveAt: iso.datetime().nullable(),
+    hostedInvoiceUrl: string().url().nullable(),
   }),
-  z.object({
-    status: z.literal("checkout_required"),
-    checkoutUrl: z.string().url(),
+  object({
+    status: literal("checkout_required"),
+    checkoutUrl: string().url(),
   }),
 ]);
 
-const usagePackSubscriptionChangePreviewRequestSchema = z.object({
-  targetTier: z.enum(["pro", "team"]),
-  memberUsagePacks: z.array(memberUsagePackSchema).min(1).max(1000),
-  supportsInAppPreview: z.boolean().optional(),
+const usagePackSubscriptionChangePreviewRequestSchema = object({
+  targetTier: zEnum(["pro", "team"]),
+  memberUsagePacks: array(memberUsagePackSchema).min(1).max(1000),
+  supportsInAppPreview: boolean().optional(),
   returnUrl: stripeRedirectUrlSchema.optional(),
 });
 
-const usagePackSubscriptionChangePreviewResponseSchema = z.object({
-  changeId: z.uuid(),
-  sourceTier: z.enum(["pro", "team"]),
-  targetTier: z.enum(["pro", "team"]),
-  immediateAmountCents: z.number().int().nonnegative(),
-  immediateCreditGrant: z
-    .object({
-      purchasedCredits: z.number().int().nonnegative(),
-      bonusCredits: z.number().int().nonnegative(),
-      totalCredits: z.number().int().nonnegative(),
-      expiresAt: z.iso.datetime().optional(),
-    })
-    .optional(),
-  nextRecurringAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  effectiveAt: z.iso.datetime(),
-  prorationDate: z.iso.datetime(),
-  expiresAt: z.iso.datetime(),
-  paymentMethodPreviewToken: z.string().min(1).optional(),
-  checkoutUrl: z.string().url().optional(),
+const usagePackSubscriptionChangePreviewResponseSchema = object({
+  changeId: uuid(),
+  sourceTier: zEnum(["pro", "team"]),
+  targetTier: zEnum(["pro", "team"]),
+  immediateAmountCents: number().int().nonnegative(),
+  immediateCreditGrant: object({
+    purchasedCredits: number().int().nonnegative(),
+    bonusCredits: number().int().nonnegative(),
+    totalCredits: number().int().nonnegative(),
+    expiresAt: iso.datetime().optional(),
+  }).optional(),
+  nextRecurringAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  effectiveAt: iso.datetime(),
+  prorationDate: iso.datetime(),
+  expiresAt: iso.datetime(),
+  paymentMethodPreviewToken: string().min(1).optional(),
+  checkoutUrl: string().url().optional(),
 });
 
-const usagePackSubscriptionChangeConfirmRequestSchema = z.object({
-  changeId: z.uuid(),
-  paymentMethodPreviewToken: z.string().min(1).optional(),
+const usagePackSubscriptionChangeConfirmRequestSchema = object({
+  changeId: uuid(),
+  paymentMethodPreviewToken: string().min(1).optional(),
 });
 
-export type UsagePackManagementResponse = z.infer<
+export type UsagePackManagementResponse = zInfer<
   typeof usagePackManagementResponseSchema
 >;
-export type UsagePackChangePreviewResponse = z.infer<
+export type UsagePackChangePreviewResponse = zInfer<
   typeof usagePackChangePreviewResponseSchema
 >;
-export type UsagePackChangeConfirmResponse = z.infer<
+export type UsagePackChangeConfirmResponse = zInfer<
   typeof usagePackChangeConfirmResponseSchema
 >;
-export type UsagePackSubscriptionChangePreviewResponse = z.infer<
+export type UsagePackSubscriptionChangePreviewResponse = zInfer<
   typeof usagePackSubscriptionChangePreviewResponseSchema
 >;
 
-export const usagePackMigrationConfigurationSchema = z.object({
-  tier: z.enum(["pro", "team"]),
-  memberUsagePacks: z.array(memberUsagePackSchema).max(1000),
-  recurringAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
+export const usagePackMigrationConfigurationSchema = object({
+  tier: zEnum(["pro", "team"]),
+  memberUsagePacks: array(memberUsagePackSchema).max(1000),
+  recurringAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
 });
 
-export type UsagePackMigrationConfiguration = z.infer<
+export type UsagePackMigrationConfiguration = zInfer<
   typeof usagePackMigrationConfigurationSchema
 >;
 
-const usagePackMigrationStateResponseSchema = z.object({
-  tier: z.enum(["pro", "team"]),
-  targetTier: z.enum(["pro", "team"]).nullable(),
-  status: z.enum(["eligible", "previewed", "applying", "scheduled"]),
-  migrationId: z.uuid().nullable(),
-  effectiveAt: z.iso.datetime().nullable(),
-  hostedInvoiceUrl: z.string().url().nullable(),
+const usagePackMigrationStateResponseSchema = object({
+  tier: zEnum(["pro", "team"]),
+  targetTier: zEnum(["pro", "team"]).nullable(),
+  status: zEnum(["eligible", "previewed", "applying", "scheduled"]),
+  migrationId: uuid().nullable(),
+  effectiveAt: iso.datetime().nullable(),
+  hostedInvoiceUrl: string().url().nullable(),
   configuration: usagePackMigrationConfigurationSchema.optional(),
 });
 
-const usagePackMigrationPreviewRequestSchema = z.object({
-  targetTier: z.enum(["pro", "team"]),
-  memberUsagePacks: z.array(memberUsagePackSchema).min(1).max(1000),
+const usagePackMigrationPreviewRequestSchema = object({
+  targetTier: zEnum(["pro", "team"]),
+  memberUsagePacks: array(memberUsagePackSchema).min(1).max(1000),
 });
 
-const usagePackMigrationPreviewResponseSchema = z.object({
-  migrationId: z.uuid(),
-  tier: z.enum(["pro", "team"]),
-  targetTier: z.enum(["pro", "team"]),
-  currentRecurringAmountCents: z.number().int().nonnegative(),
-  nextRecurringAmountCents: z.number().int().nonnegative(),
-  recurringDifferenceCents: z.number().int(),
-  currency: z.string().length(3),
-  purchasedCredits: z.number().int().nonnegative(),
-  bonusCredits: z.number().int().nonnegative(),
-  totalCredits: z.number().int().nonnegative(),
-  effectiveAt: z.iso.datetime(),
-  expiresAt: z.iso.datetime(),
+const usagePackMigrationPreviewResponseSchema = object({
+  migrationId: uuid(),
+  tier: zEnum(["pro", "team"]),
+  targetTier: zEnum(["pro", "team"]),
+  currentRecurringAmountCents: number().int().nonnegative(),
+  nextRecurringAmountCents: number().int().nonnegative(),
+  recurringDifferenceCents: number().int(),
+  currency: string().length(3),
+  purchasedCredits: number().int().nonnegative(),
+  bonusCredits: number().int().nonnegative(),
+  totalCredits: number().int().nonnegative(),
+  effectiveAt: iso.datetime(),
+  expiresAt: iso.datetime(),
 });
 
-const usagePackMigrationConfirmResponseSchema = z.object({
-  status: z.enum(["scheduled", "completed"]),
-  effectiveAt: z.iso.datetime(),
-  hostedInvoiceUrl: z.string().url().nullable(),
+const usagePackMigrationConfirmResponseSchema = object({
+  status: zEnum(["scheduled", "completed"]),
+  effectiveAt: iso.datetime(),
+  hostedInvoiceUrl: string().url().nullable(),
 });
 
 const usagePackMigrationRevisionPreviewResponseSchema =
   usagePackMigrationPreviewResponseSchema.extend({
-    previewToken: z.string().min(1),
+    previewToken: string().min(1),
   });
 
 const usagePackMigrationRevisionConfirmRequestSchema =
   usagePackMigrationPreviewRequestSchema.extend({
-    previewToken: z.string().min(1),
+    previewToken: string().min(1),
   });
 
-export type UsagePackMigrationStateResponse = z.infer<
+export type UsagePackMigrationStateResponse = zInfer<
   typeof usagePackMigrationStateResponseSchema
 >;
-export type UsagePackMigrationPreviewResponse = z.infer<
+export type UsagePackMigrationPreviewResponse = zInfer<
   typeof usagePackMigrationPreviewResponseSchema
 >;
-export type UsagePackMigrationConfirmResponse = z.infer<
+export type UsagePackMigrationConfirmResponse = zInfer<
   typeof usagePackMigrationConfirmResponseSchema
 >;
-export type UsagePackMigrationRevisionPreviewResponse = z.infer<
+export type UsagePackMigrationRevisionPreviewResponse = zInfer<
   typeof usagePackMigrationRevisionPreviewResponseSchema
 >;
 
-const checkoutCompleteRequestSchema = z.object({
-  sessionId: z.string().min(1),
+const checkoutCompleteRequestSchema = object({
+  sessionId: string().min(1),
 });
 
-const concurrencyCheckoutRequestSchema = z.object({
-  quantity: z.number().int().min(1).max(1000),
-  paymentMethodPreviewToken: z.string().min(1).optional(),
+const concurrencyCheckoutRequestSchema = object({
+  quantity: number().int().min(1).max(1000),
+  paymentMethodPreviewToken: string().min(1).optional(),
   successUrl: stripeRedirectUrlSchema,
   cancelUrl: stripeRedirectUrlSchema,
 });
 
-const concurrencyCheckoutPreviewRequestSchema = z.object({
-  quantity: z.number().int().min(1).max(1000),
-  supportsInAppPreview: z.boolean().optional(),
+const concurrencyCheckoutPreviewRequestSchema = object({
+  quantity: number().int().min(1).max(1000),
+  supportsInAppPreview: boolean().optional(),
   returnUrl: stripeRedirectUrlSchema.optional(),
 });
 
-const concurrencySubscriptionChangeRequestSchema = z.object({
-  quantity: z.number().int().min(1).max(1000),
-  paymentMethodPreviewToken: z.string().min(1).optional(),
+const concurrencySubscriptionChangeRequestSchema = object({
+  quantity: number().int().min(1).max(1000),
+  paymentMethodPreviewToken: string().min(1).optional(),
 });
 
-const concurrencySubscriptionChangePreviewRequestSchema = z.object({
-  quantity: z.number().int().min(1).max(1000),
-  supportsInAppPreview: z.boolean().optional(),
+const concurrencySubscriptionChangePreviewRequestSchema = object({
+  quantity: number().int().min(1).max(1000),
+  supportsInAppPreview: boolean().optional(),
   returnUrl: stripeRedirectUrlSchema.optional(),
 });
 
-const concurrencySubscriptionChangePreviewResponseSchema = z.object({
-  currentQuantity: z.number().int().min(0).max(1000),
-  targetQuantity: z.number().int().min(1).max(1000),
-  immediateAmountCents: z.number().int().nonnegative(),
-  nextRecurringAmountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  effectiveAt: z.iso.datetime().optional(),
-  paymentMethodPreviewToken: z.string().min(1).optional(),
-  checkoutUrl: z.string().url().optional(),
+const concurrencySubscriptionChangePreviewResponseSchema = object({
+  currentQuantity: number().int().min(0).max(1000),
+  targetQuantity: number().int().min(1).max(1000),
+  immediateAmountCents: number().int().nonnegative(),
+  nextRecurringAmountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  effectiveAt: iso.datetime().optional(),
+  paymentMethodPreviewToken: string().min(1).optional(),
+  checkoutUrl: string().url().optional(),
 });
 
-const concurrencySubscriptionChangeResponseSchema = z.discriminatedUnion(
+const concurrencySubscriptionChangeResponseSchema = discriminatedUnion(
   "status",
   [
-    z.object({
-      status: z.literal("processing"),
-      hostedInvoiceUrl: z.null(),
-      effectiveAt: z.iso.datetime().optional(),
+    object({
+      status: literal("processing"),
+      hostedInvoiceUrl: zNull(),
+      effectiveAt: iso.datetime().optional(),
     }),
-    z.object({
-      status: z.literal("pending_payment"),
-      hostedInvoiceUrl: z.string().url(),
-      effectiveAt: z.iso.datetime().optional(),
+    object({
+      status: literal("pending_payment"),
+      hostedInvoiceUrl: string().url(),
+      effectiveAt: iso.datetime().optional(),
     }),
-    z.object({
-      status: z.literal("completed"),
-      hostedInvoiceUrl: z.null(),
-      effectiveAt: z.iso.datetime().optional(),
+    object({
+      status: literal("completed"),
+      hostedInvoiceUrl: zNull(),
+      effectiveAt: iso.datetime().optional(),
     }),
-    z.object({
-      status: z.literal("checkout_required"),
-      checkoutUrl: z.string().url(),
+    object({
+      status: literal("checkout_required"),
+      checkoutUrl: string().url(),
     }),
   ],
 );
 
-const concurrencySubscriptionCancelResponseSchema = z.object({
-  success: z.literal(true),
-  currentPeriodEnd: z.string().nullable(),
+const concurrencySubscriptionCancelResponseSchema = object({
+  success: literal(true),
+  currentPeriodEnd: string().nullable(),
 });
 
-const concurrencySubscriptionRestoreResponseSchema = z.object({
-  success: z.literal(true),
+const concurrencySubscriptionRestoreResponseSchema = object({
+  success: literal(true),
 });
 
-const creditCheckoutRequestSchema = z
-  .object({
-    credits: z.number().int().min(1000).max(10_000_000),
-    customAmount: z.boolean().optional(),
-    previewExistingBilling: z.boolean().optional(),
-    supportsInAppPreview: z.boolean().optional(),
-    successUrl: stripeRedirectUrlSchema,
-    cancelUrl: stripeRedirectUrlSchema,
-    autoRecharge: z
-      .object({
-        enabled: z.boolean(),
-        threshold: z.number().int().positive().max(10_000_000).optional(),
-        amount: z.number().int().min(1000).max(10_000_000).optional(),
-      })
-      .optional(),
-  })
+const creditCheckoutRequestSchema = object({
+  credits: number().int().min(1000).max(10_000_000),
+  customAmount: boolean().optional(),
+  previewExistingBilling: boolean().optional(),
+  supportsInAppPreview: boolean().optional(),
+  successUrl: stripeRedirectUrlSchema,
+  cancelUrl: stripeRedirectUrlSchema,
+  autoRecharge: object({
+    enabled: boolean(),
+    threshold: number().int().positive().max(10_000_000).optional(),
+    amount: number().int().min(1000).max(10_000_000).optional(),
+  }).optional(),
+})
   .refine(
     (data) => {
       return data.customAmount !== true || data.autoRecharge === undefined;
@@ -536,20 +545,20 @@ const creditCheckoutRequestSchema = z
     { message: "threshold must be less than amount to avoid recharge loops" },
   );
 
-const portalRequestSchema = z.object({
+const portalRequestSchema = object({
   returnUrl: stripeRedirectUrlSchema,
 });
 
-const creditPurchasePreviewResponseSchema = z.object({
-  status: z.literal("preview"),
-  credits: z.number().int().positive(),
-  amountCents: z.number().int().nonnegative(),
-  currency: z.string().length(3),
-  expiresAt: z.iso.datetime(),
-  previewToken: z.string().min(1),
+const creditPurchasePreviewResponseSchema = object({
+  status: literal("preview"),
+  credits: number().int().positive(),
+  amountCents: number().int().nonnegative(),
+  currency: string().length(3),
+  expiresAt: iso.datetime(),
+  previewToken: string().min(1),
 });
 
-const creditPurchaseStartResponseSchema = z.union([
+const creditPurchaseStartResponseSchema = union([
   checkoutResponseSchema,
   creditPurchasePreviewResponseSchema,
 ]);
@@ -557,31 +566,29 @@ const creditPurchaseStartResponseSchema = z.union([
 const creditPurchaseConfirmResponseSchema =
   billingPurchaseConfirmResponseSchema;
 
-const autoRechargeUpdateRequestSchema = z
-  .object({
-    enabled: z.boolean(),
-    threshold: z.number().int().positive().max(10_000_000).optional(),
-    amount: z.number().int().min(1000).max(10_000_000).optional(),
-  })
-  .refine(
-    (data) => {
-      return (
-        !data.enabled ||
-        data.threshold === undefined ||
-        data.amount === undefined ||
-        data.threshold < data.amount
-      );
-    },
-    { message: "threshold must be less than amount to avoid recharge loops" },
-  );
+const autoRechargeUpdateRequestSchema = object({
+  enabled: boolean(),
+  threshold: number().int().positive().max(10_000_000).optional(),
+  amount: number().int().min(1000).max(10_000_000).optional(),
+}).refine(
+  (data) => {
+    return (
+      !data.enabled ||
+      data.threshold === undefined ||
+      data.amount === undefined ||
+      data.threshold < data.amount
+    );
+  },
+  { message: "threshold must be less than amount to avoid recharge loops" },
+);
 
-const redeemRequestSchema = z.object({
+const redeemRequestSchema = object({
   successUrl: stripeRedirectUrlSchema,
   cancelUrl: stripeRedirectUrlSchema,
 });
 
-const redeemCodeRequestSchema = z.object({
-  code: z.string().trim().min(1),
+const redeemCodeRequestSchema = object({
+  code: string().trim().min(1),
 });
 
 // ---------------------------------------------------------------------------
@@ -618,7 +625,7 @@ export const billingCheckoutContract = c.router({
     headers: authHeadersSchema,
     body: checkoutRequestSchema,
     responses: {
-      200: z.union([
+      200: union([
         checkoutResponseSchema,
         planPurchasePreviewResponseSchema,
         billingPurchaseConfirmResponseSchema,
@@ -636,7 +643,7 @@ export const billingCheckoutContract = c.router({
     method: "POST",
     path: "/api/billing/checkout/confirm",
     headers: authHeadersSchema,
-    body: z.object({ previewToken: z.string().min(1) }),
+    body: object({ previewToken: string().min(1) }),
     responses: {
       200: billingPurchaseConfirmResponseSchema,
       400: apiErrorSchema,
@@ -677,7 +684,7 @@ export const billingUsagePackCheckoutContract = c.router({
     headers: authHeadersSchema,
     body: usagePackCheckoutRequestSchema,
     responses: {
-      200: z.union([
+      200: union([
         checkoutResponseSchema,
         usagePackPurchasePreviewResponseSchema,
         billingPurchaseConfirmResponseSchema,
@@ -695,7 +702,7 @@ export const billingUsagePackCheckoutContract = c.router({
     method: "POST",
     path: "/api/billing/usage-pack-checkout/confirm",
     headers: authHeadersSchema,
-    body: z.object({ previewToken: z.string().min(1) }),
+    body: object({ previewToken: string().min(1) }),
     responses: {
       200: billingPurchaseConfirmResponseSchema,
       400: apiErrorSchema,
@@ -766,10 +773,10 @@ export const billingUsagePackManagementContract = c.router({
   confirmChange: {
     method: "POST",
     path: "/api/billing/usage-pack-subscription/changes/:changeId/confirm",
-    pathParams: z.object({ changeId: z.uuid() }),
+    pathParams: object({ changeId: uuid() }),
     headers: authHeadersSchema,
-    body: z.object({
-      paymentMethodPreviewToken: z.string().min(1).optional(),
+    body: object({
+      paymentMethodPreviewToken: string().min(1).optional(),
     }),
     responses: {
       200: usagePackChangeConfirmResponseSchema,
@@ -840,7 +847,7 @@ export const billingUsagePackCreditsContract = c.router({
 
 export type BillingUsagePackCreditsContract =
   typeof billingUsagePackCreditsContract;
-export type UsagePackCreditsResponse = z.infer<
+export type UsagePackCreditsResponse = zInfer<
   typeof usagePackCreditsResponseSchema
 >;
 
@@ -880,9 +887,9 @@ export const billingUsagePackMigrationContract = c.router({
   confirm: {
     method: "POST",
     path: "/api/billing/usage-pack-migration/:migrationId/confirm",
-    pathParams: z.object({ migrationId: z.uuid() }),
+    pathParams: object({ migrationId: uuid() }),
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: usagePackMigrationConfirmResponseSchema,
       400: apiErrorSchema,
@@ -898,7 +905,7 @@ export const billingUsagePackMigrationContract = c.router({
   previewRevision: {
     method: "POST",
     path: "/api/billing/usage-pack-migration/:migrationId/revision/preview",
-    pathParams: z.object({ migrationId: z.uuid() }),
+    pathParams: object({ migrationId: uuid() }),
     headers: authHeadersSchema,
     body: usagePackMigrationPreviewRequestSchema,
     responses: {
@@ -916,7 +923,7 @@ export const billingUsagePackMigrationContract = c.router({
   confirmRevision: {
     method: "POST",
     path: "/api/billing/usage-pack-migration/:migrationId/revision/confirm",
-    pathParams: z.object({ migrationId: z.uuid() }),
+    pathParams: object({ migrationId: uuid() }),
     headers: authHeadersSchema,
     body: usagePackMigrationRevisionConfirmRequestSchema,
     responses: {
@@ -984,8 +991,8 @@ export const billingConcurrencySubscriptionContract = c.router({
   previewChange: {
     method: "POST",
     path: "/api/billing/concurrency-subscriptions/:subscriptionId/changes/preview",
-    pathParams: z.object({
-      subscriptionId: z.string().min(1),
+    pathParams: object({
+      subscriptionId: string().min(1),
     }),
     headers: authHeadersSchema,
     body: concurrencySubscriptionChangePreviewRequestSchema,
@@ -1004,8 +1011,8 @@ export const billingConcurrencySubscriptionContract = c.router({
   confirmChange: {
     method: "POST",
     path: "/api/billing/concurrency-subscriptions/:subscriptionId/changes/confirm",
-    pathParams: z.object({
-      subscriptionId: z.string().min(1),
+    pathParams: object({
+      subscriptionId: string().min(1),
     }),
     headers: authHeadersSchema,
     body: concurrencySubscriptionChangeRequestSchema,
@@ -1024,11 +1031,11 @@ export const billingConcurrencySubscriptionContract = c.router({
   cancel: {
     method: "POST",
     path: "/api/billing/concurrency-subscriptions/:subscriptionId/cancel",
-    pathParams: z.object({
-      subscriptionId: z.string().min(1),
+    pathParams: object({
+      subscriptionId: string().min(1),
     }),
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: concurrencySubscriptionCancelResponseSchema,
       401: apiErrorSchema,
@@ -1043,11 +1050,11 @@ export const billingConcurrencySubscriptionContract = c.router({
   restore: {
     method: "POST",
     path: "/api/billing/concurrency-subscriptions/:subscriptionId/restore",
-    pathParams: z.object({
-      subscriptionId: z.string().min(1),
+    pathParams: object({
+      subscriptionId: string().min(1),
     }),
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: concurrencySubscriptionRestoreResponseSchema,
       401: apiErrorSchema,
@@ -1087,7 +1094,7 @@ export const billingCreditCheckoutContract = c.router({
     method: "POST",
     path: "/api/billing/credit-checkout/confirm",
     headers: authHeadersSchema,
-    body: z.object({ previewToken: z.string().min(1) }),
+    body: object({ previewToken: string().min(1) }),
     responses: {
       200: creditPurchaseConfirmResponseSchema,
       400: apiErrorSchema,
@@ -1163,17 +1170,17 @@ export type BillingAutoRechargeContract = typeof billingAutoRechargeContract;
 /**
  * Contract for GET /api/billing/invoices
  */
-const invoiceSchema = z.object({
-  id: z.string(),
-  number: z.string().nullable(),
-  date: z.number(),
-  amount: z.number(),
-  status: z.string().nullable(),
-  hostedInvoiceUrl: z.string().nullable(),
+const invoiceSchema = object({
+  id: string(),
+  number: string().nullable(),
+  date: number(),
+  amount: number(),
+  status: string().nullable(),
+  hostedInvoiceUrl: string().nullable(),
 });
 
-const billingInvoicesResponseSchema = z.object({
-  invoices: z.array(invoiceSchema),
+const billingInvoicesResponseSchema = object({
+  invoices: array(invoiceSchema),
 });
 
 export const billingInvoicesContract = c.router({
@@ -1197,35 +1204,35 @@ export type BillingInvoicesContract = typeof billingInvoicesContract;
 // Downgrade
 // ---------------------------------------------------------------------------
 
-const downgradeTargetTierSchema = z.enum(["limited-free-1", "pro"]);
+const downgradeTargetTierSchema = zEnum(["limited-free-1", "pro"]);
 
-const downgradeRequestSchema = z.object({
+const downgradeRequestSchema = object({
   targetTier: downgradeTargetTierSchema,
   returnUrl: stripeRedirectUrlSchema.optional(),
 });
 
-const downgradeResponseSchema = z.union([
-  z.object({
-    success: z.boolean(),
-    effectiveDate: z.string().nullable(),
+const downgradeResponseSchema = union([
+  object({
+    success: boolean(),
+    effectiveDate: string().nullable(),
   }),
-  z.object({
-    status: z.literal("payment_method_required"),
-    checkoutUrl: z.string().url(),
+  object({
+    status: literal("payment_method_required"),
+    checkoutUrl: string().url(),
   }),
 ]);
 
-const restoreRequestSchema = z.object({
+const restoreRequestSchema = object({
   returnUrl: stripeRedirectUrlSchema.optional(),
 });
 
-const restoreResponseSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("restored"),
+const restoreResponseSchema = discriminatedUnion("status", [
+  object({
+    status: literal("restored"),
   }),
-  z.object({
-    status: z.literal("payment_method_required"),
-    checkoutUrl: z.string().url(),
+  object({
+    status: literal("payment_method_required"),
+    checkoutUrl: string().url(),
   }),
 ]);
 
@@ -1288,8 +1295,8 @@ export const billingRedeemContract = c.router({
   create: {
     method: "POST",
     path: "/api/billing/redeem/:campaign",
-    pathParams: z.object({
-      campaign: z.string(),
+    pathParams: object({
+      campaign: string(),
     }),
     headers: authHeadersSchema,
     body: redeemRequestSchema,
@@ -1333,46 +1340,46 @@ export const billingRedeemCodeContract = c.router({
 export type BillingRedeemCodeContract = typeof billingRedeemCodeContract;
 
 // Inferred types from Zod schemas
-export type BillingStatusResponse = z.infer<typeof billingStatusResponseSchema>;
-export type AutoRechargeConfig = z.infer<typeof autoRechargeSchema>;
-export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
-export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
-export type UsagePackCheckoutRequest = z.infer<
+export type BillingStatusResponse = zInfer<typeof billingStatusResponseSchema>;
+export type AutoRechargeConfig = zInfer<typeof autoRechargeSchema>;
+export type CheckoutResponse = zInfer<typeof checkoutResponseSchema>;
+export type CheckoutRequest = zInfer<typeof checkoutRequestSchema>;
+export type UsagePackCheckoutRequest = zInfer<
   typeof usagePackCheckoutRequestSchema
 >;
-export type PlanPurchasePreviewResponse = z.infer<
+export type PlanPurchasePreviewResponse = zInfer<
   typeof planPurchasePreviewResponseSchema
 >;
-export type UsagePackPurchasePreviewResponse = z.infer<
+export type UsagePackPurchasePreviewResponse = zInfer<
   typeof usagePackPurchasePreviewResponseSchema
 >;
-export type BillingPurchaseConfirmResponse = z.infer<
+export type BillingPurchaseConfirmResponse = zInfer<
   typeof billingPurchaseConfirmResponseSchema
 >;
-export type RedeemCodeResponse = z.infer<typeof redeemCodeResponseSchema>;
-export type ConcurrencyCheckoutRequest = z.infer<
+export type RedeemCodeResponse = zInfer<typeof redeemCodeResponseSchema>;
+export type ConcurrencyCheckoutRequest = zInfer<
   typeof concurrencyCheckoutRequestSchema
 >;
-export type ConcurrencySubscriptionChangePreviewResponse = z.infer<
+export type ConcurrencySubscriptionChangePreviewResponse = zInfer<
   typeof concurrencySubscriptionChangePreviewResponseSchema
 >;
-export type ConcurrencySubscriptionChangeResponse = z.infer<
+export type ConcurrencySubscriptionChangeResponse = zInfer<
   typeof concurrencySubscriptionChangeResponseSchema
 >;
-export type CreditCheckoutRequest = z.infer<typeof creditCheckoutRequestSchema>;
-export type CreditPurchasePreviewResponse = z.infer<
+export type CreditCheckoutRequest = zInfer<typeof creditCheckoutRequestSchema>;
+export type CreditPurchasePreviewResponse = zInfer<
   typeof creditPurchasePreviewResponseSchema
 >;
-export type CreditPurchaseConfirmResponse = z.infer<
+export type CreditPurchaseConfirmResponse = zInfer<
   typeof creditPurchaseConfirmResponseSchema
 >;
-export type PortalResponse = z.infer<typeof portalResponseSchema>;
-export type BillingInvoice = z.infer<typeof invoiceSchema>;
-export type BillingInvoicesResponse = z.infer<
+export type PortalResponse = zInfer<typeof portalResponseSchema>;
+export type BillingInvoice = zInfer<typeof invoiceSchema>;
+export type BillingInvoicesResponse = zInfer<
   typeof billingInvoicesResponseSchema
 >;
-export type DowngradeResponse = z.infer<typeof downgradeResponseSchema>;
-export type RestoreResponse = z.infer<typeof restoreResponseSchema>;
-export type RedeemRequest = z.infer<typeof redeemRequestSchema>;
-export type RedeemCodeRequest = z.infer<typeof redeemCodeRequestSchema>;
-export type RedeemResponse = z.infer<typeof redeemResponseSchema>;
+export type DowngradeResponse = zInfer<typeof downgradeResponseSchema>;
+export type RestoreResponse = zInfer<typeof restoreResponseSchema>;
+export type RedeemRequest = zInfer<typeof redeemRequestSchema>;
+export type RedeemCodeRequest = zInfer<typeof redeemCodeRequestSchema>;
+export type RedeemResponse = zInfer<typeof redeemResponseSchema>;

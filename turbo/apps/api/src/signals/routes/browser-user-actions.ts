@@ -1,4 +1,7 @@
-import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
+import {
+  browserUserActionsContract,
+  BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
@@ -248,6 +251,10 @@ export const browserUserActionRoutes: readonly RouteEntry[] = [
   {
     route: browserUserActionsContract.apply,
     handler: authRoute(authOptions, applyInner$),
+    requestBodyPolicy: {
+      maxBytes: BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES,
+      tooLargeMessage: "Browser input request is too large",
+    },
   },
   {
     route: browserUserActionsContract.cancel,

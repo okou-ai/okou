@@ -1,4 +1,14 @@
-import { z } from "zod";
+import {
+  array,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
@@ -7,17 +17,17 @@ import { runnerGroupSchema } from "./runner-primitives";
 const c = initContract();
 
 /** Transient text only. Durable chat events remain the source of truth. */
-export const sessionOutputDeltaSchema = z.object({
-  threadId: z.uuid(),
-  runId: z.uuid(),
-  eventId: z.uuid(),
-  runEventId: z.string().min(1),
-  createdAt: z.iso.datetime(),
-  chunkIndex: z.number().int().nonnegative(),
-  delta: z.string(),
+export const sessionOutputDeltaSchema = object({
+  threadId: uuid(),
+  runId: uuid(),
+  eventId: uuid(),
+  runEventId: string().min(1),
+  createdAt: iso.datetime(),
+  chunkIndex: number().int().nonnegative(),
+  delta: string(),
 });
 
-export type SessionOutputDelta = z.infer<typeof sessionOutputDeltaSchema>;
+export type SessionOutputDelta = zInfer<typeof sessionOutputDeltaSchema>;
 
 export function sessionOutputChannelName(
   userId: string,
@@ -59,36 +69,34 @@ export function computerUseHostChannelName(
   return `${computerUseHostChannelScope(userId, orgId)}:${hostId}:${connectionGeneration}`;
 }
 
-export const computerUseCommandNotificationsSchema = z.object({
-  channelName: z.string().min(1),
-  eventName: z.literal(computerUseCommandsChangedEvent),
+export const computerUseCommandNotificationsSchema = object({
+  channelName: string().min(1),
+  eventName: literal(computerUseCommandsChangedEvent),
 });
 
-export const connectorChangedPayloadSchema = z.object({
+export const connectorChangedPayloadSchema = object({
   connectorSlug: connectorSlugSchema,
 });
 
-export type ConnectorChangedPayload = z.infer<
+export type ConnectorChangedPayload = zInfer<
   typeof connectorChangedPayloadSchema
 >;
 
-export const walletChangedPayloadSchema = z.object({
-  orgId: z.string().min(1),
+export const walletChangedPayloadSchema = object({
+  orgId: string().min(1),
 });
 
-export type WalletChangedPayload = z.infer<typeof walletChangedPayloadSchema>;
+export type WalletChangedPayload = zInfer<typeof walletChangedPayloadSchema>;
 
-export const composerAgentConnectorsChangedPayloadSchema = z
-  .object({ agentId: z.uuid() })
-  .strict();
+export const composerAgentConnectorsChangedPayloadSchema = object({
+  agentId: uuid(),
+}).strict();
 
-export const browserSessionChangedPayloadSchema = z
-  .object({
-    threadId: z.uuid(),
-  })
-  .strict();
+export const browserSessionChangedPayloadSchema = object({
+  threadId: uuid(),
+}).strict();
 
-export type BrowserSessionChangedPayload = z.infer<
+export type BrowserSessionChangedPayload = zInfer<
   typeof browserSessionChangedPayloadSchema
 >;
 
@@ -120,36 +128,36 @@ function isUserPreferenceKind(kind: string): kind is UserPreferenceKind {
  * does understand. Old web clients stay open for ~2 days
  * (`docs/fallback.md` §7), so every future kind addition needs this.
  */
-export const userPreferenceChangedPayloadSchema = z.object({
-  kinds: z.array(z.string()).transform((kinds) => {
+export const userPreferenceChangedPayloadSchema = object({
+  kinds: array(string()).transform((kinds) => {
     return kinds.filter(isUserPreferenceKind);
   }),
 });
 
-export type UserPreferenceChangedPayload = z.infer<
+export type UserPreferenceChangedPayload = zInfer<
   typeof userPreferenceChangedPayloadSchema
 >;
 
 /**
  * Ably token request schema (matches Ably SDK's TokenRequest type)
  */
-export const ablyTokenRequestSchema = z.object({
-  keyName: z.string(),
-  ttl: z.number().optional(),
-  timestamp: z.number(),
-  capability: z.string(),
-  clientId: z.string().optional(),
-  nonce: z.string(),
-  mac: z.string(),
+export const ablyTokenRequestSchema = object({
+  keyName: string(),
+  ttl: number().optional(),
+  timestamp: number(),
+  capability: string(),
+  clientId: string().optional(),
+  nonce: string(),
+  mac: string(),
 });
 
-export const realtimeSubscriptionSchema = z.object({
-  channelName: z.string(),
-  eventName: z.string(),
+export const realtimeSubscriptionSchema = object({
+  channelName: string(),
+  eventName: string(),
   tokenRequest: ablyTokenRequestSchema,
 });
 
-export type RealtimeSubscription = z.infer<typeof realtimeSubscriptionSchema>;
+export type RealtimeSubscription = zInfer<typeof realtimeSubscriptionSchema>;
 
 /**
  * Runner realtime token contract for /api/runners/realtime/token
@@ -163,7 +171,7 @@ export const runnerRealtimeTokenContract = c.router({
     method: "POST",
     path: "/api/runners/realtime/token",
     headers: authHeadersSchema,
-    body: z.object({
+    body: object({
       group: runnerGroupSchema,
     }),
     responses: {
@@ -192,7 +200,7 @@ export const platformRealtimeTokenContract = c.router({
     method: "POST",
     path: "/api/realtime/token",
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       // The client SDK exchanges this signed, single-use request with Ably.
       200: ablyTokenRequestSchema,

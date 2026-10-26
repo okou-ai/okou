@@ -1,7 +1,6 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -78,7 +77,6 @@ async function setupResourceNavigation() {
   await setupPage({
     context,
     path: `/chats/${current.id}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
     ...workspace.pageOptions,
   });
   await screen.findByRole("region", { name: "Resources" });
@@ -194,9 +192,6 @@ test.each(["messages", "artifacts"])(
       context,
       ...workspace.pageOptions,
       path: `/chats/${first.id}`,
-      featureSwitches: {
-        [FeatureSwitchKey.ChatResourcePanel]: true,
-      },
     });
     const previousPanel = await screen.findByRole("region", {
       name: "Resources",
@@ -283,7 +278,6 @@ test("Carry a press with room beside the transcript to every chat", async () => 
     context,
     ...workspace.pageOptions,
     path: `/chats/${first.id}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await screen.findByTestId("chat-thread-header-title");
   click(resourceButton());
@@ -313,7 +307,6 @@ test("Peek without changing the preference when the gutter is too narrow", async
     context,
     ...workspace.pageOptions,
     path: `/chats/${first.id}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await screen.findByTestId("chat-thread-header-title");
   click(resourceButton());

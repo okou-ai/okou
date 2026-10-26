@@ -1,4 +1,17 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  record,
+  string,
+  union,
+  uuid,
+  never as zNever,
+  undefined as zUndefined,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -44,7 +57,7 @@ export const runCreateBodySchema = unifiedRunRequestSchema
   .extend({
     // This endpoint owns the source; never strip an obsolete execution request
     // into an ordinary launch. Callers must omit source authority entirely.
-    triggerSource: z.never().optional(),
+    triggerSource: zNever().optional(),
     modelProvider: modelProviderTypeSchema.optional(),
   });
 
@@ -69,8 +82,8 @@ export const runsByIdContract = c.router({
     method: "GET",
     path: "/api/runs/:id",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.uuid("Run ID must be a valid UUID"),
+    pathParams: object({
+      id: uuid("Run ID must be a valid UUID"),
     }),
     responses: {
       200: getRunResponseSchema,
@@ -91,10 +104,10 @@ export const runsCancelContract = c.router({
     method: "POST",
     path: "/api/runs/:id/cancel",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.uuid("Run ID must be a valid UUID").toLowerCase(),
+    pathParams: object({
+      id: uuid("Run ID must be a valid UUID").toLowerCase(),
     }),
-    body: z.undefined(),
+    body: zUndefined(),
     responses: {
       200: cancelRunResponseSchema,
       400: apiErrorSchema,
@@ -131,8 +144,8 @@ export const runAgentEventsContract = c.router({
     method: "GET",
     path: "/api/runs/:id/telemetry/agent",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.uuid("Run ID must be a valid UUID"),
+    pathParams: object({
+      id: uuid("Run ID must be a valid UUID"),
     }),
     query: agentEventPaginationQuerySchema,
     responses: {
@@ -153,27 +166,25 @@ export const runAgentEventsContract = c.router({
  * Dynamic fields (environment, firewalls, storageMounts) are stored in Axiom.
  * Static fields (prompt, vars, secretNames) are merged from agent_runs at query time.
  */
-export const runContextStorageMountSchema = z.object({
-  name: z.string(),
-  version: z.string(),
-  mountPath: z.string(),
-  writeback: z.boolean(),
+export const runContextStorageMountSchema = object({
+  name: string(),
+  version: string(),
+  mountPath: string(),
+  writeback: boolean(),
 });
 
-const runContextSanitizedFirewallSchema = z.object({
-  name: z.string(),
-  apis: z.array(
-    z.object({
-      base: z.string(),
-      permissions: z
-        .array(
-          z.object({
-            name: z.string(),
-            description: z.string().optional(),
-            rules: z.array(z.string()),
-          }),
-        )
-        .optional(),
+const runContextSanitizedFirewallSchema = object({
+  name: string(),
+  apis: array(
+    object({
+      base: string(),
+      permissions: array(
+        object({
+          name: string(),
+          description: string().optional(),
+          rules: array(string()),
+        }),
+      ).optional(),
     }),
   ),
 });
@@ -182,34 +193,34 @@ const runContextSanitizedFirewallSchema = z.object({
 // inline response through runContextSanitizedFirewallSchema during rollout.
 const runContextExecutionInlineFirewallSchema =
   executionFirewallInlineEntrySchema.shape.firewall.extend({
-    kind: z.literal("inline"),
+    kind: literal("inline"),
     customConnectorId:
       executionFirewallInlineEntrySchema.shape.customConnectorId,
     sourceId: executionFirewallInlineEntrySchema.shape.sourceId,
   });
 
-const runContextFirewallSchema = z.union([
+const runContextFirewallSchema = union([
   executionFirewallBuiltinEntrySchema,
   runContextExecutionInlineFirewallSchema,
   runContextSanitizedFirewallSchema,
 ]);
 
-export const runContextResponseSchema = z.object({
-  prompt: z.string(),
-  appendSystemPrompt: z.string().nullable(),
-  runId: z.string(),
-  sessionId: z.string().nullable(),
-  cliAgentType: z.string().optional(),
-  secretNames: z.array(z.string()),
-  vars: z.record(z.string(), z.string()).nullable(),
-  environment: z.record(z.string(), z.string()),
-  firewalls: z.array(runContextFirewallSchema),
+export const runContextResponseSchema = object({
+  prompt: string(),
+  appendSystemPrompt: string().nullable(),
+  runId: string(),
+  sessionId: string().nullable(),
+  cliAgentType: string().optional(),
+  secretNames: array(string()),
+  vars: record(string(), string()).nullable(),
+  environment: record(string(), string()),
+  firewalls: array(runContextFirewallSchema),
   networkPolicies: networkPoliciesSchema.nullable(),
-  storageMounts: z.array(runContextStorageMountSchema),
-  featureFlags: z.record(z.string(), z.boolean()).nullable(),
+  storageMounts: array(runContextStorageMountSchema),
+  featureFlags: record(string(), boolean()).nullable(),
 });
 
-export type RunContextStorageMount = z.infer<
+export type RunContextStorageMount = zInfer<
   typeof runContextStorageMountSchema
 >;
 
@@ -222,8 +233,8 @@ export const runContextContract = c.router({
     method: "GET",
     path: "/api/runs/:id/context",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.uuid("Run ID must be a valid UUID"),
+    pathParams: object({
+      id: uuid("Run ID must be a valid UUID"),
     }),
     responses: {
       200: runContextResponseSchema,
@@ -245,8 +256,8 @@ export const runNetworkLogsContract = c.router({
     method: "GET",
     path: "/api/runs/:id/network",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.uuid("Run ID must be a valid UUID"),
+    pathParams: object({
+      id: uuid("Run ID must be a valid UUID"),
     }),
     query: networkLogPaginationQuerySchema,
     responses: {
@@ -267,11 +278,11 @@ export const runNetworkLogsContract = c.router({
  * so runner-tab fields can grow without polluting the generic log
  * detail response.
  */
-const runRunnerResponseSchema = z.object({
+const runRunnerResponseSchema = object({
   sandboxStartupPath: sandboxStartupPathSchema.nullable(),
   runnerHostname: runnerHostnameSchema.nullable().optional(),
   runnerVersion: runnerVersionSchema.nullable().optional(),
-  runnerId: z.uuid().nullable().optional(),
+  runnerId: uuid().nullable().optional(),
   runnerHeartbeatGeneration: runnerHeartbeatGenerationSchema
     .nullable()
     .optional(),
@@ -282,8 +293,8 @@ export const runRunnerContract = c.router({
     method: "GET",
     path: "/api/runs/:id/runner",
     headers: authHeadersSchema,
-    pathParams: z.object({
-      id: z.uuid("Run ID must be a valid UUID"),
+    pathParams: object({
+      id: uuid("Run ID must be a valid UUID"),
     }),
     responses: {
       200: runRunnerResponseSchema,
@@ -297,8 +308,8 @@ export const runRunnerContract = c.router({
 });
 
 // Inferred types from Zod schemas
-export type RunContextResponse = z.infer<typeof runContextResponseSchema>;
-export type RunRunnerResponse = z.infer<typeof runRunnerResponseSchema>;
+export type RunContextResponse = zInfer<typeof runContextResponseSchema>;
+export type RunRunnerResponse = zInfer<typeof runRunnerResponseSchema>;
 
 // Type exports
 export type RunsByIdContract = typeof runsByIdContract;

@@ -58,7 +58,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import {
   withPgPoolAcquisitionCapture,
@@ -142,7 +142,7 @@ type SandboxOperationAttrs = Parameters<
   typeof recordSandboxOperations
 >[0][number];
 type RunnerClaimIdentity = NonNullable<
-  z.infer<(typeof runnersJobClaimContract.claim)["body"]>["runnerIdentity"]
+  zInfer<(typeof runnersJobClaimContract.claim)["body"]>["runnerIdentity"]
 >;
 interface RunnerClaimAttribution {
   readonly runnerIdentity: RunnerClaimIdentity;
@@ -2229,9 +2229,9 @@ const nextSteerableInputInner$ = command(
     if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
       return forbidden("Steering is not available");
     }
+    set(writeDb$);
     const result = await set(
       loadNextSteerableInput$,
-      set(writeDb$),
       { runId, userId: auth.userId, orgId: auth.orgId },
       signal,
     );

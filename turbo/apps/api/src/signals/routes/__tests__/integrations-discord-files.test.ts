@@ -14,7 +14,7 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import { array, literal, object, string, uuid } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -262,10 +262,10 @@ function catalogClient() {
   );
 }
 
-const deliveryPayloadSchema = z.object({
-  allowed_mentions: z.object({
-    parse: z.array(z.string()),
-    replied_user: z.literal(false),
+const deliveryPayloadSchema = object({
+  allowed_mentions: object({
+    parse: array(string()),
+    replied_user: literal(false),
   }),
 });
 
@@ -1122,13 +1122,11 @@ describe("Canonical Discord file publication and delivery", () => {
         const repeated = await request();
         expect(repeated.status).toBe(response.status);
         if (repeated.status === 200 && response.status === 200) {
-          const identity = z
-            .object({
-              assetId: z.uuid(),
-              operationId: z.uuid(),
-              url: z.string(),
-            })
-            .parse(response.body);
+          const identity = object({
+            assetId: uuid(),
+            operationId: uuid(),
+            url: string(),
+          }).parse(response.body);
           expect(identity.operationId).toBe(body.operationId);
           expect(repeated.body).toMatchObject(identity);
         }

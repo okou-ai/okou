@@ -283,7 +283,17 @@ import {
   type WithSubquery,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import {
+  boolean,
+  json,
+  literal,
+  object,
+  strictObject,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
+
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import {
@@ -346,14 +356,14 @@ export interface ThreadClaim {
   readonly claimId: string;
 }
 
-const queueHeadRejectionResultSchema = z.strictObject({
-  rejected: z.boolean(),
-  assistantEventId: z.uuid().nullable(),
+const queueHeadRejectionResultSchema = strictObject({
+  rejected: boolean(),
+  assistantEventId: uuid().nullable(),
 });
-const queueRejectionLeaseFailureSchema = z.object({
-  code: z.literal("23502"),
-  table: z.literal("chat_events"),
-  column: z.literal("chat_thread_id"),
+const queueRejectionLeaseFailureSchema = object({
+  code: literal("23502"),
+  table: literal("chat_events"),
+  column: literal("chat_thread_id"),
 });
 
 function queueRejectionLeaseCte(lease: ThreadClaim | undefined): SQL {
@@ -3439,7 +3449,7 @@ export function createThreadClaimRunObjects(
           const payload =
             serializedPayload === undefined
               ? null
-              : z.json().parse(JSON.parse(serializedPayload) as unknown);
+              : json().parse(JSON.parse(serializedPayload) as unknown);
           return "internalKind" in callback
             ? { kind: "internal", internalKind: callback.internalKind, payload }
             : {
@@ -4580,7 +4590,7 @@ interface PreparedAtomicLaunchRows {
 interface PreparedAtomicLaunchPersistence {
   readonly payload: RunnerJobPayload;
   readonly rows: PreparedAtomicLaunchRows;
-  readonly diagnosticRegistrationPayload: z.infer<
+  readonly diagnosticRegistrationPayload: zInfer<
     typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
   >;
 }
@@ -4869,7 +4879,7 @@ function modelProviderFramework(
 
 // Selected-agent authorization, bootstrap and canonical session preparation.
 
-type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
+type AgentRunCreateBody = zInfer<typeof runCreateBodySchema>;
 
 /**
  * Request-scoped preparation facts from an entry point that already authorized
@@ -5786,7 +5796,7 @@ function flushQueueFirstClaimLostTiming(args: {
 // --- Private implementation: launch persistence ---
 
 type CreateRunBody = Omit<
-  z.infer<typeof unifiedRunRequestSchema>,
+  zInfer<typeof unifiedRunRequestSchema>,
   "triggerSource"
 > & {
   readonly triggerSource: TriggerSource;
@@ -6076,12 +6086,12 @@ function pendingLaunchActiveRunValues(
   };
 }
 
-const pendingLaunchRowSchema = z.object({
-  runId: z.string(),
+const pendingLaunchRowSchema = object({
+  runId: string(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
   runnerJobCreatedAt: pgTimestampWithoutTimezoneToDateSchema,
-  boundThreadId: z.string().nullable(),
-  billingAttributionId: z.string().nullable(),
+  boundThreadId: string().nullable(),
+  billingAttributionId: string().nullable(),
 });
 
 function pendingAtomicLaunchResult(

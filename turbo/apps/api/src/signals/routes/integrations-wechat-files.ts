@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import { array } from "zod";
 import {
   integrationsWechatUploadInitContract,
   integrationsWechatUploadMaterializeContract,
@@ -184,9 +184,9 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!row?.ciphertext || !attachment) {
     return notFound("This WeChat attachment is unavailable.");
   }
-  const items = z
-    .array(wechatItemSchema)
-    .parse(JSON.parse(await decryptStoredSecretValue(row.ciphertext)));
+  const items = array(wechatItemSchema).parse(
+    JSON.parse(await decryptStoredSecretValue(row.ciphertext)),
+  );
   signal.throwIfAborted();
   const item = items[Number(query.attachmentId)];
   if (!item) {

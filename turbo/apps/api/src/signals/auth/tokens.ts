@@ -6,12 +6,23 @@ import {
 } from "@okouai/api-contracts/contracts/capabilities";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import";
+import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import-session";
 import {
   workflowImportSourceSchema,
   type WorkflowImportSource,
-} from "@okouai/api-contracts/contracts/workflows";
-import { z } from "zod";
+} from "@okouai/api-contracts/contracts/workflow-import-source";
+import {
+  array,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  uuid,
+  type input,
+  type infer as zInfer,
+} from "zod";
+
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { env } from "../../lib/env";
@@ -48,7 +59,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
-  ["user-template:write", FeatureSwitchKey.CustomTemplates],
   ["vnc:read", FeatureSwitchKey.VncAccess],
   ["vnc:write", FeatureSwitchKey.VncAccess],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
@@ -65,17 +75,17 @@ interface OkouTokenOptions {
   readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
 }
 
-const jwtBaseSchema = z.object({
-  userId: z.string().min(1),
-  scope: z.string(),
-  iat: z.number(),
-  exp: z.number(),
+const jwtBaseSchema = object({
+  userId: string().min(1),
+  scope: string(),
+  iat: number(),
+  exp: number(),
 });
 
 const sandboxTokenPayloadSchema = jwtBaseSchema.extend({
-  scope: z.literal("sandbox"),
-  runId: z.string().min(1),
-  orgId: z.string().min(1),
+  scope: literal("sandbox"),
+  runId: string().min(1),
+  orgId: string().min(1),
 });
 
 function isAgentCapability(value: string): value is Capability {
@@ -87,59 +97,57 @@ function isAgentCapability(value: string): value is Capability {
 // Capability names are open-ended at the token boundary so tokens issued by a
 // newer API remain valid on an older API. The validated output remains closed
 // to known capabilities so unknown names cannot grant permissions.
-const agentCapabilitiesSchema = z
-  .array(z.string().min(1))
+const agentCapabilitiesSchema = array(string().min(1))
   .transform((capabilities) => {
     return capabilities.filter(isAgentCapability);
   })
   .readonly();
 
 const okouTokenPayloadSchema = jwtBaseSchema.extend({
-  scope: z.literal("okou"),
-  runId: z.string().min(1),
-  orgId: z.string().min(1),
+  scope: literal("okou"),
+  runId: string().min(1),
+  orgId: string().min(1),
   capabilities: agentCapabilitiesSchema,
-  computerUseHostId: z.string().uuid().optional(),
-  cloudBrowserEnabled: z.literal(true).optional(),
-  customConnectorSourceIds: z
-    .record(z.string().uuid(), z.string().uuid())
-    .optional(),
-  builtinConnectorSourceIds: z
-    .record(connectorSlugSchema, z.string().uuid())
-    .optional(),
+  computerUseHostId: string().uuid().optional(),
+  cloudBrowserEnabled: literal(true).optional(),
+  customConnectorSourceIds: record(string().uuid(), string().uuid()).optional(),
+  builtinConnectorSourceIds: record(
+    connectorSlugSchema,
+    string().uuid(),
+  ).optional(),
 });
 
-type OkouTokenClaims = Omit<z.infer<typeof okouTokenPayloadSchema>, "scope">;
+type OkouTokenClaims = Omit<zInfer<typeof okouTokenPayloadSchema>, "scope">;
 
 const cliTokenPayloadSchema = jwtBaseSchema.extend({
-  scope: z.literal("cli"),
-  orgId: z.string().min(1),
-  tokenId: z.string().min(1),
+  scope: literal("cli"),
+  orgId: string().min(1),
+  tokenId: string().min(1),
 });
 
 const composeJobTokenPayloadSchema = jwtBaseSchema.extend({
-  scope: z.literal("compose-job"),
-  jobId: z.string().min(1),
+  scope: literal("compose-job"),
+  jobId: string().min(1),
 });
 
 const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
-  scope: z.literal("skill-import"),
-  orgId: z.string().min(1),
-  agentId: z.string().min(1),
+  scope: literal("skill-import"),
+  orgId: string().min(1),
+  agentId: string().min(1),
   provider: workflowImportSourceSchema,
-  sessionId: z.uuid(),
+  sessionId: uuid(),
 });
 
-export type SkillImportTokenPayload = z.infer<
+export type SkillImportTokenPayload = zInfer<
   typeof skillImportTokenPayloadSchema
 >;
 
 type JwtPayloadInput =
-  | z.input<typeof sandboxTokenPayloadSchema>
-  | z.input<typeof okouTokenPayloadSchema>
-  | z.input<typeof cliTokenPayloadSchema>
-  | z.input<typeof composeJobTokenPayloadSchema>
-  | z.input<typeof skillImportTokenPayloadSchema>;
+  | input<typeof sandboxTokenPayloadSchema>
+  | input<typeof okouTokenPayloadSchema>
+  | input<typeof cliTokenPayloadSchema>
+  | input<typeof composeJobTokenPayloadSchema>
+  | input<typeof skillImportTokenPayloadSchema>;
 
 function base64UrlEncode(data: Buffer | string): string {
   const buffer = typeof data === "string" ? Buffer.from(data) : data;
@@ -361,7 +369,7 @@ export function generateSandboxToken(
   orgId: string,
 ): string {
   const nowSeconds = Math.floor(now() / 1000);
-  const payload: z.infer<typeof sandboxTokenPayloadSchema> = {
+  const payload: zInfer<typeof sandboxTokenPayloadSchema> = {
     scope: "sandbox",
     userId,
     runId,
@@ -427,7 +435,7 @@ function buildOkouTokenClaims(
 }
 
 function signOkouToken(claims: OkouTokenClaims): string {
-  const payload: z.infer<typeof okouTokenPayloadSchema> = {
+  const payload: zInfer<typeof okouTokenPayloadSchema> = {
     scope: "okou",
     ...claims,
   };
@@ -461,7 +469,7 @@ export function generateSkillImportToken(
 ): { readonly token: string; readonly expiresAt: Date } {
   const nowSeconds = Math.floor(now() / 1000);
   const expiresAtSeconds = nowSeconds + SKILL_IMPORT_SESSION_TTL_SECONDS;
-  const payload: z.infer<typeof skillImportTokenPayloadSchema> = {
+  const payload: zInfer<typeof skillImportTokenPayloadSchema> = {
     scope: "skill-import",
     userId,
     orgId,
@@ -484,7 +492,7 @@ export function generateCliToken(
   tokenId: string,
 ): string {
   const nowSeconds = Math.floor(now() / 1000);
-  const payload: z.infer<typeof cliTokenPayloadSchema> = {
+  const payload: zInfer<typeof cliTokenPayloadSchema> = {
     scope: "cli",
     userId,
     orgId,
@@ -501,7 +509,7 @@ export function signSandboxJwtForTests(payload: JwtPayloadInput): string {
 }
 
 export function signPatJwtForTests(
-  payload: z.infer<typeof cliTokenPayloadSchema>,
+  payload: zInfer<typeof cliTokenPayloadSchema>,
 ): string {
   return PAT_TOKEN_PREFIX + signJwt(payload);
 }

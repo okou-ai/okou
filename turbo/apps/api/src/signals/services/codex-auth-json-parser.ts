@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string, type infer as zInfer } from "zod";
 
 import { safeJsonParse, safeSync } from "../utils";
 
@@ -36,43 +36,37 @@ function decodeJwtPayload(token: string): unknown {
   return parsed;
 }
 
-const chatgptNamedClaimSchema = z
-  .object({
-    title: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    display_name: z.string().nullable().optional(),
-    displayName: z.string().nullable().optional(),
-  })
-  .passthrough();
+const chatgptNamedClaimSchema = object({
+  title: string().nullable().optional(),
+  name: string().nullable().optional(),
+  display_name: string().nullable().optional(),
+  displayName: string().nullable().optional(),
+}).passthrough();
 
-const chatgptAuthClaimsSchema = z
-  .object({
-    chatgpt_account_id: z.string().optional(),
-    chatgpt_plan_type: z.string().optional(),
-    organization: chatgptNamedClaimSchema.nullable().optional(),
-    workspace: chatgptNamedClaimSchema.nullable().optional(),
-    account: chatgptNamedClaimSchema.nullable().optional(),
-    chatgpt_workspace_name: z.string().nullable().optional(),
-    chatgpt_workspace_title: z.string().nullable().optional(),
-    chatgpt_workspace_display_name: z.string().nullable().optional(),
-    chatgpt_organization_name: z.string().nullable().optional(),
-    chatgpt_account_name: z.string().nullable().optional(),
-    organization_name: z.string().nullable().optional(),
-    workspace_name: z.string().nullable().optional(),
-  })
-  .passthrough();
+const chatgptAuthClaimsSchema = object({
+  chatgpt_account_id: string().optional(),
+  chatgpt_plan_type: string().optional(),
+  organization: chatgptNamedClaimSchema.nullable().optional(),
+  workspace: chatgptNamedClaimSchema.nullable().optional(),
+  account: chatgptNamedClaimSchema.nullable().optional(),
+  chatgpt_workspace_name: string().nullable().optional(),
+  chatgpt_workspace_title: string().nullable().optional(),
+  chatgpt_workspace_display_name: string().nullable().optional(),
+  chatgpt_organization_name: string().nullable().optional(),
+  chatgpt_account_name: string().nullable().optional(),
+  organization_name: string().nullable().optional(),
+  workspace_name: string().nullable().optional(),
+}).passthrough();
 
-const chatgptIdTokenClaimsSchema = z
-  .object({
-    exp: z.number().optional(),
-    email: z.string().nullable().optional(),
-    "https://api.openai.com/profile.email": z.string().nullable().optional(),
-    "https://api.openai.com/auth": chatgptAuthClaimsSchema.optional(),
-  })
-  .passthrough();
+const chatgptIdTokenClaimsSchema = object({
+  exp: number().optional(),
+  email: string().nullable().optional(),
+  "https://api.openai.com/profile.email": string().nullable().optional(),
+  "https://api.openai.com/auth": chatgptAuthClaimsSchema.optional(),
+}).passthrough();
 
-type ChatgptAuthClaims = z.infer<typeof chatgptAuthClaimsSchema>;
-type ChatgptNamedClaim = z.infer<typeof chatgptNamedClaimSchema>;
+type ChatgptAuthClaims = zInfer<typeof chatgptAuthClaimsSchema>;
+type ChatgptNamedClaim = zInfer<typeof chatgptNamedClaimSchema>;
 
 function nonEmptyString(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -129,18 +123,16 @@ export function extractCodexAccountEmailFromIdToken(
 
 const MAX_AUTH_JSON_BYTES = 16 * 1024;
 
-const codexAuthJsonSchema = z
-  .object({
-    tokens: z.object({
-      access_token: z.string().min(1),
-      refresh_token: z.string().min(1),
-      account_id: z.string().min(1),
-      id_token: z.string().min(1),
-    }),
-  })
-  .passthrough();
+const codexAuthJsonSchema = object({
+  tokens: object({
+    access_token: string().min(1),
+    refresh_token: string().min(1),
+    account_id: string().min(1),
+    id_token: string().min(1),
+  }),
+}).passthrough();
 
-const expSchema = z.object({ exp: z.number() }).passthrough();
+const expSchema = object({ exp: number() }).passthrough();
 
 /**
  * Typed error thrown when the pasted auth.json is malformed JSON, fails the

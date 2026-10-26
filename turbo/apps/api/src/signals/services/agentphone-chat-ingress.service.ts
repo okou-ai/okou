@@ -1,7 +1,7 @@
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import { object, string, uuid } from "zod";
 
 import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
@@ -44,10 +44,10 @@ const ROUTE_COLUMNS = {
   chatThreadId: agentphoneChatThreadRoutes.chatThreadId,
 } as const;
 
-const routeRowSchema = z.object({
-  id: z.uuid(),
-  conversationId: z.string().nullable(),
-  chatThreadId: z.uuid(),
+const routeRowSchema = object({
+  id: uuid(),
+  conversationId: string().nullable(),
+  chatThreadId: uuid(),
 });
 
 /**

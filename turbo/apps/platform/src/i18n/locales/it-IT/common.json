@@ -413,7 +413,6 @@
       "manage": "Gestisci",
       "mobile": {
         "invite": "Invita",
-        "openArtifacts": "Apri gli artefatti su mobile",
         "openAutomations": "Apri le automazioni su mobile",
         "openMenu": "Apri il menu"
       },
@@ -696,7 +695,6 @@
       "previewSlide": "Diapositiva di anteprima {{slideNumber}}",
       "previewWebsite": "Anteprima del modello di sito web {{title}}",
       "previousSlide": "Anteprima della diapositiva precedente",
-      "renameImportedTemplate": "Rinomina modello",
       "searchConnector": "Cerca modelli",
       "searchConnectors": "Cerca modelli",
       "selectStyle": "Seleziona lo stile {{style}}",
@@ -735,9 +733,7 @@
       "use": "Utilizzare",
       "useThisTemplate": "Usa questo modello",
       "visibility": {
-        "changeLabel": "Modifica la visibilità del modello",
-        "privateState": "Solo tu puoi vederlo e usarlo",
-        "workspaceState": "Chiunque in quest'area di lavoro può usarlo"
+        "changeLabel": "Modifica la visibilità del modello"
       },
       "website": "Sito web",
       "websitePreview": "{{title}} anteprima del modello di sito web",
@@ -2975,15 +2971,12 @@
         "website": "Sito web",
         "workflow": "Flusso di lavoro"
       },
-      "importedLoadFailed": "Impossibile caricare i modelli caricati.",
-      "importedUnavailable": "I modelli caricati sono temporaneamente non disponibili.",
       "previewTemplate": "Modello di anteprima {{title}}",
       "previewWebsite": "Anteprima del modello di sito web {{title}}",
       "previewWorkflow": "Anteprima del modello di flusso di lavoro {{title}}",
       "removeTemplate": "Rimuovi modello {{title}}",
       "removeWebsite": "Rimuovi modello di sito web {{title}}",
-      "removeWorkflow": "Rimuovi modello di flusso di lavoro {{title}}",
-      "retry": "Riprova"
+      "removeWorkflow": "Rimuovi modello di flusso di lavoro {{title}}"
     },
     "thread": {
       "ariaLabel": "Discussione della chat",
@@ -3008,7 +3001,6 @@
       },
       "noEmojiFound": "Nessuna emoji trovata",
       "notFound": "Conversazione non trovata",
-      "openArtifacts": "Artefatti aperti",
       "openBrowser": "Apri il browser",
       "openNamedAgent": "Apri agente {{name}}",
       "openNamedChat": "Apri la chat {{title}}",

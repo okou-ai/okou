@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { expect, onTestFinished, test } from "vitest";
-import { z } from "zod";
+import { iso, literal, object, string, uuid } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
 
@@ -131,17 +131,16 @@ test("stages only the requesting owner's OAuth export content without capabiliti
       : [];
   });
   expect(documents).toHaveLength(1);
-  const attempt = z
-    .object({
-      id: z.uuid(),
-      orgId: z.string(),
-      userId: z.string(),
-      flow: z.literal("connect"),
-      phase: z.literal("pending"),
-      guildId: z.string(),
-      createdAt: z.iso.datetime(),
-      expiresAt: z.iso.datetime(),
-    })
+  const attempt = object({
+    id: uuid(),
+    orgId: string(),
+    userId: string(),
+    flow: literal("connect"),
+    phase: literal("pending"),
+    guildId: string(),
+    createdAt: iso.datetime(),
+    expiresAt: iso.datetime(),
+  })
     .strict()
     .parse(documents[0]);
   expect(attempt).toMatchObject({
@@ -159,17 +158,16 @@ test("stages only the requesting owner's OAuth export content without capabiliti
       : [];
   });
   expect(consents).toHaveLength(1);
-  const consent = z
-    .object({
-      id: z.uuid(),
-      orgId: z.string(),
-      userId: z.string(),
-      flow: z.literal("install"),
-      guildId: z.string(),
-      discordUserId: z.string(),
-      botUserId: z.string(),
-      createdAt: z.iso.datetime(),
-    })
+  const consent = object({
+    id: uuid(),
+    orgId: string(),
+    userId: string(),
+    flow: literal("install"),
+    guildId: string(),
+    discordUserId: string(),
+    botUserId: string(),
+    createdAt: iso.datetime(),
+  })
     .strict()
     .parse(consents[0]);
   expect(consent).toMatchObject({

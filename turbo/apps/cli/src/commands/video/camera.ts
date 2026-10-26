@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Command } from "commander";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   cameraPlanSchema,
@@ -37,16 +37,14 @@ import {
   type CameraReviewCheckpoint,
 } from "./camera-review";
 
-const ffprobeSchema = z.object({
-  streams: z
-    .array(
-      z.object({
-        width: z.number().int().positive(),
-        height: z.number().int().positive(),
-      }),
-    )
-    .min(1),
-  format: z.object({ duration: z.string().optional() }),
+const ffprobeSchema = object({
+  streams: array(
+    object({
+      width: number().int().positive(),
+      height: number().int().positive(),
+    }),
+  ).min(1),
+  format: object({ duration: string().optional() }),
 });
 
 interface CameraCommandOptions {

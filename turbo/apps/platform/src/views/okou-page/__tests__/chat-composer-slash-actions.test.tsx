@@ -6,6 +6,7 @@ import {
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -493,16 +494,10 @@ test("Template counts include the custom templates listed beside the built-in on
       customTemplate("document", 3),
     ]);
   });
-  const { menu } = await openSlashActions({
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: true,
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
-    },
-  });
-  // Built-in documents are off, so Document counts only the custom one.
+  const { menu } = await openSlashActions();
   const counts = {
     Presentation: PRESENTATION_TEMPLATE_PICKER_ITEMS.length + 2,
-    Document: 1,
+    Document: DOCUMENT_TEMPLATE_ITEMS.length + 1,
     Illustration: ILLUSTRATION_TEMPLATE_ITEMS.length,
     Website: WEBSITE_TEMPLATE_ITEMS.length,
   };
@@ -536,41 +531,6 @@ test("Effort stays out when the chat model has no effort levels", async () => {
   expect(
     firstLevelNames().find((name) => {
       return name.startsWith("Effort");
-    }),
-  ).toBeUndefined();
-});
-
-test("A template type with nothing to show gets no tab", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
-  });
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, [customTemplate("presentation", 1)]);
-  });
-  const { menu } = await openSlashActions({
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: true,
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
-    },
-  });
-  const presentations = PRESENTATION_TEMPLATE_PICKER_ITEMS.length + 1;
-  const entry = await waitFor(() => {
-    return menuButton(
-      `Templates ${String(presentations + ILLUSTRATION_TEMPLATE_ITEMS.length + WEBSITE_TEMPLATE_ITEMS.length)}`,
-    );
-  });
-  fireEvent.mouseOver(entry);
-  fireEvent.mouseMove(entry);
-
-  const pane = within(menu).getByRole("region", { name: "Templates" });
-  const tabs = queryAllByRoleFast("button", pane).map((tab) => {
-    return tab.textContent?.replace(/\s+/gu, " ").trim() ?? "";
-  });
-  expect(tabs).toContain(`Presentation ${String(presentations)}`);
-  // Built-in documents are off and no custom document exists.
-  expect(
-    tabs.find((tab) => {
-      return tab.startsWith("Document");
     }),
   ).toBeUndefined();
 });

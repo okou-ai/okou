@@ -1,12 +1,13 @@
-import { z } from "zod";
+import { array, object, string, type infer as zInfer } from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const slackChannelSchema = z.object({
-  id: z.string(),
-  name: z.string(),
+const slackChannelSchema = object({
+  id: string(),
+  name: string(),
 });
 
 /**
@@ -19,7 +20,7 @@ export const slackChannelsContract = c.router({
     path: "/api/slack/channels",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ channels: z.array(slackChannelSchema) }),
+      200: object({ channels: array(slackChannelSchema) }),
       401: apiErrorSchema,
       404: apiErrorSchema,
     },
@@ -28,5 +29,5 @@ export const slackChannelsContract = c.router({
 });
 
 export type SlackChannelsContract = typeof slackChannelsContract;
-export type SlackChannel = z.infer<typeof slackChannelSchema>;
+export type SlackChannel = zInfer<typeof slackChannelSchema>;
 export { slackChannelSchema };

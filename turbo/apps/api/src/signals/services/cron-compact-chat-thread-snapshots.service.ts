@@ -34,7 +34,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
-import { z } from "zod";
+import type { infer as zInfer } from "zod";
 import {
   nullableDriverValueDecoder,
   pgTextDecoder,
@@ -330,7 +330,7 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
       return agent.id;
     }),
   );
-  const threads: z.infer<typeof chatThreadSnapshotProjectionSchema>[] = [];
+  const threads: zInfer<typeof chatThreadSnapshotProjectionSchema>[] = [];
   let after: { readonly lastMessageAt: Date; readonly id: string } | null =
     null;
   for (;;) {

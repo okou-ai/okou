@@ -250,7 +250,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -259,21 +258,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
-  });
-
-  it("should enable custom templates for users outside the staff org", () => {
-    const bingjieStates = getAllFeatureStates({
-      email: "BINGJIE@OKOU.AI",
-      orgId: "org_nonexistent",
-    });
-    expect(bingjieStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
-
-    const otherStates = getAllFeatureStates({
-      email: "ethan@okou.ai",
-      orgId: "org_nonexistent",
-    });
-    expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
   });
 
   it("should apply overrides to enable disabled features", () => {
@@ -365,9 +349,6 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",
-    );
-    expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
-      "released",
     );
     expect(
       metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,

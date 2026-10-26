@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, boolean, object, string } from "zod";
 import { integrationsDiscordReadContract } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
@@ -219,15 +219,13 @@ async function fixture(
     http.post(
       `${API}/channels/:channelId/messages`,
       async ({ request, params }) => {
-        const body = z
-          .object({
-            content: z.string(),
-            allowed_mentions: z.object({
-              parse: z.array(z.string()),
-              replied_user: z.boolean(),
-            }),
-          })
-          .parse(await request.json());
+        const body = object({
+          content: string(),
+          allowed_mentions: object({
+            parse: array(string()),
+            replied_user: boolean(),
+          }),
+        }).parse(await request.json());
         if (body.content.trim().length === 0) {
           return HttpResponse.json(
             { code: 50_006, message: "Cannot send an empty message" },

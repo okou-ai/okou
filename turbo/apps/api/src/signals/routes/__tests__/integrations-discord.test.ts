@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import { object, string } from "zod";
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -779,9 +779,9 @@ describe("verified Discord integration settings", () => {
     }
     let revoked = false;
     membership.mockImplementation(async (...args) => {
-      const { organizationId } = z
-        .object({ organizationId: z.string() })
-        .parse(args[0]);
+      const { organizationId } = object({ organizationId: string() }).parse(
+        args[0],
+      );
       const response = await currentMembership(...args);
       if (!revoked && organizationId === secondOwner.orgId) {
         revoked = true;

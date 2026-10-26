@@ -5,7 +5,7 @@ import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { randomUUID } from "node:crypto";
 import { Webhook } from "svix";
 import { beforeEach, expect, test, vi } from "vitest";
-import { z } from "zod";
+import { object, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -40,9 +40,9 @@ class ClerkInvitationTestError extends Error {
 
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const secret = `whsec_${Buffer.from("get-started-synthetic-secret").toString("base64")}`;
-const sentInvitation = z.object({
-  organizationId: z.string(),
-  privateMetadata: z.object({ getStartedClaimId: z.string().uuid() }),
+const sentInvitation = object({
+  organizationId: string(),
+  privateMetadata: object({ getStartedClaimId: string().uuid() }),
 });
 
 beforeEach(async () => {

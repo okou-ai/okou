@@ -1,11 +1,10 @@
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { compareAppVersions } from "./app-version";
 import compatibilityConfig from "./ios-client-compatibility.json";
 
-const iosClientCompatibilityConfigSchema = z.object({
-  minimumSupportedVersion: z
-    .string()
+const iosClientCompatibilityConfigSchema = object({
+  minimumSupportedVersion: string()
     .regex(/^\d+\.\d+\.\d+$/u, "The iOS floor must be a stable x.y.z version")
     .nullable(),
 });

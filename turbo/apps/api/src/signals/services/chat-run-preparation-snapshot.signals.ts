@@ -22,7 +22,8 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { array, object, string, type infer as zInfer } from "zod";
+
 import {
   pgBooleanDecoder,
   zodDriverValueDecoder,
@@ -40,11 +41,11 @@ import {
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
-const threadSelectionRowsSchema = z.array(
-  z.object({
-    connectorId: z.string().uuid(),
-    connectorSlug: z.string().nullable(),
-    customConnectorId: z.string().uuid().nullable(),
+const threadSelectionRowsSchema = array(
+  object({
+    connectorId: string().uuid(),
+    connectorSlug: string().nullable(),
+    customConnectorId: string().uuid().nullable(),
   }),
 );
 const threadSelectionRowsDecoder = zodDriverValueDecoder(
@@ -54,7 +55,7 @@ const threadSelectionRowsDecoder = zodDriverValueDecoder(
 /** Preparation facts only: neither a connector grant nor commit-time authority. */
 export interface ChatRunPreparationFacts {
   readonly isOfficialWorkflowThread: boolean;
-  readonly threadConnectorSelections: z.infer<typeof threadSelectionRowsSchema>;
+  readonly threadConnectorSelections: zInfer<typeof threadSelectionRowsSchema>;
 }
 
 function buildPreparationTables(

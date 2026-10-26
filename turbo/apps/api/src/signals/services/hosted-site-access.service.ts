@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, exists, isNull, sql } from "drizzle-orm";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import type {
   HostedSiteAccessDecision,
   HostedSiteVisibility,
@@ -151,7 +151,7 @@ export const updateHostedSiteVisibility$ = command(
   async (
     { set },
     args: Owner & {
-      readonly visibility: z.infer<typeof hostedSiteVisibilitySchema>;
+      readonly visibility: zInfer<typeof hostedSiteVisibilitySchema>;
       readonly expectedRevision: string | null;
     },
     signal: AbortSignal,

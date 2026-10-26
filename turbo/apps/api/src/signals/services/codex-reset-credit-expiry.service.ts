@@ -1,6 +1,6 @@
 import { accept } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import { array, object, string } from "zod";
 
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
@@ -174,14 +174,13 @@ function retryAfterDeadline(value: string | null): number {
     : fallback;
 }
 
-const detailsSchema = z.object({
-  credits: z
-    .array(
-      z.object({
-        status: z.string().nullable().optional(),
-        expires_at: z.string().nullable().optional(),
-      }),
-    )
+const detailsSchema = object({
+  credits: array(
+    object({
+      status: string().nullable().optional(),
+      expires_at: string().nullable().optional(),
+    }),
+  )
     .nullable()
     .optional(),
 });

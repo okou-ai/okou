@@ -1,72 +1,80 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { discordGatewaySigningPayload } from "@okouai/api-contracts/contracts/discord-gateway";
 
-export const packetSchema = z.object({
-  op: z.number().int(),
-  d: z.unknown(),
-  s: z.number().int().nonnegative().nullable().optional(),
-  t: z.string().nullable().optional(),
+export const packetSchema = object({
+  op: number().int(),
+  d: zUnknown(),
+  s: number().int().nonnegative().nullable().optional(),
+  t: string().nullable().optional(),
 });
 
-export const helloSchema = z.object({
-  heartbeat_interval: z.number().int().min(100).max(120_000),
+export const helloSchema = object({
+  heartbeat_interval: number().int().min(100).max(120_000),
 });
 
-export const readySchema = z.object({
-  session_id: z.string().min(1),
-  resume_gateway_url: z.string().url(),
-  application: z.object({ id: z.string() }),
-  user: z.object({ id: z.string().regex(/^\d{17,20}$/u) }),
+export const readySchema = object({
+  session_id: string().min(1),
+  resume_gateway_url: string().url(),
+  application: object({ id: string() }),
+  user: object({ id: string().regex(/^\d{17,20}$/u) }),
 });
 
 /** Transport-only view of a message; the API revalidates the full event. */
-export const messageRoutingSchema = z.object({
-  guild_id: z.string().optional(),
-  mentions: z.array(z.object({ id: z.string() })),
+export const messageRoutingSchema = object({
+  guild_id: string().optional(),
+  mentions: array(object({ id: string() })),
 });
 
-export const outboxEntrySchema = z.object({
-  body: z.string(),
-  queuedAt: z.number(),
+export const outboxEntrySchema = object({
+  body: string(),
+  queuedAt: number(),
 });
 
-export const gatewayBotSchema = z.object({
-  url: z.string().url(),
-  shards: z.number().int().positive(),
-  session_start_limit: z.object({
-    total: z.number().int().positive(),
-    remaining: z.number().int().nonnegative(),
-    reset_after: z.number().int().nonnegative(),
-    max_concurrency: z.number().int().positive(),
+export const gatewayBotSchema = object({
+  url: string().url(),
+  shards: number().int().positive(),
+  session_start_limit: object({
+    total: number().int().positive(),
+    remaining: number().int().nonnegative(),
+    reset_after: number().int().nonnegative(),
+    max_concurrency: number().int().positive(),
   }),
 });
 
-export const stateSchema = z.object({
-  version: z.literal(1),
-  identity: z.string().nullable(),
-  running: z.boolean(),
-  fatal: z.string().nullable(),
-  session: z
-    .object({
-      id: z.string(),
-      url: z.string(),
-      sequence: z.number().int().nonnegative(),
-      botUserId: z.string(),
-    })
-    .nullable(),
-  nextOutbox: z.number().int().nonnegative(),
-  pending: z.number().int().nonnegative(),
-  reconnectAt: z.number(),
-  failures: z.number().int().nonnegative(),
-  identifyAt: z.number(),
-  identifyRemaining: z.number().int().nonnegative(),
-  identifyResetAt: z.number(),
-  deliveryAt: z.number(),
-  deliveryFailures: z.number().int().nonnegative(),
-  deadLettered: z.number().int().nonnegative(),
+export const stateSchema = object({
+  version: literal(1),
+  identity: string().nullable(),
+  running: boolean(),
+  fatal: string().nullable(),
+  session: object({
+    id: string(),
+    url: string(),
+    sequence: number().int().nonnegative(),
+    botUserId: string(),
+  }).nullable(),
+  nextOutbox: number().int().nonnegative(),
+  pending: number().int().nonnegative(),
+  reconnectAt: number(),
+  failures: number().int().nonnegative(),
+  identifyAt: number(),
+  identifyRemaining: number().int().nonnegative(),
+  identifyResetAt: number(),
+  deliveryAt: number(),
+  deliveryFailures: number().int().nonnegative(),
+  deadLettered: number().int().nonnegative(),
 });
 
-export type RelayState = z.infer<typeof stateSchema>;
+export type RelayState = zInfer<typeof stateSchema>;
 
 export function initialState(): RelayState {
   return {

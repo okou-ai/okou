@@ -1,25 +1,22 @@
-import { z } from "zod";
+import { boolean, number, object, string, union } from "zod";
 
 import { ProviderHttpError, ProviderResponseError } from "../../provider-error";
 
 const OTO_REFRESH_TOKEN_URL = "https://api.tryoto.com/rest/v2/refreshToken";
 
-const otoRefreshTokenResponseSchema = z.object({
-  access_token: z.string().min(1),
-  refresh_token: z.string().min(1).optional(),
-  token_type: z.string().min(1).optional(),
-  success: z.boolean().optional(),
-  expires_in: z
-    .union([
-      z.number().positive(),
-      z
-        .string()
-        .regex(/^[1-9][0-9]*$/u)
-        .transform(Number),
-    ])
-    .refine((value) => {
-      return value > 0;
-    }),
+const otoRefreshTokenResponseSchema = object({
+  access_token: string().min(1),
+  refresh_token: string().min(1).optional(),
+  token_type: string().min(1).optional(),
+  success: boolean().optional(),
+  expires_in: union([
+    number().positive(),
+    string()
+      .regex(/^[1-9][0-9]*$/u)
+      .transform(Number),
+  ]).refine((value) => {
+    return value > 0;
+  }),
 });
 
 interface OtoAccessTokenResult {

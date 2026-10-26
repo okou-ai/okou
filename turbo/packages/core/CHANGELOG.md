@@ -1,5 +1,14 @@
 # Changelog
 
+## [8.791.2](https://github.com/okou-ai/okou/compare/core-v8.791.1...core-v8.791.2) (2026-10-26)
+
+
+### Refactoring
+
+* remove chat resource panel feature switch ([#43157](https://github.com/okou-ai/okou/issues/43157)) ([4b47789](https://github.com/okou-ai/okou/commit/4b477894060640e8ea0a5ef50a23a56f8f83fe2a))
+* remove custom templates feature switch ([#43162](https://github.com/okou-ai/okou/issues/43162)) ([6909a01](https://github.com/okou-ai/okou/commit/6909a011d4b2d60d5afc3fe6f5f0698d269aad28))
+* remove google docs and sheets conversion switch ([#43154](https://github.com/okou-ai/okou/issues/43154)) ([be0a3ca](https://github.com/okou-ai/okou/commit/be0a3ca522cd5edd2748912bcbecf4c07d76ff38))
+
 ## [8.791.1](https://github.com/okou-ai/okou/compare/core-v8.791.0...core-v8.791.1) (2026-10-26)
 
 

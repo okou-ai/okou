@@ -5,7 +5,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import { object, string } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -17,9 +17,9 @@ interface OrgOnboardingCompletion {
   readonly industry?: OnboardingIndustry;
 }
 
-const createdMetadataSchema = z.object({
-  org_id: z.string(),
-  tier: z.string(),
+const createdMetadataSchema = object({
+  org_id: string(),
+  tier: string(),
 });
 
 /** Metadata and entitlement bootstrap commit together. */

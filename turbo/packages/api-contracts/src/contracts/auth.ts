@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object, string } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -17,12 +17,12 @@ export const authContract = c.router({
     path: "/api/auth/me",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({
-        userId: z.string(),
-        email: z.string(),
-        orgId: z.string().nullable(),
+      200: object({
+        userId: string(),
+        email: string(),
+        orgId: string().nullable(),
         // Older API deployments omit this. Only Clerk session auth supplies it.
-        sessionId: z.string().optional(),
+        sessionId: string().optional(),
       }),
       401: apiErrorSchema,
       403: apiErrorSchema,

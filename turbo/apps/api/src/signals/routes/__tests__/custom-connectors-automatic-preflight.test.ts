@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { number, object, string, union } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -189,11 +189,10 @@ describe("Automatic custom connector preflight", () => {
       let changed = false;
       server.use(
         http.post(provider.endpoint, async ({ request }) => {
-          const message = z
-            .object({
-              method: z.string(),
-              id: z.union([z.number(), z.string()]).optional(),
-            })
+          const message = object({
+            method: string(),
+            id: union([number(), string()]).optional(),
+          })
             .passthrough()
             .parse(await request.json());
           if (!changed) {

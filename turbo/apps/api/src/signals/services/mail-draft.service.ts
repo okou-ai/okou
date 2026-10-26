@@ -25,7 +25,17 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { convert } from "html-to-text";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import {
+  array,
+  email,
+  lazy,
+  number,
+  object,
+  record,
+  string,
+  type infer as zInfer,
+  type ZodType,
+} from "zod";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
@@ -59,7 +69,7 @@ const TOKEN_REFRESH_SKEW_MS = 60_000;
 const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_MS = 60 * 60 * 1000;
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const GMAIL_ACCESS_TOKEN_ENV = "GMAIL_TOKEN";
-const oauthScopesSchema = z.array(z.string());
+const oauthScopesSchema = array(string());
 
 interface GmailMessagePart {
   readonly partId: string;
@@ -77,46 +87,44 @@ interface GmailMessagePart {
   readonly parts?: readonly GmailMessagePart[];
 }
 
-const gmailMessagePartSchema: z.ZodType<GmailMessagePart> = z.lazy(() => {
-  return z.object({
-    partId: z.string(),
-    mimeType: z.string(),
-    filename: z.string().default(""),
-    headers: z
-      .array(z.object({ name: z.string(), value: z.string() }))
-      .default([]),
-    body: z.object({
-      attachmentId: z.string().optional(),
-      size: z.number().int().nonnegative().default(0),
-      data: z.string().optional(),
+const gmailMessagePartSchema: ZodType<GmailMessagePart> = lazy(() => {
+  return object({
+    partId: string(),
+    mimeType: string(),
+    filename: string().default(""),
+    headers: array(object({ name: string(), value: string() })).default([]),
+    body: object({
+      attachmentId: string().optional(),
+      size: number().int().nonnegative().default(0),
+      data: string().optional(),
     }),
-    parts: z.array(gmailMessagePartSchema).optional(),
+    parts: array(gmailMessagePartSchema).optional(),
   });
 });
 
-const gmailDraftResourceSchema = z.object({
-  id: z.string(),
-  message: z.object({
-    id: z.string(),
-    threadId: z.string(),
+const gmailDraftResourceSchema = object({
+  id: string(),
+  message: object({
+    id: string(),
+    threadId: string(),
     payload: gmailMessagePartSchema,
   }),
 });
 
-const gmailMessageResourceSchema = z.object({
-  id: z.string(),
-  threadId: z.string(),
+const gmailMessageResourceSchema = object({
+  id: string(),
+  threadId: string(),
   payload: gmailMessagePartSchema,
 });
 
-const gmailSentResourceSchema = z.object({
-  id: z.string(),
-  threadId: z.string(),
+const gmailSentResourceSchema = object({
+  id: string(),
+  threadId: string(),
 });
 
-const gmailAttachmentResourceSchema = z.object({
-  size: z.number().int().nonnegative(),
-  data: z.string(),
+const gmailAttachmentResourceSchema = object({
+  size: number().int().nonnegative(),
+  data: string(),
 });
 
 interface MailConnection extends BuiltinConnectorCredentialConnection {
@@ -626,7 +634,7 @@ function parseAddressList(value: string | undefined): string[] {
     const candidate = part.trim();
     const angle = candidate.match(/<([^>]+)>/u)?.[1];
     const address = (angle ?? candidate).trim();
-    return z.email().safeParse(address).success ? [address] : [];
+    return email().safeParse(address).success ? [address] : [];
   });
 }
 
@@ -641,11 +649,11 @@ function parseFromHeader(
   }
   const decoded = decodeHeader(value).trim();
   const match = decoded.match(/^(.*?)\s*<([^>]+)>$/u);
-  if (match?.[2] && z.email().safeParse(match[2]).success) {
+  if (match?.[2] && email().safeParse(match[2]).success) {
     const name = match[1]?.trim().replace(/^"|"$/gu, "");
     return name ? { address: match[2], name } : { address: match[2] };
   }
-  if (!z.email().safeParse(decoded).success) {
+  if (!email().safeParse(decoded).success) {
     throw new Error("Gmail draft has an invalid From header");
   }
   return { address: decoded };
@@ -679,7 +687,7 @@ function findBodyPart(
   return null;
 }
 
-const htmlAttributesSchema = z.record(z.string(), z.string());
+const htmlAttributesSchema = record(string(), string());
 
 function normalizedContentId(value: string): string {
   return value
@@ -854,7 +862,7 @@ async function gmailGetDraftResource(
     readonly gmailDraftId: string;
   },
   _signal: AbortSignal,
-): Promise<z.infer<typeof gmailDraftResourceSchema> | null> {
+): Promise<zInfer<typeof gmailDraftResourceSchema> | null> {
   const acceptedResponse = await settle(
     accept(
       fetch(
@@ -967,7 +975,7 @@ async function gmailGetMessageResource(
     readonly gmailMessageId: string;
   },
   _signal: AbortSignal,
-): Promise<z.infer<typeof gmailMessageResourceSchema> | null> {
+): Promise<zInfer<typeof gmailMessageResourceSchema> | null> {
   const acceptedResponse3 = await settle(
     accept(
       fetch(

@@ -1,16 +1,16 @@
-import { z } from "zod";
-import { initContract } from "./base";
+import { object, string, type infer as zInfer } from "zod";
+
+import { initContract } from "./trpc-contract";
 
 const c = initContract();
 
-export const buildCommitShaSchema = z
-  .string()
+export const buildCommitShaSchema = string()
   .regex(/^[0-9a-f]{40}$/u)
   .nullable();
 
-export const buildVersionSchema = z.string().min(1).nullable().optional();
+export const buildVersionSchema = string().min(1).nullable().optional();
 
-export const buildInfoResponseSchema = z.object({
+export const buildInfoResponseSchema = object({
   commitSha: buildCommitShaSchema,
   version: buildVersionSchema,
 });
@@ -27,7 +27,7 @@ export const buildInfoContract = c.router({
 });
 
 export type BuildInfoContract = typeof buildInfoContract;
-export type BuildInfoResponse = z.infer<typeof buildInfoResponseSchema>;
+export type BuildInfoResponse = zInfer<typeof buildInfoResponseSchema>;
 export type BuildInfoRouteResponse = {
   readonly status: 200;
   readonly body: BuildInfoResponse;

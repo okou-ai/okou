@@ -399,7 +399,6 @@
       "manage": "管理",
       "mobile": {
         "invite": "招待する",
-        "openArtifacts": "モバイルでアーティファクトを開く",
         "openAutomations": "モバイルでオートメーションを開く",
         "openMenu": "メニューを開く"
       },
@@ -678,7 +677,6 @@
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previousSlide": "前のスライドをプレビューする",
-      "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
       "selectStyle": "スタイル {{style}} を選択してください",
@@ -717,9 +715,7 @@
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
       "visibility": {
-        "changeLabel": "テンプレートの公開範囲を変更",
-        "privateState": "自分だけが表示・使用できます",
-        "workspaceState": "このワークスペースの全員が使用できます"
+        "changeLabel": "テンプレートの公開範囲を変更"
       },
       "website": "ウェブサイト",
       "websitePreview": "{{title}} Web サイト テンプレートのプレビュー",
@@ -2918,15 +2914,12 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
-      "importedLoadFailed": "アップロード済みテンプレートを読み込めませんでした。",
-      "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
       "previewTemplate": "プレビュー テンプレート {{title}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previewWorkflow": "ワークフロー テンプレートのプレビュー {{title}}",
       "removeTemplate": "テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
-      "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します",
-      "retry": "再試行"
+      "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します"
     },
     "thread": {
       "ariaLabel": "チャットスレッド",
@@ -2951,7 +2944,6 @@
       },
       "noEmojiFound": "絵文字が見つかりませんでした",
       "notFound": "チャットスレッドが見つかりません",
-      "openArtifacts": "オープンアーティファクト",
       "openBrowser": "ブラウザを開く",
       "openNamedAgent": "エージェント {{name}} を開く",
       "openNamedChat": "チャットを開く {{title}}",

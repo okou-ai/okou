@@ -7,23 +7,23 @@ import {
   type Request,
 } from "miniflare";
 import { expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import { array, literal, number, object, string } from "zod";
 const connectionId = "00000000-0000-4000-8000-000000000001";
 const generation = "00000000-0000-4000-8000-000000000002";
 const secret = randomUUID();
 const control = randomUUID();
-const updatesSchema = z.object({
-  connectionId: z.literal(connectionId),
-  generation: z.literal(generation),
-  updates: z.object({
-    get_updates_buf: z.string(),
-    msgs: z.array(
-      z.object({
-        message_id: z.string(),
-        item_list: z.array(
-          z.object({
-            type: z.number(),
-            text_item: z.object({ text: z.string() }),
+const updatesSchema = object({
+  connectionId: literal(connectionId),
+  generation: literal(generation),
+  updates: object({
+    get_updates_buf: string(),
+    msgs: array(
+      object({
+        message_id: string(),
+        item_list: array(
+          object({
+            type: number(),
+            text_item: object({ text: string() }),
           }),
         ),
       }),
@@ -109,9 +109,9 @@ it("receives in a Workflow, checkpoints empty cursors and dispatches messages wi
       expect(request.headers.get("Authorization")).toBe(
         "Bearer private-provider-token",
       );
-      const body = z
-        .object({ get_updates_buf: z.string() })
-        .parse(await request.json());
+      const body = object({ get_updates_buf: string() }).parse(
+        await request.json(),
+      );
       polls++;
       expect(body.get_updates_buf).toBe(
         ["saved-cursor", "empty-cursor", "message-cursor"][polls - 1],
@@ -155,9 +155,9 @@ it("replays a saved batch larger than the RPC limit after an ambiguous delivery 
   const runtime = fixture(async (request) => {
     const path = new URL(request.url).pathname;
     if (path === "/api/internal/wechat/receiver") {
-      const body = z
-        .object({ generation: z.string().optional() })
-        .parse(await request.json());
+      const body = object({ generation: string().optional() }).parse(
+        await request.json(),
+      );
       return body.generation
         ? Response.json({ active: true, generation })
         : bootstrap();
@@ -229,9 +229,9 @@ it("fences a superseded long poll when a verified binding is replaced", async ()
       }
       releaseOld.resolve();
       nextPolls++;
-      const body = z
-        .object({ get_updates_buf: z.string() })
-        .parse(await request.json());
+      const body = object({ get_updates_buf: string() }).parse(
+        await request.json(),
+      );
       expect(body.get_updates_buf).toBe(
         nextPolls === 1 ? "initial" : "replacement",
       );
@@ -249,14 +249,12 @@ it("fences a superseded long poll when a verified binding is replaced", async ()
         : Response.json({ ret: -14 });
     }
     if (path === "/api/internal/wechat/deliver") {
-      const body = z
-        .object({
-          generation: z.literal(nextGeneration),
-          updates: z.object({
-            msgs: z.array(z.object({ message_id: z.string() })),
-          }),
-        })
-        .parse(await request.json());
+      const body = object({
+        generation: literal(nextGeneration),
+        updates: object({
+          msgs: array(object({ message_id: string() })),
+        }),
+      }).parse(await request.json());
       delivered.push(
         ...body.updates.msgs.map((message) => {
           return message.message_id;
@@ -293,9 +291,9 @@ it("continues with the saved cursor when a provider long poll reaches its own de
       return bootstrap();
     }
     if (path === "/ilink/bot/getupdates") {
-      const body = z
-        .object({ get_updates_buf: z.string() })
-        .parse(await request.json());
+      const body = object({ get_updates_buf: string() }).parse(
+        await request.json(),
+      );
       expect(body.get_updates_buf).toBe("saved-cursor");
       polls++;
       if (polls === 1) return idle.promise;
@@ -327,9 +325,9 @@ it("retains a batch while the API retries an individual input and polls only aft
       polls++;
       if (polls === 2) {
         expect(deliveries).toBe(3);
-        const body = z
-          .object({ get_updates_buf: z.string() })
-          .parse(await request.json());
+        const body = object({ get_updates_buf: string() }).parse(
+          await request.json(),
+        );
         expect(body.get_updates_buf).toBe("retry-cursor");
         return Response.json({ ret: -14 });
       }

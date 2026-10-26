@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { record, string, unknown as zUnknown } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   usagePackPendingSnapshotPlan,
@@ -19,7 +19,7 @@ import type {
   PreparedPendingUsagePackCheckout,
   UsagePackSubscriptionInput,
 } from "./usage-pack-subscription.service";
-const retainedRowSchema = z.record(z.string(), z.unknown());
+const retainedRowSchema = record(string(), zUnknown());
 
 export function usagePackPendingSnapshotCountWrite(
   orgId: string,

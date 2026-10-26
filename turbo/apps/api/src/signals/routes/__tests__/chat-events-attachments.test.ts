@@ -16,7 +16,6 @@ import {
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
 import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   formatUserPresentationTemplateId,
   userPresentationTemplateDirectory,
@@ -46,7 +45,6 @@ import {
   userMessages,
   type PromptMessage,
 } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -1293,13 +1291,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       throw new Error("Expected a chat organization");
     }
     const owner = bdd.user({ orgId });
-    for (const user of [actor, owner]) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: user.userId, orgId },
-        { [FeatureSwitchKey.CustomTemplates]: true },
-      );
-    }
     const { presentations, customs, presentationId, customId } =
       await publishPrivateChatTemplates(owner);
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
@@ -1475,64 +1466,12 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, sent.runId);
   }, 60_000);
 
-  it("rejects Document templates while disabled and injects their pinned resource after enablement", async () => {
+  it("injects the pinned public source for a Document template", async () => {
     const { actor, agentId } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected a chat organization");
-    }
     const template: GenerationTemplateRequest = {
       type: "document",
       selection: { documentTemplateId: "document-template:simple-invoice" },
     };
-    const clientEventId = randomUUID();
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId },
-      { [FeatureSwitchKey.BuiltinDocumentTemplates]: false },
-    );
-    const response = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        clientEventId,
-        prompt: "Prepare my invoice",
-        userMessage: userMessageWithTemplate("Prepare my invoice", template),
-      },
-      [201],
-    );
-    if (response.status !== 201) {
-      throw new Error("Expected the input to enqueue before pick");
-    }
-    const rejected = await waitForThreadMessages(
-      actor,
-      response.body.threadId,
-      (events) => {
-        return events.some((event) => {
-          return (
-            event.eventType === "input.rejected" &&
-            event.revokesEventId === clientEventId
-          );
-        });
-      },
-    );
-    expect(rejected.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "forbidden",
-      }),
-    );
-    expect(
-      rejected.events.some((event) => {
-        return event.runId !== undefined;
-      }),
-    ).toBeFalsy();
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
-      },
-    );
     const sent = await sendChatRun(actor, {
       agentId,
       prompt: "Prepare my invoice",
@@ -1547,14 +1486,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("preserves multiple Document references and their pinned sources in the run", async () => {
     const { actor, agentId } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected a chat organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId },
-      { [FeatureSwitchKey.BuiltinDocumentTemplates]: true },
-    );
     const references = [
       {
         id: "document-template:creative-brief",

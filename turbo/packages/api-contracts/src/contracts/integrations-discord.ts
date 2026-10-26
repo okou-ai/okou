@@ -1,35 +1,47 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  object,
+  strictObject,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { discordSnowflakeSchema } from "./integrations-discord-read";
 
 const c = initContract();
 
-export const discordContextModeSchema = z.enum([
+export const discordContextModeSchema = zEnum([
   "full",
   "mentions_only",
   "unavailable",
 ]);
 
-export const discordOrgStatusSchema = z.object({
-  isAvailable: z.boolean(),
-  isConnected: z.boolean(),
-  isAdmin: z.boolean(),
-  guildId: z.string().nullable(),
-  guildName: z.string().nullable(),
-  discordUserId: z.string().nullable(),
-  defaultAgentId: z.string().nullable(),
-  defaultAgentName: z.string().nullable(),
+export const discordOrgStatusSchema = object({
+  isAvailable: boolean(),
+  isConnected: boolean(),
+  isAdmin: boolean(),
+  guildId: string().nullable(),
+  guildName: string().nullable(),
+  discordUserId: string().nullable(),
+  defaultAgentId: string().nullable(),
+  defaultAgentName: string().nullable(),
   contextMode: discordContextModeSchema,
-  onboarding: z.literal("oauth"),
-  dmSelectionConnectionId: z.uuid().nullable(),
+  onboarding: literal("oauth"),
+  dmSelectionConnectionId: uuid().nullable(),
   /** Only the caller's verified connections for their current Discord sender. */
-  dmBindings: z.array(
-    z.object({
-      connectionId: z.uuid(),
-      guildId: z.string(),
-      guildName: z.string().nullable(),
-      workspaceName: z.string(),
+  dmBindings: array(
+    object({
+      connectionId: uuid(),
+      guildId: string(),
+      guildName: string().nullable(),
+      workspaceName: string(),
     }),
   ),
 });
@@ -39,12 +51,12 @@ export const integrationsDiscordContract = c.router({
     method: "POST",
     path: "/api/integrations/discord/install-link",
     headers: authHeadersSchema,
-    body: z.strictObject({ invite: z.url().max(2048) }),
+    body: strictObject({ invite: url().max(2048) }),
     responses: {
-      200: z.object({
-        url: z.url(),
+      200: object({
+        url: url(),
         guildId: discordSnowflakeSchema,
-        guildName: z.string(),
+        guildName: string(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -74,9 +86,9 @@ export const integrationsDiscordContract = c.router({
     path: "/api/integrations/discord",
     headers: authHeadersSchema,
     body: c.noBody(),
-    query: z.strictObject({}),
+    query: strictObject({}),
     responses: {
-      200: z.object({ ok: z.literal(true) }),
+      200: object({ ok: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -87,9 +99,9 @@ export const integrationsDiscordContract = c.router({
     method: "PUT",
     path: "/api/integrations/discord/dm-selection",
     headers: authHeadersSchema,
-    body: z.strictObject({ connectionId: z.uuid() }),
+    body: strictObject({ connectionId: uuid() }),
     responses: {
-      200: z.object({ ok: z.literal(true) }),
+      200: object({ ok: literal(true) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -98,6 +110,6 @@ export const integrationsDiscordContract = c.router({
   },
 });
 
-export type DiscordContextMode = z.infer<typeof discordContextModeSchema>;
-export type DiscordOrgStatus = z.infer<typeof discordOrgStatusSchema>;
+export type DiscordContextMode = zInfer<typeof discordContextModeSchema>;
+export type DiscordOrgStatus = zInfer<typeof discordOrgStatusSchema>;
 export type IntegrationsDiscordContract = typeof integrationsDiscordContract;

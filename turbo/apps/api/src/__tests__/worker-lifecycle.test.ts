@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { tracing } from "cloudflare:workers";
-import { z } from "zod";
+import { object, string } from "zod";
 import {
   AbortMultipartUploadCommand,
   CreateMultipartUploadCommand,
@@ -135,9 +135,9 @@ async function createAgent(name: string) {
     body: JSON.stringify({ displayName: name, visibility: "private" }),
   });
   expect(response.status).toBe(201);
-  const body = z
-    .object({ agentId: z.string(), displayName: z.string() })
-    .parse(await response.json());
+  const body = object({ agentId: string(), displayName: string() }).parse(
+    await response.json(),
+  );
   expect(body).toMatchObject({ displayName: name });
   await expect(http.settle()).resolves.toStrictEqual([]);
   return body;
@@ -301,7 +301,7 @@ test("retains the publicly accepted export job after a background provider recei
   const owner = caller();
   const response = await owner.request("/api/user/export", { method: "POST" });
   expect(response.status).toBe(202);
-  const accepted = z.object({ jobId: z.string() }).parse(await response.json());
+  const accepted = object({ jobId: string() }).parse(await response.json());
   await entered.promise;
   release.resolve();
   // Export handles provider failure by persisting a durable retry, not rejecting
