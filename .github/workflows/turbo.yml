@@ -885,23 +885,12 @@ jobs:
             echo "Create a NEW migration instead of modifying existing ones."
             exit 1
           fi
-      - name: Install PostgreSQL 17 client for archive audit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          install -d /usr/share/postgresql-common/pgdg
-          curl -fsS -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-            https://www.postgresql.org/media/keys/ACCC4CF8.asc
-          . /etc/os-release
-          printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' \
-            "$VERSION_CODENAME" > /etc/apt/sources.list.d/pgdg.list
-          apt-get update
-          apt-get install -y --no-install-recommends postgresql-client-17
+      - name: Install PostgreSQL client for audit script tests
+        run: apt-get update && apt-get install -y --no-install-recommends postgresql-client
       - name: Test Migration Consistency
         working-directory: turbo/packages/db
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-          PG_BIN: /usr/lib/postgresql/17/bin
         run: pnpm test:migration-consistency
 
   test-cli:

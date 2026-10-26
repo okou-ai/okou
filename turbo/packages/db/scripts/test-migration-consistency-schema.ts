@@ -2837,13 +2837,6 @@ async function main(): Promise<void> {
     await validatePiMemoryRetirement(dbUrl1);
     await validateStripeInvoicePaidRetirement(dbUrl1);
     await validateManagedDataRetirement(dbUrl1);
-    console.log("=== Managed Data retirement operator CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/026-managed-data-retirement/test-retire.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
     console.log("=== Workflow attachment migration CLI ===");
     console.log(
       execCommand(

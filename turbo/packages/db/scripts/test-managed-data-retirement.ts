@@ -24,7 +24,9 @@ async function seedRetainedBilling(sql: postgres.Sql) {
       (gen_random_uuid(), 'data-retirement-org', 'owner', 'social', 'monid/weibo',
         'provider_cost_usd_micros', 8000, 10, 'processed', '2026-10-20', 1250, 1000000, 20),
       (gen_random_uuid(), 'data-retirement-org', 'owner', 'data-search', 'monid/apollo',
-        'provider_cost_usd_micros', 4000, 5, 'compacted', '2026-10-19', 1250, 1000000, 10)`;
+        'provider_cost_usd_micros', 4000, 5, 'compacted', '2026-10-19', 1250, 1000000, 10),
+      (gen_random_uuid(), 'data-retirement-org', 'owner', 'social', 'socialkit',
+        'request', 1, 3, 'processed', '2026-10-20', NULL, NULL, NULL)`;
   // Current Router and model events retain their original billing state.
   await sql`INSERT INTO usage_event
     (idempotency_key, org_id, user_id, kind, provider, category, quantity)
@@ -40,6 +42,26 @@ async function seedRetainedBilling(sql: postgres.Sql) {
       ('model', 'google-maps', 'tokens.input', 2000, 1000000),
       ('maps', 'retained-provider', 'retained-category', 7, 1),
       ('data-search', 'data-router', 'credits', 1, 1)`;
+}
+
+async function seedRetiredJobs(sql: postgres.Sql) {
+  await sql`INSERT INTO commerce_jobs (org_id, user_id, operation, marketplace, status, request)
+    VALUES ('data-retirement-org', 'owner', 'search', 'amazon.com', 'failed', '{}')`;
+  await sql`INSERT INTO data_search_jobs
+    (org_id, user_id, request_id, capability, request, plan, status, provider_name,
+      provider_endpoint, estimated_cost_usd_micros, unit_price, unit_size,
+      max_credits, reserved_credits)
+    VALUES ('data-retirement-org', 'owner', gen_random_uuid(), 'company-search', '{}', '{}',
+      'unknown', 'monid/apollo', 'search', 12800, 1250, 1000000, 16, 16)`;
+  await sql`INSERT INTO social_data_jobs
+    (org_id, user_id, request_id, platform, operation, request, status, provider_name,
+      provider_endpoint, estimated_cost_usd_micros, actual_cost_usd_micros,
+      unit_price, unit_size, max_credits, reserved_credits, credits_charged)
+    VALUES ('data-retirement-org', 'owner', gen_random_uuid(), 'weibo', 'search', '{}',
+      'completed', 'monid', 'search', 8000, 8000, 1250, 1000000, 20, 0, 10)`;
+  await sql`INSERT INTO socialkit_download_jobs
+    (org_id, user_id, status, request, credits_charged)
+    VALUES ('data-retirement-org', 'owner', 'link_failed', '{}', 3)`;
 }
 
 async function retainedBilling(sql: postgres.Sql) {
@@ -62,7 +84,7 @@ async function retainedBilling(sql: postgres.Sql) {
   ]);
 }
 
-/** Preserve billing history while applying the managed Data contraction. */
+/** Discard legacy jobs while preserving billing history and current usage. */
 export async function validateManagedDataRetirement(databaseUrl: string) {
   const journal = journalSchema.parse(
     JSON.parse(
@@ -88,6 +110,7 @@ export async function validateManagedDataRetirement(databaseUrl: string) {
     try {
       await applyPendingMigrations(sql, { beforeMillis: retirement.when });
       await seedRetainedBilling(sql);
+      await seedRetiredJobs(sql);
       const original = await retainedBilling(sql);
       const originalJournal = Array.from(
         await sql`SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id`,

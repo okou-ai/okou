@@ -1,20 +1,11 @@
 -- #42935 must be independently serving, its outgoing API SQL drained and
 -- incompatible rollback artifacts excluded before this separate contraction.
--- Existing job results require explicit retirement outside this migration.
+-- Legacy job records are intentionally discarded; preserve the billing ledger.
 -- Hold DDL locks across the data/dependency census and the atomic contraction.
 LOCK TABLE "public"."commerce_jobs", "public"."data_search_jobs", "public"."social_data_jobs", "public"."socialkit_download_jobs", "public"."usage_event", "public"."usage_pricing" IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM public.commerce_jobs)
-    OR EXISTS (SELECT 1 FROM public.data_search_jobs)
-    OR EXISTS (SELECT 1 FROM public.social_data_jobs)
-    OR EXISTS (SELECT 1 FROM public.socialkit_download_jobs)
-  THEN
-    RAISE EXCEPTION 'Managed Data retirement requires empty legacy job tables; resolve billing and retention before dropping stored results'
-      USING ERRCODE = '55000';
-  END IF;
-
   -- Dynamic legacy providers and per-job pricing snapshots also need a settled
   -- financial outcome; the explicit tariff list below is not a usage census.
   IF EXISTS (
