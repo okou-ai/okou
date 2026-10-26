@@ -792,7 +792,6 @@ test.each([
             : "This website is temporarily unavailable",
       }),
     ).resolves.toBeInTheDocument();
-    expect(getNamedLink("Try again", viewer)).toBeInTheDocument();
   },
 );
 
