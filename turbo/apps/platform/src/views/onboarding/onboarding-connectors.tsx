@@ -109,7 +109,7 @@ function MobileSourceConnectorCard({
       </span>
       <Button
         type="button"
-        variant={connected ? "quiet" : "outline"}
+        variant={connected ? "quiet" : "ghost"}
         size="sm"
         className="shrink-0"
         disabled={onActivate === undefined}
@@ -126,15 +126,12 @@ function MobileSourceConnectorCard({
         onClick={onActivate}
       >
         {connected ? (
-          <>
-            <ConnectorEntryStatus
-              tone="success"
-              label={t(($) => {
-                return $.connectors.card.connected;
-              })}
-            />
-            <ChevronRight size={16} aria-hidden="true" />
-          </>
+          <ConnectorEntryStatus
+            tone="success"
+            label={t(($) => {
+              return $.connectors.card.connected;
+            })}
+          />
         ) : (
           t(($) => {
             return $.onboarding.sourcesFirst.mobile.connect;
