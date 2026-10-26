@@ -3004,9 +3004,6 @@
       "empty": "Invia un messaggio per avviare la conversazione",
       "frequentlyUsed": "Usato frequentemente",
       "icon": "Icona del thread di chat",
-      "locator": {
-        "you": "Tu"
-      },
       "noEmojiFound": "Nessuna emoji trovata",
       "notFound": "Conversazione non trovata",
       "openArtifacts": "Artefatti aperti",

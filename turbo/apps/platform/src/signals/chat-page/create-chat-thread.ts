@@ -3811,7 +3811,7 @@ export function createChatPanelSignals(
   const locator = createChatConversationLocatorSignals({
     threadId,
     scrollContainer$: messages.scroll.scrollContainer$,
-    allChatGroups$: messagePipeline.allChatGroups$,
+    allSemanticChatGroups$: messagePipeline.allSemanticChatGroups$,
     scrollToEvent$: messages.scroll.scrollToEvent$,
   });
   const runTracking = createRunTracking({

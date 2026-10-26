@@ -2947,9 +2947,6 @@
       "empty": "發條訊息開始對話",
       "frequentlyUsed": "常用",
       "icon": "聊天會話圖示",
-      "locator": {
-        "you": "你"
-      },
       "noEmojiFound": "沒有找到表情",
       "notFound": "找不到該聊天會話",
       "openArtifacts": "開啟成果",
