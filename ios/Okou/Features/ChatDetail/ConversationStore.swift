@@ -186,6 +186,22 @@ final class ConversationStore {
       && history?.executionState.isActive != true
   }
 
+  func restoreCached() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    let generation = refreshGeneration
+    let previousIDs = history?.persistedEventIDs
+    guard let cached = await sync.cachedHistory(threadID: thread.id),
+      previousIDs != cached.persistedEventIDs
+    else { return }
+    await messageMarkdown.prepareLatest(cached.messages)
+    guard !closed, !Task.isCancelled, refreshGeneration == generation,
+      history?.persistedEventIDs == previousIDs
+    else { return }
+    history = cached
+    pending.removeAll { cached.persistedEventIDs.contains($0.id) }
+    rebuildMessages()
+  }
+
   func refresh(waitForCurrent: Bool = false) async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     if let refreshTask {
@@ -193,7 +209,6 @@ final class ConversationStore {
       if waitForCurrent { await refreshTask.value }
       return
     }
-    isLoading = true
     let generation = refreshGeneration
     let task = Task { [weak self] in
       guard let self else { return }
@@ -205,15 +220,9 @@ final class ConversationStore {
         didSettle()
       }
       guard !Task.isCancelled, refreshGeneration == generation else { return }
-      if let cached = await sync.cachedHistory(threadID: thread.id),
-        history == nil || history?.persistedEventIDs != cached.persistedEventIDs
-      {
-        await messageMarkdown.prepareLatest(cached.messages)
-        guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-        history = cached
-        pending.removeAll { cached.persistedEventIDs.contains($0.id) }
-        rebuildMessages()
-      }
+      await restoreCached()
+      guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+      isLoading = true
       repeat {
         refreshAgain = false
         do {
