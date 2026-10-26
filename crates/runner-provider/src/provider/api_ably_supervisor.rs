@@ -33,7 +33,6 @@ use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
 use super::{RunnerPreferenceContext, parse_runner_preference};
 use crate::active_input::ActiveInputNotifications;
 use crate::duration::duration_ms;
-use crate::retry::{RetryState, recv_retry, sleep_until_retry};
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
 use runner_types::ids::RunId;
 use runner_types::types::ConnectorRuntimeTarget;
@@ -46,9 +45,11 @@ const ABLY_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const ABLY_BACKOFF_MAX: Duration = Duration::from_secs(60);
 const ABLY_DISCONNECT_ERROR_AFTER: Duration = Duration::from_secs(60);
 const DEFERRED_POLL_MAX: Duration = Duration::from_secs(10);
-type AblyConnectHandle =
-    tokio::task::JoinHandle<Result<ably_subscriber::Subscription, ably_subscriber::Error>>;
 type CancelDelivery = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+mod connection;
+
+use connection::{AblyConnection, ConnectionEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PollReason {
@@ -643,17 +644,14 @@ impl Drop for AblySupervisor {
 
 async fn run_supervisor(
     config: SupervisorTaskConfig,
-    mut ably: Option<ably_subscriber::Subscription>,
+    subscription: Option<ably_subscriber::Subscription>,
 ) {
     let mut cancel_deliveries = FuturesUnordered::<CancelDelivery>::new();
-    let mut ably_retry: RetryState<AblyConnectHandle> =
-        RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX);
-    // A supplied live subscription must not retain an already-due retry timer.
-    ably_retry.restart_at = ably.is_none().then(StdInstant::now);
+    let mut connection = AblyConnection::new(subscription);
     let mut disconnect = AblyDisconnectState::disconnected("connecting".to_string());
 
     loop {
-        maybe_spawn_ably_connect(&mut ably, &config.api, &config.group, &mut ably_retry);
+        connection.start_if_due(|| make_ably_config(&config.api, &config.group));
         let disconnect_error_at = disconnect.error_deadline();
 
         tokio::select! {
@@ -663,46 +661,39 @@ async fn run_supervisor(
             () = config.provider_cancel.cancelled() => {
                 break;
             }
-            event = recv_ably(&mut ably) => {
-                handle_ably_event(
-                    &config,
-                    event,
-                    &mut ably,
-                    &mut ably_retry,
-                    &mut disconnect,
-                    &mut cancel_deliveries,
-                ).await;
-            }
-            Some(()) = cancel_deliveries.next(), if !cancel_deliveries.is_empty() => {}
-            result = recv_retry(&mut ably_retry.handle) => {
-                match handle_ably_connect_result(result, &mut ably, &mut ably_retry) {
-                    Ok(()) => {
+            event = connection.next() => {
+                match event {
+                    ConnectionEvent::Subscription(event) => {
+                        handle_ably_event(
+                            &config,
+                            event,
+                            &mut connection,
+                            &mut disconnect,
+                            &mut cancel_deliveries,
+                        ).await;
+                    }
+                    ConnectionEvent::ConnectResult(Ok(())) => {
                         // `subscribe` queues `Event::Connected` as the new
                         // subscription's first event; its handler wakes the
                         // active-input readers once.
                         disconnect.mark_connected();
                         config.poll_wakeups.mark_ably_connected();
                     }
-                    Err(reason) => {
+                    ConnectionEvent::ConnectResult(Err(reason)) => {
                         disconnect.record_disconnected(reason);
                         config.poll_wakeups.mark_ably_disconnected();
                     }
+                    ConnectionEvent::RetryDue => {}
                 }
             }
-            () = sleep_until_retry(&ably_retry.restart_at) => {}
+            Some(()) = cancel_deliveries.next(), if !cancel_deliveries.is_empty() => {}
             () = sleep_until_optional(disconnect_error_at), if disconnect_error_at.is_some() => {
                 disconnect.log_persistent_disconnect();
             }
         }
     }
 
-    if let Some(sub) = ably.take() {
-        sub.close();
-    }
-    if let Some(handle) = ably_retry.handle.take() {
-        handle.abort();
-        let _ = handle.await;
-    }
+    connection.shutdown().await;
 }
 
 // Only delivered authority messages can change SSH authorization. Subscription
@@ -710,8 +701,7 @@ async fn run_supervisor(
 async fn handle_ably_event(
     config: &SupervisorTaskConfig,
     event: Option<ably_subscriber::Event>,
-    ably: &mut Option<ably_subscriber::Subscription>,
-    ably_retry: &mut RetryState<AblyConnectHandle>,
+    connection: &mut AblyConnection,
     disconnect: &mut AblyDisconnectState,
     cancel_deliveries: &mut FuturesUnordered<CancelDelivery>,
 ) {
@@ -759,15 +749,13 @@ async fn handle_ably_event(
             error!(code, message = %message, "ably fatal error, will reconnect");
             disconnect.record_disconnected(message.clone());
             config.poll_wakeups.mark_ably_disconnected();
-            *ably = None;
-            ably_retry.schedule();
+            connection.retry();
         }
         None => {
             warn!("ably subscription closed, will reconnect");
             disconnect.record_disconnected("subscription closed".to_string());
             config.poll_wakeups.mark_ably_disconnected();
-            *ably = None;
-            ably_retry.schedule();
+            connection.retry();
         }
     }
 }
@@ -1149,15 +1137,6 @@ fn parse_job_notification(msg: &ably_subscriber::Message) -> Option<JobNotificat
     })
 }
 
-async fn recv_ably(
-    ably: &mut Option<ably_subscriber::Subscription>,
-) -> Option<ably_subscriber::Event> {
-    match ably {
-        Some(sub) => sub.next().await,
-        None => std::future::pending().await,
-    }
-}
-
 async fn sleep_until_optional(deadline: Option<tokio::time::Instant>) {
     match deadline {
         Some(deadline) => tokio::time::sleep_until(deadline).await,
@@ -1182,53 +1161,6 @@ pub(super) fn make_ably_config(api: &ApiClient, group: &str) -> ably_subscriber:
     let mut config = ably_subscriber::SubscribeConfig::new(get_token, channel);
     config.heartbeat_interval = Some(ABLY_HEARTBEAT_INTERVAL);
     config
-}
-
-fn maybe_spawn_ably_connect(
-    ably: &mut Option<ably_subscriber::Subscription>,
-    api: &ApiClient,
-    group: &str,
-    retry: &mut RetryState<AblyConnectHandle>,
-) {
-    if ably.is_some() || !retry.timer_ready() {
-        return;
-    }
-    retry.clear_timer();
-    let ably_config = make_ably_config(api, group);
-    retry.handle = Some(tokio::spawn(ably_subscriber::subscribe(ably_config)));
-}
-
-fn handle_ably_connect_result(
-    result: Result<ably_subscriber::Subscription, String>,
-    ably: &mut Option<ably_subscriber::Subscription>,
-    retry: &mut RetryState<AblyConnectHandle>,
-) -> Result<(), String> {
-    match result {
-        Ok(sub) => {
-            if retry.consecutive_failures() > 0 {
-                info!(
-                    attempts = retry.consecutive_failures(),
-                    "ably connected after failures"
-                );
-            } else {
-                info!("ably connected");
-            }
-            *ably = Some(sub);
-            retry.on_success();
-            Ok(())
-        }
-        Err(e) => {
-            let next_secs = retry.backoff().as_secs();
-            retry.on_failure();
-            info!(
-                error = %e,
-                failures = retry.consecutive_failures(),
-                next_attempt_secs = next_secs,
-                "ably connect failed"
-            );
-            Err(e)
-        }
-    }
 }
 
 enum AblyDisconnectState {
@@ -1346,44 +1278,6 @@ mod tests {
 
     fn default_profiles() -> Vec<String> {
         vec![crate::profile::DEFAULT_PROFILE.to_string()]
-    }
-
-    #[test]
-    fn retryable_connect_failure_logs_info_with_retry_details() {
-        let captured = CapturedEvents::default();
-        let subscriber = tracing_subscriber::registry().with(captured.clone());
-
-        tracing::subscriber::with_default(subscriber, || {
-            let mut ably = None;
-            let mut retry = RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX);
-            let error = "token exchange transport failed".to_string();
-
-            assert_eq!(
-                handle_ably_connect_result(Err(error.clone()), &mut ably, &mut retry),
-                Err(error)
-            );
-            assert!(ably.is_none());
-            assert_eq!(retry.consecutive_failures(), 1);
-            assert!(retry.restart_at.is_some());
-        });
-
-        let events = captured.entries();
-        assert_eq!(events.len(), 1);
-        let event = &events[0];
-        assert_eq!(event.level, Level::INFO);
-        assert_eq!(
-            event.fields.get("message").map(String::as_str),
-            Some("ably connect failed")
-        );
-        assert_eq!(
-            event.fields.get("error").map(String::as_str),
-            Some("token exchange transport failed")
-        );
-        assert_eq!(event.fields.get("failures").map(String::as_str), Some("1"));
-        assert_eq!(
-            event.fields.get("next_attempt_secs").map(String::as_str),
-            Some("5")
-        );
     }
 
     #[tokio::test(start_paused = true)]
