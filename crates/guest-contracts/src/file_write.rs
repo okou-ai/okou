@@ -1,8 +1,13 @@
-//! Shared guest file-write timing budgets.
+//! Shared guest file-write budgets.
 
 use std::time::Duration;
 
 use crate::exec_terminal::EXEC_OUTPUT_DRAIN_DEADLINE;
+
+/// Maximum aggregate content in one client-side file batch, leaving room for
+/// paths and framing below the protocol's maximum message size.
+/// Larger private inputs retain the existing individual/chunked write path.
+pub const WRITE_FILES_BATCH_CONTENT_LIMIT: usize = 15 * 1024 * 1024;
 
 /// Maximum time the guest waits for its file-write helper process.
 pub const WRITE_FILE_HELPER_TIMEOUT_MS: u32 = 30_000;
