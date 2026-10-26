@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { parseArgs } from "node:util";
+import { isDeepStrictEqual, parseArgs } from "node:util";
 import {
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -17,6 +18,7 @@ import {
   verifyWorkflowAttachmentBundle,
 } from "@okouai/core/workflow-attachment-bundle";
 import { workflowAttachmentsSchema } from "@okouai/api-contracts/contracts/workflow-attachments";
+import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 
 const rowSchema = z.object({
   id: z.uuid(),
@@ -28,20 +30,42 @@ const rowSchema = z.object({
   instructionHash: z.string(),
   attachments: workflowAttachmentsSchema.nullable(),
   storageId: z.uuid().nullable(),
+  storagePrefix: z.string().nullable(),
+  storageUpdatedAt: z.string().nullable(),
+  unpublished: z.boolean(),
   versionId: z.string().nullable(),
   s3Key: z.string().nullable(),
   pending: z.boolean(),
 });
 type Source = z.infer<typeof rowSchema>;
+const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const emptySourceSchema = z.object({
+  workflowId: z.uuid(),
+  storageId: z.uuid(),
+  archiveKey: z.string(),
+  archiveSha256: hashSchema,
+});
+type EmptySource = z.infer<typeof emptySourceSchema>;
+const evidenceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("registered"),
+    manifestSha256: hashSchema,
+    manifestVersion: z.string(),
+  }),
+  emptySourceSchema.omit({ archiveSha256: true }).extend({
+    kind: z.literal("unpublished-empty"),
+  }),
+]);
 const readySchema = z.object({
   source: rowSchema,
-  archiveSha256: z.string(),
+  evidence: evidenceSchema,
+  archiveSha256: hashSchema,
   files: z.array(
     z.object({ path: z.string(), size: z.number(), sha256: z.string() }),
   ),
 });
 const planSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   rows: z.array(readySchema).max(100),
 });
 class SourceUnavailable extends Error {
@@ -49,6 +73,28 @@ class SourceUnavailable extends Error {
 }
 class SourceChanged extends Error {
   override name = "SourceChanged";
+}
+
+async function readReviewedEmptySources(
+  path: string | undefined,
+  migrate: boolean,
+) {
+  const emptySources = new Map<string, EmptySource>();
+  if (path !== undefined) {
+    if (migrate) throw new Error("ApplyUsesReviewedPlanOnly");
+    const reviewed = z
+      .object({
+        schemaVersion: z.literal(1),
+        sources: z.array(emptySourceSchema).max(100),
+      })
+      .parse(JSON.parse(await readFile(path, "utf8")));
+    for (const source of reviewed.sources) {
+      if (emptySources.has(source.workflowId))
+        throw new Error("DuplicateEmptySource");
+      emptySources.set(source.workflowId, source);
+    }
+  }
+  return emptySources;
 }
 
 async function main(): Promise<void> {
@@ -62,6 +108,7 @@ async function main(): Promise<void> {
       output: { type: "string" },
       after: { type: "string" },
       "workflow-id": { type: "string" },
+      "reviewed-empty-sources": { type: "string" },
       limit: { type: "string", default: "100" },
     },
   });
@@ -82,6 +129,10 @@ async function main(): Promise<void> {
   )
     throw new Error("ApplyRequiresReviewedPlanAndDrainedWriters");
   if (values.audit && values.migrate) throw new Error("AuditIsReadOnly");
+  const emptySources = await readReviewedEmptySources(
+    values["reviewed-empty-sources"],
+    values.migrate,
+  );
   const credentialPath = process.env.DATABASE_URL_FILE;
   if (!credentialPath) throw new Error("DATABASE_URL_FILERequired");
   const connection = (await readFile(credentialPath, "utf8")).trim();
@@ -114,14 +165,70 @@ async function main(): Promise<void> {
     if (bytes.length !== response.ContentLength) throw new SourceUnavailable();
     return bytes;
   };
-  const readSource = async (source: Source) => {
+  const readUnpublishedEmptySource = async (
+    source: Source,
+    emptySource?: EmptySource,
+  ) => {
     if (
       !source.storageId ||
-      !source.versionId ||
-      !source.s3Key ||
-      source.pending
+      !source.unpublished ||
+      !source.storagePrefix ||
+      !emptySource
     )
       throw new SourceUnavailable();
+    const prefix = `${source.storagePrefix.replace(/\/+$/, "")}/`;
+    if (
+      prefix === "/" ||
+      emptySource.workflowId !== source.id ||
+      emptySource.storageId !== source.storageId ||
+      !emptySource.archiveKey.startsWith(prefix) ||
+      !/^[a-f0-9]{64}\/archive\.tar\.gz$/.test(
+        emptySource.archiveKey.slice(prefix.length),
+      )
+    )
+      throw new SourceChanged();
+    // This is an explicit reviewed source, never a missing-source default.
+    // A second object or incomplete listing leaves the source unresolved.
+    const listing = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        MaxKeys: 2,
+      }),
+    );
+    if (
+      listing.IsTruncated !== false ||
+      listing.Contents?.length !== 1 ||
+      listing.Contents[0]?.Key !== emptySource.archiveKey
+    )
+      throw new SourceChanged();
+    const archive = await readObject(emptySource.archiveKey);
+    const archiveSha256 = workflowAttachmentHash(archive);
+    const files = readLegacyWorkflowAttachments(archive);
+    if (
+      archiveSha256 !== emptySource.archiveSha256 ||
+      files.length !== 0 ||
+      listing.Contents[0].Size !== archive.length
+    )
+      throw new SourceChanged();
+    return {
+      files,
+      metadata: workflowAttachmentMetadata(files),
+      archiveSha256,
+      evidence: {
+        kind: "unpublished-empty" as const,
+        workflowId: source.id,
+        storageId: source.storageId,
+        archiveKey: emptySource.archiveKey,
+      },
+    };
+  };
+  const readSource = async (source: Source, emptySource?: EmptySource) => {
+    if (!source.storageId || source.pending) throw new SourceUnavailable();
+    if (!source.versionId || !source.s3Key) {
+      return readUnpublishedEmptySource(source, emptySource);
+    }
+    const manifestBytes = await readObject(`${source.s3Key}/manifest.json`);
     const manifest = z
       .object({
         version: z.string(),
@@ -129,12 +236,17 @@ async function main(): Promise<void> {
           z.object({ path: z.string(), hash: z.string(), size: z.number() }),
         ),
       })
-      .parse(
-        JSON.parse(
-          (await readObject(`${source.s3Key}/manifest.json`)).toString("utf8"),
-        ),
-      );
-    if (manifest.version !== source.versionId) throw new SourceChanged();
+      .parse(JSON.parse(manifestBytes.toString("utf8")));
+    // Some retained manifests have an obsolete version label. The owned
+    // Storage's namespaced content hash must still bind their exact file list
+    // to HEAD; archive/file integrity checks below remain mandatory. Retire
+    // this operator-only compatibility with Epic #42362's legacy sources.
+    if (
+      manifest.version !== source.versionId &&
+      computeContentHashFromHashes(source.storageId, manifest.files) !==
+        source.versionId
+    )
+      throw new SourceChanged();
     const archive = await readObject(`${source.s3Key}/archive.tar.gz`);
     const files = readLegacyWorkflowAttachments(archive);
     const metadata = workflowAttachmentMetadata(files);
@@ -157,7 +269,16 @@ async function main(): Promise<void> {
     });
     if (JSON.stringify(metadata) !== JSON.stringify(effective))
       throw new SourceChanged();
-    return { files, metadata, archiveSha256: workflowAttachmentHash(archive) };
+    return {
+      files,
+      metadata,
+      archiveSha256: workflowAttachmentHash(archive),
+      evidence: {
+        kind: "registered" as const,
+        manifestSha256: workflowAttachmentHash(manifestBytes),
+        manifestVersion: manifest.version,
+      },
+    };
   };
   const readRows = async () => {
     return z.array(rowSchema).parse(
@@ -165,7 +286,11 @@ async function main(): Promise<void> {
       SELECT w.id, w.org_id AS "orgId", w.agent_id AS "agentId", w.owner_user_id AS "ownerUserId",
         w.visibility, w.updated_at::text AS "updatedAt", w.attachments,
         encode(sha256(convert_to(jsonb_build_array(w.instruction)::text, 'UTF8')), 'hex') AS "instructionHash",
-        s.id AS "storageId", s.head_version_id AS "versionId", v.s3_key AS "s3Key",
+        s.id AS "storageId", s.s3_prefix AS "storagePrefix", s.updated_at::text AS "storageUpdatedAt",
+        CASE WHEN s.id IS NOT NULL AND s.head_version_id IS NULL THEN
+          NOT EXISTS (SELECT 1 FROM storage_versions sv WHERE sv.storage_id=s.id)
+          ELSE false END AS unpublished,
+        s.head_version_id AS "versionId", v.s3_key AS "s3Key",
         EXISTS (SELECT 1 FROM storage_publication_tokens p WHERE p.org_id = w.org_id AND p.publication_key = 'workflow:' || w.id::text) AS pending
       FROM workflows w LEFT JOIN storages s ON s.org_id = w.org_id AND s.user_id = '__org__' AND s.name = 'custom-skill@' || w.id::text
       LEFT JOIN storage_versions v ON v.id = s.head_version_id AND v.storage_id = s.id
@@ -206,7 +331,7 @@ async function main(): Promise<void> {
     const attention: { workflowId: string; classification: string }[] = [];
     for (const row of rows) {
       try {
-        const source = await readSource(row);
+        const source = await readSource(row, emptySources.get(row.id));
         if (!matchesSource(row, source.metadata)) throw new SourceChanged();
         await verifyCurrentPackage(row);
         verified++;
@@ -240,11 +365,17 @@ async function main(): Promise<void> {
   const dryRun = async () => {
     const rows = await readRows();
     let alreadyCurrent = 0;
+    let legacyManifestLabels = 0;
+    let reviewedEmptySources = 0;
     const ready: z.infer<typeof readySchema>[] = [];
     const blocked: { workflowId: string; classification: string }[] = [];
     for (const source of rows) {
       try {
-        const prepared = await readSource(source);
+        const prepared = await readSource(source, emptySources.get(source.id));
+        if (prepared.evidence.kind === "unpublished-empty")
+          reviewedEmptySources++;
+        else if (prepared.evidence.manifestVersion !== source.versionId)
+          legacyManifestLabels++;
         if (matchesSource(source, prepared.metadata)) {
           await verifyCurrentPackage(source);
           alreadyCurrent++;
@@ -252,6 +383,7 @@ async function main(): Promise<void> {
         }
         ready.push({
           source,
+          evidence: prepared.evidence,
           archiveSha256: prepared.archiveSha256,
           files: [...prepared.metadata],
         });
@@ -263,7 +395,7 @@ async function main(): Promise<void> {
       }
     }
     const plan = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       rows: ready,
       baseline: rows.map((row) => {
         return { workflowId: row.id, instructionHash: row.instructionHash };
@@ -278,6 +410,8 @@ async function main(): Promise<void> {
         candidates: rows.length,
         ready: ready.length,
         alreadyCurrent,
+        legacyManifestLabels,
+        reviewedEmptySources,
         empty: ready.filter((row) => {
           return row.files.length === 0;
         }).length,
@@ -300,10 +434,16 @@ async function main(): Promise<void> {
     for (const planned of plan.rows) {
       const source = planned.source;
       try {
-        const prepared = await readSource(source);
+        const prepared = await readSource(
+          source,
+          planned.evidence.kind === "unpublished-empty"
+            ? { ...planned.evidence, archiveSha256: planned.archiveSha256 }
+            : undefined,
+        );
         if (
           prepared.archiveSha256 !== planned.archiveSha256 ||
-          JSON.stringify(prepared.metadata) !== JSON.stringify(planned.files)
+          JSON.stringify(prepared.metadata) !== JSON.stringify(planned.files) ||
+          !isDeepStrictEqual(prepared.evidence, planned.evidence)
         )
           throw new SourceChanged();
         const bundle = await prepareWorkflowAttachmentBundle(
@@ -325,6 +465,10 @@ async function main(): Promise<void> {
         // Compare the captured descriptor as well as owner/content/HEAD. A
         // non-NULL descriptor can be stale after an outgoing old-API write;
         // supported dual writers publish it atomically with Storage HEAD.
+        const unchangedSource =
+          prepared.evidence.kind === "registered"
+            ? db`EXISTS (SELECT 1 FROM storages s JOIN storage_versions v ON v.storage_id=s.id AND v.id=s.head_version_id WHERE s.id=${source.storageId}::uuid AND s.org_id=w.org_id AND s.user_id='__org__' AND s.name='custom-skill@'||w.id::text AND s.head_version_id=${source.versionId} AND v.s3_key=${source.s3Key})`
+            : db`EXISTS (SELECT 1 FROM storages s WHERE s.id=${source.storageId}::uuid AND s.org_id=w.org_id AND s.user_id='__org__' AND s.name='custom-skill@'||w.id::text AND s.s3_prefix=${source.storagePrefix} AND s.updated_at::text=${source.storageUpdatedAt}::text AND s.head_version_id IS NULL AND NOT EXISTS (SELECT 1 FROM storage_versions v WHERE v.storage_id=s.id))`;
         const changed = await db`
           UPDATE workflows w SET attachments = ${db.json(bundle.descriptor)}
           WHERE w.id = ${source.id}::uuid AND w.org_id = ${source.orgId} AND w.agent_id = ${source.agentId}::uuid
@@ -333,13 +477,14 @@ async function main(): Promise<void> {
             AND w.attachments IS NOT DISTINCT FROM ${source.attachments === null ? null : db.json(source.attachments)}::jsonb
             AND w.updated_at::text = ${source.updatedAt}::text
             AND encode(sha256(convert_to(jsonb_build_array(w.instruction)::text, 'UTF8')), 'hex') = ${source.instructionHash}
-            AND EXISTS (SELECT 1 FROM storages s JOIN storage_versions v ON v.storage_id = s.id AND v.id = s.head_version_id WHERE s.id = ${source.storageId}::uuid AND s.org_id = w.org_id AND s.name = 'custom-skill@' || w.id::text AND s.head_version_id = ${source.versionId} AND v.s3_key = ${source.s3Key})
+            AND ${unchangedSource}
             AND NOT EXISTS (SELECT 1 FROM storage_publication_tokens p WHERE p.org_id = w.org_id AND p.publication_key = 'workflow:' || w.id::text)
           RETURNING w.id`;
         process.stdout.write(
           JSON.stringify({
             workflowId: source.id,
             result: changed.length === 1 ? "converted" : "skipped-changed",
+            sourceKind: prepared.evidence.kind,
             sourceVersionId: source.versionId,
             instructionHash: source.instructionHash,
             attachments: bundle.descriptor,
