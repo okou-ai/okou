@@ -196,8 +196,9 @@ it("decorates authorized standalone HTML with a shared banner and a credential-f
   expect(html).toContain('shadowrootmode="open"');
   expect(html).toContain("Weekly &lt;report&gt; &quot;Q4&quot;");
   expect(html).toContain("Continue with Okou");
+  expect(html).toContain('data-okou-banner-download=""');
   expect(html).toContain(
-    'href="https://app.okou.ai/artifacts?downloadSite=demo"',
+    "connect-src https://demo.okou.app/.okou/files https://demo.okou.app/.okou/download",
   );
   expect(html).toContain("<h1>Original report</h1>");
   expect(html).toContain('<script src="/report-12345678.js"></script>');
@@ -288,6 +289,178 @@ it("delivers the original document when the rollout omits presentation metadata"
   expect(response.status).toBe(200);
   expect(await response.text()).toBe(original);
 });
+
+const siteSession = `okou_site_${"a".repeat(64)}`;
+const downloadHeaders = {
+  Accept: "application/json",
+  "Sec-Fetch-Dest": "empty",
+  Cookie: `__Host-okou-site-session=${siteSession}`,
+};
+
+function allowSiteDownloads(restricted = false) {
+  server.use(
+    http.get(endpoint, ({ request }) => {
+      if (
+        restricted &&
+        request.headers.get("Authorization") !== `Bearer ${siteSession}`
+      ) {
+        return HttpResponse.json({ allowed: false, decision: "authenticate" });
+      }
+      expect(new URL(request.url).searchParams.get("presentation")).toBe(
+        "banner",
+      );
+      return HttpResponse.json({
+        allowed: true,
+        decision: "allow",
+        presentation: {
+          showBanner: true,
+          title: "Report",
+          siteUrl: "https://demo.okou.app/",
+        },
+      });
+    }),
+  );
+}
+
+it.each([false, true])(
+  "downloads a Site's original publication on its own origin (restricted: %s)",
+  async (restricted) => {
+    allowSiteDownloads(restricted);
+    const env = environment();
+    if (restricted) {
+      const denied = await fetchWorker(
+        new Request("https://demo.okou.app/.okou/files", {
+          headers: { Accept: "application/json", "Sec-Fetch-Dest": "empty" },
+        }),
+        env,
+      );
+      expect(denied.status).toBe(401);
+    }
+    const response = await fetchWorker(
+      new Request("https://demo.okou.app/.okou/files", {
+        headers: restricted ? downloadHeaders : { Accept: "application/json" },
+      }),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+    const publication = (await response.json()) as {
+      publicSlug: string;
+      files: { path: string; downloadUrl: string }[];
+    };
+    expect(publication.publicSlug).toBe("demo");
+    expect(
+      publication.files
+        .map((file) => {
+          return file.path;
+        })
+        .sort(),
+    ).toStrictEqual([
+      "/index.html",
+      "/report-12345678.js",
+      "/style-12345678.css",
+    ]);
+    const expected = new Map([
+      ["/index.html", "<p>ok</p>"],
+      ["/style-12345678.css", "a{color:red}"],
+      ["/report-12345678.js", "window.privateReport = 42;"],
+    ]);
+    for (const file of publication.files) {
+      const url = new URL(file.downloadUrl);
+      expect(url.origin).toBe("https://demo.okou.app");
+      expect(url.searchParams.get("deploymentId")).toBe(deploymentId);
+      const download = await fetchWorker(
+        new Request(url, {
+          headers: restricted
+            ? downloadHeaders
+            : { Accept: "application/octet-stream" },
+        }),
+        env,
+      );
+      expect(download.status).toBe(200);
+      expect(download.headers.get("Content-Disposition")).toBe(
+        `attachment; filename*=UTF-8''${file.path.slice(1)}`,
+      );
+      expect(download.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(await download.text()).toBe(expected.get(file.path));
+    }
+  },
+);
+
+it("rechecks access to a listed file after Site access is revoked", async () => {
+  allowSiteDownloads(true);
+  const env = environment();
+  const listing = await fetchWorker(
+    new Request("https://demo.okou.app/.okou/files", {
+      headers: downloadHeaders,
+    }),
+    env,
+  );
+  const publication = (await listing.json()) as {
+    files: { downloadUrl: string }[];
+  };
+  server.use(
+    http.get(endpoint, ({ request }) => {
+      return HttpResponse.json(
+        request.headers.get("Authorization") === `Bearer ${siteSession}`
+          ? { allowed: false, decision: "deny" }
+          : { allowed: false, decision: "authenticate" },
+      );
+    }),
+  );
+  const response = await fetchWorker(
+    new Request(publication.files[0]!.downloadUrl, {
+      headers: downloadHeaders,
+    }),
+    env,
+  );
+  expect(response.status).toBe(403);
+  expect(await response.text()).toBe("Access denied");
+});
+
+it("refuses a file from a different publication version", async () => {
+  allowSiteDownloads();
+  const response = await fetchWorker(
+    new Request(
+      `https://demo.okou.app/.okou/download?deploymentId=${siteId}&path=%2Findex.html`,
+      { headers: downloadHeaders },
+    ),
+    environment(),
+  );
+  expect(response.status).toBe(409);
+  expect(await response.text()).toBe("Website changed. Try downloading again.");
+});
+
+it("limits download paths to files in the authorized manifest", async () => {
+  allowSiteDownloads();
+  const response = await fetchWorker(
+    new Request(
+      `https://demo.okou.app/.okou/download?deploymentId=${deploymentId}&path=%2F..%2Fmanifest.json`,
+      { headers: downloadHeaders },
+    ),
+    environment(),
+  );
+  expect(response.status).toBe(404);
+});
+
+it.each([
+  "/.okou/files",
+  `/.okou/download?deploymentId=${deploymentId}&path=%2Findex.html`,
+])(
+  "keeps Site downloads gated when presentation is disabled: %s",
+  async (path) => {
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({ allowed: true, decision: "allow" });
+      }),
+    );
+    const response = await fetchWorker(
+      new Request(`https://demo.okou.app${path}`, { headers: downloadHeaders }),
+      environment(),
+    );
+    expect(response.status).toBe(404);
+  },
+);
 
 it("fetches the latest banner preference on refresh without republishing", async () => {
   let showBanner = true;
