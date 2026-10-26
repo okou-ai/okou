@@ -51,6 +51,7 @@ import { billingRestoreRoutes } from "../billing-restore";
 import { billingStatusRoutes } from "../billing-status";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
 
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { orgInviteRoutes } from "../org-invite";
@@ -3380,6 +3381,33 @@ describe("usage pack allocation management", () => {
         mockNow(expiry - 1);
         await accept(preview(100), [409]);
         mockNow(expiry);
+        const providerPreview =
+          context.mocks.stripe.invoices.createPreview.getMockImplementation();
+        if (!providerPreview) {
+          throw new Error("Expected configured Stripe preview response");
+        }
+        // Both replacements prepare pricing before either publishes a quote.
+        const bothPrepared = createDeferredPromise<void>(context.signal);
+        let prepared = 0;
+        context.mocks.stripe.invoices.createPreview.mockImplementation(
+          async (input) => {
+            const response = await providerPreview(input);
+            if (
+              typeof input === "object" &&
+              input !== null &&
+              "preview_mode" in input &&
+              input.preview_mode === "recurring"
+            ) {
+              prepared += 1;
+              if (prepared === 2) {
+                bothPrepared.resolve();
+              }
+              await bothPrepared.promise;
+            }
+            return response;
+          },
+        );
+        lifecycle.captureExternalState();
         const results = await Promise.all([preview(50), preview(100)]);
         expect(
           results
