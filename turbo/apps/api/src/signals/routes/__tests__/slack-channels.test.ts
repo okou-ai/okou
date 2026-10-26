@@ -85,7 +85,7 @@ describe("GET /api/slack/channels", () => {
     );
     expect(missing.body).toStrictEqual({
       error: {
-        message: "No Slack installation found for this org",
+        message: "No Slack account connected for this user",
         code: "NOT_FOUND",
       },
     });
