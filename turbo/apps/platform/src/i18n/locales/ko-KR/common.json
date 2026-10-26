@@ -6550,6 +6550,7 @@
         "labelAppliedRule": "Gmail 라벨 {{label}}이(가) 적용될 때",
         "labelAppliedTitle": "Gmail 라벨 적용됨",
         "labelName": "라벨 이름",
+        "labelNotFound": "연결된 Gmail 계정에서 라벨을 찾을 수 없습니다. 라벨 이름과 연결된 계정을 확인하세요.",
         "labelPlaceholder": "지원",
         "labelSummary": "라벨 {{label}}",
         "messageMatchesRule": "Gmail 메시지가 {{summary}}와(과) 일치할 때",

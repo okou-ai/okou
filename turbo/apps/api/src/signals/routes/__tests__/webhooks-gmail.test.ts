@@ -1832,6 +1832,59 @@ describe("POST /api/webhooks/gmail", () => {
     ).toContainEqual(expect.objectContaining({ sourceId: firstConnectorId }));
   });
 
+  it("acknowledges events after a configured Gmail label disappears", async () => {
+    const gmailEmail = uniqueGmailEmail();
+    configureGmailEnv();
+    configureGmailWatchMock();
+    configureGmailLabelsMockSequence([
+      [{ id: "Label_support", name: "Support" }],
+      [],
+    ]);
+    configureGmailLabelAppliedMocks("Label_other", gmailEmail, [
+      "message-with-unrelated-label",
+    ]);
+    const { actor, workflowId } = await setupFixture();
+    await connectGmail(actor, gmailEmail);
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(actor),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-label-applied",
+          eventConfig: {
+            provider: "gmail",
+            event: "label_applied",
+            labelName: "Support",
+          },
+        },
+      }),
+      [201],
+    );
+
+    const result = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: gmailEmail,
+        historyId: 102,
+        messageId: "pubsub-label-disappeared",
+      }),
+    );
+    expectResponseStatus(result, 200);
+    expect(result.body).toStrictEqual({
+      success: true,
+      watchStates: 1,
+      dispatched: 0,
+      duplicates: 0,
+    });
+    await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
+      {
+        enabled: true,
+        eventConfig: { labelName: "Support", resolvedLabelId: "Label_support" },
+        lastRunAt: null,
+      },
+    );
+  });
+
   it("dispatches label applied events after refreshing a recreated label id", async () => {
     const gmailEmail = uniqueGmailEmail();
     const runnerGroup = runsApi.configureRunnerGroup();
