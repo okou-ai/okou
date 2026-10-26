@@ -22,6 +22,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { goldButton } from "./halloween-layout.tsx";
+import { halloweenTypography as typography } from "./halloween-typography.ts";
 
 function Confetti() {
   const motion = useSet(halloweenConfetti$);
@@ -60,13 +61,15 @@ function ResultTasks({ won }: { readonly won: boolean }) {
       <div className="mb-5 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1.5 text-center">
         {won ? (
           <>
-            <h2 className="text-lg font-medium tracking-tight text-[#e9e8e5]">
+            <h2 className={cn("text-[#e9e8e5]", typography.label)}>
               {copy.taskTitle}
             </h2>
-            <p className="text-[13px] text-[#8e9fb6]">{copy.taskSub}</p>
+            <p className={cn("text-[#8e9fb6]", typography.label)}>
+              {copy.taskSub}
+            </p>
           </>
         ) : (
-          <p className="text-[13px] leading-relaxed text-[#8e9fb6]">
+          <p className={cn("text-[#8e9fb6]", typography.label)}>
             {copy.optional}
           </p>
         )}
@@ -92,10 +95,15 @@ function ResultTasks({ won }: { readonly won: boolean }) {
                 <Icon className="size-[18px]" />
               </span>
               <div>
-                <h3 className="mb-1.5 text-sm font-medium tracking-[-.015em] text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]">
+                <h3
+                  className={cn(
+                    "mb-1.5 text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]",
+                    typography.label,
+                  )}
+                >
                   {task.title}
                 </h3>
-                <p className="text-xs leading-relaxed text-[#92a3bb]">
+                <p className={cn("text-[#92a3bb]", typography.body)}>
                   {task.text}
                 </p>
               </div>
@@ -130,19 +138,22 @@ export function HalloweenResultScreen() {
             <RotateCcw className="size-5" />
           )}
         </div>
-        <h1 className="mb-3 text-balance text-[35px] font-medium leading-[1.15] tracking-[-.04em] text-[#f4f1eb] md:text-[48px]">
+        <h1
+          className={cn("mb-3 text-balance text-[#f4f1eb]", typography.title)}
+        >
           {won ? copy.won : copy.lost}
         </h1>
-        <p className="text-sm leading-relaxed text-[#95a6be]">
+        <p className={cn("text-[#95a6be]", typography.body)}>
           {won ? copy.wonSub : copy.lostSub}
         </p>
         <p
           className={cn(
-            "text-[15px] leading-relaxed text-[#95a6be]",
+            "text-[#95a6be]",
+            typography.body,
             won ? "mt-5" : "mt-6",
           )}
         >
-          <strong className="font-medium text-[#e8c68d]">
+          <strong className={cn("text-[#e8c68d]", typography.body)}>
             {copy.resultRewardEmphasis}
           </strong>
           {copy.resultRewardRest}
@@ -163,7 +174,10 @@ export function HalloweenResultScreen() {
           {phase === "open" && (
             <Button
               variant="quiet"
-              className="h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-sm font-medium text-[#b9c5d6] transition-all duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]"
+              className={cn(
+                "h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-[#b9c5d6] transition-all duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]",
+                typography.label,
+              )}
               pending={operation.state === "loading"}
               onClick={() => {
                 detach(replay(signal), Reason.DomCallback);
@@ -174,12 +188,15 @@ export function HalloweenResultScreen() {
             </Button>
           )}
         </div>
-        <p className="mt-5 text-[11px] leading-relaxed text-[#7b8da5]">
+        <p className={cn("mt-5 text-[#7b8da5]", typography.label)}>
           {copy.footerBefore}
           <Button
             variant="quiet"
             size="sm"
-            className="h-auto rounded-none p-0 text-[11px] text-inherit underline decoration-[#7b8da560] underline-offset-4 hover:bg-transparent hover:text-[#e8c68d]"
+            className={cn(
+              "h-auto rounded-none p-0 text-inherit underline decoration-[#7b8da560] underline-offset-4 hover:bg-transparent hover:text-[#e8c68d]",
+              typography.label,
+            )}
             onClick={() => {
               setRules(true);
             }}

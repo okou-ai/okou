@@ -16,11 +16,12 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { goldButton } from "./halloween-layout.tsx";
+import { halloweenTypography as typography } from "./halloween-typography.ts";
 
 function Progress({ round }: { readonly round: HalloweenRound }) {
   return (
     <aside className="order-first flex items-center justify-between gap-5 rounded-2xl border border-[#a9c1df1c] bg-[linear-gradient(150deg,#ffffff05,#ffffff01)] px-4 py-3 md:order-last md:rounded-3xl md:flex-col md:items-stretch md:p-5">
-      <h2 className="text-xs font-medium text-[#b2bfd0] md:mb-1">
+      <h2 className={cn("text-[#b2bfd0] md:mb-1", typography.label)}>
         {copy.climb}
       </h2>
       <ol className="hidden flex-col-reverse gap-1.5 md:flex">
@@ -37,12 +38,15 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
                 done && "border-[#e6c58e14] bg-[#e6c58e07] text-[#c9b28a]",
               )}
             >
-              <span className="min-w-[17px] text-[11px] font-medium tabular-nums opacity-70">
+              <span
+                className={cn(
+                  "min-w-[17px] tabular-nums opacity-70",
+                  typography.label,
+                )}
+              >
                 {String(index + 1).padStart(2, "0")}
               </span>
-              <span className="text-[11px] font-medium leading-tight">
-                {level}
-              </span>
+              <span className={typography.label}>{level}</span>
               {done && <Check className="ml-auto size-[11px] shrink-0" />}
               {current && (
                 <Diamond className="ml-auto size-2 shrink-0 fill-current" />
@@ -51,9 +55,16 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
           );
         })}
       </ol>
-      <p className="text-xs text-[#8fa0b7] md:border-t md:border-[#a9c1df14] md:pt-4">
+      <p
+        className={cn(
+          "text-[#8fa0b7] md:border-t md:border-[#a9c1df14] md:pt-4",
+          typography.label,
+        )}
+      >
         {copy.correct}{" "}
-        <strong className="ml-1 text-base font-medium tabular-nums text-[#ead0a7]">
+        <strong
+          className={cn("ml-1 tabular-nums text-[#ead0a7]", typography.label)}
+        >
           {round.correct}
         </strong>{" "}
         / 5
@@ -84,7 +95,8 @@ function AnswerOptions({
             disabled={busy || Boolean(round.feedback)}
             aria-pressed={selected}
             className={cn(
-              "relative isolate h-auto min-h-14 w-full whitespace-normal rounded-none border-0 bg-[#8ba6c34d] px-16 py-3.5 text-center text-sm font-normal leading-relaxed text-[#dce4ef] transition-all duration-200 [clip-path:polygon(16px_0,calc(100%-16px)_0,100%_50%,calc(100%-16px)_100%,16px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[linear-gradient(110deg,#10243b,#142b45_50%,#10243b)] before:[clip-path:polygon(15px_0,calc(100%-15px)_0,100%_50%,calc(100%-15px)_100%,15px_100%,0_50%)] hover:bg-[#d8b77f] hover:text-[#f3eadb] hover:before:bg-[linear-gradient(110deg,#1d3147,#263e58,#1d3147)] focus-visible:brightness-125 disabled:opacity-100 md:text-[15px]",
+              "relative isolate h-auto min-h-14 w-full whitespace-normal rounded-none border-0 bg-[#8ba6c34d] px-16 py-3.5 text-center text-[#dce4ef] transition-all duration-200 [clip-path:polygon(16px_0,calc(100%-16px)_0,100%_50%,calc(100%-16px)_100%,16px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[linear-gradient(110deg,#10243b,#142b45_50%,#10243b)] before:[clip-path:polygon(15px_0,calc(100%-15px)_0,100%_50%,calc(100%-15px)_100%,15px_100%,0_50%)] hover:bg-[#d8b77f] hover:text-[#f3eadb] hover:before:bg-[linear-gradient(110deg,#1d3147,#263e58,#1d3147)] focus-visible:brightness-125 disabled:opacity-100",
+              typography.body,
               selected &&
                 round.feedback?.correct &&
                 "bg-[#dfc089] text-[#f7e5c5] before:bg-[linear-gradient(110deg,#343225,#4b4130,#343225)]",
@@ -97,7 +109,12 @@ function AnswerOptions({
               onAnswer(option.id);
             }}
           >
-            <span className="absolute left-6 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#ffffff06] text-[11px] font-medium text-[#dbc39d]">
+            <span
+              className={cn(
+                "absolute left-6 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#ffffff06] text-[#dbc39d]",
+                typography.label,
+              )}
+            >
               {String.fromCharCode(65 + index)}
             </span>
             <span>{option.text}</span>
@@ -125,7 +142,7 @@ export function HalloweenQuestionScreen() {
   return (
     <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14">
       <div className="min-w-0 text-center">
-        <p className="mb-5 text-xs font-medium tracking-[.025em] text-[#b5a07e]">
+        <p className={cn("mb-5 text-[#b5a07e]", typography.label)}>
           {copy.round} {String(round.questionNumber).padStart(2, "0")} ·{" "}
           {copy.roundTitles[round.questionNumber - 1]}
         </p>
@@ -133,7 +150,10 @@ export function HalloweenQuestionScreen() {
           key={round.question.id}
           ref={focusHeading}
           tabIndex={-1}
-          className="mx-auto mb-9 max-w-[640px] text-balance text-[27px] font-medium leading-[1.32] tracking-[-.035em] text-[#f4f1eb] outline-none md:text-[36px]"
+          className={cn(
+            "mx-auto mb-9 max-w-[640px] text-balance text-[#f4f1eb] outline-none",
+            typography.title,
+          )}
         >
           {round.question.text}
         </h1>
@@ -151,20 +171,21 @@ export function HalloweenQuestionScreen() {
           >
             <p
               className={cn(
-                "mb-1.5 text-sm font-medium",
+                "mb-1.5",
+                typography.label,
                 round.feedback.correct ? "text-[#e8c68d]" : "text-[#e8afc5]",
               )}
             >
               {round.feedback.correct ? copy.correct : copy.lost}
             </p>
-            <p className="mb-5 text-[13px] leading-relaxed text-[#9aabc1]">
+            <p className={cn("mb-5 text-[#9aabc1]", typography.body)}>
               {round.feedback.explanation}
             </p>
             {round.feedback.correct && (
               <Button
                 className={cn(
                   goldButton,
-                  "mx-auto min-h-11 min-w-[188px] px-6 py-3 text-[13px]",
+                  "mx-auto min-h-11 min-w-[188px] px-6 py-3",
                 )}
                 pending={nextOperation.state === "loading"}
                 onClick={() => {
@@ -179,7 +200,10 @@ export function HalloweenQuestionScreen() {
         )}
         {(answerOperation.state === "hasError" ||
           nextOperation.state === "hasError") && (
-          <p role="alert" className="mt-4 text-sm text-[#ffccde]">
+          <p
+            role="alert"
+            className={cn("mt-4 text-[#ffccde]", typography.body)}
+          >
             {copy.error}
           </p>
         )}

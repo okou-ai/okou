@@ -27,6 +27,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { HalloweenGhost } from "./halloween-art.tsx";
+import { halloweenTypography as typography } from "./halloween-typography.ts";
 
 export function HalloweenHomeSound({
   mobileOnly = false,
@@ -47,7 +48,7 @@ export function HalloweenHomeSound({
       size="sm"
       aria-label={sound ? copy.soundOn : copy.soundOff}
       aria-pressed={sound}
-      className="h-8 gap-2 rounded-full px-3 text-[11px] font-medium"
+      className={cn("h-8 gap-2 rounded-full px-3", typography.label)}
       onClick={() => {
         toggle();
         detach(play(signal), Reason.DomCallback);
@@ -77,10 +78,10 @@ export function HalloweenResultNotice() {
       className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4"
     >
       <div className="min-w-0">
-        <p className="text-sm font-medium">
+        <p className={typography.label}>
           {status === "saved" ? copy.saved : copy.saveError}
         </p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        <p className={cn("mt-1 text-muted-foreground", typography.body)}>
           {status === "saved" ? copy.savedSub : copy.saveErrorSub}
         </p>
       </div>
@@ -88,6 +89,7 @@ export function HalloweenResultNotice() {
         <Button
           variant="neutral"
           size="sm"
+          className={typography.label}
           pending={operation.state === "loading"}
           onClick={() => {
             detach(retry(signal), Reason.DomCallback);
@@ -151,7 +153,8 @@ export function HalloweenEntry() {
     >
       <span
         className={cn(
-          "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-[13px] font-medium leading-relaxed text-[#716456] transition-all duration-300 motion-reduce:transition-none",
+          "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-[#716456] transition-all duration-300 motion-reduce:transition-none",
+          typography.label,
           expanded ? "translate-x-0 opacity-100" : "translate-x-3 opacity-0",
         )}
       >
@@ -160,7 +163,8 @@ export function HalloweenEntry() {
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute right-3 top-3 -rotate-[16deg] text-[33px] font-bold italic leading-none tracking-[-1px] text-[#e9bb65] [font-family:Georgia,serif] [-webkit-text-stroke:.5px_#8c673e] [text-shadow:1px_2px_0_#fff3d7] transition-opacity motion-reduce:transition-none",
+          "pointer-events-none absolute right-3 top-0 text-[#e9bb65] transition-opacity motion-reduce:transition-none",
+          typography.title,
           expanded ? "opacity-100" : "opacity-0",
         )}
       >

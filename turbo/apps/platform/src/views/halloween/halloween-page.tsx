@@ -20,6 +20,7 @@ import {
   HalloweenRules,
 } from "./halloween-layout.tsx";
 import { HalloweenResultScreen } from "./halloween-result.tsx";
+import { halloweenTypography as typography } from "./halloween-typography.ts";
 
 function StartScreen() {
   const phase = useGet(halloweenPhase$);
@@ -40,29 +41,32 @@ function StartScreen() {
         : copy.unavailableSub;
   return (
     <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-14 pb-20 text-center md:py-20 md:pb-24">
-      <h1 className="mb-9 max-w-[900px] text-balance text-[42px] font-medium leading-[1.14] tracking-[-.045em] text-[#f6f3ed] md:text-[68px]">
+      <h1
+        className={cn(
+          "mb-9 max-w-[900px] text-balance text-[#f6f3ed]",
+          typography.title,
+        )}
+      >
         {open ? (
           <>
             {copy.title}
-            <span className="mt-2 block text-[1.03em] font-normal italic tracking-[-.045em] text-[#e8c68d] [font-family:Georgia,'Times_New_Roman',serif]">
-              {copy.subtitle}
-            </span>
+            <span className="mt-2 block text-[#e8c68d]">{copy.subtitle}</span>
           </>
         ) : (
           title
         )}
       </h1>
       {open ? (
-        <p className="mb-8 text-sm leading-[1.9] text-[#96a5b9]">
+        <p className={cn("mb-8 text-[#96a5b9]", typography.body)}>
           {copy.rewardPrefix}
-          <strong className="text-[17px] font-medium text-[#e8cfaa]">
+          <strong className={cn("text-[#e8cfaa]", typography.body)}>
             {copy.rewardEmphasis}
           </strong>
           <br />
           {copy.review}
         </p>
       ) : (
-        <p className="mb-8 max-w-[560px] text-base leading-relaxed text-[#a9b8ca]">
+        <p className={cn("mb-8 max-w-[560px] text-[#a9b8ca]", typography.body)}>
           {subtitle}
         </p>
       )}
@@ -88,12 +92,14 @@ function StartScreen() {
         </Button>
       )}
       {open && (
-        <p className="mt-6 max-w-[420px] text-xs leading-relaxed text-[#8292a9]">
+        <p
+          className={cn("mt-6 max-w-[420px] text-[#8292a9]", typography.label)}
+        >
           {copy.hint}
         </p>
       )}
       {operation.state === "hasError" && (
-        <p role="alert" className="mt-4 text-sm text-[#ffccde]">
+        <p role="alert" className={cn("mt-4 text-[#ffccde]", typography.body)}>
           {copy.error}
         </p>
       )}
@@ -106,7 +112,8 @@ export function HalloweenPage() {
   return (
     <div
       className={cn(
-        "relative isolate flex min-h-full w-full flex-col overflow-hidden text-[#f6f3ed] antialiased [font-family:Geist,system-ui,sans-serif]",
+        "relative isolate flex min-h-full w-full flex-col overflow-hidden text-[#f6f3ed] antialiased",
+        typography.body,
         screen === "result"
           ? "bg-[radial-gradient(ellipse_at_50%_25%,#172c48,#091426_58%,#060d19)]"
           : "bg-[radial-gradient(ellipse_at_50%_42%,#183452_0,#0c1d34_42%,#060d19_85%)]",
