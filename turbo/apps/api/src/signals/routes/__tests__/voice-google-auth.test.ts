@@ -7,7 +7,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
@@ -31,11 +30,10 @@ function client() {
     rethrowErrors: true,
   })(voiceIoPolishSegmentsContract);
 }
-function polish(signal?: AbortSignal) {
+function polish() {
   return client().post({
     headers: { authorization: "Bearer clerk-session" },
     body: { segments: ["Synthetic dictation."] },
-    ...(signal && { fetchOptions: { signal } }),
   });
 }
 function stsToken() {
@@ -132,42 +130,6 @@ describe("Google voice workload identity through the public API", () => {
       expect(response.body.error.code).toBe("VOICE_POLISH_FAILED");
     },
   );
-
-  it("bounds an in-flight auth request by its own deadline and permits a later refresh", async () => {
-    const deadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 10_000 ? deadline.signal : undefined;
-    });
-    const entered = createDeferredPromise<void>(context.signal);
-    const aborted = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.post(GOOGLE_STS_URL, async ({ request }) => {
-        request.signal.addEventListener(
-          "abort",
-          () => {
-            aborted.resolve();
-          },
-          { once: true },
-        );
-        entered.resolve();
-        await aborted.promise;
-        return HttpResponse.json(stsToken());
-      }),
-    );
-    const pending = polish();
-    await entered.promise;
-    deadline.abort(new DOMException("Auth deadline", "TimeoutError"));
-    await accept(pending, [503]);
-    await aborted.promise;
-    context.mocks.abortSignal.timeout.mockReset();
-    server.use(
-      http.post(GOOGLE_STS_URL, () => {
-        return HttpResponse.json(stsToken());
-      }),
-    );
-    const recovered = await accept(polish(), [200]);
-    expect(recovered.body).toStrictEqual({ text: "Synthetic dictation." });
-  });
 
   it("exchanges the current Vercel identity in Oregon, impersonates the exact account, and reuses short-lived credentials", async () => {
     const google = mockGoogleVoice();
@@ -415,94 +377,4 @@ describe("Google voice workload identity through the public API", () => {
     expect(accounts).toHaveLength(3);
     expect(accounts[2]).toContain(productionAccount);
   });
-
-  it("finishes a concurrent request when another request cancels authentication", async () => {
-    const controller = new AbortController();
-    const firstEntered = createDeferredPromise<void>(context.signal);
-    const firstAborted = createDeferredPromise<void>(context.signal);
-    const secondEntered = createDeferredPromise<void>(context.signal);
-    const releaseSecond = createDeferredPromise<void>(context.signal);
-    let exchanges = 0;
-    server.use(
-      http.post(GOOGLE_STS_URL, async ({ request }) => {
-        exchanges += 1;
-        if (exchanges === 1) {
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              firstAborted.resolve();
-            },
-            { once: true },
-          );
-          firstEntered.resolve();
-          await firstAborted.promise;
-        } else {
-          secondEntered.resolve();
-          await releaseSecond.promise;
-        }
-        return HttpResponse.json(stsToken());
-      }),
-    );
-    const first = polish(controller.signal);
-    const completeConcurrentRequest = async () => {
-      await firstEntered.promise;
-      const second = polish();
-      await secondEntered.promise;
-      controller.abort();
-      await firstAborted.promise;
-      releaseSecond.resolve();
-      const completed = await accept(second, [200]);
-      expect(completed.body).toStrictEqual({ text: "Synthetic dictation." });
-    };
-    await Promise.all([
-      expect(first).rejects.toMatchObject({ name: "AbortError" }),
-      completeConcurrentRequest(),
-    ]);
-  });
-
-  it.each([GOOGLE_STS_URL, GOOGLE_IMPERSONATION_URL])(
-    "cancels an abandoned exchange at %s and allows a replacement request",
-    async (url) => {
-      const controller = new AbortController();
-      const entered = createDeferredPromise<void>(context.signal);
-      const aborted = createDeferredPromise<void>(context.signal);
-      let calls = 0;
-      server.use(
-        http.post(url, async ({ request }) => {
-          calls += 1;
-          if (calls === 1) {
-            request.signal.addEventListener(
-              "abort",
-              () => {
-                aborted.resolve();
-              },
-              { once: true },
-            );
-            entered.resolve();
-            await aborted.promise;
-          }
-          return HttpResponse.json(
-            typeof url === "string"
-              ? stsToken()
-              : {
-                  accessToken: "synthetic-google-token",
-                  expireTime: new Date(now() + 3_599_000).toISOString(),
-                },
-          );
-        }),
-      );
-      const first = polish(controller.signal);
-      const cancelAfterExchangeStarts = async () => {
-        await entered.promise;
-        controller.abort();
-      };
-      await Promise.all([
-        expect(first).rejects.toMatchObject({ name: "AbortError" }),
-        cancelAfterExchangeStarts(),
-      ]);
-      await aborted.promise;
-      await accept(polish(), [200]);
-      expect(calls).toBe(2);
-    },
-  );
 });

@@ -1,3 +1,4 @@
+import { rootSignal$ } from "../context/root";
 import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
 import {
   featureSwitchContextFromRows,
@@ -154,20 +155,8 @@ const NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_LEASE_SECONDS = 5;
 const BUILTIN_MCP_AUTH_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
-const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
-
-function firewallAuthRefreshTimeoutMs(): number {
-  const configured = optionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS");
-  if (configured === undefined) {
-    return FIREWALL_AUTH_REFRESH_TIMEOUT_MS;
-  }
-  const parsed = Number.parseInt(configured, 10);
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : FIREWALL_AUTH_REFRESH_TIMEOUT_MS;
-}
 
 interface FirewallAuthBody {
   readonly encryptedSecrets: string;
@@ -972,24 +961,18 @@ function refreshErrorCodeFromError(
   return null;
 }
 
-function classifyRefreshFailure(
-  error: unknown,
-  signal: AbortSignal,
-): {
+function classifyRefreshFailure(error: unknown): {
   readonly errorCode: string | null;
   readonly failureReason: FirewallAuthFailureReason | undefined;
 } {
-  const refreshTimedOut = isRefreshTimeoutError(error, signal);
+  const refreshTimedOut = isProviderTimeoutError(error);
   return {
     errorCode: refreshErrorCodeFromError(error, refreshTimedOut),
     failureReason: refreshFailureReasonFromError(error, refreshTimedOut),
   };
 }
 
-function refreshFailureDiagnostic(
-  error: unknown,
-  signal: AbortSignal,
-): {
+function refreshFailureDiagnostic(error: unknown): {
   readonly errorKind:
     | "timeout"
     | "oauth_http"
@@ -999,7 +982,7 @@ function refreshFailureDiagnostic(
     | "other";
   readonly providerStatus: number | null;
 } {
-  if (isRefreshTimeoutError(error, signal)) {
+  if (isProviderTimeoutError(error)) {
     return { errorKind: "timeout", providerStatus: null };
   }
   if (isOAuthProviderHttpError(error)) {
@@ -1052,22 +1035,8 @@ function connectorReconnectReasonFromRefreshFailure(
   return null;
 }
 
-function isRefreshTimeoutError(error: unknown, signal: AbortSignal): boolean {
-  if (!signal.aborted || !(error instanceof Error)) {
-    return false;
-  }
-  if (error === signal.reason) {
-    return true;
-  }
-  return (
-    signal.reason instanceof Error &&
-    signal.reason.name === "TimeoutError" &&
-    (error.name === "TimeoutError" || error.name === "AbortError")
-  );
-}
-
-function firewallAuthRefreshTimeoutSignal(): AbortSignal {
-  return AbortSignal.timeout(firewallAuthRefreshTimeoutMs());
+function isProviderTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
 }
 
 function isReconnectRequiredRefreshErrorCode(
@@ -2417,7 +2386,6 @@ function refreshFailureUpdate(
     readonly attemptCount: number;
     readonly firstProviderStatus: number | null;
   },
-  signal: AbortSignal,
 ): {
   readonly errorCode: string | null;
   readonly failureReason: FirewallAuthFailureReason | undefined;
@@ -2439,7 +2407,7 @@ function refreshFailureUpdate(
       connectorReconnectReason: "credential_expired",
     };
   }
-  const { errorCode, failureReason } = classifyRefreshFailure(error, signal);
+  const { errorCode, failureReason } = classifyRefreshFailure(error);
   if (failureReason === "upstream_provider") {
     const logFailure =
       args.sourceType === "connector" &&
@@ -2452,7 +2420,7 @@ function refreshFailureUpdate(
       userId: args.userId,
       errorCode,
       failureReason,
-      ...refreshFailureDiagnostic(error, signal),
+      ...refreshFailureDiagnostic(error),
       retryAttempted: retry.attempted,
       attemptCount: retry.attemptCount,
       firstProviderStatus: retry.firstProviderStatus,
@@ -2792,7 +2760,7 @@ async function refreshPreparedAccessTokenWithRecovery(
 
 const refreshPreparedStoredAccessToken$ = command(
   async function refreshPreparedStoredAccessToken(
-    { set },
+    { get, set },
     args: {
       readonly refreshArgs: RefreshAccessTokenArgs;
       readonly prepared: PreparedRefreshTokenContext;
@@ -2801,7 +2769,7 @@ const refreshPreparedStoredAccessToken$ = command(
   ): Promise<RefreshAccessTokenResult> {
     const { refreshArgs, prepared, state } = args;
 
-    const refreshSignal = firewallAuthRefreshTimeoutSignal();
+    const refreshSignal = get(rootSignal$);
     const inputs = refreshInputsFromState({
       accessSourceKey: refreshArgs.accessSourceKey,
       state,
@@ -2821,16 +2789,12 @@ const refreshPreparedStoredAccessToken$ = command(
         refreshSignal,
       );
     if (!refreshResult.ok) {
-      const failure = refreshFailureUpdate(
-        refreshArgs,
-        {
-          error: refreshResult.error,
-          attempted: retryAttempted,
-          attemptCount,
-          firstProviderStatus,
-        },
-        refreshSignal,
-      );
+      const failure = refreshFailureUpdate(refreshArgs, {
+        error: refreshResult.error,
+        attempted: retryAttempted,
+        attemptCount,
+        firstProviderStatus,
+      });
       await set(markRefreshFailure$, refreshArgs, prepared.context, failure);
       return refreshFailedResult(failure.failureReason);
     }
@@ -2901,7 +2865,7 @@ const refreshPreparedStoredAccessToken$ = command(
   },
 );
 
-// Refresh owns its provider timeout and completes credential publication before
+// Refresh uses the API lifecycle and completes credential publication before
 // callers observe cancellation. Keep that lifetime independent of their signal.
 const refreshAccessTokenForSource$ = command(
   async function refreshAccessTokenForSource(
@@ -5246,7 +5210,7 @@ const prepareCurrentCustomConnectorFirewallAuth$ = command(
 
 const resolveCurrentCustomConnectorSecrets$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly auth: SandboxAuth;
       readonly prepared: PreparedCustomFirewallAuth;
@@ -5282,7 +5246,7 @@ const resolveCurrentCustomConnectorSecrets$ = command(
             featureContext: args.prepared.featureSwitchContext,
             forceRefresh: args.forceRefresh,
           },
-          AbortSignal.timeout(firewallAuthRefreshTimeoutMs()),
+          get(rootSignal$),
         ),
       );
       if (!accessToken.ok) {
@@ -5746,7 +5710,7 @@ const resolveNonCustomFirewallAuthMaterial$ = command(
 
 const resolveFirewallAuthMaterial$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly auth: SandboxAuth;
       readonly body: FirewallAuthBody;
@@ -5769,7 +5733,7 @@ const resolveFirewallAuthMaterial$ = command(
           },
         };
       }
-      const refreshSignal = firewallAuthRefreshTimeoutSignal();
+      const refreshSignal = get(rootSignal$);
       const resolved = await settleIncludingAbort(
         set(
           resolveBuiltinConnectorAutomaticMcpCredential,
@@ -5786,7 +5750,7 @@ const resolveFirewallAuthMaterial$ = command(
       );
       signal.throwIfAborted();
       if (!resolved.ok) {
-        if (isRefreshTimeoutError(resolved.error, refreshSignal)) {
+        if (isProviderTimeoutError(resolved.error)) {
           return {
             ok: false,
             response: tokenRefreshFailed(

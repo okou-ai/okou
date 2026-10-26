@@ -173,13 +173,7 @@ export async function createComputerUseResultSubscription(
       ttl: target.timeoutMs + 60_000,
     });
   })();
-  const token = await settle(
-    awaitWithSignal(
-      request,
-      AbortSignal.any([signal, AbortSignal.timeout(2000)]),
-    ),
-    signal,
-  );
+  const token = await settle(awaitWithSignal(request, signal), signal);
   if (!token.ok) {
     // #38733: notification delivery is optional; the created operation remains readable.
     L.warn("Unable to issue computer-use result subscription", {

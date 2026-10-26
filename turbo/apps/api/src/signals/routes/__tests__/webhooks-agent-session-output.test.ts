@@ -8,7 +8,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { generateSandboxToken } from "../../auth/tokens";
-import { createDeferredPromise } from "../../utils";
 import { webhooksAgentSessionOutputRoutes } from "../webhooks-agent-session-output";
 
 const context = testContext();
@@ -124,23 +123,5 @@ describe("Sandbox transient session output webhook", () => {
     expect(response.status).toBe(400);
     expect(context.mocks.ably.channelGet).not.toHaveBeenCalled();
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-  });
-
-  it("bounds an uncertain publication without issuing a second publish", async () => {
-    const publish = createDeferredPromise<void>(context.signal);
-    context.mocks.ably.publish.mockReturnValue(publish.promise);
-    context.mocks.abortSignal.timeout.mockImplementation(() => {
-      const controller = new AbortController();
-      controller.abort(
-        new DOMException("The operation timed out", "TimeoutError"),
-      );
-      return controller.signal;
-    });
-
-    const response = await accept(request().response, [503]);
-    publish.resolve(undefined);
-
-    expect(response.body.error.code).toBe("EVENT_DELIVERY_UNAVAILABLE");
-    expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
   });
 });

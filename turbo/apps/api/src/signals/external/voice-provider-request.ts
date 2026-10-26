@@ -1,14 +1,12 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { delay } from "signal-timers";
 
 import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
-import { onRejection, settle, startUntrackedBestEffortCleanup } from "../utils";
+import { settle, startUntrackedBestEffortCleanup } from "../utils";
 
 const L = logger("VoiceProvider");
 const MAX_ATTEMPTS = 3;
-// Recovery gets its own deadline after the first rejected request. Do not
-// impose this short budget on an otherwise healthy long transcription.
-const RECOVERY_BUDGET_MS = 15_000;
 const INITIAL_BACKOFF_MS = 1000;
 
 interface VoiceProviderContext {
@@ -67,62 +65,39 @@ export async function requestVoiceProvider<T>(
   context: VoiceProviderContext,
   signal: AbortSignal,
 ): Promise<T> {
-  signal.throwIfAborted();
-  let response = await request(signal);
-  signal.throwIfAborted();
-  let deadline: number | undefined;
-  let attempts = 1;
-  let responseSignal = signal;
-  let failedStatus = response.status;
-  const checkSignal = () => {
+  for (let attempts = 1; ; attempts += 1) {
     signal.throwIfAborted();
-    if (
-      deadline !== undefined &&
-      (responseSignal.aborted || now() >= deadline)
-    ) {
-      throw exhausted(context, failedStatus, attempts);
-    }
-  };
-  while (true) {
-    if (!isRetryableVoiceProviderStatus(response.status)) {
-      const result = await onRejection(
-        settle(readResponse(response), signal),
-        checkSignal,
-      );
-      checkSignal();
-      if (!result.ok) {
+    const result = await settle(accept(request(signal), [200]), signal);
+    let response: Response;
+    if (result.ok) {
+      response = result.value;
+    } else if (result.error instanceof HttpStatusError) {
+      response = result.error.response;
+      if (response.ok) {
         throw result.error;
       }
-      if (response.ok && attempts > 1) {
+    } else {
+      throw result.error;
+    }
+    if (!isRetryableVoiceProviderStatus(response.status)) {
+      const value = await readResponse(response);
+      signal.throwIfAborted();
+      if (result.ok && attempts > 1) {
         L.debug("Voice provider request recovered", { ...context, attempts });
       }
-      return result.value;
+      return value;
     }
-    failedStatus = response.status;
-    deadline ??= now() + RECOVERY_BUDGET_MS;
     const wait = Math.max(
       INITIAL_BACKOFF_MS * 2 ** (attempts - 1),
       retryAfterMs(response.headers.get("Retry-After")) ?? 0,
     );
-    // Stream cancellation is advisory and can remain pending (for example a
-    // tee whose other reader is retained). It must not own the recovery budget.
+    // A failed provider response is no longer consumed by the caller.
     if (!response.bodyUsed && response.body) {
       startUntrackedBestEffortCleanup(response.body.cancel());
     }
-    checkSignal();
-    // A provider's long retry delay is not permission to retry earlier.
-    if (attempts >= MAX_ATTEMPTS || wait >= deadline - now()) {
-      throw exhausted(context, failedStatus, attempts);
+    if (attempts >= MAX_ATTEMPTS) {
+      throw exhausted(context, response.status, attempts);
     }
     await delay(wait, { signal });
-    signal.throwIfAborted();
-    const remaining = deadline - now();
-    if (remaining <= 0) {
-      throw exhausted(context, failedStatus, attempts);
-    }
-    responseSignal = AbortSignal.any([signal, AbortSignal.timeout(remaining)]);
-    attempts += 1;
-    response = await onRejection(request(responseSignal), checkSignal);
-    checkSignal();
   }
 }

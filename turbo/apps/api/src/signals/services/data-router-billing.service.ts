@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { randomUUID } from "node:crypto";
 import { dataRouterRequests } from "@okouai/db/schema/data-router-request";
 import { command } from "ccstate";
@@ -52,32 +53,28 @@ export const settleDataRouterRun$ = command(
         return request.requestId;
       }),
     );
-    // The lookup owns its timeout; only caller cancellation aborts later billing.
     const lookup = await settleIncludingAbort(
       (async () => {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            Accept: "application/json, text/event-stream",
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: randomUUID(),
-            method: "tools/call",
-            params: {
-              name: "billing_get",
-              arguments: { requestIds: [...requestIds] },
+        const response = await accept(
+          fetch(url, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
             },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: randomUUID(),
+              method: "tools/call",
+              params: {
+                name: "billing_get",
+                arguments: { requestIds: [...requestIds] },
+              },
+            }),
           }),
-          signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-        });
-        if (!response.ok) {
-          throw new Error(
-            `Data Router billing lookup failed: ${response.status}`,
-          );
-        }
+          [200],
+        );
         return billingResponse.parse(await response.json());
       })(),
     );

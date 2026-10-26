@@ -1,4 +1,5 @@
 import { createPublicKey, createVerify, type KeyObject } from "node:crypto";
+import { accept } from "@okouai/connectors/accept";
 
 import { env, optionalEnv } from "./env";
 import { singleton } from "./singleton";
@@ -214,10 +215,7 @@ function parseJwks(value: unknown): JwksDocument | null {
 }
 
 async function fetchJson(url: string): Promise<unknown> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Teams bot auth fetch failed: ${response.status}`);
-  }
+  const response = await accept(fetch(url), [200]);
   return await response.json();
 }
 

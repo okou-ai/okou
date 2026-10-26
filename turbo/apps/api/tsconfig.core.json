@@ -70,6 +70,7 @@
     "src/lib/pg-errors.ts",
     "src/lib/sql-span-name.ts",
     "src/lib/time.ts",
+    "src/signals/context/root.ts",
     "src/signals/context/wait-until.ts",
     "src/signals/external/sandbox-op-log.ts",
     "src/signals/services/agent-instructions-storage-transaction.service.ts",

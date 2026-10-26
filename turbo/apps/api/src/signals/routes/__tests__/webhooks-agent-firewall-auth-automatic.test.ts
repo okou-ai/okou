@@ -5,7 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -690,7 +690,6 @@ describe("builtin Automatic firewall credential destinations", () => {
   );
 
   it.each([
-    "timeout",
     "provider failure",
     "recovery",
     "DCR rejection",
@@ -699,14 +698,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    if (outcomeKind === "timeout") {
-      mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", "25");
-    }
-    onTestFinished(() => {
-      mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
-    });
     const catalog = automaticMcpCatalogFixture();
-    const refreshAborted = createDeferredPromise<void>(context.signal);
     const dcr = outcomeKind === "DCR rejection" || outcomeKind === "DCR expiry";
     const startedAt = now();
     if (outcomeKind === "DCR expiry") {
@@ -721,26 +713,12 @@ describe("builtin Automatic firewall credential destinations", () => {
           }
         : {}),
       initialExpiresIn: 3600,
-      refreshResponse: async (attempt, signal) => {
+      refreshResponse: (attempt) => {
         if (outcomeKind === "DCR rejection") {
           return HttpResponse.json(
             { error: "invalid_client" },
             { status: 400 },
           );
-        }
-        if (outcomeKind === "timeout") {
-          const markAborted = () => {
-            if (!refreshAborted.settled()) {
-              refreshAborted.resolve();
-            }
-          };
-          if (signal.aborted) {
-            markAborted();
-          } else {
-            signal.addEventListener("abort", markAborted, { once: true });
-          }
-          await refreshAborted.promise;
-          return HttpResponse.error();
         }
         if (
           outcomeKind === "provider failure" ||

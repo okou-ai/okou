@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -499,12 +500,28 @@ const dispatchHttpCallback$ = command(
       headers["x-vercel-protection-bypass"] = bypass;
     }
 
+    const callbackUrl = resolveCallbackUrl(callback.url);
     const responseResult = await settle(
-      fetch(resolveCallbackUrl(callback.url), {
-        method: "POST",
-        headers,
-        body,
-      }),
+      (async () => {
+        const acceptedResponse = await settle(
+          accept(
+            fetch(callbackUrl, {
+              method: "POST",
+              headers,
+              body,
+            }),
+            [200, 201, 202, 204],
+          ),
+        );
+        if (!acceptedResponse.ok) {
+          const error = acceptedResponse.error;
+          if (error instanceof HttpStatusError && error.status >= 300) {
+            return error.response;
+          }
+          throw error;
+        }
+        return acceptedResponse.value;
+      })(),
     );
     signal.throwIfAborted();
 

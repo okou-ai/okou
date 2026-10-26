@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   authorizeBankingAccess$,
   recordBankingAudit$,
@@ -22,7 +23,7 @@ import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 
 import { writeDb$ } from "../external/db";
-import { safeJsonParse } from "../utils";
+import { settle, safeJsonParse } from "../utils";
 
 const APP_TOKEN_REFRESH_MS = 90 * 60 * 1000;
 const FINICITY_BASE_URL = "https://api.finicity.com";
@@ -148,7 +149,7 @@ function finicityCredentials():
 }
 
 async function getFinicityAppToken(
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<string | BankingErrorResponse> {
   const cache = finicityAppTokenCache();
   if (cache.value && cache.value.refreshAfterMs > now()) {
@@ -160,22 +161,34 @@ async function getFinicityAppToken(
     return credentials;
   }
 
-  const response = await fetch(
-    `${FINICITY_BASE_URL}/aggregation/v2/partners/authentication`,
-    {
-      method: "POST",
-      signal,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "Finicity-App-Key": credentials.appKey,
-      },
-      body: JSON.stringify({
-        partnerId: credentials.partnerId,
-        partnerSecret: credentials.appSecret,
+  const acceptedResponse = await settle(
+    accept(
+      fetch(`${FINICITY_BASE_URL}/aggregation/v2/partners/authentication`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "Finicity-App-Key": credentials.appKey,
+        },
+        body: JSON.stringify({
+          partnerId: credentials.partnerId,
+          partnerSecret: credentials.appSecret,
+        }),
       }),
-    },
+      [200],
+    ),
   );
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
   const body = await readResponseBody(response);
   if (!response.ok) {
     return badGateway(finicityErrorMessage(body), "FINICITY_AUTH_FAILED");
@@ -208,21 +221,36 @@ export async function fetchFinicityJson(
     return appToken;
   }
 
-  const response = await fetch(`${FINICITY_BASE_URL}${path}`, {
-    method: request.method ?? "GET",
-    signal,
-    headers: {
-      Accept: "application/json",
-      ...(request.body === undefined
-        ? {}
-        : { "Content-Type": "application/json" }),
-      "Finicity-App-Key": credentials.appKey,
-      "Finicity-App-Token": appToken,
-    },
-    ...(request.body === undefined
-      ? {}
-      : { body: JSON.stringify(request.body) }),
-  });
+  const acceptedResponse2 = await settle(
+    accept(
+      fetch(`${FINICITY_BASE_URL}${path}`, {
+        method: request.method ?? "GET",
+        headers: {
+          Accept: "application/json",
+          ...(request.body === undefined
+            ? {}
+            : { "Content-Type": "application/json" }),
+          "Finicity-App-Key": credentials.appKey,
+          "Finicity-App-Token": appToken,
+        },
+        ...(request.body === undefined
+          ? {}
+          : { body: JSON.stringify(request.body) }),
+      }),
+      [200, 201, 202, 204],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse2.ok) {
+    response = acceptedResponse2.value;
+  } else if (
+    acceptedResponse2.error instanceof HttpStatusError &&
+    acceptedResponse2.error.status >= 300
+  ) {
+    response = acceptedResponse2.error.response;
+  } else {
+    throw acceptedResponse2.error;
+  }
   const body = await readResponseBody(response);
   return response.ok ? body : badGateway(finicityErrorMessage(body));
 }

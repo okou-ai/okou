@@ -671,7 +671,7 @@ describe("owner provider profiles", () => {
   it("reports a losing candidate's cleanup deadline without deleting the winner", async () => {
     const both = createDeferredPromise<void>(context.signal);
     const deleting = createDeferredPromise<void>(context.signal);
-    const aborted = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
     const deadline = new AbortController();
     let arrivals = 0;
     const f = await fixture(
@@ -690,16 +690,9 @@ describe("owner provider profiles", () => {
       const a = await f.start(),
         b = await f.start();
       server.use(
-        http.delete(`${PROVIDER_URL}/profiles/:id`, async ({ request }) => {
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              aborted.resolve();
-            },
-            { once: true },
-          );
+        http.delete(`${PROVIDER_URL}/profiles/:id`, async () => {
           deleting.resolve();
-          await aborted.promise;
+          await release.promise;
           return HttpResponse.error();
         }),
       );
@@ -709,8 +702,8 @@ describe("owner provider profiles", () => {
       ]);
       await deleting.promise;
       deadline.abort(new DOMException("Cleanup deadline", "TimeoutError"));
+      release.resolve();
       const results = await allocations;
-      await aborted.promise;
       context.mocks.abortSignal.timeout.mockReset();
       expect(
         results
@@ -731,49 +724,6 @@ describe("owner provider profiles", () => {
         (await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`))
           .status,
       ).toBe(200);
-    });
-  });
-
-  it("reports a provider deadline without treating it as request cancellation", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const chat = await f.start();
-      const deadline = new AbortController();
-      context.mocks.abortSignal.timeout.mockReturnValueOnce(deadline.signal);
-      const started = createDeferredPromise<void>(context.signal);
-      const aborted = createDeferredPromise<void>(context.signal);
-      server.use(
-        http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              aborted.resolve();
-            },
-            { once: true },
-          );
-          started.resolve();
-          await aborted.promise;
-          return HttpResponse.error();
-        }),
-      );
-      const allocation = chat.control({ kind: "allocate" });
-      await started.promise;
-      deadline.abort(new DOMException("Provider deadline", "TimeoutError"));
-      const result = await allocation;
-      await aborted.promise;
-      context.mocks.abortSignal.timeout.mockReset();
-      expect(result).toMatchObject({
-        status: 502,
-        body: {
-          error: {
-            code: "BROWSER_USE_TIMEOUT",
-            message: "Managed browser provider profile is unavailable",
-          },
-        },
-      });
-      await expect(chat.request({ kind: "inspect" })).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
     });
   });
 

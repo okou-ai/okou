@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   connectorCredentialDeletion,
   connectorCredentialDeletionKinds,
@@ -387,16 +388,33 @@ async function requestToken(
   signal: AbortSignal,
 ): Promise<CustomConnectorOAuthTokenResult> {
   const authorization = tokenRequestAuthentication(args);
-  const fetched = await mcpOAuthSafeFetch(args.config.tokenUrl, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/x-www-form-urlencoded",
-      ...(authorization ? { authorization } : {}),
-    },
-    body: args.form,
+  const result = await settle(
+    accept(
+      mcpOAuthSafeFetch(args.config.tokenUrl, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/x-www-form-urlencoded",
+          ...(authorization ? { authorization } : {}),
+        },
+        body: args.form,
+        signal,
+      }),
+      [200],
+    ),
     signal,
-  });
+  );
+  let fetched: Response;
+  if (result.ok) {
+    fetched = result.value;
+  } else if (
+    result.error instanceof HttpStatusError &&
+    result.error.status >= 300
+  ) {
+    fetched = result.error.response;
+  } else {
+    throw result.error;
+  }
   const response: PublicHttpsResponse = {
     status: fetched.status,
     contentType: fetched.headers.get("content-type") ?? "",

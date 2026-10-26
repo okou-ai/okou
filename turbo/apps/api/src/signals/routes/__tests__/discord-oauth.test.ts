@@ -17,7 +17,7 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { createDeferredPromise } from "../../utils";
 import { discordOauthRoutes } from "../discord-oauth";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { integrationsDiscordRoutes } from "../integrations-discord";
@@ -1372,46 +1372,6 @@ describe("Discord product OAuth", () => {
       isConnected: false,
     });
     expect(f.messages).toHaveLength(1);
-  });
-  it("cancels a real request during provider verification without binding or welcoming", async () => {
-    const f = await fixture();
-    const actor = await f.actor();
-    const started = await start(actor, "install", f.guildId);
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.get(`${API}/oauth2/@me`, async () => {
-        entered.resolve();
-        await release.promise;
-        return HttpResponse.json({
-          application: { id: f.botId },
-          scopes: ["bot", "applications.commands", "identify", "guilds"],
-          expires: new Date(now() + 60_000).toISOString(),
-          user: { id: f.discordUserId, username: "member" },
-        });
-      }),
-    );
-    const code = randomUUID();
-    f.grants.set(code, {
-      guildId: f.guildId,
-      discordUserId: f.discordUserId,
-      scopes: ["bot", "applications.commands", "identify", "guilds"],
-    });
-    const controller = new AbortController();
-    const request = clients()(discordOauthContract).callback({
-      query: { code, state: started.state, guild_id: f.guildId },
-      fetchOptions: { signal: controller.signal },
-    });
-    const settled = settleIncludingAbort(() => {
-      return request;
-    });
-    await entered.promise;
-    controller.abort(new DOMException("Cancelled by browser", "AbortError"));
-    release.resolve();
-    const result = await settled;
-    expect(result.ok).toBeFalsy();
-    expect((await status(actor)).isConnected).toBeFalsy();
-    expect(f.messages).toStrictEqual([]);
   });
   it("authorizes the exact DM recipient independently before a welcome, without undoing connection", async () => {
     const f = await fixture();

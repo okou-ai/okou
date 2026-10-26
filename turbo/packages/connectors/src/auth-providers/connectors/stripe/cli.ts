@@ -251,7 +251,6 @@ export async function startStripeCliDashboardAuth(args: {
     `${STRIPE_DASHBOARD_ORIGIN}${STRIPE_CLI_AUTH_PATH}`,
     {
       method: "POST",
-      redirect: "error",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
@@ -319,7 +318,6 @@ export async function pollStripeCliDashboardAuth(args: {
   try {
     response = await fetch(pollUrl, {
       method: "GET",
-      redirect: "error",
     });
   } catch (error) {
     return stripeCliProviderErrorFromUnknown(

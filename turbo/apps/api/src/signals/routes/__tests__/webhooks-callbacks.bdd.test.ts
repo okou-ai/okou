@@ -1363,62 +1363,27 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       });
       await flushWaitUntilForTest();
       expect(failedRequestCount).toBe(2);
-
-      const redirectTarget =
-        "https://api.axiom.co/v1/datasets/redirected-agent-run-events/ingest";
-      let redirectTargetRequests = 0;
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-          () => {
-            return new HttpResponse(null, {
-              headers: { location: redirectTarget },
-              status: 307,
-            });
-          },
-        ),
-        http.post(redirectTarget, () => {
-          redirectTargetRequests += 1;
-          return HttpResponse.json(
-            successfulAxiomIngestStatus(body.events.length),
-          );
-        }),
-      );
-      const redirected = await api.requestAgentEvents(body, headers, [200]);
-      expect(redirected.body).toStrictEqual({
-        received: 2,
-        firstSequence: 1,
-        lastSequence: 2,
-      });
-      await flushWaitUntilForTest();
-      expect(redirectTargetRequests).toBe(0);
     });
   });
 
-  it("acknowledges the event batch before the Axiom sub-deadline elapses", async () => {
+  it("acknowledges the event batch while optional Axiom ingestion is pending", async () => {
     const {
       actor,
       runId,
       headers,
       run: own,
       ownsFeatureSwitches,
-    } = await createEventWebhookRun("best-effort Axiom deadline");
+    } = await createEventWebhookRun("best-effort Axiom background ingestion");
     ownsFeatureSwitches();
     await own(async () => {
       await createBillingMediaApi(context).updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OkouDebug]: true,
       });
-      const submittedPayloadValue = `private-timeout-value-${randomUUID()}`;
-      const axiomToken = `xaat-timeout-${randomUUID()}`;
+      const submittedPayloadValue = `private-pending-value-${randomUUID()}`;
+      const axiomToken = `xaat-pending-${randomUUID()}`;
       mockOptionalEnv("AXIOM_TOKEN_SESSIONS", axiomToken);
-      const startedAt = now();
-      mockNow(startedAt);
       const ingestStarted = createDeferredPromise<void>(context.signal);
       const releaseIngest = createDeferredPromise<void>(context.signal);
-      const axiomDeadline = new AbortController();
-      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-        return milliseconds === 10_000 ? axiomDeadline.signal : undefined;
-      });
       onTestFinished(() => {
         if (!releaseIngest.settled()) {
           releaseIngest.resolve(undefined);
@@ -1454,10 +1419,6 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
         lastSequence: 0,
       });
       await ingestStarted.promise;
-      mockNow(startedAt + 2345);
-      axiomDeadline.abort(
-        new DOMException("Axiom ingest deadline", "TimeoutError"),
-      );
 
       releaseIngest.resolve(undefined);
       await flushWaitUntilForTest();
@@ -1466,62 +1427,6 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
 });
 
 describe("WHCB-05: sandbox agent webhook boundaries", () => {
-  it("returns 500 when telemetry ingest times out", async () => {
-    const {
-      runId,
-      headers,
-      run: own,
-    } = await createEventWebhookRun("required Axiom telemetry deadline");
-    await own(async () => {
-      const submittedHost = `${randomUUID()}.timeout.example.test`;
-      const axiomToken = `xaat-telemetry-timeout-${randomUUID()}`;
-      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", axiomToken);
-      const startedAt = now();
-      mockNow(startedAt);
-      const ingestStarted = createDeferredPromise<void>(context.signal);
-      const releaseIngest = createDeferredPromise<void>(context.signal);
-      const axiomDeadline = new AbortController();
-      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-        return milliseconds === 10_000 ? axiomDeadline.signal : undefined;
-      });
-      onTestFinished(() => {
-        if (!releaseIngest.settled()) {
-          releaseIngest.resolve(undefined);
-        }
-      });
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
-          async () => {
-            ingestStarted.resolve(undefined);
-            await releaseIngest.promise;
-            return HttpResponse.json(successfulAxiomIngestStatus(1));
-          },
-        ),
-      );
-
-      const pendingResponse = api.requestAgentTelemetry(
-        {
-          runId,
-          networkLogs: [
-            { timestamp: nowDate().toISOString(), host: submittedHost },
-          ],
-        },
-        headers,
-        [500],
-      );
-      await ingestStarted.promise;
-      mockNow(startedAt + 3456);
-      axiomDeadline.abort(
-        new DOMException("Axiom telemetry deadline", "TimeoutError"),
-      );
-      releaseIngest.resolve(undefined);
-
-      const response = await pendingResponse;
-      expect(response.status).toBe(500);
-    });
-  });
-
   it("returns 500 without API error capture when telemetry transport fails", async () => {
     const {
       runId,

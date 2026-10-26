@@ -156,7 +156,7 @@ test("serves DB-backed foreground writes through response EOF and a subsequent W
   await expect(http.settle()).resolves.toStrictEqual([]);
 });
 
-test.each(["eof", "cancel", "abort"] as const)(
+test.each(["eof", "cancel"] as const)(
   "continues admitted export DB work after response %s while a concurrent request finishes",
   async (completion) => {
     actor();
@@ -192,13 +192,8 @@ test.each(["eof", "cancel", "abort"] as const)(
       },
     });
     const owner = caller();
-    const controller = new AbortController();
-    onTestFinished(() => {
-      controller.abort();
-    });
     const response = await owner.request("/api/user/export", {
       method: "POST",
-      signal: controller.signal,
     });
     expect(response.status).toBe(202);
     await entered.promise;
@@ -207,11 +202,8 @@ test.each(["eof", "cancel", "abort"] as const)(
         jobId: expect.any(String),
         status: expect.stringMatching(/pending|running/),
       });
-    } else if (completion === "cancel") {
-      await response.body!.cancel("caller stopped reading");
     } else {
-      controller.abort(new DOMException("Caller disconnected", "AbortError"));
-      await response.body!.cancel();
+      await response.body!.cancel("caller stopped reading");
     }
     // Finishing an independent request must not dispose the blocked owner's DB.
     await createAgent("Concurrent foreground");
@@ -228,7 +220,7 @@ test.each(["eof", "cancel", "abort"] as const)(
   },
 );
 
-test("joins cancelled foreground upload work through the provider's multipart cleanup", async () => {
+test("completes admitted foreground upload after the HTTP caller disconnects", async () => {
   actor();
   const entered = latch();
   const release = latch();
@@ -276,11 +268,13 @@ test("joins cancelled foreground upload work through the provider's multipart cl
   controller.abort(new DOMException("Caller disconnected", "AbortError"));
   await createAgent("Surviving foreground");
   release.resolve();
-  const cancelled = await response;
-  expect(cancelled.status).toBe(500);
-  await cancelled.body?.cancel();
+  const completed = await response;
+  expect(completed.status).toBe(200);
+  await expect(completed.json()).resolves.toMatchObject({
+    multipart: { uploadId: "owned-worker-upload" },
+  });
   await expect(http.settle()).resolves.toStrictEqual([]);
-  expect(receipts).toStrictEqual(["owned-worker-upload"]);
+  expect(receipts).toStrictEqual([]);
 });
 
 test("retains the publicly accepted export job after a background provider receipt fails", async () => {

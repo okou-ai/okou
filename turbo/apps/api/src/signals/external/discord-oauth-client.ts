@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { z } from "zod";
 import { logger } from "../../lib/log";
 import { discordSnowflakeSchema, discordUserSchema } from "./discord-client";
@@ -56,16 +57,17 @@ async function request<T>(
   },
   signal: AbortSignal,
 ): Promise<DiscordOauthResult<T>> {
-  const timeout = AbortSignal.timeout(15_000);
   const response = await settle(
-    fetch(`${API}${path}`, {
-      ...init,
-      redirect: "error",
-      signal: AbortSignal.any([signal, timeout]),
-    }),
+    accept(
+      fetch(`${API}${path}`, {
+        ...init,
+        signal,
+      }),
+      [200],
+    ),
     signal,
   );
-  if (!response.ok || !response.value.ok) {
+  if (!response.ok) {
     return { ok: false, error: "provider_error" };
   }
   const text = await settle(response.value.text(), signal);

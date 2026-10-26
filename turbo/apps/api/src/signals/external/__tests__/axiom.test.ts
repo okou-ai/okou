@@ -145,64 +145,6 @@ describe("shared SDK ingestion", () => {
     });
   });
 
-  it("rejects telemetry ingest redirects without forwarding credentials or events", async () => {
-    const owned = await publicChatActor(context);
-    const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
-      prompt: "record network telemetry without following redirects",
-    });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
-    await owned.run(async () => {
-      const restoreConsole = context.mocks.console.capture();
-      onTestFinished(restoreConsole);
-      let ingestRequests = 0;
-      let redirectedRequests = 0;
-      server.use(
-        http.post(
-          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
-          () => {
-            ingestRequests += 1;
-            return new HttpResponse(null, {
-              status: 302,
-              headers: { Location: "https://redirect.example.com/ingest" },
-            });
-          },
-        ),
-        http.all("https://redirect.example.com/ingest", () => {
-          redirectedRequests += 1;
-          return HttpResponse.json({
-            ingested: 1,
-            failed: 0,
-            processedBytes: 1,
-          });
-        }),
-      );
-
-      const response = await accept(
-        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-          webhookTelemetryContract,
-        ).send({
-          headers: { authorization: `Bearer ${claim.sandboxToken}` },
-          body: {
-            runId,
-            metrics: [
-              {
-                ts: "2026-10-23T00:00:00Z",
-                cpu: 1,
-                mem_used: 10,
-                mem_total: 100,
-              },
-            ],
-          },
-        }),
-        [500],
-      );
-      expect(response.body).toStrictEqual({ error: "Internal server error" });
-      expect(ingestRequests).toBe(1);
-      expect(redirectedRequests).toBe(0);
-    });
-  });
-
   it("records ID-free MCP name-lookup timings through the API operation interface", async () => {
     // Telemetry-client suite exception: this event has no API read endpoint.
     await recordMcpClientNameLookup({

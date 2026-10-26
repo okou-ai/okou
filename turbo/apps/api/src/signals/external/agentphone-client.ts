@@ -1,7 +1,8 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { z } from "zod";
-import { safeJsonParse } from "../utils";
+import { safeJsonParse, settle } from "../utils";
 
 const log = logger("api:agentphone");
 
@@ -70,26 +71,35 @@ export async function sendAgentPhoneMessage(
   },
   signal?: AbortSignal,
 ): Promise<AgentPhoneSentMessage> {
-  const response = await fetch(`${agentPhoneApiBase()}/v1/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${agentPhoneApiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      agent_id: opts.agentphoneAgentId,
-      to_number: opts.toNumber,
-      ...(opts.replyToMessageId
-        ? { reply_to_message_id: opts.replyToMessageId }
-        : {}),
-      body: opts.body,
-      ...(opts.mediaUrl ? { media_url: opts.mediaUrl } : {}),
-      ...(opts.mediaUrls?.length ? { media_urls: opts.mediaUrls } : {}),
-    }),
-    signal,
-  });
-
-  if (!response.ok) {
+  const responseResult = await settle(
+    accept(
+      fetch(`${agentPhoneApiBase()}/v1/messages`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${agentPhoneApiKey()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          agent_id: opts.agentphoneAgentId,
+          to_number: opts.toNumber,
+          ...(opts.replyToMessageId
+            ? { reply_to_message_id: opts.replyToMessageId }
+            : {}),
+          body: opts.body,
+          ...(opts.mediaUrl ? { media_url: opts.mediaUrl } : {}),
+          ...(opts.mediaUrls?.length ? { media_urls: opts.mediaUrls } : {}),
+        }),
+        signal,
+      }),
+      [200, 201],
+    ),
+  );
+  if (!responseResult.ok) {
+    const failure = responseResult.error;
+    if (!(failure instanceof HttpStatusError)) {
+      throw failure;
+    }
+    const response = failure.response;
     const text = await response.text();
     const error = makeAgentPhoneApiError(response.status, text);
     if (
@@ -103,6 +113,7 @@ export async function sendAgentPhoneMessage(
     }
     throw error;
   }
+  const response = responseResult.value;
 
   const result = valueObject(await response.json());
   const id = typeof result.id === "string" ? result.id : undefined;
@@ -136,16 +147,28 @@ export async function canSendAgentPhoneConversationMedia(
   conversationId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
-  const response = await fetch(
-    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(conversationId)}`,
-    { headers: { Authorization: `Bearer ${agentPhoneApiKey()}` }, signal },
+  const responseResult = await settle(
+    accept(
+      fetch(
+        `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(conversationId)}`,
+        { headers: { Authorization: `Bearer ${agentPhoneApiKey()}` }, signal },
+      ),
+      [200, 404],
+    ),
   );
+  if (!responseResult.ok) {
+    const failure = responseResult.error;
+    if (!(failure instanceof HttpStatusError)) {
+      throw failure;
+    }
+    const response = failure.response;
+    throw makeAgentPhoneApiError(response.status, await response.text());
+  }
+  const response = responseResult.value;
   if (response.status === 404) {
     return false;
   }
-  if (!response.ok) {
-    throw makeAgentPhoneApiError(response.status, await response.text());
-  }
+
   const { capabilities } = conversationMediaCapabilitiesSchema.parse(
     await response.json(),
   );
@@ -178,16 +201,28 @@ export async function getAgentPhoneMessagesAfter(
     after: after.toISOString(),
     limit: "200",
   });
-  const response = await fetch(
-    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(conversationId)}/messages?${query}`,
-    { headers: { Authorization: `Bearer ${agentPhoneApiKey()}` }, signal },
+  const responseResult = await settle(
+    accept(
+      fetch(
+        `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(conversationId)}/messages?${query}`,
+        { headers: { Authorization: `Bearer ${agentPhoneApiKey()}` }, signal },
+      ),
+      [200, 404],
+    ),
   );
+  if (!responseResult.ok) {
+    const failure = responseResult.error;
+    if (!(failure instanceof HttpStatusError)) {
+      throw failure;
+    }
+    const response = failure.response;
+    throw makeAgentPhoneApiError(response.status, await response.text());
+  }
+  const response = responseResult.value;
   if (response.status === 404) {
     return null;
   }
-  if (!response.ok) {
-    throw makeAgentPhoneApiError(response.status, await response.text());
-  }
+
   return conversationMessagesSchema.parse(await response.json());
 }
 
@@ -195,22 +230,32 @@ export async function getAgentPhoneConversationParticipants(
   opts: { readonly conversationId: string },
   signal?: AbortSignal,
 ): Promise<readonly string[]> {
-  const response = await fetch(
-    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(
-      opts.conversationId,
-    )}`,
-    {
-      headers: { Authorization: `Bearer ${agentPhoneApiKey()}` },
-      signal,
-    },
+  const responseResult = await settle(
+    accept(
+      fetch(
+        `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(
+          opts.conversationId,
+        )}`,
+        {
+          headers: { Authorization: `Bearer ${agentPhoneApiKey()}` },
+          signal,
+        },
+      ),
+      [200],
+    ),
   );
-
-  if (!response.ok) {
+  if (!responseResult.ok) {
+    const failure = responseResult.error;
+    if (!(failure instanceof HttpStatusError)) {
+      throw failure;
+    }
+    const response = failure.response;
     log.warn("AgentPhone conversation lookup failed", {
       status: response.status,
     });
     throw makeAgentPhoneApiError(response.status, "");
   }
+  const response = responseResult.value;
 
   const result = valueObject(await response.json());
   const data = valueObject(result.data);
@@ -255,22 +300,31 @@ export async function sendAgentPhoneTypingIndicator(
   opts: { readonly conversationId: string },
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(
-    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(
-      opts.conversationId,
-    )}/typing`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${agentPhoneApiKey()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({}),
-      signal,
-    },
+  const responseResult = await settle(
+    accept(
+      fetch(
+        `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(
+          opts.conversationId,
+        )}/typing`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${agentPhoneApiKey()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+          signal,
+        },
+      ),
+      [200, 204],
+    ),
   );
-
-  if (!response.ok) {
+  if (!responseResult.ok) {
+    const failure = responseResult.error;
+    if (!(failure instanceof HttpStatusError)) {
+      throw failure;
+    }
+    const response = failure.response;
     const text = await response.text();
     log.debug("AgentPhone typing indicator failed", {
       conversationId: opts.conversationId,

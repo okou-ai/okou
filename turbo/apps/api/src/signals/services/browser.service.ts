@@ -1,3 +1,4 @@
+import { rootSignal$ } from "../context/root";
 import {
   BROWSER_IDLE_LEASE_MINUTES,
   BROWSER_INITIAL_SCREEN_HEIGHT,
@@ -91,7 +92,7 @@ import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import { reconcileBrowserUserActions$ } from "./browser-user-actions.service";
 
 const RECONCILE_BATCH_SIZE = 20;
-const PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
+const BROWSER_RESIZE_TIMEOUT_MS = 30_000;
 const PROVIDER_START_LIFECYCLE_TIMEOUT_MS = 90_000;
 const BROWSER_TAB_SNAPSHOT_TIMEOUT_MS = 10_000;
 const BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS = 30_000;
@@ -556,30 +557,29 @@ const saveBrowserTabSnapshot$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    const snapshotSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
-    ]);
     const saved = await settle(
       (async () => {
         const provider = await getBrowserUseSession(
           target.providerSessionId,
-          snapshotSignal,
+          signal,
         );
-        snapshotSignal.throwIfAborted();
+        signal.throwIfAborted();
         if (provider.status !== "active" || !provider.cdpUrl) {
           return;
         }
         const urls = await listBrowserUseTabUrls(
           provider.cdpUrl,
-          snapshotSignal,
+          AbortSignal.any([
+            signal,
+            AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
+          ]),
         );
-        snapshotSignal.throwIfAborted();
+        signal.throwIfAborted();
         const encryptedTabUrls = await encryptPersistentSecretValue(
           JSON.stringify(urls),
           { userId: target.userId },
         );
-        snapshotSignal.throwIfAborted();
+        signal.throwIfAborted();
         await db
           .insert(browserSessionTabSnapshots)
           .values({
@@ -593,7 +593,7 @@ const saveBrowserTabSnapshot$ = command(
               updatedAt: nowDate(),
             },
           });
-        snapshotSignal.throwIfAborted();
+        signal.throwIfAborted();
       })(),
     );
     signal.throwIfAborted();
@@ -648,14 +648,14 @@ const restoreBrowserTabSnapshot$ = command(
   },
 );
 
-function stopProviderSessionLater(providerSessionId: string): void {
+function stopProviderSessionLater(
+  providerSessionId: string,
+  signal: AbortSignal,
+): void {
   waitUntil(
     (async () => {
       const result = await settleIncludingAbort(
-        stopBrowserUseSession(
-          providerSessionId,
-          AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
-        ),
+        stopBrowserUseSession(providerSessionId, signal),
       );
       if (!result.ok) {
         L.warn("Managed browser provider stop failed", {
@@ -671,7 +671,7 @@ function stopProviderSessionLater(providerSessionId: string): void {
 // caller observes cancellation. Both writes stay in one atomic statement.
 const commitBrowserStop$ = command(
   async (
-    { set },
+    { get, set },
     target: ActiveBrowserInstance,
     reason: BrowserSuspensionReason,
     stopProvider: boolean,
@@ -728,7 +728,7 @@ const commitBrowserStop$ = command(
     }
     const stopped = result.stopped;
     if (stopped && stopProvider) {
-      stopProviderSessionLater(target.providerSessionId);
+      stopProviderSessionLater(target.providerSessionId, get(rootSignal$));
     }
     return stopped;
   },
@@ -937,10 +937,10 @@ async function recordBrowserScreenshotResult(result: {
 const captureAndStoreBrowserScreenshot$ = command(
   async ({ get, set }, browser: BrowserSessionRow): Promise<void> => {
     const startedAt = now();
-    const signal = AbortSignal.timeout(BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS);
+    const signal = get(rootSignal$);
     let stage: BrowserScreenshotStage = "prepare";
-    // This task owns its timeout. Include aborts in the final outcome instead
-    // of losing timed-out attempts through tapError's cancellation path.
+    // Include capture cancellation in the final outcome so every started
+    // screenshot operation has a recorded result.
     const [result] = await Promise.allSettled([
       (async () => {
         const db = set(writeDb$);
@@ -960,7 +960,10 @@ const captureAndStoreBrowserScreenshot$ = command(
         stage = "capture";
         const image = await captureBrowserUseScreenshot(
           provider.cdpUrl,
-          signal,
+          AbortSignal.any([
+            signal,
+            AbortSignal.timeout(BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS),
+          ]),
         );
         signal.throwIfAborted();
         stage = "upload";
@@ -1352,13 +1355,11 @@ const loadBrowserProfileForBrowser$ = command(
   },
 );
 
-async function deleteUnusedProfile(profileId: string): Promise<void> {
-  await settle(
-    deleteBrowserUseProfile(
-      profileId,
-      AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
-    ),
-  );
+async function deleteUnusedProfile(
+  profileId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  await settle(deleteBrowserUseProfile(profileId, signal));
 }
 
 interface BrowserProfileCleanupTarget {
@@ -1570,7 +1571,7 @@ const claimBrowserProfile$ = command(
 
 const getOrCreateBrowserProfile$ = command(
   async (
-    { set },
+    { get, set },
     context: BrowserRunContext,
   ): Promise<BrowserServiceResult<BrowserThreadProfileRow>> => {
     const existing = await set(loadOwnedThreadBrowserProfile$, context);
@@ -1581,7 +1582,7 @@ const getOrCreateBrowserProfile$ = command(
     const provider = await providerCall(
       createBrowserUseProfile(
         `okou-browser-profile-${context.chatThreadId}`,
-        AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
+        get(rootSignal$),
       ),
     );
     if (provider.kind === "error") {
@@ -1597,7 +1598,7 @@ const getOrCreateBrowserProfile$ = command(
       }),
     );
     if (!claimed.ok || !claimed.value.created) {
-      await deleteUnusedProfile(provider.value);
+      await deleteUnusedProfile(provider.value, get(rootSignal$));
     }
     if (!claimed.ok) {
       throw claimed.error;
@@ -1819,7 +1820,7 @@ const claimStartedProviderInstance$ = command(
 
 const createAndClaimProviderInstance$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly browser: BrowserSessionRow;
       readonly profile: Pick<BrowserThreadProfileRow, "providerProfileId">;
@@ -1836,7 +1837,7 @@ const createAndClaimProviderInstance$ = command(
           // needs to enforce the absolute upper bound.
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
         },
-        AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
+        get(rootSignal$),
       ),
     );
     if (provider.kind === "error") {
@@ -1844,7 +1845,7 @@ const createAndClaimProviderInstance$ = command(
     }
     const { cdpUrl, liveUrl } = provider.value;
     if (provider.value.status !== "active" || !cdpUrl || !liveUrl) {
-      stopProviderSessionLater(provider.value.id);
+      stopProviderSessionLater(provider.value.id, get(rootSignal$));
       return serviceError(
         502,
         "BROWSER_USE_INVALID_RESPONSE",
@@ -1857,11 +1858,11 @@ const createAndClaimProviderInstance$ = command(
         cdpUrl,
         BROWSER_SCREEN_WIDTH,
         args.screenHeight,
-        AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
+        AbortSignal.timeout(BROWSER_RESIZE_TIMEOUT_MS),
       ),
     );
     if (resized.kind === "error") {
-      stopProviderSessionLater(provider.value.id);
+      stopProviderSessionLater(provider.value.id, get(rootSignal$));
       return resized;
     }
 
@@ -1876,14 +1877,14 @@ const createAndClaimProviderInstance$ = command(
     if (!claimResult.ok) {
       // Provider creation is irreversible. Any failed claim must reclaim the
       // provider because the atomic statement rolls back every durable owner row.
-      stopProviderSessionLater(provider.value.id);
+      stopProviderSessionLater(provider.value.id, get(rootSignal$));
       throw claimResult.error;
     }
     const claimed = claimResult.value;
     if (claimed.kind === "cleanup" || claimed.kind === "rejected") {
       // Reclaim an unpublished provider before the lifecycle signal can abort
       // the caller, including a conditional-write loser after database rollback.
-      stopProviderSessionLater(provider.value.id);
+      stopProviderSessionLater(provider.value.id, get(rootSignal$));
     }
     return {
       kind: "claimed" as const,
@@ -2047,7 +2048,7 @@ const claimFreshBrowser$ = command(
 
 const createBrowserForContext$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly context: BrowserRunContext;
       readonly input: BrowserCreateInput;
@@ -2076,7 +2077,7 @@ const createBrowserForContext$ = command(
         browser: claimed.value,
         context: args.context,
       },
-      AbortSignal.timeout(PROVIDER_START_LIFECYCLE_TIMEOUT_MS),
+      get(rootSignal$),
     );
     signal.throwIfAborted();
     if (connection.kind === "superseded") {
@@ -2406,7 +2407,7 @@ const reuseLiveThreadBrowser$ = command(
 
 const resumeSuspendedBrowser$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly context: BrowserRunContext;
       readonly current: BrowserSessionRow;
@@ -2447,7 +2448,7 @@ const resumeSuspendedBrowser$ = command(
         browser: claim.browser,
         context,
       },
-      AbortSignal.timeout(PROVIDER_START_LIFECYCLE_TIMEOUT_MS),
+      get(rootSignal$),
     );
     signal.throwIfAborted();
     if (connection.kind === "superseded") {
@@ -3490,13 +3491,7 @@ const cleanupExpiredInactiveBrowser$ = command(
     const cleanup = await settleIncludingAbort(
       (async () => {
         if (target.providerProfileId !== null) {
-          await deleteBrowserUseProfile(
-            target.providerProfileId,
-            AbortSignal.any([
-              signal,
-              AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
-            ]),
-          );
+          await deleteBrowserUseProfile(target.providerProfileId, signal);
         }
         const retired = await set(
           retireExpiredInactiveBrowser$,

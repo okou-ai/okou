@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command } from "ccstate";
 import { teamsOauthContract } from "@okouai/api-contracts/contracts/teams-oauth";
@@ -176,13 +177,13 @@ async function fetchMicrosoftMe(
   accessToken: string,
   signal: AbortSignal,
 ): Promise<MicrosoftTeamsUserInfo> {
-  const response = await fetch(MICROSOFT_ME_URL, {
-    signal,
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!response.ok) {
-    throw new Error(`Microsoft user info fetch failed: ${response.status}`);
-  }
+  const response = await accept(
+    fetch(MICROSOFT_ME_URL, {
+      signal,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }),
+    [200],
+  );
 
   const data = z
     .object({
@@ -210,22 +211,21 @@ async function exchangeMicrosoftTeamsOAuthCode(
   },
   signal: AbortSignal,
 ): Promise<MicrosoftTeamsOAuthResult> {
-  const response = await fetch(MICROSOFT_TOKEN_URL, {
-    signal,
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: args.clientId,
-      client_secret: args.clientSecret,
-      code: args.code,
-      redirect_uri: args.redirectUri,
-      grant_type: "authorization_code",
+  const response = await accept(
+    fetch(MICROSOFT_TOKEN_URL, {
+      signal,
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: args.clientId,
+        client_secret: args.clientSecret,
+        code: args.code,
+        redirect_uri: args.redirectUri,
+        grant_type: "authorization_code",
+      }),
     }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Microsoft OAuth exchange failed: ${response.status}`);
-  }
+    [200],
+  );
 
   const data = z
     .object({

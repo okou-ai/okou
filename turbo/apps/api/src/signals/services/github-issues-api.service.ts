@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 const GITHUB_API_BASE = "https://api.github.com";
 
 const GITHUB_HEADERS = {
@@ -19,24 +20,19 @@ export async function postGithubIssueComment(
     readonly issueNumber: number;
     readonly body: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<string> {
-  const response = await fetch(
-    `${GITHUB_API_BASE}/repos/${args.repo}/issues/${args.issueNumber}/comments`,
-    {
-      method: "POST",
-      headers: authHeaders(args.token),
-      body: JSON.stringify({ body: args.body }),
-      signal,
-    },
+  const response = await accept(
+    fetch(
+      `${GITHUB_API_BASE}/repos/${args.repo}/issues/${args.issueNumber}/comments`,
+      {
+        method: "POST",
+        headers: authHeaders(args.token),
+        body: JSON.stringify({ body: args.body }),
+      },
+    ),
+    [201],
   );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Failed to post GitHub comment: ${response.status} ${body}`,
-    );
-  }
 
   const data = (await response.json()) as { readonly id: number };
   return String(data.id);

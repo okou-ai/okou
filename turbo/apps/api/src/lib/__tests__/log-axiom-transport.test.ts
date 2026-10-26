@@ -371,7 +371,6 @@ describe("Axiom ingest HTTP error diagnostics", () => {
               retryAfterMs: 2000,
               eventCount: 1,
               requestBytes,
-              timeoutMs: expect.any(Number),
               elapsedMs: expect.any(Number),
               upstreamRequestId: "axiom-upstream-request-42186",
               responseContentType:
@@ -439,20 +438,12 @@ describe("Axiom ingest HTTP error diagnostics", () => {
     },
   );
 
-  it.each(["oversized", "interrupted", "deadline"])(
+  it.each(["oversized", "interrupted"])(
     "preserves the known HTTP failure when the error body is %s",
     async (mode) => {
       const upload = await ownedTelemetryUpload();
       await upload.owned.run(async () => {
         const diagnosticStarted = createDeferredPromise<void>(context.signal);
-        const diagnosticDeadline = new AbortController();
-        context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-          if (milliseconds === 200) {
-            diagnosticStarted.resolve(undefined);
-            return diagnosticDeadline.signal;
-          }
-          return undefined;
-        });
         let bodyController:
           ReadableStreamDefaultController<Uint8Array> | undefined;
         let bodyFinished = false;
@@ -476,6 +467,7 @@ describe("Axiom ingest HTTP error diagnostics", () => {
                 new ReadableStream<Uint8Array>({
                   start(controller) {
                     bodyController = controller;
+                    diagnosticStarted.resolve();
                   },
                   cancel() {
                     bodyFinished = true;
@@ -488,15 +480,11 @@ describe("Axiom ingest HTTP error diagnostics", () => {
         );
 
         const pending = upload.send();
-        await diagnosticStarted.promise;
         if (mode === "interrupted") {
+          await diagnosticStarted.promise;
           bodyFinished = true;
           bodyController?.error(
             new Error("private provider body read failure"),
-          );
-        } else if (mode === "deadline") {
-          diagnosticDeadline.abort(
-            new DOMException("body deadline", "TimeoutError"),
           );
         }
         const failed = await accept(pending, [500]);

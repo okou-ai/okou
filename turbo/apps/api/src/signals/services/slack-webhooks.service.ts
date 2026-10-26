@@ -1,3 +1,4 @@
+import { rootSignal$ } from "../context/root";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
@@ -1460,7 +1461,7 @@ const handleSlackSessionStoppedEvent$ = command(
 );
 
 const scheduleSlackLinkUnfurl$ = command(
-  ({ set }, payload: SlackEventCallback): Response => {
+  ({ get, set }, payload: SlackEventCallback): Response => {
     const shared = slackLinkSharedEventSchema.safeParse(payload.event);
     if (
       !shared.success ||
@@ -1470,13 +1471,13 @@ const scheduleSlackLinkUnfurl$ = command(
       return jsonResponse({ error: "Invalid Slack link event" }, 400);
     }
     // chat.unfurl updates the same message/URL on redelivery. Acknowledge
-    // before loading previews, with a bounded lifetime beyond the response.
+    // before loading previews; waitUntil owns completion beyond the response.
     waitUntil(
       tapError(
         set(
           unfurlSlackArtifactLinks$,
           { workspaceId: payload.team_id, event: shared.data },
-          AbortSignal.timeout(30_000),
+          get(rootSignal$),
         ),
         (error) => {
           L.error("Error unfurling Slack artifact links", { error });

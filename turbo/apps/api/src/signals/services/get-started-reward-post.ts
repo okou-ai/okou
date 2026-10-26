@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { env } from "../../lib/env";
@@ -41,31 +42,39 @@ export async function readGetStartedRewardPost(
     return { kind: "retry", reason: "verification_unavailable" };
   }
   const fetched = await settle(
-    fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-        "X-Okou-Data-Request-Id": randomUUID(),
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: randomUUID(),
-        method: "tools/call",
-        params: { name: "twitter_tweet", arguments: { url } },
-      }),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(endpoint, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+              "X-Okou-Data-Request-Id": randomUUID(),
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: randomUUID(),
+              method: "tools/call",
+              params: { name: "twitter_tweet", arguments: { url } },
+            }),
+          }),
+          [200],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
   );
   signal.throwIfAborted();
   if (!fetched.ok) {
-    if (
-      fetched.error instanceof Error &&
-      fetched.error.name === "TimeoutError"
-    ) {
-      return { kind: "retry", reason: "verification_timeout" };
-    }
     throw fetched.error;
   }
   if (!fetched.value.ok) {

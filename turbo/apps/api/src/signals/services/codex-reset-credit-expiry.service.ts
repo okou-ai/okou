@@ -1,11 +1,11 @@
+import { accept } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
-import { delay } from "signal-timers";
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
-import { awaitWithSignal, onRejection, settle, tapError } from "../utils";
+import { awaitWithSignal, onRejection, settle } from "../utils";
 
 interface CodexExpiryOwner {
   readonly orgId: string;
@@ -39,7 +39,6 @@ const DETAILS_URL =
   "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 const TTL_MS = 5 * 60_000;
 const COOLDOWN_MS = 60_000;
-const DETAILS_TIMEOUT_MS = 5000;
 // Best-effort warm-instance LRU, including in-flight entries. Eviction aborts
 // owned work and invalidates every outstanding reader; cold instances are independent.
 const MAX_ENTRIES = 256;
@@ -57,7 +56,6 @@ const observation = singleton(() => {
       success: 0,
       rate_limited: 0,
       unavailable: 0,
-      local_timeout: 0,
       unexpected_failure: 0,
     },
   };
@@ -95,7 +93,7 @@ function invalidate(entry: Entry): void {
   entry.cooldownUntil = 0;
   const flight = entry.flight;
   entry.flight = undefined;
-  // This is owned cache invalidation, not a caller AbortError or local timeout.
+  // This is owned cache invalidation, not a caller AbortError.
   flight?.controller.abort(new Error("Codex expiry read invalidated"));
 }
 
@@ -189,16 +187,19 @@ const detailsSchema = z.object({
 });
 
 async function fetchDetails(args: Credentials, signal: AbortSignal) {
-  const response = await fetch(DETAILS_URL, {
-    method: "GET",
-    headers: {
-      authorization: `Bearer ${args.accessToken}`,
-      "chatgpt-account-id": args.accountId,
-      originator: "codex_cli_rs",
-      "user-agent": "codex_cli_rs/0.0.0",
-    },
-    signal,
-  });
+  const response = await accept(
+    fetch(DETAILS_URL, {
+      method: "GET",
+      signal,
+      headers: {
+        authorization: `Bearer ${args.accessToken}`,
+        "chatgpt-account-id": args.accountId,
+        originator: "codex_cli_rs",
+        "user-agent": "codex_cli_rs/0.0.0",
+      },
+    }),
+    [200, 429, 503],
+  );
   if (response.status === 429) {
     return {
       outcome: "rate_limited" as const,
@@ -210,11 +211,6 @@ async function fetchDetails(args: Credentials, signal: AbortSignal) {
       outcome: "unavailable" as const,
       cooldownUntil: now() + COOLDOWN_MS,
     };
-  }
-  if (!response.ok) {
-    throw new Error(
-      `Codex reset credit details request failed with status ${response.status}`,
-    );
   }
   const parsed = detailsSchema.safeParse(await response.json());
   if (!parsed.success) {
@@ -239,30 +235,9 @@ async function load(
   signal: AbortSignal,
 ): Promise<void> {
   const version = entry.version;
-  const controller = new AbortController();
-  const detailsSignal = AbortSignal.any([signal, controller.signal]);
-  let timedOut = false;
-  const deadline = tapError(
-    (async () => {
-      await awaitWithSignal(
-        delay(DETAILS_TIMEOUT_MS, { signal: detailsSignal }),
-        detailsSignal,
-      );
-      timedOut = true;
-      controller.abort(
-        new DOMException("Codex expiry deadline", "TimeoutError"),
-      );
-    })(),
+  const result = await settle(
+    awaitWithSignal(fetchDetails(args, signal), signal),
   );
-  const finishDeadline = async () => {
-    controller.abort(new Error("Codex expiry read settled"));
-    await deadline;
-  };
-  const result = await onRejection(
-    settle(awaitWithSignal(fetchDetails(args, detailsSignal), detailsSignal)),
-    finishDeadline,
-  );
-  await finishDeadline();
   if (entry.version !== version) {
     return;
   }
@@ -274,9 +249,6 @@ async function load(
     } else {
       entry.cooldownUntil = result.value.cooldownUntil;
     }
-  } else if (timedOut) {
-    record("local_timeout");
-    entry.cooldownUntil = now() + COOLDOWN_MS;
   } else {
     record("unexpected_failure");
     L.warn("failed to read codex reset credit expiry", { error: result.error });

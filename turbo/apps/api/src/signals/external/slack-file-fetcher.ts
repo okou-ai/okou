@@ -1,3 +1,5 @@
+import { settle } from "../utils";
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 const ALLOWED_SLACK_DOWNLOAD_HOSTNAMES: ReadonlySet<string> = Object.freeze(
   new Set(["files.slack.com", "files-pri.slack.com", "cdn.slack.com"]),
 );
@@ -44,18 +46,28 @@ export async function fetchSlackFile(
     throw new SlackFileFetchError("invalid-url", "Invalid Slack download URL");
   }
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal,
-  });
-
-  if (!response.ok) {
+  const responseResult = await settle(
+    accept(
+      fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      }),
+      [200],
+    ),
+  );
+  if (!responseResult.ok) {
+    const error = responseResult.error;
+    if (!(error instanceof HttpStatusError)) {
+      throw error;
+    }
+    const response = error.response;
     throw new SlackFileFetchError(
       "download-failed",
       `Failed to download Slack file: ${response.status} ${response.statusText}`,
       response.status,
     );
   }
+  const response = responseResult.value;
 
   const responseContentType = response.headers.get("content-type") ?? "";
   if (responseContentType.includes("text/html")) {

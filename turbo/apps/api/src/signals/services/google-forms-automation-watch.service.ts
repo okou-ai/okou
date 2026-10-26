@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   observedWorkflowAutomationCondition,
   type WorkflowAutomationSnapshot,
@@ -29,7 +30,7 @@ import { z } from "zod";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { safeJsonParse, tapError, safeUrlParse } from "../utils";
+import { settle, safeJsonParse, tapError, safeUrlParse } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
@@ -271,15 +272,29 @@ export async function googleFormsFetchJson<T>(
   signal: AbortSignal,
 ): Promise<GoogleFormsFetchResult<T>> {
   const response = await tapError(
-    fetch(args.url, {
-      ...args.init,
-      signal,
-      headers: {
-        Authorization: `Bearer ${args.accessToken}`,
-        "Content-Type": "application/json",
-        ...args.init.headers,
-      },
-    }),
+    (async () => {
+      const acceptedResponse = await settle(
+        accept(
+          fetch(args.url, {
+            ...args.init,
+            headers: {
+              Authorization: `Bearer ${args.accessToken}`,
+              "Content-Type": "application/json",
+              ...args.init.headers,
+            },
+          }),
+          [200, 204],
+        ),
+      );
+      if (!acceptedResponse.ok) {
+        const error = acceptedResponse.error;
+        if (error instanceof HttpStatusError && error.status >= 300) {
+          return error.response;
+        }
+        throw error;
+      }
+      return acceptedResponse.value;
+    })(),
   );
   signal.throwIfAborted();
   if (!response) {

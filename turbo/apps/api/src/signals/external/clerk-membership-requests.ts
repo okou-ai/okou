@@ -1,7 +1,8 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
-import { startUntrackedBestEffortCleanup } from "../utils";
+import { settle, startUntrackedBestEffortCleanup } from "../utils";
 import {
   ClerkRateLimitError,
   createClerkReadContext,
@@ -43,26 +44,35 @@ async function requestClerkMembershipRequests(
   signal: AbortSignal,
 ): Promise<readonly ClerkMembershipRequestData[]> {
   const secretKey = env("CLERK_SECRET_KEY");
-  const res = await fetch(
-    `${CLERK_API_BASE}/organizations/${orgId}/membership_requests?status=pending`,
-    {
-      headers: { Authorization: `Bearer ${secretKey}` },
-      signal,
-    },
+  const result = await settle(
+    accept(
+      fetch(
+        `${CLERK_API_BASE}/organizations/${orgId}/membership_requests?status=pending`,
+        {
+          headers: { Authorization: `Bearer ${secretKey}` },
+          signal,
+        },
+      ),
+      [200, 404, 429],
+    ),
+    signal,
   );
-  if (!res.ok) {
+  if (!result.ok) {
+    if (result.error instanceof HttpStatusError) {
+      cancelUnusedResponseBody(result.error.response);
+    }
+    throw result.error;
+  }
+  const res = result.value;
+  if (res.status === 404) {
     cancelUnusedResponseBody(res);
-    if (res.status === 404) {
-      return [];
-    }
-    if (res.status === 429) {
-      throw new ClerkRateLimitError(
-        `Failed to fetch membership requests for org ${orgId}: HTTP 429`,
-        Number(res.headers.get("Retry-After")),
-      );
-    }
-    throw new Error(
-      `Failed to fetch membership requests for org ${orgId}: HTTP ${res.status}`,
+    return [];
+  }
+  if (res.status === 429) {
+    cancelUnusedResponseBody(res);
+    throw new ClerkRateLimitError(
+      `Failed to fetch membership requests for org ${orgId}: HTTP 429`,
+      Number(res.headers.get("Retry-After")),
     );
   }
   const body = clerkMembershipRequestsResponseSchema.parse(await res.json());
@@ -88,12 +98,26 @@ export async function acceptClerkMembershipRequest(args: {
   readonly requestId: string;
 }): Promise<{ readonly ok: boolean }> {
   const secretKey = env("CLERK_SECRET_KEY");
-  const res = await fetch(
-    `${CLERK_API_BASE}/organizations/${args.orgId}/membership_requests/${args.requestId}/accept`,
-    { method: "POST", headers: { Authorization: `Bearer ${secretKey}` } },
+  const responseResult = await settle(
+    accept(
+      fetch(
+        `${CLERK_API_BASE}/organizations/${args.orgId}/membership_requests/${args.requestId}/accept`,
+        { method: "POST", headers: { Authorization: `Bearer ${secretKey}` } },
+      ),
+      [200, 201, 204],
+    ),
   );
+  if (!responseResult.ok) {
+    const error = responseResult.error;
+    if (!(error instanceof HttpStatusError)) {
+      throw error;
+    }
+    cancelUnusedResponseBody(error.response);
+    return { ok: false };
+  }
+  const res = responseResult.value;
   cancelUnusedResponseBody(res);
-  return { ok: res.ok };
+  return { ok: true };
 }
 
 export async function rejectClerkMembershipRequest(args: {
@@ -101,10 +125,24 @@ export async function rejectClerkMembershipRequest(args: {
   readonly requestId: string;
 }): Promise<{ readonly ok: boolean }> {
   const secretKey = env("CLERK_SECRET_KEY");
-  const res = await fetch(
-    `${CLERK_API_BASE}/organizations/${args.orgId}/membership_requests/${args.requestId}/reject`,
-    { method: "POST", headers: { Authorization: `Bearer ${secretKey}` } },
+  const responseResult = await settle(
+    accept(
+      fetch(
+        `${CLERK_API_BASE}/organizations/${args.orgId}/membership_requests/${args.requestId}/reject`,
+        { method: "POST", headers: { Authorization: `Bearer ${secretKey}` } },
+      ),
+      [200, 201, 204],
+    ),
   );
+  if (!responseResult.ok) {
+    const error = responseResult.error;
+    if (!(error instanceof HttpStatusError)) {
+      throw error;
+    }
+    cancelUnusedResponseBody(error.response);
+    return { ok: false };
+  }
+  const res = responseResult.value;
   cancelUnusedResponseBody(res);
-  return { ok: res.ok };
+  return { ok: true };
 }

@@ -5,7 +5,7 @@ import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { deleteSharedThread$ } from "../services/shared-thread-artifacts.service";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { requestSignal$, setResHeader$ } from "../context/hono";
+import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import {
   createSharedThread$,
@@ -48,11 +48,10 @@ const sharedThreadAttachmentsForbidden = Object.freeze({
 
 const createSharedThreadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const creationSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const auth = get(organizationAuthContext$);
     const body = await get(createBody$);
     signal.throwIfAborted();
-    creationSignal.throwIfAborted();
+    signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
     }
@@ -70,10 +69,10 @@ const createSharedThreadInner$ = command(
           auth.tokenType !== "agent" ||
           auth.capabilities?.includes("file:read") === true,
       },
-      creationSignal,
+      signal,
     );
     signal.throwIfAborted();
-    creationSignal.throwIfAborted();
+    signal.throwIfAborted();
     if (result.kind === "thread-not-found") {
       return notFound("Chat thread not found");
     }

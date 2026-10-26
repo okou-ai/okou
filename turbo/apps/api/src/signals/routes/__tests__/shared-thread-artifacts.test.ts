@@ -56,9 +56,10 @@ beforeEach(() => {
   mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", "snapshot-private-key");
 });
 
-function api(rethrowErrors = false) {
+function api(rethrowErrors = false, signal = context.signal) {
   return setupApp({
     context,
+    signal,
     rethrowErrors,
     routes: [
       ...sharedThreadRoutes,
@@ -355,8 +356,10 @@ function share(
   selection: { threadId: string; eventId: string },
   options?: { signal: AbortSignal; rethrowErrors: boolean; id?: string },
 ) {
-  return api(options?.rethrowErrors)(sharedThreadsContract).create({
-    fetchOptions: { signal: options?.signal },
+  return api(
+    options?.rethrowErrors,
+    options?.signal,
+  )(sharedThreadsContract).create({
     headers: headers(actor),
     params: { threadId: selection.threadId },
     body: { eventIds: [selection.eventId], id: options?.id },
@@ -968,7 +971,7 @@ test("publication rechecks current ownership after allocating its durable snapsh
   expect(catalog.artifacts).toStrictEqual([]);
 });
 
-test.each(["publish", "delete", "cancel"] as const)(
+test.each(["publish", "delete", "owner cancellation"] as const)(
   "copies while the title is pending and respects the final action: %s",
   async (action) => {
     const f = await fixture();
@@ -1032,8 +1035,8 @@ test.each(["publish", "delete", "cancel"] as const)(
       (await chat.listArtifactCatalog(f.actor, { kind: "shared-thread" }))
         .artifacts,
     ).toStrictEqual([]);
-    if (action === "cancel") {
-      const reason = new DOMException("Caller cancelled", "AbortError");
+    if (action === "owner cancellation") {
+      const reason = new DOMException("API owner cancelled", "AbortError");
       controller.abort(reason);
       await expect(pending).rejects.toBe(reason);
       expect(

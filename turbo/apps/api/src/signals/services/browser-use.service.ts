@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 
@@ -30,7 +31,6 @@ import {
 } from "../utils";
 
 const BROWSER_USE_API_BASE_URL = "https://api.browser-use.com/api/v3";
-const BROWSER_USE_REQUEST_TIMEOUT_MS = 30_000;
 const BROWSER_USE_CDP_REQUEST_TIMEOUT_MS = 15_000;
 const L = logger("BrowserUseCDP");
 const MAX_BROWSER_USE_RESPONSE_BYTES = 512 * 1024;
@@ -235,18 +235,18 @@ function browserUseCdpVersionUrl(cdpUrl: string): URL {
 
 async function browserUseCdpWebSocketUrl(
   cdpUrl: string,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<string> {
   const endpoint = browserUseCdpUrlSchema.parse(cdpUrl);
   if (new URL(endpoint).protocol === "wss:") {
     return endpoint;
   }
-  const response = await fetch(browserUseCdpVersionUrl(cdpUrl), { signal });
+  const response = await accept(fetch(browserUseCdpVersionUrl(cdpUrl)), [200]);
   const text = await readBoundedResponseText(
     response,
     MAX_BROWSER_USE_CDP_RESPONSE_BYTES,
   );
-  if (!response.ok || text.kind === "too_large") {
+  if (text.kind === "too_large") {
     throw new Error("Browser Use CDP discovery failed");
   }
   const version = browserUseCdpVersionSchema.parse(safeJsonParse(text.text), {
@@ -3202,18 +3202,30 @@ async function browserUseResponse(
 
   const result = await settle(
     (async (): Promise<{ response: Response; body: unknown }> => {
-      const response = await fetch(`${BROWSER_USE_API_BASE_URL}${path}`, {
-        ...init,
-        headers: {
-          "X-Browser-Use-API-Key": apiKey,
-          ...(init.body ? { "Content-Type": "application/json" } : {}),
-          ...init.headers,
-        },
-        signal: AbortSignal.any([
-          signal,
-          AbortSignal.timeout(BROWSER_USE_REQUEST_TIMEOUT_MS),
-        ]),
-      });
+      const acceptedResponse = await settle(
+        accept(
+          fetch(`${BROWSER_USE_API_BASE_URL}${path}`, {
+            ...init,
+            headers: {
+              "X-Browser-Use-API-Key": apiKey,
+              ...(init.body ? { "Content-Type": "application/json" } : {}),
+              ...init.headers,
+            },
+          }),
+          [200, 201, 202, 204, ...acceptedStatuses],
+        ),
+      );
+      let response: Response;
+      if (acceptedResponse.ok) {
+        response = acceptedResponse.value;
+      } else if (
+        acceptedResponse.error instanceof HttpStatusError &&
+        acceptedResponse.error.status >= 300
+      ) {
+        response = acceptedResponse.error.response;
+      } else {
+        throw acceptedResponse.error;
+      }
       const text = await readBoundedResponseText(
         response,
         MAX_BROWSER_USE_RESPONSE_BYTES,
@@ -3239,8 +3251,8 @@ async function browserUseResponse(
     }
     throw new BrowserUseProviderError(
       502,
-      "BROWSER_USE_TIMEOUT",
-      "Managed browser provider request timed out",
+      "BROWSER_USE_ERROR",
+      "Managed browser provider request failed",
     );
   }
 

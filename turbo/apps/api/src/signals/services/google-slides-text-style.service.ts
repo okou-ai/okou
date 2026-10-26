@@ -1,3 +1,5 @@
+import { settle } from "../utils";
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { z } from "zod";
 import type { SlidesTextStyle } from "./google-slides-import.service";
 
@@ -151,7 +153,7 @@ export async function applyGoogleSlidesTextStyles(
   accessToken: string,
   presentationId: string,
   expected: readonly SlidesTextStyle[],
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<string | undefined> {
   if (!expected.length) {
     return undefined;
@@ -162,7 +164,20 @@ export async function applyGoogleSlidesTextStyles(
   };
   const url = `${PRESENTATIONS}/${encodeURIComponent(presentationId)}`;
   const read = async () => {
-    const response = await fetch(url, { headers, signal });
+    const acceptedResponse = await settle(
+      accept(fetch(url, { headers }), [200]),
+    );
+    let response: Response;
+    if (acceptedResponse.ok) {
+      response = acceptedResponse.value;
+    } else if (
+      acceptedResponse.error instanceof HttpStatusError &&
+      acceptedResponse.error.status >= 300
+    ) {
+      response = acceptedResponse.error.response;
+    } else {
+      throw acceptedResponse.error;
+    }
     if (!response.ok) {
       return undefined;
     }
@@ -212,15 +227,30 @@ export async function applyGoogleSlidesTextStyles(
   });
   // A single atomic batch guarded by the read revision cannot overwrite edits
   // made between identity matching and the style write.
-  const response = await fetch(`${url}:batchUpdate`, {
-    method: "POST",
-    headers,
-    signal,
-    body: JSON.stringify({
-      requests,
-      writeControl: { requiredRevisionId: before.revisionId },
-    }),
-  });
+  const acceptedResponse2 = await settle(
+    accept(
+      fetch(`${url}:batchUpdate`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          requests,
+          writeControl: { requiredRevisionId: before.revisionId },
+        }),
+      }),
+      [200],
+    ),
+  );
+  let response: Response;
+  if (acceptedResponse2.ok) {
+    response = acceptedResponse2.value;
+  } else if (
+    acceptedResponse2.error instanceof HttpStatusError &&
+    acceptedResponse2.error.status >= 300
+  ) {
+    response = acceptedResponse2.error.response;
+  } else {
+    throw acceptedResponse2.error;
+  }
   if (!response.ok) {
     return "Google Slides could not restore the imported font styles. Check the uploaded copy before retrying.";
   }

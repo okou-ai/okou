@@ -1,3 +1,4 @@
+import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { settle } from "../utils";
 
 const TELEGRAM_OAUTH_BASE_URL = "https://oauth.telegram.org/auth";
@@ -9,12 +10,11 @@ interface TelegramDomainCheckResult {
     | "missing_content_length"
     | "invalid_content_length"
     | "short_response"
-    | "request_failed"
-    | "request_timeout";
+    | "request_failed";
   readonly httpStatus: number | null;
   readonly contentLength: number | null;
   readonly durationMs: number;
-  readonly errorType?: "TimeoutError" | "TypeError" | "Error" | "unknown";
+  readonly errorType?: "TypeError" | "Error" | "unknown";
 }
 
 export async function checkTelegramDomain(
@@ -27,27 +27,26 @@ export async function checkTelegramDomain(
   });
   const startedAt = performance.now();
   const result = await settle(
-    fetch(`${TELEGRAM_OAUTH_BASE_URL}?${query}`, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(3000),
-    }),
+    accept(
+      fetch(`${TELEGRAM_OAUTH_BASE_URL}?${query}`, {
+        method: "HEAD",
+      }),
+      [200],
+    ),
   );
   const durationMs = Math.round(performance.now() - startedAt);
   if (!result.ok) {
     const error = result.error;
     const errorType =
-      error instanceof Error && error.name === "TimeoutError"
-        ? "TimeoutError"
-        : error instanceof TypeError
-          ? "TypeError"
-          : error instanceof Error
-            ? "Error"
-            : "unknown";
+      error instanceof TypeError
+        ? "TypeError"
+        : error instanceof Error
+          ? "Error"
+          : "unknown";
     return {
       configured: false,
-      reason:
-        errorType === "TimeoutError" ? "request_timeout" : "request_failed",
-      httpStatus: null,
+      reason: "request_failed",
+      httpStatus: error instanceof HttpStatusError ? error.status : null,
       contentLength: null,
       durationMs,
       errorType,

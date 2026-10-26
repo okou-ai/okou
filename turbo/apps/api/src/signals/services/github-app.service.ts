@@ -1,3 +1,4 @@
+import { accept } from "@okouai/connectors/accept";
 import { Buffer } from "node:buffer";
 import { createSign } from "node:crypto";
 
@@ -72,29 +73,24 @@ export async function getGithubInstallationAccessToken(
     readonly privateKey: string;
     readonly installationId: string;
   },
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<{ readonly token: string; readonly expiresAt: string }> {
   const installationId = validateInstallationId(args.installationId);
   const jwt = createAppJwt(args.appId, args.privateKey);
-  const response = await fetch(
-    `https://api.github.com/app/installations/${installationId}/access_tokens`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
+  const response = await accept(
+    fetch(
+      `https://api.github.com/app/installations/${installationId}/access_tokens`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
       },
-      signal,
-    },
+    ),
+    [201],
   );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Failed to get installation access token: ${response.status} ${body}`,
-    );
-  }
 
   const data = (await response.json()) as {
     readonly token: string;
