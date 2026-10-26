@@ -3382,7 +3382,7 @@ export async function getBrowserUseRunnerConnection(
   const result = await settle(
     browserUseResponse(
       `/browsers/${encodeURIComponent(providerSessionId)}`,
-      { method: "GET", signal: boundedSignal, redirect: "error" },
+      { method: "GET", signal: boundedSignal },
       signal,
       [404],
     ),
