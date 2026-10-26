@@ -71,6 +71,19 @@ jobs:
           xcrun --sdk macosx --show-sdk-build-version > "$RUNNER_TEMP/package-compiler-probe/macos-sdk-build.txt"
           xcodebuild -version > "$RUNNER_TEMP/package-compiler-probe/xcode-version.txt"
           sw_vers > "$RUNNER_TEMP/package-compiler-probe/macos-version.txt"
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "package-compiler-probe"
+          results = []
+          for label, arguments in [
+              ("swift-test-hidden-help", ["xcrun", "swift", "test", "--help-hidden"]),
+              ("swift-package-build-cache-help", ["xcrun", "swift", "package", "build-cache", "--help"]),
+          ]:
+              result = subprocess.run(arguments, capture_output=True, text=True)
+              (root / (label + ".txt")).write_text(result.stdout + result.stderr)
+              results.append({"command": arguments, "exit_code": result.returncode})
+          (root / "extended-probe-status.json").write_text(json.dumps(results, indent=2))
+          PY
       - name: Upload compiler capability evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
