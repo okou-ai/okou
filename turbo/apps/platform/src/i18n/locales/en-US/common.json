@@ -608,7 +608,7 @@
       "slideTitle": "Slide {{number}}",
       "unavailable": "{{kind}} preview unavailable.",
       "videoLabel": "Video preview for {{filename}}",
-      "wordLayoutNotice": "Preview layout may differ from Word."
+      "wordSeparateTab": "Open this Word document in a separate tab to keep zooming from resizing this page."
     },
     "sharing": {
       "accessLabel": "Who can access",

@@ -37,7 +37,6 @@ import {
   openCustomTemplateDetail$,
   openCustomTemplateKind$,
   openCustomTemplatePageIndex$,
-  openCustomTemplateWordHtml$,
   projectCustomTemplate$,
   reloadCustomTemplates$,
   selectCustomTemplatePage$,
@@ -155,8 +154,10 @@ function CustomTemplateGallery({
 /**
  * A document, as the file it was compiled from.
  *
- * A document template renders no pages, so preview its source through the
- * shared Word preview or the browser's PDF viewer.
+ * A document template renders no pages, so the source file is the only thing
+ * there is to look at — and the browser cannot draw a Word document at all.
+ * Word documents open in a separate viewer to isolate their zoom gestures;
+ * PDF sources use the browser's own embedded viewer.
  */
 function CustomTemplateSourcePreview({
   detail,
@@ -179,7 +180,6 @@ function CustomTemplateSourcePreview({
           focusKey={detail.id}
           focusOnMount={false}
           testId="custom-template-source-preview"
-          wordDocumentHtml$={openCustomTemplateWordHtml$}
         />
       ) : (
         <iframe

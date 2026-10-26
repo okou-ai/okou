@@ -78,7 +78,6 @@ export type ArtifactPreviewKind =
   | "file";
 
 export type ArtifactRef = {
-  readonly wordDocumentHtml$: Computed<Promise<string>>;
   readonly resourceUrl$: Computed<Promise<string | null>>;
   readonly shareUrl$: Computed<Promise<string | null>>;
   readonly url: string;
@@ -222,7 +221,6 @@ export interface ThreadSidebarSignals {
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
   readonly openAttachment$: Command<void, [ArtifactRefInput, AbortSignal]>;
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
-  readonly selectedArtifactWordHtml$: Computed<Promise<string>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
   readonly close$: Command<void, []>;
   /** Clear presentation before another navigation owns the URL. */
@@ -450,7 +448,6 @@ export function createThreadSidebarSignals(
     selectedArtifactText$: preview.text$,
     selectedArtifactMarkdownTree$: preview.markdownTree$,
     selectedArtifactResourceUrl$: preview.resourceUrl$,
-    selectedArtifactWordHtml$: preview.wordDocumentHtml$,
     selectedArtifactShareUrl$: preview.shareUrl$,
   };
 }

@@ -624,7 +624,7 @@
       "slideTitle": "Slide {{number}}",
       "unavailable": "Visualização de {{kind}} indisponível.",
       "videoLabel": "Visualização de vídeo de {{filename}}",
-      "wordLayoutNotice": "O layout da prévia pode ser diferente do Word."
+      "wordSeparateTab": "Abra este documento do Word em outra aba para que o zoom não altere o tamanho desta página."
     },
     "sharing": {
       "accessLabel": "Quem pode acessar",

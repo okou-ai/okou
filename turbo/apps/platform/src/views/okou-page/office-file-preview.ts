@@ -88,9 +88,3 @@ export function officeFilePreviewKind(
 export function isOfficeFilePreview(filename: string): boolean {
   return officeFilePreviewKind(filename) !== null;
 }
-
-export function isOpenXmlWordPreview(filename: string): boolean {
-  return ["docx", "docm", "dotx", "dotm"].includes(
-    fileExtension(filename) ?? "",
-  );
-}

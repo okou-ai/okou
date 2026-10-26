@@ -1,17 +1,11 @@
-import { ExternalLink, Loader2 } from "lucide-react";
-import { useLoadable, useSet } from "ccstate-react";
-import type { Computed } from "ccstate";
+import { ExternalLink, FileText, Loader2 } from "lucide-react";
+import { buttonVariants } from "@okouai/ui";
+import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { resolveOfficeDocumentViewerBaseUrl } from "../../lib/platform-host.ts";
-import {
-  documentPreviewRef$,
-  wordDocumentFrameRef$,
-} from "../../signals/document-preview.ts";
+import { documentPreviewRef$ } from "../../signals/document-preview.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
-import {
-  isOpenXmlWordPreview,
-  officeFilePreviewKind,
-} from "./office-file-preview.ts";
+import { officeFilePreviewKind } from "./office-file-preview.ts";
 
 function officeDocumentViewerUrl(sourceUrl: string): string {
   const viewerUrl = new URL(resolveOfficeDocumentViewerBaseUrl());
@@ -25,16 +19,15 @@ export function OfficeDocumentPreview({
   focusKey,
   focusOnMount,
   testId,
-  wordDocumentHtml$,
 }: {
   resourceUrl: string | null;
   filename: string;
   focusKey: string;
   focusOnMount: boolean;
   testId: string;
-  wordDocumentHtml$: Computed<Promise<string>>;
 }) {
   const { t } = useTranslation();
+  const documentPreviewRef = useSet(documentPreviewRef$);
 
   if (resourceUrl === null) {
     return (
@@ -45,16 +38,40 @@ export function OfficeDocumentPreview({
   }
 
   if (officeFilePreviewKind(filename) === "document") {
+    // Native zoom input inside Microsoft's cross-origin Word frame never
+    // reaches our document listeners. Give that viewer its own browsing
+    // context so its zoom cannot resize the surrounding application.
     return (
-      <WordDocumentPreview
-        key={resourceUrl}
-        resourceUrl={resourceUrl}
-        filename={filename}
-        testId={testId}
-        html$={wordDocumentHtml$}
-        focusKey={focusKey}
-        focusOnMount={focusOnMount}
-      />
+      <div
+        ref={documentPreviewRef}
+        className="flex h-full min-h-0 w-full touch-pan-x touch-pan-y flex-col items-center justify-center gap-4 overflow-hidden overscroll-contain p-6 text-center"
+        data-testid={testId}
+      >
+        <FileText
+          size={32}
+          className="shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+        <p className="max-w-full truncate text-sm font-medium" title={filename}>
+          {filename}
+        </p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          {t(($) => {
+            return $.artifacts.preview.wordSeparateTab;
+          })}
+        </p>
+        <a
+          href={officeDocumentViewerUrl(resourceUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({ variant: "outline" })}
+        >
+          {t(($) => {
+            return $.artifacts.actions.openNewTab;
+          })}
+          <ExternalLink size={16} aria-hidden />
+        </a>
+      </div>
     );
   }
 
@@ -83,112 +100,5 @@ export function OfficeDocumentPreview({
         data-testid={testId}
       />
     </div>
-  );
-}
-
-function WordDocumentPreview({
-  resourceUrl,
-  filename,
-  testId,
-  html$,
-  focusKey,
-  focusOnMount,
-}: {
-  resourceUrl: string;
-  filename: string;
-  testId: string;
-  html$: Computed<Promise<string>>;
-  focusKey: string;
-  focusOnMount: boolean;
-}) {
-  const { t } = useTranslation();
-  const documentPreviewRef = useSet(documentPreviewRef$);
-  const inline = isOpenXmlWordPreview(filename);
-  return (
-    <div
-      ref={documentPreviewRef}
-      className="flex h-full min-h-0 w-full touch-pan-x touch-pan-y flex-col overflow-hidden overscroll-contain"
-    >
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
-        <span>
-          {t(($) => {
-            return inline
-              ? $.artifacts.preview.wordLayoutNotice
-              : $.artifacts.preview.noInline;
-          })}
-        </span>
-        <a
-          href={officeDocumentViewerUrl(resourceUrl)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex shrink-0 items-center gap-1 text-foreground underline underline-offset-2"
-        >
-          {t(($) => {
-            return $.artifacts.actions.openNewTab;
-          })}
-          <ExternalLink size={12} aria-hidden />
-        </a>
-      </div>
-      {inline && (
-        <OwnedWordDocument
-          filename={filename}
-          testId={testId}
-          html$={html$}
-          focusKey={focusKey}
-          focusOnMount={focusOnMount}
-        />
-      )}
-    </div>
-  );
-}
-
-function OwnedWordDocument({
-  filename,
-  testId,
-  html$,
-  focusKey,
-  focusOnMount,
-}: {
-  filename: string;
-  testId: string;
-  html$: Computed<Promise<string>>;
-  focusKey: string;
-  focusOnMount: boolean;
-}) {
-  const { t } = useTranslation();
-  const html = useLoadable(html$);
-  const frameRef = useSet(wordDocumentFrameRef$);
-  if (html.state === "hasError") {
-    return (
-      <p role="alert" className="p-6 text-center text-sm text-muted-foreground">
-        {t(($) => {
-          return $.artifacts.preview.genericUnavailable;
-        })}
-      </p>
-    );
-  }
-  if (html.state === "loading") {
-    return (
-      <div className="flex flex-1 items-center justify-center text-muted-foreground">
-        <Loader2 size={20} className="animate-spin" />
-      </div>
-    );
-  }
-  return (
-    <AutoFocusedArtifactIframe
-      onFrameRef={frameRef}
-      focusKey={focusKey}
-      focusOnMount={focusOnMount}
-      srcDoc={html.data}
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      title={t(
-        ($) => {
-          return $.artifacts.preview.dialogLabel;
-        },
-        { filename },
-      )}
-      className="pointer-events-none block min-h-0 w-full flex-1 border-0 bg-background data-[preview-ready=true]:pointer-events-auto"
-      data-testid={testId}
-    />
   );
 }

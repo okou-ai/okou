@@ -13,7 +13,6 @@ import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { rootVersion$ } from "../root-signal.ts";
-import { createWordDocumentHtml$ } from "../word-document-preview.ts";
 
 const catalogVersion$ = state(0);
 
@@ -243,12 +242,6 @@ export const openCustomTemplateDetail$ = computed(
     );
     return result.body;
   },
-);
-
-export const openCustomTemplateWordHtml$ = createWordDocumentHtml$(
-  computed(async (get) => {
-    return (await get(openCustomTemplateDetail$))?.sourceUrl ?? null;
-  }),
 );
 
 /**

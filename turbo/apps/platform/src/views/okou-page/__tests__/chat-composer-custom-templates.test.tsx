@@ -15,7 +15,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
-import { wordDocumentFixture } from "./word-document-test-fixture.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -672,26 +671,27 @@ test("A document template with a cover is tiled by its first page over a stack",
   expect(within(custom).getAllByTestId("document-cover-sheet")).toHaveLength(2);
 });
 
-test("Opening a Word template renders an isolated document preview", async () => {
+test("Opening a Word template offers a separate Office viewer", async () => {
   mockCustomTemplateStore([documentTemplate()]);
-  context.mocks.http.get(DOCUMENT_SOURCE_URL, () => {
-    return new Response(wordDocumentFixture());
-  });
 
   const { dialog } = await openCustomPanel("Document");
   click(tabByText("Document"));
   await within(dialog).findByText("Brand report");
   click(buttonByName("Preview Brand report", dialog)!);
 
-  const frame = await screen.findByTitle("brand-report.docx preview");
-  expect(frame).toHaveAttribute(
-    "srcdoc",
-    expect.stringContaining("Word preview keeps document gestures local."),
+  const content = await screen.findByTestId("custom-template-source-preview");
+  const link = within(content).getByText("Open in new tab");
+  const viewerUrl = new URL(link.getAttribute("href") ?? "");
+  expect(`${viewerUrl.origin}${viewerUrl.pathname}`).toBe(
+    "https://view.officeapps.live.com/op/embed.aspx",
   );
+  expect(viewerUrl.searchParams.get("src")).toBe(DOCUMENT_SOURCE_URL);
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
 
   // The dialog carries the management column a deck shows, so what a member
   // can do to a template does not depend on its kind.
-  const preview = previewDialogAround(frame);
+  const preview = previewDialogAround(content);
   expect(within(preview).getByLabelText("Rename template")).toBeVisible();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by

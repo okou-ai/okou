@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "43ba679e92c51f885fdfec691af75d7f5a3bc8af",
+  "sourceCommit": "c65b6bf584305f5f06e89c7e66efaedecee5177b",
   "method": "existing acyclic partition extended from resolved production dependency layers; generated, do not hand-classify packages",
   "packages": {
     "@axiomhq/js": 3,
@@ -66,7 +66,6 @@
     "dequal": 4,
     "devlop": 1,
     "direction": 1,
-    "docx-preview": 1,
     "entities": 1,
     "estree-util-is-identifier-name": 1,
     "extend": 1,
@@ -98,7 +97,6 @@
     "is-hexadecimal": 1,
     "is-plain-obj": 1,
     "jsonc-parser": 1,
-    "jszip": 1,
     "lucide-react": 3,
     "marked": 3,
     "micromark-util-character": 1,

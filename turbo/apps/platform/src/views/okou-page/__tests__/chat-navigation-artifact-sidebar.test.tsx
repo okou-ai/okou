@@ -23,7 +23,6 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import { expectDocumentPreviewGestures } from "./document-preview-gesture-test-helpers.ts";
-import { wordDocumentFixture } from "./word-document-test-fixture.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   artifactSummary,
@@ -59,6 +58,17 @@ const MARKDOWN_URL = "https://files.example.test/architecture.md";
 const HOSTED_SITE_URL = "https://launch-site.example.test/";
 const IMAGE_URL = "https://files.example.test/launch-graphic.png";
 
+function expectWordViewerLink(link: HTMLElement, sourceUrl: string): void {
+  const viewer = new URL(link.getAttribute("href") ?? "");
+  expect(`${viewer.origin}${viewer.pathname}`).toBe(
+    "https://view.officeapps.live.com/op/embed.aspx",
+  );
+  expect(viewer.searchParams.get("src")).toBe(sourceUrl);
+  expect(link.tagName).toBe("A");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+}
+
 function useWideScreen(): void {
   context.mocks.browser.matchMedia((query) => {
     return (
@@ -73,16 +83,6 @@ function artifactList(): HTMLElement {
 
 function artifactPreview(): HTMLElement {
   return screen.getByTestId("artifact-sidebar");
-}
-
-function originalDocumentLink(container: HTMLElement): HTMLElement {
-  const link = queryAllByRoleFast("link", container).find((candidate) => {
-    return candidate.textContent?.includes("Open in new tab");
-  });
-  if (!link) {
-    throw new Error("Expected original document link");
-  }
-  return link;
 }
 
 function resourcesControl(): HTMLElement {
@@ -276,43 +276,30 @@ test("Keep attachment cards closed until the user selects one", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("Preview a DOCX attachment in the dialog and split view", async () => {
-  const filename = "release-plan.docx";
-  const url = await setupGeneratedFilePreview(
-    filename,
+test.each([
+  [
+    "release-plan.docx",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  );
-  context.mocks.http.get(url, () => {
-    return new Response(wordDocumentFixture());
-  });
-
-  click(await screen.findByLabelText(`Preview ${filename}`));
-
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expect(dialogFrame).toHaveAttribute(
-    "srcdoc",
-    expect.stringContaining("Word preview keeps document gestures local."),
-  );
-  expect(dialogFrame.getAttribute("sandbox")?.split(" ")).not.toContain(
-    "allow-scripts",
-  );
-  expectOfficeViewerFocusable(dialogFrame);
-  // Native child-document input is additionally exercised in browser QA.
-  expectDocumentPreviewGestures(dialogFrame);
-  click(buttonNamed("Open in split view", dialog));
-
-  const splitView = await screen.findByTestId("artifact-sidebar");
-  const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
-  expect(splitFrame).toBeVisible();
-  expect(splitFrame).toHaveAttribute(
-    "srcdoc",
-    expect.stringContaining("Word preview keeps document gestures local."),
-  );
-  expectOfficeViewerFocusable(splitFrame);
-  expectDocumentPreviewGestures(splitFrame);
-});
+  ],
+  ["legacy-report.doc", "application/msword"],
+])(
+  "Open Word attachment %s separately from the dialog and split view",
+  async (filename, contentType) => {
+    const url = await setupGeneratedFilePreview(filename, contentType);
+    click(await screen.findByLabelText(`Preview ${filename}`));
+    const dialog = await screen.findByTestId("attachment-lightbox");
+    const link = await within(dialog).findByText("Open in new tab");
+    expectWordViewerLink(link, url);
+    expectDocumentPreviewGestures(link);
+    expect(dialog.querySelector("iframe")).toBeNull();
+    click(buttonNamed("Open in split view", dialog));
+    const splitView = await screen.findByTestId("artifact-sidebar");
+    const splitLink = await within(splitView).findByText("Open in new tab");
+    expectWordViewerLink(splitLink, url);
+    expectDocumentPreviewGestures(splitLink);
+    expect(splitView.querySelector("iframe")).toBeNull();
+  },
+);
 
 test("Preview a PPTX attachment in the dialog and split view", async () => {
   const filename = "quarterly-review.pptx";
@@ -358,16 +345,13 @@ test("Preview an XLSX attachment in the dialog and split view", async () => {
   expectOfficeViewerUrl(splitFrame, url);
 });
 
-test("Render a private Word file locally and retain its public Office link", async () => {
+test("Use a public URL when opening a private Word attachment separately", async () => {
   const fileId = "office-private-file";
   const filename = "private-plan.docx";
   const contentType =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   const privateUrl = `https://storage.example.test/${filename}?signature=test`;
   const publicUrl = `https://cdn.vm7.io/artifacts/tests/office/${filename}`;
-  context.mocks.http.get(privateUrl, () => {
-    return new Response(wordDocumentFixture());
-  });
   context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
     expect(query.file_id).toBe(fileId);
     return respond(200, {
@@ -390,28 +374,9 @@ test("Render a private Word file locally and retain its public Office link", asy
   click(await screen.findByLabelText(`Preview ${filename}`));
 
   const dialog = await screen.findByTestId("attachment-lightbox");
-  const frame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(frame).toHaveAttribute(
-    "srcdoc",
-    expect.stringContaining("Word preview keeps document gestures local."),
-  );
-  const original = originalDocumentLink(dialog);
-  const viewer = new URL(original.getAttribute("href") ?? "");
-  expect(viewer.searchParams.get("src")).toBe(publicUrl);
-  expect(original).toHaveAttribute("target", "_blank");
-});
-
-test("Open legacy Word documents in their own browsing context", async () => {
-  const filename = "legacy-report.doc";
-  const url = await setupGeneratedFilePreview(filename, "application/msword");
-  click(await screen.findByLabelText(`Preview ${filename}`));
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const original = originalDocumentLink(dialog);
-  expect(
-    new URL(original.getAttribute("href") ?? "").searchParams.get("src"),
-  ).toBe(url);
-  expect(original).toHaveAttribute("target", "_blank");
-  expect(original).toHaveAttribute("rel", "noopener noreferrer");
+  const link = await within(dialog).findByText("Open in new tab");
+  expectWordViewerLink(link, publicUrl);
+  expect(link.getAttribute("href")).not.toContain(privateUrl);
 });
 
 test("Render a generated private image and offer sharing by default", async () => {

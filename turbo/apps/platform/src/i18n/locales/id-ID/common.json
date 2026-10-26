@@ -607,7 +607,7 @@
       "slideTitle": "Slide {{number}}",
       "unavailable": "Pratinjau {{kind}} tidak tersedia.",
       "videoLabel": "Pratinjau video untuk {{filename}}",
-      "wordLayoutNotice": "Tata letak pratinjau mungkin berbeda dari Word."
+      "wordSeparateTab": "Buka dokumen Word ini di tab terpisah agar zoom tidak mengubah ukuran halaman ini."
     },
     "sharing": {
       "accessLabel": "Siapa yang dapat mengakses",

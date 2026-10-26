@@ -607,7 +607,7 @@
       "slideTitle": "第 {{number}} 頁",
       "unavailable": "無法預覽 {{kind}}。",
       "videoLabel": "{{filename}} 的影片預覽",
-      "wordLayoutNotice": "預覽排版可能與 Word 有所不同。"
+      "wordSeparateTab": "在新分頁中閱讀 Word 文件，縮放不會影響目前頁面。"
     },
     "sharing": {
       "accessLabel": "誰可以訪問",

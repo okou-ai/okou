@@ -608,7 +608,7 @@
       "slideTitle": "स्लाइड {{number}}",
       "unavailable": "{{kind}} पूर्वावलोकन अनुपलब्ध है.",
       "videoLabel": "{{filename}} के लिए वीडियो पूर्वावलोकन",
-      "wordLayoutNotice": "पूर्वावलोकन का लेआउट Word से अलग हो सकता है।"
+      "wordSeparateTab": "इस Word दस्तावेज़ को अलग टैब में खोलें, ताकि ज़ूम करने से इस पेज का आकार न बदले।"
     },
     "sharing": {
       "accessLabel": "किसे ऐक्सेस है",

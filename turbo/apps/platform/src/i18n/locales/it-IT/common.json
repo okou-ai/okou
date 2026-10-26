@@ -624,7 +624,7 @@
       "slideTitle": "Diapositiva {{number}}",
       "unavailable": "{{kind}} anteprima non disponibile.",
       "videoLabel": "Anteprima video per {{filename}}",
-      "wordLayoutNotice": "Il layout dell’anteprima potrebbe differire da Word."
+      "wordSeparateTab": "Apri questo documento Word in una scheda separata per evitare che lo zoom ridimensioni questa pagina."
     },
     "sharing": {
       "accessLabel": "Chi può accedere",
