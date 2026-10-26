@@ -12,7 +12,6 @@ mod profile;
 pub mod provider;
 #[cfg(test)]
 mod proxy;
-mod retry;
 mod run_cancellation;
 
 pub use active_input::{
