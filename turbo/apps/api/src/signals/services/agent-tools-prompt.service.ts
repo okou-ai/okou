@@ -59,7 +59,6 @@ function buildIntegrationToolsPrompt(): readonly string[] {
 export interface AgentToolsPromptInputs {
   readonly disabledPaidTools: readonly string[];
   readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
   readonly remoteConnectionDiagnosticsEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly wechatEnabled: boolean;
@@ -82,7 +81,6 @@ export function buildAgentToolsPromptInputs(args: {
       context,
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
-    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, context),
     remoteConnectionDiagnosticsEnabled: isFeatureEnabled(
       FeatureSwitchKey.RemoteConnectionDiagnostics,
       context,
@@ -189,14 +187,10 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
         ]
       : []),
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
-    ...(args.vncEnabled
+    "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
+    ...(args.remoteConnectionDiagnosticsEnabled
       ? [
-          "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
-          ...(args.remoteConnectionDiagnosticsEnabled
-            ? [
-                "- Remote VNC failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay uncertain input or checks.",
-              ]
-            : []),
+          "- Remote VNC failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay uncertain input or checks.",
         ]
       : []),
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",

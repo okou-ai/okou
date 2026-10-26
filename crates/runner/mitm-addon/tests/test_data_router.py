@@ -1,9 +1,10 @@
-"""Data Router billing identity through the production request and response hooks."""
+"""Data Router billing identity through production request and terminal hooks."""
 
 import asyncio
 import json
 import time
 import uuid
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Literal
 from unittest.mock import AsyncMock, patch
@@ -12,6 +13,7 @@ import pytest
 from hyperframe.frame import DataFrame
 from mitmproxy import connection, http
 from mitmproxy.addons.proxyserver import Proxyserver
+from mitmproxy.flow import Error
 from mitmproxy.proxy import commands, events
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
 from mitmproxy.test import taddons
@@ -21,6 +23,7 @@ import firewall_auth_client
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import public_destination_body_admission
+from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http2_request, start_http_layer
 from tests.pending_helpers import assert_pending
@@ -62,6 +65,15 @@ def router_flow(real_flow, *, method="tools/call", name="web_search"):
         {"jsonrpc": "2.0", "id": 1, "method": method, "params": {"name": name, "arguments": {}}}
     ).encode()
     return flow
+
+
+def finish_router_flow(
+    flow: http.HTTPFlow, terminal: Literal["response", "error"]
+) -> Awaitable[None] | None:
+    if terminal == "error":
+        flow.error = Error("connection reset by peer")
+        return mitm_addon.error(flow)
+    return mitm_addon.response(flow)
 
 
 async def test_each_router_response_registers_its_own_id_after_upstream(
@@ -112,8 +124,9 @@ async def test_each_router_response_registers_its_own_id_after_upstream(
 
 
 @pytest.mark.parametrize("status", [200, 502])
-async def test_response_completion_waits_for_registration_including_provider_errors(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, status
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_terminal_completion_waits_for_registration_including_provider_errors(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, status, terminal
 ):
     path = router_registry(tmp_path)
     flow = router_flow(real_flow)
@@ -133,7 +146,8 @@ async def test_response_completion_waits_for_registration_including_provider_err
         flow.response = http.Response.make(
             status, b"provider response", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
         )
-        pending = mitm_addon.response(flow)
+        mitm_addon.responseheaders(flow)
+        pending = finish_router_flow(flow, terminal)
         assert pending is not None
 
         async def complete_response():
@@ -152,8 +166,9 @@ async def test_response_completion_waits_for_registration_including_provider_err
         assert flow.response.content == b"provider response"
 
 
-async def test_failed_response_registration_is_reported_without_replaying_upstream(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_failed_terminal_registration_is_reported_without_retrying(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, terminal
 ):
     path = router_registry(tmp_path)
     flow = router_flow(real_flow)
@@ -168,12 +183,104 @@ async def test_failed_response_registration_is_reported_without_replaying_upstre
         flow.response = http.Response.make(
             200, b"already executed", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
         )
-        pending = mitm_addon.response(flow)
+        mitm_addon.responseheaders(flow)
+        pending = finish_router_flow(flow, terminal)
         assert pending is not None
         with pytest.raises(TimeoutError):
             await pending
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+        if terminal == "error":
+            [entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
+            assert entry["error"] == "connection reset by peer"
+        later_error = finish_router_flow(flow, "error")
+        assert later_error is not None
+        await later_error
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
     registration.assert_awaited_once()
     assert flow.response.content == b"already executed"
+
+
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_connection_error_does_not_repeat_successful_terminal_registration(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, terminal
+):
+    path = router_registry(tmp_path)
+    flow = router_flow(real_flow)
+    registration = AsyncMock()
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        flow.response = http.Response.make(
+            200, b"already executed", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
+        )
+        mitm_addon.responseheaders(flow)
+        completion = finish_router_flow(flow, terminal)
+        assert completion is not None
+        await completion
+        later_error = finish_router_flow(flow, "error")
+        assert later_error is not None
+        await later_error
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+    registration.assert_awaited_once()
+
+
+async def test_connection_error_after_response_headers_registers_router_identity(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+):
+    path = router_registry(tmp_path)
+    flow = router_flow(real_flow)
+    request_id = str(uuid.uuid4())
+    registration = AsyncMock()
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        flow.response = http.Response.make(200, b"", {"X-Okou-Data-Request-Id": request_id})
+        flow.response.raw_content = None
+        mitm_addon.responseheaders(flow)
+        response_stream(flow)(b"partial provider response")
+        flow.error = Error("connection reset by peer")
+        completion = mitm_addon.error(flow)
+        if completion is not None:
+            await completion
+        registration.assert_awaited_once()
+        [registered] = registration.await_args_list
+        sandbox = json.loads(path.read_text())["sandboxes"]["10.200.0.5"]
+        assert registered.args[0] == "https://api.okou.ai/api/webhooks/agent/data-request"
+        assert json.loads(registered.args[1]) == {
+            "runId": sandbox["runId"],
+            "requestId": request_id,
+        }
+        assert registered.args[2] == sandbox["sandboxToken"]
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+
+
+@pytest.mark.parametrize("with_response", [False, True])
+async def test_connection_error_without_router_identity_does_not_register(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, with_response
+):
+    path = router_registry(tmp_path)
+    flow = router_flow(real_flow)
+    registration = AsyncMock()
+    with (
+        mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        await mitm_addon.request(flow)
+        if with_response:
+            flow.response = http.Response.make(200, b"no execution identity")
+            mitm_addon.responseheaders(flow)
+        completion = finish_router_flow(flow, "error")
+        assert completion is not None
+        await completion
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+    registration.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -200,8 +307,9 @@ async def test_control_responses_without_identity_are_not_registered(
     registration.assert_not_awaited()
 
 
+@pytest.mark.parametrize("terminal", ["response", "error"])
 async def test_another_provider_cannot_register_a_router_response_id(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, terminal
 ):
     path = router_registry(tmp_path, owner="github")
     flow = router_flow(real_flow)
@@ -215,7 +323,7 @@ async def test_another_provider_cannot_register_a_router_response_id(
         flow.response = http.Response.make(
             200, b"another provider", {"X-Okou-Data-Request-Id": str(uuid.uuid4())}
         )
-        assert mitm_addon.response(flow) is None
+        assert finish_router_flow(flow, terminal) is None
     registration.assert_not_awaited()
 
 

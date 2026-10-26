@@ -229,8 +229,6 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
     [FeatureSwitchKey.WechatIntegration, "wechat:read"],
     [FeatureSwitchKey.WechatIntegration, "wechat:write"],
-    [FeatureSwitchKey.VncAccess, "vnc:read"],
-    [FeatureSwitchKey.VncAccess, "vnc:write"],
   ] as const)(
     "gates %s capability behind its feature switch",
     (feature, capability) => {
@@ -259,6 +257,8 @@ describe("auth tokens", () => {
     "artifact:write",
     "discord:read",
     "discord:write",
+    "vnc:read",
+    "vnc:write",
   ] as const)("grants %s by default", (capability) => {
     const token = generateOkouToken("user_okou", "run_okou", "org_okou");
 

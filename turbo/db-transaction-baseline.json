@@ -147,11 +147,6 @@
       "owner": "writePersonalAccount"
     },
     {
-      "id": "TX-0187",
-      "file": "turbo/apps/api/src/signals/services/model-provider-account.service.ts",
-      "owner": "disconnectPersonalModelProviderAccounts$"
-    },
-    {
       "id": "TX-0189",
       "file": "turbo/apps/api/src/signals/services/morning-brief-schedule-claim.service.ts",
       "owner": "commitMorningBriefScheduleSettlement$"

@@ -59,8 +59,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
-  ["vnc:read", FeatureSwitchKey.VncAccess],
-  ["vnc:write", FeatureSwitchKey.VncAccess],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [

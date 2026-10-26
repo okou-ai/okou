@@ -51,7 +51,6 @@ export enum FeatureSwitchKey {
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",
-  VncAccess = "vncAccess",
   RemoteConnectionDiagnostics = "remoteConnectionDiagnostics",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",

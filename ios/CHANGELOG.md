@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/okou-ai/okou/compare/ios-v0.20.1...ios-v0.20.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **ios:** present cached chats before network refresh ([#43180](https://github.com/okou-ai/okou/issues/43180)) ([d45c12a](https://github.com/okou-ai/okou/commit/d45c12ab06fc063b66d10924b6f7d49a7825d920))
+
 ## [0.20.1](https://github.com/okou-ai/okou/compare/ios-v0.20.0...ios-v0.20.1) (2026-10-26)
 
 

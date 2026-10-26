@@ -2380,6 +2380,9 @@ def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:
     latency_ms = elapsed_ms(start_time)
     connector_diagnostics.handle_error(flow)
 
+    if flow_metadata.firewall_name(flow.metadata) == data_router.OWNER:
+        return _finish_data_router_error(flow, latency_ms=latency_ms)
+
     # Complete captured model evidence remains observable on errors. Keep the
     # pre-inspection network timing and connector interruption policy intact.
     response_streaming.start_buffered_response_inspection(flow, interrupted=True)
@@ -2387,6 +2390,13 @@ def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:
         return _finish_error_after_inspection(flow, latency_ms=latency_ms)
     _finish_error_handling(flow, latency_ms=latency_ms)
     return None
+
+
+async def _finish_data_router_error(flow: http.HTTPFlow, *, latency_ms: int) -> None:
+    try:
+        await data_router.register_response(flow)
+    finally:
+        _finish_error_handling(flow, latency_ms=latency_ms)
 
 
 async def _finish_error_after_inspection(flow: http.HTTPFlow, *, latency_ms: int) -> None:

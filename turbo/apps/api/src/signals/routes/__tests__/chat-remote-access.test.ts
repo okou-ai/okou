@@ -2,14 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -51,11 +49,7 @@ async function ownerWithThread(actor = bdd.user()) {
     throw new Error("Expected an organization");
   }
   const actorWithOrg = { ...actor, orgId: actor.orgId };
-  mocks.clerk.session(
-    actorWithOrg.userId,
-    actorWithOrg.orgId,
-    actorWithOrg.orgRole,
-  );
+  vnc.authenticate(actorWithOrg);
   return { actor: actorWithOrg, agentId: agent.agentId, threadId: thread.id };
 }
 
@@ -334,12 +328,9 @@ describe("chat remote access owner API", () => {
     );
   });
 
-  it("exposes VNC defaults and overrides only when VNC admission is available", async () => {
+  it("exposes VNC defaults and thread overrides", async () => {
     initializeVncRuntimeTest();
     const owner = await ownerWithThread();
-    await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.VncAccess]: true,
-    });
     vnc.authenticate({
       orgId: owner.actor.orgId,
       userId: owner.actor.userId,
@@ -434,26 +425,6 @@ describe("chat remote access owner API", () => {
       enabled: true,
       source: "default",
     });
-    await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.VncAccess]: false,
-    });
-    vnc.authenticate({
-      orgId: owner.actor.orgId,
-      userId: owner.actor.userId,
-    });
-    const hidden = await accept(
-      accessClient().listHostDefaults({ headers }),
-      [200],
-    );
-    expect(hidden.body.vnc).toStrictEqual([]);
-    await accept(
-      accessClient().updateHostDefault({
-        headers,
-        params: { protocol: "vnc", connectionId: vncId },
-        body: { enabled: false },
-      }),
-      [404],
-    );
   });
 
   it.each([
@@ -471,9 +442,6 @@ describe("chat remote access owner API", () => {
       }
       const owner = await ownerWithThread();
       if (protocol === "vnc") {
-        await updateFeatureSwitchesForUser(context, owner.actor, {
-          [FeatureSwitchKey.VncAccess]: true,
-        });
         vnc.authenticate(owner.actor);
       }
       const ownerHost =
@@ -516,9 +484,6 @@ describe("chat remote access owner API", () => {
         bdd.user({ [shared]: owner.actor[shared] }),
       );
       if (protocol === "vnc") {
-        await updateFeatureSwitchesForUser(context, peer.actor, {
-          [FeatureSwitchKey.VncAccess]: true,
-        });
         vnc.authenticate(peer.actor);
       }
       const peerHost =

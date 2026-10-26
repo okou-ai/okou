@@ -2,8 +2,8 @@
 
 This test runs a **disposable loopback-only QEMU VNC server** with synthetic CA,
 server and client identities. It never connects to an existing VNC or OpenSSH
-server, launches a guest, edits a production configuration, or activates the
-`VncAccess` switch. The owner/Agent/Runner path is **not** covered; that is
+server, launches a guest, or edits a production configuration.
+The owner/Agent/Runner path is **not** covered; that is
 tracked by [#37375](https://github.com/okou-ai/okou/issues/37375).
 
 ## Pinned executable and command
@@ -34,17 +34,17 @@ host's QEMU settings, or use these fixture keys elsewhere.
 
 ## Independently observed matrix, 2026-09-29; repeated and expanded 2026-09-30
 
-| QEMU setting | VeNCrypt subtype | Client | Observed outcome |
-| --- | --- | --- | --- |
-| `verify-peer=on` | X509None (260) | trusted synthetic CA, ordinary and 17-byte-fragmented transport | TLS + SecurityResult + ClientInit/ServerInit accepted |
-| `verify-peer=on` | X509Vnc (261) | trusted synthetic CA + correct classic password, ordinary and 17-byte-fragmented transport | accepted |
-| `verify-peer=on` | both | unrelated-CA, expired or no client identity | no authenticated stream |
-| `verify-peer=on` | both | correct client, wrong server name or server CA | no authenticated stream |
-| `verify-peer=on` | X509Vnc | correct client, wrong password | no authenticated stream |
-| `verify-peer=on` | both | malformed TLS record at selected subtype, then input EOF | peer closes or sends alert; no SecurityResult |
-| `verify-peer=off` | X509None (260) | trusted synthetic CA | **accepted** |
-| `verify-peer=off` | X509None (260) | unrelated-CA client | **accepted** |
-| `verify-peer=off` | X509Vnc (261) | trusted or unrelated-CA client + correct classic password | **accepted** |
+| QEMU setting      | VeNCrypt subtype | Client                                                                                     | Observed outcome                                      |
+| ----------------- | ---------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `verify-peer=on`  | X509None (260)   | trusted synthetic CA, ordinary and 17-byte-fragmented transport                            | TLS + SecurityResult + ClientInit/ServerInit accepted |
+| `verify-peer=on`  | X509Vnc (261)    | trusted synthetic CA + correct classic password, ordinary and 17-byte-fragmented transport | accepted                                              |
+| `verify-peer=on`  | both             | unrelated-CA, expired or no client identity                                                | no authenticated stream                               |
+| `verify-peer=on`  | both             | correct client, wrong server name or server CA                                             | no authenticated stream                               |
+| `verify-peer=on`  | X509Vnc          | correct client, wrong password                                                             | no authenticated stream                               |
+| `verify-peer=on`  | both             | malformed TLS record at selected subtype, then input EOF                                   | peer closes or sends alert; no SecurityResult         |
+| `verify-peer=off` | X509None (260)   | trusted synthetic CA                                                                       | **accepted**                                          |
+| `verify-peer=off` | X509None (260)   | unrelated-CA client                                                                        | **accepted**                                          |
+| `verify-peer=off` | X509Vnc (261)    | trusted or unrelated-CA client + correct classic password                                  | **accepted**                                          |
 
 The `verify-peer=off` rows are **negative controls**, not passing security guarantees. The fragmented transport caps each individual client-side read/write at 17 bytes; the malformed TLS probe closes its write side after the invalid record and accepts only EOF or a TLS alert, not a hang or authenticated stream.
 QEMU 8.2.2 still sends a TLS CertificateRequest with `verify-peer=off`, then
