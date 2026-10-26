@@ -221,7 +221,6 @@ test.each([
       featureSwitches: {
         ...features,
         [FeatureSwitchKey.ProactiveAgent]: true,
-        [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
       },
     });
     await waitFor(() => {

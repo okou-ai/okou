@@ -14,11 +14,7 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { SelectResultFields } from "drizzle-orm/query-builders/select.types";
 import { and, eq } from "drizzle-orm";
 
@@ -132,7 +128,7 @@ export const materializeActiveInputSource$ = command(
     source: ActiveInputSourceRow,
     auth: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
-  ): Promise<string | null> => {
+  ): Promise<string> => {
     if (
       !source.userMessage ||
       (source.eventType !== "input.prompt" &&
@@ -150,17 +146,6 @@ export const materializeActiveInputSource$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.BuiltinDocumentTemplates,
-        featureSwitchContext,
-      ) &&
-      projectUserMessage(source.userMessage).templates.some((template) => {
-        return template.type === "document";
-      })
-    ) {
-      return null;
-    }
     return await set(
       materializeActiveInputPrompt$,
       {

@@ -1,8 +1,3 @@
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { computed, type Computed } from "ccstate";
@@ -39,7 +34,6 @@ export function createRunTemplates(
     Promise<Pick<PickedThreadInputEvent, "userId" | "userMessage"> | null>
   >,
   orgId: string,
-  features$: Computed<Promise<FeatureSwitchContext>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
 ): Computed<Promise<RunTemplatesResult>> {
   const selection$ = computed(async (get) => {
@@ -119,19 +113,17 @@ export function createRunTemplates(
     });
   });
   return computed(async (get): Promise<RunTemplatesResult> => {
-    const [selection, presentations, mounted, features, disabledPaidTools] =
+    const [selection, presentations, mounted, disabledPaidTools] =
       await Promise.all([
         get(selection$),
         get(presentations$),
         get(mounted$),
-        get(features$),
         get(disabledPaidTools$),
       ]);
     return buildRunTemplateGuidance({
       templates: selection?.templates ?? [],
       presentations,
       mounted,
-      features,
       disabledPaidTools,
     });
   });
@@ -141,21 +133,9 @@ function buildRunTemplateGuidance(args: {
   readonly templates: readonly LiveGenerationTemplate[];
   readonly presentations: readonly string[];
   readonly mounted: readonly MountedUserTemplate[];
-  readonly features: FeatureSwitchContext;
   readonly disabledPaidTools: readonly string[];
 }): RunTemplatesResult {
-  const { templates, presentations, mounted, features, disabledPaidTools } =
-    args;
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.BuiltinDocumentTemplates, features) &&
-    templates.some((template) => {
-      return template.type === "document";
-    })
-  ) {
-    return {
-      error: { code: "FORBIDDEN", message: "Document templates disabled" },
-    };
-  }
+  const { templates, presentations, mounted, disabledPaidTools } = args;
   const guidance = buildGenerationTemplatesPrompt(templates, {
     mountedUserPresentationTemplateIds: presentations,
     mountedUserTemplates: mounted,
