@@ -348,6 +348,7 @@
     "src/signals/services/usage-pack-retained-sql.ts",
     "src/signals/services/usage-pack-pending-snapshot-plan.ts",
     "src/signals/services/usage-pack-member-removal-plan.ts",
+    "src/signals/services/usage-pack-member-removal-reservation-sql.ts",
     "src/signals/services/proactive-workflows-eligibility.service.ts",
     "src/signals/services/proactive-workflow-owner.ts",
     "src/signals/services/proactive-workflow-definitions.ts"
