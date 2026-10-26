@@ -15,7 +15,6 @@ import {
   type AgentRunStorageSelection,
   assertUniquePersistedMountPaths,
   finalizePreparedStorage,
-  loadStorageBaseIndex,
   type MaterializedAgentRunStorage,
   persistedStorageMountRequests,
   prepareRequestStorageResolution,
@@ -32,6 +31,8 @@ import {
 import {
   exactStorageVersionsFromIndex,
   mergeStorageIndexes,
+  storageBaseIndexFromRows,
+  storageBaseIndexReadPlan,
   storageRequestKey,
 } from "./storage-index.service";
 import type { ThreadContext } from "./thread-context.signals";
@@ -302,7 +303,27 @@ function createStorageIndexSignals(
     });
     const index = mergeStorageIndexes(
       prefetched.index,
-      await loadStorageBaseIndex(input.db, ownedRequests, input.timing),
+      await (async () => {
+        return await measureApiDispatchTiming(
+          input.timing,
+          "api_dispatch_prepare_storage_manifest_load_storage_index",
+          "nested",
+          async () => {
+            const readPlan = storageBaseIndexReadPlan(ownedRequests);
+            if (readPlan === null) {
+              return new Map();
+            }
+            const rows = await input.db
+              .select(readPlan.columns)
+              .from(readPlan.from)
+              .innerJoin(readPlan.requested, readPlan.requestedCondition)
+              .leftJoin(readPlan.head, readPlan.headCondition)
+              .leftJoin(readPlan.exact, readPlan.exactCondition)
+              .leftJoin(readPlan.cache, readPlan.cacheCondition);
+            return storageBaseIndexFromRows(rows);
+          },
+        );
+      })(),
     );
     // Keep the query and its selection together so dependent version reads
     // reuse this snapshot without walking the same upstream graph again.

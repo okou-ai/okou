@@ -53,7 +53,10 @@ import {
 } from "./model-source-context.service";
 import { createOfficialWorkflowCatalog } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { readStorageBaseIndex } from "./storage-index.service";
+import {
+  storageBaseIndexFromRows,
+  storageBaseIndexReadPlan,
+} from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -512,9 +515,23 @@ function createIdentityContext(
         null,
       ]),
     );
+    const db = get(db$);
     return captureAgentStorageContext(
       plan,
-      await readStorageBaseIndex(get(db$), plan.ownedRequests),
+      await (async () => {
+        const readPlan = storageBaseIndexReadPlan(plan.ownedRequests);
+        if (readPlan === null) {
+          return new Map();
+        }
+        const rows = await db
+          .select(readPlan.columns)
+          .from(readPlan.from)
+          .innerJoin(readPlan.requested, readPlan.requestedCondition)
+          .leftJoin(readPlan.head, readPlan.headCondition)
+          .leftJoin(readPlan.exact, readPlan.exactCondition)
+          .leftJoin(readPlan.cache, readPlan.cacheCondition);
+        return storageBaseIndexFromRows(rows);
+      })(),
     );
   });
   const disabledPaidTools$ =
