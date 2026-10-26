@@ -104,6 +104,8 @@ final class SubscriptionAuthorizationTests: XCTestCase {
   }
 
   func testCodexPollsWithSessionTokenAndRefreshesAfterSuccess() async throws {
+    let scheduled = expectation(description: "Codex poll scheduled")
+    let clock = SubscriptionAuthorizationClock(didSchedule: { scheduled.fulfill() })
     let completed = expectation(description: "Codex token completion")
     let fixture = ChatHTTPFixture { request in
       let path = request.url!.path
@@ -116,11 +118,14 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       }
       return try XCTUnwrap(ModelHTTPFixtures.response(path))
     }
-    let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    let store = PersonalSubscriptionStore(
+      client: fixture.client, authNow: { clock.now }, authSleep: clock.sleep, didFail: { _ in })
     defer { store.close() }
     store.start(type: .codex)
     try await eventually { store.phase == .pending }
     XCTAssertEqual(store.verificationCode, "EXAMPLE-CODE")
+    await fulfillment(of: [scheduled], timeout: 3)
+    clock.advance(by: .seconds(1))
     await fulfillment(of: [completed], timeout: 3)
     try await eventually { store.phase == .complete && !store.accounts.isEmpty }
     XCTAssertNil(store.browserURL)
@@ -217,6 +222,8 @@ final class SubscriptionAuthorizationTests: XCTestCase {
   }
 
   func testLateClaudeCompletionCannotOverrideExpiry() async throws {
+    let scheduled = expectation(description: "Claude expiry scheduled")
+    let clock = SubscriptionAuthorizationClock(didSchedule: { scheduled.fulfill() })
     let completionGate = ModelResponseGate()
     let completing = expectation(description: "Claude completion in flight")
     let cancelled = expectation(description: "Expired session cancelled")
@@ -233,7 +240,8 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       }
       throw URLError(.unsupportedURL)
     }
-    let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    let store = PersonalSubscriptionStore(
+      client: fixture.client, authNow: { clock.now }, authSleep: clock.sleep, didFail: { _ in })
     defer {
       store.close()
       completionGate.open()
@@ -242,7 +250,9 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     try await eventually { store.phase == .pending }
     store.authorizationCode = "example-code"
     let completion = Task { await store.submitClaudeCode() }
-    await fulfillment(of: [completing, cancelled], timeout: 3)
+    await fulfillment(of: [completing, scheduled], timeout: 3)
+    clock.advance(by: .seconds(1))
+    await fulfillment(of: [cancelled], timeout: 3)
     completionGate.open()
     await completion.value
     XCTAssertEqual(store.phase, .expired)
@@ -251,6 +261,8 @@ final class SubscriptionAuthorizationTests: XCTestCase {
   }
 
   func testExpiredSessionCancelsAndRetainsReconnectTargetForRetry() async throws {
+    let scheduled = expectation(description: "Reconnect expiry scheduled")
+    let clock = SubscriptionAuthorizationClock(didSchedule: { scheduled.fulfill() })
     let expired = expectation(description: "Expired session cancelled")
     let fixture = ChatHTTPFixture { request in
       if request.url!.path.hasSuffix("/sessions") { return authSession(code: false, expires: 1) }
@@ -260,13 +272,67 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       }
       throw URLError(.unsupportedURL)
     }
-    let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    let store = PersonalSubscriptionStore(
+      client: fixture.client, authNow: { clock.now }, authSleep: clock.sleep, didFail: { _ in })
     defer { store.close() }
     store.start(type: .claude, accountID: ModelHTTPFixtures.accountID)
+    await fulfillment(of: [scheduled], timeout: 3)
+    clock.advance(by: .seconds(1))
     await fulfillment(of: [expired], timeout: 3)
     XCTAssertEqual(store.phase, .expired)
     XCTAssertNil(store.expiresAt)
     XCTAssertNil(store.browserURL)
+  }
+}
+
+private final class SubscriptionAuthorizationClock: Sendable {
+  private struct Sleeper: Sendable {
+    let deadline: Date
+    let continuation: AsyncStream<Void>.Continuation
+  }
+  private struct State: Sendable {
+    var now = Date(timeIntervalSince1970: 1_800_000_000)
+    var sleepers: [UUID: Sleeper] = [:]
+  }
+  private let state = Mutex(State())
+  private let didSchedule: @Sendable () -> Void
+
+  init(didSchedule: @escaping @Sendable () -> Void) {
+    self.didSchedule = didSchedule
+  }
+
+  var now: Date { state.withLock { $0.now } }
+
+  func sleep(_ duration: Duration) async throws {
+    try Task.checkCancellation()
+    let id = UUID()
+    let tick = AsyncStream<Void>.makeStream()
+    state.withLock { value in
+      value.sleepers[id] = Sleeper(
+        deadline: value.now.addingTimeInterval(seconds(duration)), continuation: tick.continuation)
+    }
+    defer {
+      _ = state.withLock { $0.sleepers.removeValue(forKey: id) }
+      tick.continuation.finish()
+    }
+    didSchedule()
+    for await _ in tick.stream {}
+    try Task.checkCancellation()
+  }
+
+  func advance(by duration: Duration) {
+    let ready = state.withLock { value in
+      value.now.addTimeInterval(seconds(duration))
+      let ready = value.sleepers.filter { $0.value.deadline <= value.now }
+      for id in ready.keys { value.sleepers.removeValue(forKey: id) }
+      return ready.values.map(\.continuation)
+    }
+    for continuation in ready { continuation.finish() }
+  }
+
+  private func seconds(_ duration: Duration) -> TimeInterval {
+    let components = duration.components
+    return Double(components.seconds) + Double(components.attoseconds) / 1e18
   }
 }
 

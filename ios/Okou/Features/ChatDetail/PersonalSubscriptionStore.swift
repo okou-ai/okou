@@ -6,6 +6,8 @@ import Observation
 final class PersonalSubscriptionStore {
   enum AuthPhase: Equatable { case idle, starting, pending, completing, complete, expired, failed }
   private let service: PersonalSubscriptionService
+  private let authNow: @Sendable () -> Date
+  private let authSleep: @Sendable (Duration) async throws -> Void
   private let didFail: @MainActor (Error) -> Void
   var didMutate: (@MainActor () async -> Void)?
   private(set) var accounts: [PersonalSubscription] = []
@@ -32,8 +34,17 @@ final class PersonalSubscriptionStore {
   private var resetKeys: [String: String] = [:]
   private var closed = false
 
-  init(client: APIClient, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    client: APIClient,
+    authNow: @escaping @Sendable () -> Date = { Date() },
+    authSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    },
+    didFail: @escaping @MainActor (Error) -> Void
+  ) {
     service = PersonalSubscriptionService(client: client)
+    self.authNow = authNow
+    self.authSleep = authSleep
     self.didFail = didFail
   }
   @discardableResult
@@ -138,13 +149,13 @@ final class PersonalSubscriptionStore {
         session = result
         browserURL = result.browserUrl
         verificationCode = result.verificationCode
-        expiresAt = Date().addingTimeInterval(TimeInterval(result.expiresIn))
+        expiresAt = authNow().addingTimeInterval(TimeInterval(result.expiresIn))
         phase = .pending
         while !closed, authRevision == request {
           let delay = type == .codex ? max(1, result.interval ?? 1) : 1
-          try await Task.sleep(for: .seconds(delay))
+          try await authSleep(.seconds(delay))
           guard authRevision == request, !closed else { return }
-          if let expiresAt, Date() >= expiresAt {
+          if let expiresAt, authNow() >= expiresAt {
             await expire(type: type, token: result.sessionToken, request: request)
             return
           }
@@ -179,7 +190,7 @@ final class PersonalSubscriptionStore {
       let session, !authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return }
     let request = authRevision
-    guard expiresAt.map({ Date() < $0 }) == true else {
+    guard expiresAt.map({ authNow() < $0 }) == true else {
       await expire(type: .claude, token: session.sessionToken, request: request)
       return
     }
