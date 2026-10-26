@@ -1,8 +1,6 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { animationFrame } from "signal-timers";
 
 import {
   click,
@@ -294,13 +292,11 @@ function mockMutableConversation(
 async function openConversation(
   threadId: string,
   loadedText: string,
-  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
 ): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${threadId}`,
     host: "app.okou.ai",
-    featureSwitches,
   });
   const loadedMessage = await screen.findByText(loadedText);
   expect(loadedMessage).toBeVisible();
@@ -383,39 +379,26 @@ function installKeyboardChatGeometry(
   container: HTMLElement,
   viewport: KeyboardViewport,
 ): ChatScrollGeometry {
-  // happy-dom has no layout engine. Model only the browser's projection of
-  // the shell styles into DOM geometry; bootstrap, editor, viewport manager
-  // and transcript scroll ownership all run unchanged.
-  const shellStyle = document.documentElement.style;
+  // happy-dom has no layout engine. Model the layout viewport and native
+  // focus pan; bootstrap, editor and transcript scroll ownership run unchanged.
   return installChatScrollGeometry(
     container,
     () => {
-      const height = shellStyle.getPropertyValue(
-        "--okou-keyboard-viewport-height",
-      );
-      return (height ? Number.parseFloat(height) : window.innerHeight) - 200;
+      return window.innerHeight - 200;
     },
     () => {
-      const top = shellStyle.getPropertyValue("--okou-keyboard-viewport-top");
-      return (top ? Number.parseFloat(top) : 0) - viewport.pageTop + 64;
+      return 64 - viewport.pageTop;
     },
   );
 }
 
-test.each([
-  { enabled: true, position: "tail" },
-  { enabled: true, position: "history" },
-  { enabled: false, position: "tail" },
-  { enabled: false, position: "history" },
-])(
-  "Keep $position through PWA keyboard cycles with rollout $enabled",
-  async ({ enabled, position }) => {
+test.each(["tail", "history"])(
+  "Keep %s through PWA keyboard cycles",
+  async (position) => {
     const viewport = installKeyboardViewport();
     const threadId = THREAD_IDS.growingHistory;
     mockMutableConversation(threadId, completedHistoryEvents(8));
-    const container = await openConversation(threadId, "History answer 8", {
-      [FeatureSwitchKey.PwaKeyboardViewport]: enabled,
-    });
+    const container = await openConversation(threadId, "History answer 8");
     const geometry = installKeyboardChatGeometry(container, viewport);
     const editor = chatComposerTextarea();
     await fill(editor, "Keep this multiline draft\nand its second line");
@@ -451,9 +434,9 @@ test.each([
         vi.stubGlobal("scrollY", 240);
       });
       await waitFor(() => {
-        expect(container.clientHeight).toBe(enabled ? 220 : 644);
+        expect(container.clientHeight).toBe(644);
         expect(container.getBoundingClientRect().top).toBe(
-          enabled ? 64 : 64 - viewport.pageTop,
+          64 - viewport.pageTop,
         );
         expectPosition();
       });
@@ -467,31 +450,13 @@ test.each([
       });
       await waitFor(() => {
         expect(container.getBoundingClientRect().top).toBe(
-          enabled ? 64 : 64 - viewport.pageTop,
+          64 - viewport.pageTop,
         );
         expectPosition();
       });
       expect(editor).toHaveFocus();
       expect(editor).toHaveTextContent("Keep this multiline draft");
       expect(editor).toHaveTextContent("and its second line");
-
-      if (enabled) {
-        await act(async () => {
-          viewport.scale = 2;
-          viewport.resize(210, 280);
-          const painted = context.mocks.deferred<void>();
-          animationFrame(
-            () => {
-              painted.resolve();
-            },
-            { signal: context.signal },
-          );
-          await painted.promise;
-        });
-        viewport.scale = 1;
-      }
-      expect(container.clientHeight).toBe(enabled ? 220 : 644);
-      expectPosition();
 
       act(() => {
         editor.blur();
@@ -505,7 +470,7 @@ test.each([
       });
     }
 
-    // A real layout-viewport resize must still restore the legacy path too.
+    // A layout-viewport resize must also preserve the reading position.
     act(() => {
       vi.stubGlobal("innerHeight", 740);
       viewport.resize(740, 0);
