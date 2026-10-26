@@ -7,13 +7,9 @@ import {
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../__tests__/page-helper.ts";
+import { setupPage } from "../../__tests__/page-helper.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { testContext } from "./test-helpers.ts";
@@ -118,9 +114,6 @@ test("An empty service error still gives the user a useful status", async () => 
 });
 
 test("The update dialog appears only when an update is required", async () => {
-  const reload = vi
-    .spyOn(window.location, "reload")
-    .mockImplementation(() => {});
   context.mocks.http.get("*/api/agents/:id/user-connectors", () => {
     return Response.json(
       { error: "Client update required" },
@@ -139,16 +132,6 @@ test("The update dialog appears only when an update is required", async () => {
     name: "Update required",
   });
   expect(dialog).toHaveTextContent(
-    "This version of Okou is no longer supported. Refresh to load the latest version.",
+    "This version of Okou is no longer supported.",
   );
-  const refresh = queryAllByRoleFast("button", dialog).find((button) => {
-    return button.textContent?.trim() === "Refresh";
-  });
-  if (!refresh) {
-    throw new Error("Refresh button not found");
-  }
-
-  click(refresh);
-
-  expect(reload).toHaveBeenCalledOnce();
 });

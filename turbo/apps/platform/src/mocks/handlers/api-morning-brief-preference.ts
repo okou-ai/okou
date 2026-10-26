@@ -23,9 +23,6 @@ export const apiMorningBriefPreferenceHandlers = [
   mockApi(morningBriefPreferenceContract.get, ({ respond }) => {
     return respond(200, preference);
   }),
-  mockApi(morningBriefPreferenceContract.retry, ({ respond }) => {
-    return respond(200, preference);
-  }),
   mockApi(morningBriefPreferenceContract.update, ({ body, respond }) => {
     preference = {
       ...preference,
