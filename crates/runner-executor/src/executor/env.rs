@@ -14,7 +14,7 @@ use guest_contracts::codex_thread_id::canonical_codex_thread_id;
 use guest_contracts::connector_account_context::{
     RunConnectorAccountContext, RunConnectorAccountTarget,
 };
-use sandbox::{Sandbox, WriteFileEntry};
+use sandbox::WriteFileEntry;
 
 use super::cli_framework::{
     EffectiveCliFramework, effective_cli_framework, normalized_cli_agent_type,
@@ -707,12 +707,19 @@ pub(super) struct RequiredAgentFiles {
     pub(super) run_payload_file: String,
 }
 
-pub(super) async fn write_required_agent_files(
-    sandbox: &dyn Sandbox,
+pub(super) struct PreparedRequiredAgentFiles {
+    paths: RequiredAgentFiles,
+    connector_context_file: String,
+    connector_context_bytes: Vec<u8>,
+    user_env_bytes: Vec<u8>,
+    run_payload_bytes: Vec<u8>,
+}
+
+pub(super) fn prepare_required_agent_files(
     context: &ExecutionContext,
     user_env: &mut HashMap<String, String>,
     run_payload: &guest_contracts::env::RunPayload,
-) -> RunnerResult<RequiredAgentFiles> {
+) -> RunnerResult<PreparedRequiredAgentFiles> {
     let connector_context_file = guest_connector_account_context_file_path(context.run_id)?;
     let connector_context_bytes = serde_json::to_vec(&build_connector_account_context(context))
         .map_err(|e| RunnerError::Internal(format!("serialize connector account context: {e}")))?;
@@ -727,29 +734,63 @@ pub(super) async fn write_required_agent_files(
     let run_payload_bytes = serde_json::to_vec(run_payload)
         .map_err(|e| RunnerError::Internal(format!("serialize run payload: {e}")))?;
 
-    // All bootstrap inputs are required. Keep context first so a failed account
-    // projection write prevents later writes, including in oversized fallback.
-    sandbox
-        .write_private_files(&[
-            WriteFileEntry {
-                path: &connector_context_file,
-                content: &connector_context_bytes,
-            },
-            WriteFileEntry {
-                path: &user_env_file,
-                content: &user_env_bytes,
-            },
-            WriteFileEntry {
-                path: &run_payload_file,
-                content: &run_payload_bytes,
-            },
-        ])
-        .await?;
-
-    Ok(RequiredAgentFiles {
-        user_env_file,
-        run_payload_file,
+    Ok(PreparedRequiredAgentFiles {
+        paths: RequiredAgentFiles {
+            user_env_file,
+            run_payload_file,
+        },
+        connector_context_file,
+        connector_context_bytes,
+        user_env_bytes,
+        run_payload_bytes,
     })
+}
+
+impl PreparedRequiredAgentFiles {
+    pub(super) fn entries(&self) -> [WriteFileEntry<'_>; 3] {
+        // Context must precede the other bootstrap files, including in the
+        // client's ordered oversized fallback.
+        [
+            WriteFileEntry {
+                path: &self.connector_context_file,
+                content: &self.connector_context_bytes,
+            },
+            WriteFileEntry {
+                path: &self.paths.user_env_file,
+                content: &self.user_env_bytes,
+            },
+            WriteFileEntry {
+                path: &self.paths.run_payload_file,
+                content: &self.run_payload_bytes,
+            },
+        ]
+    }
+
+    pub(super) fn batch_with<'a>(
+        &'a self,
+        source: WriteFileEntry<'a>,
+    ) -> Option<[WriteFileEntry<'a>; 4]> {
+        let [context, environment, payload] = self.entries();
+        let entries = [source, context, environment, payload];
+        let content_len = entries
+            .iter()
+            .try_fold(0usize, |total, file| total.checked_add(file.content.len()))?;
+        if content_len > guest_contracts::file_write::WRITE_FILES_BATCH_CONTENT_LIMIT {
+            return None;
+        }
+        let protocol_entries = entries.map(|file| guest_control_proto::WriteFileBatchEntry {
+            path: file.path,
+            content: file.content,
+        });
+        // Avoid turning two fitting requests into four individual writes when
+        // their combination exceeds either the content or encoded-frame bound.
+        guest_control_proto::validate_write_files(&protocol_entries).ok()?;
+        Some(entries)
+    }
+
+    pub(super) fn into_paths(self) -> RequiredAgentFiles {
+        self.paths
+    }
 }
 
 /// Build the guest-agent bootstrap environment.

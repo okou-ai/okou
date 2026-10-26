@@ -662,9 +662,13 @@ async fn inline_instruction_enospc_recovers_before_private_inputs_and_agent_star
     assert_eq!(outcome.exit_code(), 0);
     assert!(overrides.private_write_file_calls().is_empty());
     let writes = overrides.private_write_files_calls();
-    assert_eq!(writes.len(), 3);
+    assert_eq!(writes.len(), 2);
     assert_eq!(writes[0].files, writes[1].files);
-    assert_eq!(writes[2].files.len(), 3);
+    assert_eq!(writes[0].files.len(), 4);
+    assert_eq!(
+        writes[1].files[0].content,
+        context.agent_instructions.as_ref().unwrap().as_bytes()
+    );
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
     assert_eq!(cleanup_calls(&overrides).len(), 1);
 }
