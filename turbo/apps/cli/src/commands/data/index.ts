@@ -1,5 +1,5 @@
 import { Command, InvalidArgumentError } from "commander";
-import { z } from "zod";
+import { json, record, string } from "zod";
 import {
   callDataRouterTool,
   listDataRouterTools,
@@ -14,7 +14,7 @@ function inputObject(value: string): Record<string, unknown> {
   } catch {
     throw new InvalidArgumentError("--input must contain a JSON object");
   }
-  const result = z.record(z.string(), z.json()).safeParse(parsed);
+  const result = record(string(), json()).safeParse(parsed);
   if (!result.success)
     throw new InvalidArgumentError("--input must contain a JSON object");
   return result.data;

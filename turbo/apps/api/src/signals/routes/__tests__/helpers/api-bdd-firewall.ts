@@ -1,6 +1,6 @@
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { HttpResponse, http } from "msw";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import { mockClerkUsers } from "./clerk-users";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
@@ -10,7 +10,7 @@ import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-a
 import type { ApiTestUser } from "./api-bdd";
 import { encryptSecretForTests } from "./encrypt-secret";
 
-type FirewallAuthBody = z.infer<
+type FirewallAuthBody = zInfer<
   (typeof webhookFirewallAuthContract.resolve)["body"]
 >;
 

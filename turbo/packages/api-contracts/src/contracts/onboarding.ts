@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { publicConnectorCatalogConnectListResponseSchema } from "./connector-catalog";
@@ -9,24 +20,22 @@ const c = initContract();
 /**
  * Onboarding status response schema
  */
-export const onboardingStatusResponseSchema = z.object({
-  needsOnboarding: z.boolean(),
-  onboardingComplete: z.boolean(),
-  isAdmin: z.boolean(),
-  hasOrg: z.boolean(),
-  hasDefaultAgent: z.boolean(),
-  defaultAgentId: z.string().nullable(),
-  defaultAgentMetadata: z
-    .object({
-      displayName: z.string().optional(),
-      description: z.string().optional(),
-      sound: z.string().optional(),
-      avatarUrl: z.string().optional(),
-    })
-    .nullable(),
+export const onboardingStatusResponseSchema = object({
+  needsOnboarding: boolean(),
+  onboardingComplete: boolean(),
+  isAdmin: boolean(),
+  hasOrg: boolean(),
+  hasDefaultAgent: boolean(),
+  defaultAgentId: string().nullable(),
+  defaultAgentMetadata: object({
+    displayName: string().optional(),
+    description: string().optional(),
+    sound: string().optional(),
+    avatarUrl: string().optional(),
+  }).nullable(),
 });
 
-export type OnboardingStatusResponse = z.infer<
+export type OnboardingStatusResponse = zInfer<
   typeof onboardingStatusResponseSchema
 >;
 
@@ -52,16 +61,16 @@ export const ONBOARDING_INDUSTRY_IDS = [
   "other",
 ] as const;
 
-export const onboardingIndustrySchema = z.enum(ONBOARDING_INDUSTRY_IDS);
+export const onboardingIndustrySchema = zEnum(ONBOARDING_INDUSTRY_IDS);
 
-export type OnboardingIndustry = z.infer<typeof onboardingIndustrySchema>;
+export type OnboardingIndustry = zInfer<typeof onboardingIndustrySchema>;
 
-export const onboardingSubscriptionProviderSchema = z.enum([
+export const onboardingSubscriptionProviderSchema = zEnum([
   "codex",
   "claudeCode",
 ]);
 
-export type OnboardingSubscriptionProvider = z.infer<
+export type OnboardingSubscriptionProvider = zInfer<
   typeof onboardingSubscriptionProviderSchema
 >;
 
@@ -90,61 +99,57 @@ export const ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS = [
   "meta-ads",
 ] as const;
 
-export const onboardingRecommendationConnectorSlugSchema = z.enum(
+export const onboardingRecommendationConnectorSlugSchema = zEnum(
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
 );
 
-export type OnboardingRecommendationConnectorSlug = z.infer<
+export type OnboardingRecommendationConnectorSlug = zInfer<
   typeof onboardingRecommendationConnectorSlugSchema
 >;
 
 /** A short, evidence-based portrait from the same sources as the first task. */
-export const onboardingUserProfileSchema = z
-  .object({
-    overview: z.string().trim().min(1).max(240),
-    professionalIdentity: z.array(z.string().trim().min(1).max(180)).max(3),
-    communicationStyle: z.array(z.string().trim().min(1).max(180)).max(3),
-    priorities: z.array(z.string().trim().min(1).max(180)).max(3),
-  })
-  .strict();
+export const onboardingUserProfileSchema = object({
+  overview: string().trim().min(1).max(240),
+  professionalIdentity: array(string().trim().min(1).max(180)).max(3),
+  communicationStyle: array(string().trim().min(1).max(180)).max(3),
+  priorities: array(string().trim().min(1).max(180)).max(3),
+}).strict();
 
-export type OnboardingUserProfile = z.infer<typeof onboardingUserProfileSchema>;
+export type OnboardingUserProfile = zInfer<typeof onboardingUserProfileSchema>;
 
-export const onboardingRecommendationSchema = z
-  .object({
-    kind: z.enum(["task", "workflow"]),
-    title: z.string().trim().min(1).max(120),
-    outcome: z.string().trim().min(1).max(240),
-    prompt: z.string().trim().min(1).max(1000),
-    profile: onboardingUserProfileSchema,
-  })
-  .strict();
+export const onboardingRecommendationSchema = object({
+  kind: zEnum(["task", "workflow"]),
+  title: string().trim().min(1).max(120),
+  outcome: string().trim().min(1).max(240),
+  prompt: string().trim().min(1).max(1000),
+  profile: onboardingUserProfileSchema,
+}).strict();
 
-export type OnboardingRecommendation = z.infer<
+export type OnboardingRecommendation = zInfer<
   typeof onboardingRecommendationSchema
 >;
 
-const onboardingRecommendationJobSchema = z.object({
-  jobId: z.uuid(),
+const onboardingRecommendationJobSchema = object({
+  jobId: uuid(),
 });
 
-export const onboardingRecommendationStatusSchema = z.discriminatedUnion(
+export const onboardingRecommendationStatusSchema = discriminatedUnion(
   "status",
   [
     onboardingRecommendationJobSchema.extend({
-      status: z.enum(["pending", "running"]),
+      status: zEnum(["pending", "running"]),
     }),
     onboardingRecommendationJobSchema.extend({
-      status: z.literal("completed"),
+      status: literal("completed"),
       recommendation: onboardingRecommendationSchema,
     }),
     onboardingRecommendationJobSchema.extend({
-      status: z.literal("failed"),
+      status: literal("failed"),
     }),
   ],
 );
 
-export type OnboardingRecommendationStatus = z.infer<
+export type OnboardingRecommendationStatus = zInfer<
   typeof onboardingRecommendationStatusSchema
 >;
 
@@ -188,20 +193,18 @@ export const onboardingCompleteContract = c.router({
     method: "POST",
     path: "/api/onboarding/complete",
     headers: authHeadersSchema,
-    body: z
-      .object({
-        // Semantic IANA validation happens after core completion so an invalid
-        // optional fallback cannot roll back the onboarding transition.
-        timezone: z.string().optional(),
-        // The field answered in the source-first flow. Only that flow asks the
-        // question, so an absent industry completes onboarding unchanged.
-        industry: onboardingIndustrySchema.optional(),
-      })
-      .strict(),
+    body: object({
+      // Semantic IANA validation happens after core completion so an invalid
+      // optional fallback cannot roll back the onboarding transition.
+      timezone: string().optional(),
+      // The field answered in the source-first flow. Only that flow asks the
+      // question, so an absent industry completes onboarding unchanged.
+      industry: onboardingIndustrySchema.optional(),
+    }).strict(),
     responses: {
-      200: z.object({
-        onboardingComplete: z.literal(true),
-        needsOnboarding: z.literal(false),
+      200: object({
+        onboardingComplete: literal(true),
+        needsOnboarding: literal(false),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -216,15 +219,13 @@ export const onboardingRecommendationContract = c.router({
     method: "POST",
     path: "/api/onboarding/recommendations",
     headers: authHeadersSchema,
-    body: z
-      .object({
-        industry: onboardingIndustrySchema,
-        locale: onboardingRecommendationLocaleSchema,
-      })
-      .strict(),
+    body: object({
+      industry: onboardingIndustrySchema,
+      locale: onboardingRecommendationLocaleSchema,
+    }).strict(),
     responses: {
       202: onboardingRecommendationJobSchema.extend({
-        status: z.literal("pending"),
+        status: literal("pending"),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,

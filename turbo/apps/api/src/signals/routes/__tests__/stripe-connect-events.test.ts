@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { webhookStripeConnectContract } from "@okouai/api-contracts/contracts/webhooks";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import { string } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -116,9 +116,9 @@ beforeEach(() => {
   context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
     (rawBody, signature, secret) => {
       return verifier.webhooks.constructEventAsync(
-        z.string().parse(rawBody),
-        z.string().parse(signature),
-        z.string().parse(secret),
+        string().parse(rawBody),
+        string().parse(signature),
+        string().parse(secret),
       );
     },
   );

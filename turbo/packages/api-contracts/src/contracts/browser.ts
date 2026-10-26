@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  boolean,
+  iso,
+  literal,
+  number,
+  object,
+  string,
+  url,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -15,7 +26,7 @@ export const BROWSER_INITIAL_SCREEN_HEIGHT = 900;
 export const BROWSER_MIN_SCREEN_HEIGHT = 320;
 export const BROWSER_MAX_SCREEN_HEIGHT = 3456;
 
-export const browserStatusSchema = z.enum([
+export const browserStatusSchema = zEnum([
   "creating",
   "active",
   "resuming",
@@ -24,7 +35,7 @@ export const browserStatusSchema = z.enum([
   "error",
 ]);
 
-export const browserSuspensionReasonSchema = z.enum([
+export const browserSuspensionReasonSchema = zEnum([
   // Historical reason kept for rows written before the idle lease existed.
   "run_end",
   "idle",
@@ -34,97 +45,91 @@ export const browserSuspensionReasonSchema = z.enum([
   "user",
 ]);
 
-const browserScreenSchema = z.object({
-  width: z.literal(BROWSER_SCREEN_WIDTH),
-  height: z
-    .number()
+const browserScreenSchema = object({
+  width: literal(BROWSER_SCREEN_WIDTH),
+  height: number()
     .int()
     .min(BROWSER_MIN_SCREEN_HEIGHT)
     .max(BROWSER_MAX_SCREEN_HEIGHT),
-  resizable: z.boolean(),
+  resizable: boolean(),
 });
 
-export const browserSessionSchema = z
-  .object({
-    threadId: z.uuid(),
-    name: z.string().min(1).max(64),
-    status: browserStatusSchema,
-    viewerUrl: z.url(),
-    liveUrl: z.url().nullable(),
-    screenshotUrl: z.url().nullable(),
-    proxyCountryCode: z.string().length(2).nullable(),
-    timeoutMinutes: z.number().int().positive(),
-    // Only live provider instances have persisted window dimensions.
-    screen: browserScreenSchema.optional(),
-    // When Okou reclaims the live provider instance unless somebody leases it
-    // again. Null once no provider instance is running.
-    idleExpiresAt: z.iso.datetime().nullable(),
-    suspendedAt: z.iso.datetime().nullable(),
-    suspensionReason: browserSuspensionReasonSchema.nullable(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-  })
-  .strict();
+export const browserSessionSchema = object({
+  threadId: uuid(),
+  name: string().min(1).max(64),
+  status: browserStatusSchema,
+  viewerUrl: url(),
+  liveUrl: url().nullable(),
+  screenshotUrl: url().nullable(),
+  proxyCountryCode: string().length(2).nullable(),
+  timeoutMinutes: number().int().positive(),
+  // Only live provider instances have persisted window dimensions.
+  screen: browserScreenSchema.optional(),
+  // When Okou reclaims the live provider instance unless somebody leases it
+  // again. Null once no provider instance is running.
+  idleExpiresAt: iso.datetime().nullable(),
+  suspendedAt: iso.datetime().nullable(),
+  suspensionReason: browserSuspensionReasonSchema.nullable(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
+}).strict();
 
-export type BrowserStatus = z.infer<typeof browserStatusSchema>;
-export type BrowserSuspensionReason = z.infer<
+export type BrowserStatus = zInfer<typeof browserStatusSchema>;
+export type BrowserSuspensionReason = zInfer<
   typeof browserSuspensionReasonSchema
 >;
-export type BrowserSession = z.infer<typeof browserSessionSchema>;
+export type BrowserSession = zInfer<typeof browserSessionSchema>;
 
-export const browserCreateRequestSchema = z
-  .object({
-    name: z.string().trim().min(1).max(64).default("browser"),
-    proxyCountryCode: z
-      .string()
-      .trim()
-      .length(2)
-      .transform((value) => {
-        return value.toLowerCase();
-      })
-      .nullable()
-      .default(null),
-  })
-  .strict();
+export const browserCreateRequestSchema = object({
+  name: string().trim().min(1).max(64).default("browser"),
+  proxyCountryCode: string()
+    .trim()
+    .length(2)
+    .transform((value) => {
+      return value.toLowerCase();
+    })
+    .nullable()
+    .default(null),
+}).strict();
 
-export type BrowserCreateRequest = z.infer<typeof browserCreateRequestSchema>;
+export type BrowserCreateRequest = zInfer<typeof browserCreateRequestSchema>;
 
-const browserThreadParamsSchema = z.object({
-  threadId: z.uuid(),
+const browserThreadParamsSchema = object({
+  threadId: uuid(),
 });
 
-const browserResponseSchema = z.object({
+const browserResponseSchema = object({
   browser: browserSessionSchema,
 });
 
-const browserResizeRequestSchema = z.object({
-  aspectRatio: z.number().positive().finite(),
+const browserResizeRequestSchema = object({
+  aspectRatio: number().positive().finite(),
 });
 
-const browserAuthorizationRequestTokenPathParamsSchema = z.object({
-  requestToken: z.string().min(1),
+const browserAuthorizationRequestTokenPathParamsSchema = object({
+  requestToken: string().min(1),
 });
 
-const browserAuthorizationRequestCreateResponseSchema = z.object({
-  authorizationUrl: z.url(),
-  expiresAt: z.iso.datetime(),
+const browserAuthorizationRequestCreateResponseSchema = object({
+  authorizationUrl: url(),
+  expiresAt: iso.datetime(),
 });
 
-const browserAuthorizationRequestResponseSchema = z.object({
-  id: z.uuid(),
-  chatThreadId: z.uuid(),
-  expiresAt: z.iso.datetime(),
-  completedAt: z.iso.datetime().nullable(),
-  cloudBrowserEnabled: z.boolean(),
+const browserAuthorizationRequestResponseSchema = object({
+  id: uuid(),
+  chatThreadId: uuid(),
+  expiresAt: iso.datetime(),
+  completedAt: iso.datetime().nullable(),
+  cloudBrowserEnabled: boolean(),
 });
 
-const browserAuthorizationRequestApplyResponseSchema = z.object({
-  ok: z.literal(true),
-  cloudBrowserEnabled: z.literal(true),
+const browserAuthorizationRequestApplyResponseSchema = object({
+  ok: literal(true),
+  cloudBrowserEnabled: literal(true),
 });
 
 const browserConnectionResponseSchema = browserResponseSchema.extend({
-  cdpUrl: z.url(),
+  cdpUrl: url(),
 });
 
 const commonErrorResponses = {
@@ -154,7 +159,7 @@ export const browserContract = c.router({
     method: "POST",
     path: "/api/browsers/use",
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: browserConnectionResponseSchema,
       ...commonErrorResponses,
@@ -166,7 +171,7 @@ export const browserContract = c.router({
     method: "POST",
     path: "/api/browsers/lease",
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: browserResponseSchema,
       ...commonErrorResponses,
@@ -178,7 +183,7 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/lease",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: browserResponseSchema,
       ...commonErrorResponses,
@@ -190,7 +195,7 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/open",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: browserResponseSchema,
       ...commonErrorResponses,
@@ -202,9 +207,9 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/close",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
-      200: z.object({}),
+      200: object({}),
       ...commonErrorResponses,
     },
     summary: "Record that the managed browser sidebar was closed",
@@ -248,8 +253,8 @@ export const browserContract = c.router({
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
     responses: {
-      200: z.object({
-        cdpUrl: z.url({ protocol: /^wss$/u }),
+      200: object({
+        cdpUrl: url({ protocol: /^wss$/u }),
       }),
       ...commonErrorResponses,
     },
@@ -262,7 +267,7 @@ export const browserAuthorizationRequestsContract = c.router({
     method: "POST",
     path: "/api/browser/authorization-requests",
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: browserAuthorizationRequestCreateResponseSchema,
       400: apiErrorSchema,
@@ -293,7 +298,7 @@ export const browserAuthorizationRequestsContract = c.router({
     path: "/api/browser/authorization-requests/:requestToken/apply",
     headers: authHeadersSchema,
     pathParams: browserAuthorizationRequestTokenPathParamsSchema,
-    body: z.object({}),
+    body: object({}),
     responses: {
       200: browserAuthorizationRequestApplyResponseSchema,
       400: apiErrorSchema,
@@ -309,12 +314,12 @@ export const browserAuthorizationRequestsContract = c.router({
 export type BrowserContract = typeof browserContract;
 export type BrowserAuthorizationRequestsContract =
   typeof browserAuthorizationRequestsContract;
-export type BrowserAuthorizationRequestCreateResponse = z.infer<
+export type BrowserAuthorizationRequestCreateResponse = zInfer<
   typeof browserAuthorizationRequestCreateResponseSchema
 >;
-export type BrowserAuthorizationRequestResponse = z.infer<
+export type BrowserAuthorizationRequestResponse = zInfer<
   typeof browserAuthorizationRequestResponseSchema
 >;
-export type BrowserAuthorizationRequestApplyResponse = z.infer<
+export type BrowserAuthorizationRequestApplyResponse = zInfer<
   typeof browserAuthorizationRequestApplyResponseSchema
 >;

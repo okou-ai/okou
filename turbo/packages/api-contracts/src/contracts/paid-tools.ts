@@ -1,4 +1,13 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  string,
+  union,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -24,11 +33,11 @@ export const PAID_TOOL_IDS = [
   "avatar-video-generation",
 ] as const;
 
-export const paidToolIdSchema = z.union([
-  z.enum(PAID_TOOL_IDS),
-  z.string().regex(/^data:[a-zA-Z0-9_.-]{1,128}$/),
+export const paidToolIdSchema = union([
+  zEnum(PAID_TOOL_IDS),
+  string().regex(/^data:[a-zA-Z0-9_.-]{1,128}$/),
 ]);
-export type PaidToolId = z.infer<typeof paidToolIdSchema>;
+export type PaidToolId = zInfer<typeof paidToolIdSchema>;
 
 export const DISABLED_PAID_TOOLS_ENV_VAR = "OKOU_DISABLED_PAID_TOOLS";
 export const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR =
@@ -45,7 +54,7 @@ export const paidToolsContract = c.router({
     headers: authHeadersSchema,
     responses: {
       // Lists remain additive when a newer API supports more tools.
-      200: z.object({ disabledTools: z.array(z.string()) }),
+      200: object({ disabledTools: array(string()) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       500: apiErrorSchema,
@@ -56,10 +65,10 @@ export const paidToolsContract = c.router({
     method: "PATCH",
     path: "/api/paid-tools/:toolId",
     headers: authHeadersSchema,
-    pathParams: z.object({ toolId: paidToolIdSchema }),
-    body: z.object({ disabled: z.boolean() }).strict(),
+    pathParams: object({ toolId: paidToolIdSchema }),
+    body: object({ disabled: boolean() }).strict(),
     responses: {
-      200: z.object({ toolId: paidToolIdSchema, disabled: z.boolean() }),
+      200: object({ toolId: paidToolIdSchema, disabled: boolean() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

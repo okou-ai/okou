@@ -2,7 +2,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type postgres from "postgres";
-import { z } from "zod";
+import { array, guid, number, object, string, tuple } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { summarizeMigrationPlan } from "./migration-plan";
 
@@ -16,9 +16,7 @@ export const NON_TRANSACTIONAL_MIGRATION_MARKER = "-- okou:non-transactional";
 export const UUID_BATCH_MIGRATION_MARKER = "-- okou:batch-by-uuid";
 const EXPLAIN_ON_TIMEOUT_MIGRATION_MARKER = "-- okou:explain-on-timeout";
 
-const batchCursorSchema = z.tuple([
-  z.object({ next_cursor: z.guid().nullable() }),
-]);
+const batchCursorSchema = tuple([object({ next_cursor: guid().nullable() })]);
 
 export interface ApplyPendingMigrationsOptions {
   /**
@@ -92,18 +90,16 @@ export async function applyPendingMigrations(
     migrationsFolder: DRIZZLE_MIGRATE_OUT,
   });
 
-  const journal = z
-    .object({
-      entries: z.array(z.object({ tag: z.string(), when: z.number() })),
-    })
-    .parse(
-      JSON.parse(
-        readFileSync(
-          path.join(DRIZZLE_MIGRATE_OUT, "meta/_journal.json"),
-          "utf8",
-        ),
+  const journal = object({
+    entries: array(object({ tag: string(), when: number() })),
+  }).parse(
+    JSON.parse(
+      readFileSync(
+        path.join(DRIZZLE_MIGRATE_OUT, "meta/_journal.json"),
+        "utf8",
       ),
-    );
+    ),
+  );
   const migrationFiles = new Map(
     journal.entries.map((entry) => {
       return [entry.when, `${entry.tag}.sql`];

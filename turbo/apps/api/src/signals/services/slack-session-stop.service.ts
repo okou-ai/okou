@@ -19,7 +19,8 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { literal, object, string, type infer as zInfer } from "zod";
+
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -43,17 +44,17 @@ import {
 
 const L = logger("SlackSessionStop");
 const stopQueueRevoker = alias(chatEvents, "slack_stop_queue_revoker");
-const slackTimestamp = z.string().regex(/^\d{1,12}\.\d{1,6}$/);
+const slackTimestamp = string().regex(/^\d{1,12}\.\d{1,6}$/);
 
-export const slackSessionStoppedEventSchema = z.object({
-  type: z.literal("agent_session_stopped"),
-  channel: z.string().min(1),
+export const slackSessionStoppedEventSchema = object({
+  type: literal("agent_session_stopped"),
+  channel: string().min(1),
   thread_ts: slackTimestamp,
-  user: z.string().min(1),
+  user: string().min(1),
   event_ts: slackTimestamp,
 });
 
-export type SlackSessionStoppedEvent = z.infer<
+export type SlackSessionStoppedEvent = zInfer<
   typeof slackSessionStoppedEventSchema
 >;
 

@@ -1,22 +1,18 @@
-import { z } from "zod";
+import { object, string, type infer as zInfer } from "zod";
 
-export const automationLoopCallbackPayloadSchema = z
-  .object({
-    automationId: z.string(),
-  })
-  .strict();
+export const automationLoopCallbackPayloadSchema = object({
+  automationId: string(),
+}).strict();
 
-export const automationCronCallbackPayloadSchema = z
-  .object({
-    automationId: z.string(),
-    timezone: z.string(),
-    cronExpression: z.string().optional(),
-  })
-  .strict();
+export const automationCronCallbackPayloadSchema = object({
+  automationId: string(),
+  timezone: string(),
+  cronExpression: string().optional(),
+}).strict();
 
-export type AutomationLoopCallbackPayload = z.infer<
+export type AutomationLoopCallbackPayload = zInfer<
   typeof automationLoopCallbackPayloadSchema
 >;
-export type AutomationCronCallbackPayload = z.infer<
+export type AutomationCronCallbackPayload = zInfer<
   typeof automationCronCallbackPayloadSchema
 >;

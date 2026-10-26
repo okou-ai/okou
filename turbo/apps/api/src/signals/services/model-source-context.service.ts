@@ -12,7 +12,7 @@ import {
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { computed } from "ccstate";
 import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
   contextJsonProjection,
@@ -72,9 +72,10 @@ function memberModelSourcePredicates(orgId: string, userId: string) {
   };
 }
 
-const sourceSecretSchema = z
-  .object({ name: z.string(), encryptedValue: z.string() })
-  .nullable();
+const sourceSecretSchema = object({
+  name: string(),
+  encryptedValue: string(),
+}).nullable();
 
 /**
  * The same member-source join as one JSON aggregate, for statements that
@@ -90,19 +91,19 @@ export function memberModelSourcesAggregate(orgId: string, userId: string) {
       'secret', CASE WHEN ${modelProviderAccountSecrets.modelProviderAccountId} IS NULL THEN NULL
         ELSE jsonb_build_object('name', ${modelProviderAccountSecrets.name},
           'encryptedValue', ${modelProviderAccountSecrets.encryptedValue}) END)), '[]'::jsonb)`;
-  const rowSchema = z.object({
+  const rowSchema = object({
     provider: contextProjectionSchema(providerProjection().provider),
     account: contextProjectionSchema(accountColumns).nullable(),
     secret: sourceSecretSchema,
   });
   return {
-    payload: payload.mapWith(zodDriverValueDecoder(z.unknown())),
+    payload: payload.mapWith(zodDriverValueDecoder(zUnknown())),
     joins: on,
     decode(value: unknown) {
       return memberModelSourcesFromRows(
         orgId,
         userId,
-        z.array(rowSchema).parse(value),
+        array(rowSchema).parse(value),
       );
     },
   };

@@ -4,11 +4,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
 
-const journalSchema = z.object({
-  entries: z.array(z.object({ tag: z.string(), when: z.number() })),
+const journalSchema = object({
+  entries: array(object({ tag: string(), when: number() })),
 });
 
 async function seedRetainedBilling(sql: postgres.Sql) {

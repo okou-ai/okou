@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { array, literal, object, union, enum as zEnum } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -28,81 +28,81 @@ const vncHostBaseSchema = vncConnectionMetadataSchema
   })
   .extend({ availability: sshHostAvailabilitySchema });
 
-export const vncHostSchema = z.union([
+export const vncHostSchema = union([
   vncHostBaseSchema
     .extend({
-      authMethod: z.enum([
+      authMethod: zEnum([
         "qemu_kerberos_ticket",
         "qemu_kerberos_keytab",
         "qemu_kerberos_password",
       ]),
-      securityType: z.literal("qemu_x509_gssapi"),
+      securityType: literal("qemu_x509_gssapi"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
       authMethod: vncRsaAesAuthenticationMethodSchema,
-      securityType: z.enum(VNC_RSA_AES_SECURITY_TYPES),
+      securityType: zEnum(VNC_RSA_AES_SECURITY_TYPES),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("client_certificate"),
-      securityType: z.literal("x509_none"),
+      authMethod: literal("client_certificate"),
+      securityType: literal("x509_none"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("client_certificate_vnc_password"),
-      securityType: z.literal("x509_vnc"),
+      authMethod: literal("client_certificate_vnc_password"),
+      securityType: literal("x509_vnc"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("none"),
-      securityType: z.literal("x509_none"),
+      authMethod: literal("none"),
+      securityType: literal("x509_none"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("vnc_password"),
-      securityType: z.literal("x509_vnc"),
+      authMethod: literal("vnc_password"),
+      securityType: literal("x509_vnc"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("username_password"),
-      securityType: z.literal("x509_plain"),
+      authMethod: literal("username_password"),
+      securityType: literal("x509_plain"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("qemu_scram_sha256"),
-      securityType: z.literal("qemu_x509_sasl"),
+      authMethod: literal("qemu_scram_sha256"),
+      securityType: literal("qemu_x509_sasl"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("apple_dh_username_password"),
-      securityType: z.literal("apple_dh"),
+      authMethod: literal("apple_dh_username_password"),
+      securityType: literal("apple_dh"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("apple_srp_username_password"),
-      securityType: z.literal("apple_srp"),
+      authMethod: literal("apple_srp_username_password"),
+      securityType: literal("apple_srp"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("apple_rsa_srp_username_password"),
-      securityType: z.literal("apple_rsa_srp"),
+      authMethod: literal("apple_rsa_srp_username_password"),
+      securityType: literal("apple_rsa_srp"),
     })
     .strict(),
   vncHostBaseSchema
     .extend({
-      authMethod: z.literal("vnc_password"),
-      securityType: z.literal("apple_vnc_password"),
+      authMethod: literal("vnc_password"),
+      securityType: literal("apple_vnc_password"),
     })
     .strict(),
 ]);
@@ -113,12 +113,10 @@ export const vncHostsContract = c.router({
     path: "/api/vnc/hosts",
     headers: authHeadersSchema,
     responses: {
-      200: z
-        .object({
-          hosts: z.array(vncHostSchema),
-          identities: z.array(remoteHostIdentitySchema),
-        })
-        .strict(),
+      200: object({
+        hosts: array(vncHostSchema),
+        identities: array(remoteHostIdentitySchema),
+      }).strict(),
       ...errors,
     },
     summary: "List current VNC hosts authorized for a running Agent",

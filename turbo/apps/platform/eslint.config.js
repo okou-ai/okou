@@ -1,3 +1,4 @@
+import { namedZodImportsConfig } from "@okouai/eslint-rules/zod";
 import { createHash } from "node:crypto";
 import { globSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -19,12 +20,14 @@ const eslintCacheInputPaths = globSync(
     "../../packages/eslint-config/**/*.{js,cjs,mjs,json}",
     "../../packages/eslint-rules/package.json",
     "../../packages/eslint-rules/src/ccstate/**/*.ts",
+    "../../packages/eslint-rules/src/zod/**/*.ts",
   ],
   {
     cwd: import.meta.dirname,
     exclude: [
       "../../packages/eslint-config/**/*.node.js",
       "../../packages/eslint-rules/src/ccstate/__tests__/**",
+      "../../packages/eslint-rules/src/zod/__tests__/**",
     ],
   },
 ).sort();
@@ -59,6 +62,7 @@ const runtimeImportRestrictions = Object.freeze([
 /** @type {import("eslint").Linter.Config[]} */
 export default [
   ...baseConfig,
+  namedZodImportsConfig,
   {
     ...pluginReact.configs.flat.recommended,
     settings: {

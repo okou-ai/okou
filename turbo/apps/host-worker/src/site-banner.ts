@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.edge";
 import { escapeUTF8 } from "entities/escape";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import type { hostedSitePresentationSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import {
   hostedSiteBannerCsp,
@@ -13,7 +13,7 @@ import {
 } from "@okouai/ui/components/ui/artifact-banner";
 import assets from "./site-banner-assets.json";
 
-type Presentation = z.infer<typeof hostedSitePresentationSchema>;
+type Presentation = zInfer<typeof hostedSitePresentationSchema>;
 
 /** Fetch destination is a presentation hint only; it never establishes access. */
 export function standaloneSiteDocument(request: Request) {

@@ -1,5 +1,5 @@
 import type { WechatReceiver } from "./index";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import type { wechatUpdatesSchema } from "@okouai/api-contracts/contracts/wechat-protocol";
 export interface Env {
   readonly WECHAT_RECEIVER: DurableObjectNamespace<WechatReceiver>;
@@ -18,7 +18,7 @@ export interface EncryptedValue {
   readonly iv: string;
   readonly data: string;
 }
-export type Updates = z.infer<typeof wechatUpdatesSchema>;
+export type Updates = zInfer<typeof wechatUpdatesSchema>;
 export interface Pending {
   readonly id: string;
   readonly parts: number;

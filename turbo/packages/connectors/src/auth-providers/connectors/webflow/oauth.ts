@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -66,12 +66,10 @@ export async function exchangeWebflowCode(
     await throwOAuthError("Webflow", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string(),
-      token_type: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string(),
+    token_type: string().optional(),
+  }).parse(await response.json());
 
   const userInfo = await fetchWebflowUserInfo(data.access_token);
 
@@ -104,14 +102,12 @@ async function fetchWebflowUserInfo(accessToken: string): Promise<{
     return { id: "unknown", username: null, email: null };
   }
 
-  const data = z
-    .object({
-      id: z.string().optional(),
-      email: z.string().nullable().optional(),
-      firstName: z.string().nullable().optional(),
-      lastName: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    id: string().optional(),
+    email: string().nullable().optional(),
+    firstName: string().nullable().optional(),
+    lastName: string().nullable().optional(),
+  }).parse(await response.json());
 
   const fullName =
     [data.firstName, data.lastName].filter(Boolean).join(" ") || null;

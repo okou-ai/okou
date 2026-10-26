@@ -1,13 +1,13 @@
 import { Realtime, type RealtimeChannel } from "ably";
-import { z } from "zod";
+import { number, object, string } from "zod";
 import type { RealtimeSubscription } from "@okouai/api-contracts/contracts/realtime";
 
-const tokenDetailsSchema = z.object({
-  token: z.string().min(1),
-  issued: z.number(),
-  expires: z.number(),
-  capability: z.string(),
-  clientId: z.string().optional(),
+const tokenDetailsSchema = object({
+  token: string().min(1),
+  issued: number(),
+  expires: number(),
+  capability: string(),
+  clientId: string().optional(),
 });
 
 async function redeemToken(

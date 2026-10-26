@@ -20,7 +20,8 @@ import {
 } from "vitest";
 
 import { piModelFailureReason } from "./model-request-diagnostics";
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import cyberSafetyRefusal from "./test/fixtures/codex-cyber-safety-refusal.json";
 import modelAccessVerification from "./test/fixtures/codex-model-access-verification.json";

@@ -1,5 +1,5 @@
 import { mockClerkUsers } from "./clerk-users";
-import type { z } from "zod";
+import type { input } from "zod";
 import {
   logsByIdContract,
   logsListContract,
@@ -22,13 +22,13 @@ const TEST_APP_ROUTES = Object.freeze([...logsRoutes, ...runDetailRoutes]);
 type AuthHeaders = {
   readonly authorization?: string;
 };
-type AgentEventsQuery = z.input<
+type AgentEventsQuery = input<
   (typeof runAgentEventsContract.getAgentEvents)["query"]
 >;
-type NetworkLogsQuery = z.input<
+type NetworkLogsQuery = input<
   (typeof runNetworkLogsContract.getNetworkLogs)["query"]
 >;
-type LogsListQuery = z.input<(typeof logsListContract.list)["query"]>;
+type LogsListQuery = input<(typeof logsListContract.list)["query"]>;
 
 interface ClerkUserProfile {
   readonly id: string;

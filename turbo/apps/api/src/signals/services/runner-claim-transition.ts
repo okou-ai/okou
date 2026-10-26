@@ -4,7 +4,8 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { and, eq, exists, isNull, or, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { number, object, enum as zEnum, type infer as zInfer } from "zod";
+
 import { runnerJobQueueExpiredCondition } from "./runner-job-queue-lifecycle.service";
 
 export type ClaimTransitionResult =
@@ -12,18 +13,18 @@ export type ClaimTransitionResult =
   | { readonly status: "job-not-found" }
   | { readonly status: "run-not-found" };
 
-export const claimTransitionSqlRowSchema = z.object({
-  status: z.enum([
+export const claimTransitionSqlRowSchema = object({
+  status: zEnum([
     "claimed",
     "job-not-found",
     "run-not-found",
     "invariant-error",
   ]),
-  claimedAtMs: z.number().nullable(),
+  claimedAtMs: number().nullable(),
 });
 
 export function decodeClaimTransitionResult(
-  rows: readonly z.infer<typeof claimTransitionSqlRowSchema>[],
+  rows: readonly zInfer<typeof claimTransitionSqlRowSchema>[],
 ): ClaimTransitionResult {
   const row = rows[0];
   if (!row || row.status === "invariant-error") {

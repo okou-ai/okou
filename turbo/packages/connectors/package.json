@@ -121,6 +121,7 @@
   },
   "devDependencies": {
     "@okouai/eslint-config": "workspace:*",
+    "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "@types/node": "^24.3.0",
     "@types/tr46": "5.0.1",

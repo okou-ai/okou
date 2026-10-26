@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
-import { z } from "zod";
+import { array, number, object, string } from "zod";
 import { summarizeMigrationPlan } from "./migration-plan";
 import { applyPendingMigrations } from "./migration-runner";
 
@@ -345,18 +345,16 @@ async function assertHistoricalAgentRepair(): Promise<void> {
 }
 
 try {
-  const journal = z
-    .object({
-      entries: z.array(z.object({ tag: z.string(), when: z.number() })),
-    })
-    .parse(
-      JSON.parse(
-        await readFile(
-          new URL("../src/migrations/meta/_journal.json", import.meta.url),
-          "utf8",
-        ),
+  const journal = object({
+    entries: array(object({ tag: string(), when: number() })),
+  }).parse(
+    JSON.parse(
+      await readFile(
+        new URL("../src/migrations/meta/_journal.json", import.meta.url),
+        "utf8",
       ),
-    );
+    ),
+  );
   const entry = journal.entries.find(({ tag }) => {
     return tag === "1452_backfill_thread_executed_predecessor";
   });

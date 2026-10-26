@@ -1,6 +1,6 @@
 import { initContract } from "./base";
-import { z } from "zod";
-import { apiErrorSchema } from "./errors";
+import { array, literal, object, string, uuid } from "zod";
+import { apiErrorSchema } from "./api-error";
 
 const c = initContract();
 
@@ -12,10 +12,10 @@ export const dataRouterRequestContract = c.router({
   register: {
     method: "POST",
     path: "/api/webhooks/agent/data-request",
-    headers: z.object({ authorization: z.string().optional() }),
-    body: z.object({ runId: z.uuid(), requestId: z.uuid() }).strict(),
+    headers: object({ authorization: string().optional() }),
+    body: object({ runId: uuid(), requestId: uuid() }).strict(),
     responses: {
-      200: z.object({ success: z.literal(true) }),
+      200: object({ success: literal(true) }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       404: apiErrorSchema,
@@ -30,9 +30,9 @@ export const dataRouterHistoryContract = c.router({
   list: {
     method: "GET",
     path: "/api/data/router/requests",
-    headers: z.object({ authorization: z.string().optional() }),
+    headers: object({ authorization: string().optional() }),
     responses: {
-      200: z.object({ requestIds: z.array(z.uuid()) }),
+      200: object({ requestIds: array(uuid()) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
     },

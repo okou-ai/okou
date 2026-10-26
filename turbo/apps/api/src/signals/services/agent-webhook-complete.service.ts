@@ -9,7 +9,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { z } from "zod";
+import type { infer as zInfer } from "zod";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -43,9 +43,7 @@ import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { settleDataRouterRun$ } from "./data-router-billing.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 
-type WebhookCompleteBody = z.infer<
-  typeof webhookCompleteContract.complete.body
->;
+type WebhookCompleteBody = zInfer<typeof webhookCompleteContract.complete.body>;
 type TerminalStatus = "completed" | "failed";
 
 interface CompleteAgentRunInput {

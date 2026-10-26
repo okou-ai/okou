@@ -8,7 +8,8 @@ import { randomUUID } from "node:crypto";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { array, number, object, string, type infer as zInfer } from "zod";
+
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -28,20 +29,20 @@ const chat = createChatFilesBddApi(context);
 const callbacks = createChatCallbacksApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
-const evidenceSchema = z.object({
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
-  activity: z.array(
-    z.object({
-      sequence: z.number(),
-      index: z.number(),
-      kind: z.string(),
-      name: z.string(),
-      callId: z.string(),
-      excerpt: z.string(),
+const evidenceSchema = object({
+  messages: array(object({ role: string(), content: string() })),
+  activity: array(
+    object({
+      sequence: number(),
+      index: number(),
+      kind: string(),
+      name: string(),
+      callId: string(),
+      excerpt: string(),
     }),
   ),
 });
-type Evidence = z.infer<typeof evidenceSchema>;
+type Evidence = zInfer<typeof evidenceSchema>;
 type TestRun = { runId: string; threadId: string };
 
 function request(

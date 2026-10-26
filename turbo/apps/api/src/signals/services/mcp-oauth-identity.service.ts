@@ -7,7 +7,16 @@ import {
   type JSONWebKeySet,
   type JWTPayload,
 } from "jose";
-import { z } from "zod";
+import {
+  array,
+  number,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+  url as zUrl,
+  type infer as zInfer,
+} from "zod";
 
 import { nowDate } from "../../lib/time";
 import { safeJsonParse, safeSync, settle } from "../utils";
@@ -15,51 +24,40 @@ import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 
 const ID_TOKEN_FUTURE_IAT_TOLERANCE_SECONDS = 60;
 
-const oidcDiscoveryIdentitySchema = z
-  .object({
-    issuer: z.url({ protocol: /^https$/u }),
-    authorization_endpoint: z.url({ protocol: /^https$/u }),
-    token_endpoint: z.url({ protocol: /^https$/u }),
-    jwks_uri: z.url({ protocol: /^https$/u }),
-    userinfo_endpoint: z.url({ protocol: /^https$/u }).optional(),
-    id_token_signing_alg_values_supported: z.array(z.string()).min(1),
-  })
-  .passthrough();
+const oidcDiscoveryIdentitySchema = object({
+  issuer: zUrl({ protocol: /^https$/u }),
+  authorization_endpoint: zUrl({ protocol: /^https$/u }),
+  token_endpoint: zUrl({ protocol: /^https$/u }),
+  jwks_uri: zUrl({ protocol: /^https$/u }),
+  userinfo_endpoint: zUrl({ protocol: /^https$/u }).optional(),
+  id_token_signing_alg_values_supported: array(string()).min(1),
+}).passthrough();
 
-const jwksSchema = z
-  .object({
-    keys: z.array(z.record(z.string(), z.unknown())).min(1).max(100),
-  })
-  .passthrough();
+const jwksSchema = object({
+  keys: array(record(string(), zUnknown())).min(1).max(100),
+}).passthrough();
 
-const identityClaimSchema = z
-  .string()
+const identityClaimSchema = string()
   .min(1)
   .max(255)
   .refine((value) => {
     return value.trim().length > 0;
   });
 
-const identityClaimsSchema = z
-  .object({
-    sub: identityClaimSchema,
-    azp: z.string().min(1).optional(),
-    exp: z.number().int(),
-    iat: z.number().int(),
-  })
-  .passthrough();
+const identityClaimsSchema = object({
+  sub: identityClaimSchema,
+  azp: string().min(1).optional(),
+  exp: number().int(),
+  iat: number().int(),
+}).passthrough();
 
-const userInfoClaimsSchema = z
-  .object({
-    sub: identityClaimSchema,
-  })
-  .passthrough();
+const userInfoClaimsSchema = object({
+  sub: identityClaimSchema,
+}).passthrough();
 
-const untrustedIssuerClaimSchema = z
-  .object({
-    iss: z.url({ protocol: /^https$/u }),
-  })
-  .passthrough();
+const untrustedIssuerClaimSchema = object({
+  iss: zUrl({ protocol: /^https$/u }),
+}).passthrough();
 
 interface McpAutomaticOAuthIdentityMetadata {
   readonly jwksUri: string;
@@ -115,7 +113,7 @@ function supportedIdentitySigningAlgorithm(algorithm: string): boolean {
 }
 
 function optionalOidcIdentityMetadata(
-  metadata: z.infer<typeof oidcDiscoveryIdentitySchema>,
+  metadata: zInfer<typeof oidcDiscoveryIdentitySchema>,
 ): McpAutomaticOAuthIdentityMetadata | undefined {
   const idTokenSigningAlgorithms = [
     ...new Set(
@@ -234,7 +232,7 @@ async function optionalUserInfoClaims(
   accessToken: string,
   subject: string,
   signal: AbortSignal,
-): Promise<z.infer<typeof userInfoClaimsSchema> | null> {
+): Promise<zInfer<typeof userInfoClaimsSchema> | null> {
   const userInfoEndpoint = metadata.userInfoEndpoint;
   if (!userInfoEndpoint) {
     return null;

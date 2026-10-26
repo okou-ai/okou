@@ -3,11 +3,11 @@ import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   type PaidToolId,
 } from "@okouai/api-contracts/contracts/paid-tools";
-import { z } from "zod";
+import { array, string } from "zod";
 
 import { getPlatformOrigin } from "../platform-url";
 
-const disabledToolsSchema = z.array(z.string());
+const disabledToolsSchema = array(string());
 
 function readPolicy(): ReadonlySet<string> | null {
   const value = process.env[DISABLED_PAID_TOOLS_ENV_VAR];

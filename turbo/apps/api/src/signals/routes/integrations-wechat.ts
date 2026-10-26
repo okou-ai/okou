@@ -33,7 +33,7 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { z } from "zod";
+import { object, uuid } from "zod";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { sendWechatWelcome$ } from "../services/wechat-notice.service";
@@ -215,7 +215,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   const bound = await settle(
     (async () => {
       return parseRawRows(
-        z.object({ id: z.uuid() }),
+        object({ id: uuid() }),
         await db.execute(sql`
   WITH consumed AS (DELETE FROM ${wechatConnectAttempts}
    WHERE id=${attempt.id}::uuid AND org_id=${auth.orgId} AND user_id=${auth.userId} AND expires_at>now()
@@ -322,7 +322,7 @@ const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   // Rotating the generation consumes every link for this disconnected binding.
   // Clear any pending disconnected batch and cancel in-progress QR attempts.
   const [row] = parseRawRows(
-    z.object({ id: z.uuid() }),
+    object({ id: uuid() }),
     await set(writeDb$).execute(sql`
     WITH restored AS (
       UPDATE ${wechatConnections} SET status='active', generation=${generation}::uuid,

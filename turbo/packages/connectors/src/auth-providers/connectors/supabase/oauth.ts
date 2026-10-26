@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { requireConnectorGrantUserId } from "../../grant-result";
@@ -123,16 +123,14 @@ export async function refreshSupabaseToken(
     await throwOAuthError("Supabase", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -185,16 +183,14 @@ export async function exchangeSupabaseCode(
     await throwOAuthError("Supabase", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    scope: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -232,13 +228,11 @@ async function fetchSupabaseUserInfo(
     throw new Error(`Supabase profile fetch failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      gotrue_id: z.string(),
-      primary_email: z.string().nullable().optional(),
-      username: z.string().nullable().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    gotrue_id: string(),
+    primary_email: string().nullable().optional(),
+    username: string().nullable().optional(),
+  }).parse(await response.json());
 
   // Supabase documents `gotrue_id` on `/v1/profile` as the OAuth user's identity, avoiding unstable organization-list ordering. Ref: https://api.supabase.com/api/v1#tag/profile/GET/v1/profile
   return {

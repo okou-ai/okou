@@ -19,7 +19,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { z } from "zod";
+import { object, string } from "zod";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { signSandboxJwtForTests, verifyOkouToken } from "../../auth/tokens";
@@ -1570,9 +1570,9 @@ describe("POST /api/webhooks/teams/bot", () => {
         idempotencyKey: `${fixture.teamsConversationId}:message:${fixture.teamsActivityId}`,
       },
     });
-    const { connectUrl: connectUrlValue } = z
-      .object({ connectUrl: z.string() })
-      .parse(body);
+    const { connectUrl: connectUrlValue } = object({
+      connectUrl: string(),
+    }).parse(body);
     expect(connectUrlValue).toContain(`${APP_ORIGIN}/settings/teams`);
     const connectUrl = new URL(connectUrlValue);
     expect(connectUrl.searchParams.get("tenantId")).toBe(fixture.teamsTenantId);
@@ -1686,9 +1686,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       url: "https://api.okou.ai/api/webhooks/teams/bot",
     });
 
-    const body = z
-      .object({ connectUrl: z.string() })
-      .parse(await readTeamsBotResponseAndFlush(response));
+    const body = object({ connectUrl: string() }).parse(
+      await readTeamsBotResponseAndFlush(response),
+    );
     const connectUrl = new URL(body.connectUrl);
     expect(connectUrl.origin).toBe("https://app.okou.ai");
     expect(connectUrl.searchParams.get("botName")).toBe(botName);

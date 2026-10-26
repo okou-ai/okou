@@ -1,9 +1,9 @@
-import { z } from "zod";
+import { uuid } from "zod";
 import { listWechatChannels } from "../../lib/api/domains/integrations-wechat";
 
 export async function wechatChannelId(value: string): Promise<string> {
   if (value !== "me") {
-    return z.uuid().parse(value.startsWith("chat:") ? value.slice(5) : value);
+    return uuid().parse(value.startsWith("chat:") ? value.slice(5) : value);
   }
   const { channels } = await listWechatChannels();
   const [channel] = channels;

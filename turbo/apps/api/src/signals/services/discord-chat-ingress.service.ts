@@ -25,7 +25,17 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { z } from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  object,
+  strictObject,
+  string,
+  enum as zEnum,
+  null as zNull,
+  type output,
+} from "zod";
 
 import {
   parseRawRows,
@@ -213,43 +223,43 @@ type RouteDefaults = {
 
 // PostgreSQL UUID text is canonical 8-4-4-4-12 hex; do not impose an RFC
 // version/variant restriction stronger than the actual native uuid column.
-const nativeUuidSchema = z
-  .string()
-  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
-const canonicalRouteRowSchema = z.strictObject({
+const nativeUuidSchema = string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u,
+);
+const canonicalRouteRowSchema = strictObject({
   id: nativeUuidSchema,
   connectionId: nativeUuidSchema,
-  channelId: z.string(),
-  sessionKey: z.string(),
-  userId: z.string(),
+  channelId: string(),
+  sessionKey: string(),
+  userId: string(),
   chatThreadId: nativeUuidSchema,
-  destinationChannelId: z.string().nullable(),
+  destinationChannelId: string().nullable(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
 });
-const canonicalRouteResultSchema = z.discriminatedUnion("outcome", [
-  canonicalRouteRowSchema.extend({ outcome: z.literal("route") }),
-  z.strictObject({
-    outcome: z.enum([
+const canonicalRouteResultSchema = discriminatedUnion("outcome", [
+  canonicalRouteRowSchema.extend({ outcome: literal("route") }),
+  strictObject({
+    outcome: zEnum([
       "claim_missing",
       "assigned_missing",
       "dm_update_missing",
       "conflict",
       "winner_missing",
     ]),
-    id: z.null(),
-    connectionId: z.null(),
-    channelId: z.null(),
-    sessionKey: z.null(),
-    userId: z.null(),
-    chatThreadId: z.null(),
-    destinationChannelId: z.null(),
-    createdAt: z.null(),
+    id: zNull(),
+    connectionId: zNull(),
+    channelId: zNull(),
+    sessionKey: zNull(),
+    userId: zNull(),
+    chatThreadId: zNull(),
+    destinationChannelId: zNull(),
+    createdAt: zNull(),
   }),
 ]);
 
 // Enforce the single-outcome boundary after runtime row decoding.
 function canonicalRouteResult(
-  rows: readonly z.output<typeof canonicalRouteResultSchema>[],
+  rows: readonly output<typeof canonicalRouteResultSchema>[],
 ) {
   if (rows.length !== 1 || !rows[0]) {
     throw new Error("Expected one canonical Discord route outcome");
@@ -527,25 +537,23 @@ interface DiscordIngressAdmissionArgs {
   readonly currentTime: Date;
 }
 
-const discordIngressInsertResultSchema = z
-  .object({
-    inserted: z.boolean(),
-    id: nativeUuidSchema,
-    connectionId: nativeUuidSchema,
-    status: z.enum([
-      "pending",
-      "processing",
-      "retryable",
-      "processed",
-      "terminal",
-    ]),
-  })
-  .strict();
+const discordIngressInsertResultSchema = object({
+  inserted: boolean(),
+  id: nativeUuidSchema,
+  connectionId: nativeUuidSchema,
+  status: zEnum([
+    "pending",
+    "processing",
+    "retryable",
+    "processed",
+    "terminal",
+  ]),
+}).strict();
 
-const discordIngressOwnerConflictSchema = z.object({
-  code: z.literal("23502"),
-  table: z.literal("discord_chat_ingress"),
-  column: z.literal("connection_id"),
+const discordIngressOwnerConflictSchema = object({
+  code: literal("23502"),
+  table: literal("discord_chat_ingress"),
+  column: literal("connection_id"),
 });
 
 function discordIngressAdmissionSql(args: DiscordIngressAdmissionArgs) {

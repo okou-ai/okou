@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { object, uuid } from "zod";
 import {
   HOSTED_SITE_AUTH_CALLBACK_PATH,
   HOSTED_SITE_AUTH_START_PATH,
@@ -180,8 +180,8 @@ async function beginLogin(
   return new Response(null, { status: 302, headers });
 }
 
-const pendingLoginSchema = z.object({
-  siteId: z.uuid(),
+const pendingLoginSchema = object({
+  siteId: uuid(),
   verifier: hostedSiteAuthProofSchema,
   returnTo: hostedSiteReturnPathSchema,
 });

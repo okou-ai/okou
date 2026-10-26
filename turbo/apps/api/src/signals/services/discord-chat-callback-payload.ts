@@ -1,13 +1,13 @@
-import { z } from "zod";
+import { object, string, type infer as zInfer } from "zod";
 
-export const discordDeliveryTargetSchema = z.object({
-  routeId: z.string().uuid(),
-  connectionId: z.string().uuid(),
-  guildId: z.string().min(1).nullable(),
-  discordUserId: z.string().min(1),
-  channelId: z.string().min(1),
-  messageId: z.string().min(1),
-  sessionKey: z.string().min(1),
+export const discordDeliveryTargetSchema = object({
+  routeId: string().uuid(),
+  connectionId: string().uuid(),
+  guildId: string().min(1).nullable(),
+  discordUserId: string().min(1),
+  channelId: string().min(1),
+  messageId: string().min(1),
+  sessionKey: string().min(1),
 });
 
-export type DiscordDeliveryTarget = z.infer<typeof discordDeliveryTargetSchema>;
+export type DiscordDeliveryTarget = zInfer<typeof discordDeliveryTargetSchema>;

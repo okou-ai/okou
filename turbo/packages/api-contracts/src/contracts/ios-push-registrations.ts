@@ -1,16 +1,16 @@
-import { z } from "zod";
+import { literal, number, object, string, uuid, enum as zEnum } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
-const binding = z.object({
-  installationId: z.uuid(),
-  revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  deviceToken: z.string().regex(/^(?:[0-9a-f]{2}){32,256}$/u),
-  environment: z.enum(["production", "sandbox"]),
+const binding = object({
+  installationId: uuid(),
+  revision: number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  deviceToken: string().regex(/^(?:[0-9a-f]{2}){32,256}$/u),
+  environment: zEnum(["production", "sandbox"]),
 });
 const responses = {
-  200: z.object({ success: z.literal(true) }),
+  200: object({ success: literal(true) }),
   400: apiErrorSchema,
   401: apiErrorSchema,
   403: apiErrorSchema,

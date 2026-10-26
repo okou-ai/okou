@@ -1,7 +1,7 @@
 import { accept } from "@okouai/connectors/accept";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { z } from "zod";
+import { object } from "zod";
 import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import {
   dataRouterToolsPageSchema,
@@ -49,9 +49,9 @@ const list$ = command(async (_, signal: AbortSignal) => {
           }),
           [200],
         );
-        const page = z
-          .object({ result: dataRouterToolsPageSchema })
-          .parse(await response.json()).result;
+        const page = object({ result: dataRouterToolsPageSchema }).parse(
+          await response.json(),
+        ).result;
         tools.push(
           ...page.tools.filter((tool) => {
             return Boolean(tool._meta?.["ai.okou/data"]);

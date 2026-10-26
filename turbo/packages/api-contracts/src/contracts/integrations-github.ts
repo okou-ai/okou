@@ -1,63 +1,69 @@
-import { z } from "zod";
+import {
+  boolean,
+  literal,
+  number,
+  object,
+  string,
+  type infer as zInfer,
+} from "zod";
+
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const githubInstallationResponseSchema = z.object({
-  installation: z.object({
-    id: z.string(),
-    installationId: z.string().nullable(),
-    status: z.string(),
-    targetName: z.string().nullable(),
-    targetType: z.string().nullable(),
-    isAdmin: z.boolean(),
+export const githubInstallationResponseSchema = object({
+  installation: object({
+    id: string(),
+    installationId: string().nullable(),
+    status: string(),
+    targetName: string().nullable(),
+    targetType: string().nullable(),
+    isAdmin: boolean(),
   }),
-  isConnected: z.boolean(),
-  connectedGithubUserId: z.string().nullable(),
-  connectedGithubUsername: z.string().nullable(),
-  connectUrl: z.string(),
+  isConnected: boolean(),
+  connectedGithubUserId: string().nullable(),
+  connectedGithubUsername: string().nullable(),
+  connectUrl: string(),
 });
 
-export type GithubInstallationResponse = z.infer<
+export type GithubInstallationResponse = zInfer<
   typeof githubInstallationResponseSchema
 >;
 
 export const githubInstallationNotFoundResponseSchema = apiErrorSchema.extend({
-  installUrl: z.string().nullable(),
+  installUrl: string().nullable(),
 });
 
-export type GithubInstallationNotFoundResponse = z.infer<
+export type GithubInstallationNotFoundResponse = zInfer<
   typeof githubInstallationNotFoundResponseSchema
 >;
 
-export const githubIntegrationActionResponseSchema = z.object({
-  ok: z.literal(true),
+export const githubIntegrationActionResponseSchema = object({
+  ok: literal(true),
 });
 
-export type GithubIntegrationActionResponse = z.infer<
+export type GithubIntegrationActionResponse = zInfer<
   typeof githubIntegrationActionResponseSchema
 >;
 
-export const githubConnectSignatureSchema = z.object({
-  installationId: z.string().min(1),
-  githubUserId: z.string().min(1),
-  githubUsername: z.string().max(255).optional(),
-  timestamp: z.number(),
-  signature: z.string().min(1),
+export const githubConnectSignatureSchema = object({
+  installationId: string().min(1),
+  githubUserId: string().min(1),
+  githubUsername: string().max(255).optional(),
+  timestamp: number(),
+  signature: string().min(1),
 });
 
-export type GithubConnectSignature = z.infer<
+export type GithubConnectSignature = zInfer<
   typeof githubConnectSignatureSchema
 >;
 
-export const githubConnectUserBodySchema = z
-  .object({
-    connectSignature: githubConnectSignatureSchema.optional(),
-  })
-  .optional();
+export const githubConnectUserBodySchema = object({
+  connectSignature: githubConnectSignatureSchema.optional(),
+}).optional();
 
-export type GithubConnectUserBody = z.infer<typeof githubConnectUserBodySchema>;
+export type GithubConnectUserBody = zInfer<typeof githubConnectUserBodySchema>;
 
 export const integrationsGithubContract = c.router({
   getInstallation: {

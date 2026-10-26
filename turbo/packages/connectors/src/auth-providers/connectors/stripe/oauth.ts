@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { boolean, number, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -79,17 +79,15 @@ export async function exchangeStripeCode(
     await throwOAuthError("Stripe", "exchange", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      expires_in: z.number().optional(),
-      livemode: z.boolean(),
-      refresh_token: z.string().nullable().optional(),
-      stripe_user_id: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    expires_in: number().optional(),
+    livemode: boolean(),
+    refresh_token: string().nullable().optional(),
+    stripe_user_id: string().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -148,15 +146,13 @@ export async function refreshStripeToken(
     await throwOAuthError("Stripe", "refresh", response);
   }
 
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    access_token: string().optional(),
+    refresh_token: string().nullable().optional(),
+    expires_in: number().optional(),
+    error: string().optional(),
+    error_description: string().optional(),
+  }).parse(await response.json());
 
   if (data.error) {
     throw new Error(data.error_description ?? data.error);
@@ -198,18 +194,15 @@ async function fetchStripeAccountInfo(
     };
   }
 
-  const data = z
-    .object({
-      id: z.string().optional(),
-      business_profile: z
-        .object({
-          name: z.string().nullable().optional(),
-        })
-        .nullable()
-        .optional(),
-      email: z.string().nullable().optional(),
+  const data = object({
+    id: string().optional(),
+    business_profile: object({
+      name: string().nullable().optional(),
     })
-    .parse(await response.json());
+      .nullable()
+      .optional(),
+    email: string().nullable().optional(),
+  }).parse(await response.json());
 
   return {
     id: data.id ?? stripeUserId,

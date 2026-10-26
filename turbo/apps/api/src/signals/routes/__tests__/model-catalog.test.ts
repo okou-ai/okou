@@ -4,7 +4,7 @@ import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-cata
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { http, HttpResponse } from "msw";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { z } from "zod";
+import { object, unknown as zUnknown } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -127,9 +127,9 @@ async function mcpThread(actor: ApiTestUser, threadId: string) {
       : undefined;
   const rpc: unknown =
     frame === undefined ? body : JSON.parse(frame.slice("data: ".length));
-  const { result } = z
-    .object({ result: z.object({ structuredContent: z.unknown() }) })
-    .parse(rpc);
+  const { result } = object({
+    result: object({ structuredContent: zUnknown() }),
+  }).parse(rpc);
   const created = mcpGetChatThreadOutputSchema
     .parse(result.structuredContent)
     .events.find((event) => {

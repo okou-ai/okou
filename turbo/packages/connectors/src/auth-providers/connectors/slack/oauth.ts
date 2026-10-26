@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { boolean, object, string } from "zod";
 
 import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
 import { throwOAuthError } from "../../oauth/error";
@@ -68,19 +68,15 @@ export async function exchangeSlackCode(
     await throwOAuthError("Slack", "exchange", response);
   }
 
-  const data = z
-    .object({
-      ok: z.boolean(),
-      error: z.string().optional(),
-      authed_user: z
-        .object({
-          id: z.string().optional(),
-          access_token: z.string().optional(),
-          scope: z.string().optional(),
-        })
-        .optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    ok: boolean(),
+    error: string().optional(),
+    authed_user: object({
+      id: string().optional(),
+      access_token: string().optional(),
+      scope: string().optional(),
+    }).optional(),
+  }).parse(await response.json());
 
   if (!data.ok) {
     throw new Error(data.error ?? "Slack token exchange returned ok=false");
@@ -124,20 +120,16 @@ export async function fetchSlackUserInfo(
     throw new Error(`Slack users.info API failed: ${response.status}`);
   }
 
-  const data = z
-    .object({
-      ok: z.boolean(),
-      error: z.string().optional(),
-      user: z
-        .object({
-          id: z.string().optional(),
-          name: z.string().optional(),
-          real_name: z.string().optional(),
-          profile: z.object({ email: z.string().optional() }).optional(),
-        })
-        .optional(),
-    })
-    .parse(await response.json());
+  const data = object({
+    ok: boolean(),
+    error: string().optional(),
+    user: object({
+      id: string().optional(),
+      name: string().optional(),
+      real_name: string().optional(),
+      profile: object({ email: string().optional() }).optional(),
+    }).optional(),
+  }).parse(await response.json());
 
   if (!data.ok) {
     throw new Error(data.error ?? "Slack users.info returned ok=false");

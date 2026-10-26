@@ -1,4 +1,15 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  literal,
+  number,
+  object,
+  record,
+  string,
+  url,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
@@ -11,12 +22,12 @@ export { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-ca
 
 const c = initContract();
 
-const publicConnectorCatalogAuthMethodSummarySchema = z.object({
+const publicConnectorCatalogAuthMethodSummarySchema = object({
   id: connectorAuthMethodIdSchema,
-  label: z.string(),
-  description: z.string().nullable(),
-  supportsRefresh: z.boolean(),
-  grantKind: z.enum([
+  label: string(),
+  description: string().nullable(),
+  supportsRefresh: boolean(),
+  grantKind: zEnum([
     "none",
     "automatic",
     "manual",
@@ -28,83 +39,81 @@ const publicConnectorCatalogAuthMethodSummarySchema = z.object({
   ]),
 });
 
-const publicConnectorCatalogPermissionSummarySchema = z.object({
-  hasPermissions: z.boolean(),
-  permissionCount: z.number().int().nonnegative(),
-  hasCategories: z.boolean(),
-  hasDefaultPolicyOverrides: z.boolean(),
+const publicConnectorCatalogPermissionSummarySchema = object({
+  hasPermissions: boolean(),
+  permissionCount: number().int().nonnegative(),
+  hasCategories: boolean(),
+  hasDefaultPolicyOverrides: boolean(),
 });
 
-export const publicConnectorCatalogIconSchema = z.object({
-  url: z.url({ protocol: /^https$/u }).max(2048),
-  invertInDarkMode: z.boolean(),
-  scale: z.number().min(1).max(3).optional(),
+export const publicConnectorCatalogIconSchema = object({
+  url: url({ protocol: /^https$/u }).max(2048),
+  invertInDarkMode: boolean(),
+  scale: number().min(1).max(3).optional(),
 });
 
-const publicConnectorCatalogItemSchema = z.object({
+const publicConnectorCatalogItemSchema = object({
   slug: connectorSlugSchema,
-  label: z.string(),
-  description: z.string(),
+  label: string(),
+  description: string(),
   icon: publicConnectorCatalogIconSchema,
-  category: z.string(),
+  category: string(),
   /**
    * Discovery ordering, lower first. Absent for connectors outside the ranked
    * head, which sort after every ranked one.
    */
-  popularityRank: z.number().int().nonnegative().optional(),
-  generation: z.array(z.string()),
-  tags: z.array(z.string()),
-  mcp: z
-    .object({
-      transport: z.literal("streamable-http"),
-      endpoint: z.url({ protocol: /^https$/u }),
-    })
-    .optional(),
-  authMethods: z.array(publicConnectorCatalogAuthMethodSummarySchema),
+  popularityRank: number().int().nonnegative().optional(),
+  generation: array(string()),
+  tags: array(string()),
+  mcp: object({
+    transport: literal("streamable-http"),
+    endpoint: url({ protocol: /^https$/u }),
+  }).optional(),
+  authMethods: array(publicConnectorCatalogAuthMethodSummarySchema),
   permissionSummary: publicConnectorCatalogPermissionSummarySchema,
 });
 
-const publicConnectorCatalogManualFieldSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  required: z.boolean(),
-  placeholder: z.string().nullable(),
-  inputType: z.enum(["password", "text"]),
+const publicConnectorCatalogManualFieldSchema = object({
+  id: string(),
+  label: string(),
+  required: boolean(),
+  placeholder: string().nullable(),
+  inputType: zEnum(["password", "text"]),
 });
 
-const publicConnectorCatalogStartOptionChoiceSchema = z.object({
-  value: z.string(),
-  label: z.string(),
+const publicConnectorCatalogStartOptionChoiceSchema = object({
+  value: string(),
+  label: string(),
 });
 
-const publicConnectorCatalogStartOptionSchema = z.object({
-  id: z.string(),
-  kind: z.literal("select"),
-  label: z.string(),
-  required: z.boolean(),
-  defaultValue: z.string().nullable(),
-  options: z.array(publicConnectorCatalogStartOptionChoiceSchema),
+const publicConnectorCatalogStartOptionSchema = object({
+  id: string(),
+  kind: literal("select"),
+  label: string(),
+  required: boolean(),
+  defaultValue: string().nullable(),
+  options: array(publicConnectorCatalogStartOptionChoiceSchema),
 });
 
 const publicConnectorCatalogAuthMethodDetailSchema =
   publicConnectorCatalogAuthMethodSummarySchema.extend({
-    manualFields: z.array(publicConnectorCatalogManualFieldSchema),
-    startOptions: z.array(publicConnectorCatalogStartOptionSchema),
+    manualFields: array(publicConnectorCatalogManualFieldSchema),
+    startOptions: array(publicConnectorCatalogStartOptionSchema),
   });
 
 const publicConnectorCatalogDetailSchema =
   publicConnectorCatalogItemSchema.extend({
-    authMethods: z.array(publicConnectorCatalogAuthMethodDetailSchema),
+    authMethods: array(publicConnectorCatalogAuthMethodDetailSchema),
   });
 
-const publicConnectorCatalogListResponseSchema = z.object({
-  connectors: z.array(publicConnectorCatalogItemSchema),
+const publicConnectorCatalogListResponseSchema = object({
+  connectors: array(publicConnectorCatalogItemSchema),
 });
 
 export const publicConnectorCatalogStatusItemSchema =
   publicConnectorCatalogDetailSchema.extend({
     singleAuthCodeAuthMethodId: connectorAuthMethodIdSchema.nullable(),
-    connectNotice: z.enum(["google-security-warning"]).nullable(),
+    connectNotice: zEnum(["google-security-warning"]).nullable(),
   });
 
 /**
@@ -125,64 +134,65 @@ export const publicConnectorCatalogConnectItemSchema =
     connectNotice: true,
   });
 
-export const publicConnectorCatalogConnectListResponseSchema = z.object({
-  connectors: z.array(publicConnectorCatalogConnectItemSchema),
+export const publicConnectorCatalogConnectListResponseSchema = object({
+  connectors: array(publicConnectorCatalogConnectItemSchema),
 });
 
-const publicConnectorCatalogDetailResponseSchema = z.object({
+const publicConnectorCatalogDetailResponseSchema = object({
   connector: publicConnectorCatalogStatusItemSchema,
 });
 
-const publicConnectorCatalogStatusResponseSchema = z.object({
-  connectors: z.array(publicConnectorCatalogStatusItemSchema),
+const publicConnectorCatalogStatusResponseSchema = object({
+  connectors: array(publicConnectorCatalogStatusItemSchema),
 });
 
 const publicConnectorCatalogDiscoveryResponseSchema =
   publicConnectorCatalogStatusResponseSchema.extend({
-    totalConnectorCount: z.number().int().nonnegative(),
+    totalConnectorCount: number().int().nonnegative(),
     /**
      * How many connectors each category holds in total. Discovery returns a
      * slice per category, so the client needs this to offer "show all" without
      * a second request.
      */
-    categoryConnectorCounts: z
-      .record(z.string(), z.number().int().nonnegative())
-      .optional(),
+    categoryConnectorCounts: record(
+      string(),
+      number().int().nonnegative(),
+    ).optional(),
   });
 
-const publicFirewallPolicyValueSchema = z.enum(["allow", "deny", "ask"]);
+const publicFirewallPolicyValueSchema = zEnum(["allow", "deny", "ask"]);
 
-const publicConnectorCatalogPermissionSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
+const publicConnectorCatalogPermissionSchema = object({
+  name: string(),
+  description: string().optional(),
 });
 
-const publicConnectorCatalogPermissionCategoriesSchema = z.object({
-  categories: z.record(z.string(), z.string()),
-  displayOrder: z.array(z.string()),
+const publicConnectorCatalogPermissionCategoriesSchema = object({
+  categories: record(string(), string()),
+  displayOrder: array(string()),
 });
 
-const publicConnectorCatalogDefaultPolicySchema = z.object({
+const publicConnectorCatalogDefaultPolicySchema = object({
   permissionDefault: publicFirewallPolicyValueSchema,
-  permissionOverrides: z.record(z.string(), z.array(z.string())).optional(),
+  permissionOverrides: record(string(), array(string())).optional(),
   unknownPolicy: publicFirewallPolicyValueSchema,
 });
 
-const publicConnectorCatalogPermissionDetailSchema = z.object({
+const publicConnectorCatalogPermissionDetailSchema = object({
   connectorSlug: connectorSlugSchema,
-  label: z.string(),
+  label: string(),
   icon: publicConnectorCatalogIconSchema,
-  permissionCount: z.number().int().nonnegative(),
-  permissions: z.array(publicConnectorCatalogPermissionSchema),
+  permissionCount: number().int().nonnegative(),
+  permissions: array(publicConnectorCatalogPermissionSchema),
   categories: publicConnectorCatalogPermissionCategoriesSchema.nullable(),
   defaultPolicy: publicConnectorCatalogDefaultPolicySchema,
 });
 
-const publicConnectorCatalogPermissionDetailResponseSchema = z.object({
+const publicConnectorCatalogPermissionDetailResponseSchema = object({
   permissions: publicConnectorCatalogPermissionDetailSchema,
 });
 
-const connectorCatalogPathParamsSchema = z.object({
+const connectorCatalogPathParamsSchema = object({
   connectorSlug: connectorSlugSchema,
 });
 
@@ -207,55 +217,55 @@ export function isOneClickConnectorGrantKind(grantKind: string): boolean {
   });
 }
 
-export type PublicConnectorCatalogAuthMethodSummary = z.infer<
+export type PublicConnectorCatalogAuthMethodSummary = zInfer<
   typeof publicConnectorCatalogAuthMethodSummarySchema
 >;
-export type PublicConnectorCatalogPermissionSummary = z.infer<
+export type PublicConnectorCatalogPermissionSummary = zInfer<
   typeof publicConnectorCatalogPermissionSummarySchema
 >;
-export type PublicConnectorCatalogIcon = z.infer<
+export type PublicConnectorCatalogIcon = zInfer<
   typeof publicConnectorCatalogIconSchema
 >;
-export type PublicConnectorCatalogItem = z.infer<
+export type PublicConnectorCatalogItem = zInfer<
   typeof publicConnectorCatalogItemSchema
 >;
-export type PublicConnectorCatalogManualField = z.infer<
+export type PublicConnectorCatalogManualField = zInfer<
   typeof publicConnectorCatalogManualFieldSchema
 >;
-export type PublicConnectorCatalogStartOption = z.infer<
+export type PublicConnectorCatalogStartOption = zInfer<
   typeof publicConnectorCatalogStartOptionSchema
 >;
-export type PublicConnectorCatalogAuthMethodDetail = z.infer<
+export type PublicConnectorCatalogAuthMethodDetail = zInfer<
   typeof publicConnectorCatalogAuthMethodDetailSchema
 >;
-export type PublicConnectorCatalogDetail = z.infer<
+export type PublicConnectorCatalogDetail = zInfer<
   typeof publicConnectorCatalogDetailSchema
 >;
-export type PublicConnectorCatalogListResponse = z.infer<
+export type PublicConnectorCatalogListResponse = zInfer<
   typeof publicConnectorCatalogListResponseSchema
 >;
-export type PublicConnectorCatalogDetailResponse = z.infer<
+export type PublicConnectorCatalogDetailResponse = zInfer<
   typeof publicConnectorCatalogDetailResponseSchema
 >;
-export type PublicConnectorCatalogStatusItem = z.infer<
+export type PublicConnectorCatalogStatusItem = zInfer<
   typeof publicConnectorCatalogStatusItemSchema
 >;
-export type PublicConnectorCatalogConnectItem = z.infer<
+export type PublicConnectorCatalogConnectItem = zInfer<
   typeof publicConnectorCatalogConnectItemSchema
 >;
-export type PublicConnectorCatalogConnectListResponse = z.infer<
+export type PublicConnectorCatalogConnectListResponse = zInfer<
   typeof publicConnectorCatalogConnectListResponseSchema
 >;
-export type PublicConnectorCatalogStatusResponse = z.infer<
+export type PublicConnectorCatalogStatusResponse = zInfer<
   typeof publicConnectorCatalogStatusResponseSchema
 >;
-export type PublicConnectorCatalogDiscoveryResponse = z.infer<
+export type PublicConnectorCatalogDiscoveryResponse = zInfer<
   typeof publicConnectorCatalogDiscoveryResponseSchema
 >;
-export type PublicConnectorCatalogPermissionDetail = z.infer<
+export type PublicConnectorCatalogPermissionDetail = zInfer<
   typeof publicConnectorCatalogPermissionDetailSchema
 >;
-export type PublicConnectorCatalogPermissionDetailResponse = z.infer<
+export type PublicConnectorCatalogPermissionDetailResponse = zInfer<
   typeof publicConnectorCatalogPermissionDetailResponseSchema
 >;
 
@@ -288,14 +298,14 @@ export const connectorCatalogContract = c.router({
     method: "GET",
     path: "/api/connector-catalog/discovery",
     headers: authHeadersSchema,
-    query: z.object({
-      keyword: z.string().optional(),
+    query: object({
+      keyword: string().optional(),
       /**
        * Browse one category in full instead of the per-category slice. The
        * category totals this endpoint reports are what the client offers as a
        * way in, so entering one has to return everything it counted.
        */
-      category: z.string().optional(),
+      category: string().optional(),
     }),
     responses: {
       200: publicConnectorCatalogDiscoveryResponseSchema,

@@ -1,7 +1,8 @@
-import { z } from "zod";
+import { object, enum as zEnum, type infer as zInfer } from "zod";
+
 import { CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES } from "@okouai/connectors/connector-catalog/contracts";
 
-export const connectorCatalogSyncFailureCodeSchema = z.enum([
+export const connectorCatalogSyncFailureCodeSchema = zEnum([
   "source-unavailable",
   ...CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES,
 ]);
@@ -11,14 +12,14 @@ export const connectorCatalogSyncFailureCodeSchema = z.enum([
  * cron sync response. Nothing about the attempt is persisted. `failureCode` is
  * set only for a rejected attempt.
  */
-export const connectorCatalogSyncAttemptReportSchema = z.object({
-  outcome: z.enum(["accepted", "unchanged", "rejected"]),
+export const connectorCatalogSyncAttemptReportSchema = object({
+  outcome: zEnum(["accepted", "unchanged", "rejected"]),
   failureCode: connectorCatalogSyncFailureCodeSchema.nullable(),
 });
 
-export type ConnectorCatalogSyncFailureCode = z.infer<
+export type ConnectorCatalogSyncFailureCode = zInfer<
   typeof connectorCatalogSyncFailureCodeSchema
 >;
-export type ConnectorCatalogSyncAttemptReport = z.infer<
+export type ConnectorCatalogSyncAttemptReport = zInfer<
   typeof connectorCatalogSyncAttemptReportSchema
 >;

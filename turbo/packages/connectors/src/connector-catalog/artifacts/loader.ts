@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { z } from "zod";
+import { object, type infer as zInfer, type ZodType } from "zod";
 
 import {
   CONNECTOR_CATALOG_MAX_RAW_BYTES,
@@ -26,12 +26,11 @@ import {
 
 const ACTIVE_POINTER_MAX_BYTES = 16 * 1024;
 
-const connectorCatalogActivePointerSchema = z
-  .object({
-    catalogVersion: connectorCatalogVersionSchema,
-    catalogKey: artifactKeySchema,
-    catalogDigest: digestSchema,
-  })
+const connectorCatalogActivePointerSchema = object({
+  catalogVersion: connectorCatalogVersionSchema,
+  catalogKey: artifactKeySchema,
+  catalogDigest: digestSchema,
+})
   .strict()
   .refine((pointer) => {
     return (
@@ -40,7 +39,7 @@ const connectorCatalogActivePointerSchema = z
     );
   }, "Catalog key must match its supported generation and release version");
 
-export type ConnectorCatalogActivePointer = z.infer<
+export type ConnectorCatalogActivePointer = zInfer<
   typeof connectorCatalogActivePointerSchema
 >;
 
@@ -136,7 +135,7 @@ function decodedJson(bytes: Uint8Array): unknown {
 
 function parseStrict<T>(
   value: unknown,
-  schema: z.ZodType<T>,
+  schema: ZodType<T>,
   code: ConnectorCatalogValidationFailureCode,
 ): T {
   const parsed = schema.safeParse(value);

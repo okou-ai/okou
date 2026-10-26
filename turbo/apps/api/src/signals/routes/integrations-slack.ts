@@ -1,6 +1,6 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command, computed, type Computed } from "ccstate";
-import { z } from "zod";
+import type { infer as zInfer } from "zod";
 import {
   slackOrgStatusSchema,
   integrationsSlackContract,
@@ -78,7 +78,7 @@ const getSlackStatusInner$ = computed(async (get) => {
         installUrl: status.installUrl,
         connectUrl: status.connectUrl,
       };
-  const body: z.infer<typeof slackOrgStatusSchema> = {
+  const body: zInfer<typeof slackOrgStatusSchema> = {
     isConnected: status.isConnected,
     isInstalled: status.isInstalled,
     isAdmin: status.isAdmin,

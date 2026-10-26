@@ -1,4 +1,5 @@
-import { z } from "zod";
+import { array, iso, object, type infer as zInfer } from "zod";
+
 import { agentResponseSchema } from "./agents";
 import { initContract } from "./base";
 import { CHAT_SEARCH_RESULT_LIMIT, chatSearchContract } from "./chat-threads";
@@ -10,7 +11,7 @@ const nativeResult = nativeSearch.responses[200].shape.results.element;
 const nativeRange = nativeResult.shape.matchedRanges.element;
 
 // Extra fractional precision would silently truncate when converted to Date.
-const mcpSearchSinceSchema = z.iso
+const mcpSearchSinceSchema = iso
   .datetime({ offset: true })
   .regex(
     /T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/,
@@ -26,20 +27,18 @@ const mcpChatSearchResultSchema = nativeResult
   .extend({
     ...agentResponseSchema.pick({ agentId: true, displayName: true }).shape,
     threadId: mcpThreadIdSchema,
-    matchedRanges: z
-      .array(
-        nativeRange.extend({
-          start: nativeRange.shape.start.describe(
-            "Inclusive start offset in UTF-16 code units within matchedMessage.content.",
-          ),
-          end: nativeRange.shape.end.describe(
-            "Exclusive end offset in UTF-16 code units within matchedMessage.content.",
-          ),
-        }),
-      )
-      .describe(
-        "Highlight [start,end) intervals in matchedMessage.content, measured in UTF-16 code units, not code points, grapheme clusters or UTF-8 bytes. JavaScript can use content.slice(start,end). Example: 中文 in ACK-QA-A1-🧪-中文 has [13,15). For code-point or UTF-8 byte indexing, translate both UTF-16 boundaries before slicing. Ranges can split a displayed grapheme; apply them to the unchanged returned content.",
-      ),
+    matchedRanges: array(
+      nativeRange.extend({
+        start: nativeRange.shape.start.describe(
+          "Inclusive start offset in UTF-16 code units within matchedMessage.content.",
+        ),
+        end: nativeRange.shape.end.describe(
+          "Exclusive end offset in UTF-16 code units within matchedMessage.content.",
+        ),
+      }),
+    ).describe(
+      "Highlight [start,end) intervals in matchedMessage.content, measured in UTF-16 code units, not code points, grapheme clusters or UTF-8 bytes. JavaScript can use content.slice(start,end). Example: 中文 in ACK-QA-A1-🧪-中文 has [13,15). For code-point or UTF-8 byte indexing, translate both UTF-16 boundaries before slicing. Ranges can split a displayed grapheme; apply them to the unchanged returned content.",
+    ),
     matchedMessage: nativeResult.shape.matchedMessage
       .omit({ chatThreadId: true })
       .extend({
@@ -60,20 +59,18 @@ export const mcpChatSearchContract = c.router({
     }),
     responses: {
       ...nativeSearch.responses,
-      200: z.object({
-        results: z
-          .array(mcpChatSearchResultSchema)
-          .max(CHAT_SEARCH_RESULT_LIMIT),
+      200: object({
+        results: array(mcpChatSearchResultSchema).max(CHAT_SEARCH_RESULT_LIMIT),
       }),
     },
     summary: "Search chat messages with canonical visible Agent metadata",
   },
 });
 
-export type McpChatSearchQuery = z.infer<
+export type McpChatSearchQuery = zInfer<
   typeof mcpChatSearchContract.search.query
 >;
-export type McpChatSearchResult = z.infer<typeof mcpChatSearchResultSchema>;
-export type McpChatSearchResponse = z.infer<
+export type McpChatSearchResult = zInfer<typeof mcpChatSearchResultSchema>;
+export type McpChatSearchResponse = zInfer<
   (typeof mcpChatSearchContract.search.responses)[200]
 >;

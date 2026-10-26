@@ -1,6 +1,6 @@
 import { initContract } from "./base";
-import { z } from "zod";
-import { apiErrorSchema } from "./errors";
+import { array, object, string } from "zod";
+import { apiErrorSchema } from "./api-error";
 import { dataRouterToolSchema } from "./data-router-tools";
 
 const c = initContract();
@@ -10,9 +10,9 @@ export const dataRouterToolsContract = c.router({
   list: {
     method: "GET",
     path: "/api/data/router/tools",
-    headers: z.object({ authorization: z.string().optional() }),
+    headers: object({ authorization: string().optional() }),
     responses: {
-      200: z.object({ tools: z.array(dataRouterToolSchema) }),
+      200: object({ tools: array(dataRouterToolSchema) }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       502: apiErrorSchema,

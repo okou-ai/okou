@@ -2,13 +2,12 @@ import {
   customConnectorHttpUpdateBodySchema,
   customConnectorMcpUpdateBodySchema,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { z } from "zod";
+import { union, type infer as zInfer } from "zod";
 
-const customConnectorDefinitionFileSchema = z
-  .union([
-    customConnectorMcpUpdateBodySchema.strict(),
-    customConnectorHttpUpdateBodySchema.strict(),
-  ])
+const customConnectorDefinitionFileSchema = union([
+  customConnectorMcpUpdateBodySchema.strict(),
+  customConnectorHttpUpdateBodySchema.strict(),
+])
   .refine(
     (definition) => {
       return definition.authMode !== undefined;
@@ -27,7 +26,7 @@ const customConnectorDefinitionFileSchema = z
   );
 
 function oauthDefinitionIsValid(
-  definition: z.infer<typeof customConnectorDefinitionFileSchema>,
+  definition: zInfer<typeof customConnectorDefinitionFileSchema>,
   requireClientSecret: boolean,
 ): boolean {
   if (definition.authMode !== "oauth") {

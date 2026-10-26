@@ -7,7 +7,8 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { piAgentStreamForConfig } from "./model";
+import { resolvePiAgentModel } from "./model-catalog";
 import type { PiAgentModelConfig } from "./types";
 import type { PiAgentStreamOptions } from "./stream-options";
 

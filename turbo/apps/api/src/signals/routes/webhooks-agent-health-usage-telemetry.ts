@@ -17,7 +17,7 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
+import { object, type infer as zInfer } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -66,7 +66,7 @@ const SANDBOX_TELEMETRY_NETWORK_DATASET = "sandbox-telemetry-network";
 const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
-const discordTypingPayloadSchema = z.object({
+const discordTypingPayloadSchema = object({
   discordDelivery: discordDeliveryTargetSchema,
 });
 const DISCORD_TYPING_ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
@@ -619,7 +619,7 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
-type TelemetryBody = z.infer<(typeof webhookTelemetryContract.send)["body"]>;
+type TelemetryBody = zInfer<(typeof webhookTelemetryContract.send)["body"]>;
 type TelemetryMetric = NonNullable<TelemetryBody["metrics"]>[number];
 
 interface TelemetryBatch {

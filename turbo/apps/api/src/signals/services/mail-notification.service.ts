@@ -21,7 +21,7 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command, computed } from "ccstate";
 import { and, asc, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { boolean, strictObject, string, enum as zEnum } from "zod";
 import {
   conflict,
   notConfigured,
@@ -124,27 +124,23 @@ interface NotificationDelivery {
 const MORNING_BRIEF_SOURCE_REQUIRED =
   "morning-brief notifications require a run from your official Morning Brief automation. Use --kind notification for ordinary updates.";
 
-const mailAdmissionSchema = z.strictObject({
-  active: z.boolean(),
-  sourceAllowed: z.boolean(),
-  reason: z.enum(["unsubscribed", "no-email", "suppressed"]).nullable(),
-  inserted: z.boolean(),
-  receipt: z
-    .strictObject({
-      id: z.string(),
-      payloadHash: z.string(),
-      status: z.enum(["queued", "sent", "skipped", "failed"]),
-      reason: z
-        .enum([
-          "unsubscribed",
-          "suppressed",
-          "no-email",
-          "expired",
-          "delivery-failed",
-        ])
-        .nullable(),
-    })
-    .nullable(),
+const mailAdmissionSchema = strictObject({
+  active: boolean(),
+  sourceAllowed: boolean(),
+  reason: zEnum(["unsubscribed", "no-email", "suppressed"]).nullable(),
+  inserted: boolean(),
+  receipt: strictObject({
+    id: string(),
+    payloadHash: string(),
+    status: zEnum(["queued", "sent", "skipped", "failed"]),
+    reason: zEnum([
+      "unsubscribed",
+      "suppressed",
+      "no-email",
+      "expired",
+      "delivery-failed",
+    ]).nullable(),
+  }).nullable(),
 });
 
 function morningBriefSourceSql(owner: Owner) {

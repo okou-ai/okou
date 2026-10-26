@@ -12,7 +12,15 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { Client } from "pg";
 import { create } from "tar";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  number,
+  record,
+  string,
+  object as zObject,
+  unknown as zUnknown,
+} from "zod";
 import {
   workflowAttachmentHash,
   verifyWorkflowAttachmentBundle,
@@ -143,17 +151,15 @@ const expectBlocked = async (
   ...args: string[]
 ) => {
   await assert.rejects(runFor(id, ...args), (error: unknown) => {
-    const failed = z
-      .object({ code: z.literal(2), stdout: z.string() })
-      .safeParse(error);
+    const failed = zObject({ code: literal(2), stdout: string() }).safeParse(
+      error,
+    );
     if (!failed.success) return false;
-    const receipt = z
-      .object({
-        blocked: z.array(
-          z.object({ workflowId: z.string(), classification: z.string() }),
-        ),
-      })
-      .parse(JSON.parse(failed.data.stdout));
+    const receipt = zObject({
+      blocked: array(
+        zObject({ workflowId: string(), classification: string() }),
+      ),
+    }).parse(JSON.parse(failed.data.stdout));
     return receipt.blocked.some((row) => {
       return row.workflowId === id && row.classification === classification;
     });
@@ -170,18 +176,16 @@ try {
     [workflowId, orgId, agentId, instruction],
   );
   await assert.rejects(run(), (error: unknown) => {
-    const failed = z
-      .object({ code: z.literal(2), stdout: z.string() })
-      .safeParse(error);
+    const failed = zObject({ code: literal(2), stdout: string() }).safeParse(
+      error,
+    );
     if (!failed.success) return false;
-    const receipt = z
-      .object({
-        ready: z.literal(0),
-        blocked: z.array(
-          z.object({ workflowId: z.string(), classification: z.string() }),
-        ),
-      })
-      .parse(JSON.parse(failed.data.stdout));
+    const receipt = zObject({
+      ready: literal(0),
+      blocked: array(
+        zObject({ workflowId: string(), classification: string() }),
+      ),
+    }).parse(JSON.parse(failed.data.stdout));
     return receipt.blocked.some((row) => {
       return (
         row.workflowId === workflowId &&
@@ -265,7 +269,7 @@ try {
   );
   assert.ok(
     stale.some((row) => {
-      return z.object({ result: z.literal("skipped-changed") }).safeParse(row)
+      return zObject({ result: literal("skipped-changed") }).safeParse(row)
         .success;
     }),
   );
@@ -386,18 +390,16 @@ try {
     outgoingVersion,
   ]);
   await assert.rejects(run("--audit"), (error: unknown) => {
-    const failed = z
-      .object({ code: z.literal(2), stdout: z.string() })
-      .safeParse(error);
+    const failed = zObject({ code: literal(2), stdout: string() }).safeParse(
+      error,
+    );
     if (!failed.success) return false;
-    const receipt = z
-      .object({
-        verified: z.literal(0),
-        attention: z.array(
-          z.object({ workflowId: z.string(), classification: z.string() }),
-        ),
-      })
-      .parse(JSON.parse(failed.data.stdout));
+    const receipt = zObject({
+      verified: literal(0),
+      attention: array(
+        zObject({ workflowId: string(), classification: string() }),
+      ),
+    }).parse(JSON.parse(failed.data.stdout));
     return receipt.attention.some((row) => {
       return (
         row.workflowId === workflowId && row.classification === "SourceChanged"
@@ -442,7 +444,7 @@ try {
   const repeat = await run(...overlapArgs);
   assert.ok(
     repeat.some((row) => {
-      return z.object({ result: z.literal("skipped-changed") }).safeParse(row)
+      return zObject({ result: literal("skipped-changed") }).safeParse(row)
         .success;
     }),
   );
@@ -459,9 +461,10 @@ try {
   const current = await run("--output", currentPlan);
   assert.ok(
     current.some((row) => {
-      return z
-        .object({ ready: z.literal(0), alreadyCurrent: z.literal(1) })
-        .safeParse(row).success;
+      return zObject({
+        ready: literal(0),
+        alreadyCurrent: literal(1),
+      }).safeParse(row).success;
     }),
   );
   assert.equal(
@@ -516,9 +519,10 @@ try {
   const duplicates = await run();
   assert.ok(
     duplicates.some((row) => {
-      return z
-        .object({ ready: z.literal(0), alreadyCurrent: z.literal(1) })
-        .safeParse(row).success;
+      return zObject({
+        ready: literal(0),
+        alreadyCurrent: literal(1),
+      }).safeParse(row).success;
     }),
   );
   // Retained manifests may carry a previous label even though the file list
@@ -555,13 +559,11 @@ try {
   const retained = await run();
   assert.ok(
     retained.some((row) => {
-      return z
-        .object({
-          ready: z.literal(0),
-          alreadyCurrent: z.literal(1),
-          legacyManifestLabels: z.literal(1),
-        })
-        .safeParse(row).success;
+      return zObject({
+        ready: literal(0),
+        alreadyCurrent: literal(1),
+        legacyManifestLabels: literal(1),
+      }).safeParse(row).success;
     }),
   );
   // The namespaced digest binds the entire raw manifest file list to HEAD.
@@ -616,9 +618,10 @@ try {
   const retainedPreview = await run("--output", retainedPlan);
   assert.ok(
     retainedPreview.some((row) => {
-      return z
-        .object({ ready: z.literal(1), legacyManifestLabels: z.literal(1) })
-        .safeParse(row).success;
+      return zObject({
+        ready: literal(1),
+        legacyManifestLabels: literal(1),
+      }).safeParse(row).success;
     }),
   );
   const retainedApply = [
@@ -641,17 +644,15 @@ try {
   );
   const beforeRejectedApply = objects.size;
   await assert.rejects(run(...retainedApply), (error: unknown) => {
-    const failed = z
-      .object({ code: z.literal(2), stdout: z.string() })
-      .safeParse(error);
+    const failed = zObject({ code: literal(2), stdout: string() }).safeParse(
+      error,
+    );
     return (
       failed.success &&
-      z
-        .object({
-          result: z.literal("attention"),
-          classification: z.literal("SourceChanged"),
-        })
-        .safeParse(JSON.parse(failed.data.stdout)).success
+      zObject({
+        result: literal("attention"),
+        classification: literal("SourceChanged"),
+      }).safeParse(JSON.parse(failed.data.stdout)).success
     );
   });
   assert.equal(objects.size, beforeRejectedApply);
@@ -669,8 +670,7 @@ try {
   );
   assert.ok(
     (await run(...retainedApply)).some((row) => {
-      return z.object({ result: z.literal("converted") }).safeParse(row)
-        .success;
+      return zObject({ result: literal("converted") }).safeParse(row).success;
     }),
   );
   assert.equal(
@@ -748,21 +748,17 @@ try {
   );
   assert.ok(
     emptyPreview.some((row) => {
-      return z
-        .object({
-          ready: z.literal(1),
-          empty: z.literal(1),
-          reviewedEmptySources: z.literal(1),
-        })
-        .safeParse(row).success;
+      return zObject({
+        ready: literal(1),
+        empty: literal(1),
+        reviewedEmptySources: literal(1),
+      }).safeParse(row).success;
     }),
   );
-  const emptyPlanBody = z
-    .object({
-      schemaVersion: z.number(),
-      rows: z.array(z.object({ evidence: z.object({ kind: z.string() }) })),
-    })
-    .parse(JSON.parse(await readFile(emptyPlan, "utf8")));
+  const emptyPlanBody = zObject({
+    schemaVersion: number(),
+    rows: array(zObject({ evidence: zObject({ kind: string() }) })),
+  }).parse(JSON.parse(await readFile(emptyPlan, "utf8")));
   assert.equal(emptyPlanBody.schemaVersion, 2);
   assert.equal(emptyPlanBody.rows[0]?.evidence.kind, "unpublished-empty");
   assert.equal(
@@ -779,9 +775,9 @@ try {
     workflowAttachmentHash(await readFile(emptyPlan)),
   ];
   const oldPlan = join(root, "old-plan.json");
-  const capturedPlan = z
-    .record(z.string(), z.unknown())
-    .parse(JSON.parse(await readFile(emptyPlan, "utf8")));
+  const capturedPlan = record(string(), zUnknown()).parse(
+    JSON.parse(await readFile(emptyPlan, "utf8")),
+  );
   await writeFile(
     oldPlan,
     JSON.stringify({ ...capturedPlan, schemaVersion: 1 }),
@@ -797,14 +793,14 @@ try {
       workflowAttachmentHash(await readFile(oldPlan)),
     ),
     (error: unknown) => {
-      const failed = z
-        .object({ code: z.literal(1), stderr: z.string() })
-        .safeParse(error);
+      const failed = zObject({ code: literal(1), stderr: string() }).safeParse(
+        error,
+      );
       return (
         failed.success &&
-        z
-          .object({ classification: z.literal("ZodError") })
-          .safeParse(JSON.parse(failed.data.stderr)).success
+        zObject({ classification: literal("ZodError") }).safeParse(
+          JSON.parse(failed.data.stderr),
+        ).success
       );
     },
   );
@@ -829,7 +825,7 @@ try {
   const skippedEmpty = await runFor(emptyWorkflowId, ...emptyApply);
   assert.ok(
     skippedEmpty.some((row) => {
-      return z.object({ result: z.literal("skipped-changed") }).safeParse(row)
+      return zObject({ result: literal("skipped-changed") }).safeParse(row)
         .success;
     }),
   );
@@ -851,7 +847,7 @@ try {
   const pendingEmpty = await runFor(emptyWorkflowId, ...emptyApply);
   assert.ok(
     pendingEmpty.some((row) => {
-      return z.object({ result: z.literal("skipped-changed") }).safeParse(row)
+      return zObject({ result: literal("skipped-changed") }).safeParse(row)
         .success;
     }),
   );
@@ -875,9 +871,10 @@ try {
   await runFor(emptyWorkflowId, "--audit", ...reviewArgs);
   assert.ok(
     (await runFor(emptyWorkflowId, ...reviewArgs)).some((row) => {
-      return z
-        .object({ ready: z.literal(0), alreadyCurrent: z.literal(1) })
-        .safeParse(row).success;
+      return zObject({
+        ready: literal(0),
+        alreadyCurrent: literal(1),
+      }).safeParse(row).success;
     }),
   );
   console.log(

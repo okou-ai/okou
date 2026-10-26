@@ -10,7 +10,7 @@ import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import type { z } from "zod";
+import type { output } from "zod";
 
 const L = logger("ConversationHistoryDeletion");
 const DELETION_BATCH_SIZE = 500;
@@ -30,7 +30,7 @@ async function contentFreeDatabaseOperation<T>(
 }
 
 export function deletedRunHistoryReferences(
-  rows: readonly z.output<typeof deletedRunHistorySchema>[],
+  rows: readonly output<typeof deletedRunHistorySchema>[],
 ) {
   const references = new Map<string, number>();
   for (const row of rows) {

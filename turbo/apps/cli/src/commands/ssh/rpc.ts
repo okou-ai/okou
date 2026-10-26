@@ -1,5 +1,15 @@
 import type { Writable } from "node:stream";
-import { z } from "zod";
+import {
+  boolean,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  string,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
 import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 
 import {
@@ -12,14 +22,14 @@ import {
 const STREAM_LIMIT = 1024 * 1024;
 const LINE_LIMIT = 24 * 1024;
 const RESPONSE_LIMIT = 4 * 1024 * 1024;
-const count = z.number().int().min(0).max(STREAM_LIMIT);
+const count = number().int().min(0).max(STREAM_LIMIT);
 const totals = {
   stdout_bytes: count,
   stderr_bytes: count,
-  stdout_truncated: z.boolean(),
-  stderr_truncated: z.boolean(),
+  stdout_truncated: boolean(),
+  stderr_truncated: boolean(),
 };
-export const failureReasonSchema = z.enum([
+export const failureReasonSchema = zEnum([
   "unavailable",
   "authority_failure",
   "invalid_credential",
@@ -39,76 +49,64 @@ export const failureReasonSchema = z.enum([
   "resource_exhausted",
   "transport",
 ]);
-export const remoteExitSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      type: z.literal("status"),
-      code: z.number().int().min(0).max(0xffffffff),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("signal"),
-      signal: z.enum([
-        "ABRT",
-        "ALRM",
-        "FPE",
-        "HUP",
-        "ILL",
-        "INT",
-        "KILL",
-        "PIPE",
-        "QUIT",
-        "SEGV",
-        "TERM",
-        "USR1",
-        "USR2",
-        "UNKNOWN",
-      ]),
-      core_dumped: z.boolean(),
-    })
-    .strict(),
+export const remoteExitSchema = discriminatedUnion("type", [
+  object({
+    type: literal("status"),
+    code: number().int().min(0).max(0xffffffff),
+  }).strict(),
+  object({
+    type: literal("signal"),
+    signal: zEnum([
+      "ABRT",
+      "ALRM",
+      "FPE",
+      "HUP",
+      "ILL",
+      "INT",
+      "KILL",
+      "PIPE",
+      "QUIT",
+      "SEGV",
+      "TERM",
+      "USR1",
+      "USR2",
+      "UNKNOWN",
+    ]),
+    core_dumped: boolean(),
+  }).strict(),
 ]);
-const terminalSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      type: z.literal("finished"),
-      effects: z.literal("completed"),
-      ...totals,
-      exit: remoteExitSchema,
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("failed"),
-      diagnostic_text: diagnosticTextSchema,
-      failure_reason: failureReasonSchema,
-      effects: z.enum(["not_started", "unknown"]),
-      ...totals,
-    })
-    .strict(),
+const terminalSchema = discriminatedUnion("type", [
+  object({
+    type: literal("finished"),
+    effects: literal("completed"),
+    ...totals,
+    exit: remoteExitSchema,
+  }).strict(),
+  object({
+    type: literal("failed"),
+    diagnostic_text: diagnosticTextSchema,
+    failure_reason: failureReasonSchema,
+    effects: zEnum(["not_started", "unknown"]),
+    ...totals,
+  }).strict(),
 ]);
-const envelopeSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      type: z.literal("event"),
-      data: z.discriminatedUnion("type", [
-        z.object({ type: z.literal("accepted") }).strict(),
-        z
-          .object({
-            type: z.literal("output"),
-            stream: z.enum(["stdout", "stderr"]),
-            data: z.string(),
-          })
-          .strict(),
-      ]),
-    })
-    .strict(),
-  z.object({ type: z.literal("result"), data: terminalSchema }).strict(),
+const envelopeSchema = discriminatedUnion("type", [
+  object({
+    type: literal("event"),
+    data: discriminatedUnion("type", [
+      object({ type: literal("accepted") }).strict(),
+      object({
+        type: literal("output"),
+        stream: zEnum(["stdout", "stderr"]),
+        data: string(),
+      }).strict(),
+    ]),
+  }).strict(),
+  object({ type: literal("result"), data: terminalSchema }).strict(),
   rpcErrorSchema,
 ]);
-type Terminal = z.infer<typeof terminalSchema>;
-type RpcError = z.infer<typeof rpcErrorSchema>;
+type Terminal = zInfer<typeof terminalSchema>;
+type RpcError = zInfer<typeof rpcErrorSchema>;
 
 // A pipe consumer can stall independently of the helper. Bound writes without
 // destroying the caller's stdout/stderr; never replay the remote request.
@@ -183,7 +181,7 @@ class SshResponse {
   }
 
   private async message(
-    message: z.infer<typeof envelopeSchema>,
+    message: zInfer<typeof envelopeSchema>,
     json: boolean,
     signal: AbortSignal,
   ) {

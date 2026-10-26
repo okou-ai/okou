@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { enum as zEnum, type infer as zInfer } from "zod";
 
-export const feishuPlatformSchema = z.enum(["feishu", "lark"]);
-export type FeishuPlatform = z.infer<typeof feishuPlatformSchema>;
+export const feishuPlatformSchema = zEnum(["feishu", "lark"]);
+export type FeishuPlatform = zInfer<typeof feishuPlatformSchema>;

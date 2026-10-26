@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, onTestFinished, test } from "vitest";
-import { z } from "zod";
+import { object, string, uuid } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
@@ -16,7 +16,7 @@ import { settleIncludingAbort } from "../../utils";
 
 const context = testContext();
 const api = createRunsApi(context);
-const successfulClaim = z.object({ runId: z.uuid(), sandboxToken: z.string() });
+const successfulClaim = object({ runId: uuid(), sandboxToken: string() });
 
 test.each([
   { first: "a", readyAtStart: false },

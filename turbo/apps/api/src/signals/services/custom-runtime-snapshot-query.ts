@@ -9,7 +9,7 @@ import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, ne, exists, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { enum as zEnum } from "zod";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -24,7 +24,7 @@ import { userFeatureSwitchRowCondition } from "./feature-switch-scope";
 import { FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF } from "./feishu-custom-connector-permissions";
 
 const sectionDecoder = zodEnumDriverValueDecoder(
-  z.enum([
+  zEnum([
     "definition",
     "catalog",
     "account",
@@ -35,21 +35,21 @@ const sectionDecoder = zodEnumDriverValueDecoder(
   ]),
 );
 const authModeDecoder = zodEnumDriverValueDecoder(
-  z.enum(["none", "manual", "oauth", "automatic"]),
+  zEnum(["none", "manual", "oauth", "automatic"]),
 );
-const transportDecoder = zodEnumDriverValueDecoder(z.enum(["streamable-http"]));
+const transportDecoder = zodEnumDriverValueDecoder(zEnum(["streamable-http"]));
 const automaticAuthTypeDecoder = zodEnumDriverValueDecoder(
-  z.enum(["none", "oauth"]),
+  zEnum(["none", "oauth"]),
 );
 const providerAdapterDecoder = zodEnumDriverValueDecoder(
-  z.enum(["standard", "feishu"]),
+  zEnum(["standard", "feishu"]),
 );
 const tokenAuthMethodDecoder = zodEnumDriverValueDecoder(
-  z.enum(["client_secret_basic", "client_secret_post"]),
+  zEnum(["client_secret_basic", "client_secret_post"]),
 );
-const pkceDecoder = zodEnumDriverValueDecoder(z.enum(["none", "S256"]));
+const pkceDecoder = zodEnumDriverValueDecoder(zEnum(["none", "S256"]));
 const storageKindDecoder = zodEnumDriverValueDecoder(
-  z.enum(["secret", "variable"]),
+  zEnum(["secret", "variable"]),
 );
 
 // Independent sections share a typed transport, never a collection cross product.

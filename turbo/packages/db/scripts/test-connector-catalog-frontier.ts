@@ -1,48 +1,57 @@
-import { z } from "zod";
+import {
+  array,
+  boolean,
+  int32,
+  json,
+  number,
+  strictObject,
+  string,
+  tuple,
+} from "zod";
 
 export type RequiredColumnPhase = "prepared" | "contracted";
 
 const rawColumns = {
-  hash: z.string(),
-  slug: z.string(),
-  label: z.string(),
-  description: z.string(),
-  category: z.string(),
-  icon: z.json(),
-  tags: z.array(z.string().nullable()),
-  generation: z.array(z.string().nullable()),
-  auth_methods: z.json(),
-  mcp: z.json(),
-  skill: z.json(),
-  firewall: z.json(),
-  permission_summary: z.json(),
-  icon_sql_null: z.boolean(),
-  auth_methods_sql_null: z.boolean(),
-  mcp_sql_null: z.boolean(),
-  skill_sql_null: z.boolean(),
-  firewall_sql_null: z.boolean(),
-  permission_summary_sql_null: z.boolean(),
+  hash: string(),
+  slug: string(),
+  label: string(),
+  description: string(),
+  category: string(),
+  icon: json(),
+  tags: array(string().nullable()),
+  generation: array(string().nullable()),
+  auth_methods: json(),
+  mcp: json(),
+  skill: json(),
+  firewall: json(),
+  permission_summary: json(),
+  icon_sql_null: boolean(),
+  auth_methods_sql_null: boolean(),
+  mcp_sql_null: boolean(),
+  skill_sql_null: boolean(),
+  firewall_sql_null: boolean(),
+  permission_summary_sql_null: boolean(),
 };
-export const contractedRequiredRows = z.array(z.strictObject(rawColumns));
-export const preparedRequiredRows = z.array(
-  z.strictObject({
+export const contractedRequiredRows = array(strictObject(rawColumns));
+export const preparedRequiredRows = array(
+  strictObject({
     ...rawColumns,
-    payload: z.json(),
-    payload_sql_null: z.boolean(),
+    payload: json(),
+    payload_sql_null: boolean(),
   }),
 );
-export const requiredPointers = z.array(
-  z.strictObject({
-    schema_version: z.int32(),
-    hash: z.string(),
+export const requiredPointers = array(
+  strictObject({
+    schema_version: int32(),
+    hash: string(),
   }),
 );
-export const nativeIdentityRows = z.tuple([
-  z.strictObject({
-    database: z.string(),
-    role: z.string(),
-    session_role: z.string(),
-    pid: z.int32(),
+export const nativeIdentityRows = tuple([
+  strictObject({
+    database: string(),
+    role: string(),
+    session_role: string(),
+    pid: int32(),
   }),
 ]);
 export const nativeIdentitySql = `SELECT current_database() AS database,
@@ -67,12 +76,12 @@ export const requiredPermissions = {
       has_schema_privilege(current_user,n.oid,'USAGE') AS can_use,
       has_schema_privilege(current_user,n.oid,'CREATE') AS can_create
       FROM pg_namespace n WHERE n.nspname=$1`,
-    rows: z.tuple([
-      z.strictObject({
-        owner: z.string(),
-        acl: z.string().nullable(),
-        can_use: z.boolean(),
-        can_create: z.boolean(),
+    rows: tuple([
+      strictObject({
+        owner: string(),
+        acl: string().nullable(),
+        can_use: boolean(),
+        can_create: boolean(),
       }),
     ]),
   },
@@ -87,19 +96,19 @@ export const requiredPermissions = {
       has_table_privilege(current_user,c.oid,'DELETE') AS can_delete
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname=$1 AND c.relkind IN ('r','p') ORDER BY c.relname`,
-    rows: z.array(
-      z.strictObject({
-        relname: z.string(),
-        owner: z.string(),
-        acl: z.string().nullable(),
-        kind: z.string(),
-        persistence: z.string(),
-        rls: z.boolean(),
-        force_rls: z.boolean(),
-        can_select: z.boolean(),
-        can_insert: z.boolean(),
-        can_update: z.boolean(),
-        can_delete: z.boolean(),
+    rows: array(
+      strictObject({
+        relname: string(),
+        owner: string(),
+        acl: string().nullable(),
+        kind: string(),
+        persistence: string(),
+        rls: boolean(),
+        force_rls: boolean(),
+        can_select: boolean(),
+        can_insert: boolean(),
+        can_update: boolean(),
+        can_delete: boolean(),
       }),
     ),
   },
@@ -108,13 +117,13 @@ export const requiredPermissions = {
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum>0
       WHERE n.nspname=$1 AND c.relkind IN ('r','p') ORDER BY c.relname,a.attnum`,
-    rows: z.array(
-      z.strictObject({
-        relname: z.string(),
-        attnum: z.number().int(),
-        attname: z.string(),
-        attisdropped: z.boolean(),
-        acl: z.string().nullable(),
+    rows: array(
+      strictObject({
+        relname: string(),
+        attnum: number().int(),
+        attname: string(),
+        attisdropped: boolean(),
+        acl: string().nullable(),
       }),
     ),
   },
@@ -126,15 +135,15 @@ export const requiredPermissions = {
       FROM pg_policy p JOIN pg_class c ON c.oid=p.polrelid
       JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname=$1 ORDER BY c.relname,p.polname`,
-    rows: z.array(
-      z.strictObject({
-        relname: z.string(),
-        polname: z.string(),
-        command: z.string(),
-        polpermissive: z.boolean(),
-        roles: z.string(),
-        using_expression: z.string().nullable(),
-        check_expression: z.string().nullable(),
+    rows: array(
+      strictObject({
+        relname: string(),
+        polname: string(),
+        command: string(),
+        polpermissive: boolean(),
+        roles: string(),
+        using_expression: string().nullable(),
+        check_expression: string().nullable(),
       }),
     ),
   },
@@ -143,11 +152,11 @@ export const requiredPermissions = {
       FROM pg_rewrite r JOIN pg_class c ON c.oid=r.ev_class
       JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname=$1 ORDER BY c.relname,r.rulename`,
-    rows: z.array(
-      z.strictObject({
-        relname: z.string(),
-        rulename: z.string(),
-        definition: z.string(),
+    rows: array(
+      strictObject({
+        relname: string(),
+        rulename: string(),
+        definition: string(),
       }),
     ),
   },
@@ -160,69 +169,67 @@ export const requiredPermissions = {
       JOIN pg_namespace pn ON pn.oid=pc.relnamespace
       WHERE n.nspname=$1 OR pn.nspname=$1
       ORDER BY c.relname,pn.nspname,pc.relname,i.inhseqno`,
-    rows: z.array(
-      z.strictObject({
-        child: z.string(),
-        parent_schema: z.string(),
-        parent: z.string(),
-        inhseqno: z.number().int(),
+    rows: array(
+      strictObject({
+        child: string(),
+        parent_schema: string(),
+        parent: string(),
+        inhseqno: number().int(),
       }),
     ),
   },
 };
 
 // Keep every selected catalog field; result generics do not decode pg rows.
-export const physicalCatalogRows = z.tuple([
-  z.strictObject({
-    catalog: z.strictObject({
-      columns: z.array(
-        z.strictObject({
-          oid: z.string().regex(/^\d+$/u),
-          table: z.string(),
-          attnum: z.number().int().positive(),
-          name: z.string(),
-          type: z.string(),
-          notNull: z.boolean(),
-          default: z.string().nullable(),
-          identity: z.string(),
-          generated: z.string(),
-          dropped: z.boolean(),
-          collation: z.string().nullable(),
+export const physicalCatalogRows = tuple([
+  strictObject({
+    catalog: strictObject({
+      columns: array(
+        strictObject({
+          oid: string().regex(/^\d+$/u),
+          table: string(),
+          attnum: number().int().positive(),
+          name: string(),
+          type: string(),
+          notNull: boolean(),
+          default: string().nullable(),
+          identity: string(),
+          generated: string(),
+          dropped: boolean(),
+          collation: string().nullable(),
         }),
       ),
-      constraints: z.array(
-        z.strictObject({
-          oid: z.string().regex(/^\d+$/u),
-          name: z.string(),
-          type: z.string(),
-          validated: z.boolean(),
-          deferrable: z.boolean(),
-          deferred: z.boolean(),
-          definition: z.string(),
+      constraints: array(
+        strictObject({
+          oid: string().regex(/^\d+$/u),
+          name: string(),
+          type: string(),
+          validated: boolean(),
+          deferrable: boolean(),
+          deferred: boolean(),
+          definition: string(),
         }),
       ),
-      indexes: z.array(
-        z.strictObject({
-          table: z.string(),
-          name: z.string(),
-          definition: z.string(),
+      indexes: array(
+        strictObject({
+          table: string(),
+          name: string(),
+          definition: string(),
         }),
       ),
-      tables: z.array(
-        z.strictObject({
-          name: z.string(),
-          kind: z.string(),
-          rls: z.boolean(),
+      tables: array(
+        strictObject({
+          name: string(),
+          kind: string(),
+          rls: boolean(),
         }),
       ),
-      triggers: z.array(
-        z.strictObject({ name: z.string(), definition: z.string() }),
-      ),
-      routines: z.array(
-        z.strictObject({
-          name: z.string(),
-          kind: z.string(),
-          body: z.string(),
+      triggers: array(strictObject({ name: string(), definition: string() })),
+      routines: array(
+        strictObject({
+          name: string(),
+          kind: string(),
+          body: string(),
         }),
       ),
     }),
@@ -281,61 +288,57 @@ export const catalogFrontierSql = `SELECT jsonb_build_object(
     FROM pg_proc r JOIN pg_namespace n ON n.oid = r.pronamespace
     WHERE n.nspname = $1)
 ) AS catalog`;
-export const catalogRowsSchema = z
-  .array(
-    z.strictObject({
-      catalog: z.strictObject({
-        columns: z.array(
-          z.strictObject({
-            table: z.string(),
-            position: z.number().int(),
-            name: z.string(),
-            type: z.string(),
-            notNull: z.boolean(),
-            default: z.string().nullable(),
-            identity: z.string(),
-            generated: z.string(),
-            dropped: z.boolean(),
-            collation: z.string().nullable(),
-          }),
-        ),
-        constraints: z.array(
-          z.strictObject({
-            name: z.string(),
-            type: z.string(),
-            validated: z.boolean(),
-            deferrable: z.boolean(),
-            deferred: z.boolean(),
-            definition: z.string(),
-          }),
-        ),
-        indexes: z.array(
-          z.strictObject({
-            table: z.string(),
-            name: z.string(),
-            definition: z.string(),
-          }),
-        ),
-        relations: z.array(
-          z.strictObject({
-            name: z.string(),
-            kind: z.string(),
-            persistence: z.string(),
-            rls: z.boolean(),
-            forceRls: z.boolean(),
-          }),
-        ),
-        triggers: z.array(
-          z.strictObject({ name: z.string(), definition: z.string() }),
-        ),
-        routines: z.array(
-          z.strictObject({
-            name: z.string(),
-            kind: z.string(),
-            body: z.string(),
-          }),
-        ),
-      }),
+export const catalogRowsSchema = array(
+  strictObject({
+    catalog: strictObject({
+      columns: array(
+        strictObject({
+          table: string(),
+          position: number().int(),
+          name: string(),
+          type: string(),
+          notNull: boolean(),
+          default: string().nullable(),
+          identity: string(),
+          generated: string(),
+          dropped: boolean(),
+          collation: string().nullable(),
+        }),
+      ),
+      constraints: array(
+        strictObject({
+          name: string(),
+          type: string(),
+          validated: boolean(),
+          deferrable: boolean(),
+          deferred: boolean(),
+          definition: string(),
+        }),
+      ),
+      indexes: array(
+        strictObject({
+          table: string(),
+          name: string(),
+          definition: string(),
+        }),
+      ),
+      relations: array(
+        strictObject({
+          name: string(),
+          kind: string(),
+          persistence: string(),
+          rls: boolean(),
+          forceRls: boolean(),
+        }),
+      ),
+      triggers: array(strictObject({ name: string(), definition: string() })),
+      routines: array(
+        strictObject({
+          name: string(),
+          kind: string(),
+          body: string(),
+        }),
+      ),
     }),
-  )
-  .length(1);
+  }),
+).length(1);

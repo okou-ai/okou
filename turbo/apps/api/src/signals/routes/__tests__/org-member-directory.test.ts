@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import { array, literal, number, object, string } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
@@ -9,11 +9,11 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 
 const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
-const invitationListParams = z.object({
-  organizationId: z.string(),
-  status: z.array(z.literal("pending")),
-  limit: z.number(),
-  offset: z.number(),
+const invitationListParams = object({
+  organizationId: string(),
+  status: array(literal("pending")),
+  limit: number(),
+  offset: number(),
 });
 
 async function useInvitationTransport(): Promise<void> {
@@ -37,14 +37,14 @@ async function useDirectoryTransport(): Promise<void> {
   const client = sdk.createClerkClient({
     secretKey: "sk_test_member_directory",
   });
-  const organizationParams = z.object({ organizationId: z.string() });
+  const organizationParams = object({ organizationId: string() });
   const membershipParams = organizationParams.extend({
-    limit: z.number(),
-    offset: z.number(),
+    limit: number(),
+    offset: number(),
   });
-  const userParams = z.object({
-    userId: z.array(z.string()),
-    limit: z.number(),
+  const userParams = object({
+    userId: array(string()),
+    limit: number(),
   });
   context.mocks.clerk.organizations.getOrganization.mockImplementation(
     (params) => {

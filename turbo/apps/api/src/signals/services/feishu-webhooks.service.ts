@@ -4,7 +4,15 @@ import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
+import {
+  array,
+  literal,
+  object,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
+
 import { feishuEventsContract } from "@okouai/api-contracts/contracts/feishu-events";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -44,46 +52,44 @@ import {
 
 const L = logger("FeishuWebhooks");
 
-const encryptedBodySchema = z.object({ encrypt: z.string() });
-const challengeSchema = z.object({
-  type: z.literal("url_verification"),
-  challenge: z.string(),
-  token: z.string(),
+const encryptedBodySchema = object({ encrypt: string() });
+const challengeSchema = object({
+  type: literal("url_verification"),
+  challenge: string(),
+  token: string(),
 });
-const v2EnvelopeSchema = z.object({
-  schema: z.literal("2.0"),
-  header: z.object({
-    event_id: z.string(),
-    event_type: z.string(),
-    tenant_key: z.string(),
-    app_id: z.string(),
-    token: z.string(),
+const v2EnvelopeSchema = object({
+  schema: literal("2.0"),
+  header: object({
+    event_id: string(),
+    event_type: string(),
+    tenant_key: string(),
+    app_id: string(),
+    token: string(),
   }),
-  event: z.unknown(),
+  event: zUnknown(),
 });
-const v2MessageEventSchema = z.object({
-  sender: z.object({
-    sender_id: z.object({ open_id: z.string() }),
-    sender_type: z.string().optional(),
+const v2MessageEventSchema = object({
+  sender: object({
+    sender_id: object({ open_id: string() }),
+    sender_type: string().optional(),
   }),
-  message: z.object({
-    message_id: z.string(),
-    root_id: z.string().optional(),
-    parent_id: z.string().optional(),
-    thread_id: z.string().optional(),
-    chat_id: z.string(),
-    chat_type: z.string(),
-    message_type: z.string(),
-    content: z.string(),
-    mentions: z
-      .array(
-        z.object({
-          key: z.string(),
-          id: z.object({ open_id: z.string().optional() }),
-          name: z.string().optional(),
-        }),
-      )
-      .optional(),
+  message: object({
+    message_id: string(),
+    root_id: string().optional(),
+    parent_id: string().optional(),
+    thread_id: string().optional(),
+    chat_id: string(),
+    chat_type: string(),
+    message_type: string(),
+    content: string(),
+    mentions: array(
+      object({
+        key: string(),
+        id: object({ open_id: string().optional() }),
+        name: string().optional(),
+      }),
+    ).optional(),
   }),
 });
 const FEISHU_REPLAY_WINDOW_SECONDS = 60 * 5;
@@ -179,7 +185,7 @@ function decryptPayload(encrypted: string, encryptKey: string): unknown {
 
 function inboundMessage(
   config: FeishuInstallationConfig,
-  envelope: z.infer<typeof v2EnvelopeSchema>,
+  envelope: zInfer<typeof v2EnvelopeSchema>,
 ): FeishuInboundMessage | null {
   if (envelope.header.event_type !== "im.message.receive_v1") {
     return null;
@@ -259,7 +265,7 @@ const ensureInboundBotIdentity$ = command(
     { set },
     args: {
       readonly config: FeishuInstallationConfig;
-      readonly envelope: z.infer<typeof v2EnvelopeSchema>;
+      readonly envelope: zInfer<typeof v2EnvelopeSchema>;
     },
     signal: AbortSignal,
   ): Promise<FeishuInstallationConfig> => {

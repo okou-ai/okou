@@ -1,15 +1,24 @@
-import { z } from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  number,
+  object,
+  uuid,
+  enum as zEnum,
+  type RefinementCtx,
+  type infer as zInfer,
+} from "zod";
 
-const safeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const combinedCoverage = z.enum(["complete", "partial"]);
-const totalTokens = z
-  .object({
-    input: safeInteger,
-    cacheRead: safeInteger,
-    cacheCreation: safeInteger,
-    output: safeInteger,
-    total: safeInteger,
-  })
+const safeInteger = number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const combinedCoverage = zEnum(["complete", "partial"]);
+const totalTokens = object({
+  input: safeInteger,
+  cacheRead: safeInteger,
+  cacheCreation: safeInteger,
+  output: safeInteger,
+  total: safeInteger,
+})
   .strict()
   .superRefine((tokens, context) => {
     if (
@@ -23,7 +32,7 @@ const totalTokens = z
       });
     }
   });
-const coverageReason = z.enum([
+const coverageReason = zEnum([
   "history_lost",
   "retention_lost",
   "missing_usage",
@@ -35,103 +44,87 @@ const coverageReason = z.enum([
   "overflow",
   "in_flight",
 ]);
-const sandboxProxy = z
-  .discriminatedUnion("state", [
-    z
-      .object({
-        state: z.literal("unavailable"),
-        reason: z.enum([
-          "not-observed",
-          "launch-unavailable",
-          "busy",
-          "timed-out",
-          "invalid-response",
-          "transport",
-        ]),
-      })
-      .strict(),
-    z
-      .object({
-        state: z.literal("observed"),
-        sampledAtMs: safeInteger.positive(),
-        revision: safeInteger,
-        coverage: combinedCoverage,
-        reasons: z.array(coverageReason).max(10),
-        observedResponses: safeInteger.max(4096),
-        outstandingResponses: safeInteger.max(4096),
-        tokens: totalTokens,
-      })
-      .strict(),
-  ])
-  .superRefine((source, context) => {
-    if (source.state !== "observed") return;
-    const reasons = new Set(source.reasons);
-    if (reasons.size !== source.reasons.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["reasons"],
-        message: "MITM reasons must be unique",
-      });
-    }
-    if ((source.coverage === "complete") !== (source.reasons.length === 0)) {
-      context.addIssue({
-        code: "custom",
-        path: ["coverage"],
-        message: "MITM coverage does not match its reasons",
-      });
-    }
-    if (reasons.has("in_flight") !== source.outstandingResponses > 0) {
-      context.addIssue({
-        code: "custom",
-        path: ["outstandingResponses"],
-        message: "MITM in-flight state is incoherent",
-      });
-    }
-    if (source.observedResponses === 0 && source.tokens.total !== 0) {
-      context.addIssue({
-        code: "custom",
-        path: ["observedResponses"],
-        message: "MITM totals require an observed response",
-      });
-    }
-  });
+const sandboxProxy = discriminatedUnion("state", [
+  object({
+    state: literal("unavailable"),
+    reason: zEnum([
+      "not-observed",
+      "launch-unavailable",
+      "busy",
+      "timed-out",
+      "invalid-response",
+      "transport",
+    ]),
+  }).strict(),
+  object({
+    state: literal("observed"),
+    sampledAtMs: safeInteger.positive(),
+    revision: safeInteger,
+    coverage: combinedCoverage,
+    reasons: array(coverageReason).max(10),
+    observedResponses: safeInteger.max(4096),
+    outstandingResponses: safeInteger.max(4096),
+    tokens: totalTokens,
+  }).strict(),
+]).superRefine((source, context) => {
+  if (source.state !== "observed") return;
+  const reasons = new Set(source.reasons);
+  if (reasons.size !== source.reasons.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["reasons"],
+      message: "MITM reasons must be unique",
+    });
+  }
+  if ((source.coverage === "complete") !== (source.reasons.length === 0)) {
+    context.addIssue({
+      code: "custom",
+      path: ["coverage"],
+      message: "MITM coverage does not match its reasons",
+    });
+  }
+  if (reasons.has("in_flight") !== source.outstandingResponses > 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["outstandingResponses"],
+      message: "MITM in-flight state is incoherent",
+    });
+  }
+  if (source.observedResponses === 0 && source.tokens.total !== 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["observedResponses"],
+      message: "MITM totals require an observed response",
+    });
+  }
+});
 
-const combined = z.discriminatedUnion("state", [
-  z
-    .object({
-      state: z.literal("observed"),
-      coverage: combinedCoverage,
-      observedTokens: totalTokens,
-    })
-    .strict(),
-  z
-    .object({
-      state: z.literal("unavailable"),
-      reason: z.literal("no-observation"),
-    })
-    .strict(),
-  z
-    .object({
-      state: z.literal("overflow"),
-      coverage: combinedCoverage,
-    })
-    .strict(),
+const combined = discriminatedUnion("state", [
+  object({
+    state: literal("observed"),
+    coverage: combinedCoverage,
+    observedTokens: totalTokens,
+  }).strict(),
+  object({
+    state: literal("unavailable"),
+    reason: literal("no-observation"),
+  }).strict(),
+  object({
+    state: literal("overflow"),
+    coverage: combinedCoverage,
+  }).strict(),
 ]);
 
-const runUsageResultBaseSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    runId: z.uuid(),
-    combined,
-    sources: z
-      .object({
-        sandboxProxy,
-      })
-      .strict(),
-  })
-  .strict();
+const runUsageResultBaseSchema = object({
+  schemaVersion: literal(1),
+  runId: uuid(),
+  combined,
+  sources: object({
+    sandboxProxy,
+  }).strict(),
+}).strict();
 
-type RunUsageResultInput = z.infer<typeof runUsageResultBaseSchema>;
+type RunUsageResultInput = zInfer<typeof runUsageResultBaseSchema>;
 
 function sourceCategorySums(
   sources: RunUsageResultInput["sources"],
@@ -143,7 +136,7 @@ function sourceCategorySums(
 
 function validateCombined(
   result: RunUsageResultInput,
-  context: z.RefinementCtx,
+  context: RefinementCtx,
 ): void {
   const proxy = result.sources.sandboxProxy;
   if (result.combined.state === "unavailable") {
@@ -221,7 +214,7 @@ function validateCombined(
 export const runUsageResultSchema =
   runUsageResultBaseSchema.superRefine(validateCombined);
 
-export const runUsageErrorKindSchema = z.enum([
+export const runUsageErrorKindSchema = zEnum([
   "unsupported-runner",
   "assignment-unavailable",
   "busy",
@@ -230,28 +223,22 @@ export const runUsageErrorKindSchema = z.enum([
   "invalid-response",
   "transport",
 ]);
-export const runUsageCliOutcomeSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      schemaVersion: z.literal(1),
-      status: z.literal("ok"),
-      usage: runUsageResultSchema,
-    })
-    .strict(),
-  z
-    .object({
-      schemaVersion: z.literal(1),
-      status: z.literal("error"),
-      error: z
-        .object({
-          kind: runUsageErrorKindSchema,
-          delivery: z.enum(["not-dispatched", "unknown"]),
-        })
-        .strict(),
-    })
-    .strict(),
+export const runUsageCliOutcomeSchema = discriminatedUnion("status", [
+  object({
+    schemaVersion: literal(1),
+    status: literal("ok"),
+    usage: runUsageResultSchema,
+  }).strict(),
+  object({
+    schemaVersion: literal(1),
+    status: literal("error"),
+    error: object({
+      kind: runUsageErrorKindSchema,
+      delivery: zEnum(["not-dispatched", "unknown"]),
+    }).strict(),
+  }).strict(),
 ]);
 
-export type RunUsageResult = z.infer<typeof runUsageResultSchema>;
-export type RunUsageCliOutcome = z.infer<typeof runUsageCliOutcomeSchema>;
-export type RunUsageErrorKind = z.infer<typeof runUsageErrorKindSchema>;
+export type RunUsageResult = zInfer<typeof runUsageResultSchema>;
+export type RunUsageCliOutcome = zInfer<typeof runUsageCliOutcomeSchema>;
+export type RunUsageErrorKind = zInfer<typeof runUsageErrorKindSchema>;

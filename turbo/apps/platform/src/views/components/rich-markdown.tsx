@@ -12,7 +12,7 @@ import { File, Image, Loader2, Video } from "lucide-react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
-import { z } from "zod";
+import { iso } from "zod";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { cn } from "@okouai/ui";
 
@@ -706,7 +706,7 @@ function MarkdownSpanRenderer(props: MarkdownSpanProps) {
   return <span {...omitMarkdownNodeProp(rest)}>{children}</span>;
 }
 
-const markdownDateTimeSchema = z.iso.datetime({ offset: true });
+const markdownDateTimeSchema = iso.datetime({ offset: true });
 
 function MarkdownTimeRenderer({
   children,

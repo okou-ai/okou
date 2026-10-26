@@ -15,7 +15,15 @@ import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/int
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  url,
+  type infer as zInfer,
+} from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -49,42 +57,40 @@ const publicKey = keys.publicKey
   .toString("hex");
 const applicationId = DISCORD_TEST_APPLICATION_ID;
 
-const messageComponentSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal(2),
-    custom_id: z.string().max(100).optional(),
-    url: z.url().optional(),
-    label: z.string(),
+const messageComponentSchema = discriminatedUnion("type", [
+  object({
+    type: literal(2),
+    custom_id: string().max(100).optional(),
+    url: url().optional(),
+    label: string(),
   }),
-  z.object({
-    type: z.literal(3),
-    custom_id: z.string().max(100),
-    min_values: z.literal(1),
-    max_values: z.literal(1),
-    options: z
-      .array(
-        z.object({
-          label: z.string(),
-          value: z.string(),
-          default: z.literal(true).optional(),
-        }),
-      )
-      .max(25),
+  object({
+    type: literal(3),
+    custom_id: string().max(100),
+    min_values: literal(1),
+    max_values: literal(1),
+    options: array(
+      object({
+        label: string(),
+        value: string(),
+        default: literal(true).optional(),
+      }),
+    ).max(25),
   }),
 ]);
 
-const privateMessageSchema = z.object({
-  content: z.string(),
-  components: z.array(
-    z.object({
-      type: z.literal(1),
-      components: z.array(messageComponentSchema),
+const privateMessageSchema = object({
+  content: string(),
+  components: array(
+    object({
+      type: literal(1),
+      components: array(messageComponentSchema),
     }),
   ),
-  allowed_mentions: z.object({ parse: z.array(z.string()) }),
+  allowed_mentions: object({ parse: array(string()) }),
 });
 
-type PrivateMessage = z.infer<typeof privateMessageSchema>;
+type PrivateMessage = zInfer<typeof privateMessageSchema>;
 
 interface DiscordSender {
   readonly discordUserId: string;

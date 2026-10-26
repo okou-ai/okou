@@ -4,7 +4,7 @@ import {
   sshHostsContract,
   sshHostsResponseSchema,
 } from "@okouai/api-contracts/contracts/ssh-access";
-import { z } from "zod";
+import { uuid } from "zod";
 
 import { getClientConfig } from "../../lib/api/core/client-factory";
 import { listConfiguredSshHosts } from "../../lib/api/domains/ssh-management";
@@ -126,7 +126,7 @@ Safety:
         options: { readonly command: string; readonly json?: boolean },
       ) => {
         requireCapability("ssh:write");
-        if (!z.uuid().safeParse(connectionId).success)
+        if (!uuid().safeParse(connectionId).success)
           throw new Error(
             "Invalid SSH connection ID. Use an exact ID from okou ssh host list.",
           );
