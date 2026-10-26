@@ -23,6 +23,9 @@ readonly FINALIZING_SOURCE_RUNNER_READER_COMMIT=b610ff61043274157618e3925b13a66d
 # #41808 stopped naming runner_state.wss_ingress_service_active in ORM statements.
 # Migration drop_runner_state_wss_ingress drops it, so earlier APIs fail Runner state SQL.
 readonly RUNNER_STATE_WSS_INGRESS_FREE_COMMIT=430cb92b5431e1554d0a1dceed6d9cfb27762921
+# #42935 removed retired Data job mappings and pricing columns from API SQL.
+# The later storage contraction must not restore an API that still names them.
+readonly MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT=b220a504c5e633de162791f1216c4458188ffe72
 # #42572 removed invoice-paid automation SQL before its dedicated tables retire.
 # Preserve the shared Stripe Connect deauthorization receiver from that release.
 readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447d707b81
@@ -178,6 +181,10 @@ fi
 
 if ! git merge-base --is-ancestor "$RUNNER_STATE_WSS_INGRESS_FREE_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the wss_ingress_service_active-free Runner state mapping: ${RUNNER_STATE_WSS_INGRESS_FREE_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired Data storage-independent runtime: ${MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$STRIPE_INVOICE_PAID_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then

@@ -572,6 +572,13 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "ingress-mapping API must fail before artifact or host access"
 fi
 
+# The preparation remains a valid target independently of the later DROP.
+run_resolver "${tmp_dir}/managed-data-runtime-exact.output" \
+  TARGET_COMMIT=b220a504c5e633de162791f1216c4458188ffe72 \
+  >"${tmp_dir}/managed-data-runtime-exact.log"
+grep -qx "target_commit=b220a504c5e633de162791f1216c4458188ffe72" \
+  "${tmp_dir}/managed-data-runtime-exact.output" || fail "exact Data runtime preparation must remain eligible"
+
 : >"${tmp_dir}/boundaries.log"
 assert_failure "predates the independent finalizing source reader" \
   run_resolver "${tmp_dir}/finalizing-source-runner-floor.output" MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID=0
