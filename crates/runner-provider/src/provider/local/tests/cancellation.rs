@@ -1,5 +1,44 @@
 use super::support::*;
 
+#[tokio::test(flavor = "current_thread")]
+async fn shutdown_joins_after_concurrent_and_cancelled_waiters() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = LocalProvider::new(
+        dir.path().to_path_buf(),
+        default_profiles(),
+        CancellationToken::new(),
+        empty_cancel_tokens(),
+    );
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        provider.wait_for_cancel_scan_count(1),
+    )
+    .await
+    .expect("initial watcher scan should complete");
+
+    // Poll the public shutdown calls without yielding this single-threaded
+    // runtime: the signalled watcher has not yet run its exit path.
+    let mut first_shutdown = Box::pin(provider.shutdown());
+    assert!(futures_util::poll!(first_shutdown.as_mut()).is_pending());
+    let mut concurrent_shutdown = Box::pin(provider.shutdown());
+    assert!(
+        futures_util::poll!(concurrent_shutdown.as_mut()).is_pending(),
+        "concurrent shutdown must wait for watcher retirement"
+    );
+
+    drop(first_shutdown);
+    assert!(
+        futures_util::poll!(concurrent_shutdown.as_mut()).is_pending(),
+        "cancelling one waiter must preserve the remaining join boundary"
+    );
+    tokio::time::timeout(Duration::from_secs(2), concurrent_shutdown)
+        .await
+        .expect("remaining shutdown should join the watcher");
+    tokio::time::timeout(Duration::from_secs(2), provider.shutdown())
+        .await
+        .expect("shutdown should stay idempotent after the join");
+}
+
 #[tokio::test]
 async fn claim_reconciles_without_waiting_for_unrelated_gate_and_wakes_watcher() {
     let dir = tempfile::tempdir().unwrap();
