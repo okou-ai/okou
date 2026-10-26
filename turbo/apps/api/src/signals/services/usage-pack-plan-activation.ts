@@ -2,7 +2,8 @@ import {
   usagePackAllocations,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { and, eq, inArray, notExists, notInArray, or } from "drizzle-orm";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { and, eq, inArray, notExists, notInArray, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import type { CommitUsagePackFulfillmentArgs } from "./usage-pack-subscription.service";
@@ -206,4 +207,38 @@ export function activationEntitlementValues(
     stripeProductId: null,
     metadataHash: null,
   };
+}
+
+/** The insert-select follows the table's full column order, retaining defaults. */
+export function activationEntitlementInsertValues(
+  values: ReturnType<typeof activationEntitlementValues>,
+) {
+  const columns = orgPlanEntitlements;
+  return sql`
+    ${sql.param(values.orgId, columns.orgId)},
+    ${sql.param(values.planKey, columns.planKey)},
+    ${sql.param(values.planRank, columns.planRank)},
+    ${sql.param(values.source, columns.source)},
+    ${sql.param(values.status, columns.status)},
+    ${sql.param(values.baseConcurrencyLimit, columns.baseConcurrencyLimit)},
+    ${sql.param(values.canBuyConcurrency, columns.canBuyConcurrency)},
+    ${sql.param(values.canBuyCredits, columns.canBuyCredits)},
+    ${sql.param(values.showUsagePack, columns.showUsagePack)},
+    ${sql.param(values.autoRechargeAllowed, columns.autoRechargeAllowed)},
+    ${sql.param(values.restrictedBuiltInModels, columns.restrictedBuiltInModels)},
+    ${sql.param(values.workflowWebhookTriggerAllowed, columns.workflowWebhookTriggerAllowed)},
+    ${sql.param(values.audioLifetimeLimit, columns.audioLifetimeLimit)},
+    ${sql.param(values.audioDailyRateLimit, columns.audioDailyRateLimit)},
+    ${sql.param(values.audioDailyDurationSeconds, columns.audioDailyDurationSeconds)},
+    ${sql.param(values.stripeSubscriptionId, columns.stripeSubscriptionId)},
+    ${sql.param(values.stripeProductId, columns.stripeProductId)},
+    ${sql.param(values.stripePriceId, columns.stripePriceId)},
+    ${sql.param(values.currentPeriodStart, columns.currentPeriodStart)},
+    ${sql.param(values.currentPeriodEnd, columns.currentPeriodEnd)},
+    ${sql.param(values.cancelAt, columns.cancelAt)},
+    ${sql.param(values.expiresAt, columns.expiresAt)},
+    '1', ${sql.param(values.metadataHash, columns.metadataHash)},
+    ${sql.param(values.sourceMetadata, columns.sourceMetadata)},
+    now(), ${sql.param(values.updatedAt, columns.updatedAt)}
+  `;
 }

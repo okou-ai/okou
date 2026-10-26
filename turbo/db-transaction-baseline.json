@@ -202,11 +202,6 @@
       "owner": "writeUsagePackPendingSnapshots"
     },
     {
-      "id": "TX-0304",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "commitUsagePackPlanActivation$"
-    },
-    {
       "id": "TX-0308",
       "file": "turbo/apps/api/src/signals/services/user-connectors.service.ts",
       "owner": "updateUserBuiltinConnectors$"
