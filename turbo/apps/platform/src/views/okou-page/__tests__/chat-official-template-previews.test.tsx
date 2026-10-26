@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import {
   click,
   queryAllByRoleFast,
@@ -23,6 +24,73 @@ const WELCOME_STEP_BASE =
 const WELCOME_SCENE_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
 const QUICK_START = "https://4nnp6iwpss.okou.app";
+
+test.each([
+  {
+    name: "sproutpop-launch-deck",
+    url: "https://sproutpop-launch-deck-p9jk.okou.app",
+    cover: "sproutpop-a826bd3d2831.png",
+  },
+  {
+    name: "coastal-hotel-example",
+    url: "https://coastal-hotel-example.okou.app",
+    cover: "coastal-hotel-d2b4e1caa3c1.png",
+  },
+  {
+    name: "Quick start",
+    url: QUICK_START,
+    cover: "quick-start-eb0e18d9a32b.png",
+  },
+])(
+  "An existing welcome message shows the $name cover before opening the HTML",
+  async ({ name, url, cover }) => {
+    const chat = createMarkdownChatFixture(context);
+    const row = chat.outputMessage(`![${name}](${url})`, { seqId: 1 });
+    chat.install({
+      rows: () => {
+        return [
+          {
+            ...row,
+            runId: null,
+            runEventId: null,
+            runEventSequenceNumber: null,
+          },
+        ];
+      },
+    });
+    context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+      return respond(200, { runs: [] });
+    });
+    const previewImageUrl = `https://static.vm0.io/vm0/welcome-thread/2026-10-26-previews/${cover}`;
+    const sharedSnapshot = url === QUICK_START;
+    const previewUrl = sharedSnapshot
+      ? `https://ps-${"1".repeat(48)}.okou.app/`
+      : `${url}/`;
+    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+      return respond(200, {
+        url: previewUrl,
+        expiresAt: sharedSnapshot ? "2099-01-01T00:00:00.000Z" : null,
+        previewImageUrl,
+      });
+    });
+    await setupPage({ context, path: chat.path, host: "app.okou.ai" });
+    const image = await screen.findByTestId("attachment-preview-thumbnail");
+    expect(image).toHaveAttribute("src", expect.stringContaining(cover));
+    expect(document.querySelector("iframe")).toBeNull();
+    const card = image.closest("a");
+    if (!card) {
+      throw new Error("Missing welcome preview link");
+    }
+    click(card);
+    await waitFor(() => {
+      expect(
+        screen
+          .getByTestId("artifact-dialog-site-frame")
+          .querySelector("iframe"),
+      ).toHaveAttribute("src", sharedSnapshot ? previewUrl : url);
+    });
+  },
+);
 
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
