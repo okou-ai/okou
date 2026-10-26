@@ -12,6 +12,19 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1063.1](https://github.com/okou-ai/okou/compare/app-v0.1063.0...app-v0.1063.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** cancel superseded custom permission preparation ([#42895](https://github.com/okou-ai/okou/issues/42895)) ([26857c7](https://github.com/okou-ai/okou/commit/26857c71094ed3307049ba3afedd481ebd5e7b6d))
+* **app:** preserve newer workflow automation creation dialogs ([#42896](https://github.com/okou-ai/okou/issues/42896)) ([dc06c78](https://github.com/okou-ai/okou/commit/dc06c7836a75eb46c61d5993694aaacd195239dd))
+* **app:** preserve reopened feishu setup on completion ([#42892](https://github.com/okou-ai/okou/issues/42892)) ([806243e](https://github.com/okou-ai/okou/commit/806243e94c2beb35352c1de2e4900ea367253991))
+* **app:** scope feishu app validation to its wizard ([#42893](https://github.com/okou-ai/okou/issues/42893)) ([2208f8b](https://github.com/okou-ai/okou/commit/2208f8b29a1164a60bb8875fb16d4febaffa1b3a))
+* preserve reopened workflow automation drafts ([#42898](https://github.com/okou-ai/okou/issues/42898)) ([88213db](https://github.com/okou-ai/okou/commit/88213db20cbedf1e5bff47d0a44e6ed37d2ecfe0))
+* preserve the current email after an earlier deletion ([#42901](https://github.com/okou-ai/okou/issues/42901)) ([f4f7346](https://github.com/okou-ai/okou/commit/f4f7346880fc0e4b6733f8d47a0596f9d07892a5))
+* scope chat automation saves to their editor ([#42899](https://github.com/okou-ai/okou/issues/42899)) ([deadd17](https://github.com/okou-ai/okou/commit/deadd17850aa209039edb26ac301fd4b821ff8e9))
+
 ## [0.1063.0](https://github.com/okou-ai/okou/compare/app-v0.1062.0...app-v0.1063.0) (2026-10-26)
 
 
