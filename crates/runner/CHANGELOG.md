@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.2...runner-rs-v0.237.3) (2026-10-26)
+
+
+### Performance Improvements
+
+* **python:** skip body work for native-rejected requests ([#43023](https://github.com/okou-ai/okou/issues/43023)) ([e67a6b5](https://github.com/okou-ai/okou/commit/e67a6b582dbfcd7bdd9421992197d5417bf7987e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.1...runner-rs-v0.237.2) (2026-10-26)
 
 ### Release Dependencies
