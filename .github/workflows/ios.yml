@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      overlap_package_sources:
+        description: Start the Mac job alongside locked package-source preparation
+        type: boolean
+        default: false
       sample_xcode_startup:
         description: Sample the compile-phase Xcode startup
         type: boolean
@@ -116,6 +120,7 @@ jobs:
           python3 ios/scripts/run-ci-tests.test.py
           python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
+          python3 ios/scripts/wait-for-package-sources.test.py
 
   test-packages:
     needs: detect
@@ -170,7 +175,7 @@ jobs:
   build-test:
     needs: [detect, prepare-package-sources]
     # Main pushes consume previously built archives in release-please; never rebuild/test.
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push' && !(github.event_name == 'workflow_dispatch' && inputs.overlap_package_sources)
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -190,6 +195,118 @@ jobs:
       - name: Restore native build caches
         id: build-cache
         uses: ./.github/actions/setup-ios-build-cache
+      - name: Receive locked source repositories
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-package-sources-${{ github.sha }}
+          path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
+      - name: Configure locked package sources
+        run: |
+          mkdir -p "$RUNNER_TEMP/okou-ios-ci"
+          python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
+          # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
+          printf '\n' >> "$HOME/.gitconfig"
+          cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
+      - name: Capture promotion inputs
+        run: |
+          mkdir "$IOS_ARCHIVE_DIR"
+          cp "${{ steps.build-cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+      - name: Classify the whole merge group
+        id: release-only
+        if: github.event_name == 'merge_group'
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
+          echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
+      - name: Install AWS CLI
+        if: github.event_name == 'merge_group' && steps.release-only.outputs.release_only == 'true'
+        run: |
+          if ! command -v aws >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
+          fi
+          aws --version
+      - name: Resolve exact-input test evidence
+        id: evidence
+        if: github.event_name == 'merge_group'
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+        run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
+      - name: Check Swift formatting and property lists
+        run: |
+          xcodebuild -version
+          xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests
+          plutil -lint ios/Okou/Resources/Info.plist ios/Okou.xcodeproj/project.pbxproj
+      - name: Build app and run isolated simulator tests
+        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        run: bash ios/scripts/run-ci-tests.sh
+      - name: Upload Xcode startup observations
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-xcode-startup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/startup-samples
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Record simulator inputs and test decision
+        if: github.event_name == 'merge_group'
+        run: |
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/test-inputs.json"
+          echo "${{ steps.evidence.outputs.run_tests }}" > "$IOS_ARCHIVE_DIR/ran-tests.txt"
+      - name: Transfer simulator inputs and evidence
+        if: github.event_name == 'merge_group'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.IOS_ARCHIVE_DIR }}/test-inputs.json
+            ${{ env.IOS_ARCHIVE_DIR }}/test-evidence.json
+            ${{ env.IOS_ARCHIVE_DIR }}/ran-tests.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload failed test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-test-results-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build-test-overlap:
+    needs: detect
+    # Main pushes consume previously built archives in release-please; never rebuild/test.
+    if: github.event_name == 'workflow_dispatch' && inputs.overlap_package_sources && needs.detect.outputs.needed == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_BUILD_CACHE_ENABLED: "true"
+      IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Keep the bounded squash-group ancestry, not the entire repository history.
+          fetch-depth: 32
+      - name: Configure archive workspace
+        run: |
+          echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+          echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
+      - name: Restore native build caches
+        id: build-cache
+        uses: ./.github/actions/setup-ios-build-cache
+      - name: Wait for successful locked package sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 ios/scripts/wait-for-package-sources.py
       - name: Receive locked source repositories
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -357,6 +474,7 @@ jobs:
         script-checks,
         test-packages,
         build-test,
+        build-test-overlap,
         build-archive,
         publish-archive,
       ]
@@ -376,7 +494,7 @@ jobs:
           SCRIPT_CHECKS_RESULT: ${{ needs.script-checks.result }}
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
           PACKAGES_RESULT: ${{ needs.test-packages.result }}
-          BUILD_RESULT: ${{ needs.build-test.result }}
+          BUILD_RESULT: ${{ github.event_name == 'workflow_dispatch' && inputs.overlap_package_sources && needs.build-test-overlap.result || needs.build-test.result }}
           ARCHIVE_RESULT: ${{ needs.build-archive.result }}
           PUBLISH_RESULT: ${{ needs.publish-archive.result }}
         run: bash ios/scripts/ci-gate.sh
