@@ -249,6 +249,9 @@ test("Connect ChatGPT directly without selecting a provider from a menu", async 
       interval: 5,
     });
   });
+  context.mocks.api(codexDeviceAuthContract.complete, ({ respond }) => {
+    return respond(200, { status: "pending", errorMessage: null });
+  });
   const settings = await openSettings();
   click(
     button("Connect account", providerSection(settings, "ChatGPT (Codex)")),

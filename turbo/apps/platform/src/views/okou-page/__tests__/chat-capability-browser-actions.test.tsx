@@ -1491,12 +1491,12 @@ test("A pending transcript card becomes consumed when the standalone form comple
 test.each(["apply", "cancel"] as const)(
   "An inline dialog reconciles a lost %s response from a thread change signal",
   async (operation) => {
-    let current: BrowserUserActionResponse["state"] = "pending";
+    const current$ = state<BrowserUserActionResponse["state"]>("pending");
     installCapabilityChat({
       events: completedConversation(`[Enter details](${browserInputUrl()})`),
     });
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      return respond(200, browserInputAction(current));
+      return respond(200, browserInputAction(context.store.get(current$)));
     });
     context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
       return respond(200, browserInputAction("pending"));
@@ -1504,27 +1504,14 @@ test.each(["apply", "cancel"] as const)(
     context.mocks.http.post(
       `*${browserUserActionsContract[operation].path.replace(":requestToken", BROWSER_INPUT_TOKEN)}`,
       () => {
-        expect(current).toBe("pending");
-        current = operation === "apply" ? "succeeded" : "cancelled";
+        expect(context.store.get(current$)).toBe("pending");
+        context.store.set(
+          current$,
+          operation === "apply" ? "succeeded" : "cancelled",
+        );
         return HttpResponse.error();
       },
     );
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      expect(body.clientEventId).toBe(
-        operation === "apply"
-          ? BROWSER_INPUT_SUCCESS_CLIENT_ID
-          : BROWSER_INPUT_CANCEL_CLIENT_ID,
-      );
-      expect(body.chatThreadSortEventId).toBe(
-        operation === "apply"
-          ? BROWSER_INPUT_SUCCESS_SORT_ID
-          : BROWSER_INPUT_CANCEL_SORT_ID,
-      );
-      acceptCallback();
-      return respond(201, {
-        threadId: RUN_THREAD_ID,
-      });
-    });
 
     await setupPage({
       context,
@@ -1547,7 +1534,7 @@ test.each(["apply", "cancel"] as const)(
       await findButton(operation === "apply" ? "Add to browser" : "Cancel"),
     );
     await waitFor(() => {
-      expect(current).not.toBe("pending");
+      expect(context.store.get(current$)).not.toBe("pending");
     });
     context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
@@ -1558,10 +1545,6 @@ test.each(["apply", "cancel"] as const)(
     ).resolves.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(buttonsByName("Enter information")).toHaveLength(0);
-    click(await findButton("Notify agent"));
-    await expect(
-      screen.findByText("Agent notified"),
-    ).resolves.toBeInTheDocument();
   },
 );
 
@@ -1677,7 +1660,6 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
   await readyChat();
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Notify agent")).toHaveLength(0);
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 

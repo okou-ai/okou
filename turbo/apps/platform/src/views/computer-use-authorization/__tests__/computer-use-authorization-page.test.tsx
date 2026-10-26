@@ -154,9 +154,7 @@ test("A user with no online computer receives setup guidance", async () => {
     screen.findByRole("heading", { name: "No online computers" }),
   ).resolves.toBeVisible();
   expect(
-    screen.getByText(
-      "Open Okou on your Mac and refresh this page when it comes online.",
-    ),
+    screen.getByText("Open Okou on your Mac to bring it online."),
   ).toBeVisible();
   expect(screen.queryByText("Offline Desktop")).toBeNull();
   expect(
