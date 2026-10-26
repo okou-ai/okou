@@ -707,8 +707,6 @@ pub enum FailureClass {
     CliNonzero,
     /// Claude Code produced zero turns and no usable session history.
     ClaudeZeroTurnNoHistory,
-    /// Uploading events failed.
-    EventUploadFailed,
     /// Publishing session history or artifacts during Run finalization failed.
     FinalizationFailed,
 }
@@ -722,7 +720,6 @@ impl FailureClass {
             Self::CliExecutionError => "cli_execution_error",
             Self::CliNonzero => "cli_nonzero",
             Self::ClaudeZeroTurnNoHistory => "claude_zero_turn_no_history",
-            Self::EventUploadFailed => "event_upload_failed",
             Self::FinalizationFailed => "finalization_failed",
         }
     }
@@ -1779,11 +1776,11 @@ mod tests {
             }),
         };
         let diagnostic = FailureDiagnostic::new(
-            FailureClass::EventUploadFailed,
+            FailureClass::CliNonzero,
             AgentFramework::ClaudeCode,
             PromptMetadata::from_prompt("continue"),
         )
-        .with_cli_exit_code(0)
+        .with_cli_exit_code(1)
         .with_event_delivery(event_delivery);
 
         let json = serde_json::to_value(&diagnostic).unwrap();
