@@ -35,7 +35,7 @@ import {
   type AgentRunOutputInput,
 } from "./agent-run-output.service";
 import {
-  releaseRunSlots,
+  runSlotReleasePlan,
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
@@ -793,7 +793,17 @@ export function createAgentRunCompletion(runId: string, userId: string) {
           }
           // The runner reported completion, so the active row is released
           // whether or not the run ever started. Must stay last in the tx.
-          const releasedSlots = await releaseRunSlots(tx, [input.body.runId]);
+          const releaseRunIds = [input.body.runId];
+          const releasedSlots = await (async () => {
+            const plan = runSlotReleasePlan(releaseRunIds);
+            if (plan === null) {
+              return [];
+            }
+            return await tx
+              .delete(plan.from)
+              .where(plan.where)
+              .returning(plan.returning);
+          })();
           return {
             kind: transition.kind,
             commit: { ...transition.commit, releasedSlots },
