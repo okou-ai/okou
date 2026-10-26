@@ -59,7 +59,7 @@ export const CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS =
 // is the visible edge that cut rests on; without it the collar floats on an
 // invisible clip line and reads as a rendering fault.
 export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
-  "size-5 shrink-0 overflow-hidden rounded-md border border-border";
+  "size-5 shrink-0 overflow-hidden rounded-md border border-surface-border";
 
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "size-full object-cover object-top";

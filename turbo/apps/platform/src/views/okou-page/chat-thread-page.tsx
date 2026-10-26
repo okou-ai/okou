@@ -6259,7 +6259,7 @@ function ShareGroupSelection({
     >
       {/* The label covers the whole column, including the row's padding,
           and keeps its text for assistive technology only. */}
-      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-pointer data-disabled:pointer-events-none @[900px]:-right-2.5">
+      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-pointer data-disabled:pointer-events-none @[960px]:-right-2.5">
         <span className="sr-only">
           {t(($) => {
             return allSelected
@@ -6374,9 +6374,11 @@ function SelectablePagedGroupRow({
         // The padding the tint needs is spent by the negative margin, so the
         // group keeps the height it has outside sharing.
         "relative -mx-2 -my-1.5 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
-        // From 900px the selection column takes the gutter outside the reading
-        // column, so starting a share does not move the transcript.
-        "@[900px]:-mr-3 @[900px]:-ml-[54px] @[900px]:grid-cols-[2.25rem_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:pr-3",
+        // Once the gutter has room, the selection column sits outside the
+        // reading column, so starting a share does not move the transcript.
+        // The 900px column is centred in 24px of padding, so the 54px gutter
+        // clears the scroll viewport's edge only from a 960px container.
+        "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3",
         "data-selected:bg-state-selected",
         phase === "selecting" &&
           (allSelected
