@@ -1564,8 +1564,7 @@
         "whatsCooking": "What's cooking, {{userName}}?",
         "whatsOnYourMind": "What's on your mind, {{userName}}?",
         "whatsTheMove": "What's the move, {{userName}}?"
-      },
-      "viewAgentProfile": "View agent profile"
+      }
     },
     "agentSuggestions": {
       "dismiss": "Dismiss",

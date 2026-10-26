@@ -41,29 +41,28 @@ export const CHAT_THREAD_WORK_HISTORY_TEXT_CLASS =
   "text-sm leading-5 text-muted-foreground";
 export const CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS = "!text-muted-foreground";
 
-// `transition-none` keeps the responsive margin from animating, which would
-// otherwise continue changing layout after resize.
 export const CHAT_THREAD_USER_MESSAGE_ROW_CLASS =
-  "flex flex-col items-end min-w-0 duration-300 transition-none @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "flex flex-col items-end min-w-0";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS =
   "relative flex flex-col gap-2 duration-300";
 
-export const CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS =
-  "flex flex-col gap-2 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+// A reply opens with a name line — who is speaking — and the response follows
+// on the same edge. Nothing hangs outside the reading column, so the transcript
+// keeps one left edge and one layout at every width.
+export const CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS = "flex flex-col gap-1";
 
-// In the stacked mobile layout, inset the response by 6px so the centre of its
-// canonical 16px leading icons lines up with the centre of the 28px avatar
-// above it. The desktop grid already owns that alignment, so reset the inset
-// at that breakpoint.
-export const CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS =
-  "pl-1.5 @[900px]:pl-0";
+export const CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS =
+  "flex h-7 w-fit max-w-full min-w-0 items-center gap-2 text-sm font-medium text-foreground";
 
+// Agent artwork is a half figure cut at its canvas bottom. The hairline frame
+// is the visible edge that cut rests on; without it the collar floats on an
+// invisible clip line and reads as a rendering fault.
 export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
-  "h-7 w-7 shrink-0 overflow-hidden rounded-xl @[900px]:h-9 @[900px]:w-9";
+  "size-5 shrink-0 overflow-hidden rounded-md border border-surface-border";
 
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
-  "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
+  "size-full object-cover object-top";
 
 // Only the message's content and controls reveal its actions, not the empty
 // space in its full-width row. Top padding bridges the bubble and buttons while
@@ -74,16 +73,14 @@ export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS = cn(
   "hover:opacity-100 focus-within:opacity-100",
 );
 
-export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
-  "pl-1.5 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";
-
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS =
   "flex items-center justify-between gap-2";
 
 // Consecutive user messages read as one burst. The copy button already sits
 // 4px below its message, so this pull keeps the gap below it equally tight.
 // It only ever cancels part of that reserved row, which is why the row above
-// has to exist on every user message, in every mode.
+// has to exist on every user message the pull follows. Sharing removes the row
+// and the pull together.
 export const CHAT_THREAD_MESSAGE_STACK_PULL_CLASS = "-mt-5";
 
 export function ChatUserMessageBubble({
