@@ -11,7 +11,7 @@ export function ArtifactMarkdownDocument({ tree }: { readonly tree: Root }) {
       ref={documentPreviewRef}
       role="document"
       tabIndex={-1}
-      className="h-full touch-pan-x touch-pan-y overflow-auto overscroll-contain p-6 outline-none"
+      className="h-full touch-pan-x touch-pan-y p-6 outline-none"
       onKeyDown={(event) => {
         if (
           event.key === "Escape" &&
