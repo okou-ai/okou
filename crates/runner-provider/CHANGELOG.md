@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.20...runner-provider-v0.11.21) (2026-10-26)
+
+
+### Refactoring
+
+* **runner-provider:** own exclusive ably connection phases ([#43108](https://github.com/okou-ai/okou/issues/43108)) ([4f6b00f](https://github.com/okou-ai/okou/commit/4f6b00f0a10cb562ad96d0508b8f96e33469cd43))
+
 ## [0.11.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.19...runner-provider-v0.11.20) (2026-10-26)
 
 

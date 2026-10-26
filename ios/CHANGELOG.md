@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/okou-ai/okou/compare/ios-v0.20.0...ios-v0.20.1) (2026-10-26)
+
+
+### CI
+
+* **ios:** reuse immutable publisher provenance within each process ([#43100](https://github.com/okou-ai/okou/issues/43100)) ([cf63daa](https://github.com/okou-ai/okou/commit/cf63daabf6063a23dffb052220f1d4640eaff66e))
+
 ## [0.20.0](https://github.com/okou-ai/okou/compare/ios-v0.19.5...ios-v0.20.0) (2026-10-26)
 
 

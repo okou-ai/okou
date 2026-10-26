@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.237.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.6...runner-rs-v0.237.7) (2026-10-26)
+
+
+### Bug Fixes
+
+* **runner:** cap buffered data router request bodies ([#43112](https://github.com/okou-ai/okou/issues/43112)) ([4b48b9d](https://github.com/okou-ai/okou/commit/4b48b9da3ecaa6620ca5c6e2cd3d2af0dfbbb7d8))
+
+
+### Performance Improvements
+
+* **runner:** bound catalog content-type acquisition before conversion ([#43107](https://github.com/okou-ai/okou/issues/43107)) ([cb9fd87](https://github.com/okou-ai/okou/commit/cb9fd879166713afdccb73a3d16535a2af818d9d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.5...runner-rs-v0.237.6) (2026-10-26)
 
 
