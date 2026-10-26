@@ -749,6 +749,12 @@ assert_machine_secret_values_absent_from_output "$production_api_output" "github
 assert_env_value "$production_api_env_file" APNS_PRIVATE_KEY_BASE64 "github-apns-test-key"
 assert_env_value "$production_api_env_file" APNS_KEY_ID "TESTKEY001"
 assert_env_value "$production_api_env_file" APNS_TEAM_ID "TESTTEAM01"
+assert_env_key_absent "$success_env_file" APNS_PRIVATE_KEY_BASE64
+assert_env_key_absent "$success_env_file" APNS_KEY_ID
+assert_env_key_absent "$success_env_file" APNS_TEAM_ID
+assert_env_key_absent "$preview_web_env_file" APNS_PRIVATE_KEY_BASE64
+assert_env_key_absent "$preview_web_env_file" APNS_KEY_ID
+assert_env_key_absent "$preview_web_env_file" APNS_TEAM_ID
 assert_env_key_absent "$production_web_env_file" APNS_PRIVATE_KEY_BASE64
 assert_env_key_absent "$production_web_env_file" APNS_KEY_ID
 assert_env_key_absent "$production_web_env_file" APNS_TEAM_ID
