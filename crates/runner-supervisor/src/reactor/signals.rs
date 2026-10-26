@@ -1,4 +1,4 @@
-use tokio_util::sync::CancellationToken;
+use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{info, warn};
 
 use crate::idle_pool::ParkingGate;
@@ -78,37 +78,23 @@ impl SignalController {
 }
 
 pub struct SignalHandlerTask {
-    handle: Option<tokio::task::JoinHandle<()>>,
+    handle: AbortOnDropHandle<()>,
 }
 
 impl SignalHandlerTask {
     pub(crate) fn new(handle: tokio::task::JoinHandle<()>) -> Self {
         Self {
-            handle: Some(handle),
+            handle: AbortOnDropHandle::new(handle),
         }
     }
 
-    pub async fn abort_and_wait(mut self) -> Result<(), tokio::task::JoinError> {
-        let Some(handle) = self.handle.take() else {
-            return Ok(());
-        };
-        handle.abort();
-        handle.await
+    pub async fn abort_and_wait(self) -> Result<(), tokio::task::JoinError> {
+        self.handle.abort();
+        self.handle.await
     }
 
     async fn wait(&mut self) -> Result<(), String> {
-        match self.handle.as_mut() {
-            Some(handle) => handle.await.map_err(|error| error.to_string()),
-            None => Err("signal handler task handle missing".to_string()),
-        }
-    }
-}
-
-impl Drop for SignalHandlerTask {
-    fn drop(&mut self) {
-        if let Some(handle) = &self.handle {
-            handle.abort();
-        }
+        (&mut self.handle).await.map_err(|error| error.to_string())
     }
 }
 
