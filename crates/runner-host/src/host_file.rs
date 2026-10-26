@@ -241,21 +241,7 @@ pub(crate) async fn write_private_atomic(
     content: &[u8],
     context: &str,
 ) -> io::Result<()> {
-    use std::ffi::OsString;
-
-    let file_name = path.file_name().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "{} does not have a file name; refusing to write {context}",
-                path.display()
-            ),
-        )
-    })?;
-    let mut tmp_name = OsString::from(".");
-    tmp_name.push(file_name);
-    tmp_name.push(format!(".{}.tmp", uuid::Uuid::new_v4()));
-    let tmp = path.with_file_name(tmp_name);
+    let tmp = private_staging_path(path, context)?;
 
     let result = async {
         write_private_new(&tmp, content, context).await?;
@@ -270,6 +256,68 @@ pub(crate) async fn write_private_atomic(
         let _ = tokio::fs::remove_file(&tmp).await;
     }
     result
+}
+
+#[cfg(unix)]
+fn private_staging_path(path: &Path, context: &str) -> io::Result<PathBuf> {
+    use std::ffi::OsString;
+
+    let file_name = path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{} does not have a file name; refusing to write {context}",
+                path.display()
+            ),
+        )
+    })?;
+    let mut tmp_name = OsString::from(".");
+    tmp_name.push(file_name);
+    tmp_name.push(format!(".{}.tmp", uuid::Uuid::new_v4()));
+    Ok(path.with_file_name(tmp_name))
+}
+
+/// Synchronous counterpart for an owner that must retain authority until all
+/// physical writes and publication finish. Must run outside async workers.
+#[cfg(unix)]
+pub(crate) fn write_private_atomic_blocking(
+    path: &Path,
+    content: &[u8],
+    context: &str,
+) -> io::Result<()> {
+    use std::io::Write;
+
+    let tmp = private_staging_path(path, context)?;
+    let result = (|| {
+        let mut file = File::options()
+            .write(true)
+            .create_new(true)
+            .mode(PRIVATE_FILE_MODE)
+            .open(&tmp)
+            .map_err(|e| wrap_io(e, format!("open {context} {}", tmp.display())))?;
+        chmod_private_file_fd(&file, &tmp, context)?;
+        file.write_all(content)
+            .map_err(|e| wrap_io(e, format!("write {context} {}", tmp.display())))?;
+        file.flush()
+            .map_err(|e| wrap_io(e, format!("flush {context} {}", tmp.display())))?;
+        std::fs::rename(&tmp, path)
+            .map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+#[cfg(not(unix))]
+pub(crate) fn write_private_atomic_blocking(
+    path: &Path,
+    content: &[u8],
+    context: &str,
+) -> io::Result<()> {
+    std::fs::write(path, content)
+        .map_err(|e| wrap_io(e, format!("write {context} {}", path.display())))
 }
 
 #[cfg(not(unix))]

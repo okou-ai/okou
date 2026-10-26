@@ -52,12 +52,13 @@ pub(crate) struct PreparedCa {
 /// Also locks down permissions unconditionally on every call (not just on
 /// first-ever generation) so legacy runners that shipped with looser perms
 /// get migrated automatically.
+///
+/// Waiting for the CA lock is cancellable. Once admitted, preparation finishes
+/// under that lock even if the caller stops waiting or its runtime shuts down.
 pub async fn ensure(home: &HomePaths) -> RunnerResult<()> {
-    let _lock = lock::acquire(home.ca_lock()).await?;
-    let ca_dir = home.ca_dir();
-    create_ca_dir(&ca_dir).await?;
-    secure_ca_dir(&ca_dir).await?;
-    reconcile(&ca_dir, true).await
+    reconcile_locked(home.ca_dir(), home.ca_lock(), true)
+        .await
+        .map(drop)
 }
 
 /// Validate and recover an existing CA before launching mitmdump.
@@ -69,31 +70,51 @@ pub(crate) async fn prepare_for_proxy(
     ca_dir: &Path,
     ca_lock_path: &Path,
 ) -> RunnerResult<PreparedCa> {
-    let ca_lock = lock::acquire(ca_lock_path.to_path_buf()).await?;
-    secure_ca_dir(ca_dir).await?;
-    reconcile(ca_dir, false).await?;
-    Ok(PreparedCa { _lock: ca_lock })
+    reconcile_locked(ca_dir.to_path_buf(), ca_lock_path.to_path_buf(), false).await
 }
 
-async fn create_ca_dir(ca_dir: &Path) -> RunnerResult<()> {
-    let mut builder = tokio::fs::DirBuilder::new();
+async fn reconcile_locked(
+    ca_dir: PathBuf,
+    ca_lock_path: PathBuf,
+    allow_generation: bool,
+) -> RunnerResult<PreparedCa> {
+    // Contention remains asynchronously cancellable. Once acquired, the lock
+    // travels with all physical work: cancelling this waiter or shutting down
+    // its runtime must not release authority before a filesystem operation ends.
+    let ca_lock = lock::acquire(ca_lock_path).await?;
+    tokio::task::spawn_blocking(move || {
+        let prepared = PreparedCa { _lock: ca_lock };
+        if allow_generation {
+            create_ca_dir(&ca_dir)?;
+        }
+        secure_ca_dir(&ca_dir)?;
+        reconcile(&ca_dir, allow_generation)?;
+        Ok(prepared)
+    })
+    .await
+    .map_err(|e| RunnerError::Internal(format!("CA preparation task: {e}")))?
+}
+
+fn create_ca_dir(ca_dir: &Path) -> RunnerResult<()> {
+    let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
-    builder.mode(0o700);
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
     builder
         .create(ca_dir)
-        .await
         .map_err(|e| RunnerError::Internal(format!("create ca dir: {e}")))
 }
 
-async fn secure_ca_dir(ca_dir: &Path) -> RunnerResult<()> {
+fn secure_ca_dir(ca_dir: &Path) -> RunnerResult<()> {
     // Refuse to chmod through a directory symlink. The runner-owned parent is
     // the trust boundary for the small metadata-to-chmod TOCTOU window.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let meta = tokio::fs::symlink_metadata(ca_dir)
-            .await
+        let meta = std::fs::symlink_metadata(ca_dir)
             .map_err(|e| RunnerError::Internal(format!("stat ca dir: {e}")))?;
         if !meta.file_type().is_dir() {
             return Err(RunnerError::Internal(format!(
@@ -101,25 +122,24 @@ async fn secure_ca_dir(ca_dir: &Path) -> RunnerResult<()> {
                 ca_dir.display()
             )));
         }
-        tokio::fs::set_permissions(ca_dir, std::fs::Permissions::from_mode(0o700))
-            .await
+        std::fs::set_permissions(ca_dir, std::fs::Permissions::from_mode(0o700))
             .map_err(|e| RunnerError::Internal(format!("chmod ca dir: {e}")))?;
     }
     Ok(())
 }
 
-async fn reconcile(ca_dir: &Path, allow_generation: bool) -> RunnerResult<()> {
+fn reconcile(ca_dir: &Path, allow_generation: bool) -> RunnerResult<()> {
     let files = CaFiles::new(ca_dir);
 
-    let identity = if let Some(identity) = load_identity(&files.combined, &files.combined).await? {
+    let identity = if let Some(identity) = load_identity(&files.combined, &files.combined)? {
         tracing::info!("using valid combined proxy CA identity");
         identity
-    } else if let Some(identity) = load_identity(&files.cert, &files.key).await? {
+    } else if let Some(identity) = load_identity(&files.cert, &files.key)? {
         tracing::info!("recovering combined proxy CA from valid standalone identity");
         identity
     } else if allow_generation {
         tracing::info!("generating proxy CA certificate...");
-        generate_identity(ca_dir).await?
+        generate_identity(ca_dir)?
     } else {
         return Err(RunnerError::Config(format!(
             "proxy CA in {} is not recoverable; run `runner build` before starting the proxy",
@@ -127,34 +147,31 @@ async fn reconcile(ca_dir: &Path, allow_generation: bool) -> RunnerResult<()> {
         )));
     };
 
-    publish_identity(&files, &identity).await?;
-    apply_perms(&files.cert, &files.key, &files.combined).await?;
+    publish_identity(&files, &identity)?;
+    apply_perms(&files.cert, &files.key, &files.combined)?;
     Ok(())
 }
 
-async fn load_identity(cert: &Path, key: &Path) -> RunnerResult<Option<CaIdentity>> {
-    if !exists(cert).await? || !exists(key).await? {
+fn load_identity(cert: &Path, key: &Path) -> RunnerResult<Option<CaIdentity>> {
+    if !exists(cert)? || !exists(key)? {
         return Ok(None);
     }
 
     let cert_path = cert.to_string_lossy();
     let key_path = key.to_string_lossy();
-    let Some(cert_pem) =
-        try_openssl(&["x509", "-in", cert_path.as_ref(), "-outform", "PEM"]).await?
+    let Some(cert_pem) = try_openssl(&["x509", "-in", cert_path.as_ref(), "-outform", "PEM"])?
     else {
         return Ok(None);
     };
-    let Some(key_pem) = try_openssl(&["pkey", "-in", key_path.as_ref(), "-outform", "PEM"]).await?
-    else {
+    let Some(key_pem) = try_openssl(&["pkey", "-in", key_path.as_ref(), "-outform", "PEM"])? else {
         return Ok(None);
     };
     let Some(cert_public_key) =
-        try_openssl(&["x509", "-in", cert_path.as_ref(), "-pubkey", "-noout"]).await?
+        try_openssl(&["x509", "-in", cert_path.as_ref(), "-pubkey", "-noout"])?
     else {
         return Ok(None);
     };
-    let Some(private_public_key) =
-        try_openssl(&["pkey", "-in", key_path.as_ref(), "-pubout"]).await?
+    let Some(private_public_key) = try_openssl(&["pkey", "-in", key_path.as_ref(), "-pubout"])?
     else {
         return Ok(None);
     };
@@ -168,7 +185,7 @@ async fn load_identity(cert: &Path, key: &Path) -> RunnerResult<Option<CaIdentit
     }))
 }
 
-async fn generate_identity(ca_dir: &Path) -> RunnerResult<CaIdentity> {
+fn generate_identity(ca_dir: &Path) -> RunnerResult<CaIdentity> {
     let staging = tempfile::Builder::new()
         .prefix(".ca-generation-")
         .tempdir_in(ca_dir)
@@ -176,7 +193,7 @@ async fn generate_identity(ca_dir: &Path) -> RunnerResult<CaIdentity> {
     let key = staging.path().join(CA_KEY);
     let cert = staging.path().join(CA_CERT);
 
-    run_openssl(&["genrsa", "-out", key.to_string_lossy().as_ref(), "4096"]).await?;
+    run_openssl(&["genrsa", "-out", key.to_string_lossy().as_ref(), "4096"])?;
     run_openssl(&[
         "req",
         "-new",
@@ -193,29 +210,27 @@ async fn generate_identity(ca_dir: &Path) -> RunnerResult<CaIdentity> {
         "basicConstraints=critical,CA:TRUE",
         "-addext",
         "keyUsage=critical,keyCertSign,cRLSign",
-    ])
-    .await?;
+    ])?;
 
-    load_identity(&cert, &key).await?.ok_or_else(|| {
+    load_identity(&cert, &key)?.ok_or_else(|| {
         RunnerError::Internal("generated proxy CA certificate and key do not match".into())
     })
 }
 
-async fn exists(path: &Path) -> RunnerResult<bool> {
-    tokio::fs::try_exists(path)
-        .await
+fn exists(path: &Path) -> RunnerResult<bool> {
+    path.try_exists()
         .map_err(|e| RunnerError::Internal(format!("check {}: {e}", path.display())))
 }
 
-async fn publish_identity(files: &CaFiles, identity: &CaIdentity) -> RunnerResult<()> {
-    write_if_changed(&files.cert, &identity.cert).await?;
-    write_if_changed(&files.key, &identity.key).await?;
-    write_if_changed(&files.combined, &identity.combined()).await?;
+fn publish_identity(files: &CaFiles, identity: &CaIdentity) -> RunnerResult<()> {
+    write_if_changed(&files.cert, &identity.cert)?;
+    write_if_changed(&files.key, &identity.key)?;
+    write_if_changed(&files.combined, &identity.combined())?;
     Ok(())
 }
 
-async fn write_if_changed(path: &Path, content: &[u8]) -> RunnerResult<()> {
-    match tokio::fs::read(path).await {
+fn write_if_changed(path: &Path, content: &[u8]) -> RunnerResult<()> {
+    match std::fs::read(path) {
         Ok(existing) if existing == content => return Ok(()),
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -226,51 +241,46 @@ async fn write_if_changed(path: &Path, content: &[u8]) -> RunnerResult<()> {
             )));
         }
     }
-    Ok(state_file::write_private_atomic(path, content).await?)
+    Ok(state_file::write_private_atomic_blocking(path, content)?)
 }
 
 /// Chmod the three CA files: cert 0o644, key 0o600, combined 0o600.
 /// Migrates legacy runners that shipped with looser perms. No-op on non-Unix.
 #[cfg_attr(not(unix), allow(unused_variables))]
-async fn apply_perms(cert: &Path, key: &Path, combined: &Path) -> RunnerResult<()> {
+fn apply_perms(cert: &Path, key: &Path, combined: &Path) -> RunnerResult<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(cert, std::fs::Permissions::from_mode(0o644))
-            .await
+        std::fs::set_permissions(cert, std::fs::Permissions::from_mode(0o644))
             .map_err(|e| RunnerError::Internal(format!("chmod CA cert: {e}")))?;
-        tokio::fs::set_permissions(key, std::fs::Permissions::from_mode(0o600))
-            .await
+        std::fs::set_permissions(key, std::fs::Permissions::from_mode(0o600))
             .map_err(|e| RunnerError::Internal(format!("chmod CA key: {e}")))?;
-        tokio::fs::set_permissions(combined, std::fs::Permissions::from_mode(0o600))
-            .await
+        std::fs::set_permissions(combined, std::fs::Permissions::from_mode(0o600))
             .map_err(|e| RunnerError::Internal(format!("chmod CA combined: {e}")))?;
     }
     Ok(())
 }
 
-async fn run_openssl(args: &[&str]) -> RunnerResult<()> {
-    let output = openssl_output(args).await?;
+fn run_openssl(args: &[&str]) -> RunnerResult<()> {
+    let output = openssl_output(args)?;
     if !output.status.success() {
         return Err(openssl_error(args, &output));
     }
     Ok(())
 }
 
-async fn try_openssl(args: &[&str]) -> RunnerResult<Option<Vec<u8>>> {
-    let output = openssl_output(args).await?;
+fn try_openssl(args: &[&str]) -> RunnerResult<Option<Vec<u8>>> {
+    let output = openssl_output(args)?;
     Ok(output.status.success().then_some(output.stdout))
 }
 
-async fn openssl_output(args: &[&str]) -> RunnerResult<std::process::Output> {
-    let mut cmd = tokio::process::Command::new("openssl");
+fn openssl_output(args: &[&str]) -> RunnerResult<std::process::Output> {
+    let mut cmd = std::process::Command::new("openssl");
     cmd.args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
+        .stderr(std::process::Stdio::piped());
     cmd.output()
-        .await
         .map_err(|e| RunnerError::Internal(format!("spawn openssl: {e}")))
 }
 
@@ -310,7 +320,7 @@ mod tests {
         }
     }
 
-    async fn generate_test_ca() -> CaBytes {
+    fn generate_test_ca() -> CaBytes {
         let dir = tempfile::tempdir().unwrap();
         let files = CaFiles::new(dir.path());
         let key_path = files.key.to_string_lossy();
@@ -333,11 +343,9 @@ mod tests {
             "-subj",
             "/CN=runner-ca-test",
         ])
-        .await
         .unwrap();
 
         let identity = load_identity(&files.cert, &files.key)
-            .await
             .unwrap()
             .expect("test CA should be valid");
         let combined = identity.combined();
@@ -351,10 +359,14 @@ mod tests {
     async fn test_ca_identities() -> &'static TestCaIdentities {
         TEST_CA_IDENTITIES
             .get_or_init(|| async {
-                let first = generate_test_ca().await;
-                let second = generate_test_ca().await;
-                assert!(first.key != second.key, "test CA identities should differ");
-                TestCaIdentities { first, second }
+                tokio::task::spawn_blocking(|| {
+                    let first = generate_test_ca();
+                    let second = generate_test_ca();
+                    assert!(first.key != second.key, "test CA identities should differ");
+                    TestCaIdentities { first, second }
+                })
+                .await
+                .unwrap()
             })
             .await
     }
@@ -377,14 +389,222 @@ mod tests {
         );
     }
 
+    /// Gate the real OpenSSL input without replacing the CA implementation.
+    /// Drop also releases the reader if a test fails before its normal cleanup.
+    struct CaReadGate {
+        path: PathBuf,
+        replacement: PathBuf,
+        content: &'static [u8],
+        writer: Option<std::fs::File>,
+        released: bool,
+    }
+
+    impl CaReadGate {
+        fn new(ca_dir: &Path, content: &'static [u8]) -> Self {
+            std::fs::create_dir_all(ca_dir).unwrap();
+            let path = ca_dir.join(CA_COMBINED);
+            nix::unistd::mkfifo(
+                &path,
+                nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+            )
+            .unwrap();
+            let replacement = ca_dir.join("valid-combined.pem");
+            std::fs::write(&replacement, content).unwrap();
+            Self {
+                path,
+                replacement,
+                content,
+                writer: None,
+                released: false,
+            }
+        }
+
+        async fn wait_for_reader(&mut self) {
+            use std::os::unix::fs::OpenOptionsExt;
+
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                loop {
+                    match std::fs::OpenOptions::new()
+                        .write(true)
+                        .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC)
+                        .open(&self.path)
+                    {
+                        Ok(writer) => {
+                            self.writer = Some(writer);
+                            return;
+                        }
+                        Err(error) if error.raw_os_error() == Some(libc::ENXIO) => {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                        Err(error) => panic!("open CA input gate: {error}"),
+                    }
+                }
+            })
+            .await
+            .expect("OpenSSL must open the CA input");
+        }
+
+        fn release(&mut self) -> std::io::Result<()> {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+
+            if self.released {
+                return Ok(());
+            }
+            self.released = true;
+            // A failing setup may leave OpenSSL waiting in open(), before we
+            // obtained its writer. Pair it before replacing the FIFO path.
+            let writer = self.writer.take().or_else(|| {
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC)
+                    .open(&self.path)
+                    .ok()
+            });
+            let replacement = std::fs::rename(&self.replacement, &self.path);
+            let delivery = writer.map(|mut writer| writer.write_all(self.content));
+            replacement?;
+            delivery.transpose()?;
+            Ok(())
+        }
+    }
+
+    impl Drop for CaReadGate {
+        fn drop(&mut self) {
+            let _ = self.release();
+        }
+    }
+
+    async fn start_blocked_ca(
+        home: &HomePaths,
+        proxy: bool,
+    ) -> (tokio::task::JoinHandle<RunnerResult<()>>, CaReadGate) {
+        let expected = &test_ca_identities().await.first;
+        let mut gate = CaReadGate::new(&home.ca_dir(), &expected.combined);
+        let home = home.clone();
+        let task = tokio::spawn(async move {
+            if proxy {
+                prepare_for_proxy(&home.ca_dir(), &home.ca_lock())
+                    .await
+                    .map(drop)
+            } else {
+                ensure(&home).await
+            }
+        });
+        gate.wait_for_reader().await;
+        (task, gate)
+    }
+
+    async fn assert_cancelled_ca_finishes(home: &HomePaths, mut gate: CaReadGate) {
+        let expected = &test_ca_identities().await.first;
+        let held = matches!(
+            lock::try_acquire_or_busy_blocking(&home.ca_lock()).unwrap(),
+            lock::TryLock::Busy
+        );
+        let delivery = gate.release();
+        // This independently opened lock observes physical retirement, including
+        // all publications, rather than the cancelled caller's task completion.
+        let retired = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            lock::acquire(home.ca_lock()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            held,
+            "cancelling the waiter released CA authority before physical completion"
+        );
+        delivery.unwrap();
+        assert_ca_eq(&read_ca(&home.ca_dir()), expected);
+        drop(retired);
+    }
+
+    #[tokio::test]
+    async fn cancelled_ca_waiters_retain_lock_until_physical_completion() {
+        for proxy in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let home = HomePaths::with_root(dir.path().to_path_buf());
+            let (task, gate) = start_blocked_ca(&home, proxy).await;
+            task.abort();
+            assert!(task.await.unwrap_err().is_cancelled());
+            assert_cancelled_ca_finishes(&home, gate).await;
+        }
+    }
+
+    #[test]
+    fn ca_work_retains_lock_across_runtime_shutdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(dir.path().to_path_buf());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (task, gate) = runtime.block_on(start_blocked_ca(&home, false));
+        runtime.shutdown_background();
+        let observer = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        observer.block_on(async {
+            assert!(task.await.unwrap_err().is_cancelled());
+            assert_cancelled_ca_finishes(&home, gate).await;
+        });
+    }
+
+    #[tokio::test]
+    async fn proxy_preparation_transfers_authority_and_releases_it_on_failure() {
+        let expected = &test_ca_identities().await.first;
+        let dir = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(dir.path().join("valid"));
+        write_ca(
+            &home.ca_dir(),
+            &expected.cert,
+            &expected.key,
+            Some(&expected.combined),
+        );
+
+        let prepared = prepare_for_proxy(&home.ca_dir(), &home.ca_lock())
+            .await
+            .unwrap();
+        assert!(matches!(
+            lock::try_acquire_or_busy_blocking(&home.ca_lock()).unwrap(),
+            lock::TryLock::Busy
+        ));
+        drop(prepared);
+        let reacquired = lock::try_acquire_or_busy_blocking(&home.ca_lock()).unwrap();
+        assert!(matches!(reacquired, lock::TryLock::Acquired(_)));
+        drop(reacquired);
+
+        let invalid = HomePaths::with_root(dir.path().join("invalid"));
+        std::fs::create_dir_all(invalid.ca_dir()).unwrap();
+        let error = prepare_for_proxy(&invalid.ca_dir(), &invalid.ca_lock())
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(error, RunnerError::Config(_)));
+        assert_eq!(
+            std::fs::read_dir(invalid.ca_dir()).unwrap().count(),
+            0,
+            "proxy preparation must not generate an identity"
+        );
+        assert!(matches!(
+            lock::try_acquire_or_busy_blocking(&invalid.ca_lock()).unwrap(),
+            lock::TryLock::Acquired(_)
+        ));
+    }
+
     async fn assert_valid_ca(ca_dir: &Path) {
         let files = CaFiles::new(ca_dir);
-        let identity = load_identity(&files.cert, &files.key)
+        let combined = std::fs::read(&files.combined).unwrap();
+        let identity = tokio::task::spawn_blocking(move || load_identity(&files.cert, &files.key))
             .await
+            .unwrap()
             .unwrap()
             .expect("standalone CA should be valid");
         assert!(
-            std::fs::read(&files.combined).unwrap() == identity.combined(),
+            combined == identity.combined(),
             "combined should exactly contain the standalone certificate and key"
         );
     }
