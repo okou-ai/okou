@@ -16,6 +16,7 @@ fail() {
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
 decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-storage-capacity-reader")
+data_router_response_id_floor=$(<"${repo_root}/.github/rollback-floors/data-router-response-id")
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
 
@@ -26,7 +27,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR" ]; then
+    if [ "${3:-}" = "$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_DATA_ROUTER_RESPONSE_ID_ON_MAIN:-1}" = "1" ]
+      elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_DATA_ROUTER_RESPONSE_ID_RUNNER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_DESKTOP_MANIFEST_R2_READER_ON_MAIN:-1}" = "1" ]
       else
@@ -279,6 +286,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/data-router-response-id" ]; then
+      [ "${MOCK_DATA_ROUTER_RESPONSE_ID_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_DATA_ROUTER_RESPONSE_ID_COMMIT-$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/desktop-manifest-r2-reader" ]; then
       [ "${MOCK_DESKTOP_MANIFEST_R2_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR"
@@ -309,7 +321,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_RUN_STORAGE_OUTPUT_READER_COMMIT-c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de}"
       exit 0
     fi
-    printf '[package]\nversion = "1.2.3"\n'
+    printf '[package]\nversion = "%s"\n' "${MOCK_RUNNER_VERSION:-1.2.3}"
     ;;
   rev-list)
     printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n'
@@ -339,9 +351,9 @@ if [[ "$*" == *"api.vercel.com/v6/deployments"* ]]; then
 fi
 
 if [ "${MOCK_RUNNER_ASSETS_VALID:-1}" = "1" ]; then
-  jq -n '{assets: [
-    {name: "runner-v1.2.3-aarch64-linux"},
-    {name: "runner-v1.2.3-x86_64-linux"}
+  jq -n --arg version "${MOCK_RUNNER_VERSION:-1.2.3}" '{assets: [
+    {name: ("runner-v" + $version + "-aarch64-linux")},
+    {name: ("runner-v" + $version + "-x86_64-linux")}
   ]}'
 else
   jq -n '{assets: [{name: "runner-v1.2.3-aarch64-linux"}]}'
@@ -378,6 +390,7 @@ run_resolver() {
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
     MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
     MOCK_DECODED_STORAGE_READER_FLOOR="$decoded_storage_reader_floor" \
+    MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR="$data_router_response_id_floor" \
     MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR="$connector_diagnostic_targets_floor" \
     MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
     TARGET_COMMIT="$target_commit" \
@@ -396,6 +409,39 @@ assert_failure() {
   fi
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
+
+# Missing or unmerged current-main policy must fail before provider or host access.
+for data_router_case in \
+  "MOCK_DATA_ROUTER_RESPONSE_ID_AVAILABLE=0|Cannot read the Data Router response ID rollback floor from main" \
+  "MOCK_DATA_ROUTER_RESPONSE_ID_COMMIT=invalid|Missing or invalid Data Router response ID rollback floor" \
+  "MOCK_DATA_ROUTER_RESPONSE_ID_ON_MAIN=0|Data Router response ID rollback floor is not on main"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${data_router_case#*|}" \
+    run_resolver "${tmp_dir}/data-router-policy.output" "${data_router_case%%|*}"
+  [ ! -s "${tmp_dir}/data-router-policy.output" ] || fail "invalid Data Router policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Data Router policy must fail before provider or host access"
+  fi
+done
+
+# Reject the old protocol in both a paired rollback and a compatible API target
+# whose independently resolved Runner artifact still predates response tracking.
+for data_router_api_target in bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb "$target_commit"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Runner release runner-rs-v0.237.7 predates Data Router response ID tracking" \
+    run_resolver "${tmp_dir}/data-router-old-runner.output" \
+    TARGET_COMMIT="$data_router_api_target" MOCK_RUNNER_VERSION=0.237.7 \
+    MOCK_DATA_ROUTER_RESPONSE_ID_RUNNER_VALID=0
+  [ ! -s "${tmp_dir}/data-router-old-runner.output" ] || fail "old Data Router protocol must not publish outputs"
+  if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+    fail "old Data Router protocol must fail before Runner artifact or host access"
+  fi
+done
+
+# The first Runner release containing #43113 remains eligible.
+run_resolver "${tmp_dir}/data-router-compatible.output" MOCK_RUNNER_VERSION=0.237.8 \
+  >"${tmp_dir}/data-router-compatible.log"
+grep -Fxq 'runner_version=0.237.8' "${tmp_dir}/data-router-compatible.output" || fail "compatible Data Router Runner must remain eligible"
 
 # Current-main policy must reject pre-preparation APIs before provider or host
 # access. Valid descendants still resolve through the existing success case.

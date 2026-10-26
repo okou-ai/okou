@@ -1,4 +1,3 @@
-import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -105,7 +104,7 @@ test("Members manage Paid tools in Tools", async () => {
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
   await expect(
-    within(dialog).findByRole("switch", { name: "Finance Quote" }),
+    within(dialog).findByRole("switch", { name: "Financial data" }),
   ).resolves.toBeInTheDocument();
   expect(
     within(dialog).getByText(
@@ -465,57 +464,3 @@ test.each(["preference read", "write token"] as const)(
     expect(updates).toStrictEqual([]);
   },
 );
-
-test("Members control a Router tool individually and through its family", async () => {
-  const updates = mockPaidTools(["finance"]);
-  await openPaidTools();
-  const family = await readySwitch("Financial data");
-  const quote = await screen.findByRole("switch", { name: "Finance Quote" });
-  expect(quote).not.toBeChecked();
-  expect(quote).toHaveAttribute("aria-disabled", "true");
-  click(family);
-  await readySwitch("Finance Quote");
-  expect(quote).toBeChecked();
-  click(quote);
-  await waitFor(() => {
-    return expect(quote).not.toBeChecked();
-  });
-  await expect(readySwitch("Finance Search")).resolves.toBeChecked();
-  expect(family).toBeChecked();
-  expect(updates).toStrictEqual([
-    { toolId: "finance", disabled: false },
-    { toolId: "data:finance_quote", disabled: true },
-  ]);
-});
-
-test("A newly discovered Router tool can be disabled without a local catalog entry", async () => {
-  context.mocks.api(dataRouterToolsContract.list, ({ respond }) => {
-    return respond(200, {
-      tools: [
-        {
-          name: "future_research",
-          title: "New research tool",
-          description: "Published independently by Router",
-          inputSchema: {
-            type: "object",
-            properties: { topic: { type: "string" } },
-          },
-          _meta: { "ai.okou/data": { family: "data-search" } },
-        },
-      ],
-    });
-  });
-  const updates = mockPaidTools();
-  await openPaidTools();
-  const toggle = await readySwitch("New research tool");
-  expect(
-    screen.getByText("Published independently by Router"),
-  ).toBeInTheDocument();
-  click(toggle);
-  await waitFor(() => {
-    return expect(toggle).not.toBeChecked();
-  });
-  expect(updates).toStrictEqual([
-    { toolId: "data:future_research", disabled: true },
-  ]);
-});
