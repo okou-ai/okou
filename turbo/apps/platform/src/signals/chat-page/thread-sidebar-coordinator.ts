@@ -120,6 +120,15 @@ const openAttachmentOnThread$ = command(
   },
 );
 
+export const closeThreadMailDraft$ = command(
+  ({ get, set }, thread: ChatPanelSignals, draft: MailDraftSignals): void => {
+    const target = get(thread.sidebar.target$);
+    if (target?.type === "email-draft" && target.signals === draft) {
+      set(thread.sidebar.close$);
+    }
+  },
+);
+
 export const openThreadArtifacts$ = command(
   ({ get, set }, thread: ChatPanelSignals) => {
     set(openOnThread$, thread, { type: "artifacts" }, get(pageSignal$));
