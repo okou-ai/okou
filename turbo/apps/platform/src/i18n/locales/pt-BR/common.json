@@ -1597,10 +1597,7 @@
       "position": "{{current}} de {{total}}",
       "previous": "Sugestão anterior",
       "recoveryHint": "Verifique a conversa antes de enviar novamente. Você pode restaurar a sugestão no rascunho.",
-      "restoreDraft": "Restaurar rascunho",
-      "runInChat": "Executar nesta conversa",
-      "runNewChat": "Executar em uma nova conversa",
-      "starting": "Iniciando…"
+      "restoreDraft": "Restaurar rascunho"
     },
     "attachments": {
       "attach": "Anexar",

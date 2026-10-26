@@ -107,28 +107,13 @@ function AgentSuggestionOption({
         return $.chat.agentSuggestions.restoreDraft;
       })
     : option.label;
-  const hint = starting
-    ? t(($) => {
-        return $.chat.agentSuggestions.starting;
-      })
-    : restoring
-      ? t(($) => {
-          return $.chat.agentSuggestions.recoveryHint;
-        })
-      : option.threadId
-        ? t(($) => {
-            return $.chat.agentSuggestions.runInChat;
-          })
-        : t(($) => {
-            return $.chat.agentSuggestions.runNewChat;
-          });
   return (
     <Button
       type="button"
       variant="neutral"
       className="h-auto min-h-12 w-full justify-start gap-3 whitespace-normal rounded-lg border-border bg-card px-3 py-2.5 text-left font-normal"
       aria-label={label}
-      aria-description={`${option.description} ${hint}`.trim()}
+      aria-description={option.description}
       aria-busy={starting}
       disabled={disabled}
       onClick={onClick}

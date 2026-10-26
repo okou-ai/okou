@@ -1572,10 +1572,7 @@
       "position": "{{current}} / {{total}}",
       "previous": "이전 제안",
       "recoveryHint": "다시 보내기 전에 채팅을 확인하세요. 제안을 초안으로 복원할 수 있습니다.",
-      "restoreDraft": "초안 복원",
-      "runInChat": "이 채팅에서 실행",
-      "runNewChat": "새 채팅에서 실행",
-      "starting": "시작 중…"
+      "restoreDraft": "초안 복원"
     },
     "attachments": {
       "attach": "첨부",

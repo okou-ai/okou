@@ -544,7 +544,7 @@ describe("Agent suggestions", () => {
       options,
     });
   });
-  it("requires one to three options with unique identities", async () => {
+  it("requires one to three options with unique identities and a bounded payload", async () => {
     const fixture = await primaryRun();
     for (const options of [
       [],
@@ -552,6 +552,17 @@ describe("Agent suggestions", () => {
       Array.from({ length: 4 }, (_, index) => {
         return makeOption({ id: `option-${index}` });
       }),
+      [
+        makeOption({
+          draft: {
+            draftUserMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "x".repeat(65_536) }],
+            },
+            draftAttachments: null,
+          },
+        }),
+      ],
     ]) {
       await accept(
         client().create({

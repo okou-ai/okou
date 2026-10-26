@@ -8,28 +8,19 @@ const SUGGESTION_LIMIT = 10;
 const suggestionIdSchema = z.uuid().toLowerCase();
 const suggestionOptionIdSchema = z.string().trim().min(1).max(64);
 const suggestionStatusSchema = z.enum(["active", "consumed", "removed"]);
-const suggestionDraftSchema = composerDraftSchema
-  .refine(
-    (draft) => {
-      return (
-        draft.draftUserMessage?.parts.some((part) => {
-          return part.type !== "text" || part.text.trim().length > 0;
-        }) ?? false
-      );
-    },
-    {
-      message: "A suggestion requires a composer message",
-      path: ["draftUserMessage"],
-    },
-  )
-  .refine(
-    (draft) => {
-      return JSON.stringify(draft).length <= 65536;
-    },
-    {
-      message: "Suggestion draft exceeds 65536 characters",
-    },
-  );
+const suggestionDraftSchema = composerDraftSchema.refine(
+  (draft) => {
+    return (
+      draft.draftUserMessage?.parts.some((part) => {
+        return part.type !== "text" || part.text.trim().length > 0;
+      }) ?? false
+    );
+  },
+  {
+    message: "A suggestion requires a composer message",
+    path: ["draftUserMessage"],
+  },
+);
 export const suggestionOptionSchema = z.object({
   id: suggestionOptionIdSchema,
   label: z.string().trim().min(1).max(80),
