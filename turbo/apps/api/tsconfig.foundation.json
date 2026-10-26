@@ -332,7 +332,6 @@
     "src/signals/services/run-uploaded-files.service.ts",
     "src/signals/services/runner-dispatch.service.ts",
     "src/signals/services/runner-reuse-preference.ts",
-    "src/signals/services/previous-chat-run.ts",
     "src/signals/services/runner-vnc-authority.service.ts",
     "src/signals/services/runner-vnc.service.ts",
     "src/signals/services/ssh-client-invalidation.service.ts",

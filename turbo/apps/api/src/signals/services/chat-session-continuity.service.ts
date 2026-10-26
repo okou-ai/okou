@@ -8,6 +8,7 @@ export interface ChatThreadNativeBinding {
   readonly threadAgentId: string | null;
   readonly framework: string | null;
   readonly frameworkSessionId: string | null;
+  /** Latest executed predecessor; native readiness also requires the pair above. */
   readonly frameworkSessionRunId: string | null;
 }
 
@@ -20,6 +21,7 @@ export interface ChatThreadContinuation {
   /** Revalidated at the actual Run insertion time before launch can commit. */
   readonly admission: {
     readonly runId: string;
+    /** Captured before this Run's first claim advances the Thread to itself. */
     readonly finalizingSourceRunId: string | null;
   };
   readonly cloudBrowserEnabled: boolean;
@@ -41,8 +43,7 @@ export function resolveChatThreadContinuation(
     thread.framework !== null &&
     thread.framework === args.cliAgentType &&
     thread.frameworkSessionId !== null &&
-    args.admission.finalizingSourceRunId !== null &&
-    thread.frameworkSessionRunId === args.admission.finalizingSourceRunId;
+    thread.frameworkSessionRunId !== null;
   const nativeContinuation: NativeContinuation = {
     sessionId: reusable ? thread.frameworkSessionId : null,
     generationRunId: reusable ? thread.frameworkSessionRunId : null,
@@ -51,7 +52,7 @@ export function resolveChatThreadContinuation(
     // validation prevents resuming an otherwise current binding.
     recoveryPrompt:
       !args.officialWorkflow &&
-      (args.admission.finalizingSourceRunId !== null ||
+      (thread.frameworkSessionRunId !== null ||
         thread.frameworkSessionId !== null)
         ? NATIVE_CONTEXT_RECOVERY_PROMPT
         : null,
