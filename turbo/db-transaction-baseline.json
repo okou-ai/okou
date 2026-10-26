@@ -217,11 +217,6 @@
       "owner": "writeUsagePackPendingSnapshots"
     },
     {
-      "id": "TX-0287",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-plan-change.service.ts",
-      "owner": "persistDeferredSubscriptionChangeSchedule"
-    },
-    {
       "id": "TX-0299",
       "file": "turbo/apps/api/src/signals/services/usage-pack-subscription-migration.service.ts",
       "owner": "completeMigrationInvitations$"
