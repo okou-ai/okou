@@ -50,6 +50,8 @@ or validation, leaving the ordinary response pipeline to handle the upstream byt
 Cache-Control and Pragma share an aggregate raw-value budget checked before decoding;
 cache-policy inspection also bounds field traversal and stops at the first unsafe token.
 Policy exhaustion follows the same storage-bypass lifecycle without rewriting the response.
+Vary presence rejects storage using only raw field names, without inspecting values;
+the preceding encoding and cache-policy gates bound this field traversal.
 Ordinary owners require identity responses. Prefetch owners request Brotli; for an eligible
 Brotli response, the compressed stream passes downstream unchanged while validation decodes
 the bounded capture. A successful response to an authenticated Codex Responses request can
@@ -839,8 +841,9 @@ def _response_headers_bypass_reason(
         return "response_content_type"
     if _response_cache_control_is_unsafe(headers):
         return "response_cache_control"
-    if headers.get_all("Vary"):
-        return "response_vary"
+    for name, _ in headers.fields:
+        if len(name) == len(b"vary") and name.lower() == b"vary":
+            return "response_vary"
     if _single_usable_etag(headers) is None:
         return "response_etag"
     parsed_content_length = _parse_content_length(headers)
