@@ -278,6 +278,9 @@ export type AutomationResult =
   | {
       readonly kind: "bad-request";
       readonly message: string;
+    }
+  | {
+      readonly kind: "gmail-label-not-found";
     };
 
 function workflowWebhookTeamRequiredResult(): {
@@ -2797,6 +2800,9 @@ const prepareGmailEventConfigForPersist$ = command(
         readonly kind: "bad-request";
         readonly message: string;
       }
+    | {
+        readonly kind: "gmail-label-not-found";
+      }
   > => {
     if (args.eventType === "gmail-new-message") {
       if (args.eventConfig.event !== "new_message") {
@@ -2824,6 +2830,9 @@ const prepareGmailEventConfigForPersist$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (label.kind === "not_found") {
+      return { kind: "gmail-label-not-found" };
+    }
     if (label.kind !== "ok") {
       return { kind: "bad-request", message: label.message };
     }

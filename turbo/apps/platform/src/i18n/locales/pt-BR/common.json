@@ -6652,6 +6652,7 @@
         "labelAppliedRule": "Quando o rótulo do Gmail {{label}} for aplicado",
         "labelAppliedTitle": "Rótulo do Gmail aplicado",
         "labelName": "Nome do rótulo",
+        "labelNotFound": "A etiqueta não foi encontrada na conta do Gmail conectada. Verifique o nome da etiqueta e a conta conectada.",
         "labelPlaceholder": "Suporte",
         "labelSummary": "Rótulo {{label}}",
         "messageMatchesRule": "Quando uma mensagem do Gmail corresponder a {{summary}}",

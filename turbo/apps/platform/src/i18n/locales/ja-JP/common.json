@@ -6550,6 +6550,7 @@
         "labelAppliedRule": "Gmail ラベル {{label}} が適用される場合",
         "labelAppliedTitle": "Gmail ラベルが適用されました",
         "labelName": "レーベル名",
+        "labelNotFound": "接続中の Gmail アカウントにラベルが見つかりません。ラベル名と接続中のアカウントを確認してください。",
         "labelPlaceholder": "サポート",
         "labelSummary": "ラベル {{label}}",
         "messageMatchesRule": "Gmail メッセージが {{summary}} と一致する場合",

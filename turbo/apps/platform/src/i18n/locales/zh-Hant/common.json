@@ -6550,6 +6550,7 @@
         "labelAppliedRule": "當新增 Gmail 標籤{{label}}時",
         "labelAppliedTitle": "Gmail 標籤已新增",
         "labelName": "標籤名稱",
+        "labelNotFound": "目前綁定的 Gmail 帳戶中找不到此標籤，請檢查標籤名稱和帳戶。",
         "labelPlaceholder": "客服",
         "labelSummary": "標籤{{label}}",
         "messageMatchesRule": "當 Gmail 郵件匹配{{summary}}時",

@@ -6550,6 +6550,7 @@
         "labelAppliedRule": "Saat label Gmail {{label}} diterapkan",
         "labelAppliedTitle": "Label Gmail diterapkan",
         "labelName": "Nama label",
+        "labelNotFound": "Label tidak ditemukan di akun Gmail yang terhubung. Periksa nama label dan akun yang terhubung.",
         "labelPlaceholder": "Dukungan",
         "labelSummary": "Label {{label}}",
         "messageMatchesRule": "Saat pesan Gmail cocok dengan {{summary}}",

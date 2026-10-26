@@ -6572,6 +6572,7 @@
         "labelAppliedRule": "When Gmail label {{label}} is applied",
         "labelAppliedTitle": "Gmail label applied",
         "labelName": "Label name",
+        "labelNotFound": "Label not found in the connected Gmail account. Check the label name and connected account.",
         "labelPlaceholder": "Support",
         "labelSummary": "Label {{label}}",
         "messageMatchesRule": "When Gmail message matches {{summary}}",

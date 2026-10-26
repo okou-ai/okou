@@ -6574,6 +6574,7 @@
         "labelAppliedRule": "जब Gmail लेबल {{label}} लगाया जाता है",
         "labelAppliedTitle": "Gmail लेबल लागू किया गया",
         "labelName": "लेबल का नाम",
+        "labelNotFound": "कनेक्ट किए गए Gmail खाते में यह लेबल नहीं मिला। लेबल का नाम और कनेक्ट किया गया खाता जाँचें।",
         "labelPlaceholder": "सहायता",
         "labelSummary": "लेबल {{label}}",
         "messageMatchesRule": "जब Gmail संदेश {{summary}} से मेल खाता है",

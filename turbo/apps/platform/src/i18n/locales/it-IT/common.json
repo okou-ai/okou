@@ -6652,6 +6652,7 @@
         "labelAppliedRule": "Quando viene applicata l'etichetta Gmail {{label}}",
         "labelAppliedTitle": "Etichetta Gmail applicata",
         "labelName": "Nome dell'etichetta",
+        "labelNotFound": "Etichetta non trovata nell’account Gmail collegato. Controlla il nome dell’etichetta e l’account collegato.",
         "labelPlaceholder": "Supporto",
         "labelSummary": "Etichetta {{label}}",
         "messageMatchesRule": "Quando il messaggio Gmail corrisponde a {{summary}}",

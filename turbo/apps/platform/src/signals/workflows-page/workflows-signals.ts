@@ -1,6 +1,7 @@
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { command, computed, state } from "ccstate";
 import {
+  GMAIL_LABEL_NOT_FOUND_ERROR_CODE,
   workflowsCollectionContract,
   workflowsDetailContract,
   workflowAutomationsContract,
@@ -1035,6 +1036,11 @@ export const createWorkflowGmailLabelAppliedAutomation$ = command(
         fetchOptions: { signal },
       }),
       [201],
+      signal,
+      {
+        expectedErrors: { 400: [GMAIL_LABEL_NOT_FOUND_ERROR_CODE] },
+        showExpectedErrorToast: false,
+      },
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
@@ -1504,6 +1510,15 @@ const updateWorkflowAutomation$ = command(
         fetchOptions: { signal },
       }),
       [200],
+      signal,
+      "eventConfig" in body &&
+        body.eventConfig.provider === "gmail" &&
+        body.eventConfig.event === "label_applied"
+        ? {
+            expectedErrors: { 400: [GMAIL_LABEL_NOT_FOUND_ERROR_CODE] },
+            showExpectedErrorToast: false,
+          }
+        : undefined,
     );
     signal.throwIfAborted();
     set(reloadWorkflows$);
