@@ -16,10 +16,8 @@ import {
 } from "drizzle-orm";
 import { alias, QueryBuilder, type AnyPgColumn } from "drizzle-orm/pg-core";
 
-import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
 
-type ChatQueueReadDb = Pick<Db, "select">;
 type ChatQueueEventContextType = NonNullable<
   (typeof chatEvents.$inferSelect)["contextType"]
 >;
@@ -72,8 +70,7 @@ export function recentStaleChatQueueWindow(
   };
 }
 
-export async function listChatQueueEventScanCandidatePage(
-  db: ChatQueueReadDb,
+export function chatQueueEventScanReadPlan(
   args: RecentStaleChatQueueWindow & {
     readonly cursor?: ChatQueueEventScanCursor;
     readonly limit: number;
@@ -81,65 +78,52 @@ export async function listChatQueueEventScanCandidatePage(
     readonly chatThreadIds?: readonly string[];
     readonly contextTypes?: readonly ChatQueueEventContextType[];
   },
-): Promise<readonly ChatQueueEventScanCandidate[]> {
+) {
   if (
     args.limit <= 0 ||
     args.eventIds?.length === 0 ||
     args.chatThreadIds?.length === 0 ||
     args.contextTypes?.length === 0
   ) {
-    return [];
+    return null;
   }
 
-  return await db
-    .select({
+  return {
+    columns: {
       id: chatEvents.id,
       chatThreadId: chatEvents.chatThreadId,
       contextType: chatEvents.contextType,
       contextId: chatEvents.contextId,
       createdAt: chatEvents.createdAt,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        gte(chatEvents.createdAt, args.createdAtOrAfter),
-        lt(chatEvents.createdAt, args.createdBefore),
-        chatEventTypeIn(["input.prompt", "input.automation"]),
-        isNull(chatEvents.runId),
-        args.cursor === undefined
-          ? undefined
-          : or(
-              gt(chatEvents.createdAt, args.cursor.createdAt),
-              and(
-                eq(chatEvents.createdAt, args.cursor.createdAt),
-                gt(chatEvents.id, args.cursor.id),
-              ),
+    },
+    from: chatEvents,
+    where: and(
+      gte(chatEvents.createdAt, args.createdAtOrAfter),
+      lt(chatEvents.createdAt, args.createdBefore),
+      chatEventTypeIn(["input.prompt", "input.automation"]),
+      isNull(chatEvents.runId),
+      args.cursor === undefined
+        ? undefined
+        : or(
+            gt(chatEvents.createdAt, args.cursor.createdAt),
+            and(
+              eq(chatEvents.createdAt, args.cursor.createdAt),
+              gt(chatEvents.id, args.cursor.id),
             ),
-        args.eventIds === undefined
-          ? undefined
-          : inArray(chatEvents.id, [...args.eventIds]),
-        args.chatThreadIds === undefined
-          ? undefined
-          : inArray(chatEvents.chatThreadId, [...args.chatThreadIds]),
-        args.contextTypes === undefined
-          ? undefined
-          : inArray(chatEvents.contextType, [...args.contextTypes]),
-      ),
-    )
-    .orderBy(asc(chatEvents.createdAt), asc(chatEvents.id))
-    .limit(Math.min(args.limit, CHAT_QUEUE_SCAN_PAGE_SIZE));
-}
-
-export async function revokedChatEventIds(
-  db: ChatQueueReadDb,
-  eventIds: readonly string[],
-): Promise<ReadonlySet<string>> {
-  const read = revokedChatEventReadPlan(eventIds);
-  if (read === null) {
-    return new Set();
-  }
-  const rows = await db.select(read.columns).from(read.from).where(read.where);
-  return revokedChatEventIdsFromRows(rows);
+          ),
+      args.eventIds === undefined
+        ? undefined
+        : inArray(chatEvents.id, [...args.eventIds]),
+      args.chatThreadIds === undefined
+        ? undefined
+        : inArray(chatEvents.chatThreadId, [...args.chatThreadIds]),
+      args.contextTypes === undefined
+        ? undefined
+        : inArray(chatEvents.contextType, [...args.contextTypes]),
+    ),
+    orderBy: [asc(chatEvents.createdAt), asc(chatEvents.id)],
+    limit: Math.min(args.limit, CHAT_QUEUE_SCAN_PAGE_SIZE),
+  };
 }
 
 export function revokedChatEventReadPlan(eventIds: readonly string[]) {
