@@ -104,6 +104,7 @@ export function ArtifactPreviewDialogFrame({
         overlayClassName="[@media(display-mode:standalone)]:-bottom-safe bg-gray-900/45 dark:bg-gray-900/45"
         maxWidth={1440}
         height={1000}
+        scrollable={false}
         surface="canvas"
         mode={fullscreen ? "fullscreen" : "windowed"}
         contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"

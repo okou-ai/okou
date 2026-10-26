@@ -499,7 +499,7 @@ function ArtifactDialogStage({
 }) {
   return (
     <div
-      className={`h-full min-h-0 bg-muted/30 ${flush ? "p-0" : "p-5"} ${
+      className={`h-full min-h-0 overscroll-contain bg-muted/30 ${flush ? "p-0" : "p-5"} ${
         scrollable ? "overflow-auto" : "overflow-hidden"
       }`}
       data-testid="artifact-dialog-stage"

@@ -1,7 +1,11 @@
 import { Loader2 } from "lucide-react";
+import { cn } from "@okouai/ui";
+import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { resolveOfficeDocumentViewerBaseUrl } from "../../lib/platform-host.ts";
+import { documentPreviewRef$ } from "../../signals/document-preview.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
+import { officeFilePreviewKind } from "./office-file-preview.ts";
 
 function officeDocumentViewerUrl(sourceUrl: string): string {
   const viewerUrl = new URL(resolveOfficeDocumentViewerBaseUrl());
@@ -23,6 +27,8 @@ export function OfficeDocumentPreview({
   testId: string;
 }) {
   const { t } = useTranslation();
+  const documentPreviewRef = useSet(documentPreviewRef$);
+  const preventPinch = officeFilePreviewKind(filename) === "document";
 
   if (resourceUrl === null) {
     return (
@@ -39,7 +45,13 @@ export function OfficeDocumentPreview({
   // one pixel past every edge and clip the viewer-owned border without
   // blocking interaction with the cross-origin document.
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden">
+    <div
+      ref={preventPinch ? documentPreviewRef : undefined}
+      className={cn(
+        "relative h-full min-h-0 w-full overflow-hidden",
+        preventPinch && "touch-pan-x touch-pan-y overscroll-contain",
+      )}
+    >
       <AutoFocusedArtifactIframe
         focusKey={focusKey}
         focusOnMount={focusOnMount}

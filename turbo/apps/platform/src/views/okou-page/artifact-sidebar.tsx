@@ -895,7 +895,7 @@ function ArtifactStageShell({
   return (
     <div
       className={cn(
-        "h-full min-h-0 bg-muted/30",
+        "h-full min-h-0 overscroll-contain bg-muted/30",
         flush ? "p-0" : "p-5",
         scrollable ? "overflow-auto" : "overflow-hidden",
       )}

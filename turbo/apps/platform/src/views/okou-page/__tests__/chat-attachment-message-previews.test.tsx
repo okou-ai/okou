@@ -3,7 +3,7 @@ import type {
   ChatThreadArtifactFile,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -13,6 +13,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { expectDocumentPreviewGestures } from "./document-preview-gesture-test-helpers.ts";
 import {
   ATTACHMENT_RUN_ID,
   ATTACHMENT_THREAD_ID,
@@ -416,11 +417,14 @@ test("Persisted Markdown attachments render without offering sharing", async () 
 
   click(getNamedButton("Open markdown preview for notes.md"));
   await expect(screen.findByText("Review notes")).resolves.toBeVisible();
+  expectDocumentPreviewGestures(screen.getByRole("document"));
   // The file belongs to the user's own message, so the preview has a download
   // but no share action even though a public URL resolved for it.
   expect(getNamedButton("Download options")).toBeInTheDocument();
   expect(queryNamedLink("Share")).toBeNull();
-  await closeFocusedPreview();
+  click(getNamedButton("Open in split view"));
+  const splitView = await screen.findByTestId("artifact-sidebar");
+  expectDocumentPreviewGestures(await within(splitView).findByRole("document"));
 });
 
 test("Persisted HTML presentations open and download as presentations", async () => {

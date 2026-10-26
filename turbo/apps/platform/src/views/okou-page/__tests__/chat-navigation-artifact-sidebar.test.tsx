@@ -22,6 +22,7 @@ import {
   warmMermaidParser,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import { expectDocumentPreviewGestures } from "./document-preview-gesture-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   artifactSummary,
@@ -278,6 +279,9 @@ test("Preview a DOCX attachment in the dialog and split view", async () => {
   expect(dialogFrame).toBeVisible();
   expectOfficeViewerUrl(dialogFrame, url);
   expectOfficeViewerFocusable(dialogFrame);
+  // These events exercise the app-owned iframe element. Native input inside
+  // the cross-origin Office document still requires browser verification.
+  expectDocumentPreviewGestures(dialogFrame);
   click(buttonNamed("Open in split view", dialog));
 
   const splitView = await screen.findByTestId("artifact-sidebar");
@@ -285,6 +289,7 @@ test("Preview a DOCX attachment in the dialog and split view", async () => {
   expect(splitFrame).toBeVisible();
   expectOfficeViewerUrl(splitFrame, url);
   expectOfficeViewerFocusable(splitFrame);
+  expectDocumentPreviewGestures(splitFrame);
 });
 
 test("Preview a PPTX attachment in the dialog and split view", async () => {
