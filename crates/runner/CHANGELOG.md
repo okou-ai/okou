@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.10...runner-rs-v0.237.11) (2026-10-26)
+
+
+### Documentation
+
+* correct data router registration timing contract ([#43173](https://github.com/okou-ai/okou/issues/43173)) ([78a8661](https://github.com/okou-ai/okou/commit/78a8661f835cd4b380461054a1ca4d7d661dea07))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.9...runner-rs-v0.237.10) (2026-10-26)
 
 ### Release Dependencies

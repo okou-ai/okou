@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.38](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.37...runner-executor-v0.15.38) (2026-10-26)
+
+
+### Performance Improvements
+
+* **runner-executor:** encode secret values into one payload buffer ([#43177](https://github.com/okou-ai/okou/issues/43177)) ([41177b1](https://github.com/okou-ai/okou/commit/41177b13c0e655b55e9dc4712b5c4520c32b35fc))
+
 ## [0.15.37](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.36...runner-executor-v0.15.37) (2026-10-26)
 
 ## [0.15.36](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.35...runner-executor-v0.15.36) (2026-10-26)

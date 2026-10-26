@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.10.60](https://github.com/okou-ai/okou/compare/app-worker-v1.10.59...app-worker-v1.10.60) (2026-10-26)
+
+
+### Refactoring
+
+* require named zod imports and route-owned http policies ([#43155](https://github.com/okou-ai/okou/issues/43155)) ([20685b6](https://github.com/okou-ai/okou/commit/20685b655da844b5df38384a136deec14037fe76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.2
+    * @okouai/core bumped to 8.791.3
+
 ## [1.10.59](https://github.com/okou-ai/okou/compare/app-worker-v1.10.58...app-worker-v1.10.59) (2026-10-26)
 
 
