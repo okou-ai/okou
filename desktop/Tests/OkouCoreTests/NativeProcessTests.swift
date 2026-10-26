@@ -12,7 +12,8 @@ final class NativeProcessTests: XCTestCase {
   }
 
   private func nativeFixture(
-    _ source: String, purpose: NativeProcess.Purpose = .computerUse
+    _ source: String, purpose: NativeProcess.Purpose = .computerUse,
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
   ) throws -> (NativeProcess, URL) {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -21,7 +22,7 @@ final class NativeProcessTests: XCTestCase {
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
     let helper = NativeProcess(
       executable: executable, environment: ["OKOU_NATIVE_TEST_DIRECTORY": directory.path],
-      purpose: purpose)
+      purpose: purpose, now: now)
     addTeardownBlock {
       await helper.stop()
       try FileManager.default.removeItem(at: directory)
@@ -366,9 +367,79 @@ final class NativeProcessTests: XCTestCase {
       XCTAssertEqual(diagnostics["operation"].string, operation)
       XCTAssertEqual(diagnostics["timeoutMs"].number, 100)
       XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["elapsedMs"].number), 100)
+      XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "timer")
+      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["deadlineOverrunMs"].number), 0)
+      XCTAssertGreaterThanOrEqual(try XCTUnwrap(diagnostics["writeElapsedMs"].number), 0)
+      XCTAssertEqual(diagnostics["stdoutBytesRead"].number, 0)
+      XCTAssertEqual(diagnostics["stdoutBytesProcessed"].number, 0)
       XCTAssertFalse(event.formatted.contains("private-operation-content"))
       XCTAssertFalse(event.formatted.contains("private-input-content"))
     }
+  }
+
+  func testReadyResponseCannotSucceedAfterDeadlineAndOnlyANewCommandRestartsHelper() async throws {
+    let collector = try telemetry()
+    let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    addTeardownBlock { try FileManager.default.removeItem(at: marker) }
+    let started = ContinuousClock.now
+    let (helper, directory) = try nativeFixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, pathlib, sys
+      root = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY'])
+      for line in sys.stdin:
+          request = json.loads(line)
+          with (root / 'attempts').open('a') as stream:
+              stream.write(request['kind'] + '\n')
+          if request['kind'] == 'keyboard.type_text':
+              pathlib.Path(request['marker']).write_text(str(os.getpid()))
+          print(json.dumps({'id': request['id'], 'status': 'succeeded',
+                            'result': {'pid': os.getpid()}}), flush=True)
+      """#,
+      now: {
+        // Advance the OS clock boundary only after the helper handles the input.
+        started.advanced(
+          by: .seconds(FileManager.default.fileExists(atPath: marker.path) ? 31 : 0))
+      })
+
+    do {
+      _ = try await helper.request(
+        .object([
+          "kind": .string("keyboard.type_text"), "text": .string("private-input-content"),
+          "marker": .string(marker.path),
+        ]), timeout: 30)
+      XCTFail("A response processed after the deadline must fail even before the timer runs")
+    } catch let failure as DesktopFailure {
+      XCTAssertEqual(failure.code, "command_timeout")
+      XCTAssertTrue(failure.message.contains("do not replay"))
+    }
+    let retiredPID = try XCTUnwrap(
+      Int32(String(contentsOf: marker, encoding: .utf8)))
+    XCTAssertEqual(kill(retiredPID, 0), -1)
+    XCTAssertEqual(errno, ESRCH)
+    let response = try await helper.request(.object(["kind": .string("apps.list")]))
+    XCTAssertEqual(response["status"].string, "succeeded")
+    XCTAssertNotEqual(response["result"]["pid"].number, Double(retiredPID))
+    let attempts = try String(
+      contentsOf: directory.appendingPathComponent("attempts"), encoding: .utf8)
+    XCTAssertEqual(attempts.split(separator: "\n"), ["keyboard.type_text", "apps.list"])
+
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 1)
+    let event = try XCTUnwrap(events.first)
+    let diagnostics = event["contexts"]["nativeHelper"]
+    XCTAssertEqual(diagnostics["operation"].string, "keyboard.type_text")
+    XCTAssertEqual(diagnostics["timeoutDetectedBy"].string, "response")
+    XCTAssertEqual(diagnostics["timeoutMs"].number, 30000)
+    XCTAssertEqual(diagnostics["elapsedMs"].number, 31000)
+    XCTAssertEqual(diagnostics["deadlineOverrunMs"].number, 1000)
+    XCTAssertGreaterThan(try XCTUnwrap(diagnostics["stdoutBytesRead"].number), 0)
+    XCTAssertEqual(diagnostics["stdoutBytesRead"], diagnostics["stdoutBytesProcessed"])
+    XCTAssertEqual(diagnostics["lastStdoutReadElapsedMs"].number, 31000)
+    XCTAssertEqual(diagnostics["lastStdoutProcessedElapsedMs"].number, 31000)
+    XCTAssertFalse(event.formatted.contains("private-input-content"))
+    XCTAssertFalse(event.formatted.contains(marker.path))
+    XCTAssertTrue(try collector.attachments(for: event).isEmpty)
   }
 
   func testExplicitStopReapsTheHelperWithoutReportingAnUnexpectedExit() async throws {
