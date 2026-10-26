@@ -23,6 +23,7 @@ import {
 } from "./api-email-subscription.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
 import { apiGetStartedHandlers } from "./api-get-started.ts";
+import { apiHalloweenHandlers } from "./api-halloween.ts";
 import { apiHostHandlers } from "./api-host.ts";
 import {
   apiIntegrationsAgentPhoneHandlers,
@@ -152,6 +153,7 @@ export const handlers = [
   ...apiIntegrationsSlackConnectHandlers,
   ...apiFeatureSwitchesHandlers,
   ...apiGetStartedHandlers,
+  ...apiHalloweenHandlers,
   ...apiRealtimeHandlers,
   ...apiUserPermissionGrantsHandlers,
   ...apiVoiceIoHandlers,

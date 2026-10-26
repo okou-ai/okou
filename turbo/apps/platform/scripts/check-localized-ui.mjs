@@ -103,6 +103,66 @@ function isUserVisibleFunctionName(value) {
 function getInternalAllowedLiterals() {
   return [
     [
+      "src/signals/halloween/halloween-content.ts\u0000A treat from Okou.",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000But first, a little quiz.",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000Four right answers. One sweet finale. 🎃✨",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000See my result",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000Create a Halloween image",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000Connect your tools",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000See what else she can do",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000Event period",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000How to play",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000Your Halloween reward",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-content.ts\u0000Fair play & support",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-page-setup.ts\u0000Halloween participant review",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/signals/halloween/halloween-page-setup.ts\u0000A treat from Okou · Halloween",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/views/halloween/halloween-operations.tsx\u0000Halloween participant review",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
+      "src/views/halloween/halloween-operations.tsx\u0000Staff administrators only. Capture an immutable account list, export it, and record your review decisions.",
+      "Approved Halloween 2026 campaign copy is English in every locale, per the campaign launch requirements.",
+    ],
+    [
       "src/signals/okou-page/chat-feedback.ts\u0000a sent email (mail ID: {…}{…})",
       "locale-neutral serialized agent prompt metadata",
     ],

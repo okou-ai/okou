@@ -46,6 +46,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.HalloweenQuiz]: {
+    maintainer: "ming@okou.ai",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.IosComposerConnectors]: {
     maintainer: "lancy@okou.ai",
     displayName: "iOS composer connectors",
