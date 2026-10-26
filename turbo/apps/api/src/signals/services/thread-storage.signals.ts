@@ -1,8 +1,14 @@
 import { computed, type Computed } from "ccstate";
+import { isValidVersionPrefix } from "@okouai/core/version-id";
+import { storageVersions } from "@okouai/db/schema/storage";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { and, desc, eq, like, or, sql } from "drizzle-orm";
+import { unionAll } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { measureApiDispatchTiming } from "./api-dispatch-timing.service";
+import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
 import {
   createResolvedExecutionStorageObjects,
   type ExecutionStorageRequest,
@@ -25,8 +31,9 @@ import {
   StorageManifestBuildStats,
   storageEntriesMetadata,
   storageIndexKey,
+  storageIndexWithPrefixVersions,
+  storagePrefixVersionRequests,
   storedMountFromPrepared,
-  withStoragePrefixVersions,
 } from "./run-storage-manifest.service";
 import {
   exactStorageVersionsFromIndex,
@@ -228,7 +235,7 @@ function createStorageInputSignal(
 
 type StorageInput$ = ReturnType<typeof createStorageInputSignal>;
 
-function createStorageIndexSignals(
+function createStorageBaseIndexSignal(
   threadContext: ThreadContext,
   storageInput$: StorageInput$,
 ) {
@@ -341,15 +348,71 @@ function createStorageIndexSignals(
       index,
     };
   });
+  return capturedStorageBaseIndex$;
+}
+
+function createStorageIndexSignals(
+  threadContext: ThreadContext,
+  storageInput$: StorageInput$,
+) {
+  const capturedStorageBaseIndex$ = createStorageBaseIndexSignal(
+    threadContext,
+    storageInput$,
+  );
   const capturedStorageIndex$ = computed(async (get) => {
     const { selection, input, index } = await get(capturedStorageBaseIndex$);
     return {
       selection,
-      storageIndex: await withStoragePrefixVersions(
-        input.db,
-        input.requests,
-        index,
-      ),
+      storageIndex: await (async () => {
+        const queries = storagePrefixVersionRequests(input.requests, index).map(
+          (request) => {
+            return input.db
+              .select({
+                storageId: storageVersions.storageId,
+                id: storageVersions.id,
+                s3Key: storageVersions.s3Key,
+                archiveSize: storageVersions.archiveSize,
+                fileCount: storageVersions.fileCount,
+                cacheKey: systemStoragePresignedUrlCache.cacheKey,
+                cacheScope: systemStoragePresignedUrlCache.scope,
+                presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+                expiresAt: systemStoragePresignedUrlCache.expiresAt,
+              })
+              .from(storageVersions)
+              .leftJoin(
+                systemStoragePresignedUrlCache,
+                eq(
+                  systemStoragePresignedUrlCache.cacheKey,
+                  storageVersionCacheKeySql({
+                    orgId: sql`${request.lookup.orgId}`,
+                    userId: sql`${request.lookup.userId}`,
+                    name: sql`${request.lookup.name}`,
+                    versionId: sql`${storageVersions.id}`,
+                    s3Key: sql`${storageVersions.s3Key}`,
+                  }),
+                ),
+              )
+              .where(
+                and(
+                  eq(storageVersions.storageId, request.storageId),
+                  or(
+                    eq(storageVersions.id, request.version),
+                    isValidVersionPrefix(request.version)
+                      ? like(storageVersions.id, `${request.version}%`)
+                      : undefined,
+                  ),
+                ),
+              )
+              .orderBy(desc(eq(storageVersions.id, request.version)))
+              .limit(2);
+          },
+        );
+        const [first, second, ...remaining] = queries;
+        const versions = first
+          ? await (second ? unionAll(first, second, ...remaining) : first)
+          : [];
+        return storageIndexWithPrefixVersions(index, versions);
+      })(),
     };
   });
   return { capturedStorageIndex$ };
