@@ -10,7 +10,7 @@ const {
   parseEnvironment,
   request,
   command,
-  sharedPreviewDatabase,
+  sharedDatabase,
   main,
 } = require("./api-worker-preview.cjs");
 
@@ -84,7 +84,7 @@ test("Worker consumes the exact prepared shared branch through a direct GET-only
       });
     }),
   );
-  const database = await sharedPreviewDatabase(neon, branch.name);
+  const database = await sharedDatabase(neon, branch.name);
   assert.equal(database.hostname, "ep-shared.example.neon.tech");
   assert.equal(database.searchParams.get("sslmode"), "verify-full");
   assert.equal(requests[0][1], "/branches?search=preview%2Fpr-123&limit=100");
@@ -100,8 +100,8 @@ test("a missing shared branch fails instead of allocating another Neon branch", 
     }),
   );
   await assert.rejects(
-    sharedPreviewDatabase(neon, "preview/pr-123"),
-    /Expected one existing shared API preview branch/,
+    sharedDatabase(neon, "preview/pr-123"),
+    /Expected one existing shared API database branch/,
   );
   assert.deepEqual(requests, [
     ["GET", "/branches?search=preview%2Fpr-123&limit=100"],
@@ -195,7 +195,7 @@ test("a superseded PR revision is rejected before database or Cloudflare operati
   await assert.rejects(main("deploy"), /Superseded PR revision/);
 });
 
-function deploymentFixture(t, environment = {}) {
+function deploymentFixture(t, environment = {}, production = false) {
   const root = path.resolve(__dirname, "../..");
   const cwd = process.cwd();
   process.chdir(root);
@@ -232,15 +232,19 @@ function deploymentFixture(t, environment = {}) {
     ...environment,
   });
   const branch = {
-    id: "br-shared-preview",
-    name: "preview/pr-123",
+    id: production ? "br-shared-production" : "br-shared-preview",
+    name: production ? "production" : "preview/pr-123",
     current_state: "ready",
   };
   const hyperdrive = {
     id: "b".repeat(32),
-    name: "okou-api-preview-pr-123",
+    name: production ? "okou-api-production" : "okou-api-preview-pr-123",
     caching: { disabled: true },
   };
+  const databaseHost = production
+    ? "ep-production.example.neon.tech"
+    : "ep-shared.example.neon.tech";
+  const databaseUser = production ? "production" : "preview";
   const mutations = [];
   server.use(
     http.get(`${cfBase}/workers/subdomain`, () =>
@@ -273,17 +277,17 @@ function deploymentFixture(t, environment = {}) {
       assert.equal(params.get("branch_id"), branch.id);
       assert.equal(params.get("pooled"), "false");
       return HttpResponse.json({
-        uri: "postgresql://preview:password@ep-shared.example.neon.tech/neondb",
+        uri: `postgresql://${databaseUser}:password@${databaseHost}/neondb`,
       });
     }),
     http.get(`${cfBase}/hyperdrive/configs`, () =>
       HttpResponse.json({
         success: true,
-        result: [hyperdrive],
+        result: production ? [] : [hyperdrive],
       }),
     ),
-    http.put(
-      `${cfBase}/hyperdrive/configs/${hyperdrive.id}`,
+    (production ? http.post : http.put)(
+      `${cfBase}/hyperdrive/configs${production ? "" : `/${hyperdrive.id}`}`,
       async ({ request: incoming }) => {
         assert.equal(
           incoming.headers.get("authorization"),
@@ -295,10 +299,10 @@ function deploymentFixture(t, environment = {}) {
           name: hyperdrive.name,
           origin: {
             scheme: "postgres",
-            host: "ep-shared.example.neon.tech",
+            host: databaseHost,
             port: 5432,
             database: "neondb",
-            user: "preview",
+            user: databaseUser,
             password: "password",
           },
           caching: { disabled: true },
@@ -426,6 +430,100 @@ test("Worker deployment binds certificate federation while preserving the shared
     "llm-dev@test-project.iam.gserviceaccount.com",
   );
   assert.equal(fs.readFileSync(envFile, "utf8"), sharedEnvironment);
+});
+
+test("production deployment publishes the released API with its own database binding and Google identity", async (t) => {
+  const provider =
+    "projects/123456789/locations/global/workloadIdentityPools/api-production/providers/x509";
+  const certificateChain = JSON.stringify(["bGVhZg==", "cm9vdA=="]);
+  const { envFile, outputFile, hyperdrive, mutations } = deploymentFixture(
+    t,
+    {
+      JOB_REF: undefined,
+      GH_TOKEN: undefined,
+      GITHUB_REPOSITORY: undefined,
+      EXPECTED_PR_HEAD_SHA: undefined,
+      CF_API_NATIVE_TELEMETRY: "false",
+      CF_API_LOGS_DESTINATION: undefined,
+      CF_API_TRACES_DESTINATION: undefined,
+      GCP_MTLS_CERTIFICATE_ID: "d".repeat(32),
+      GCP_MTLS_CERTIFICATE_CHAIN: certificateChain,
+      GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER: provider,
+    },
+    true,
+  );
+  const releaseRuntime = {
+    ENV: "production",
+    GIT_COMMIT_SHA: "4".repeat(40),
+    CLERK_PUBLISHABLE_KEY: "pk_live_test",
+    CLERK_SECRET_KEY: "sk_live_test",
+    APP_URL: "https://app.okou.ai",
+    OKOU_WEB_URL: "https://www.okou.ai",
+    OKOU_API_BACKEND_URL: "https://api.okou.ai",
+    DATABASE_URL:
+      "postgresql://production:password@ep-production-pooler.example.neon.tech/neondb",
+    AXIOM_DATASET_SUFFIX: "prod",
+    GCP_LLM_PROJECT_ID: "test-project",
+    GCP_LLM_SERVICE_ACCOUNT_EMAIL:
+      "llm-production@test-project.iam.gserviceaccount.com",
+    GCP_LLM_WORKLOAD_IDENTITY_PROVIDER:
+      "projects/123456789/locations/global/workloadIdentityPools/vercel-production/providers/oidc",
+  };
+  const sharedEnvironment = Object.entries(releaseRuntime)
+    .map(([key, value]) => `${key}=${value}\n`)
+    .join("");
+  fs.writeFileSync(envFile, sharedEnvironment);
+  const commands = [];
+  let generatedPath;
+  let secretsPath;
+  t.mock.method(childProcess, "spawnSync", (_command, args) => {
+    if (args.includes("build:worker")) commands.push("build");
+    else {
+      assert.ok(args.includes("deploy"));
+      generatedPath = args[args.indexOf("--config") + 1];
+      const config = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
+      assert.equal(config.name, "okou-api-production");
+      assert.equal(config.workers_dev, true);
+      assert.deepEqual(config.routes, []);
+      assert.deepEqual(config.triggers.crons, []);
+      assert.equal(config.vars.API_NATIVE_TELEMETRY, "false");
+      assert.deepEqual(config.hyperdrive, [
+        { binding: "HYPERDRIVE", id: hyperdrive.id },
+      ]);
+      assert.deepEqual(config.mtls_certificates, [
+        { binding: "GCP_MTLS", certificate_id: "d".repeat(32) },
+      ]);
+      secretsPath = args[args.indexOf("--secrets-file") + 1];
+      const secrets = JSON.parse(fs.readFileSync(secretsPath, "utf8"));
+      const runtime = JSON.parse(
+        Array.from(
+          { length: Number(secrets.API_ENV_JSON_PARTS) },
+          (_, i) => secrets[`API_ENV_JSON_${i}`],
+        ).join(""),
+      );
+      assert.deepEqual(runtime, {
+        ...releaseRuntime,
+        DATABASE_URL:
+          "postgresql://production:password@ep-production.example.neon.tech/neondb?sslmode=verify-full",
+        GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: provider,
+        GCP_MTLS_CERTIFICATE_CHAIN: certificateChain,
+      });
+      commands.push("upload");
+    }
+    return { status: 0 };
+  });
+  await main("deploy-production");
+  assert.deepEqual(commands, ["build", "upload"]);
+  assert.deepEqual(mutations, [
+    ["POST", `/client/v4/accounts/${"a".repeat(32)}/hyperdrive/configs`],
+  ]);
+  assert.equal(
+    fs.readFileSync(outputFile, "utf8"),
+    `worker-url=https://okou-api-production.test-account.workers.dev\nsource-sha=${releaseRuntime.GIT_COMMIT_SHA}\n`,
+  );
+  assert.equal(fs.readFileSync(envFile, "utf8"), sharedEnvironment);
+  assert.equal(fs.existsSync(generatedPath), false);
+  assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
 });
 
 for (const kind of ["logs", "traces"]) {

@@ -57,6 +57,7 @@ import { orgMembershipRequestsRoutes } from "../routes/org-membership-requests";
 import { orgReadRoutes } from "../routes/org-read";
 import { orgOpenrouterPresetRoutes } from "../routes/org-openrouter-preset";
 import { pushSubscriptionsRoutes } from "../routes/push-subscriptions";
+import { iosPushRegistrationsRoutes } from "../routes/ios-push-registrations";
 import { userPermissionGrantsRoutes } from "../routes/user-permission-grants";
 import { userPreferencesRoutes } from "../routes/user-preferences";
 import { paidToolsRoutes } from "../routes/paid-tools";
@@ -136,6 +137,7 @@ export const CORE_ROUTES: readonly RouteEntry[] = [
   ...orgReadRoutes,
   ...orgOpenrouterPresetRoutes,
   ...pushSubscriptionsRoutes,
+  ...iosPushRegistrationsRoutes,
   ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,
   ...paidToolsRoutes,

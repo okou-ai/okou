@@ -17,6 +17,7 @@ target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
 decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-storage-capacity-reader")
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
+desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -25,7 +26,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "${MOCK_DECODED_STORAGE_READER_COMMIT-$MOCK_DECODED_STORAGE_READER_FLOOR}" ]; then
+    if [ "${3:-}" = "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_DESKTOP_MANIFEST_R2_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_DESKTOP_MANIFEST_R2_READER_TARGET_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "${MOCK_DECODED_STORAGE_READER_COMMIT-$MOCK_DECODED_STORAGE_READER_FLOOR}" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_DECODED_STORAGE_READER_ON_MAIN:-1}" = "1" ]
       elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
@@ -272,6 +279,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/desktop-manifest-r2-reader" ]; then
+      [ "${MOCK_DESKTOP_MANIFEST_R2_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/decoded-storage-capacity-reader" ]; then
       [ "${MOCK_DECODED_STORAGE_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_DECODED_STORAGE_READER_COMMIT-$MOCK_DECODED_STORAGE_READER_FLOOR}"
@@ -367,6 +379,7 @@ run_resolver() {
     MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
     MOCK_DECODED_STORAGE_READER_FLOOR="$decoded_storage_reader_floor" \
     MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR="$connector_diagnostic_targets_floor" \
+    MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -386,6 +399,19 @@ assert_failure() {
 
 # Current-main policy must reject pre-preparation APIs before provider or host
 # access. Valid descendants still resolve through the existing success case.
+for desktop_manifest_case in \
+  "MOCK_DESKTOP_MANIFEST_R2_READER_AVAILABLE=0|Cannot read the Desktop manifest R2 reader rollback floor from main" \
+  "MOCK_DESKTOP_MANIFEST_R2_READER_ON_MAIN=0|Desktop manifest R2 reader rollback floor is not on main" \
+  "MOCK_DESKTOP_MANIFEST_R2_READER_TARGET_VALID=0|Rollback target predates the Desktop manifest R2 reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${desktop_manifest_case#*|}" \
+    run_resolver "${tmp_dir}/desktop-manifest-r2-reader.output" "${desktop_manifest_case%%|*}"
+  [ ! -s "${tmp_dir}/desktop-manifest-r2-reader.output" ] || fail "unsupported Desktop manifest reader must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Desktop manifest R2 policy must reject before provider or host access"
+  fi
+done
+
 for connector_case in \
   "MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE=0|Cannot read the Connector resource split rollback floor from main" \
   "MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT=|Missing or invalid Connector resource split rollback floor" \

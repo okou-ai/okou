@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.7...guest-agent-v0.109.8) (2026-10-26)
+
+
+### Documentation
+
+* **guest-agent:** clarify protocol cancellation in cli results ([#43074](https://github.com/okou-ai/okou/issues/43074)) ([2a28adb](https://github.com/okou-ai/okou/commit/2a28adb2c700ce8a67ef6237553a89a2c29b57da))
+
 ## [0.109.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.6...guest-agent-v0.109.7) (2026-10-26)
 
 ## [0.109.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.5...guest-agent-v0.109.6) (2026-10-26)

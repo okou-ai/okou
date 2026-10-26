@@ -1,8 +1,10 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
+use tokio::time::Instant;
 use tracing::{info, warn};
 
 use super::types::{ActiveInputEntry, JobRequest, JobResponse};
@@ -40,12 +42,18 @@ pub struct LocalCancelMarker {
 }
 
 /// Shared file-state checks for the local queue protocol.
+///
+/// Clones share transient retry deadlines when an invalid job's failure result
+/// cannot be published. These deadlines are local to this queue instance and
+/// reset on restart; the persisted job, claim, and result protocol is unchanged.
 #[derive(Clone)]
 pub struct LocalQueue {
     group_dir: Arc<PathBuf>,
+    failed_claim_retries: Arc<Mutex<HashMap<RunId, Instant>>>,
 }
 
 const DISCOVERY_SNAPSHOT_CANDIDATE_THRESHOLD: usize = 32;
+const FAILED_CLAIM_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 struct DiscoveryCandidate {
@@ -120,11 +128,37 @@ impl LocalQueue {
     pub fn new(group_dir: PathBuf) -> Self {
         Self {
             group_dir: Arc::new(group_dir),
+            failed_claim_retries: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub fn group_dir(&self) -> &Path {
         self.group_dir.as_ref()
+    }
+
+    fn lock_claim_retries(&self) -> MutexGuard<'_, HashMap<RunId, Instant>> {
+        self.failed_claim_retries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+
+    fn deferred_claims(&self) -> HashSet<RunId> {
+        let now = Instant::now();
+        let mut retries = self.lock_claim_retries();
+        retries.retain(|_, deadline| *deadline > now);
+        retries.keys().copied().collect()
+    }
+
+    fn claim_retry_is_pending(&self, run_id: RunId) -> bool {
+        let mut retries = self.lock_claim_retries();
+        if retries
+            .get(&run_id)
+            .is_some_and(|deadline| *deadline > Instant::now())
+        {
+            return true;
+        }
+        retries.remove(&run_id);
+        false
     }
 
     pub fn discover_candidate_sync(
@@ -136,6 +170,7 @@ impl LocalQueue {
             return None;
         }
 
+        let deferred_claims = self.deferred_claims();
         let profile_count = supported_profiles.len();
         for offset in 0..profile_count {
             let Some(profile) = supported_profiles.get(start.wrapping_add(offset) % profile_count)
@@ -174,6 +209,9 @@ impl LocalQueue {
                     let Ok(run_id) = stem.parse::<RunId>() else {
                         continue;
                     };
+                    if deferred_claims.contains(&run_id) {
+                        continue;
+                    }
                     candidates.push(Reverse(DiscoveryCandidate { run_id, path }));
                 }
             }
@@ -384,6 +422,9 @@ impl LocalQueue {
         partition_profile: &str,
         job_file: &Path,
     ) -> LocalClaimResult {
+        if self.claim_retry_is_pending(run_id) {
+            return LocalClaimResult::NotClaimed;
+        }
         // Atomic claim via O_EXCL — only the first runner to create the file wins.
         if let Err(e) = super::ensure_claims_dir(&self.group_dir) {
             warn!(path = %super::claims_dir(&self.group_dir).display(), error = %e, "local: failed to create claim dir");
@@ -391,6 +432,12 @@ impl LocalQueue {
         }
         let claim_file = super::claim_path(&self.group_dir, run_id);
         if super::create_private_marker(&claim_file, "local claim marker").is_err() {
+            return LocalClaimResult::NotClaimed;
+        }
+        // Another queue clone may have recorded backoff and released its claim
+        // after our first check but before this acquisition.
+        if self.claim_retry_is_pending(run_id) {
+            let _ = std::fs::remove_file(&claim_file);
             return LocalClaimResult::NotClaimed;
         }
         if self.result_file_has_content(run_id) {
@@ -428,9 +475,10 @@ impl LocalQueue {
                 // .job is a permanent error — retrying the parse will just
                 // spin. Keep the claim until after the result attempt so other
                 // local runners do not repeatedly process the same poison job.
-                // If the result write fails, the claim is released and the job
-                // remains retryable. If it succeeds, the result becomes the
-                // durable terminal marker before the bad job is removed.
+                // If the result write fails, record backoff before releasing
+                // the claim so sequential admission cannot immediately retry.
+                // On success, the result becomes the durable terminal marker
+                // before the bad job is removed.
                 self.fail_claimed_job_sync_with_claim(
                     run_id,
                     &claim_file,
@@ -870,8 +918,16 @@ impl LocalQueue {
 
     fn fail_claimed_job_sync_with_claim(&self, run_id: RunId, claim_file: &Path, error: String) {
         if self.write_result_sync(run_id, 1, Some(&error)) {
+            self.lock_claim_retries().remove(&run_id);
             let _ = self.remove_job_files_if_present(run_id);
             self.cleanup_active_inputs_sync(run_id);
+        } else {
+            // Publish retry state before releasing ownership. Discovery skips
+            // this run, but can still return other jobs in the same partition.
+            let now = Instant::now();
+            let mut retries = self.lock_claim_retries();
+            retries.retain(|_, deadline| *deadline > now);
+            retries.insert(run_id, now + FAILED_CLAIM_RETRY_INTERVAL);
         }
         let _ = std::fs::remove_file(claim_file);
     }

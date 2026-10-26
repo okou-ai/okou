@@ -291,7 +291,7 @@ import {
   type RunMetadataValues,
 } from "./agent-run-metadata-write.service";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
-import { previousChatRunId } from "./previous-chat-run";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-policy.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
@@ -4656,7 +4656,6 @@ function launchThreadBindingCte(args: {
   readonly userId: string;
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
-  readonly createdAt: Date;
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
 }) {
   const expected = args.validatedThreadSession;
@@ -4669,13 +4668,6 @@ function launchThreadBindingCte(args: {
   if (expected.admission.runId !== args.identity.runId) {
     throw new Error("Captured predecessor facts do not match launch identity");
   }
-  const sourceRunId = previousChatRunId({
-    runId: sql.param(args.identity.runId),
-    chatThreadId: sql.param(args.chatThreadId),
-    userId: sql.param(args.userId),
-    orgId: sql.param(args.orgId),
-    createdAt: sql.param(args.createdAt, agentRuns.createdAt),
-  });
   return new QueryBuilder().$with("validated_launch_thread").as(
     new QueryBuilder()
       .select({ id: chatThreads.id })
@@ -4684,11 +4676,12 @@ function launchThreadBindingCte(args: {
         and(
           eq(chatThreads.id, args.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          chatThreadOrganizationCondition(args.orgId),
           sql`${chatThreads.agentId} IS NOT DISTINCT FROM ${expected.threadAgentId}::uuid`,
           sql`${chatThreads.framework} IS NOT DISTINCT FROM ${expected.framework}::text`,
           sql`${chatThreads.frameworkSessionId} IS NOT DISTINCT FROM ${expected.frameworkSessionId}::text`,
           sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${expected.frameworkSessionRunId}::uuid`,
-          sql`${sourceRunId} IS NOT DISTINCT FROM ${expected.admission.finalizingSourceRunId}::uuid`,
+          sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${expected.admission.finalizingSourceRunId}::uuid`,
         ),
       ),
   );
@@ -4696,7 +4689,7 @@ function launchThreadBindingCte(args: {
 
 function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const { rowsArgs, metadata } = args.commit.persistence.rows;
-  // Preserve insertion time and revalidate the predecessor at this same bound.
+  // Preserve insertion time; the captured Thread tuple fences continuation.
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
 
@@ -4745,7 +4738,6 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     userId: args.commit.createArgs.userId,
     orgId: args.commit.createArgs.orgId,
     identity: rowsArgs.identity,
-    createdAt,
     validatedThreadSession: args.validatedThreadSession,
   });
   return {

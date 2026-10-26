@@ -8,6 +8,67 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
+  func testForegroundConversationPublishesNewMessagesWhileSidebarIndicatorsAreStillPending()
+    async throws
+  {
+    let updated = Mutex(false)
+    let pendingSidebar = Mutex(false)
+    let sidebarStarted = expectation(description: "Sidebar indicators are held")
+    let releaseSidebar = HTTPResponseGate()
+    defer { releaseSidebar.open() }
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Priority conversation")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case "/api/indicators":
+        if pendingSidebar.withLock({ $0 }) {
+          sidebarStarted.fulfill()
+          await releaseSidebar.wait()
+        }
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
+      case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let after =
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
+            $0.name == "sinceSeqId"
+          }?.value.flatMap(Int.init) ?? 0
+        let last = updated.withLock { $0 ? 4 : 2 }
+        let rows = (1...last).filter { $0 > after }.map { sequence in
+          sequence.isMultiple(of: 2)
+            ? historyEvent(sequence: sequence, type: "run.completed")
+            : historyEvent(
+              sequence: sequence, type: "output.message",
+              payload: sequence == 1
+                ? #"{"content":"Cached answer"}"# : #"{"content":"Fresh answer"}"#)
+        }
+        return historyPage(rows: rows, lastSequence: last)
+      case "/api/chat-threads/\(storeThreadID)":
+        return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
+      case "/api/chat-threads/\(storeThreadID)/mark-read":
+        return ChatHTTPResponse(body: #"{"lastReadAt":"2026-10-26T00:00:00Z"}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    store.setForeground(true)
+    await store.list.refresh()
+    store.selectedThreadID = storeThreadID
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.refresh()
+    XCTAssertEqual(conversation.messages.map(\.text), ["Cached answer"])
+    updated.withLock { $0 = true }
+    pendingSidebar.withLock { $0 = true }
+    let refresh = Task { await store.refresh() }
+    defer { refresh.cancel() }
+    await fulfillment(of: [sidebarStarted], timeout: 3)
+    try await eventually { conversation.messages.contains { $0.text == "Fresh answer" } }
+    releaseSidebar.open()
+    await refresh.value
+    XCTAssertNil(conversation.error)
+  }
+
   func testHistoryRefreshPreservesTheComposerAndForegroundRecoveryLoadsOtherDeviceChanges()
     async throws
   {

@@ -80,6 +80,7 @@ public struct CachedChatHistory: Sendable {
 }
 
 public enum ChatCacheError: Error {
+  case unavailable
   case missingThreadList
   case missingHistory
   case invalidCursor
@@ -325,13 +326,29 @@ public actor ChatCache {
     let directory = fileURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true,
-      attributes: [.protectionKey: FileProtectionType.complete])
+      attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    let protection: [FileAttributeKey: Any] = [
+      .protectionKey: FileProtectionType.completeUntilFirstUserAuthentication
+    ]
+    try FileManager.default.setAttributes(protection, ofItemAtPath: directory.path)
+    for suffix in ["", "-wal", "-shm"] {
+      let path = fileURL.path + suffix
+      if FileManager.default.fileExists(atPath: path) {
+        try FileManager.default.setAttributes(protection, ofItemAtPath: path)
+      }
+    }
     var values = URLResourceValues()
     values.isExcludedFromBackup = true
     var mutableDirectory = directory
     try mutableDirectory.setResourceValues(values)
     let opened = try CacheDatabase(url: fileURL)
     try opened.initialize(version: Self.version)
+    for suffix in ["", "-wal", "-shm"] {
+      let path = fileURL.path + suffix
+      if FileManager.default.fileExists(atPath: path) {
+        try FileManager.default.setAttributes(protection, ofItemAtPath: path)
+      }
+    }
     connection = opened
     return opened
   }

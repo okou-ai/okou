@@ -321,7 +321,7 @@ async fn guest_apply_telemetry_attributes_one_and_three_batches() {
 
         let observations = telemetry.pending_ops_with_outcome_snapshot();
         assert!(observations.iter().any(|(action, success, _, _)| {
-            action == "runner_storage_manifest_batch_encode" && *success
+            action == "runner_storage_manifest_batch_prepare" && *success
         }));
         assert!(observations.iter().any(|(action, success, outcome, _)| {
             action == "runner_storage_manifest_batch_count"
@@ -872,7 +872,7 @@ async fn split_delivery_rejects_cross_batch_ownership_conflicts_before_guest_wor
         assert!(sandbox.write_file_calls().is_empty());
         let observations = telemetry.pending_ops_with_outcome_snapshot();
         assert!(observations.iter().any(|(action, success, _, _)| {
-            action == "runner_storage_manifest_batch_encode" && !success
+            action == "runner_storage_manifest_batch_prepare" && !success
         }));
         assert!(
             observations

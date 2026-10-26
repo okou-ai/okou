@@ -293,6 +293,9 @@ export interface ApiTestMocks {
       readonly retrieve: AsyncMock;
     };
   };
+  readonly apns: {
+    readonly connect: Mock<typeof import("node:http2").connect>;
+  };
   readonly webpush: {
     readonly sendNotification: AsyncMock;
   };
@@ -596,6 +599,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     },
     slack,
     stripe,
+    apns: { connect: vi.fn<typeof import("node:http2").connect>() },
     webpush: {
       sendNotification: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
@@ -932,6 +936,19 @@ vi.mock("@clerk/backend/webhooks", () => {
   return {
     verifyWebhook: (...args: unknown[]): Promise<unknown> => {
       return apiTestMocks.clerk.verifyWebhook(...args);
+    },
+  };
+});
+
+vi.mock("node:http2", async (importActual) => {
+  const actual = await importActual<typeof import("node:http2")>();
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      connect: (...args: Parameters<typeof actual.connect>) => {
+        return apiTestMocks.apns.connect(...args);
+      },
     },
   };
 });
@@ -1567,6 +1584,7 @@ export function resetApiTestMocks(): void {
       metadata: {},
     });
   });
+  apiTestMocks.apns.connect.mockReset();
   apiTestMocks.webpush.sendNotification.mockReset();
   apiTestMocks.webpush.sendNotification.mockResolvedValue(undefined);
   // Re-install the Stripe client override so getStripeClient() returns

@@ -151,6 +151,113 @@ test("API job keeps auxiliary Worker steps non-blocking after Vercel deployment"
   assert.deepEqual(executionOwners, ["deploy-api"]);
 });
 
+test("production release keeps Worker deployment non-blocking and verifies its deployed revision", () => {
+  const production = jobs(read("release-please.yml"))["promote-api-production"];
+  const productionSteps = steps(production);
+  const byId = (id) => {
+    const matches = productionSteps.filter((step) =>
+      step.includes(`        id: ${id}\n`),
+    );
+    assert.equal(matches.length, 1, id);
+    return matches[0];
+  };
+  const worker = byId("api-worker-deploy");
+  const verify = byId("api-worker-verify");
+  assert.equal(field(production, "environment"), "production");
+  assert.match(
+    production,
+    /ref: \$\{\{ needs.release-please.outputs.release_target \}\}/,
+  );
+  assert.doesNotMatch(production, /^    continue-on-error: (?!false\s*$)/m);
+  assert.doesNotMatch(byId("deploy"), /^        continue-on-error: true/m);
+  for (const id of [
+    "api-worker-checks",
+    "api-worker-deploy",
+    "api-worker-verify",
+  ]) {
+    const step = byId(id);
+    assert.equal(field(step, "continue-on-error", 8), "true");
+    assert.ok(
+      productionSteps.indexOf(step) > productionSteps.indexOf(byId("deploy")),
+    );
+  }
+  assert.equal(
+    field(worker, "API_ENV_FILE", 10),
+    "${{ steps.api-production-env.outputs.file }}",
+  );
+  for (const name of [
+    "CERTIFICATE_ID",
+    "CERTIFICATE_CHAIN",
+    "WORKLOAD_IDENTITY_PROVIDER",
+  ]) {
+    const data = {
+      vars: {
+        [`CF_API_GCP_MTLS_${name}_PRODUCTION`]: `production-${name}`,
+        [`CF_API_GCP_MTLS_${name}_PREVIEW`]: `preview-${name}`,
+        [`CF_API_GCP_MTLS_${name}_STAGING`]: `staging-${name}`,
+      },
+    };
+    assert.equal(
+      render(field(worker, `GCP_MTLS_${name}`, 10), data),
+      `production-${name}`,
+    );
+  }
+
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "api-worker-release-"),
+  );
+  try {
+    const sha = "4".repeat(40);
+    const url = "https://okou-api-production.example.workers.dev";
+    // The external HTTP boundary returns a healthy Worker at the uploaded SHA.
+    fs.writeFileSync(
+      path.join(directory, "curl"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "\${!#}" >> "$REQUESTS_FILE"
+case "\${!#}" in
+  "$WORKER_URL/health") printf '%s\\n' '{"status":"ok"}' ;;
+  "$WORKER_URL/api/build-info") printf '{"commitSha":"%s"}\\n' "$FIXTURE_SHA" ;;
+  *) exit 1 ;;
+esac
+`,
+      { mode: 0o700 },
+    );
+    const data = {
+      steps: {
+        "api-worker-deploy": {
+          outputs: { "worker-url": url, "source-sha": sha },
+        },
+      },
+    };
+    const requests = path.join(directory, "requests");
+    const summary = path.join(directory, "summary");
+    const result = spawnSync("bash", ["-eu", "-c", field(verify, "run", 8)], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${directory}${path.delimiter}${process.env.PATH}`,
+        WORKER_URL: render(field(verify, "WORKER_URL", 10), data),
+        EXPECTED_SOURCE_SHA: render(
+          field(verify, "EXPECTED_SOURCE_SHA", 10),
+          data,
+        ),
+        FIXTURE_SHA: sha,
+        REQUESTS_FILE: requests,
+        GITHUB_STEP_SUMMARY: summary,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(fs.readFileSync(requests, "utf8").trim().split("\n"), [
+      `${url}/health`,
+      `${url}/api/build-info`,
+    ]);
+    assert.ok(fs.readFileSync(summary, "utf8").includes(sha));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("both Worker steps run only for same-repository PRs and main pushes", () => {
   for (const name of [contractName, workerName]) {
     const step = stepNamed(name);

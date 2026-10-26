@@ -9,7 +9,11 @@ public actor ChatSync {
   private let cache: ChatCache?
   private var histories: [String: CachedHistory] = [:]
   private var readingHistories = Set<String>()
-  private var historyWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+  private struct HistoryWaiter {
+    let id: UUID
+    let continuation: CheckedContinuation<Bool, Never>
+  }
+  private var historyWaiters: [String: [HistoryWaiter]] = [:]
 
   public init(client: APIClient, cache: ChatCache? = nil) {
     self.client = client
@@ -350,27 +354,58 @@ public actor ChatSync {
   }
 
   public func history(threadID: String) async throws -> ChatHistory {
+    try await readHistory(threadID: threadID, requirePersistence: false)
+  }
+
+  /// Notification prefetch uses authoritative history without UI or read-cursor writes.
+  public func prefetchHistory(threadID: String) async throws {
+    _ = try await readHistory(threadID: threadID, requirePersistence: true)
+  }
+
+  private func readHistory(threadID: String, requirePersistence: Bool) async throws -> ChatHistory {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.
     if !readingHistories.insert(threadID).inserted {
-      await withCheckedContinuation { historyWaiters[threadID, default: []].append($0) }
+      let id = UUID()
+      let acquired = await withTaskCancellationHandler {
+        await withCheckedContinuation { continuation in
+          if Task.isCancelled {
+            continuation.resume(returning: false)
+          } else {
+            historyWaiters[threadID, default: []].append(
+              HistoryWaiter(id: id, continuation: continuation))
+          }
+        }
+      } onCancel: {
+        Task { await self.cancelHistoryWaiter(threadID: threadID, id: id) }
+      }
+      guard acquired else { throw CancellationError() }
     }
     defer { finishHistoryRead(threadID: threadID) }
     try Task.checkCancellation()
-    return try await loadHistory(threadID: threadID)
+    return try await loadHistory(threadID: threadID, requirePersistence: requirePersistence)
+  }
+
+  private func cancelHistoryWaiter(threadID: String, id: UUID) {
+    guard var waiters = historyWaiters[threadID],
+      let index = waiters.firstIndex(where: { $0.id == id })
+    else { return }
+    let waiter = waiters.remove(at: index)
+    historyWaiters[threadID] = waiters.isEmpty ? nil : waiters
+    waiter.continuation.resume(returning: false)
   }
 
   private func finishHistoryRead(threadID: String) {
     if var waiters = historyWaiters[threadID], !waiters.isEmpty {
       let next = waiters.removeFirst()
       historyWaiters[threadID] = waiters.isEmpty ? nil : waiters
-      next.resume()
+      next.continuation.resume(returning: true)
     } else {
       readingHistories.remove(threadID)
     }
   }
 
-  private func loadHistory(threadID: String) async throws -> ChatHistory {
+  private func loadHistory(threadID: String, requirePersistence: Bool) async throws -> ChatHistory {
     let cached = await readCachedHistory(threadID: threadID)
     var history: CachedHistory
     if let cached {
@@ -382,12 +417,14 @@ public actor ChatSync {
     if await persistHistory(history, threadID: threadID) {
       history.newRows = []
       history.replaced = false
+    } else if requirePersistence {
+      throw ChatCacheError.unavailable
     }
     history.cursorFromServerSnapshot = false
     histories[threadID] = history
-    let detail: ThreadDetail = try await client.request("/api/chat-threads/\(threadID)")
+    let resolvedDetail: ThreadDetail = try await client.request("/api/chat-threads/\(threadID)")
     return try ChatEventProjection.history(
-      rows: history.rows.map(\.event), recovering: detail.cancellationRecoveryPending)
+      rows: history.rows.map(\.event), recovering: resolvedDetail.cancellationRecoveryPending)
   }
 
   private func loadSnapshot(threadID: String) async throws -> CachedHistory {

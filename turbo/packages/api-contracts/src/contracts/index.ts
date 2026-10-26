@@ -1472,3 +1472,4 @@ export {
   cronCleanupXResourceReadsContract,
   type CronCleanupXResourceReadsContract,
 } from "./cron-cleanup-x-resource-reads";
+export { iosPushRegistrationsContract } from "./ios-push-registrations";

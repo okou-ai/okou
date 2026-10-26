@@ -12,6 +12,9 @@
 // slugs in CF_API_{LOGS,TRACES}_DESTINATION; otherwise those exports are optional.
 // Account destination provisioning and credentials belong to their operator.
 // deploy reads the branch prepared by deploy-api; it never creates or migrates it.
+// deploy-production uses the existing production branch and requires ENV=production,
+// live Clerk keys and production Google certificate federation inputs. It publishes
+// only a workers.dev endpoint; canonical routes and scheduled jobs stay unchanged.
 // cleanup needs only JOB_REF, Cloudflare and GitHub credentials; PR refs only.
 // Credentials stay in memory/environment or private temporary files, never argv.
 // Only control-plane APIs are called: never the deployed Worker.
@@ -233,10 +236,10 @@ function command(label, args, env, cwd) {
   return Number.isFinite(startupTimeMs) ? startupTimeMs : undefined;
 }
 
-// deploy-api is the only owner of branch creation, restore, migration and seed.
+// The existing API release/preview lane owns branch creation and migrations.
 // Workers uses a direct connection to that exact existing branch, never a second
 // compute/branch or a hostname derived by rewriting Vercel's pooled URL.
-async function sharedPreviewDatabase(neon, branchName) {
+async function sharedDatabase(neon, branchName) {
   const branches = (
     await neon(
       "GET",
@@ -244,17 +247,17 @@ async function sharedPreviewDatabase(neon, branchName) {
     )
   ).branches;
   if (!Array.isArray(branches) || branches.length >= 100)
-    throw new Error("Incomplete Neon preview inventory");
+    throw new Error("Incomplete Neon branch inventory");
   const matches = branches.filter((branch) => branch.name === branchName);
   if (matches.length !== 1 || !/^br-[a-z0-9-]+$/.test(matches[0].id))
-    throw new Error("Expected one existing shared API preview branch");
+    throw new Error("Expected one existing shared API database branch");
   const branch = (await neon("GET", `/branches/${matches[0].id}`)).branch;
   if (
     branch?.id !== matches[0].id ||
     branch.name !== branchName ||
     branch.current_state !== "ready"
   )
-    throw new Error("Shared API preview branch is not ready");
+    throw new Error("Shared API database branch is not ready");
   const connection = await neon(
     "GET",
     `/connection_uri?branch_id=${encodeURIComponent(branch.id)}&database_name=neondb&role_name=neondb_owner&pooled=false`,
@@ -274,16 +277,23 @@ async function sharedPreviewDatabase(neon, branchName) {
   )
     throw new Error("Expected a direct Neon database endpoint");
   database.searchParams.set("sslmode", "verify-full");
-  console.log(`Reuse prepared API preview branch ${branchName} (${branch.id})`);
+  console.log(
+    `Reuse prepared API database branch ${branchName} (${branch.id})`,
+  );
   return database;
 }
 
 async function main(mode) {
-  const ref = required("JOB_REF");
-  const names = identities(ref);
+  if (!["deploy", "deploy-production", "cleanup"].includes(mode))
+    throw new Error(
+      "Usage: api-worker-preview.cjs deploy|deploy-production|cleanup",
+    );
+  const production = mode === "deploy-production";
+  const ref = production ? "production" : required("JOB_REF");
+  const names = production
+    ? { worker: "okou-api-production", branch: "production" }
+    : identities(ref);
   const benchmark = startupBenchmark.enabled(process.env, ref, mode);
-  if (!["deploy", "cleanup"].includes(mode))
-    throw new Error("Usage: api-worker-preview.cjs deploy|cleanup");
   if (mode === "cleanup" && ref === "staging")
     throw new Error("Cleanup requires a PR reference");
   const account = required("CLOUDFLARE_ACCOUNT_ID");
@@ -400,8 +410,7 @@ async function main(mode) {
   if (!Array.isArray(hyperdrives))
     throw new Error("Invalid Hyperdrive inventory");
   const configs = hyperdrives.filter((config) => config.name === names.worker);
-  if (configs.length > 1)
-    throw new Error("Ambiguous Hyperdrive preview identity");
+  if (configs.length > 1) throw new Error("Ambiguous Hyperdrive identity");
   let hyperdrive = configs[0];
   if (hyperdrive && !/^[a-f0-9]{32}$/.test(hyperdrive.id))
     throw new Error("Invalid Hyperdrive ID");
@@ -428,15 +437,25 @@ async function main(mode) {
       route,
     );
   };
-  const database = await sharedPreviewDatabase(neon, names.branch);
+  const database = await sharedDatabase(neon, names.branch);
   fs.chmodSync(required("API_ENV_FILE"), 0o600);
   const runtime = parseEnvironment(
     fs.readFileSync(required("API_ENV_FILE"), "utf8"),
   );
   runtime.DATABASE_URL = database.toString();
-  if (runtime.ENV !== "preview")
-    throw new Error("Only preview runtime configuration is allowed");
+  if (runtime.ENV !== (production ? "production" : "preview"))
+    throw new Error(
+      `Expected ${production ? "production" : "preview"} runtime configuration`,
+    );
+  if (
+    production &&
+    (!runtime.CLERK_SECRET_KEY?.startsWith("sk_live_") ||
+      !runtime.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_"))
+  )
+    throw new Error("Production Worker requires live Clerk keys");
   const googleCertificates = googleCertificateBinding(runtime);
+  if (production && googleCertificates.length !== 1)
+    throw new Error("Production Worker requires Google certificate federation");
   const nativeTelemetry = process.env.CF_API_NATIVE_TELEMETRY === "true";
   if (nativeTelemetry && !ref.startsWith("pr-"))
     throw new Error("Native telemetry validation requires a PR preview");
@@ -460,9 +479,9 @@ async function main(mode) {
   }
   const subdomain = (await cf("GET", "/workers/subdomain"))?.subdomain;
   if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(subdomain))
-    throw new Error("Invalid Workers preview subdomain");
+    throw new Error("Invalid Workers subdomain");
   if (!/^[a-f0-9]{40}$/.test(runtime.GIT_COMMIT_SHA))
-    throw new Error("Invalid Worker preview source revision");
+    throw new Error("Invalid Worker source revision");
   const root = process.cwd();
   command(
     "Build API Worker",
@@ -549,7 +568,7 @@ async function main(mode) {
       mode: 0o600,
     });
     const startupTimeMs = command(
-      "Deploy API Worker preview",
+      `Deploy API Worker ${production ? "production" : "preview"}`,
       [
         "--dir",
         "turbo/apps/app-worker",
@@ -573,7 +592,7 @@ async function main(mode) {
       `Deployed ${names.worker}; no Worker HTTP/health/E2E requests were made`,
     );
     const url = `https://${names.worker}.${subdomain}.workers.dev`;
-    console.log(`API Worker preview: ${url}`);
+    console.log(`API Worker ${production ? "production" : "preview"}: ${url}`);
     console.log(`API Worker source revision: ${runtime.GIT_COMMIT_SHA}`);
     if (process.env.GITHUB_OUTPUT)
       fs.appendFileSync(
@@ -583,7 +602,7 @@ async function main(mode) {
     if (process.env.GITHUB_STEP_SUMMARY)
       fs.appendFileSync(
         process.env.GITHUB_STEP_SUMMARY,
-        `API Worker preview: ${url}\n\nSource: \`${runtime.GIT_COMMIT_SHA}\`\n\nNative Axiom export: ${nativeTelemetry}\n`,
+        `API Worker ${production ? "production" : "preview"}: ${url}\n\nSource: \`${runtime.GIT_COMMIT_SHA}\`\n\nNative Axiom export: ${nativeTelemetry}\n`,
       );
   } finally {
     fs.rmSync(generatedPath, { force: true });
@@ -597,7 +616,7 @@ module.exports = {
   packSecrets,
   request,
   command,
-  sharedPreviewDatabase,
+  sharedDatabase,
   main,
 };
 if (require.main === module) {
@@ -608,7 +627,7 @@ if (require.main === module) {
       console.error(
         error instanceof Error
           ? error.message
-          : "Worker preview operation failed; details withheld to protect credentials",
+          : "Worker operation failed; details withheld to protect credentials",
       );
       process.exitCode = 1;
     })

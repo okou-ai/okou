@@ -859,8 +859,10 @@ jobs:
 
   publish-desktop-update-manifest:
     # Skipped Runner ancestors must not suppress an otherwise ready Desktop feed.
-    # R2 is authoritative; retain the GitHub mirror for outgoing API readers.
     needs: [release-please, promote-desktop-release, promote-api-production]
+    permissions:
+      actions: read
+      contents: read
     if: >-
       always() && !cancelled() &&
       needs.release-please.outputs.desktop_release_created == 'true' &&
@@ -1425,6 +1427,89 @@ jobs:
                 text:
                   type: mrkdwn
                   text: "*API* ❌ Deploy failed\n📦 Version: `${{ needs.release-please.outputs.api_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/api-v${{ needs.release-please.outputs.api_version }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+
+      # Publish the same release to an auxiliary production Worker only after
+      # the canonical API is live. Worker failures must not block the release.
+      - name: Check API Worker production deployment contracts
+        id: api-worker-checks
+        continue-on-error: true
+        if: success() && steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
+          pnpm --dir turbo/apps/api test:worker-build
+
+      - name: Build and deploy API Worker production
+        id: api-worker-deploy
+        continue-on-error: true
+        if: steps.api-worker-checks.outcome == 'success'
+        env:
+          API_ENV_FILE: ${{ steps.api-production-env.outputs.file }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          # Production must never inherit a preview or staging Google identity.
+          GCP_MTLS_CERTIFICATE_ID: ${{ vars.CF_API_GCP_MTLS_CERTIFICATE_ID_PRODUCTION }}
+          GCP_MTLS_CERTIFICATE_CHAIN: ${{ vars.CF_API_GCP_MTLS_CERTIFICATE_CHAIN_PRODUCTION }}
+          GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.CF_API_GCP_MTLS_WORKLOAD_IDENTITY_PROVIDER_PRODUCTION }}
+          CF_API_LOGS_DESTINATION: ${{ vars.CF_API_LOGS_DESTINATION_PRODUCTION }}
+          CF_API_TRACES_DESTINATION: ${{ vars.CF_API_TRACES_DESTINATION_PRODUCTION }}
+          CF_API_NATIVE_TELEMETRY: "false"
+        run: node .github/scripts/api-worker-preview.cjs deploy-production
+
+      - name: Verify API Worker production release
+        id: api-worker-verify
+        continue-on-error: true
+        if: steps.api-worker-deploy.outcome == 'success'
+        shell: bash
+        env:
+          WORKER_URL: ${{ steps.api-worker-deploy.outputs.worker-url }}
+          EXPECTED_SOURCE_SHA: ${{ steps.api-worker-deploy.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 \
+            --retry 3 --retry-delay 2 --retry-max-time 90 \
+            "$WORKER_URL/health" | jq -e '.status == "ok"' > /dev/null
+          curl --fail --silent --show-error --max-time 20 \
+            --retry 3 --retry-delay 2 --retry-max-time 90 \
+            "$WORKER_URL/api/build-info" | jq -e --arg sha "$EXPECTED_SOURCE_SHA" \
+            '.commitSha == $sha' > /dev/null
+          echo "Verified API Worker production at $WORKER_URL ($EXPECTED_SOURCE_SHA)"
+          echo "API Worker production health and release SHA verified: $EXPECTED_SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report API Worker production failure
+        if: >-
+          always() && (
+            steps.api-worker-checks.outcome == 'failure' ||
+            steps.api-worker-deploy.outcome == 'failure' ||
+            steps.api-worker-verify.outcome == 'failure'
+          )
+        shell: bash
+        env:
+          WORKER_CHECKS_OUTCOME: ${{ steps.api-worker-checks.outcome }}
+          WORKER_DEPLOY_OUTCOME: ${{ steps.api-worker-deploy.outcome }}
+          WORKER_VERIFY_OUTCOME: ${{ steps.api-worker-verify.outcome }}
+        run: |
+          set -euo pipefail
+          echo "::warning::API Worker production failed (checks=$WORKER_CHECKS_OUTCOME, deploy=$WORKER_DEPLOY_OUTCOME, verify=$WORKER_VERIFY_OUTCOME). The canonical Vercel API release remains required."
+          {
+            echo "### API Worker production failed (non-blocking)"
+            echo "Checks: $WORKER_CHECKS_OUTCOME; deployment: $WORKER_DEPLOY_OUTCOME; verification: $WORKER_VERIFY_OUTCOME."
+            echo "See the Worker steps above. Production traffic remains on the canonical API."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary API production environment
+        if: always()
+        shell: bash
+        env:
+          API_ENV_FILE: ${{ steps.api-production-env.outputs.file }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$API_ENV_FILE" ]]; then
+            rm -f -- "$API_ENV_FILE"
+          fi
 
   deploy-api-schema:
     needs: [release-please, promote-api-production]

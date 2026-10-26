@@ -168,12 +168,28 @@ final class ChatSyncTests: XCTestCase {
       client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let firstRead = Task { try await service.history(threadID: syncThreadID) }
     await fulfillment(of: [firstTailStarted], timeout: 2)
+    let prefetchStarted = expectation(description: "Notification prefetch started")
+    let prefetchCancelled = expectation(
+      description: "Prefetch cancels before the foreground response")
+    let prefetch = Task {
+      prefetchStarted.fulfill()
+      do {
+        try await service.prefetchHistory(threadID: syncThreadID)
+        XCTFail("Cancelled prefetch must not complete a history read")
+      } catch is CancellationError {
+      } catch { XCTFail("Unexpected prefetch failure: \(error)") }
+      prefetchCancelled.fulfill()
+    }
+    await fulfillment(of: [prefetchStarted], timeout: 2)
+    prefetch.cancel()
+    await fulfillment(of: [prefetchCancelled], timeout: 2)
     let secondRead = Task {
       secondReadStarted.fulfill()
       return try await service.history(threadID: syncThreadID)
     }
     await fulfillment(of: [secondReadStarted], timeout: 2)
     releaseFirstTail.open()
+    await prefetch.value
     let first = try await firstRead.value
     let second = try await secondRead.value
 

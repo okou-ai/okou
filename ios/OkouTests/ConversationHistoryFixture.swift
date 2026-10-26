@@ -14,14 +14,22 @@ final class ConversationHistoryFixture: Sendable {
   let requests = HistoryRequests()
   private let rows: HistoryRows
 
-  convenience init(count: Int = 100) {
-    self.init(rows: (0..<count).map { Self.row($0 + 1) })
+  convenience init(
+    count: Int = 100, snapshot: ChatHTTPFixture.Handler? = nil,
+    beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
+    additional: ChatHTTPFixture.Handler? = nil
+  ) {
+    self.init(
+      rows: (0..<count).map { Self.row($0 + 1) }, snapshot: snapshot,
+      beforeEventRows: beforeEventRows, additional: additional)
   }
 
   init(
     rows initial: [String], fileOrigin: URL? = nil,
     usage: ChatHTTPFixture.Handler? = nil, artifactResources: ChatHTTPFixture.Handler? = nil,
-    snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil
+    snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil,
+    beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
+    additional: ChatHTTPFixture.Handler? = nil
   ) {
     let rows = HistoryRows(initial)
     self.rows = rows
@@ -70,6 +78,7 @@ final class ConversationHistoryFixture: Sendable {
           body:
             "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case path + "/event-rows":
+        try await beforeEventRows?(request)
         let after =
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
@@ -95,7 +104,9 @@ final class ConversationHistoryFixture: Sendable {
         if let send { return try await send(request) }
         return ChatHTTPResponse(
           status: 503, body: "{\"error\":{\"message\":\"Delivery unavailable\"}}")
-      default: throw URLError(.unsupportedURL)
+      default:
+        if let additional { return try await additional(request) }
+        throw URLError(.unsupportedURL)
       }
     }
   }
@@ -112,9 +123,10 @@ final class ConversationHistoryFixture: Sendable {
 
   @MainActor
   func conversation(
-    cache: ChatCache? = nil, isVisible: @escaping @MainActor () -> Bool = { true }
+    cache: ChatCache? = nil, sharedSync: ChatSync? = nil,
+    isVisible: @escaping @MainActor () -> Bool = { true }
   ) -> ConversationStore {
-    let sync = ChatSync(client: http.client, cache: cache)
+    let sync = sharedSync ?? ChatSync(client: http.client, cache: cache)
     return ConversationStore(
       thread: ChatThread(
         id: Self.threadID, agentID: Self.agentID, title: "History", createdAt: .now,

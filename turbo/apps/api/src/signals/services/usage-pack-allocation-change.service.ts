@@ -1421,6 +1421,10 @@ function allocationChangePreviewSource(
   };
 }
 
+const usagePackPreviewRetirementFailure = z.object({
+  code: z.literal("22012"),
+});
+
 const persistUsagePackChangePreview$ = command(
   async (
     { set },
@@ -1510,43 +1514,53 @@ const persistUsagePackChangePreview$ = command(
         )
         .returning({ id: usagePackAllocationChanges.id }),
     );
-    const completeRetirement = eq(
+    const allRetired = eq(
       db.select({ count: count() }).from(retired),
       db.select({ count: count() }).from(expiring),
     );
-    const values = allocationChangePreviewValues(
-      context,
-      source,
-      args,
-      preview,
+    const previewSource = allocationChangePreviewSource(
+      allocationChangePreviewValues(context, source, args, preview),
     );
-    const [change] = await db
-      .with(expiring, retired)
-      .insert(usagePackAllocationChanges)
-      .select(
-        db
-          .select(allocationChangePreviewSource(values))
-          .from(usagePackAllocations)
-          .where(
-            and(
-              eq(usagePackAllocations.id, source.id),
-              eq(usagePackAllocations.status, "active"),
-              eq(usagePackAllocations.orgId, args.orgId),
-              eq(usagePackAllocations.userId, args.userId),
-              eq(
-                usagePackAllocations.usagePackSubscriptionId,
-                context.subscription.id,
+    const result = await settle(
+      db
+        .with(expiring, retired)
+        .insert(usagePackAllocationChanges)
+        .select(
+          db
+            .select(previewSource)
+            .from(usagePackAllocations)
+            .where(
+              and(
+                eq(usagePackAllocations.id, source.id),
+                eq(usagePackAllocations.status, "active"),
+                eq(usagePackAllocations.orgId, args.orgId),
+                eq(usagePackAllocations.userId, args.userId),
+                eq(
+                  usagePackAllocations.usagePackSubscriptionId,
+                  context.subscription.id,
+                ),
+                eq(usagePackAllocations.usagePackUsd, source.usagePackUsd),
+                eq(usagePackAllocations.stripePriceId, source.stripePriceId),
+                eq(sql`1 / CASE WHEN ${allRetired} THEN 1 ELSE 0 END`, 1),
               ),
-              eq(usagePackAllocations.usagePackUsd, source.usagePackUsd),
-              eq(usagePackAllocations.stripePriceId, source.stripePriceId),
-              eq(sql`1 / CASE WHEN ${completeRetirement} THEN 1 ELSE 0 END`, 1),
             ),
-          ),
-      )
-      .onConflictDoNothing()
-      .returning();
+        )
+        .onConflictDoNothing()
+        .returning(),
+    );
     signal.throwIfAborted();
-    return change;
+    if (result.ok) {
+      return result.value[0];
+    }
+    // This statement emits 22012 only when competing retirement wins. Its
+    // rollback preserves atomicity; the caller exposes the usual conflict.
+    if (
+      result.error instanceof DrizzleQueryError &&
+      usagePackPreviewRetirementFailure.safeParse(result.error.cause).success
+    ) {
+      return undefined;
+    }
+    throw result.error;
   },
 );
 

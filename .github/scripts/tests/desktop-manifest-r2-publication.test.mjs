@@ -88,7 +88,7 @@ async function fixture(t, options) {
   };
 }
 
-test("publication preserves R2 history and exports verified bytes for the compatibility mirror", async (t) => {
+test("publication preserves R2 history and exports verified publication bytes", async (t) => {
   const s3 = await fixture(t);
   await s3.publish();
   const published = s3.objects.get(currentKey);

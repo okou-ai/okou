@@ -19,6 +19,11 @@ const actionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("inspect"),
     instanceId: z.uuid().optional(),
   }),
+  z.strictObject({
+    kind: z.literal("authorize"),
+    ...windowIdentity,
+    providerSessionId: z.uuid(),
+  }),
   z.strictObject({ kind: z.literal("allocate") }),
   z.strictObject({
     kind: z.literal("publish"),

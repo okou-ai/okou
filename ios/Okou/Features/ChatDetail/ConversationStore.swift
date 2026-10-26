@@ -205,10 +205,13 @@ final class ConversationStore {
         didSettle()
       }
       guard !Task.isCancelled, refreshGeneration == generation else { return }
-      if history == nil, let cached = await sync.cachedHistory(threadID: thread.id) {
+      if let cached = await sync.cachedHistory(threadID: thread.id),
+        history == nil || history?.persistedEventIDs != cached.persistedEventIDs
+      {
         await messageMarkdown.prepareLatest(cached.messages)
-        guard !closed, !Task.isCancelled else { return }
+        guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
         history = cached
+        pending.removeAll { cached.persistedEventIDs.contains($0.id) }
         rebuildMessages()
       }
       repeat {
