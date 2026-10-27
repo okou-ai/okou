@@ -24,7 +24,7 @@ httpmock = { workspace = true, features = ["cookies"] }
 proptest = { workspace = true, features = ["std"] }
 raw-http-test-support = { workspace = true, features = ["test-support"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "test-util"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
 tracing-test-support = { workspace = true }
 
