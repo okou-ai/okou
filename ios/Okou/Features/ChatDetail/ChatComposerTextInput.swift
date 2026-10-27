@@ -24,8 +24,9 @@ struct ChatComposerTextInput: UIViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-  func makeUIView(context: Context) -> ComposerTextView {
-    let view = ComposerTextView()
+  func makeUIView(context: Context) -> ComposerInputContainer {
+    let container = ComposerInputContainer()
+    let view = container.textView
     view.font = ComposerAttributedDocument.scaledFont(for: view.traitCollection)
     view.adjustsFontForContentSizeCategory = true
     view.backgroundColor = .clear
@@ -35,12 +36,13 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.pasteDelegate = context.coordinator
     view.accessibilityIdentifier = "message-input"
     view.accessibilityLabel = "Message Okou"
-    view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    updateUIView(view, context: context)
-    return view
+    container.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    updateUIView(container, context: context)
+    return container
   }
 
-  func updateUIView(_ view: ComposerTextView, context: Context) {
+  func updateUIView(_ container: ComposerInputContainer, context: Context) {
+    let view = container.textView
     context.coordinator.input = self
     view.mentionEditor = editor
     view.workflowSuggestions = editor?.workflows
@@ -103,20 +105,24 @@ struct ChatComposerTextInput: UIViewRepresentable {
         ]
         : [ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier])
     view.placeholder.isHidden = !view.text.isEmpty
+    container.expandsOnTap = isEnabled && !isFocused && !expanded
     view.setFocused(isFocused)
   }
 
-  func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context)
+  func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerInputContainer, context: Context)
     -> CGSize?
   {
     guard let width = proposal.width else { return nil }
-    let line = uiView.font?.lineHeight ?? 20
-    let height = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+    let line = uiView.textView.font?.lineHeight ?? 20
+    let height = uiView.textView.sizeThatFits(
+      CGSize(width: width, height: .greatestFiniteMagnitude)
+    ).height
     return CGSize(
       width: width, height: isFocused || expanded ? min(max(height, line * 2), line * 6) : line)
   }
 
-  static func dismantleUIView(_ view: ComposerTextView, coordinator: Coordinator) {
+  static func dismantleUIView(_ container: ComposerInputContainer, coordinator: Coordinator) {
+    let view = container.textView
     coordinator.input.editor?.unregister(view)
     view.delegate = nil
     view.pasteDelegate = nil
