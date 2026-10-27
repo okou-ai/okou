@@ -1555,6 +1555,10 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
+      "customDirection": "自分で方向を指定",
+      "customDirectionDescription": "背景を引き継いで追加の質問や要望を入力",
+      "customPrepared": "入力欄に追加しました",
+      "customPreparedDescription": "上で要望を入力し、送信すると新しいチャットが始まります",
       "dismiss": "非表示にする",
       "label": "提案",
       "next": "次の提案",

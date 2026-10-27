@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { isDeepStrictEqual } from "node:util";
 import { array, union } from "zod";
 import { command } from "ccstate";
@@ -48,7 +53,11 @@ function contains(id: string, active: boolean) {
   return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([identity]))}::jsonb`;
 }
 function containsOption(id: string, optionId: string) {
-  return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([{ id, options: [{ id: optionId }] }]))}::jsonb`;
+  const option =
+    optionId === "custom"
+      ? { id, customOption: { id: optionId } }
+      : { id, options: [{ id: optionId }] };
+  return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([option]))}::jsonb`;
 }
 /** Compact terminal business receipts without changing the active suggestions. */
 function compactEntries() {
@@ -285,7 +294,8 @@ export const createSuggestion$ = command(
       existing.title === input.title &&
       existing.rationale === input.rationale &&
       existing.priority === input.priority &&
-      isDeepStrictEqual(existing.options, input.options)
+      isDeepStrictEqual(existing.options, input.options) &&
+      isDeepStrictEqual(existing.customOption, input.customOption)
     ) {
       return { status: 200 as const, body: existing };
     }
@@ -377,6 +387,11 @@ export const consumeSuggestion$ = command(
     optionId: string | null,
     signal: AbortSignal,
   ) => {
+    if (optionId === "custom") {
+      return conflict(
+        "Send your question or direction to choose the custom option.",
+      );
+    }
     const item = await set(
       changeSuggestion$,
       owner,
@@ -387,5 +402,123 @@ export const consumeSuggestion$ = command(
     return item
       ? { status: 200 as const, body: item }
       : conflict("Suggestion or selected option is no longer available.");
+  },
+);
+
+const acceptedSuggestionMessage$ = command(
+  async (
+    { set },
+    owner: Owner,
+    threadId: string,
+    eventId: string,
+    signal: AbortSignal,
+  ) => {
+    const [event] = await set(writeDb$)
+      .select({ document: canonicalChatEventUserMessage() })
+      .from(chatEvents)
+      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+      .where(
+        and(
+          eq(chatEvents.id, eventId),
+          eq(chatEvents.chatThreadId, threadId),
+          eq(chatThreads.userId, owner.userId),
+          chatThreadOrganizationPredicate(owner.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return event?.document ?? null;
+  },
+);
+
+export const validateSuggestionFollowup$ = command(
+  async (
+    { set },
+    owner: Owner,
+    input: {
+      readonly threadId: string;
+      readonly eventId: string;
+      readonly document: UserMessageDocument;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { threadId, eventId, document } = input;
+    // An accepted replay must repair its receipt even if curation has since changed.
+    if (
+      await set(acceptedSuggestionMessage$, owner, threadId, eventId, signal)
+    ) {
+      return null;
+    }
+    const entries = await set(storedEntries$, owner, signal);
+    for (const { context, part } of suggestionFeedbacks(document)) {
+      const item = entries.find((entry): entry is Suggestion => {
+        return entry.id === context.suggestionId && entry.status === "active";
+      });
+      // A saved quote is self-contained and can outlive its disposable card.
+      // Retired or absent cards grant no new authority and keep their receipt.
+      if (!item) {
+        continue;
+      }
+      const submittedFiles = new Set(
+        document.parts
+          .filter((entry) => {
+            return entry.type === "file";
+          })
+          .map((entry) => {
+            return entry.fileId;
+          }),
+      );
+      const savedQuote = item?.customOption.draft.draftUserMessage?.parts.find(
+        (entry) => {
+          return entry.type === "feedback";
+        },
+      );
+      if (
+        savedQuote?.type !== "feedback" ||
+        savedQuote.quote !== part.quote ||
+        (item.customOption.draft.draftAttachments ?? []).some((file) => {
+          return !submittedFiles.has(file.id);
+        }) ||
+        createHash("sha256")
+          .update(JSON.stringify(item.customOption.draft))
+          .digest("hex") !== context.contextVersion
+      ) {
+        return conflict(
+          "This suggestion background has changed. Select its custom direction again to refresh the context, or remove the quote to continue with your own message. Your draft has been kept.",
+        );
+      }
+    }
+    return null;
+  },
+);
+
+/** Recoverable on an explicit replay of the accepted input; never consumes on prepare. */
+export const recordAcceptedSuggestionFollowup$ = command(
+  async (
+    { set },
+    owner: Owner,
+    threadId: string,
+    eventId: string,
+    signal: AbortSignal,
+  ) => {
+    const document = await set(
+      acceptedSuggestionMessage$,
+      owner,
+      threadId,
+      eventId,
+      signal,
+    );
+    if (!document) {
+      throw new Error("Accepted suggestion input is unavailable");
+    }
+    for (const { context } of suggestionFeedbacks(document)) {
+      await set(
+        changeSuggestion$,
+        owner,
+        context.suggestionId,
+        { status: "consumed", selectedOptionId: "custom" },
+        signal,
+      );
+    }
   },
 );

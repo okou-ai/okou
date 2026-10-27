@@ -1580,6 +1580,10 @@
       "viewAgentProfile": "Ver perfil do agente"
     },
     "agentSuggestions": {
+      "customDirection": "Escolher sua própria direção",
+      "customDirectionDescription": "Usar o contexto completo para perguntar ou acrescentar seus requisitos",
+      "customPrepared": "Adicionado à mensagem",
+      "customPreparedDescription": "Acrescente seus requisitos acima e envie para iniciar uma nova conversa",
       "dismiss": "Dispensar",
       "label": "Sugestões",
       "next": "Próxima sugestão",

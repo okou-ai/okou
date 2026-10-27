@@ -12,6 +12,24 @@ const content = {
   title: "Review the launch",
   rationale: "A decision is pending",
   priority: 20,
+  customOption: {
+    id: "custom",
+    threadId: null,
+    draft: {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "feedback",
+            quote:
+              "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
+            note: [],
+          },
+        ],
+      },
+      draftAttachments: null,
+    },
+  },
   options: [
     {
       id: "default",
@@ -124,6 +142,8 @@ it("converts convenient text input into the same saved composer format", async (
     content.title,
     "--text",
     "Review the launch plan.",
+    "--background",
+    "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
     "--json",
   );
   expect(log).toHaveBeenCalledWith(JSON.stringify({ ...item, priority: 0 }));
@@ -247,6 +267,8 @@ it("prints structured capacity errors with the API's next-action guidance", asyn
       content.title,
       "--text",
       "Review the launch plan.",
+      "--background",
+      "Complete neutral launch background",
       "--json",
     ),
   ).rejects.toThrow("process.exit called");
@@ -297,10 +319,32 @@ it("rejects text publication without a stable UUID before making a request", asy
       content.title,
       "--text",
       "Review the launch plan.",
+      "--background",
+      "Complete neutral launch background",
       "--json",
     ),
   ).rejects.toThrow("process.exit called");
   expect(error).toHaveBeenCalledWith(
     expect.stringContaining('"code":"INVALID_INPUT"'),
+  );
+});
+
+it("requires an explicit neutral background for convenient text input", async () => {
+  await expect(
+    run(
+      "create",
+      "--id",
+      id,
+      "--title",
+      content.title,
+      "--text",
+      "Draft the reply",
+      "--json",
+    ),
+  ).rejects.toThrow("process.exit called");
+  expect(error).toHaveBeenCalledWith(
+    expect.stringContaining(
+      "Provide --background with the complete neutral context",
+    ),
   );
 });

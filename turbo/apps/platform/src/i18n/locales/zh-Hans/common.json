@@ -1555,6 +1555,10 @@
       "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
+      "customDirection": "自己指定方向",
+      "customDirectionDescription": "带上完整背景，继续追问或补充你的要求",
+      "customPrepared": "已加入输入框",
+      "customPreparedDescription": "在上方补充要求，发送后开启新对话",
       "dismiss": "忽略",
       "label": "建议",
       "next": "下一条建议",
