@@ -18,7 +18,7 @@ import {
   browserUseWindowExists,
   closeBrowserUseWindowCandidate,
   createBrowserUseWindow,
-  getBrowserUseSession,
+  findBrowserUseSession,
   type BrowserUseWindowCandidate,
 } from "./browser-use.service";
 
@@ -156,16 +156,12 @@ export function createRunnerBrowserAdmission(
       };
       const result = await settleIncludingAbort(
         (async () => {
-          const provider = await getBrowserUseSession(
+          const provider = await findBrowserUseSession(
             context.providerSessionId,
             signal,
           );
           signal.throwIfAborted();
-          if (
-            provider.id !== context.providerSessionId ||
-            provider.status !== "active" ||
-            !provider.cdpUrl
-          ) {
+          if (!provider || provider.status !== "active" || !provider.cdpUrl) {
             return unavailable;
           }
           const cdpUrl = provider.cdpUrl;

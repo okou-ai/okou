@@ -3557,6 +3557,30 @@ export async function createBrowserUseSession(
   return parseBrowserUseSession(body);
 }
 
+export async function findBrowserUseSession(
+  providerSessionId: string,
+  signal: AbortSignal,
+): Promise<BrowserUseSession | null> {
+  const result = await browserUseResponse(
+    `/browsers/${encodeURIComponent(providerSessionId)}`,
+    { method: "GET" },
+    signal,
+    [404],
+  );
+  if (result.response.status === 404) {
+    return null;
+  }
+  const session = parseBrowserUseSession(result.body);
+  if (session.id !== providerSessionId) {
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_INVALID_RESPONSE",
+      "Managed browser provider returned a different session",
+    );
+  }
+  return session;
+}
+
 export async function getBrowserUseSession(
   providerSessionId: string,
   signal: AbortSignal,

@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createRunnerBrowserFixtures,
   MINUTE,
+  PROVIDER_URL,
   START,
 } from "./helpers/runner-browser-fixture";
 
@@ -15,6 +18,67 @@ const context = testContext();
 const { fixture, allocate, accepted } = createRunnerBrowserFixtures(context);
 
 describe("native owner Browser window admission", () => {
+  it.each([
+    [false, "missing"],
+    [true, "missing"],
+    [false, "failed"],
+    [true, "failed"],
+    [false, "different"],
+    [true, "different"],
+  ] as const)(
+    "resolves provider session identity before native effects with existing window %s and provider %s",
+    async (hasWindow, failure) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        const chat = await f.start();
+        const instance = await allocate(chat);
+        if (hasWindow) {
+          accepted(
+            await chat.request({ kind: "admit", instanceId: instance.id }),
+          );
+        }
+        const current = accepted(await chat.request({ kind: "inspect" }));
+        server.use(
+          http.get(
+            `${PROVIDER_URL}/browsers/${instance.providerSessionId}`,
+            () => {
+              return failure === "different"
+                ? HttpResponse.json({
+                    id: randomUUID(),
+                    status: "active",
+                    startedAt: new Date(START).toISOString(),
+                    timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+                    finishedAt: null,
+                    liveUrl: "https://live.browser-use.com/wrong-session",
+                    cdpUrl: f.provider.native.url,
+                  })
+                : HttpResponse.json(
+                    { detail: "Private provider diagnostic" },
+                    { status: failure === "missing" ? 404 : 500 },
+                  );
+            },
+          ),
+        );
+        const result = await chat.control({
+          kind: "admit",
+          instanceId: instance.id,
+        });
+        if (failure === "missing") {
+          expect(result.status).toBe(200);
+          expect(result.body).toStrictEqual({ outcome: "unavailable" });
+        } else {
+          expect(result.status).toBe(502);
+          expect(JSON.stringify(result.body)).not.toMatch(/Private|wss:/u);
+        }
+        expect(accepted(await chat.request({ kind: "inspect" }))).toStrictEqual(
+          current,
+        );
+        expect(f.provider.native.created).toHaveLength(Number(hasWindow));
+        expect(f.provider.native.closed).toHaveLength(0);
+      });
+    },
+  );
+
   it("creates a native window and reuses its current binding without another candidate", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
