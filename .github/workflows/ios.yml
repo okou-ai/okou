@@ -9,6 +9,7 @@ run-name: Compiler cache ${{ inputs.phase }} ${{ inputs.variant }} ${{ inputs.la
           - seed
           - measure
           - inspect
+          - forward
         required: true
         default: seed
         description: Seed isolated cache snapshots or run a frozen full native comparison
@@ -125,7 +126,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   detect:
-    if: inputs.phase == 'measure'
+    if: inputs.phase == 'measure' || inputs.phase == 'forward'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -140,7 +141,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          ref:
+            ${{ inputs.phase == 'forward' && '3d5f0a292b722575e8fda7776e870905b517ca5e' || '430013c10ec6b5adc6ccea82f94539b7c9c1bd30'
+            }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
@@ -159,7 +162,7 @@ jobs:
           python3 ios/scripts/run-ci-tests.test.py
           python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
-    if: inputs.phase == 'measure'
+    if: inputs.phase == 'measure' || inputs.phase == 'forward'
   test-packages:
     needs: detect
     if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
@@ -171,7 +174,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          ref:
+            ${{ inputs.phase == 'forward' && '3d5f0a292b722575e8fda7776e870905b517ca5e' || '430013c10ec6b5adc6ccea82f94539b7c9c1bd30'
+            }}
           persist-credentials: false
       - name: Run isolated Swift package tests
         run: bash ios/scripts/ci-package-test.sh
@@ -196,7 +201,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          ref:
+            ${{ inputs.phase == 'forward' && '3d5f0a292b722575e8fda7776e870905b517ca5e' || '430013c10ec6b5adc6ccea82f94539b7c9c1bd30'
+            }}
           persist-credentials: false
       - name: Fetch locked package revisions
         id: sources
@@ -228,7 +235,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 32
-          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          ref:
+            ${{ inputs.phase == 'forward' && '3d5f0a292b722575e8fda7776e870905b517ca5e' || '430013c10ec6b5adc6ccea82f94539b7c9c1bd30'
+            }}
           persist-credentials: false
       - name: Configure archive workspace
         run: |
@@ -244,16 +253,19 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ steps.build-cache.outputs.compilation-path }}
-          key: experiment-ios-slim-20261027-${{ inputs.variant }}-${{ steps.build-cache.outputs.compilation-key }}
+          key: experiment-ios-slim-20261027-${{ inputs.variant }}-ios-compilation-v1-aec6a49679f515c8c94fd60e29460d17e0c33607398230d42b5798724a3ca1c0-9a4adac8c1302751ec3a315715d98f18253a742db8de8779f2ead004056b4124-ffdecea50b70593686829da7601d53ae25404fe0
           fail-on-cache-miss: true
       - name: Require frozen cache identities
         env:
           SOURCES_HIT: ${{ steps.build-cache.outputs.dependencies-hit }}
           COMPILER_HIT: ${{ steps.snapshot.outputs.cache-hit }}
+          EXPECTED_SOURCE:
+            ${{ inputs.phase == 'forward' && '3d5f0a292b722575e8fda7776e870905b517ca5e' || '430013c10ec6b5adc6ccea82f94539b7c9c1bd30'
+            }}
         run: |-
           set -euo pipefail
           [[ "$SOURCES_HIT" == true && "$COMPILER_HIT" == true ]]
-          [[ "$(git rev-parse HEAD)" == 430013c10ec6b5adc6ccea82f94539b7c9c1bd30 ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]
       - name: Receive locked source repositories
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -316,7 +328,7 @@ jobs:
       - script-checks
       - test-packages
       - build-test
-    if: always() && inputs.phase == 'measure'
+    if: always() && (inputs.phase == 'measure' || inputs.phase == 'forward')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -325,7 +337,9 @@ jobs:
           sparse-checkout: /ios/scripts/ci-gate.sh
           sparse-checkout-cone-mode: false
           persist-credentials: false
-          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          ref:
+            ${{ inputs.phase == 'forward' && '3d5f0a292b722575e8fda7776e870905b517ca5e' || '430013c10ec6b5adc6ccea82f94539b7c9c1bd30'
+            }}
       - name: Validate iOS check results
         env:
           EVENT_NAME: ${{ github.event_name }}
