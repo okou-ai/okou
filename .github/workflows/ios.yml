@@ -124,3 +124,216 @@ jobs:
           path: ${{ runner.temp }}/cache-snapshot.json
           if-no-files-found: error
           retention-days: 7
+  detect:
+    if: inputs.phase == 'measure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.changes.outputs.needed }}
+    steps:
+      - name: Select full native experiment
+        id: changes
+        run: echo "needed=true" >> "$GITHUB_OUTPUT"
+  script-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.23.4
+      - name: Verify CI change detection and promotion contracts
+        run: |
+          bash -n ios/scripts/*.sh
+          shellcheck ios/scripts/*.sh
+          bash ios/scripts/test-ci.sh
+          node --test ios/scripts/testflight.test.mjs
+          python3 ios/scripts/archive-proof.test.py
+          python3 ios/scripts/distribution-profile.test.py
+          python3 ios/scripts/archive-promotion.test.py
+          python3 ios/scripts/preboot-simulator.test.py
+          python3 ios/scripts/prepare-package-sources.test.py
+          python3 ios/scripts/run-ci-tests.test.py
+          python3 ios/scripts/sample-xcode-startup.test.py
+          python3 ios/scripts/build-cache.test.py
+    if: inputs.phase == 'measure'
+  test-packages:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          persist-credentials: false
+      - name: Run isolated Swift package tests
+        run: bash ios/scripts/ci-package-test.sh
+      - name: Capture package test inputs
+        if: github.event_name == 'merge_group'
+        run: |
+          python3 ios/scripts/archive-promotion.py toolchain "$RUNNER_TEMP/package-toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$RUNNER_TEMP/package-toolchain.json" --output "$RUNNER_TEMP/package-inputs.json"
+      - name: Transfer package test inputs
+        if: github.event_name == 'merge_group'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/package-inputs.json
+          if-no-files-found: error
+          retention-days: 7
+  prepare-package-sources:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          persist-credentials: false
+      - name: Fetch locked package revisions
+        id: sources
+        run: |
+          mkdir "$RUNNER_TEMP/package-inputs"
+          sources=$(python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/package-inputs")
+          echo "path=$sources" >> "$GITHUB_OUTPUT"
+      - name: Transfer locked source repositories
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-package-sources-${{ github.sha }}
+          overwrite: true
+          path: ${{ steps.sources.outputs.path }}
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+  build-test:
+    needs:
+      - detect
+      - prepare-package-sources
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_BUILD_CACHE_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 32
+          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          persist-credentials: false
+      - name: Configure archive workspace
+        run: |
+          echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+          echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
+      - name: Restore native build caches
+        id: build-cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          restore-compilation: "false"
+      - name: Restore isolated compiler snapshot
+        id: snapshot
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ steps.build-cache.outputs.compilation-path }}
+          key: experiment-ios-slim-20261027-${{ inputs.variant }}-${{ steps.build-cache.outputs.compilation-key }}
+          fail-on-cache-miss: true
+      - name: Require frozen cache identities
+        env:
+          SOURCES_HIT: ${{ steps.build-cache.outputs.dependencies-hit }}
+          COMPILER_HIT: ${{ steps.snapshot.outputs.cache-hit }}
+        run: |-
+          set -euo pipefail
+          [[ "$SOURCES_HIT" == true && "$COMPILER_HIT" == true ]]
+          [[ "$(git rev-parse HEAD)" == 430013c10ec6b5adc6ccea82f94539b7c9c1bd30 ]]
+      - name: Receive locked source repositories
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ios-package-sources-${{ github.sha }}
+          path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
+      - name: Configure locked package sources
+        run: |
+          mkdir -p "$RUNNER_TEMP/okou-ios-ci"
+          python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
+          # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
+          printf '\n' >> "$HOME/.gitconfig"
+          cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
+      - name: Capture promotion inputs
+        run: |
+          mkdir "$IOS_ARCHIVE_DIR"
+          cp "${{ steps.build-cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+      - name: Check Swift formatting and property lists
+        run: |
+          xcodebuild -version
+          xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push
+          plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Okou.xcodeproj/project.pbxproj
+      - name: Build app and run isolated simulator tests
+        run: bash ios/scripts/run-ci-tests.sh
+      - name: Upload failed test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-test-results-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Record measured cache provenance
+        env:
+          CACHE_PATH: ${{ steps.build-cache.outputs.compilation-path }}
+          VARIANT: ${{ inputs.variant }}
+          CACHE_KEY: ${{ steps.snapshot.outputs.cache-matched-key }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PROOF'
+          import json, os, pathlib, subprocess
+          root=pathlib.Path(os.environ['CACHE_PATH'])
+          files=sorted(((p.stat().st_size,str(p.relative_to(root))) for p in root.rglob('*') if p.is_file()),reverse=True)
+          proof={'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'variant':os.environ['VARIANT'],'cacheKey':os.environ['CACHE_KEY'],'cacheBytes':sum(x[0] for x in files),'fileCount':len(files),'largest':files[:20],'runId':os.environ['GITHUB_RUN_ID'],'destination':os.environ['IOS_TEST_DESTINATION'],'toolchain':json.loads(pathlib.Path(os.environ['RUNNER_TEMP'],'ios-cache-toolchain.json').read_text())}
+          pathlib.Path(os.environ['RUNNER_TEMP'],'cache-snapshot.json').write_text(json.dumps(proof,indent=2))
+          print(json.dumps(proof,indent=2))
+          PROOF
+      - name: Retain comparison provenance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: cache-measure-${{ inputs.label }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cache-snapshot.json
+            ${{ env.IOS_ARCHIVE_DIR }}/inputs.json
+          if-no-files-found: error
+          retention-days: 7
+  ci-gate-ios:
+    needs:
+      - detect
+      - script-checks
+      - test-packages
+      - build-test
+    if: always() && inputs.phase == 'measure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: /ios/scripts/ci-gate.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+      - name: Validate iOS check results
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DETECT_RESULT: ${{ needs.detect.result }}
+          SCRIPT_CHECKS_RESULT: ${{ needs.script-checks.result }}
+          IOS_NEEDED: ${{ needs.detect.outputs.needed }}
+          PACKAGES_RESULT: ${{ needs.test-packages.result }}
+          BUILD_RESULT: ${{ needs.build-test.result }}
+          ARCHIVE_RESULT: skipped
+          PUBLISH_RESULT: skipped
+        run: bash ios/scripts/ci-gate.sh
