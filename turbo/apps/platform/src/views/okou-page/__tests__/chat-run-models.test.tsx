@@ -7,6 +7,7 @@ import {
 import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
@@ -15,7 +16,11 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import { SharedDatabaseMessagePortServer } from "../../../shared-database/message-port-server.ts";
@@ -771,6 +776,57 @@ test.each([
     expect(queryButton(action, card)).toBeVisible();
     expect(queryButton("View details", card)).not.toBeInTheDocument();
     expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  { label: "structured", failureReason: "usage_limit" as const },
+  { label: "legacy", failureReason: undefined },
+])(
+  "Keep the error card's rows during delayed $label limit classification",
+  async ({ failureReason }) => {
+    const accountsReady = context.mocks.deferred<void>();
+    configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(
+        "You've hit your usage limit.",
+        "gpt-5.6-sol",
+        failureReason,
+      ),
+    });
+    context.mocks.api(
+      thirdPartySubscriptionsMainContract.list,
+      async ({ respond }) => {
+        await accountsReady.promise;
+        return respond(200, {
+          subscriptions: [
+            codexSubscriptionAccount({ accountEmail: "current@example.com" }),
+          ],
+        });
+      },
+    );
+
+    const page = await startPage({ context, path: RUN_PATH });
+    await page.content;
+    const pending = await screen.findByTestId("assistant-error-card-loading");
+    // Each direct child is a flex row below the card's 640px breakpoint.
+    // Inspect the real page's row structure: jsdom cannot measure CSS layout.
+    // The action row is reserved before classification, so the recovery
+    // controls that land with it cannot add a row afterward.
+    expect(pending.children).toHaveLength(2);
+
+    accountsReady.resolve();
+    await page.ready;
+    const settled = await recoveryCard();
+    expect(settled).toHaveTextContent("Codex limit reached");
+    expect(settled).toHaveTextContent(
+      "Personal subscription current@example.com",
+    );
+    expect(queryButton("Try again", settled)).toBeInTheDocument();
+    // Card-frame continuity is itself the transcript's geometry contract.
+    expect(settled).toBe(pending);
+    expect(settled.children).toHaveLength(2);
   },
 );
 
