@@ -932,9 +932,13 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = object({
-  // API-only logical identity for Stage 2; absence marks an older queued context.
+  // Reader preparation for #42362: current writers still emit only agentId.
+  // Recognize Stage 2 intent so the preparation API can leave it pending.
   customWorkflowSelection: object({
     agentId: uuid(),
+    invokedWorkflowId: uuid().nullable().optional(),
+    automationId: uuid().optional(),
+    protectedMountPaths: array(string()).optional(),
   })
     .strict()
     .optional(),
