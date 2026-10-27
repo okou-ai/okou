@@ -660,6 +660,7 @@ const AGENT_EVENT_CONTEXT: Readonly<
   ...EVENT_NOTES,
   "chat-run-finished": [
     "The finished run's full transcript and final output beyond the excerpt are not included. The run ID identifies its agent-session files in Okou search.",
+    "failureReason carries the public reason recorded for a failed run. A null or missing value means this notification does not supply a failure reason.",
   ],
   "google-forms-response-submitted": [
     "Response answers are not included. The response and form resources identified by formId and responseId contain the answers and question text.",
