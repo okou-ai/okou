@@ -248,6 +248,7 @@
     "src/signals/services/official-workflow-catalog-read.service.ts",
     "src/signals/services/official-workflow-context.signals.ts",
     "src/signals/services/official-workflow-run.service.ts",
+    "src/signals/services/permission-grant-apply-plan.ts",
     "src/signals/services/pi-resource-version-index.service.ts",
     "src/signals/services/run-admission.service.ts",
     "src/signals/services/storage-index.service.ts",

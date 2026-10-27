@@ -35,7 +35,7 @@ import type {
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { notFound } from "../../lib/error";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import {
@@ -65,6 +65,11 @@ import {
 } from "./connector-catalog-slug-source.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { visibleAgentIdentityCondition } from "./agent-data.service";
+import {
+  permissionGrantCondition,
+  resolveGrantExpiresAt,
+  resolvedExpiresAt,
+} from "./permission-grant-apply-plan";
 
 const userPermissionGrantSelection = Object.freeze({
   id: userPermissionGrants.id,
@@ -143,9 +148,6 @@ type ApplyUserPermissionGrantsResult =
   | NotFoundResponse
   | ValidationErrorResponse;
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-
 function validationError(message: string): ValidationErrorResponse {
   return {
     status: 400 as const,
@@ -183,60 +185,6 @@ export function activeUserPermissionGrantCondition(
   return or(
     isNull(userPermissionGrants.expiresAt),
     gt(userPermissionGrants.expiresAt, checkedAt),
-  );
-}
-
-function resolveGrantExpiresAt(
-  expiresIn: UserPermissionGrantExpiresIn | undefined,
-  timestamp: Date,
-): Date | null {
-  switch (expiresIn) {
-    case "1h": {
-      return new Date(timestamp.getTime() + HOUR_MS);
-    }
-    case "24h": {
-      return new Date(timestamp.getTime() + DAY_MS);
-    }
-    case "7d": {
-      return new Date(timestamp.getTime() + 7 * DAY_MS);
-    }
-    case "always":
-    case undefined: {
-      return null;
-    }
-  }
-}
-
-function preservedActiveGrantExpiresAt(
-  expiresAt: Date | null,
-  timestamp: Date,
-): Date | null {
-  if (!expiresAt) {
-    return null;
-  }
-  return expiresAt.getTime() > timestamp.getTime() ? expiresAt : null;
-}
-
-function resolvedExpiresAt({
-  action,
-  expiresIn,
-  existing,
-  timestamp,
-}: {
-  readonly action: UserPermissionGrantAction;
-  readonly expiresIn: UserPermissionGrantExpiresIn | undefined;
-  readonly existing: StoredPermissionGrantRow | undefined;
-  readonly timestamp: Date;
-}): Date | null {
-  if (action !== "allow") {
-    return null;
-  }
-  if (expiresIn !== undefined) {
-    return resolveGrantExpiresAt(expiresIn, timestamp);
-  }
-  return preservedActiveGrantExpiresAt(
-    existing?.action === "allow" ? existing.expiresAt : null,
-    timestamp,
   );
 }
 
@@ -473,123 +421,121 @@ async function validateApplyUserPermissionGrants(
   return null;
 }
 
-async function applyVisibleGrantRows(
-  db: Db,
-  args: ApplyUserPermissionGrantsArgs,
-): Promise<readonly StoredPermissionGrantRow[] | NotFoundResponse> {
-  return await applyVisibleAgentGrantRows(db, args, args.apply.agentId);
-}
-
-async function applyVisibleAgentGrantRows(
-  db: Db,
-  args: ApplyUserPermissionGrantsArgs,
-  agentId: string,
-): Promise<readonly UserPermissionGrantRow[] | NotFoundResponse> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0314; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const visibleAgentDb = tx;
-    const visibleAgentScope: UserPermissionGrantScope = {
-      orgId: args.orgId,
-      userId: args.userId,
-      role: args.role,
-      agentId,
-    };
-    const visibleAgent = await (async (): Promise<{
-      readonly id: string;
-    } | null> => {
-      const [agent] = await visibleAgentDb
-        .select({ id: agents.id })
-        .from(agents)
-        .where(visibleAgentIdentityCondition(visibleAgentScope))
-        .for("update")
-        .limit(1);
-      return agent ?? null;
-    })();
-    if (!visibleAgent) {
-      return notFound(`Agent not found: ${agentId}`);
-    }
-
-    const timestamp = nowDate();
-    const connectorScopeCondition = and(
-      eq(userPermissionGrants.orgId, args.orgId),
-      eq(userPermissionGrants.userId, args.userId),
-      eq(userPermissionGrants.agentId, agentId),
-      eq(userPermissionGrants.connectorSlug, args.apply.connectorSlug),
-    );
-
-    if (args.apply.mode === "replace") {
-      await tx.delete(userPermissionGrants).where(connectorScopeCondition);
-    }
-
-    if (args.apply.grants.length === 0) {
-      return [];
-    }
-
-    const existingRows =
-      args.apply.mode === "replace"
-        ? []
-        : await tx
-            .select(userPermissionGrantSelection)
-            .from(userPermissionGrants)
-            .where(connectorScopeCondition)
-            .for("update");
-    const existingRowsByPermission = new Map(
-      existingRows.map((row) => {
-        return [row.permission, row] as const;
-      }),
-    );
-    const rows: UserPermissionGrantRow[] = [];
-    for (const grant of args.apply.grants) {
-      const existing = existingRowsByPermission.get(grant.permission);
-      const expiresAt = resolvedExpiresAt({
-        action: grant.action,
-        expiresIn: grant.expiresIn,
-        existing,
-        timestamp,
-      });
-      const [row] = existing
-        ? await tx
-            .update(userPermissionGrants)
-            .set({
-              action: grant.action,
-              expiresAt,
-              updatedAt: timestamp,
-            })
-            .where(
-              and(
-                eq(userPermissionGrants.orgId, args.orgId),
-                eq(userPermissionGrants.userId, args.userId),
-                eq(userPermissionGrants.agentId, agentId),
-                eq(
-                  userPermissionGrants.connectorSlug,
-                  args.apply.connectorSlug,
-                ),
-                eq(userPermissionGrants.permission, grant.permission),
-              ),
-            )
-            .returning(userPermissionGrantSelection)
-        : await tx
-            .insert(userPermissionGrants)
-            .values({
-              orgId: args.orgId,
-              userId: args.userId,
-              agentId,
-              connectorSlug: args.apply.connectorSlug,
-              permission: grant.permission,
-              action: grant.action,
-              expiresAt,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            })
-            .returning(userPermissionGrantSelection);
-      if (!row) {
-        throw new Error("User permission grant apply did not return a row");
+// The entry observes cancellation after this finite transaction and its
+// committed-row refresh, preserving the existing apply-stage boundary.
+const applyVisibleGrantRows$ = command(
+  async function applyVisibleAgentGrantRows(
+    { set },
+    args: ApplyUserPermissionGrantsArgs,
+    _signal: AbortSignal,
+  ): Promise<readonly UserPermissionGrantRow[] | NotFoundResponse> {
+    const db = set(writeDb$);
+    const agentId = args.apply.agentId;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0314; new non-billing transactions are prohibited.
+    return await db.transaction(async (tx) => {
+      const visibleAgentDb = tx;
+      const visibleAgentScope: UserPermissionGrantScope = {
+        orgId: args.orgId,
+        userId: args.userId,
+        role: args.role,
+        agentId,
+      };
+      const visibleAgent = await (async (): Promise<{
+        readonly id: string;
+      } | null> => {
+        const [agent] = await visibleAgentDb
+          .select({ id: agents.id })
+          .from(agents)
+          .where(visibleAgentIdentityCondition(visibleAgentScope))
+          .for("update")
+          .limit(1);
+        return agent ?? null;
+      })();
+      if (!visibleAgent) {
+        return notFound(`Agent not found: ${agentId}`);
       }
-      rows.push(row);
-    }
-    return rows;
-  });
-}
+
+      const timestamp = nowDate();
+      const connectorScopeCondition = permissionGrantCondition({
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId,
+        connectorSlug: args.apply.connectorSlug,
+      });
+
+      if (args.apply.mode === "replace") {
+        await tx.delete(userPermissionGrants).where(connectorScopeCondition);
+      }
+
+      if (args.apply.grants.length === 0) {
+        return [];
+      }
+
+      const existingRows =
+        args.apply.mode === "replace"
+          ? []
+          : await tx
+              .select(userPermissionGrantSelection)
+              .from(userPermissionGrants)
+              .where(connectorScopeCondition)
+              .for("update");
+      const existingRowsByPermission = new Map(
+        existingRows.map((row) => {
+          return [row.permission, row] as const;
+        }),
+      );
+      const rows: UserPermissionGrantRow[] = [];
+      for (const grant of args.apply.grants) {
+        const existing = existingRowsByPermission.get(grant.permission);
+        const expiresAt = resolvedExpiresAt({
+          action: grant.action,
+          expiresIn: grant.expiresIn,
+          existing,
+          timestamp,
+        });
+        const [row] = existing
+          ? await tx
+              .update(userPermissionGrants)
+              .set({
+                action: grant.action,
+                expiresAt,
+                updatedAt: timestamp,
+              })
+              .where(
+                permissionGrantCondition(
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    agentId,
+                    connectorSlug: args.apply.connectorSlug,
+                  },
+                  grant.permission,
+                ),
+              )
+              .returning(userPermissionGrantSelection)
+          : await tx
+              .insert(userPermissionGrants)
+              .values({
+                orgId: args.orgId,
+                userId: args.userId,
+                agentId,
+                connectorSlug: args.apply.connectorSlug,
+                permission: grant.permission,
+                action: grant.action,
+                expiresAt,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              })
+              .returning(userPermissionGrantSelection);
+        if (!row) {
+          throw new Error("User permission grant apply did not return a row");
+        }
+        rows.push(row);
+      }
+      return rows;
+    });
+  },
+);
 
 function permissionGrantResponseScope(scope: UserPermissionGrantScope): {
   readonly agentId: string;
@@ -601,64 +547,6 @@ function applyPermissionGrantResponseScope(
   args: ApplyUserPermissionGrantsArgs,
 ): { readonly agentId: string } {
   return { agentId: args.apply.agentId };
-}
-
-async function applyRowsAndPublishNetworkPolicyRefreshes(
-  db: Db,
-  args: ApplyUserPermissionGrantsArgs,
-  serverFirewalls: ConnectorServerFirewallSelection,
-): Promise<readonly StoredPermissionGrantRow[] | NotFoundResponse> {
-  const commit = applyVisibleGrantRows(db, args);
-  return await (async () => {
-    const result = await commit;
-    const wakeup = ((
-      rows: typeof result,
-    ): ConnectorRuntimeWakeupBusinessArgs | undefined => {
-      if ("status" in rows || !serverFirewalls.has(args.apply.connectorSlug)) {
-        return undefined;
-      }
-      const responseScope = applyPermissionGrantResponseScope(args);
-      return {
-        scope: {
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: responseScope.agentId,
-        },
-        targets: [{ kind: "builtin", connectorSlug: args.apply.connectorSlug }],
-      };
-    })(result);
-    if (wakeup) {
-      await (async () => {
-        const result = await settle(
-          (async () => {
-            const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
-            if (targets.length === 0) {
-              return;
-            }
-            const rows = await db
-              .select(connectorRuntimeWakeupRunColumns())
-              .from(agentRuns)
-              .where(connectorRuntimeWakeupCondition(wakeup.scope));
-            await publishConnectorRuntimeWakeupRows({
-              scope: wakeup.scope,
-              targets,
-              rows,
-            });
-          })(),
-        );
-        if (!result.ok) {
-          reportConnectorRuntimeWakeupDiscoveryFailure({
-            orgId: wakeup.scope.orgId,
-            scopedToUser: wakeup.scope.userId !== undefined,
-            scopedToAgent: wakeup.scope.agentId !== undefined,
-            targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
-            error: result.error,
-          });
-        }
-      })();
-    }
-    return result;
-  })();
 }
 
 function permissionGrantCatalogSlugsFromRows(
@@ -778,11 +666,62 @@ export const applyUserPermissionGrants$ = command(
       return validation;
     }
 
-    const rows = await applyRowsAndPublishNetworkPolicyRefreshes(
-      writeDb,
-      args,
-      snapshot.serverFirewalls,
-    );
+    const commit = set(applyVisibleGrantRows$, args, signal);
+    const rows = await (async () => {
+      const result = await commit;
+      const wakeup = ((
+        rows: typeof result,
+      ): ConnectorRuntimeWakeupBusinessArgs | undefined => {
+        if (
+          "status" in rows ||
+          !snapshot.serverFirewalls.has(args.apply.connectorSlug)
+        ) {
+          return undefined;
+        }
+        const responseScope = applyPermissionGrantResponseScope(args);
+        return {
+          scope: {
+            orgId: args.orgId,
+            userId: args.userId,
+            agentId: responseScope.agentId,
+          },
+          targets: [
+            { kind: "builtin", connectorSlug: args.apply.connectorSlug },
+          ],
+        };
+      })(result);
+      if (wakeup) {
+        await (async () => {
+          const result = await settle(
+            (async () => {
+              const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+              if (targets.length === 0) {
+                return;
+              }
+              const rows = await writeDb
+                .select(connectorRuntimeWakeupRunColumns())
+                .from(agentRuns)
+                .where(connectorRuntimeWakeupCondition(wakeup.scope));
+              await publishConnectorRuntimeWakeupRows({
+                scope: wakeup.scope,
+                targets,
+                rows,
+              });
+            })(),
+          );
+          if (!result.ok) {
+            reportConnectorRuntimeWakeupDiscoveryFailure({
+              orgId: wakeup.scope.orgId,
+              scopedToUser: wakeup.scope.userId !== undefined,
+              scopedToAgent: wakeup.scope.agentId !== undefined,
+              targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+              error: result.error,
+            });
+          }
+        })();
+      }
+      return result;
+    })();
     signal.throwIfAborted();
 
     if ("status" in rows) {
