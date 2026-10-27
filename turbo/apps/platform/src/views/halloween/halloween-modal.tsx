@@ -1,8 +1,6 @@
 import { Dialog, DialogContent, DialogTitle } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useSet } from "ccstate-react";
 import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   closeHalloweenModal$,
   halloweenModalOpen$,
@@ -15,20 +13,11 @@ import { HalloweenBubbles, HalloweenEntry } from "./halloween-home.tsx";
 import { HalloweenPage } from "./halloween-page.tsx";
 
 export function HalloweenHomeActivity() {
-  const switches = useGet(featureSwitch$);
   const open = useGet(halloweenModalOpen$);
   const show = useSet(openHalloweenModal$);
   const close = useSet(closeHalloweenModal$);
   const mount = useSet(mountHalloweenModal$);
   const signal = useGet(pageSignal$);
-  if (!switches[FeatureSwitchKey.HalloweenQuizModal]) {
-    return (
-      <>
-        <HalloweenEntry />
-        <HalloweenBubbles />
-      </>
-    );
-  }
   return (
     <Dialog
       open={open}
@@ -40,8 +29,8 @@ export function HalloweenHomeActivity() {
         }
       }}
     >
-      <HalloweenEntry modal />
-      <HalloweenBubbles modal />
+      <HalloweenEntry />
+      <HalloweenBubbles />
       <DialogContent
         ref={mount}
         maxWidth={1120}

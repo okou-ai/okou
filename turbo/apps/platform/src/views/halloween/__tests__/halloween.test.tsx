@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import {
   halloweenContract,
@@ -10,7 +10,6 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
 
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
@@ -76,9 +75,6 @@ function round(id: string): HalloweenRound {
   };
 }
 beforeEach(() => {
-  context.mocks.api(halloweenContract.exposure, ({ respond }) => {
-    return respond(200, { first: false });
-  });
   context.mocks.api(halloweenContract.status, ({ respond }) => {
     return respond(200, { phase: "open", changesInMs: null });
   });
@@ -86,33 +82,6 @@ beforeEach(() => {
     return respond(200, round(body.id));
   });
 });
-
-test.each([
-  ["desktop", "(hover: hover)"],
-  ["touch", "(hover: none)"],
-])(
-  "%s users enter the quiz from the existing app home with one click and return to its composer",
-  async (_device, hoverQuery) => {
-    context.mocks.browser.matchMedia((query) => {
-      return query === hoverQuery;
-    });
-    await setupPage({ context, path: "/" });
-    await screen.findByRole("textbox", { name: "Message" });
-    const homePath = pathname();
-    const entry = await waitFor(() => {
-      return control("link", "Play the Halloween quiz");
-    });
-    fireEvent.mouseEnter(entry);
-    await click(entry);
-    await expect(screen.findByText("Let’s play")).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/halloween");
-    await click(control("link", "Back to Okou"));
-    await expect(
-      screen.findByRole("textbox", { name: "Message" }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe(homePath);
-  },
-);
 
 test("returns to the existing homepage and retries the same result after association fails", async () => {
   const linkedIds: string[] = [];

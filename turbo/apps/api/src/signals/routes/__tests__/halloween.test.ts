@@ -112,7 +112,6 @@ describe("Halloween quiz", () => {
       );
       expect(success.outcome).toBe("success");
       expect(success.completedAt).toBeTruthy();
-      mockNow(new Date("2026-11-06T12:00:00Z"));
       const left = await accept(
         game.leave({ body: { ...body, reason: "interrupted" } }),
         [200],
@@ -188,7 +187,7 @@ describe("Halloween quiz", () => {
     ).toStrictEqual(failed);
   });
 
-  it("honors Los Angeles midnight across DST while allowing existing rounds to finish", async () => {
+  it("uses the feature switch as the only quiz availability gate", async () => {
     const { game } = clients(
       await setupApp({
         context,
@@ -196,38 +195,23 @@ describe("Halloween quiz", () => {
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
-    mockNow(new Date("2026-10-29T06:59:59Z"));
+    for (const now of ["2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z"]) {
+      mockNow(new Date(now));
+      expect(
+        (await accept(game.status({ headers }), [200])).body,
+      ).toStrictEqual({ phase: "open", changesInMs: null });
+      await accept(game.start({ headers, body: credential() }), [200]);
+    }
+
+    actor(false);
+    expect((await accept(game.status({ headers }), [200])).body).toStrictEqual({
+      phase: "unavailable",
+      changesInMs: null,
+    });
     await accept(game.start({ headers, body: credential() }), [409]);
-    expect((await accept(game.status({ headers }), [200])).body.phase).toBe(
-      "upcoming",
-    );
-    mockNow(new Date("2026-10-29T07:00:00Z"));
-    expect((await accept(game.status({ headers }), [200])).body.phase).toBe(
-      "open",
-    );
-    mockNow(new Date("2026-11-05T07:59:59Z"));
-    const body = credential();
-    await getFinale(game, body);
-    mockNow(new Date("2026-11-05T08:00:00Z"));
-    expect((await accept(game.status({ headers }), [200])).body.phase).toBe(
-      "ended",
-    );
-    await accept(game.start({ headers, body: credential() }), [409]);
-    await accept(
-      game.answer({ body: { ...body, questionId: "QUIZ-53", optionId: "B" } }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          game.next({ body: { ...body, questionId: "QUIZ-53" } }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("success");
   });
 
-  it("associates an interrupted round once, including after the event, and rejects another account", async () => {
+  it("associates an interrupted round once and rejects another account", async () => {
     const { game } = clients(
       await setupApp({
         context,
@@ -237,7 +221,6 @@ describe("Halloween quiz", () => {
     );
     const body = credential();
     await accept(game.start({ headers, body }), [200]);
-    mockNow(new Date("2026-11-07T12:00:00Z"));
     const first = await accept(
       game.link({ headers, body: { ...body, interrupted: true } }),
       [200],
@@ -255,26 +238,6 @@ describe("Halloween quiz", () => {
     await accept(game.link({ headers, body }), [404]);
   });
 
-  it("tracks the first homepage exposure per authenticated account", async () => {
-    const { game } = clients(
-      await setupApp({
-        context,
-        isolatePg: true,
-        routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
-      }),
-    );
-    expect(
-      (await accept(game.exposure({ headers, body: {} }), [200])).body.first,
-    ).toBeTruthy();
-    expect(
-      (await accept(game.exposure({ headers, body: {} }), [200])).body.first,
-    ).toBeFalsy();
-    actor();
-    expect(
-      (await accept(game.exposure({ headers, body: {} }), [200])).body.first,
-    ).toBeTruthy();
-  });
-
   it("exports immutable deduplicated staff batches without losing prior round history", async () => {
     const { game, operations } = clients(
       await setupApp({
@@ -283,6 +246,7 @@ describe("Halloween quiz", () => {
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
+    mockNow(new Date("2026-01-01T00:00:00Z"));
     const bodies = [credential(), credential()];
     for (const body of bodies) {
       await accept(game.start({ headers, body }), [200]);

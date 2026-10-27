@@ -2759,6 +2759,13 @@
       "when": 1793095360753,
       "tag": "1472_absurd_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 1469,
+      "version": "7",
+      "when": 1793086007378,
+      "tag": "1469_retire_halloween_home_exposure",
+      "breakpoints": true
     }
   ]
 }

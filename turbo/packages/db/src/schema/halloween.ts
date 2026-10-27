@@ -48,11 +48,6 @@ export const halloweenRounds = pgTable(
   },
 );
 
-export const halloweenExposures = pgTable("halloween_2026_exposures", {
-  userId: text("user_id").primaryKey(),
-  seenAt: timestamp("seen_at").notNull().defaultNow(),
-});
-
 export const halloweenBatches = pgTable("halloween_2026_batches", {
   id: uuid("id").primaryKey(),
   capturedAt: timestamp("captured_at").notNull(),

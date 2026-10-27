@@ -1,7 +1,4 @@
-import {
-  HalloweenHomeSound,
-  HalloweenResultNotice,
-} from "../halloween/halloween-home.tsx";
+import { HalloweenResultNotice } from "../halloween/halloween-home.tsx";
 import { HalloweenHomeActivity } from "../halloween/halloween-modal.tsx";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -430,10 +427,7 @@ function AgentComposerPage() {
 
   return (
     <div className="relative flex flex-1 flex-col min-h-0">
-      <GrowthEntryHeader>
-        <HalloweenHomeSound />
-      </GrowthEntryHeader>
-      <HalloweenHomeSound mobileOnly />
+      <GrowthEntryHeader />
 
       <main
         className={cn(

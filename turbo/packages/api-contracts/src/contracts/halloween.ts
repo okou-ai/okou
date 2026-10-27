@@ -107,13 +107,6 @@ export const halloweenContract = c.router({
     body: credential.extend({ interrupted: boolean().optional() }),
     responses: { 200: halloweenRoundSchema, ...errors },
   },
-  exposure: {
-    method: "POST",
-    path: "/api/halloween/exposure",
-    headers: authHeadersSchema,
-    body: object({}),
-    responses: { 200: object({ first: boolean() }), ...errors },
-  },
 });
 
 export const halloweenParticipantSchema = object({

@@ -1,7 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { array, boolean, object, string } from "zod";
 import { delay } from "signal-timers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   halloweenContract,
   type HalloweenRound,
@@ -12,9 +11,6 @@ import { apiClient$ } from "../api-client.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { apiClientRuntime$ } from "../api-client-runtime.ts";
-import { navigateTo$ } from "../route.ts";
-import { rootSignal$ } from "../root-signal.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   detach,
   Reason,
@@ -26,6 +22,9 @@ import {
 
 const pendingStorage = localStorageSignals("halloween_2026_pending");
 const soundStorage = localStorageSignals("halloween_2026_sound");
+const homeAnimationStorage = localStorageSignals(
+  "halloween_2026_home_animation_seen",
+);
 const credentialSchema = object({
   id: string().uuid(),
   token: string().regex(/^[a-f0-9]{64}$/),
@@ -49,7 +48,7 @@ const phaseState$ = state<HalloweenPhase>("upcoming");
 const screenState$ = state<"start" | "question" | "result">("start");
 const rulesState$ = state(false);
 const linkState$ = state<"idle" | "saved" | "error">("idle");
-const firstExposureState$ = state(false);
+const homeAnimationVisibleState$ = state(false);
 const ghostExpandedState$ = state(false);
 const ghostGreetingIndex$ = state(-1);
 const ghostGreetingLocked$ = state(false);
@@ -100,12 +99,8 @@ export const enterHalloweenFromBubble$ = command(
     set(bubbleTransitionState$, index);
     await delay(750, { signal });
     signal.throwIfAborted();
-    if (get(featureSwitch$)[FeatureSwitchKey.HalloweenQuizModal]) {
-      set(modalAnchorState$, null);
-      set(openHalloweenModal$);
-    } else {
-      await set(navigateTo$, "/halloween", undefined, get(rootSignal$));
-    }
+    set(modalAnchorState$, null);
+    set(openHalloweenModal$);
     set(bubbleTransitionState$, null);
   },
 );
@@ -178,8 +173,8 @@ export const halloweenRulesOpen$ = computed((get) => {
 export const halloweenLinkState$ = computed((get) => {
   return get(linkState$);
 });
-export const halloweenFirstExposure$ = computed((get) => {
-  return get(firstExposureState$);
+export const halloweenHomeAnimationVisible$ = computed((get) => {
+  return get(homeAnimationVisibleState$);
 });
 export const halloweenSound$ = computed((get) => {
   return get(soundStorage.get$) !== "off";
@@ -579,7 +574,7 @@ export const initializeHalloweenHome$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(modalOpenState$, false);
     set(linkState$, "idle");
-    set(firstExposureState$, false);
+    set(homeAnimationVisibleState$, false);
     set(bubbleTransitionState$, null);
     set(ghostExpandedState$, false);
     set(ghostGreetingLocked$, false);
@@ -592,17 +587,10 @@ export const initializeHalloweenHome$ = command(
     if (get(phaseState$) !== "open") {
       return;
     }
-    const result = await accept(
-      get(apiClient$)(halloweenContract).exposure({
-        body: {},
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    signal.throwIfAborted();
-    set(firstExposureState$, result.body.first);
-    if (result.body.first) {
+    const first = set(homeAnimationStorage.readFresh$) === null;
+    set(homeAnimationStorage.set$, "seen");
+    set(homeAnimationVisibleState$, first);
+    if (first) {
       set(expandHalloweenGhost$);
       set(ghostGreetingLocked$, true);
       await delay(

@@ -11,13 +11,16 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
+const homeAnimationStorage = localStorageSignals(
+  "halloween_2026_home_animation_seen",
+);
 const switches = Object.freeze({
   [FeatureSwitchKey.HalloweenQuiz]: true,
-  [FeatureSwitchKey.HalloweenQuizModal]: true,
 });
 const question = Object.freeze({
   id: "QUIZ-01",
@@ -62,9 +65,6 @@ beforeEach(() => {
   context.mocks.api(halloweenContract.status, ({ respond }) => {
     return respond(200, { phase: "open", changesInMs: null });
   });
-  context.mocks.api(halloweenContract.exposure, ({ respond }) => {
-    return respond(200, { first: false });
-  });
   context.mocks.api(halloweenContract.start, ({ body, respond }) => {
     return respond(200, round(body.id));
   });
@@ -96,6 +96,25 @@ beforeEach(() => {
       linked: true,
     });
   });
+});
+
+test("shows the home animation once and stores it in this browser", async () => {
+  await setupPage({ context, path: "/", featureSwitches: switches });
+  await expect(
+    screen.findByTestId("halloween-bubbles"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(context.store.set(homeAnimationStorage.readFresh$)).toBe("seen");
+  });
+});
+
+test("does not repeat the home animation stored in this browser", async () => {
+  context.store.set(homeAnimationStorage.set$, "seen");
+  await setupPage({ context, path: "/", featureSwitches: switches });
+  await waitFor(() => {
+    expect(button("Play the Halloween quiz")).toBeInTheDocument();
+  });
+  expect(screen.queryByTestId("halloween-bubbles")).not.toBeInTheDocument();
 });
 
 test.each(["(hover: hover)", "(hover: none)"])(

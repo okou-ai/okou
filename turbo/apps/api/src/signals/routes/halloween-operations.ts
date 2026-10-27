@@ -3,7 +3,6 @@ import {
   type HalloweenParticipant,
 } from "@okouai/api-contracts/contracts/halloween";
 import { isStaffOrg } from "@okouai/core/staff-org";
-import { HALLOWEEN_START } from "@okouai/core/halloween";
 import {
   halloweenBatches,
   halloweenReviews,
@@ -66,9 +65,6 @@ const capture$ = command(async ({ get, set }, signal: AbortSignal) => {
     return batchReceipt(existing);
   }
   const at = nowDate();
-  if (at.getTime() < HALLOWEEN_START) {
-    return conflict("Participant lists are available once the event begins");
-  }
   const rows = await db
     .select({
       id: halloweenRounds.id,

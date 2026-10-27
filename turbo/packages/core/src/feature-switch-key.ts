@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   HalloweenQuiz = "halloweenQuiz",
-  HalloweenQuizModal = "halloweenQuizModal",
   IosComposerConnectors = "iosComposerConnectors",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
