@@ -688,7 +688,6 @@ const sendNewThreadMessage$ = command(
     if (request.connectorSelections?.length) {
       await createResult;
       signal.throwIfAborted();
-      set(confirmThreadIdentity$, draft, threadId);
     }
     await set(
       mintNewThreadSubmission$,

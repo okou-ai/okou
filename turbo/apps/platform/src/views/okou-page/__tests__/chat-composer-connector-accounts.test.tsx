@@ -12,7 +12,12 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import type { infer as zInfer } from "zod";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import {
   ACME_CONNECTOR_ID,
   builtinConnector,
@@ -69,6 +74,19 @@ async function openConnectors(
   await expect(
     findFastControl("button", "Add connectors"),
   ).resolves.toBeEnabled();
+}
+
+function enabledSendButton(): Promise<HTMLElement> {
+  return waitFor(() => {
+    const button = queryAllByRoleFast("button").find((candidate) => {
+      return candidate.getAttribute("aria-label") === "Send";
+    });
+    if (!button) {
+      throw new Error("Send button not found");
+    }
+    expect(button).toBeEnabled();
+    return button;
+  });
 }
 
 async function openAccountChooser(
@@ -452,11 +470,7 @@ test.each([false, true])(
       new File(["notes"], filename, { type: "text/plain" }),
     );
     await screen.findByText(filename);
-    const send = await findFastControl("button", "Send");
-    await waitFor(() => {
-      expect(send).toBeEnabled();
-    });
-    click(send);
+    click(await enabledSendButton());
     await started.promise;
     const retainedPrompt = editWhileCreating
       ? "Keep this newer message while creation is pending"
@@ -481,10 +495,7 @@ test.each([false, true])(
       within(retryChooser).getByRole("option", { name: /Use default/u }),
     );
     await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(send).toBeEnabled();
-    });
-    click(send);
+    click(await enabledSendButton());
     await waitFor(() => {
       expect(sends).toHaveLength(1);
       expect(window.location.pathname).toBe(
@@ -562,17 +573,13 @@ test("Resending an unconfirmed creation reuses its chat and event identities", a
   await user.keyboard("{Escape}");
   const composer = await findComposer();
   await fill(composer, "Use my personal GitHub account");
-  const send = await findFastControl("button", "Send");
-  click(send);
+  click(await enabledSendButton());
   await screen.findByText(message);
   expect(window.location.pathname).toBe(newChatPath);
   expect(composer).toHaveTextContent("Use my personal GitHub account");
   expect(sends).toHaveLength(0);
 
-  await waitFor(() => {
-    expect(send).toBeEnabled();
-  });
-  click(send);
+  click(await enabledSendButton());
   await waitFor(() => {
     expect(sends).toHaveLength(1);
     expect(window.location.pathname).toBe(
