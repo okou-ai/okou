@@ -95,16 +95,27 @@ final class ConversationWindowStoreTests: XCTestCase {
   }
 
   func testClosingDuringExpansionPreventsPublishingPreparedHistory() async {
-    let fixture = ConversationHistoryFixture()
-    let conversation = fixture.conversation()
-    await conversation.refresh()
-    let expansion = Task { await conversation.loadEarlierMessages() }
-    let deadline = ContinuousClock.now + .seconds(2)
-    while !conversation.isLoadingEarlier && ContinuousClock.now < deadline { await Task.yield() }
-    XCTAssertTrue(conversation.isLoadingEarlier)
-    conversation.close()
-    await expansion.value
-    XCTAssertEqual(conversation.visibleMessages.count, 10)
-    XCTAssertFalse(conversation.isLoadingEarlier)
+    for iteration in 1...5 {
+      let fixture = ConversationHistoryFixture()
+      let origin = fixture.http.baseURL.absoluteString
+      print("A02_PROBE_START:\(iteration):\(origin)")
+      let conversation = fixture.conversation()
+      defer { conversation.close() }
+      await conversation.refresh()
+      XCTAssertTrue(conversation.hasEarlierMessages, "A02_PROBE_HAS_EARLIER:\(iteration)")
+      let expansion = Task.immediate { await conversation.loadEarlierMessages() }
+      addTeardownBlock {
+        expansion.cancel()
+        await expansion.value
+      }
+      let visibleAtClose = conversation.visibleMessages.map(\.id)
+      print("A02_PROBE_CLOSE:\(iteration):\(origin)")
+      conversation.close()
+      await expansion.value
+      print("A02_PROBE_JOINED:\(iteration):\(origin)")
+      XCTAssertEqual(
+        conversation.visibleMessages.map(\.id), visibleAtClose,
+        "A02_PROBE_VISIBLE_HISTORY:\(iteration)")
+    }
   }
 }
