@@ -1,4 +1,10 @@
 import {
+  legacyPlanSubscriptionEntitlementPublication,
+  trialShorteningWhere,
+  unpreparedLegacyPlanTrialLots,
+  legacyPlanTrialLotMembership,
+} from "./legacy-plan-subscription-publication";
+import {
   canceledPlanEntitlementConflictValues,
   canceledPlanEntitlementInsertSql,
   canceledPlanEntitlementProjection,
@@ -37,7 +43,6 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import {
   usagePackAllocationChanges,
   usagePackSubscriptions,
-  usagePackAllocations,
 } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
 import {
@@ -47,9 +52,6 @@ import {
   gt,
   inArray,
   isNull,
-  not,
-  ne,
-  notInArray,
   or,
   sql,
   type SQL,
@@ -3846,26 +3848,13 @@ function legacyPlanPublication(args: Omit<LegacyPlanPublication, "orgId">) {
   };
 }
 
-function trialShorteningWhere(orgId: string, end: Date) {
-  return and(
-    eq(creditExpiresRecord.orgId, orgId),
-    eq(creditExpiresRecord.source, "subscription_renewal"),
-    gt(creditExpiresRecord.expiresAt, end),
-    gt(creditExpiresRecord.remaining, 0),
-  );
-}
-
 function legacyPlanEntitlement(
   args: LegacyPlanPublication,
   input: {
     readonly tier: BillingSubscriptionTier;
     readonly item: SubscriptionInput["items"]["data"][number];
-    readonly showUsagePack: boolean;
-    readonly owner: string | undefined;
   },
 ) {
-  const duplicateOwner =
-    input.owner !== undefined && input.owner !== args.orgId;
   const metadata = retireMarketingMetadata(args.subscription.metadata ?? {});
   return {
     ...orgPlanEntitlementValues(
@@ -3884,17 +3873,12 @@ function legacyPlanEntitlement(
           : null,
         cancelAt: args.scheduledEnd,
         expiresAt: args.scheduledEnd,
-        showUsagePack: input.showUsagePack,
+        // The publication SQL applies live membership to this tier policy.
+        showUsagePack: true,
       },
       {
-        stripeSubscriptionId: duplicateOwner ? null : args.subscription.id,
-        sourceMetadata: duplicateOwner
-          ? {
-              ...metadata,
-              stripeSubscriptionSnapshotSkipped:
-                "duplicate_stripe_subscription_id",
-            }
-          : metadata,
+        stripeSubscriptionId: args.subscription.id,
+        sourceMetadata: metadata,
       },
     ),
     stripeProductId: null,
@@ -3947,116 +3931,29 @@ const publishLegacyPlanSubscription$ = command(
         )
         .returning({ orgId: orgMetadata.orgId }),
     );
-    const entitlement =
+    const entitlementInput =
       publication.planTier && publication.planItem
-        ? (() => {
-            const memberPack = exists(
-              db
-                .select({ id: usagePackAllocations.id })
-                .from(usagePackSubscriptions)
-                .innerJoin(
-                  usagePackAllocations,
-                  eq(
-                    usagePackAllocations.usagePackSubscriptionId,
-                    usagePackSubscriptions.id,
-                  ),
-                )
-                .where(
-                  and(
-                    eq(usagePackSubscriptions.orgId, args.orgId),
-                    eq(
-                      usagePackSubscriptions.stripeSubscriptionId,
-                      args.subscription.id,
-                    ),
-                    notInArray(usagePackSubscriptions.subscriptionStatus, [
-                      "canceled",
-                      "incomplete_expired",
-                      "invalid",
-                    ]),
-                    inArray(usagePackAllocations.status, [
-                      "pending_payment",
-                      "active",
-                      "pending_invitation",
-                      "paid_pending_invitation",
-                    ]),
-                  ),
-                ),
-            );
-            const otherOwner = exists(
-              db
-                .select({ orgId: orgPlanEntitlements.orgId })
-                .from(orgPlanEntitlements)
-                .where(
-                  and(
-                    eq(
-                      orgPlanEntitlements.stripeSubscriptionId,
-                      args.subscription.id,
-                    ),
-                    ne(orgPlanEntitlements.orgId, args.orgId),
-                  ),
-                ),
-            );
-            const values = legacyPlanEntitlement(args, {
+        ? legacyPlanSubscriptionEntitlementPublication(
+            legacyPlanEntitlement(args, {
               tier: publication.planTier,
               item: publication.planItem,
-              showUsagePack: true,
-              owner: undefined,
-            });
-            const projected = {
-              ...values,
-              showUsagePack: values.showUsagePack ? memberPack : sql`false`,
-              stripeSubscriptionId: sql`CASE WHEN ${otherOwner} THEN NULL ELSE ${args.subscription.id} END`,
-              sourceMetadata: sql`CASE WHEN ${otherOwner} THEN ${sql.param(
-                {
-                  ...values.sourceMetadata,
-                  stripeSubscriptionSnapshotSkipped:
-                    "duplicate_stripe_subscription_id",
-                },
-                orgPlanEntitlements.sourceMetadata,
-              )}::jsonb
-                ELSE ${sql.param(values.sourceMetadata, orgPlanEntitlements.sourceMetadata)}::jsonb END`,
-            };
-            // INSERT SELECT is gated by the actual wallet RETURNING. Drizzle's
-            // structured insert-select requires every schema column in order.
-            return db.$with("published_legacy_entitlement").as(
-              db
-                .insert(orgPlanEntitlements)
-                .select(
-                  sql`SELECT
-                ${published.orgId},
-                ${sql.param(values.planKey, orgPlanEntitlements.planKey)},
-                ${sql.param(values.planRank, orgPlanEntitlements.planRank)},
-                ${sql.param(values.source, orgPlanEntitlements.source)},
-                ${sql.param(values.status, orgPlanEntitlements.status)},
-                ${sql.param(values.baseConcurrencyLimit, orgPlanEntitlements.baseConcurrencyLimit)},
-                ${sql.param(values.canBuyConcurrency, orgPlanEntitlements.canBuyConcurrency)},
-                ${sql.param(values.canBuyCredits, orgPlanEntitlements.canBuyCredits)},
-                ${projected.showUsagePack},
-                ${sql.param(values.autoRechargeAllowed, orgPlanEntitlements.autoRechargeAllowed)},
-                ${sql.param(values.restrictedBuiltInModels, orgPlanEntitlements.restrictedBuiltInModels)},
-                ${sql.param(values.workflowWebhookTriggerAllowed, orgPlanEntitlements.workflowWebhookTriggerAllowed)},
-                ${sql.param(values.audioLifetimeLimit, orgPlanEntitlements.audioLifetimeLimit)},
-                ${sql.param(values.audioDailyRateLimit, orgPlanEntitlements.audioDailyRateLimit)},
-                ${sql.param(values.audioDailyDurationSeconds, orgPlanEntitlements.audioDailyDurationSeconds)},
-                ${projected.stripeSubscriptionId},
-                NULL,
-                ${sql.param(values.stripePriceId, orgPlanEntitlements.stripePriceId)},
-                ${sql.param(values.currentPeriodStart, orgPlanEntitlements.currentPeriodStart)},
-                ${sql.param(values.currentPeriodEnd, orgPlanEntitlements.currentPeriodEnd)},
-                ${sql.param(values.cancelAt, orgPlanEntitlements.cancelAt)},
-                ${sql.param(values.expiresAt, orgPlanEntitlements.expiresAt)},
-                '1', NULL, ${projected.sourceMetadata}, now()::timestamp,
-                ${sql.param(values.updatedAt, orgPlanEntitlements.updatedAt)}
-                FROM ${published} WHERE true`,
-                )
-                .onConflictDoUpdate({
-                  target: orgPlanEntitlements.orgId,
-                  set: projected,
-                })
-                .returning({ orgId: orgPlanEntitlements.orgId }),
-            );
-          })()
-        : undefined;
+            }),
+            db.select({ orgId: published.orgId }).from(published).getSQL(),
+            args.subscription.id,
+          )
+        : null;
+    const entitlement = entitlementInput
+      ? db.$with("published_legacy_entitlement").as(
+          db
+            .insert(orgPlanEntitlements)
+            .select(entitlementInput.source)
+            .onConflictDoUpdate({
+              target: orgPlanEntitlements.orgId,
+              set: entitlementInput.values,
+            })
+            .returning({ orgId: orgPlanEntitlements.orgId }),
+        )
+      : undefined;
     const shortened = publication.trialEnd
       ? db.$with("shortened_legacy_trial_lots").as(
           db
@@ -4066,12 +3963,7 @@ const publishLegacyPlanSubscription$ = command(
             .where(
               and(
                 trialShorteningWhere(args.orgId, publication.trialEnd),
-                // One array binding avoids doubling the old parameter budget
-                // when the prepared and unprepared cohorts share a statement.
-                eq(
-                  creditExpiresRecord.id,
-                  sql`ANY(${sql.param(lotIds)}::uuid[])`,
-                ),
+                legacyPlanTrialLotMembership(lotIds),
               ),
             )
             .returning({ id: creditExpiresRecord.id }),
@@ -4087,22 +3979,7 @@ const publishLegacyPlanSubscription$ = command(
         .where(and(eq(orgMetadata.orgId, args.orgId), prepared.target)),
     );
     const unprepared = publication.trialEnd
-      ? exists(
-          db
-            .select({ id: creditExpiresRecord.id })
-            .from(creditExpiresRecord)
-            .where(
-              and(
-                trialShorteningWhere(args.orgId, publication.trialEnd),
-                not(
-                  eq(
-                    creditExpiresRecord.id,
-                    sql`ANY(${sql.param(lotIds)}::uuid[])`,
-                  ),
-                ),
-              ),
-            ),
-        )
+      ? unpreparedLegacyPlanTrialLots(args.orgId, publication.trialEnd, lotIds)
       : sql`false`;
     // A stale cohort aborts the whole statement, including every DML CTE.
     // This replaces the old post-wallet fresh snapshot with a natural xmin CAS.
@@ -4137,7 +4014,6 @@ const publishLegacyPlanSubscription$ = command(
     if (!result) {
       throw new Error("Subscription publication returned no outcome");
     }
-    signal.throwIfAborted();
     return result.applied;
   },
 );

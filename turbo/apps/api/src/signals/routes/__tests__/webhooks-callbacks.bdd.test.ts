@@ -3350,7 +3350,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       redeliveries.some((response) => {
         return response.status === 200;
       }),
-    ).toBe(true);
+    ).toBeTruthy();
     for (const response of redeliveries) {
       if (response.status === 500) {
         await api.postStripeEvent(shorteningEvent, [200]);
