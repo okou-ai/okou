@@ -136,6 +136,18 @@ final class NotificationService {
     defaults.set(installationID, forKey: key)
   }
 
+  /// Installed by the application initializer, before any background delegate callback.
+  func configure(
+    authentication: AuthenticationService, configuration: AppConfiguration,
+    session: URLSession = .shared
+  ) {
+    prepareWorkspace = { [weak self] in
+      if authentication.isLoading { await authentication.refresh() }
+      return self?.data(
+        authentication: authentication, configuration: configuration, session: session)
+    }
+  }
+
   func data(
     authentication: AuthenticationService, configuration: AppConfiguration, session: URLSession
   ) -> NotificationWorkspace? {
@@ -445,7 +457,10 @@ final class NotificationService {
   }
 
   func synchronize(_ destination: NotificationDestination) async -> Bool {
-    let id = "\(destination.userId):\(destination.workspaceId):\(destination.threadId)"
+    // Only duplicate deliveries of the same notification share work. A later run
+    // must perform its own catch-up even if an earlier run is still being saved.
+    let id =
+      "\(destination.userId):\(destination.workspaceId):\(destination.threadId):\(destination.notificationId)"
     if let existing = backgroundTasks[id] { return await existing.value }
     let task = Task { @MainActor in
       await withTaskGroup(of: Bool.self) { group in
@@ -467,8 +482,8 @@ final class NotificationService {
       task.cancel()
     }
     backgroundTasks[id] = nil
-    log.debug(
-      "Notification cache synchronization completed in \(started.duration(to: .now)); saved: \(result)"
+    log.info(
+      "Notification prefetch finished: notification=\(destination.notificationId, privacy: .public) duration=\(started.duration(to: .now)) saved=\(result) cancelled=\(Task.isCancelled)"
     )
     return result && !Task.isCancelled
   }
@@ -482,13 +497,30 @@ final class NotificationService {
       destination.workspaceId == workspace.workspaceID, !Task.isCancelled
     else { return false }
     let generation = generation
+    let started = ContinuousClock.now
     do {
-      try await workspace.sync.prefetchHistory(threadID: destination.threadId)
+      let receipt = try await workspace.sync.prefetchHistory(
+        threadID: destination.threadId, runID: destination.runId)
+      try Task.checkCancellation()
+      // Cache metadata as well, so a notification for a new chat can open offline.
+      try await workspace.sync.prefetchThreadList()
       try Task.checkCancellation()
       guard self.generation == generation else { return false }
       didSynchronize?(destination.threadId)
+      let elapsed = started.duration(to: .now).components
+      await workspace.client.reportNotificationPrefetch(
+        NotificationPrefetchReport(
+          notificationId: destination.notificationId, threadId: destination.threadId,
+          runId: destination.runId, source: "app", outcome: "saved",
+          durationMs: Int(elapsed.seconds * 1000 + elapsed.attoseconds / 1_000_000_000_000_000),
+          lastSeqId: receipt.lastSeqID, containsRun: receipt.containsRun))
       return true
-    } catch { return false }
+    } catch {
+      log.error(
+        "Notification prefetch failed: notification=\(destination.notificationId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+      )
+      return false
+    }
   }
 
 }

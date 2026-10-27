@@ -85,6 +85,122 @@ final class NotificationTests: XCTestCase {
     XCTAssertFalse(fixture.requests.values.withLock { $0.contains { $0.contains("mark-read") } })
   }
 
+  func testBackgroundLaunchRestoresAuthenticationBeforeAnyPageTask() async throws {
+    let identity = try AuthenticationHTTPFixture()
+    addTeardownBlock { await identity.close() }
+    let authentication = try await identity.authentication()
+    let fixture = ConversationHistoryFixture(count: 2)
+    let bundleURL = directory().appendingPathComponent("Notification.bundle")
+    try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+    let info: [String: String] = [
+      "CFBundleIdentifier": "ai.okou.tests.notification", "CFBundleShortVersionString": "1.0.0",
+      "APIBaseURL": fixture.http.baseURL.absoluteString,
+      "WebBaseURL": fixture.http.baseURL.absoluteString,
+    ]
+    try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+      .write(to: bundleURL.appendingPathComponent("Info.plist"))
+    let configuration = try AppConfiguration(bundle: XCTUnwrap(Bundle(url: bundleURL)))
+    let service = notifications()
+    service.configure(
+      authentication: authentication, configuration: configuration, session: fixture.http.session)
+    let user = identity.state.withLock { $0.userID }
+    let completed = expectation(description: "Cold background callback saved messages")
+    NotificationAppDelegate(notifications: service).application(
+      UIApplication.shared, didReceiveRemoteNotification: payload(user: user, workspace: "org_one")
+    ) { result in
+      XCTAssertEqual(result, .newData)
+      completed.fulfill()
+    }
+    await fulfillment(of: [completed], timeout: 5)
+    let data = try XCTUnwrap(
+      service.data(
+        authentication: authentication,
+        configuration: configuration, session: fixture.http.session))
+    let restored = await data.sync.cachedHistory(threadID: ConversationHistoryFixture.threadID)
+    XCTAssertEqual(restored?.messages.count, 2)
+  }
+
+  func testLaterNotificationCatchesUpWhileAnEarlierNotificationIsStillFinishing() async throws {
+    let reachedMetadata = expectation(description: "First history persisted before metadata")
+    let gate = AuthenticationRequestGate()
+    await gate.hold()
+    addTeardownBlock { await gate.releaseAll() }
+    let requests = Mutex(0)
+    let fixture = ConversationHistoryFixture(
+      count: 2,
+      threadSnapshot: { _ in
+        let first = requests.withLock { value in
+          value += 1
+          return value == 1
+        }
+        if first {
+          reachedMetadata.fulfill()
+          await gate.enter()
+        }
+        return ConversationHistoryFixture.threadSnapshotResponse()
+      })
+    let data = workspace(fixture)
+    let service = notifications()
+    await service.update(workspace: data)
+    let first = try XCTUnwrap(NotificationDestination(userInfo: payload()))
+    let work = Task { await service.synchronize(first) }
+    addTeardownBlock {
+      work.cancel()
+      await gate.releaseAll()
+      _ = await work.value
+    }
+    await fulfillment(of: [reachedMetadata], timeout: 3)
+    fixture.appendMessage()
+    let second = try XCTUnwrap(
+      NotificationDestination(
+        userInfo: payload(
+          run: "60000000-0000-4000-8000-000000000004")))
+    let saved = await service.synchronize(second)
+    XCTAssertTrue(saved)
+    await gate.releaseAll()
+    let firstSaved = await work.value
+    XCTAssertTrue(firstSaved)
+    let history = await data.sync.cachedHistory(threadID: first.threadId)
+    XCTAssertEqual(history?.messages.count, 3)
+  }
+
+  func testPrefetchedNewChatOpensFromCacheInAnAlreadyMountedList() async throws {
+    let offline = Mutex(false)
+    let fixture = ConversationHistoryFixture(
+      count: 2,
+      beforeRequest: {
+        if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+      })
+    let data = workspace(fixture)
+    // The mounted list has already shown an empty authoritative cache.
+    let emptyCache = ChatCache(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.http.baseURL, userID: "user_push", workspaceID: "org_push"),
+      directory: directory())
+    try await emptyCache.replaceThreadList(
+      snapshot: Data(#"{"chatThreads":[]}"#.utf8),
+      cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
+    let mounted = WorkspaceStore(
+      client: data.client, webURL: fixture.http.baseURL,
+      sharedSync: ChatSync(client: data.client, cache: emptyCache))
+    defer { mounted.close() }
+    await mounted.list.restoreCached()
+    let service = notifications()
+    let shared = NotificationWorkspace(
+      scopeID: data.scopeID, userID: data.userID,
+      workspaceID: data.workspaceID, client: data.client,
+      sync: ChatSync(client: data.client, cache: emptyCache))
+    await service.update(workspace: shared)
+    let destination = try XCTUnwrap(NotificationDestination(userInfo: payload()))
+    let saved = await service.synchronize(destination)
+    XCTAssertTrue(saved)
+    offline.withLock { $0 = true }
+    // Use a runless navigation to exercise the cache-first presentation contract.
+    let opened = await mounted.openChatLink(.thread(id: destination.threadId, runID: nil))
+    XCTAssertTrue(opened)
+    XCTAssertEqual(mounted.selectedConversation?.messages.count, 2)
+  }
+
   func testAccountReplacementCancelsBackgroundWorkAndOtherWorkspacesAreDeferred() async throws {
     let started = expectation(description: "Background snapshot request")
     let gate = AuthenticationRequestGate()

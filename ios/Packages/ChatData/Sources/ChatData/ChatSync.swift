@@ -69,6 +69,35 @@ public actor ChatSync {
   public func threadsWithIndicators() async throws -> (
     threads: [ChatThread], indicators: Indicators?, eventIDs: Set<String>
   ) {
+    let result = try await synchronizeThreadList(requirePersistence: false)
+    let indicators: Indicators?
+    do {
+      indicators = try await self.indicators()
+    } catch let error as APIClientError where error.statusCode == 401 || error.statusCode == 426 {
+      throw error
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      indicators = nil
+    }
+    let threads = result.threads.map { thread in
+      var updated = thread
+      updated.indicator = indicators?.threads[thread.id]
+      updated.unreadAt = indicators?.unreadAt[thread.id]
+      if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
+      return updated
+    }
+    return (threads, indicators, result.eventIDs)
+  }
+
+  /// Cache navigation without fetching indicators or marking any conversation read.
+  public func prefetchThreadList() async throws {
+    _ = try await synchronizeThreadList(requirePersistence: true)
+  }
+
+  private func synchronizeThreadList(requirePersistence: Bool) async throws -> (
+    threads: [ChatThread], eventIDs: Set<String>
+  ) {
     let cached = await readCachedThreadList()
     var state: ThreadListState
     if let cached {
@@ -98,7 +127,7 @@ public actor ChatSync {
       if let rebased { state = try await catchUpThreadEvents(rebased) }
     }
     eventIDs.formUnion(state.events.map(\.id))
-    await persistThreadList(state)
+    if !(await persistThreadList(state)), requirePersistence { throw ChatCacheError.unavailable }
     let current = ChatThreadReplay.sidebarOrder(
       ChatThreadReplay.replay(
         snapshot: state.snapshot.map(\.thread), events: state.events.map(\.change)))
@@ -112,24 +141,7 @@ public actor ChatSync {
             "Cannot remove deleted chat history: \(error.localizedDescription, privacy: .public)")
       }
     }
-    let indicators: Indicators?
-    do {
-      indicators = try await self.indicators()
-    } catch let error as APIClientError where error.statusCode == 401 || error.statusCode == 426 {
-      throw error
-    } catch is CancellationError {
-      throw CancellationError()
-    } catch {
-      indicators = nil
-    }
-    let threads = current.map { thread in
-      var updated = thread
-      updated.indicator = indicators?.threads[thread.id]
-      updated.unreadAt = indicators?.unreadAt[thread.id]
-      if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
-      return updated
-    }
-    return (threads, indicators, eventIDs)
+    return (current, eventIDs)
   }
 
   public func indicators() async throws -> Indicators {
@@ -251,8 +263,9 @@ public actor ChatSync {
     }
   }
 
-  private func persistThreadList(_ state: ThreadListState) async {
-    guard let cache, state.replaced || !state.newEvents.isEmpty else { return }
+  private func persistThreadList(_ state: ThreadListState) async -> Bool {
+    guard let cache else { return false }
+    guard state.replaced || !state.newEvents.isEmpty else { return true }
     do {
       if state.replaced {
         try await cache.replaceThreadList(
@@ -260,9 +273,11 @@ public actor ChatSync {
       } else {
         try await cache.appendThreadEvents(state.newEvents)
       }
+      return true
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
         .error("Cannot save chat list cache: \(error.localizedDescription, privacy: .public)")
+      return false
     }
   }
 
@@ -373,15 +388,33 @@ public actor ChatSync {
   }
 
   public func history(threadID: String) async throws -> ChatHistory {
-    try await readHistory(threadID: threadID, requirePersistence: false)
+    let history = try await readHistory(threadID: threadID, requirePersistence: false)
+    let detail: ThreadDetail = try await client.request("/api/chat-threads/\(threadID)")
+    return try ChatEventProjection.history(
+      rows: history.rows.map(\.event), recovering: detail.cancellationRecoveryPending)
   }
 
-  /// Notification prefetch uses authoritative history without UI or read-cursor writes.
-  public func prefetchHistory(threadID: String) async throws {
-    _ = try await readHistory(threadID: threadID, requirePersistence: true)
+  public struct PrefetchReceipt: Sendable {
+    public let lastSeqID: Int
+    public let containsRun: Bool
   }
 
-  private func readHistory(threadID: String, requirePersistence: Bool) async throws -> ChatHistory {
+  /// Persist raw events without building UI projections or updating read cursors.
+  @discardableResult
+  public func prefetchHistory(threadID: String, runID: String? = nil) async throws
+    -> PrefetchReceipt
+  {
+    let history = try await readHistory(threadID: threadID, requirePersistence: true)
+    return PrefetchReceipt(
+      lastSeqID: history.cursor.lastSeqId,
+      containsRun: runID.map { id in
+        history.rows.contains { $0.runId == id && $0.eventType.isTerminal }
+      }
+        ?? false)
+  }
+
+  private func readHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
+  {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.
     if !readingHistories.insert(threadID).inserted {
@@ -424,7 +457,8 @@ public actor ChatSync {
     }
   }
 
-  private func loadHistory(threadID: String, requirePersistence: Bool) async throws -> ChatHistory {
+  private func loadHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
+  {
     let cached = await readCachedHistory(threadID: threadID)
     var history: CachedHistory
     if let cached {
@@ -441,9 +475,7 @@ public actor ChatSync {
     }
     history.cursorFromServerSnapshot = false
     histories[threadID] = history
-    let resolvedDetail: ThreadDetail = try await client.request("/api/chat-threads/\(threadID)")
-    return try ChatEventProjection.history(
-      rows: history.rows.map(\.event), recovering: resolvedDetail.cancellationRecoveryPending)
+    return history
   }
 
   private func loadSnapshot(threadID: String) async throws -> CachedHistory {

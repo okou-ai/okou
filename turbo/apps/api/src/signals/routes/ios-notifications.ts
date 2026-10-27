@@ -12,6 +12,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { unreadIosNotificationThreadCondition } from "../services/ios-notification-query";
+import { recordIosNotificationFact } from "../services/ios-notification-telemetry";
 import type { RouteEntry } from "../route-entry";
 
 const reconciliationBody$ = bodyResultOf(iosNotificationsContract.reconcile);
@@ -151,7 +152,31 @@ const reconcile$ = command(async ({ get, set }, signal: AbortSignal) => {
     : result.response;
 });
 
+const prefetchBody$ = bodyResultOf(iosNotificationsContract.prefetch);
+const reportPrefetch$ = computed(async (get) => {
+  const body = await get(prefetchBody$);
+  if (!body.ok) {
+    return body.response;
+  }
+  const auth = get(authContext$);
+  // This is a client observation, not a server attestation of successful delivery.
+  recordIosNotificationFact({
+    event: "prefetch_observed",
+    userId: auth.userId,
+    ...body.data,
+  });
+  return { status: 200 as const, body: { success: true as const } };
+});
+
 export const iosNotificationsRoutes: readonly RouteEntry[] = [
+  {
+    route: iosNotificationsContract.prefetch,
+    handler: authRoute({ accept: ["session"] }, reportPrefetch$),
+    requestBodyPolicy: {
+      maxBytes: 2048,
+      tooLargeMessage: "Prefetch report is too large",
+    },
+  },
   {
     route: iosNotificationsContract.reconcile,
     handler: authRoute({ accept: ["session"] }, reconcile$),

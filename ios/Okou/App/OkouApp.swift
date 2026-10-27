@@ -11,7 +11,11 @@ struct OkouApp: App {
   init() {
     // The XCTest host runs real services with isolated HTTP fixtures, never production auth.
     let isTestHost = NSClassFromString("XCTestCase") != nil
-    _authentication = State(initialValue: isTestHost ? nil : AuthenticationService())
+    let authentication = isTestHost ? nil : AuthenticationService()
+    _authentication = State(initialValue: authentication)
+    if let authentication, case .success(let configuration) = configuration {
+      delegate.notifications.configure(authentication: authentication, configuration: configuration)
+    }
   }
 
   var body: some Scene {
@@ -84,11 +88,6 @@ struct AppRootView: View {
       }
     }
     .task(id: authentication.scopeID) {
-      notifications.prepareWorkspace = {
-        if authentication.isLoading { await authentication.refresh() }
-        return notifications.data(
-          authentication: authentication, configuration: configuration, session: session)
-      }
       let data = notifications.data(
         authentication: authentication, configuration: configuration, session: session)
       workspaceData = data

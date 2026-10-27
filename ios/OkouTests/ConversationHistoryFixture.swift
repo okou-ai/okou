@@ -15,19 +15,24 @@ final class ConversationHistoryFixture: Sendable {
   private let rows: HistoryRows
 
   convenience init(
-    count: Int = 100, snapshot: ChatHTTPFixture.Handler? = nil,
+    count: Int = 100, beforeRequest: (@Sendable () throws -> Void)? = nil,
+    snapshot: ChatHTTPFixture.Handler? = nil,
+    threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
     additional: ChatHTTPFixture.Handler? = nil
   ) {
     self.init(
-      rows: (0..<count).map { Self.row($0 + 1) }, snapshot: snapshot,
+      rows: (0..<count).map { Self.row($0 + 1) }, beforeRequest: beforeRequest, snapshot: snapshot,
+      threadSnapshot: threadSnapshot,
       beforeEventRows: beforeEventRows, additional: additional)
   }
 
   init(
-    rows initial: [String], fileOrigin: URL? = nil,
+    rows initial: [String], beforeRequest: (@Sendable () throws -> Void)? = nil,
+    fileOrigin: URL? = nil,
     usage: ChatHTTPFixture.Handler? = nil, artifactResources: ChatHTTPFixture.Handler? = nil,
     snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil,
+    threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
     additional: ChatHTTPFixture.Handler? = nil
   ) {
@@ -35,6 +40,7 @@ final class ConversationHistoryFixture: Sendable {
     self.rows = rows
     let requests = requests
     http = ChatHTTPFixture { request in
+      try beforeRequest?()
       requests.values.withLock {
         $0.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
       }
@@ -46,6 +52,19 @@ final class ConversationHistoryFixture: Sendable {
         return try await artifactResources(request)
       }
       switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        if let threadSnapshot { return try await threadSnapshot(request) }
+        return Self.threadSnapshotResponse()
+      case "/api/chat-threads/events":
+        let since =
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+          .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
+        let event = """
+          {"id":"60000000-0000-4000-8000-000000000090","seqId":1,"kind":"created","chatThreadId":"\(Self.threadID)","agentId":"\(Self.agentID)","title":"History","createdAt":"2026-10-20T00:00:00Z"}
+          """
+        return ChatHTTPResponse(body: "{\"events\":[\(since == 0 ? event : "")],\"hasMore\":false}")
+      case "/api/ios-notifications/prefetch":
+        return ChatHTTPResponse(body: #"{"success":true}"#)
       case path + "/activity-summary":
         let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
         let data = try JSONSerialization.data(withJSONObject: [
@@ -109,6 +128,13 @@ final class ConversationHistoryFixture: Sendable {
         throw URLError(.unsupportedURL)
       }
     }
+  }
+
+  static func threadSnapshotResponse() -> ChatHTTPResponse {
+    ChatHTTPResponse(
+      body: """
+        {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)","title":"History","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
+        """)
   }
 
   func appendMessage() { rows.values.withLock { $0.append(Self.row($0.count + 1)) } }

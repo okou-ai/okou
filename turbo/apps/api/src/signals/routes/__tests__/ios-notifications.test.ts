@@ -137,3 +137,32 @@ describe("iOS notification read-state reconciliation", () => {
     });
   });
 });
+
+describe("iOS notification prefetch diagnostics", () => {
+  it("accepts payload-free observations from a native session", async () => {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected a workspace session");
+    }
+    authenticateIosSession(context, actor.userId, actor.orgId);
+    const result = await accept(
+      setupApp({ context, routes: iosNotificationsRoutes })(
+        iosNotificationsContract,
+      ).prefetch({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          notificationId: `${randomUUID()}:completed`,
+          threadId: randomUUID(),
+          runId: randomUUID(),
+          source: "app",
+          outcome: "saved",
+          durationMs: 120,
+          lastSeqId: 42,
+          containsRun: true,
+        },
+      }),
+      [200],
+    );
+    expect(result.body).toStrictEqual({ success: true });
+  });
+});

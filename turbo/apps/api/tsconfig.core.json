@@ -502,6 +502,7 @@
     "src/signals/services/pi-sandbox-config.ts",
     "src/signals/services/presentation-template-data.service.ts",
     "src/signals/services/push-notifications.service.ts",
+    "src/signals/services/ios-notification-telemetry.ts",
     "src/signals/external/apns.ts",
     "src/signals/services/ios-push-registrations.service.ts",
     "src/signals/services/run-context-snapshot.service.ts",

@@ -73,7 +73,7 @@ final class ThreadListStore {
     self.readRetrySleep = readRetrySleep
   }
 
-  func restoreCached() async {
+  func restoreCached(threadID: String? = nil) async {
     guard !closed, !Task.isCancelled else { return }
     if !restoredNavigation, navigationRevision == 0 {
       let revision = navigationRevision
@@ -86,7 +86,18 @@ final class ThreadListStore {
       }
       restoredNavigation = true
     }
-    guard !closed, !hasLoadedThreads, !Task.isCancelled else { return }
+    if hasLoadedThreads {
+      // A notification can cache a newly created chat after this list was mounted.
+      if let threadID, !threads.contains(where: { $0.id == threadID }),
+        let cached = await sync.cachedThreads(),
+        let thread = cached.first(where: { $0.id == threadID }),
+        !closed, !Task.isCancelled, !threads.contains(where: { $0.id == threadID })
+      {
+        projectThreads(threads + [thread])
+      }
+      return
+    }
+    guard !closed, !Task.isCancelled else { return }
     let revision = creationRevision
     if let cached = await sync.cachedThreads() {
       guard !closed, !hasLoadedThreads, !Task.isCancelled, revision == creationRevision else {
