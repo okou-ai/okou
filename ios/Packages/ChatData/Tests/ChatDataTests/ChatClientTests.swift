@@ -417,6 +417,55 @@ final class ChatClientTests: XCTestCase {
       snapshotThread.createdAt.timeIntervalSince1970, 1_789_639_200.123456, accuracy: 0.000001)
   }
 
+  func testServerTimestampsKeepTheirUTCInstantsAndPrecisionAcrossOfflineRestart() async throws {
+    let directory = try temporaryChatCacheDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let dates: [(value: String, seconds: TimeInterval)] = [
+      ("2026-09-17T10:00:00.123Z", 1_789_639_200.123),
+      ("2026-09-17T10:00:00Z", 1_789_639_200),
+      ("2026-09-17T10:00:00.123456", 1_789_639_200.123456),
+      ("2026-09-17T10:00:01", 1_789_639_201),
+      ("2026-09-17T18:00:00.123+08:00", 1_789_639_200.123),
+      ("2026-09-17T05:00:02-05:00", 1_789_639_202),
+    ]
+    let snapshot = dates.enumerated().map { index, date in
+      threadJSON(id: eventIdentity(index + 1), date: date.value)
+    }.joined(separator: ",")
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: "{\"chatThreads\":[\(snapshot)],\"latestEventId\":null,\"latestSeqId\":null}")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case "/api/indicators":
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    addTeardownBlock { fixture.session.invalidateAndCancel() }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "timestamp-user", workspaceID: "timestamp-workspace")
+    let cache = ChatCache(scope: scope, directory: directory)
+    addTeardownBlock { await cache.close() }
+    let service = ChatSync(client: fixture.client, cache: cache)
+    let online = try await service.threads()
+    await cache.close()
+    fixture.session.invalidateAndCancel()
+    let reopened = ChatCache(scope: scope, directory: directory)
+    addTeardownBlock { await reopened.close() }
+    let restored = await ChatSync(client: fixture.client, cache: reopened).cachedThreads()
+    for threads in [online, try XCTUnwrap(restored)] {
+      XCTAssertEqual(threads.count, dates.count)
+      for (index, date) in dates.enumerated() {
+        let thread = try XCTUnwrap(threads.first { $0.id == eventIdentity(index + 1) })
+        XCTAssertEqual(thread.createdAt.timeIntervalSince1970, date.seconds, accuracy: 0.000001)
+        XCTAssertEqual(thread.updatedAt.timeIntervalSince1970, date.seconds, accuracy: 0.000001)
+        XCTAssertEqual(thread.sortAt.timeIntervalSince1970, date.seconds, accuracy: 0.000001)
+      }
+    }
+  }
+
   func testListKeepsArchivedSnapshotAndReplaysUnarchive() async throws {
     let archivedThread = threadJSON(id: fixtureThread)
       .replacingOccurrences(of: "\"renamedAt\":null", with: "\"archived\":true,\"renamedAt\":null")
@@ -523,6 +572,11 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(cachedThreads?.first?.title, "Synced title")
     XCTAssertEqual(cachedHistory?.messages.map(\.text), ["Hello", "Answer"])
     XCTAssertEqual(requests.withLock { $0.count }, requestsBeforeRestart)
+    let unchanged = await restarted.cachedThreadList(newerThan: 11)
+    XCTAssertNil(unchanged)
+    let afterSnapshot = await restarted.cachedThreadList(newerThan: 10)
+    XCTAssertEqual(afterSnapshot?.threads.first?.title, "Synced title")
+    XCTAssertEqual(afterSnapshot?.cursor.seqID, 11)
 
     let restartedThreads = try await restarted.threads()
     let restartedHistory = try await restarted.history(threadID: fixtureThread)
