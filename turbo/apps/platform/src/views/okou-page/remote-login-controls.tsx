@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
+import {
+  sortByName,
+  sortRemoteHosts,
+} from "../../lib/remote-resource-order.ts";
+import { locale$ } from "../../signals/locale.ts";
 import { useTranslation } from "react-i18next";
 import { KeyRound, ChevronRight, Check } from "lucide-react";
 import {
@@ -34,6 +39,7 @@ export function RemoteLoginPicker({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
+  const locale = useGet(locale$);
   const open = useGet(remoteLoginPicker$) === protocol;
   const setOpen = useSet(setRemoteLoginPicker$);
   if (!items.length) {
@@ -75,7 +81,9 @@ export function RemoteLoginPicker({
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
-            {items.map((item) => {
+            {sortByName(items, locale, (item) => {
+              return { name: item.label, id: item.value };
+            }).map((item) => {
               return (
                 <Button
                   type="button"
@@ -110,6 +118,7 @@ export function RemoteLoginConfirmation({
   readonly protocol: RemoteLoginProtocol;
 }) {
   const { t } = useTranslation();
+  const locale = useGet(locale$);
   const impact = useGet(remoteLoginImpact$);
   const confirm = useSet(confirmRemoteLoginSave$);
   const cancel = useSet(cancelRemoteLoginSave$);
@@ -139,7 +148,7 @@ export function RemoteLoginConfirmation({
           </DialogDescription>
         </DialogHeader>
         <ul className="grid gap-2 rounded-lg bg-gray-50 p-4">
-          {impact?.hosts.map((host) => {
+          {sortRemoteHosts(impact?.hosts ?? [], locale).map((host) => {
             return (
               <li key={host.id} className="text-sm">
                 {host.displayName}

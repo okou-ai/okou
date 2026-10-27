@@ -1,5 +1,6 @@
 import { computed } from "ccstate";
 import type { ComputerUseHost } from "@okouai/api-contracts/contracts/computer-use";
+import { sortRemoteHosts } from "../../lib/remote-resource-order.ts";
 import { resolveApiBaseForNavigation } from "../api-base.ts";
 import { tapError } from "../utils.ts";
 
@@ -86,7 +87,10 @@ export const desktopDownloadSupportStatus$ = computed(
   },
 );
 
-type SelectableComputerUseHost = Pick<ComputerUseHost, "id" | "status">;
+type SelectableComputerUseHost = Pick<
+  ComputerUseHost,
+  "id" | "displayName" | "status"
+>;
 
 export function selectedComputerUseHostId(
   hosts: readonly { readonly id: string }[],
@@ -105,9 +109,13 @@ export function selectedComputerUseHostId(
 export function visibleComputerUseHosts<Host extends SelectableComputerUseHost>(
   hosts: readonly Host[],
   selectedHostId: string | null | undefined,
+  locale: string,
 ): Host[] {
   const selected = selectedComputerUseHostId(hosts, selectedHostId);
-  return hosts.filter((host) => {
-    return host.status === "online" || host.id === selected;
-  });
+  return sortRemoteHosts(
+    hosts.filter((host) => {
+      return host.status === "online" || host.id === selected;
+    }),
+    locale,
+  );
 }

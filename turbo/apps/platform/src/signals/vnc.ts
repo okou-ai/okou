@@ -45,6 +45,8 @@ import {
   type RsaAesProfile,
 } from "./vnc-rsa-aes.ts";
 import { accept } from "../lib/accept.ts";
+import { sortByName, sortRemoteHosts } from "../lib/remote-resource-order.ts";
+import { locale$ } from "./locale.ts";
 import {
   authenticatedSessionKey$,
   clerk$,
@@ -113,7 +115,7 @@ export const invalidateVnc$ = command(({ set }) => {
   set(invalidateTailscale$);
 });
 
-export const vncConnections$ = computed(async (get) => {
+const vncConnectionsData$ = computed(async (get) => {
   get(reload$);
   if (!(await get(vncIdentity$))) {
     return null;
@@ -125,6 +127,11 @@ export const vncConnections$ = computed(async (get) => {
     { showErrorToast: false },
   );
   return result.status === 200 ? result.body.connections : null;
+});
+export const vncConnections$ = computed(async (get) => {
+  const locale = get(locale$);
+  const connections = await get(vncConnectionsData$);
+  return connections ? sortRemoteHosts(connections, locale) : null;
 });
 
 export const vncObservationsSnapshot$ = computed(async (get) => {
@@ -182,7 +189,7 @@ export const subscribeVncObservations$ = command(
   },
 );
 
-export const vncCredentials$ = computed(async (get) => {
+const vncCredentialsData$ = computed(async (get) => {
   get(reload$);
   if (!(await get(vncIdentity$))) {
     return null;
@@ -194,6 +201,24 @@ export const vncCredentials$ = computed(async (get) => {
     { showErrorToast: false },
   );
   return result.status === 200 ? result.body.credentials : null;
+});
+export const vncCredentials$ = computed(async (get) => {
+  const locale = get(locale$);
+  const credentials = await get(vncCredentialsData$);
+  return credentials
+    ? sortByName(
+        credentials.map((credential) => {
+          return {
+            ...credential,
+            hosts: sortRemoteHosts(credential.hosts, locale),
+          };
+        }),
+        locale,
+        (credential) => {
+          return { name: credential.name, id: credential.id };
+        },
+      )
+    : null;
 });
 
 export const vncSummary$ = computed(async (get) => {

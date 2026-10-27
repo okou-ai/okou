@@ -208,6 +208,7 @@ import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/pe
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { locale$ } from "../../signals/locale.ts";
 import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { sendMode$ } from "../../signals/send-mode.ts";
@@ -6683,6 +6684,7 @@ function ComposerConnectorConnectDialogs({
 }
 
 function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
+  const locale = useGet(locale$);
   const storedComputerUseHostId = useGet(signals.computer.computerUseHostId$);
   const cloudBrowserState = useLastLoadable(
     signals.computer.cloudBrowserEnabled$,
@@ -6711,7 +6713,11 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   );
   const composerPageSignal = useGet(pageSignal$);
   return {
-    hosts: visibleComputerUseHosts(computerUseHosts, resolvedComputerUseHostId),
+    hosts: visibleComputerUseHosts(
+      computerUseHosts,
+      resolvedComputerUseHostId,
+      locale,
+    ),
     loading:
       computerUseHostsState.state === "loading" &&
       computerUseHosts.length === 0,

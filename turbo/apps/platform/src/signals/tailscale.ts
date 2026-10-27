@@ -4,6 +4,8 @@ import {
 } from "./remote-network-scope.ts";
 import { command, computed, state } from "ccstate";
 import { privateNetworkHostCount } from "../lib/private-network-references.ts";
+import { sortByName, sortRemoteHosts } from "../lib/remote-resource-order.ts";
+import { locale$ } from "./locale.ts";
 import {
   tailscaleChangedPayloadSchema,
   tailscaleContract,
@@ -85,7 +87,7 @@ export const invalidateTailscale$ = command(({ set }) => {
   set(invalidateRemoteAccess$);
 });
 
-export const tailscaleConfigs$ = computed(async (get) => {
+const tailscaleConfigsData$ = computed(async (get) => {
   get(reload$);
   if (!(await get(tailscaleIdentity$))) {
     return null;
@@ -97,6 +99,25 @@ export const tailscaleConfigs$ = computed(async (get) => {
     { showErrorToast: false },
   );
   return result.body.configs;
+});
+export const tailscaleConfigs$ = computed(async (get) => {
+  const locale = get(locale$);
+  const configs = await get(tailscaleConfigsData$);
+  return configs
+    ? sortByName(
+        configs.map((config) => {
+          return {
+            ...config,
+            sshHosts: sortRemoteHosts(config.sshHosts, locale),
+            vncHosts: sortRemoteHosts(config.vncHosts, locale),
+          };
+        }),
+        locale,
+        (config) => {
+          return { name: config.name, id: config.id };
+        },
+      )
+    : null;
 });
 
 const catchUpTailscale$ = command(({ set }) => {
