@@ -37,6 +37,7 @@ export function createRunnerBrowserFixtures(context: TestContext) {
       { readonly id: string; readonly name: string }
     >();
     const createdIds: string[] = [];
+    const sessionRequests: unknown[] = [];
     function profile(id: string, name = "owned-provider-profile") {
       return {
         id,
@@ -47,6 +48,34 @@ export function createRunnerBrowserFixtures(context: TestContext) {
     }
     const handlers = [
       native.handler,
+      http.post(`${PROVIDER_URL}/browsers`, async ({ request }) => {
+        sessionRequests.push(await request.json());
+        const id = randomUUID();
+        sessionIds.add(id);
+        const initialPage = {
+          targetId: randomUUID(),
+          windowId: 0,
+          url: "about:blank",
+        };
+        native.targets.set(initialPage.targetId, initialPage);
+        native.created.push(initialPage);
+        return HttpResponse.json(
+          {
+            id,
+            status: "active",
+            startedAt: new Date(START).toISOString(),
+            timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+            finishedAt: null,
+            liveUrl: "https://live.browser-use.com/owned-fixture",
+            cdpUrl: native.url,
+          },
+          { status: 201 },
+        );
+      }),
+      http.patch(`${PROVIDER_URL}/browsers/:id`, ({ params }) => {
+        sessionIds.delete(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
       http.get(`${PROVIDER_URL}/browsers/:id`, ({ params }) => {
         if (!sessionIds.has(String(params.id))) {
           return;
@@ -82,7 +111,14 @@ export function createRunnerBrowserFixtures(context: TestContext) {
         return new HttpResponse(null, { status: 204 });
       }),
     ];
-    return { handlers, createdIds, profile, native, sessionIds };
+    return {
+      handlers,
+      createdIds,
+      profile,
+      native,
+      sessionIds,
+      sessionRequests,
+    };
   }
 
   function client() {

@@ -25,16 +25,19 @@ export async function validatePermanentBrowserOwnerStorage(
   const creationExpiresAt = new Date(now.getTime() + 60_000);
   const timeoutAt = new Date(now.getTime() + 240 * 60_000);
   try {
-    await db.insert(browserOwnerProfiles).values({
-      id: profileId,
-      orgId,
-      userId: orgId,
-      providerProfileId,
-      instanceId,
-      status: "creating",
-      creationExpiresAt,
-      timeoutAt,
-    });
+    // This invariant checker also runs against the historical owner-only DDL.
+    // Name its invariant columns explicitly so later metadata stays independent.
+    await client.query(
+      "INSERT INTO browser_owner_profiles (id, org_id, user_id, provider_profile_id, instance_id, status, creation_expires_at, timeout_at) VALUES ($1, $2, $2, $3, $4, 'creating', $5, $6)",
+      [
+        profileId,
+        orgId,
+        providerProfileId,
+        instanceId,
+        creationExpiresAt,
+        timeoutAt,
+      ],
+    );
     await assert.rejects(
       client.query(
         "INSERT INTO browser_owner_profiles (org_id, user_id, provider_profile_id, instance_id, status, creation_expires_at, timeout_at) VALUES ($1, $1, $2, $3, 'creating', $4, $5)",
@@ -105,13 +108,10 @@ export async function validatePermanentBrowserOwnerStorage(
       ),
       { code: "23505", constraint: "uq_browser_owner_profiles_session" },
     );
-    await db.insert(browserOwnerWindows).values({
-      instanceId,
-      chatThreadId,
-      state: "active",
-      primaryWindowId: 0,
-      expiresAt: timeoutAt,
-    });
+    await client.query(
+      "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
+      [instanceId, chatThreadId, timeoutAt],
+    );
     await assert.rejects(
       client.query(
         "INSERT INTO browser_owner_windows (instance_id, chat_thread_id, state, primary_window_id, expires_at) VALUES ($1, $2, 'active', 0, $3)",
@@ -185,7 +185,10 @@ export async function validatePermanentBrowserOwnerStorage(
         status: "creating",
       })
       .where(eq(browserOwnerProfiles.id, profileId))
-      .returning();
+      .returning({
+        providerProfileId: browserOwnerProfiles.providerProfileId,
+        instanceId: browserOwnerProfiles.instanceId,
+      });
     assert.equal(replacement?.providerProfileId, providerProfileId);
     assert.equal(replacement?.instanceId, replacementId);
     const stale = await client.query(

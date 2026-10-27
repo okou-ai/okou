@@ -7,6 +7,7 @@ import { detach, Mechanism } from "../../../utils";
 interface NativeTarget {
   readonly targetId: string;
   windowId: number;
+  url?: string;
 }
 
 /** Stateful external CDP provider; no application state or DB access. */
@@ -24,6 +25,12 @@ export function createNativeWindowProvider(context: TestContext) {
     windowError?: string;
     closeSucceeds: boolean;
     createReply: "reply" | "disconnect" | "withhold";
+    command?: (command: {
+      readonly id: number;
+      readonly method: string;
+      readonly params: Readonly<Record<string, unknown>>;
+      readonly sessionId?: string;
+    }) => unknown;
   } = {
     url,
     targets: new Map(),
@@ -39,6 +46,7 @@ export function createNativeWindowProvider(context: TestContext) {
     id: number(),
     method: string(),
     params: record(string(), zUnknown()),
+    sessionId: string().optional(),
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
     const reply = async (event: { readonly data: unknown }) => {
@@ -84,7 +92,7 @@ export function createNativeWindowProvider(context: TestContext) {
             return {
               targetId: target.targetId,
               type: "page",
-              url: "about:blank",
+              url: target.url ?? "about:blank",
             };
           }),
         };
@@ -96,7 +104,19 @@ export function createNativeWindowProvider(context: TestContext) {
         }
         result = { success: state.closeSucceeds };
       } else {
-        throw new Error(`Unhandled external CDP method: ${command.method}`);
+        if (!state.command) {
+          throw new Error(`Unhandled external CDP method: ${command.method}`);
+        }
+        result = await state.command(command);
+        if (result instanceof Error) {
+          client.send(
+            JSON.stringify({
+              id: command.id,
+              error: { message: result.message },
+            }),
+          );
+          return;
+        }
       }
       client.send(JSON.stringify({ id: command.id, result }));
     };

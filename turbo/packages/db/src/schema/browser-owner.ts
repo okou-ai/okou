@@ -4,6 +4,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -22,6 +23,7 @@ export const browserOwnerProfiles = pgTable(
     providerProfileId: uuid("provider_profile_id").notNull(),
     instanceId: uuid("instance_id").notNull(),
     providerSessionId: uuid("provider_session_id"),
+    proxyCountryCode: varchar("proxy_country_code", { length: 2 }),
     status: varchar("status", { length: 16 })
       .$type<"creating" | "active" | "stopping" | "stopped">()
       .notNull(),
@@ -72,6 +74,7 @@ export const browserOwnerWindows = pgTable(
       .$type<"active" | "closing">()
       .notNull(),
     primaryWindowId: bigint("primary_window_id", { mode: "number" }).notNull(),
+    screenHeight: integer("screen_height").default(900).notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

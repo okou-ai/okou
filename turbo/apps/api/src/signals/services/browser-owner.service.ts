@@ -32,6 +32,7 @@ import {
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 
@@ -74,11 +75,17 @@ interface RunnerBrowserIdentity {
   readonly runnerIdentity: RunnerBrowserRequest["runnerIdentity"];
 }
 
-export interface BrowserOwnerAuthority extends RunnerBrowserIdentity {
+export interface BrowserPublicAuthority {
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
+  readonly runId: string;
+  readonly requireLiveRun: boolean;
 }
+
+export type BrowserOwnerAuthority =
+  | (RunnerBrowserIdentity & Omit<BrowserPublicAuthority, "requireLiveRun">)
+  | BrowserPublicAuthority;
 
 /** The trusted host derives Guest -> Run locally; completion sandboxId is not authority. */
 function currentRun(input: RunnerBrowserIdentity) {
@@ -134,12 +141,48 @@ export function authorityStillCurrent(owner: BrowserOwnerAuthority) {
       .from(agentRuns)
       .where(
         and(
-          currentRun(owner),
+          browserAuthorityRun(owner),
           eq(agentRuns.orgId, owner.orgId),
           eq(agentRuns.userId, owner.userId),
           eq(agentRuns.chatThreadId, owner.chatThreadId),
         ),
       ),
+  );
+}
+
+function browserAuthorityRun(owner: BrowserOwnerAuthority) {
+  if ("runnerIdentity" in owner) {
+    return currentRun(owner);
+  }
+  return and(
+    eq(agentRuns.id, owner.runId),
+    eq(agentRuns.orgId, owner.orgId),
+    eq(agentRuns.userId, owner.userId),
+    eq(agentRuns.chatThreadId, owner.chatThreadId),
+    owner.requireLiveRun
+      ? or(eq(agentRuns.status, "pending"), eq(agentRuns.status, "running"))
+      : undefined,
+    exists(
+      new QueryBuilder()
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .innerJoin(
+          agents,
+          and(
+            eq(agents.id, chatThreads.agentId),
+            eq(agents.orgId, owner.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(chatThreads.id, owner.chatThreadId),
+            eq(chatThreads.userId, owner.userId),
+            eq(chatThreads.cloudBrowserEnabled, true),
+            eq(agentRuns.agentId, chatThreads.agentId),
+            or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
+          ),
+        ),
+    ),
   );
 }
 
@@ -343,6 +386,9 @@ const allocateOwnerBrowser$ = command(
               providerSessionId: sql`NULL::uuid`
                 .mapWith(profiles.providerSessionId)
                 .as("provider_session_id"),
+              proxyCountryCode: sql`NULL::varchar`
+                .mapWith(nullableDriverValueDecoder(profiles.proxyCountryCode))
+                .as("proxy_country_code"),
               status: sql`'creating'`.mapWith(profiles.status).as("status"),
               creationExpiresAt:
                 sql`${sql.param(creationExpiresAt, profiles.creationExpiresAt)}::timestamp`
@@ -362,7 +408,7 @@ const allocateOwnerBrowser$ = command(
             .from(agentRuns)
             .where(
               and(
-                currentRun(owner),
+                browserAuthorityRun(owner),
                 action.previousProfile
                   ? exists(
                       new QueryBuilder()
@@ -505,6 +551,9 @@ const admitOwnerBrowserWindow$ = command(
               primaryWindowId: sql`${action.primaryWindowId}::bigint`
                 .mapWith(windows.primaryWindowId)
                 .as("primary_window_id"),
+              screenHeight: sql`900`
+                .mapWith(windows.screenHeight)
+                .as("screen_height"),
               expiresAt:
                 sql`least(${profiles.timeoutAt}, ${sql.param(new Date(now.getTime() + IDLE_MS), windows.expiresAt)}::timestamp)`
                   .mapWith(windows.expiresAt)
@@ -703,6 +752,7 @@ const beginOwnerBrowserStop$ = command(
           orgId: stopping.orgId,
           userId: stopping.userId,
           providerProfileId: stopping.providerProfileId,
+          proxyCountryCode: stopping.proxyCountryCode,
           instanceId: stopping.instanceId,
           providerSessionId: stopping.providerSessionId,
           status: stopping.status,

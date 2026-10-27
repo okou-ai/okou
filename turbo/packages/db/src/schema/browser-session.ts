@@ -292,6 +292,7 @@ export const browserSessionTabSnapshots = pgTable(
         { onDelete: "cascade" },
       ),
     encryptedTabUrls: text("encrypted_tab_urls").notNull(),
+    ownerProfileId: uuid("owner_profile_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

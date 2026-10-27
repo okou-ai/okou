@@ -8,17 +8,23 @@ import {
   BROWSER_SCREEN_WIDTH,
   type BrowserSession,
   type BrowserSuspensionReason,
+  type BrowserWindowContext,
 } from "@okouai/api-contracts/contracts/browser";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   browserSessionInstances,
   browserSessionResizeStates,
   browserSessionScreenshots,
+  browserSessionScreenshotDeletions,
   browserSessionTabSnapshots,
   browserSessions,
   browserThreadProfiles,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
+import {
+  browserOwnerProfiles,
+  browserOwnerWindows,
+} from "@okouai/db/schema/browser-owner";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -43,6 +49,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { array, boolean, object, string, ZodError } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
@@ -376,7 +383,7 @@ const loadBrowserScreen$ = command(
   },
 );
 
-const loadBrowserScreenshotUrl$ = command(
+export const loadBrowserScreenshotUrl$ = command(
   async (
     { set },
     chatThreadId: string,
@@ -588,11 +595,13 @@ const saveBrowserTabSnapshot$ = command(
           .values({
             chatThreadId: target.chatThreadId,
             encryptedTabUrls,
+            ownerProfileId: null,
           })
           .onConflictDoUpdate({
             target: browserSessionTabSnapshots.chatThreadId,
             set: {
               encryptedTabUrls,
+              ownerProfileId: null,
               updatedAt: nowDate(),
             },
           });
@@ -823,7 +832,7 @@ const browserConcurrencyLimit$ = command(
   },
 );
 
-const ensureBrowserCapacity$ = command(
+export const ensureBrowserCapacity$ = command(
   async (
     { get, set },
     orgId: string,
@@ -840,6 +849,25 @@ const ensureBrowserCapacity$ = command(
     }
     if (!Number.isFinite(limit)) {
       return null;
+    }
+    const shared = await db.$count(
+      browserOwnerProfiles,
+      and(
+        eq(browserOwnerProfiles.orgId, orgId),
+        inArray(browserOwnerProfiles.status, [
+          "creating",
+          "active",
+          "stopping",
+        ]),
+      ),
+    );
+    signal.throwIfAborted();
+    const available = limit - shared;
+    if (available <= 0) {
+      return conflict(
+        "This organization has no managed browser concurrency available",
+        "BROWSER_CONCURRENCY_LIMIT",
+      );
     }
     const active = await db
       .select({
@@ -864,7 +892,7 @@ const ensureBrowserCapacity$ = command(
         asc(browserSessionInstances.startedAt),
       );
     signal.throwIfAborted();
-    const reclaimCount = active.length - limit + 1;
+    const reclaimCount = active.length - available + 1;
     for (const target of active.slice(0, Math.max(reclaimCount, 0))) {
       await set(
         stopActiveBrowserInstance$,
@@ -937,8 +965,117 @@ async function recordBrowserScreenshotResult(result: {
   }
 }
 
-const captureAndStoreBrowserScreenshot$ = command(
-  async ({ get, set }, browser: BrowserSessionRow): Promise<void> => {
+const publishBrowserScreenshot$ = command(
+  async (
+    { set },
+    args: {
+      readonly browser: BrowserSessionRow;
+      readonly shared?: {
+        readonly providerSessionId: string;
+        readonly window: BrowserWindowContext;
+      };
+      readonly objectKey: string;
+      readonly url: string;
+    },
+  ): Promise<boolean> => {
+    const { browser, shared } = args;
+    const artifact = { key: args.objectKey, url: args.url };
+    const db = set(writeDb$);
+    if (shared) {
+      const t = browserSessionScreenshots;
+      const guard = and(
+        eq(browserOwnerWindows.chatThreadId, browser.chatThreadId),
+        eq(browserOwnerWindows.instanceId, shared.window.instanceId),
+        eq(browserOwnerWindows.primaryWindowId, shared.window.primaryWindowId),
+        exists(
+          new QueryBuilder()
+            .select({ id: browserOwnerProfiles.id })
+            .from(browserOwnerProfiles)
+            .where(
+              and(
+                eq(browserOwnerProfiles.instanceId, shared.window.instanceId),
+                eq(
+                  browserOwnerProfiles.providerSessionId,
+                  shared.providerSessionId,
+                ),
+                eq(browserOwnerProfiles.orgId, browser.orgId),
+                eq(browserOwnerProfiles.userId, browser.userId),
+              ),
+            ),
+        ),
+      );
+      const source = new QueryBuilder()
+        .select({
+          chatThreadId: browserOwnerWindows.chatThreadId,
+          objectKey: sql`${artifact.key}`.mapWith(t.objectKey).as("object_key"),
+          url: sql`${artifact.url}`.mapWith(t.url).as("url"),
+          createdAt: sql`${sql.param(nowDate(), t.createdAt)}::timestamp`
+            .mapWith(t.createdAt)
+            .as("created_at"),
+          updatedAt: sql`${sql.param(nowDate(), t.updatedAt)}::timestamp`
+            .mapWith(t.updatedAt)
+            .as("updated_at"),
+        })
+        .from(browserOwnerWindows)
+        .where(guard);
+      const saved = await db
+        .insert(t)
+        .select(source)
+        .onConflictDoUpdate({
+          target: t.chatThreadId,
+          set: {
+            objectKey: artifact.key,
+            url: artifact.url,
+            updatedAt: nowDate(),
+          },
+          setWhere: exists(
+            new QueryBuilder()
+              .select({ id: browserOwnerWindows.chatThreadId })
+              .from(browserOwnerWindows)
+              .where(guard),
+          ),
+        })
+        .returning({ id: t.chatThreadId });
+      if (saved.length === 0) {
+        await db
+          .insert(browserSessionScreenshotDeletions)
+          .values({
+            objectKey: artifact.key,
+            chatThreadId: browser.chatThreadId,
+          })
+          .onConflictDoNothing();
+        return false;
+      }
+    } else {
+      await db
+        .insert(browserSessionScreenshots)
+        .values({
+          chatThreadId: browser.chatThreadId,
+          objectKey: artifact.key,
+          url: artifact.url,
+        })
+        .onConflictDoUpdate({
+          target: browserSessionScreenshots.chatThreadId,
+          set: {
+            objectKey: artifact.key,
+            url: artifact.url,
+            updatedAt: nowDate(),
+          },
+        });
+    }
+    return true;
+  },
+);
+
+export const captureAndStoreBrowserScreenshot$ = command(
+  async (
+    { get, set },
+    browser: BrowserSessionRow,
+    shared?: {
+      readonly providerSessionId: string;
+      readonly window: BrowserWindowContext;
+    },
+  ): Promise<void> => {
     const startedAt = now();
     const signal = get(rootSignal$);
     let stage: BrowserScreenshotStage = "prepare";
@@ -946,8 +1083,8 @@ const captureAndStoreBrowserScreenshot$ = command(
     // screenshot operation has a recorded result.
     const [result] = await Promise.allSettled([
       (async () => {
-        const db = set(writeDb$);
-        const instance = await set(loadActiveInstance$, browser.chatThreadId);
+        const instance =
+          shared ?? (await set(loadActiveInstance$, browser.chatThreadId));
         signal.throwIfAborted();
         if (!instance) {
           return;
@@ -967,6 +1104,7 @@ const captureAndStoreBrowserScreenshot$ = command(
             signal,
             AbortSignal.timeout(BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS),
           ]),
+          shared?.window.primaryWindowId,
         );
         signal.throwIfAborted();
         stage = "upload";
@@ -1006,21 +1144,15 @@ const captureAndStoreBrowserScreenshot$ = command(
             signal,
           );
         }
-        await db
-          .insert(browserSessionScreenshots)
-          .values({
-            chatThreadId: browser.chatThreadId,
-            objectKey: artifact.key,
-            url: artifact.url,
-          })
-          .onConflictDoUpdate({
-            target: browserSessionScreenshots.chatThreadId,
-            set: {
-              objectKey: artifact.key,
-              url: artifact.url,
-              updatedAt: nowDate(),
-            },
-          });
+        const saved = await set(publishBrowserScreenshot$, {
+          browser,
+          shared,
+          objectKey: artifact.key,
+          url: artifact.url,
+        });
+        if (!saved) {
+          return;
+        }
 
         // Persistence is the success boundary; a deadline after commit must
         // not turn an available preview into a failed capture metric.

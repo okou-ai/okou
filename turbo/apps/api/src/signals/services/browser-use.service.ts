@@ -511,8 +511,21 @@ async function resizeBrowserUseCdp(
   width: number,
   height: number,
   signal: AbortSignal,
+  primaryWindowId?: number,
 ): Promise<void> {
   await withBrowserUseCdpSocket(cdpUrl, signal, async (socket) => {
+    if (primaryWindowId !== undefined) {
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: 1,
+          method: "Browser.setContentsSize",
+          params: { windowId: primaryWindowId, width, height },
+        },
+        signal,
+      );
+      return;
+    }
     const targets = browserUseCdpTargetsSchema.parse(
       await sendBrowserUseCdpCommand(
         socket,
@@ -616,6 +629,63 @@ async function browserWindowTargets(
       signal,
     ),
   ).targetInfos;
+}
+
+async function browserUseInputWindowMatches(
+  socket: WebSocket,
+  target: {
+    readonly pageTargetId: string;
+    readonly primaryWindowId?: number;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  return (
+    target.primaryWindowId === undefined ||
+    (await nativeWindowForTarget(
+      socket,
+      target.pageTargetId,
+      { next: 0 },
+      signal,
+    )) === target.primaryWindowId
+  );
+}
+
+/** Only a newly created, unpublished owner instance may adopt its blank page. */
+export async function initialBrowserUseWindow(
+  cdpUrl: string,
+  signal: AbortSignal,
+): Promise<BrowserUseWindowCandidate> {
+  const candidate = await withBrowserUseCdpSocket(
+    cdpUrl,
+    browserUseCdpSignal(signal),
+    async (socket) => {
+      const sequence = { next: 1 };
+      const pages = (
+        await browserWindowTargets(socket, sequence, signal)
+      ).filter((target) => {
+        return target.type === "page";
+      });
+      const page = pages[0];
+      if (pages.length !== 1 || !page || page.url !== "about:blank") {
+        throw new BrowserUseProviderError(
+          502,
+          "BROWSER_USE_INVALID_INITIAL_WINDOW",
+          "The new Browser instance did not provide an empty initial window",
+        );
+      }
+      const primaryWindowId = await nativeWindowForTarget(
+        socket,
+        page.targetId,
+        sequence,
+        signal,
+      );
+      if (primaryWindowId === null) {
+        throw new Error("The initial Browser window disappeared");
+      }
+      return { targetId: page.targetId, primaryWindowId };
+    },
+  );
+  return candidate;
 }
 
 /** Creation is never retried: an unknown response may already have a window. */
@@ -840,6 +910,7 @@ async function withBrowserUseCdpDeadline<T>(
 export async function listBrowserUseTabUrls(
   cdpUrl: string,
   signal: AbortSignal,
+  primaryWindowId?: number,
 ): Promise<readonly string[]> {
   const cdpSignal = browserUseCdpSignal(signal);
   return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
@@ -851,8 +922,24 @@ export async function listBrowserUseTabUrls(
       ),
       { reportInput: true },
     );
+    const pages = [];
+    const sequence = { next: 2 };
+    for (const target of targets.targetInfos) {
+      if (
+        target.type === "page" &&
+        (primaryWindowId === undefined ||
+          (await nativeWindowForTarget(
+            socket,
+            target.targetId,
+            sequence,
+            cdpSignal,
+          )) === primaryWindowId)
+      ) {
+        pages.push(target);
+      }
+    }
     return boundedRestorableBrowserUseTabUrls(
-      targets.targetInfos
+      pages
         .filter((target) => {
           return target.type === "page";
         })
@@ -863,9 +950,67 @@ export async function listBrowserUseTabUrls(
   });
 }
 
+async function selectBrowserScreenshotPage(
+  socket: WebSocket,
+  pageTargets: readonly { readonly targetId: string }[],
+  firstCommandId: number,
+  cdpSignal: AbortSignal,
+) {
+  let commandId = firstCommandId;
+  let focusedSessionId: string | null = null;
+  let fallbackSessionId: string | null = null;
+  let selectedTargetId: string | null = null;
+  for (const target of pageTargets) {
+    const attached = browserUseCdpAttachedTargetSchema.parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: commandId,
+          method: "Target.attachToTarget",
+          params: { targetId: target.targetId, flatten: true },
+        },
+        cdpSignal,
+      ),
+      { reportInput: true },
+    );
+    commandId += 1;
+    fallbackSessionId = attached.sessionId;
+    selectedTargetId = target.targetId;
+    const focus = browserUseCdpFocusSchema.parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: commandId,
+          method: "Runtime.evaluate",
+          params: {
+            expression: "document.hasFocus()",
+            returnByValue: true,
+          },
+          sessionId: attached.sessionId,
+        },
+        cdpSignal,
+      ),
+      { reportInput: true },
+    );
+    commandId += 1;
+    if (focus.result.value === true) {
+      focusedSessionId = attached.sessionId;
+      break;
+    }
+  }
+
+  const sessionId = focusedSessionId ?? fallbackSessionId;
+  if (!sessionId) {
+    throw new Error("Browser Use CDP could not attach to a page target");
+  }
+
+  return { sessionId, selectedTargetId, nextCommandId: commandId };
+}
+
 export async function captureBrowserUseScreenshot(
   cdpUrl: string,
   signal: AbortSignal,
+  primaryWindowId?: number,
 ): Promise<Buffer> {
   const cdpSignal = browserUseCdpSignal(signal);
   return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
@@ -877,58 +1022,34 @@ export async function captureBrowserUseScreenshot(
       ),
       { reportInput: true },
     );
-    const pageTargets = targets.targetInfos.filter((target) => {
-      return target.type === "page";
-    });
+    const pageTargets = [];
+    const sequence = { next: 2 };
+    for (const target of targets.targetInfos) {
+      if (
+        target.type === "page" &&
+        (primaryWindowId === undefined ||
+          (await nativeWindowForTarget(
+            socket,
+            target.targetId,
+            sequence,
+            cdpSignal,
+          )) === primaryWindowId)
+      ) {
+        pageTargets.push(target);
+      }
+    }
     if (pageTargets.length === 0) {
       throw new Error("Browser Use CDP returned no page target");
     }
 
-    let commandId = 2;
-    let focusedSessionId: string | null = null;
-    let fallbackSessionId: string | null = null;
-    for (const target of pageTargets) {
-      const attached = browserUseCdpAttachedTargetSchema.parse(
-        await sendBrowserUseCdpCommand(
-          socket,
-          {
-            id: commandId,
-            method: "Target.attachToTarget",
-            params: { targetId: target.targetId, flatten: true },
-          },
-          cdpSignal,
-        ),
-        { reportInput: true },
-      );
-      commandId += 1;
-      fallbackSessionId = attached.sessionId;
-      const focus = browserUseCdpFocusSchema.parse(
-        await sendBrowserUseCdpCommand(
-          socket,
-          {
-            id: commandId,
-            method: "Runtime.evaluate",
-            params: {
-              expression: "document.hasFocus()",
-              returnByValue: true,
-            },
-            sessionId: attached.sessionId,
-          },
-          cdpSignal,
-        ),
-        { reportInput: true },
-      );
-      commandId += 1;
-      if (focus.result.value === true) {
-        focusedSessionId = attached.sessionId;
-        break;
-      }
-    }
-
-    const sessionId = focusedSessionId ?? fallbackSessionId;
-    if (!sessionId) {
-      throw new Error("Browser Use CDP could not attach to a page target");
-    }
+    const selected = await selectBrowserScreenshotPage(
+      socket,
+      pageTargets,
+      sequence.next,
+      cdpSignal,
+    );
+    const { sessionId, selectedTargetId } = selected;
+    let commandId = selected.nextCommandId;
     const layout = browserUseCdpLayoutMetricsSchema.parse(
       await sendBrowserUseCdpCommand(
         socket,
@@ -944,6 +1065,17 @@ export async function captureBrowserUseScreenshot(
     );
     commandId += 1;
     const viewport = layout.cssVisualViewport;
+    if (
+      primaryWindowId !== undefined &&
+      selectedTargetId &&
+      !(await browserUseInputWindowMatches(
+        socket,
+        { pageTargetId: selectedTargetId, primaryWindowId },
+        cdpSignal,
+      ))
+    ) {
+      throw new Error("The Browser screenshot page moved to another window");
+    }
     const screenshot = browserUseCdpScreenshotSchema.parse(
       await sendBrowserUseCdpCommand(
         socket,
@@ -970,6 +1102,17 @@ export async function captureBrowserUseScreenshot(
       ),
       { reportInput: true },
     );
+    if (
+      primaryWindowId !== undefined &&
+      selectedTargetId &&
+      !(await browserUseInputWindowMatches(
+        socket,
+        { pageTargetId: selectedTargetId, primaryWindowId },
+        cdpSignal,
+      ))
+    ) {
+      throw new Error("The Browser screenshot page moved to another window");
+    }
     return Buffer.from(screenshot.data, "base64");
   });
 }
@@ -1988,10 +2131,14 @@ async function validateBrowserUseUserActionOnSocket(
   socket: WebSocket,
   target: {
     readonly pageTargetId: string;
+    readonly primaryWindowId?: number;
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
 ): Promise<BrowserUseUserActionValidation> {
+  if (!(await browserUseInputWindowMatches(socket, target, signal))) {
+    throw new BrowserUseUserActionValidationError("page_target_not_found");
+  }
   const opened = await openBrowserUseValidationPage(
     socket,
     target.pageTargetId,
@@ -2069,6 +2216,9 @@ async function validateBrowserUseUserActionOnSocket(
     },
     signal,
   );
+  if (!(await browserUseInputWindowMatches(socket, target, signal))) {
+    throw new BrowserUseUserActionValidationError("page_target_not_found");
+  }
   const fields = capturedControls.map((control, index) => {
     const inspection = inspections[index];
     if (
@@ -2110,6 +2260,7 @@ export async function validateBrowserUseUserAction(
   cdpUrl: string,
   target: {
     readonly pageTargetId: string;
+    readonly primaryWindowId?: number;
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
@@ -2168,6 +2319,7 @@ export interface BrowserUseUserActionApplyField {
 }
 
 export interface BrowserUseUserActionExactTarget {
+  readonly primaryWindowId?: number;
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly pageUrlHash: string;
@@ -2220,6 +2372,9 @@ async function openBrowserUseApplyPage(
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
 ): Promise<(AttachedBrowserUsePage & { readonly frameId: string }) | null> {
+  if (!(await browserUseInputWindowMatches(socket, target, signal))) {
+    return null;
+  }
   const targets = browserUseCdpTargetsSchema.parse(
     await sendBrowserUseCdpCommand(
       socket,
@@ -2527,7 +2682,8 @@ export async function preflightBrowserUseUserAction(
             );
           },
         );
-        return resolved
+        return resolved &&
+          (await browserUseInputWindowMatches(socket, target, cdpSignal))
           ? {
               kind: "valid",
               controls: resolved.fields.map((field) => {
@@ -3048,6 +3204,29 @@ function assessBrowserUseFileChoice(
   return "write";
 }
 
+const browserUseFileWriter = `function (original, operation, files) {
+    if (!(this instanceof HTMLInputElement) || this.type !== "file" ||
+      !this.isConnected || this.ownerDocument !== document ||
+      this.getRootNode() !== document || this.matches(":disabled") ||
+      this.webkitdirectory ||
+      this.accept !== original.accept || this.multiple !== original.multiple ||
+      this.required !== original.required ||
+      JSON.stringify([...this.files].map(f => ({ name: f.name, size: f.size, type: f.type }))) !==
+        JSON.stringify(original.files)) return false;
+    const transfer = new DataTransfer();
+    if (operation === "replace") for (const item of files) {
+      const raw = atob(item.contentBase64);
+      const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+      transfer.items.add(new File([bytes], item.name, { type: item.type }));
+    }
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")?.set;
+    if (!setter) return false;
+    setter.call(this, transfer.files);
+    this.dispatchEvent(new Event("input", { bubbles: true }));
+    this.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }`;
+
 async function applyBrowserUseFileActionOnSocket(
   socket: WebSocket,
   target: BrowserUseUserActionExactTarget,
@@ -3094,28 +3273,9 @@ async function applyBrowserUseFileActionOnSocket(
     required: observed.siteRequired,
     files: observed.files,
   };
-  const writer = `function (original, operation, files) {
-    if (!(this instanceof HTMLInputElement) || this.type !== "file" ||
-      !this.isConnected || this.ownerDocument !== document ||
-      this.getRootNode() !== document || this.matches(":disabled") ||
-      this.webkitdirectory ||
-      this.accept !== original.accept || this.multiple !== original.multiple ||
-      this.required !== original.required ||
-      JSON.stringify([...this.files].map(f => ({ name: f.name, size: f.size, type: f.type }))) !==
-        JSON.stringify(original.files)) return false;
-    const transfer = new DataTransfer();
-    if (operation === "replace") for (const item of files) {
-      const raw = atob(item.contentBase64);
-      const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
-      transfer.items.add(new File([bytes], item.name, { type: item.type }));
-    }
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")?.set;
-    if (!setter) return false;
-    setter.call(this, transfer.files);
-    this.dispatchEvent(new Event("input", { bubbles: true }));
-    this.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
-  }`;
+  if (!(await browserUseInputWindowMatches(socket, target, signal))) {
+    return "stale";
+  }
   mutation.writeStarted = true;
   const wrote = browserUseCdpValueSchema.parse(
     await sendBrowserUseCdpCommand(
@@ -3126,7 +3286,7 @@ async function applyBrowserUseFileActionOnSocket(
         sessionId: page.sessionId,
         params: {
           objectId,
-          functionDeclaration: writer,
+          functionDeclaration: browserUseFileWriter,
           arguments: [
             { value: snapshot },
             { value: choice.operation },
@@ -3167,7 +3327,10 @@ async function applyBrowserUseFileActionOnSocket(
       signal,
     ),
   );
-  if (verified.result.value !== true) {
+  if (
+    verified.result.value !== true ||
+    !(await browserUseInputWindowMatches(socket, target, signal))
+  ) {
     throw new BrowserUseUserActionMutationError(true);
   }
   return "succeeded";
@@ -3222,7 +3385,16 @@ async function applyBrowserUseUserActionOnSocket(
     fields: resolved.fields,
     commandId: resolved.commandId + (resolved.fields.length > 0 ? 1 : 0),
   };
+  if (!(await browserUseInputWindowMatches(socket, target, signal))) {
+    return "stale";
+  }
   await writeBrowserUseControlFields(socket, writeArgs, mutation, signal);
+  if (!(await browserUseInputWindowMatches(socket, target, signal))) {
+    if (mutation.writeStarted) {
+      throw new BrowserUseUserActionMutationError(true);
+    }
+    return "stale";
+  }
   return "succeeded";
 }
 
@@ -3254,6 +3426,191 @@ export async function applyBrowserUseUserAction(
 
 function disposableBrowserUseTabUrl(url: string): boolean {
   return url === "about:blank" || url === "chrome://newtab/";
+}
+
+async function closeRestoredBrowserSeed(
+  socket: WebSocket,
+  window: BrowserUseWindowCandidate,
+  sequence: { next: number },
+  cdpSignal: AbortSignal,
+) {
+  if (
+    (await nativeWindowForTarget(
+      socket,
+      window.targetId,
+      sequence,
+      cdpSignal,
+    )) === window.primaryWindowId
+  ) {
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: sequence.next++,
+        method: "Target.closeTarget",
+        params: { targetId: window.targetId },
+      },
+      cdpSignal,
+    );
+  }
+}
+
+export async function restoreBrowserUseWindowTabUrls(
+  cdpUrl: string,
+  window: BrowserUseWindowCandidate,
+  urls: readonly string[],
+  signal: AbortSignal,
+): Promise<void> {
+  const bounded = boundedRestorableBrowserUseTabUrls(urls);
+  if (bounded.length === 0) {
+    return;
+  }
+  const cdpSignal = browserUseCdpSignal(signal);
+  await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
+    const sequence = { next: 1 };
+    if (
+      (await nativeWindowForTarget(
+        socket,
+        window.targetId,
+        sequence,
+        cdpSignal,
+      )) !== window.primaryWindowId
+    ) {
+      throw new Error("The Browser restore window is unavailable");
+    }
+    const before = new Set(
+      (await browserWindowTargets(socket, sequence, cdpSignal)).map(
+        (target) => {
+          return target.targetId;
+        },
+      ),
+    );
+    const attached = browserUseCdpAttachedTargetSchema.parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: sequence.next++,
+          method: "Target.attachToTarget",
+          params: { targetId: window.targetId, flatten: true },
+        },
+        cdpSignal,
+      ),
+    );
+    const tree = browserUseCdpFrameTreeSchema.parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: sequence.next++,
+          method: "Page.getFrameTree",
+          params: {},
+          sessionId: attached.sessionId,
+        },
+        cdpSignal,
+      ),
+    );
+    const world = object({
+      executionContextId: number().int().positive(),
+    }).parse(
+      await sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: sequence.next++,
+          method: "Page.createIsolatedWorld",
+          params: {
+            frameId: tree.frameTree.frame.id,
+            worldName: "okou-window-restore",
+          },
+          sessionId: attached.sessionId,
+        },
+        cdpSignal,
+      ),
+    );
+    for (const url of bounded) {
+      const opened = browserUseCdpFocusSchema.parse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: sequence.next++,
+            method: "Runtime.evaluate",
+            params: {
+              expression: `Boolean(window.open(${JSON.stringify(url)}, "_blank"))`,
+              contextId: world.executionContextId,
+              userGesture: true,
+              returnByValue: true,
+            },
+            sessionId: attached.sessionId,
+          },
+          cdpSignal,
+        ),
+      );
+      if (opened.result.value !== true) {
+        throw new Error("The Browser could not restore a tab");
+      }
+    }
+    let restored = 0;
+    for (const target of await browserWindowTargets(
+      socket,
+      sequence,
+      cdpSignal,
+    )) {
+      if (
+        target.type === "page" &&
+        !before.has(target.targetId) &&
+        (await nativeWindowForTarget(
+          socket,
+          target.targetId,
+          sequence,
+          cdpSignal,
+        )) === window.primaryWindowId
+      ) {
+        restored++;
+      }
+    }
+    if (restored !== bounded.length) {
+      throw new Error("The Browser could not confirm restored tab placement");
+    }
+    await closeRestoredBrowserSeed(socket, window, sequence, cdpSignal);
+  });
+}
+
+export async function closeBrowserUseWindow(
+  cdpUrl: string,
+  primaryWindowId: number,
+  signal: AbortSignal,
+): Promise<void> {
+  await withBrowserUseCdpSocket(
+    cdpUrl,
+    browserUseCdpSignal(signal),
+    async (socket) => {
+      const sequence = { next: 1 };
+      for (const target of await browserWindowTargets(
+        socket,
+        sequence,
+        signal,
+      )) {
+        if (
+          target.type === "page" &&
+          (await nativeWindowForTarget(
+            socket,
+            target.targetId,
+            sequence,
+            signal,
+          )) === primaryWindowId
+        ) {
+          object({ success: literal(true) }).parse(
+            await sendBrowserUseCdpCommand(
+              socket,
+              {
+                id: sequence.next++,
+                method: "Target.closeTarget",
+                params: { targetId: target.targetId },
+              },
+              signal,
+            ),
+          );
+        }
+      }
+    },
+  );
 }
 
 export async function restoreBrowserUseTabUrls(
@@ -3323,9 +3680,16 @@ export async function resizeBrowserUseSession(
   width: number,
   height: number,
   signal: AbortSignal,
+  primaryWindowId?: number,
 ): Promise<void> {
   const result = await settle(
-    resizeBrowserUseCdp(cdpUrl, width, height, browserUseCdpSignal(signal)),
+    resizeBrowserUseCdp(
+      cdpUrl,
+      width,
+      height,
+      browserUseCdpSignal(signal),
+      primaryWindowId,
+    ),
   );
   signal.throwIfAborted();
   if (!result.ok) {

@@ -1,0 +1,272 @@
+import { randomUUID } from "node:crypto";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { describe, expect, it } from "vitest";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow } from "../../../lib/time";
+import { browserRoutes } from "../browser";
+import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  createRunnerBrowserFixtures,
+  MINUTE,
+  START,
+} from "./helpers/runner-browser-fixture";
+
+const context = testContext();
+const { fixture, accepted } = createRunnerBrowserFixtures(context);
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+function client() {
+  return setupApp({ context, routes: browserRoutes })(browserContract);
+}
+type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
+function runHeaders(chat: Chat) {
+  return { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` };
+}
+async function use(chat: Chat) {
+  return (
+    await accept(client().use({ headers: runHeaders(chat), body: {} }), [200])
+  ).body;
+}
+function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
+  const resize: number[] = [];
+  f.provider.native.command = (command) => {
+    const targetId = command.sessionId?.replace(/^page-/u, "");
+    if (command.method === "Target.attachToTarget") {
+      return { sessionId: `page-${String(command.params.targetId)}` };
+    }
+    if (command.method === "Browser.setContentsSize") {
+      resize.push(Number(command.params.windowId));
+      return {};
+    }
+    if (command.method === "Page.getFrameTree") {
+      return {
+        frameTree: {
+          frame: { id: "frame", loaderId: "loader", url: "about:blank" },
+        },
+      };
+    }
+    if (command.method === "Page.createIsolatedWorld") {
+      return { executionContextId: 1 };
+    }
+    if (command.method === "Runtime.evaluate") {
+      const expression = String(command.params.expression);
+      if (expression.includes("window.open(")) {
+        const source = f.provider.native.targets.get(String(targetId));
+        if (!source) {
+          throw new Error("Restore source missing");
+        }
+        const match =
+          /^Boolean\(window\.open\(("(?:[^"\\]|\\.)*"), "_blank"\)\)$/u.exec(
+            expression,
+          );
+        if (!match?.[1]) {
+          throw new Error("Unexpected restore expression");
+        }
+        const target = {
+          targetId: randomUUID(),
+          windowId: source.windowId,
+          url: String(JSON.parse(match[1])),
+        };
+        f.provider.native.targets.set(target.targetId, target);
+        return { result: { value: true } };
+      }
+      return { result: { value: true } };
+    }
+    if (command.method === "Page.getLayoutMetrics") {
+      return {
+        cssVisualViewport: {
+          pageX: 0,
+          pageY: 0,
+          clientWidth: 1440,
+          clientHeight: 900,
+        },
+      };
+    }
+    if (command.method === "Page.captureScreenshot") {
+      return { data: Buffer.from("shared-window-preview").toString("base64") };
+    }
+    throw new Error(`Unexpected external CDP operation: ${command.method}`);
+  };
+  return { resize };
+}
+
+describe("shared Browser public consumers", () => {
+  it("provisions one profile and instance for two chats, reads and resizes only each owned window", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const external = nativeCommands(f);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await use(a);
+      const second = await use(b);
+      expect(first.browser.window?.instanceId).toBe(
+        second.browser.window?.instanceId,
+      );
+      expect(first.browser.window?.primaryWindowId).not.toBe(
+        second.browser.window?.primaryWindowId,
+      );
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+      expect(f.provider.sessionRequests[0]).toMatchObject({
+        profileId: f.provider.createdIds[0],
+      });
+      const current = await accept(
+        client().current({ headers: runHeaders(a) }),
+        [200],
+      );
+      expect(current.body.browser.window).toStrictEqual(first.browser.window);
+      const resized = await accept(
+        client().resizeByThread({
+          headers,
+          params: { threadId: a.threadId },
+          body: { aspectRatio: 2 },
+        }),
+        [200],
+      );
+      expect(resized.body.browser.screen?.height).toBe(720);
+      expect(external.resize).toStrictEqual([
+        first.browser.window?.primaryWindowId,
+      ]);
+      const unchanged = await accept(
+        client().get({ headers, params: { threadId: b.threadId } }),
+        [200],
+      );
+      expect(unchanged.body.browser.screen?.height).toBe(900);
+      mockNow(START + MINUTE);
+      const leased = await accept(
+        client().lease({ headers: runHeaders(a), body: {} }),
+        [200],
+      );
+      expect(Date.parse(String(leased.body.browser.idleExpiresAt))).toBe(
+        START + 11 * MINUTE,
+      );
+      const sibling = accepted(await b.request({ kind: "inspect" }));
+      expect(sibling.window?.expiresAt).toBe(START + 10 * MINUTE);
+    });
+  });
+
+  it("captures only the chat URLs and reopens a new window without recreating the live owner instance", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      nativeCommands(f);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await use(a);
+      const second = await use(b);
+      const window = first.browser.window;
+      if (!window) {
+        throw new Error("Expected the public Browser window");
+      }
+      for (const target of f.provider.native.targets.values()) {
+        target.url =
+          target.windowId === window.primaryWindowId
+            ? "https://a.example.test/saved"
+            : "https://b.example.test/private";
+      }
+      await accept(
+        client().close({ headers, params: { threadId: a.threadId }, body: {} }),
+        [200],
+      );
+      accepted(
+        await a.request({ kind: "retire", ...window, reason: "closed" }),
+      );
+      for (const [id, target] of f.provider.native.targets) {
+        if (target.windowId === window.primaryWindowId) {
+          f.provider.native.targets.delete(id);
+        }
+      }
+      accepted(await a.request({ kind: "completeWindowClose", ...window }));
+      const resumed = await use(a);
+      expect(resumed.browser.window?.instanceId).toBe(window.instanceId);
+      expect(resumed.browser.window?.primaryWindowId).not.toBe(
+        window.primaryWindowId,
+      );
+      const restored = [...f.provider.native.targets.values()].filter(
+        (target) => {
+          return target.windowId === resumed.browser.window?.primaryWindowId;
+        },
+      );
+      expect(
+        restored.map((target) => {
+          return target.url;
+        }),
+      ).toStrictEqual(["https://a.example.test/saved"]);
+      expect((await use(b)).browser.window).toStrictEqual(
+        second.browser.window,
+      );
+      expect(f.provider.sessionRequests).toHaveLength(1);
+      for (const [chat, current] of [
+        [a, resumed.browser.window],
+        [b, second.browser.window],
+      ] as const) {
+        if (!current) {
+          throw new Error("Expected a current chat window");
+        }
+        accepted(
+          await chat.request({ kind: "retire", ...current, reason: "closed" }),
+        );
+        for (const [id, target] of f.provider.native.targets) {
+          if (target.windowId === current.primaryWindowId) {
+            f.provider.native.targets.delete(id);
+          }
+        }
+        accepted(
+          await chat.request({ kind: "completeWindowClose", ...current }),
+        );
+      }
+      const stopping = accepted(
+        await a.request({ kind: "beginStop", instanceId: window.instanceId }),
+      );
+      if (!stopping.providerSessionId) {
+        throw new Error("Expected a physical provider session");
+      }
+      // The external provider confirms its stop before the trusted acknowledgement.
+      f.provider.sessionIds.delete(stopping.providerSessionId);
+      accepted(
+        await a.request({
+          kind: "completeStop",
+          instanceId: window.instanceId,
+        }),
+      );
+      const restarted = await use(a);
+      expect(restarted.browser.window?.instanceId).not.toBe(window.instanceId);
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(2);
+      expect(f.provider.sessionRequests[1]).toMatchObject({
+        profileId: f.provider.createdIds[0],
+      });
+      expect(
+        [...f.provider.native.targets.values()].map((target) => {
+          return target.url;
+        }),
+      ).toStrictEqual(["https://a.example.test/saved"]);
+      const sleepingSibling = await accept(
+        client().get({ headers, params: { threadId: b.threadId } }),
+        [200],
+      );
+      expect(sleepingSibling.body.browser.status).toBe("suspended");
+      expect(sleepingSibling.body.browser.window).toBeUndefined();
+    });
+  });
+
+  it("does not fall back to thread provisioning when shared admission is disabled", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      nativeCommands(f);
+      const a = await f.start();
+      await use(a);
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: false,
+      });
+      const b = await f.start();
+      const denied = await client().use({ headers: runHeaders(b), body: {} });
+      expect(denied.status).toBe(403);
+      expect(denied.body).toMatchObject({
+        error: { code: "BROWSER_SHARED_OWNER_DISABLED" },
+      });
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  });
+});
