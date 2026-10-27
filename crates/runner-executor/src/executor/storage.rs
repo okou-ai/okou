@@ -24,47 +24,8 @@ use runner_types::types::ExecutionContext;
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
-pub(super) async fn apply_workflow_skill_documents(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-) -> RunnerResult<()> {
-    let Some(manifest) = &context.storage_manifest else {
-        return Ok(());
-    };
-    let runtime_dir = guest_runtime_dir(context.run_id)?;
-    for skill in &manifest.workflow_skills {
-        let source = format!("{runtime_dir}/workflow-{}", skill.workflow_id);
-        sandbox
-            .write_private_files(&[sandbox::WriteFileEntry {
-                path: &source,
-                content: skill.skill_md.as_bytes(),
-            }])
-            .await?;
-        let command = format!("{STORAGE_APPLY_PATH} --skill {} {source}", skill.mount_path);
-        let run_id = context.run_id.to_string();
-        let env = guest_storage_apply_env(&run_id, &runtime_dir);
-        let result = sandbox
-            .exec_with_diagnostic_label(
-                &ExecRequest {
-                    cmd: &command,
-                    timeout: DEFAULT_EXEC_TIMEOUT,
-                    env: &env,
-                    sudo: false,
-                    expected_exit_codes: &[],
-                    stdin_bytes: None,
-                    output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
-                },
-                "workflow-skill",
-            )
-            .await?;
-        if !helper_exec_succeeded(&result) {
-            return Err(RunnerError::Internal(
-                "required Workflow skill document write failed".into(),
-            ));
-        }
-    }
-    Ok(())
-}
+mod workflow_documents;
+pub(super) use workflow_documents::apply_workflow_skill_documents;
 
 pub(super) struct AgentInstructionSource<'a> {
     path: String,
@@ -97,9 +58,10 @@ impl<'a> AgentInstructionSource<'a> {
         &self,
         sandbox: &dyn Sandbox,
         context: &ExecutionContext,
+        telemetry: &mut JobTelemetry,
     ) -> RunnerResult<()> {
-        sandbox.write_private_files(&[self.entry()]).await?;
-        self.apply(sandbox, context).await
+        publish_bootstrap_files(sandbox, &[self.entry()], telemetry).await?;
+        self.apply(sandbox, context, telemetry).await
     }
 
     /// Apply only after this source's private publication has succeeded.
@@ -107,6 +69,7 @@ impl<'a> AgentInstructionSource<'a> {
         &self,
         sandbox: &dyn Sandbox,
         context: &ExecutionContext,
+        telemetry: &mut JobTelemetry,
     ) -> RunnerResult<()> {
         let runtime_dir = guest_runtime_dir(context.run_id)?;
         let source = &self.path;
@@ -115,6 +78,7 @@ impl<'a> AgentInstructionSource<'a> {
         let command = format!("{STORAGE_APPLY_PATH} --instructions {framework} {source}");
         let run_id = context.run_id.to_string();
         let env = guest_storage_apply_env(&run_id, &runtime_dir);
+        let started = Instant::now();
         let result = sandbox
             .exec_with_diagnostic_label(
                 &ExecRequest {
@@ -128,14 +92,41 @@ impl<'a> AgentInstructionSource<'a> {
                 },
                 "agent-instructions",
             )
-            .await?;
-        if !helper_exec_succeeded(&result) {
-            return Err(RunnerError::Internal(
-                "required Agent instruction write failed".into(),
-            ));
-        }
-        Ok(())
+            .await
+            .map_err(RunnerError::from)
+            .and_then(|result| {
+                if helper_exec_succeeded(&result) {
+                    Ok(())
+                } else {
+                    Err(RunnerError::Internal(
+                        "required Agent instruction write failed".into(),
+                    ))
+                }
+            });
+        telemetry.record(
+            "runner_agent_instruction_apply",
+            started.elapsed(),
+            result.is_ok(),
+            None,
+        );
+        result
     }
+}
+
+pub(super) async fn publish_bootstrap_files(
+    sandbox: &dyn Sandbox,
+    files: &[sandbox::WriteFileEntry<'_>],
+    telemetry: &mut JobTelemetry,
+) -> RunnerResult<()> {
+    let started = Instant::now();
+    let result = sandbox.write_private_files(files).await;
+    telemetry.record(
+        "runner_bootstrap_private_publish",
+        started.elapsed(),
+        result.is_ok(),
+        None,
+    );
+    result.map_err(Into::into)
 }
 
 // Runner-local INFO only. Keep API keys when cache delivery uses file://;

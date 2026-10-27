@@ -202,7 +202,7 @@ async fn bootstrap_preserves_workflow_order_and_stops_on_document_helper_failure
         let overrides = Arc::new(MockSandboxOverrides::new());
         if fail_first {
             overrides.add_exec_result_matcher(
-                " --skill /home/user/.codex/skills/first-workflow ",
+                " --skills-stdin",
                 ExecResult::new(1, Vec::new(), Vec::new()),
             );
         }
@@ -221,20 +221,28 @@ async fn bootstrap_preserves_workflow_order_and_stops_on_document_helper_failure
             .unwrap();
         assert_eq!(outcome.exit_code(), i32::from(fail_first));
         let writes = overrides.private_write_files_calls();
-        assert_eq!(writes.len(), if fail_first { 2 } else { 3 });
+        assert_eq!(writes.len(), 2);
         assert_eq!(writes[0].files.len(), 4);
         assert_eq!(writes[1].files[0].content, b"first document");
+        assert_eq!(writes[1].files[1].content, b"second document");
         let helpers = overrides
             .exec_calls()
             .into_iter()
-            .filter(|call| call.cmd.contains(" --instructions ") || call.cmd.contains(" --skill "))
+            .filter(|call| {
+                call.cmd.contains(" --instructions ") || call.cmd.contains(" --skills-stdin")
+            })
             .collect::<Vec<_>>();
         assert!(helpers[0].cmd.contains(" --instructions "));
-        assert!(helpers[1].cmd.contains("/first-workflow "));
-        if !fail_first {
-            assert_eq!(writes[2].files[0].content, b"second document");
-            assert!(helpers[2].cmd.contains("/second-workflow "));
-        }
+        assert_eq!(helpers.len(), 2);
+        let metadata = guest_contracts::workflow_documents::decode(
+            helpers[1].stdin_bytes.as_ref().unwrap(),
+            std::path::Path::new(&writes[1].files[0].path)
+                .parent()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(metadata[0].mount_path.ends_with("/first-workflow"));
+        assert!(metadata[1].mount_path.ends_with("/second-workflow"));
         assert_eq!(
             overrides.start_agent_process_calls().len(),
             usize::from(!fail_first)
@@ -271,4 +279,152 @@ async fn bootstrap_cancellation_while_publishing_never_applies_or_spawns() {
         .unwrap();
     assert!(result.failure.is_some());
     assert!(overrides.start_agent_process_calls().is_empty());
+}
+
+fn batch_workflow_context() -> serde_json::Result<runner_types::types::ExecutionContext> {
+    let mut context = minimal_context();
+    context.agent_instructions = Some("current Agent instructions".into());
+    context.storage_manifest = Some(serde_json::from_value(serde_json::json!({
+        "storageMounts": [],
+        "workflowSkills": (0..65).map(|index| serde_json::json!({
+            "workflowId": uuid::Uuid::new_v4(),
+            "mountPath": format!("/home/user/.codex/skills/workflow-{index}"),
+            "skillMd": format!("captured document {index}"),
+            "attachments": null,
+        })).collect::<Vec<_>>()
+    }))?);
+    Ok(context)
+}
+
+#[tokio::test]
+async fn bootstrap_workflow_batch_publication_failure_prevents_helper_and_spawn() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_private_write_files_result(Ok(()));
+    overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+        "partial Workflow publication failed",
+    )));
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let outcome = run_new_sandbox_outcome(
+        &factory,
+        &batch_workflow_context().unwrap(),
+        &config,
+        &default_params(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome.exit_code(), 1);
+    assert_eq!(overrides.private_write_files_calls().len(), 2);
+    assert!(
+        overrides
+            .exec_calls()
+            .iter()
+            .all(|call| !call.cmd.contains(" --skills-stdin"))
+    );
+    assert!(overrides.start_agent_process_calls().is_empty());
+}
+
+#[tokio::test]
+async fn bootstrap_cancellation_during_workflow_helper_never_starts_later_groups_or_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let publication_gate = MockLifecycleGate::new();
+    overrides.set_private_write_file_lifecycle_gate(publication_gate.clone());
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let mut context = batch_workflow_context().unwrap();
+    context.agent_instructions = None;
+    let cancel = CancellationToken::new();
+    let task = spawn_run_in_sandbox_test(sandbox, context, config, cancel.clone());
+    publication_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .unwrap();
+    let helper_gate = MockLifecycleGate::new();
+    overrides.set_exec_lifecycle_gate(helper_gate.clone());
+    publication_gate.release_one();
+    helper_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .unwrap();
+    assert!(
+        overrides
+            .exec_calls()
+            .last()
+            .unwrap()
+            .cmd
+            .ends_with(" --skills-stdin")
+    );
+    cancel.cancel();
+    let outcome = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(outcome.failure.is_some());
+    assert_eq!(overrides.private_write_files_calls().len(), 1);
+    assert!(overrides.start_agent_process_calls().is_empty());
+}
+
+#[tokio::test]
+async fn bootstrap_workflow_batch_recovery_republishes_captured_inputs_once() {
+    use guest_contracts::disk_cleanup::{DiskCleanupFilesystem, DiskCleanupReport};
+
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_private_write_files_result(Ok(()));
+    overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+        "No space left on device (os error 28)",
+    )));
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "guest-agent-binary".into(), exit_code: 0,
+        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 6000000 6000000 50% /\n/dev/vdb 24000000 24000000 0 100% /home/user\n".to_vec(), stderr: Vec::new(),
+    });
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "recover-disk-space home".into(),
+        exit_code: 0,
+        stdout: serde_json::to_vec(&DiskCleanupReport {
+            filesystem: DiskCleanupFilesystem::Home,
+            available_bytes_before: 0,
+            available_bytes_after: 256 * 1024 * 1024,
+            available_inodes_before: 1000,
+            available_inodes_after: 1010,
+            removed_entries: 10,
+        })
+        .unwrap(),
+        stderr: Vec::new(),
+    });
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let outcome = run_new_sandbox_outcome(
+        &factory,
+        &batch_workflow_context().unwrap(),
+        &config,
+        &default_params(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome.exit_code(), 0);
+    let writes = overrides.private_write_files_calls();
+    assert_eq!(
+        writes
+            .iter()
+            .map(|call| call.files.len())
+            .collect::<Vec<_>>(),
+        [4, 64, 4, 64, 1]
+    );
+    for (first, retry) in writes[1].files.iter().zip(&writes[3].files) {
+        assert_eq!(first.path, retry.path);
+        assert_eq!(first.content, retry.content);
+    }
+    assert_eq!(
+        overrides
+            .exec_calls()
+            .iter()
+            .filter(|call| call.cmd.contains("recover-disk-space"))
+            .count(),
+        1
+    );
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
 }
