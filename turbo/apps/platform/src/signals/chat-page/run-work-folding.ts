@@ -350,17 +350,28 @@ function splitRunWorkEventsAtUsers(
   return phases;
 }
 
-function eventTime(event: EnrichedChatEvent | undefined): number | null {
+function eventTime(
+  unit: RunWorkUnit,
+  event: EnrichedChatEvent | undefined,
+): number | null {
   if (event === undefined) {
     return null;
   }
   const timestamp = Date.parse(event.inputCreatedAt ?? event.createdAt);
-  return Number.isNaN(timestamp) ? null : timestamp;
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+  // A steer's submission still bounds its phase, but initial queue waiting
+  // cannot count as work before this Run's first execution-side event.
+  return Math.max(timestamp, Date.parse(unit.events[0]!.createdAt));
 }
 
-function firstEventTime(events: readonly EnrichedChatEvent[]): number | null {
+function firstEventTime(
+  unit: RunWorkUnit,
+  events: readonly EnrichedChatEvent[],
+): number | null {
   for (const event of events) {
-    const timestamp = eventTime(event);
+    const timestamp = eventTime(unit, event);
     if (timestamp !== null) {
       return timestamp;
     }
@@ -413,7 +424,7 @@ function foldRunWorkGroup(group: RunWorkGroup): RunWorkGroupFolding {
       return event.runId === latestRunId;
     }),
   };
-  const startTime = firstEventTime(events);
+  const startTime = firstEventTime(unit, events);
   if (
     unit.runId === undefined ||
     anchorEvent === undefined ||
@@ -489,7 +500,8 @@ function runWorkGroups(events: readonly EnrichedChatEvent[]): RunWorkGroup[] {
   for (let index = groups.length - 1; index >= 0; index--) {
     const group = groups[index]!;
     const terminalTime =
-      eventTime(terminalEventForLatestRun(group.events)) ?? undefined;
+      eventTime(group.unit, terminalEventForLatestRun(group.events)) ??
+      undefined;
     const endTime =
       terminalTime === undefined
         ? nextInputTime
@@ -502,7 +514,7 @@ function runWorkGroups(events: readonly EnrichedChatEvent[]): RunWorkGroup[] {
       return isChatInputEventType(event.eventType);
     });
     if (input !== undefined) {
-      nextInputTime = eventTime(input) ?? undefined;
+      nextInputTime = eventTime(group.unit, input) ?? undefined;
     }
   }
   return workGroups.reverse();
