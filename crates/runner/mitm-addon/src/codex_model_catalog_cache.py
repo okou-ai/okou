@@ -151,13 +151,15 @@ _PREFETCH_HEADER = "X-Okou-Codex-Model-Catalog-Prefetch"
 _RAW_PREFETCH_HEADER = b"x-okou-codex-model-catalog-prefetch"
 _BROTLI_ENCODING = "br"
 _IDENTITY_ENCODING = "identity"
-_REQUEST_CONDITIONAL_HEADERS = (
-    "If-Match",
-    "If-Modified-Since",
-    "If-None-Match",
-    "If-Range",
-    "If-Unmodified-Since",
-    "Range",
+_RAW_REQUEST_CONDITIONAL_HEADERS = frozenset(
+    (
+        b"if-match",
+        b"if-modified-since",
+        b"if-none-match",
+        b"if-range",
+        b"if-unmodified-since",
+        b"range",
+    )
 )
 _UNSAFE_RESPONSE_CACHE_CONTROL = frozenset(
     (
@@ -676,15 +678,17 @@ def _request_bypass_reason(
     if flow.request.stream:
         return "request_streaming"
     parsed_content_length = _parse_content_length(flow.request.headers)
+    # These gates depend only on presence, including empty or repeated fields.
+    raw_header_names = {name.lower() for name, _value in flow.request.headers.fields}
     if (
-        flow.request.headers.get_all("Transfer-Encoding")
+        b"transfer-encoding" in raw_header_names
         or parsed_content_length.kind in ("invalid", "conflicting", "over_limit")
         or (parsed_content_length.kind == "valid" and parsed_content_length.value > 0)
     ):
         return "request_framing"
-    if any(flow.request.headers.get_all(name) for name in _REQUEST_CONDITIONAL_HEADERS):
+    if not raw_header_names.isdisjoint(_RAW_REQUEST_CONDITIONAL_HEADERS):
         return "request_conditions"
-    if flow.request.headers.get_all("Cache-Control") or flow.request.headers.get_all("Pragma"):
+    if b"cache-control" in raw_header_names or b"pragma" in raw_header_names:
         return "request_cache_control"
     if _request_accepts_encoded_response(flow.request.headers):
         return "request_encoding"

@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from mitmproxy import connection, http
 from mitmproxy.flow import Error
+from mitmproxy.net.http import http1, validate
 
 import auth
 import codex_model_catalog_cache as catalog_cache
@@ -45,6 +46,23 @@ class _DecodeGuardPrefetchMarker(bytes):
 class _DecodeGuardAcceptEncoding(bytes):
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
         raise AssertionError("bypassed Accept-Encoding must not be decoded")
+
+
+class _UninspectedRequestBypassValue(bytes):
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        raise AssertionError("request bypass presence must not decode values")
+
+    def __bytes__(self) -> bytes:
+        raise AssertionError("request bypass presence must not copy values")
+
+    def __bool__(self) -> bool:
+        raise AssertionError("request bypass presence must not test value truthiness")
+
+    def lower(self) -> bytes:
+        raise AssertionError("request bypass presence must not lowercase values")
+
+    def strip(self, chars: bytes | None = None) -> bytes:
+        raise AssertionError("request bypass presence must not strip values")
 
 
 def _set_catalog_query(flow: http.HTTPFlow, raw_query: str) -> None:
@@ -523,6 +541,178 @@ def _write_codex_registry(tmp_path: Path, *, capture: bool, billable: bool = Fal
             },
         ),
     )
+
+
+@pytest.mark.parametrize("entry_point", ["request", "requestheaders"])
+@pytest.mark.parametrize("value_shape", ["empty", "large", "repeated"])
+@pytest.mark.parametrize(
+    ("names", "reason"),
+    [
+        pytest.param((b"iF-mAtCh",), "request_conditions", id="if-match"),
+        pytest.param((b"iF-mOdIfIeD-sInCe",), "request_conditions", id="if-modified-since"),
+        pytest.param((b"iF-nOnE-mAtCh",), "request_conditions", id="if-none-match"),
+        pytest.param((b"iF-rAnGe",), "request_conditions", id="if-range"),
+        pytest.param((b"iF-uNmOdIfIeD-sInCe",), "request_conditions", id="if-unmodified-since"),
+        pytest.param((b"rAnGe",), "request_conditions", id="range"),
+        pytest.param((b"cAcHe-CoNtRoL",), "request_cache_control", id="cache-control"),
+        pytest.param((b"pRaGmA",), "request_cache_control", id="pragma"),
+        pytest.param(
+            (b"Cache-Control", b"Pragma", b"If-None-Match"),
+            "request_conditions",
+            id="conditions-after-policy",
+        ),
+    ],
+)
+async def test_request_bypass_presence_preserves_values_across_auth_hooks(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    entry_point: Literal["request", "requestheaders"],
+    value_shape: str,
+    names: tuple[bytes, ...],
+    reason: str,
+):
+    large = b"x" * (1024 * 1024)
+    values = {"empty": (b"",), "large": (large,), "repeated": (b"", large)}[value_shape]
+    flow = real_flow(with_response=False, client_ip="10.200.0.5", host="chatgpt.com")
+    flow.request = http1.read_request_head(
+        [
+            b"GET https://chatgpt.com/backend-api/codex/models?client_version=0.145.0 HTTP/1.1",
+            b"Host: chatgpt.com",
+            # Omit the length for the header-auth path's streaming probe.
+            *([b"Content-Length: 0"] if entry_point == "request" else []),
+            b"Accept-Encoding: gzip",
+            *(name + b": " + value for name in names for value in values),
+        ]
+    )
+    validate.validate_headers(flow.request)
+    assert http1.expected_http_body_size(flow.request) == 0
+    # Native framing owns validation; only then guard equal-content raw values.
+    guarded_names = {name.lower() for name in names}
+    flow.request.headers.fields = tuple(
+        (name, _UninspectedRequestBypassValue(value) if name.lower() in guarded_names else value)
+        for name, value in flow.request.headers.fields
+    )
+    original_fields = flow.request.headers.fields
+    flow.metadata["_request_end_stream"] = True
+    registry_path = _write_codex_registry(tmp_path, capture=entry_point == "requestheaders")
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(
+            headers={
+                "Authorization": "Bearer resolved-token",
+                "ChatGPT-Account-ID": "resolved-account",
+            }
+        ),
+    ):
+        if entry_point == "requestheaders":
+            await await_requestheaders_result(mitm_addon.requestheaders(flow))
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.error is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert flow.request.headers["Authorization"] == "Bearer resolved-token"
+    assert flow.request.headers["Accept-Encoding"] == "gzip"
+    retained_fields = flow.request.headers.fields[: len(original_fields)]
+    assert retained_fields == original_fields
+    assert all(
+        value is original[1]
+        for (_name, value), original in zip(retained_fields, original_fields, strict=True)
+    )
+    telemetry: dict[str, object] = {}
+    catalog_cache.add_network_log_fields(flow, telemetry)
+    assert telemetry == {
+        "model_catalog_cache_status": "model_catalog_bypass",
+        "model_catalog_cache_bypass_reason": reason,
+    }
+
+
+@pytest.mark.parametrize(
+    "transfer_fields",
+    [
+        pytest.param(((b"Transfer-Encoding", b""),), id="empty"),
+        pytest.param(((b"tRaNsFeR-EnCoDiNg", b"chunked"),), id="mixed-case"),
+        pytest.param(
+            ((b"Transfer-Encoding", b""), (b"transfer-encoding", b"x" * (1024 * 1024))),
+            id="empty-before-large-repeat",
+        ),
+    ],
+)
+async def test_catalog_transfer_encoding_presence_precedes_conditions(real_flow, transfer_fields):
+    # Empty/repeated Transfer-Encoding is a helper contract, not valid H1 framing.
+    flow = catalog_flow(real_flow, extra_headers={"Cache-Control": "", "If-None-Match": ""})
+    flow.request.headers.fields += tuple(
+        (name, _UninspectedRequestBypassValue(value)) for name, value in transfer_fields
+    )
+    original_fields = flow.request.headers.fields
+
+    await catalog_cache.prepare_request(flow, request_end_stream=True)
+
+    assert flow.response is None
+    assert flow.request.headers.fields is original_fields
+    telemetry: dict[str, object] = {}
+    catalog_cache.add_network_log_fields(flow, telemetry)
+    assert telemetry == {
+        "model_catalog_cache_status": "model_catalog_bypass",
+        "model_catalog_cache_bypass_reason": "request_framing",
+    }
+
+
+async def test_native_valid_catalog_transfer_encoding_bypasses_without_value_conversion(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+):
+    large = b"gzip" + b" " * (1024 * 1024) + b",chunked"
+    flow = real_flow(with_response=False, client_ip="10.200.0.5", host="chatgpt.com")
+    flow.request = http1.read_request_head(
+        [
+            b"GET https://chatgpt.com/backend-api/codex/models?client_version=0.145.0 HTTP/1.1",
+            b"Host: chatgpt.com",
+            b"tRaNsFeR-EnCoDiNg: " + large,
+        ]
+    )
+    validate.validate_headers(flow.request)
+    assert http1.expected_http_body_size(flow.request) is None
+    flow.request.headers.fields = tuple(
+        (
+            name,
+            _UninspectedRequestBypassValue(value)
+            if name.lower() == b"transfer-encoding"
+            else value,
+        )
+        for name, value in flow.request.headers.fields
+    )
+    original_fields = flow.request.headers.fields
+    # The complete-request hook sees the decoded empty chunked body after EOF.
+    flow.request.raw_content = b""
+    registry_path = _write_codex_registry(tmp_path, capture=True)
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(
+            headers={
+                "Authorization": "Bearer resolved-token",
+                "ChatGPT-Account-ID": "resolved-account",
+            }
+        ),
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.error is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert flow.request.headers["Authorization"] == "Bearer resolved-token"
+    retained_fields = flow.request.headers.fields[: len(original_fields)]
+    assert retained_fields == original_fields
+    assert retained_fields[1][1] is original_fields[1][1]
+    telemetry: dict[str, object] = {}
+    catalog_cache.add_network_log_fields(flow, telemetry)
+    assert telemetry == {
+        "model_catalog_cache_status": "model_catalog_bypass",
+        "model_catalog_cache_bypass_reason": "request_framing",
+    }
 
 
 async def test_both_firewall_auth_paths_prepare_catalog_cache(
