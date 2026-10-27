@@ -118,6 +118,11 @@ async function primaryRun(enabled = true, secondary = false) {
 
 describe("Agent suggestions", () => {
   it("renews a card for 24 hours after an update and retains it through cleanup", async () => {
+    await setupApp({
+      context,
+      routes: cronCleanupSuggestionsRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
     mockEnv("CRON_SECRET", cronSecret);
@@ -232,6 +237,11 @@ describe("Agent suggestions", () => {
   it.each(["review", null])(
     "records a cached choice once after physical cleanup (option %s)",
     async (optionId) => {
+      await setupApp({
+        context,
+        routes: cronCleanupSuggestionsRoutes,
+        isolatePg: true,
+      });
       const start = Date.parse("2026-10-27T00:00:00.000Z");
       mockNow(start);
       mockEnv("CRON_SECRET", cronSecret);
@@ -245,7 +255,7 @@ describe("Agent suggestions", () => {
         cleanupClient().cleanup({ headers: cronHeaders }),
         [200],
       );
-      expect(cleaned.body.deleted).toBeGreaterThanOrEqual(1);
+      expect(cleaned.body.deleted).toBe(1);
       const choices = await Promise.all(
         [0, 1].map(() => {
           return accept(
@@ -289,6 +299,11 @@ describe("Agent suggestions", () => {
   );
 
   it("preserves a cached choice when the same action is concurrently republished", async () => {
+    await setupApp({
+      context,
+      routes: cronCleanupSuggestionsRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
     mockEnv("CRON_SECRET", cronSecret);
@@ -337,6 +352,11 @@ describe("Agent suggestions", () => {
   });
 
   it("requires the original owner's unmodified snapshot after cleanup", async () => {
+    await setupApp({
+      context,
+      routes: cronCleanupSuggestionsRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
     mockEnv("CRON_SECRET", cronSecret);
@@ -375,6 +395,11 @@ describe("Agent suggestions", () => {
   });
 
   it("reclaims expired capacity when publication overlaps scheduled cleanup", async () => {
+    await setupApp({
+      context,
+      routes: cronCleanupSuggestionsRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
     mockEnv("CRON_SECRET", cronSecret);
@@ -406,6 +431,11 @@ describe("Agent suggestions", () => {
   });
 
   it("retains selected, dismissed and withdrawn feedback for 24 hours after processing", async () => {
+    await setupApp({
+      context,
+      routes: cronCleanupSuggestionsRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
     mockEnv("CRON_SECRET", cronSecret);
@@ -475,8 +505,7 @@ describe("Agent suggestions", () => {
       cleanupClient().cleanup({ headers: cronHeaders }),
       [200],
     );
-    expect(pruned.body.cleaned).toBeGreaterThanOrEqual(1);
-    expect(pruned.body.deleted).toBeGreaterThanOrEqual(1);
+    expect(pruned.body).toStrictEqual({ cleaned: 1, deleted: 1 });
     const listed = await accept(
       client().list({ headers: humanHeaders }),
       [200],
@@ -490,6 +519,11 @@ describe("Agent suggestions", () => {
   });
 
   it("preserves a newly consumed receipt while cleaning an expired card", async () => {
+    await setupApp({
+      context,
+      routes: cronCleanupSuggestionsRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
     mockEnv("CRON_SECRET", cronSecret);
