@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1069.1](https://github.com/okou-ai/okou/compare/app-v0.1069.0...app-v0.1069.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* expire stale suggestions without blocking cached choices ([#43401](https://github.com/okou-ai/okou/issues/43401)) ([683f3b7](https://github.com/okou-ai/okou/commit/683f3b71885993682d583b32c51f1cd998a1860b))
+
+
+### Refactoring
+
+* keep shared error and token modules off heavy dependencies ([#43439](https://github.com/okou-ai/okou/issues/43439)) ([ca70c33](https://github.com/okou-ai/okou/commit/ca70c33b2ce91a0065a3d2f76e409724d7bd50e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.12.0
+    * @okouai/core bumped to 8.793.4
+
 ## [0.1069.0](https://github.com/okou-ai/okou/compare/app-v0.1068.3...app-v0.1069.0) (2026-10-27)
 
 

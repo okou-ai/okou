@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.793.4](https://github.com/okou-ai/okou/compare/core-v8.793.3...core-v8.793.4) (2026-10-27)
+
+
+### Refactoring
+
+* keep shared error and token modules off heavy dependencies ([#43439](https://github.com/okou-ai/okou/issues/43439)) ([ca70c33](https://github.com/okou-ai/okou/commit/ca70c33b2ce91a0065a3d2f76e409724d7bd50e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.12.0
+
 ## [8.793.3](https://github.com/okou-ai/okou/compare/core-v8.793.2...core-v8.793.3) (2026-10-27)
 
 
