@@ -2239,7 +2239,8 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
-      "empty": "Artefatti e chat correlate di questa chat compaiono qui.",
+      "emptyDescription": "I file e le chat di questa chat compariranno qui.",
+      "emptyTitle": "Ancora nessuna risorsa",
       "loadFailed": "Impossibile caricare le risorse",
       "loading": "Caricamento risorse",
       "showMore": "Mostra altro",
