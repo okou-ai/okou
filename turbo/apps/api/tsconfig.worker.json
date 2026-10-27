@@ -15,6 +15,7 @@
   "include": [
     "src/worker.ts",
     "src/worker-runtime.ts",
+    "src/worker-process-env.ts",
     "src/worker-domains/**/*.ts",
     "src/__tests__/worker-lifecycle.test.ts",
     "src/worker-cloudflare.d.ts",

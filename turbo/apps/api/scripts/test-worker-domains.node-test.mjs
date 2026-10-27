@@ -1,7 +1,7 @@
 import { URL } from "node:url";
 import process from "node:process";
 import assert from "node:assert/strict";
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -216,5 +216,82 @@ test(
         },
       );
     }
+  },
+);
+
+// Any read of the global process instantiates workerd's node:process polyfill,
+// which costs measurable Cloudflare startup CPU.
+const processProbe = `
+const descriptor = Object.getOwnPropertyDescriptor(globalThis, "process");
+const reads = [];
+Object.defineProperty(globalThis, "process", {
+  configurable: true,
+  get() {
+    reads.push(new Error("Global process read during startup").stack);
+    return descriptor.get ? descriptor.get.call(globalThis) : descriptor.value;
+  },
+});
+export function finishProcessProbe() {
+  Object.defineProperty(globalThis, "process", descriptor);
+  return reads;
+}
+`;
+const probedEntry = `
+import { finishProcessProbe } from "./process-probe.js";
+import worker from "./worker.js";
+const reads = finishProcessProbe();
+export default {
+  fetch(request, env, context) {
+    if (new URL(request.url).pathname === "/__startup-process-reads") {
+      return Response.json(reads);
+    }
+    return worker.fetch(request, env, context);
+  },
+};
+`;
+
+test(
+  "Data Worker startup never loads node:process",
+  { timeout: 60_000 },
+  async (t) => {
+    const directory = await mkdtemp(resolve(tmpdir(), "okou-api-process-"));
+    t.after(() => {
+      return rm(directory, { recursive: true, force: true });
+    });
+    const source = await readFile(
+      resolve(apiRoot, "dist-worker-domains/data/worker.js"),
+      "utf8",
+    );
+    assert.doesNotMatch(source, /from\s*["']node:process["']/);
+    await writeFile(resolve(directory, "worker.js"), source);
+    await writeFile(resolve(directory, "process-probe.js"), processProbe);
+    await writeFile(resolve(directory, "entry.js"), probedEntry);
+    const runtime = new Miniflare(
+      convertV4MiniflareOptions({
+        modules: ["entry.js", "process-probe.js", "worker.js"].map((name) => {
+          return { type: "ESModule", path: resolve(directory, name) };
+        }),
+        modulesRoot: directory,
+        compatibilityDate: "2026-09-02",
+        compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
+        bindings: {
+          API_ENV_JSON_PARTS: "1",
+          API_ENV_JSON_0: JSON.stringify(environment),
+        },
+      }),
+    );
+    t.after(() => {
+      return runtime.dispose();
+    });
+
+    const reads = await runtime.dispatchFetch(
+      "https://api.example.invalid/__startup-process-reads",
+    );
+    assert.deepEqual(await reads.json(), []);
+    const routed = await runtime.dispatchFetch(
+      "https://api.example.invalid/api/data/router/tools",
+      { headers: bypass },
+    );
+    assert.equal(routed.status, 401, await routed.text());
   },
 );

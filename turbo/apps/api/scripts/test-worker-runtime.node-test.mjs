@@ -129,3 +129,85 @@ test(
     assert.equal(unhandled.exception.values[0].mechanism.handled, false);
   },
 );
+
+test(
+  "Worker build reads process.env and platform exactly like nodejs_compat",
+  { timeout: 30_000 },
+  async (t) => {
+    const directory = await mkdtemp(resolve(tmpdir(), "okou-worker-process-"));
+    t.after(() => {
+      return rm(directory, { recursive: true, force: true });
+    });
+    const options = workerBuildOptions({
+      entryPoint: "src/worker.ts",
+      outputDirectory: directory,
+    });
+    delete options.entryPoints;
+    // Build-time replacements apply to `process.env`/`process.platform`; the
+    // Reflect read observes workerd's own process object at request time.
+    options.stdin = {
+      contents: `
+      const startupEnv = { ...process.env };
+      const startupAxiomEnv = globalThis.process.env;
+      const startupPlatform = process.platform;
+      export default {
+        fetch() {
+          const runtime = Reflect.get(globalThis, "process");
+          return Response.json({
+            startupEnv,
+            sharedEnv: startupAxiomEnv === process.env,
+            runtimeEnv: { ...runtime.env },
+            startupPlatform,
+            runtimePlatform: runtime.platform,
+          });
+        },
+      };
+    `,
+      resolveDir: apiRoot,
+      sourcefile: "worker-process-fixture.js",
+    };
+    const result = await build(options);
+    validateWorkerExternals(result);
+    for (const output of result.outputFiles) {
+      await writeFile(output.path, output.contents);
+    }
+    const mf = new Miniflare(
+      convertV4MiniflareOptions({
+        rootPath: directory,
+        modules: true,
+        scriptPath: resolve(directory, "worker.js"),
+        compatibilityDate: "2026-09-02",
+        compatibilityFlags: ["nodejs_compat"],
+        bindings: {
+          TEXT: "plain",
+          EMPTY: "",
+          JSON_OBJECT: { nested: [1, { value: null }] },
+          JSON_ARRAY: [1, "two"],
+          JSON_NUMBER: 5,
+          JSON_BOOLEAN: true,
+        },
+        hyperdrives: { HYPERDRIVE: "postgres://user:pass@127.0.0.1:5432/db" },
+        kvNamespaces: ["KV"],
+        serviceBindings: {
+          SERVICE() {
+            return new WorkerResponse(null, { status: 204 });
+          },
+        },
+      }),
+    );
+    t.after(() => {
+      return mf.dispose();
+    });
+
+    const response = await mf.dispatchFetch("https://api.example.invalid/");
+    const observed = await response.json();
+    assert.deepEqual(observed.startupEnv, observed.runtimeEnv);
+    assert.equal(
+      observed.startupEnv.JSON_OBJECT,
+      '{"nested":[1,{"value":null}]}',
+    );
+    assert.equal(observed.startupEnv.HYPERDRIVE, undefined);
+    assert.equal(observed.sharedEnv, true);
+    assert.equal(observed.startupPlatform, observed.runtimePlatform);
+  },
+);

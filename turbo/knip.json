@@ -27,6 +27,7 @@
         "src/worker-domains/data.ts",
         "src/worker-domains/processor.ts",
         "src/worker-domains/slides-client.ts",
+        "src/worker-process-env.ts",
         "src/worker-unsupported-pg-native.ts",
         "src/worker-unsupported-react-email.ts",
         "src/signals/context/hono.ts",

@@ -36,6 +36,15 @@ export function workerBuildOptions({
     banner: {
       js: workerRequireBanner,
     },
+    // Startup reads must not instantiate node:process. Read process.env from
+    // bindings and use workerd's constant platform; other process members
+    // still resolve to the real object when used.
+    inject: [resolve(apiRoot, "src/worker-process-env.ts")],
+    define: {
+      "process.env": "workerProcessEnv",
+      "globalThis.process.env": "workerProcessEnv",
+      "process.platform": JSON.stringify("linux"),
+    },
     plugins: [
       ...plugins,
       {
