@@ -7,7 +7,10 @@ import {
 } from "@okouai/db/schema/chat-event";
 
 /** Exact, user-owned unread conversations, independent of the sidebar's display limits. */
-export function unreadIosNotificationThreadCondition(userId: string) {
+export function unreadIosNotificationThreadCondition(
+  userId: string,
+  badgeClearedAt: Date | null = null,
+) {
   const unreadTerminal = new QueryBuilder()
     .select({ id: chatEvents.id })
     .from(chatEvents)
@@ -15,6 +18,12 @@ export function unreadIosNotificationThreadCondition(userId: string) {
       and(
         eq(chatEvents.chatThreadId, chatThreads.id),
         chatEventTerminalPredicate(chatEvents.eventType),
+        badgeClearedAt === null
+          ? undefined
+          : gte(
+              chatEvents.createdAt,
+              sql`date_trunc('milliseconds', ${badgeClearedAt.toISOString()}::timestamp) + interval '1 millisecond'`,
+            ),
         // Read cursors are published through JavaScript Dates, at millisecond precision.
         or(
           isNull(chatThreads.lastReadAt),

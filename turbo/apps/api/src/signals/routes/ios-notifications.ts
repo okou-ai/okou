@@ -1,5 +1,5 @@
-import { command, computed } from "ccstate";
-import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { command, computed, state } from "ccstate";
+import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { iosNotificationsContract } from "@okouai/api-contracts/contracts/ios-notifications";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
@@ -13,9 +13,11 @@ import { bodyResultOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { unreadIosNotificationThreadCondition } from "../services/ios-notification-query";
 import { recordIosNotificationFact } from "../services/ios-notification-telemetry";
+import { nowDateSql } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 
 const reconciliationBody$ = bodyResultOf(iosNotificationsContract.reconcile);
+const acknowledgedBadgeClearedAt$ = state<Date | null>(null);
 const reconciliation$ = computed(async (get) => {
   const body = await get(reconciliationBody$);
   if (!body.ok) {
@@ -38,8 +40,17 @@ const reconciliation$ = computed(async (get) => {
     ),
   ];
   const db = get(db$);
-  const [unreadCount, threads, terminals] = await Promise.all([
+  const badgeClearedAt = get(acknowledgedBadgeClearedAt$);
+  const [unreadCount, badgeCount, threads, terminals] = await Promise.all([
     db.$count(chatThreads, unreadIosNotificationThreadCondition(userId)),
+    body.data.badgeClearSequence === undefined
+      ? Promise.resolve(undefined)
+      : badgeClearedAt === null
+        ? Promise.resolve(0)
+        : db.$count(
+            chatThreads,
+            unreadIosNotificationThreadCondition(userId, badgeClearedAt),
+          ),
     threadIds.length === 0
       ? Promise.resolve([])
       : db
@@ -97,7 +108,14 @@ const reconciliation$ = computed(async (get) => {
       ? [receipt.identifier]
       : [];
   });
-  return { ok: true as const, data: { unreadCount, removeIdentifiers } };
+  return {
+    ok: true as const,
+    data: {
+      unreadCount,
+      ...(badgeCount === undefined ? {} : { badgeCount }),
+      removeIdentifiers,
+    },
+  };
 });
 
 const reconcile$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -119,13 +137,30 @@ const reconcile$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { installationId, registrationRevision } = body.data;
+  const { badgeClearSequence } = body.data;
   if (registrationRevision !== undefined) {
     // A new client's handshake only activates its exact current binding.
     // An old API writer advancing revision retires this capability as well.
-    await set(writeDb$)
+    const [acknowledged] = await set(writeDb$)
       .update(iosPushRegistrations)
       .set({
         notificationStateRevision: registrationRevision,
+        ...(badgeClearSequence === undefined
+          ? {}
+          : {
+              badgeClearedRevision: registrationRevision,
+              badgeClearSequence: sql`CASE
+                WHEN ${iosPushRegistrations.badgeClearedRevision} = ${registrationRevision}
+                THEN GREATEST(${iosPushRegistrations.badgeClearSequence}, ${badgeClearSequence})
+                ELSE ${badgeClearSequence}
+              END`,
+              badgeClearedAt: sql`CASE
+                WHEN ${iosPushRegistrations.badgeClearedRevision} = ${registrationRevision}
+                  AND ${iosPushRegistrations.badgeClearSequence} >= ${badgeClearSequence}
+                THEN ${iosPushRegistrations.badgeClearedAt}
+                ELSE ${nowDateSql()}
+              END`,
+            }),
       })
       .where(
         and(
@@ -134,16 +169,20 @@ const reconcile$ = command(async ({ get, set }, signal: AbortSignal) => {
           eq(iosPushRegistrations.sessionId, auth.sessionId),
           eq(iosPushRegistrations.revision, registrationRevision),
           eq(iosPushRegistrations.enabled, true),
-          or(
-            isNull(iosPushRegistrations.notificationStateRevision),
-            ne(
-              iosPushRegistrations.notificationStateRevision,
-              registrationRevision,
-            ),
-          ),
+          badgeClearSequence === undefined
+            ? or(
+                isNull(iosPushRegistrations.notificationStateRevision),
+                ne(
+                  iosPushRegistrations.notificationStateRevision,
+                  registrationRevision,
+                ),
+              )
+            : undefined,
         ),
-      );
+      )
+      .returning({ badgeClearedAt: iosPushRegistrations.badgeClearedAt });
     signal.throwIfAborted();
+    set(acknowledgedBadgeClearedAt$, acknowledged?.badgeClearedAt ?? null);
   }
   const result = await get(reconciliation$);
   signal.throwIfAborted();

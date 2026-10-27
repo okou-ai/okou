@@ -5249,6 +5249,80 @@ describe("CHAT-02: push notification gating", () => {
     });
   }, 60_000);
 
+  it("keeps acknowledged chats out of later alert and badge-only pushes on that device", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const identity = { ...actor, orgId: actor.orgId! };
+    const startedAt = now();
+    mockNow(startedAt);
+    onTestFinished(clearMockNow);
+    const provider = await createApnsFixture(context);
+    const phone = await registerIosPush(context, identity);
+    const tablet = await registerIosPush(context, identity, {
+      deviceToken: "cd".repeat(32),
+    });
+    const old = await startChatRun(actor, {
+      agentId,
+      prompt: "Before opening",
+    });
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      old.runId,
+      await claimChatRun(runnerGroup, old.runId),
+    );
+    await flushWaitUntilForTest();
+
+    mockNow(startedAt + 1000);
+    const opened = await reconcileIosNotifications(context, identity, phone, {
+      badgeClearSequence: 1,
+    });
+    expect(opened.body).toMatchObject({ unreadCount: 1, badgeCount: 0 });
+    await expect(chat.listUnreadChatThreadIds(actor)).resolves.toContain(
+      old.threadId,
+    );
+
+    await chat.markThreadUnread(actor, old.threadId);
+    await flushWaitUntilForTest();
+    const latestPayload = (deviceToken: string) => {
+      return provider.requests
+        .filter((request) => {
+          return request.headers[":path"] === `/3/device/${deviceToken}`;
+        })
+        .at(-1)?.payload;
+    };
+    expect(latestPayload(phone.deviceToken)).toStrictEqual({
+      aps: { badge: 0 },
+    });
+    expect(latestPayload(tablet.deviceToken)).toStrictEqual({
+      aps: { badge: 1 },
+    });
+
+    mockNow(startedAt + 2000);
+    const fresh = await startChatRun(actor, {
+      agentId,
+      prompt: "After opening",
+    });
+    await completeChatRunOk(
+      fresh.runId,
+      await claimChatRun(runnerGroup, fresh.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(latestPayload(phone.deviceToken)).toMatchObject({
+      aps: { badge: 1, alert: expect.any(Object) },
+    });
+    expect(latestPayload(tablet.deviceToken)).toMatchObject({
+      aps: { badge: 2, alert: expect.any(Object) },
+    });
+
+    await chat.markThreadRead(actor, fresh.threadId);
+    await flushWaitUntilForTest();
+    expect(latestPayload(phone.deviceToken)).toStrictEqual({
+      aps: { badge: 0 },
+    });
+    expect(latestPayload(tablet.deviceToken)).toStrictEqual({
+      aps: { badge: 1 },
+    });
+  }, 60_000);
+
   it("uses sandbox credentials and the sandbox APNs destination independently of production", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context, "sandbox");

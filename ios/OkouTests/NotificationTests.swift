@@ -429,6 +429,7 @@ final class NotificationSystemFixture: NotificationSystem {
   var prompts = 0
   var delivered: [DeliveredChatNotification] = []
   var badgeCount = 0
+  var didSetBadgeCount: (@MainActor (Int) -> Void)?
   let environment: String? = "production"
   func authorizationStatus() async -> UNAuthorizationStatus { status }
   func requestAuthorization() async throws -> Bool {
@@ -443,5 +444,8 @@ final class NotificationSystemFixture: NotificationSystem {
     let removed = Set(identifiers)
     delivered.removeAll { removed.contains($0.identifier) }
   }
-  func setBadgeCount(_ count: Int) async throws { badgeCount = count }
+  func setBadgeCount(_ count: Int) async throws {
+    badgeCount = count
+    didSetBadgeCount?(count)
+  }
 }
