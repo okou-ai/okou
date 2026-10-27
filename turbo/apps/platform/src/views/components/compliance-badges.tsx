@@ -1,5 +1,4 @@
 import { Badge } from "@okouai/ui";
-import { cn } from "@okouai/ui/lib/utils";
 import {
   Globe,
   HeartPulse,
@@ -104,8 +103,8 @@ export function SecurityDetailsLink({ className }: { className: string }) {
  * The five frameworks as status badges. Onboarding and the chat home show the
  * same list, so the claims cannot drift apart between the two surfaces.
  *
- * `quiet` renders unboxed inline text for ambient surfaces, with subdued
- * icons and the same readable tone for each framework and its status.
+ * `quiet` renders compact, unboxed footer text with subdued icons and the
+ * same tone for each framework and its status.
  */
 export function ComplianceBadges({
   className,
@@ -123,15 +122,14 @@ export function ComplianceBadges({
         return (
           <li key={item.name}>
             <Item
-              className={cn(
-                "text-xs",
+              className={
                 quiet
-                  ? "inline-flex items-center gap-1 text-gray-700"
-                  : "text-muted-foreground",
-              )}
+                  ? "inline-flex items-center gap-1 text-[11px] leading-4 text-gray-600"
+                  : "text-xs text-muted-foreground"
+              }
             >
               <item.icon
-                className={quiet ? "size-3 text-gray-600" : "text-foreground"}
+                className={quiet ? "size-2.5 text-gray-500" : "text-foreground"}
                 aria-hidden="true"
               />
               <span>{item.name}</span>
