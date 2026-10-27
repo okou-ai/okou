@@ -10,11 +10,10 @@ import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { workflowAutomationColumns } from "../services/autonomy-budget-schema.service";
 import { googleFormsAccountProjectionStatement } from "../services/google-forms-automation-account.service";
-import { preparedVolumePublicationSql as volumeSql } from "../services/storage-volume-publication-sql";
+import { consumeWorkflowAttachmentCandidateSql } from "../services/workflow-attachment-cleanup.service";
 import {
   chatThreadCreatedEventSql as createdEventSql,
   createdChatThreadFromRow,
@@ -32,12 +31,12 @@ import {
   copySourceResult,
   copyTransactionResult,
   requirePreparedCopyUnchanged,
+  CopyPreparationConflict,
   type WorkflowCopyInput,
 } from "./workflow-copy-source";
 import {
   copyPublicationPlans,
   requireCopySlugAvailable,
-  requireCopyVolumePublished,
   copyAutomationPlan,
   requireCopiedRow,
   copyConnectorSlugs,
@@ -88,11 +87,7 @@ export const readWorkflowCopySnapshot$ = command(
         ? await db.select().from(copyWebhooksQuery(rows, "preparation"))
         : [];
       signal.throwIfAborted();
-      const storage = m
-        ? null
-        : ((await db.select().from(p.storage))[0] ?? null);
-      signal.throwIfAborted();
-      const facts = { webhooks, storage };
+      const facts = { webhooks };
       const current = copySourceResult(args, visible, m, rows, facts);
 
       return current;
@@ -141,18 +136,22 @@ export const commitWorkflowCopy$ = command(
       const webhooks = rows.length
         ? await tx.select().from(copyWebhooksQuery(rows))
         : [];
-      const storage = m
-        ? null
-        : ((await tx.select().from(p.storage))[0] ?? null);
-      const facts = { webhooks, storage };
+      const facts = { webhooks };
       const current = copySourceResult(args, visible, m, rows, facts);
 
       requirePreparedCopyUnchanged(current.source, args.source);
       const [slugRow] = await tx.select().from(p.slug);
       requireCopySlugAvailable(slugRow, current.source.sourceWorkflow.name);
-      // Orphan cleanup takes this storage lock before checking Workflow absence.
-      const [storageRow] = await tx.select().from(p.preparedStorage);
-      requireCopiedRow(storageRow, p.storageError);
+      if (args.cleanupJobId !== null) {
+        const { rowCount } = await tx.execute(
+          consumeWorkflowAttachmentCandidateSql(args.cleanupJobId),
+        );
+        if (rowCount !== 1) {
+          throw new CopyPreparationConflict(
+            "Workflow attachment preparation changed; retry the copy",
+          );
+        }
+      }
       const [workflowRow] = await tx
         .insert(workflows)
         .values(p.workflow)
@@ -198,9 +197,6 @@ export const commitWorkflowCopy$ = command(
         }
         signal.throwIfAborted();
       }
-      const { rowCount } = await tx.execute(volumeSql(args.volume, nowDate()));
-      requireCopyVolumePublished(rowCount, args.volume.version.versionId);
-      signal.throwIfAborted();
       // The shared user/org event sequence remains the final publication lock.
       if (copyNeedsThread(current.source)) {
         await tx

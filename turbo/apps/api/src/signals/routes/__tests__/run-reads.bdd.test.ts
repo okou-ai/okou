@@ -1,6 +1,6 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
+import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
 import { createHash, randomUUID } from "node:crypto";
 
 import { CANONICAL_CLAUDE_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
@@ -25,7 +25,6 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -645,8 +644,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://r2.example.com/storages/presigned?sig=bdd",
       );
-      // An Agent workflow's exact Storage version is the run's volume; its
-      // archive is recorded at the mocked object size.
       context.mocks.s3.send.mockResolvedValue({
         ContentLength: volumeArchiveSize,
       });
@@ -654,39 +651,17 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         displayName: "BDD resume agent",
         visibility: "private",
       });
-      const workflowName = `bdd-resume-${randomUUID().slice(0, 8)}`;
-      const misc = createMiscRoutesApi(context);
-      const workflowWritesStart = context.mocks.s3.send.mock.calls.length;
-      const workflow = await misc.createWorkflow(
+      const [readonlySkill] = await readonlyConnectorSkills(
+        context,
         actor,
         agent.agentId,
-        workflowName,
-        { content: "# Resume\nUse for session continuation." },
-        [201],
+        ["session continuation"],
       );
-      if (workflow.status !== 201) {
-        throw new Error("Expected workflow creation to succeed");
+      if (!readonlySkill) {
+        throw new Error("Expected a readonly Connector skill");
       }
-      const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
-      const archiveWrites = context.mocks.s3.send.mock.calls
-        .slice(workflowWritesStart)
-        .flatMap(([command]: readonly unknown[]) => {
-          if (s3CommandName(command) !== "PutObjectCommand") {
-            return [];
-          }
-          const input = (
-            command as { readonly input?: { readonly Key?: string } }
-          ).input;
-          const version = input?.Key?.match(
-            /\/([a-f0-9]{64})\/archive\.tar\.gz$/u,
-          )?.[1];
-          return version ? [version] : [];
-        });
-      expect(archiveWrites).toHaveLength(1);
-      const workflowVersion = archiveWrites[0];
-      if (!workflowVersion) {
-        throw new Error("Expected the workflow's actual archive publication");
-      }
+      const workflowStorageName = readonlySkill.name;
+      const workflowVersion = readonlySkill.versionId;
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://r2.example.com/storages/presigned?sig=bdd",
       );
@@ -720,7 +695,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         context.mocks.s3.getSignedUrl.mock.calls.length;
       const r1 = await api.createThreadRun(actor, {
         agentId: agent.agentId,
-        prompt: "pin the workflow Storage version",
+        prompt: "pin the Connector skill Storage version",
       });
       fixture.registerRun(r1.runId);
       const claim1 = await api.claimRunnerJob(r1.runId);
@@ -731,9 +706,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         expect.arrayContaining([
           expect.objectContaining({
             name: workflowStorageName,
-            mountPath: `/home/user/.claude/skills/${workflowName}`,
+            mountPath: readonlySkill.mountPath,
             versionId: workflowVersion,
-            // The server packages the workflow, so its archive size is the one
+            // The server packages the Connector skill, so its archive size is the one
             // recorded for that version rather than a mocked object size.
             archiveSize: expect.any(Number),
           }),

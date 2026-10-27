@@ -34,6 +34,8 @@ import {
   logCommittedConversationDeletion,
 } from "./conversation-history-deletion.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
+import { workflowAttachmentCleanupValues } from "./workflow-attachment-cleanup.service";
 
 const log = logger("api:agent-deletion");
 const THREAD_DELETION_READ_PAGE_SIZE = 500;
@@ -119,6 +121,33 @@ const deleteAgentRows$ = command(
       for (const statement of agentPublicationFenceDeletionSql(args.agentId)) {
         await tx.execute(statement);
         signal.throwIfAborted();
+      }
+      // DELETE RETURNING consumes the actual winning descriptor after any
+      // concurrent Workflow update. A preceding SELECT would miss a late edit.
+      const removedWorkflows = await tx
+        .delete(workflows)
+        .where(
+          and(
+            eq(workflows.agentId, args.agentId),
+            eq(workflows.orgId, args.orgId),
+          ),
+        )
+        .returning({
+          id: workflows.id,
+          ownerUserId: workflows.ownerUserId,
+          attachments: workflows.attachments,
+        });
+      for (const workflow of removedWorkflows) {
+        if (workflow.attachments?.kind === "bundle") {
+          await tx.insert(backgroundJobs).values(
+            workflowAttachmentCleanupValues({
+              orgId: args.orgId,
+              userId: workflow.ownerUserId,
+              workflowId: workflow.id,
+              objectKey: workflow.attachments.objectKey,
+            }),
+          );
+        }
       }
       await tx.delete(agents).where(agentDeletionIdentityCondition(args));
       signal.throwIfAborted();

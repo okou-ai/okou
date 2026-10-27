@@ -105,6 +105,17 @@ async function readReviewedEmptySources(
   return emptySources;
 }
 
+class WorkflowStorageCutoverInstalled extends Error {
+  override name = "WorkflowStorageCutoverInstalled";
+}
+
+async function requireLegacyWorkflowStorage(db: ReturnType<typeof postgres>) {
+  const [cutover] = array(object({ installed: boolean() })).parse(
+    await db`SELECT to_regclass('public.claimed_workflow_attachments') IS NOT NULL AS installed`,
+  );
+  if (cutover?.installed) throw new WorkflowStorageCutoverInstalled();
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
@@ -509,6 +520,9 @@ async function main(): Promise<void> {
     }
   };
   try {
+    // Legacy parity ceases to be authoritative with Stage 2's direct writer.
+    // Refuse stale plans before any object read/upload or Workflow mutation.
+    await requireLegacyWorkflowStorage(db);
     if (values.audit) await audit();
     else if (values.migrate) await migrate();
     else await dryRun();

@@ -88,16 +88,3 @@ export function preparedVolumePublicationPlan(
     published: ready,
   };
 }
-
-/** Register one immutable version and Storage HEAD, preserving a reused ready index. */
-export function preparedVolumePublicationSql(
-  volume: PreparedServerSideVolume,
-  publishedAt: Date,
-) {
-  const plan = preparedVolumePublicationPlan(volume, publishedAt);
-  return new QueryBuilder()
-    .with(...plan.ctes)
-    .select({ id: plan.published.id })
-    .from(plan.published)
-    .getSQL();
-}

@@ -1,6 +1,5 @@
 import { computed, type Computed } from "ccstate";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import {
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowObservation,
@@ -21,17 +20,12 @@ export function createWorkflowSkills(
     ]);
     const skillVolumes = workflows
       .filter((workflow) => {
-        return !SEED_SKILLS.includes(workflow.name);
+        return (
+          !SEED_SKILLS.includes(workflow.name) &&
+          workflow.officialDefinitionName !== null
+        );
       })
       .map((workflow): SkillVolume => {
-        if (workflow.officialDefinitionName === null) {
-          return {
-            // Storage is keyed by workflow identity; its skill mounts at the slug.
-            name: getCustomSkillStorageName(workflow.workflowId),
-            skillName: workflow.name,
-            source: "workflow_skill",
-          };
-        }
         const definition = official?.definitions.find((candidate) => {
           return candidate.workflowId === workflow.workflowId;
         });

@@ -1,3 +1,4 @@
+import type { WorkflowSkillDocument } from "@okouai/api-contracts/contracts/workflow-attachments";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
@@ -31,7 +32,6 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 
@@ -52,7 +52,6 @@ import {
   isNull,
   lt,
   ne,
-  not,
   notExists,
   notInArray,
   or,
@@ -86,6 +85,11 @@ import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import { readAgentInstructionsForClaim$ } from "../services/agent-instructions-claim.service";
+import {
+  workflowClaimInput,
+  materializeClaimedWorkflowDocuments$,
+  type WorkflowClaimInput,
+} from "../services/workflow-claim.service";
 import {
   createRunnerGroupRealtimeToken,
   publishChatThreadMessageCreatedSafely,
@@ -186,14 +190,6 @@ const INVALID_EXECUTION_CONTEXT_ERROR =
   "Runner job missing valid execution context";
 const runnerClaimVersionHeaderSchema = runnerVersionSchema.optional();
 const MAX_VALIDATION_ISSUES_TO_LOG = 10;
-// Reader-only preparation for #42362. Activation #43216 removes these gates
-// after this reader is deployed and pre-preparation API requests/rollback targets
-// are excluded. The selector fields remain part of the active contract.
-const WORKFLOW_DOCUMENT_SELECTION_FIELDS = [
-  "invokedWorkflowId",
-  "automationId",
-  "protectedMountPaths",
-] as const;
 
 function mergeClaimVars(args: {
   readonly runVars: Record<string, string> | null;
@@ -820,9 +816,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     eq(runnerJobQueue.runnerGroup, group),
     gt(runnerJobQueue.expiresAt, sql`now()`),
     eq(agentRuns.status, "pending"),
-    not(
-      sql`COALESCE(${runnerJobQueue.executionContext}->'customWorkflowSelection' ?| ${sql.param(WORKFLOW_DOCUMENT_SELECTION_FIELDS)}::text[], false)`,
-    ),
   ];
 
   if (auth.type === "official-runner") {
@@ -1084,12 +1077,40 @@ type ClaimedTransitionResult = Extract<
   ClaimTransitionResult,
   { readonly status: "claimed" }
 >;
+function withClaimedWorkflowDocuments(
+  responseBody: ExecutionContext,
+  workflowSkills: WorkflowSkillDocument[],
+): ExecutionContext {
+  const workflowMountPaths = new Set(
+    workflowSkills.map((skill) => {
+      return skill.mountPath;
+    }),
+  );
+  return {
+    ...responseBody,
+    storageManifest: {
+      storageMounts: (responseBody.storageManifest?.storageMounts ?? []).filter(
+        (mount) => {
+          return (
+            !mount.name.startsWith("custom-skill@") &&
+            !workflowMountPaths.has(mount.mountPath)
+          );
+        },
+      ),
+      workflowSkills,
+    },
+  };
+}
+
 type FailedClaimTransitionResult = Exclude<
   ClaimTransitionResult,
   { readonly status: "claimed" }
 >;
 
 function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
+  if (result.status === "workflow-unavailable") {
+    return notFound("Workflow is no longer available for this claim");
+  }
   if (result.status === "job-not-found") {
     return notFound("Job not found in queue");
   }
@@ -1099,19 +1120,27 @@ function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
 const transitionClaimedJobToRunning$ = command(
   (
     { set },
-    runId: string,
-    runnerAttribution: RunnerClaimAttribution | undefined,
-    timing: ClaimRouteTimingCollector,
+    args: {
+      readonly runId: string;
+      readonly workflowInput: WorkflowClaimInput;
+      readonly runnerAttribution: RunnerClaimAttribution | undefined;
+      readonly timing: ClaimRouteTimingCollector;
+    },
     signal: AbortSignal,
   ): Promise<ClaimTransitionResult> => {
+    const { runId, workflowInput, runnerAttribution, timing } = args;
     const db = set(writeDb$);
     return (async () => {
       const query = buildClaimTransitionSql(
         runId,
-        runnerAttribution?.runnerIdentity.runnerId ?? null,
-        runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
-        runnerAttribution?.runnerHostname ?? null,
-        runnerAttribution?.runnerVersion ?? null,
+        {
+          id: runnerAttribution?.runnerIdentity.runnerId ?? null,
+          heartbeatGeneration:
+            runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
+          hostname: runnerAttribution?.runnerHostname ?? null,
+          version: runnerAttribution?.runnerVersion ?? null,
+        },
+        workflowInput,
       );
       const result = await timing.measure(
         "claim_route_transition_execute",
@@ -1124,12 +1153,6 @@ const transitionClaimedJobToRunning$ = command(
         },
       );
       const transition = decodeClaimTransitionResult(result);
-      if (transition.status === "claimed") {
-        await db
-          .update(activeAgentRuns)
-          .set({ lastHeartbeatAt: transition.claimedAt })
-          .where(eq(activeAgentRuns.runId, runId));
-      }
       signal.throwIfAborted();
       return transition;
     })();
@@ -1860,20 +1883,6 @@ const resolveStoredExecutionContextForClaim$ = command(
         ),
       };
     }
-    const workflowSelection = storedContextResult.data.customWorkflowSelection;
-    if (
-      workflowSelection &&
-      WORKFLOW_DOCUMENT_SELECTION_FIELDS.some((field) => {
-        return workflowSelection[field] !== undefined;
-      })
-    ) {
-      // New-only Workflow content cannot be served by the legacy Storage reader.
-      // Keep both Run and queue intact until the activation API handles claim.
-      return {
-        compatible: false as const,
-        response: notFound("Job requires a Workflow document claim API"),
-      };
-    }
     const piModelConfigResolution = resolvePiModelConfigForClaim({
       cliAgentType: storedContextResult.data.cliAgentType,
       modelConfig: storedContextResult.data.piModelConfig,
@@ -1911,7 +1920,7 @@ const resolveStoredExecutionContextForClaim$ = command(
 
 const claimAuthorizedJob$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly runId: string;
       readonly authType: RunnerAuthContext["type"];
@@ -1942,6 +1951,10 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
+    if (run.agentId !== null && get(request$).query("workflowSkills") !== "1") {
+      return notFound("Job requires a Workflow document reader");
+    }
+    const workflowInput = workflowClaimInput(storedContext, run.prompt);
 
     let responseBody = await set(
       buildClaimResponseBodyForClaim$,
@@ -1985,9 +1998,12 @@ const claimAuthorizedJob$ = command(
       async () => {
         return await set(
           transitionClaimedJobToRunning$,
-          runId,
-          args.runnerAttribution,
-          claimRouteTiming,
+          {
+            runId,
+            workflowInput,
+            runnerAttribution: args.runnerAttribution,
+            timing: claimRouteTiming,
+          },
           signal,
         );
       },
@@ -2001,6 +2017,13 @@ const claimAuthorizedJob$ = command(
     if (claimResult.status !== "claimed") {
       return claimTransitionErrorResponse(claimResult);
     }
+
+    const workflowSkills = await set(
+      materializeClaimedWorkflowDocuments$,
+      { workflows: claimResult.workflows, skillRoot: workflowInput.skillRoot },
+      signal,
+    );
+    responseBody = withClaimedWorkflowDocuments(responseBody, workflowSkills);
 
     const response = {
       status: 200 as const,
@@ -2359,6 +2382,7 @@ export const runnersRoutes: readonly RouteEntry[] = [
     route: runnersJobClaimContract.claim,
     handler: claimInner$,
     observeJsonResponse: observeClaimJsonResponse,
+    streamJsonResponse: true,
   },
   {
     route: runnersSteerContract.next,

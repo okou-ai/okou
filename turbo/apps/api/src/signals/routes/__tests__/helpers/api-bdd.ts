@@ -183,7 +183,11 @@ export function createBddApi(context: TestContext) {
   }
 
   function acceptAgentStorageWrites(): void {
-    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
+    context.mocks.s3.send.mockResolvedValue({
+      ContentLength: 1024,
+      UploadId: randomUUID(),
+      ETag: "fixture-etag",
+    });
     context.mocks.s3.getSignedUrl.mockImplementation(
       (_client: unknown, command: unknown) => {
         return Promise.resolve(apiTestS3PresignedUrl(command));

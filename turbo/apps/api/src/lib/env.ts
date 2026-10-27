@@ -95,6 +95,10 @@ const SCHEMA = {
   GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE: url().optional(),
   GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL: email().optional(),
   CRON_SECRET: string().min(1),
+  // Enable only after Stage 1 API writers have drained and cannot be rolled back.
+  WORKFLOW_ATTACHMENT_CLEANUP_ENABLED: zEnum(["true", "false"]).default(
+    "false",
+  ),
   R2_ACCESS_KEY_ID: string().min(1),
   R2_ACCOUNT_ID: string().min(1),
   R2_SECRET_ACCESS_KEY: string().min(1),

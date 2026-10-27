@@ -811,6 +811,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
+          query: { workflowSkills: "1" },
           headers: runnerHeaders(true),
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
@@ -983,6 +984,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
+          query: { workflowSkills: "1" },
           headers: authorization === undefined ? {} : { authorization },
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
@@ -1004,6 +1006,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
+          query: { workflowSkills: "1" },
           headers: authorization === undefined ? {} : { authorization },
           ...(extraHeaders ? { extraHeaders } : {}),
           params: { id: runId },
@@ -1446,6 +1449,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
+          query: { workflowSkills: "1" },
           headers: runnerHeaders(validAuth),
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
@@ -1468,6 +1472,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
+          query: { workflowSkills: "1" },
           headers: runnerHeaders(validAuth),
           ...(extraHeaders ? { extraHeaders } : {}),
           params: { id: runId },

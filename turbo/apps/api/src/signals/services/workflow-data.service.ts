@@ -6,10 +6,11 @@ import type {
 } from "@okouai/api-contracts/contracts/workflows";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, asc, desc, eq, isNull, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 
 import { db$ } from "../external/db";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   acceptedOfficialWorkflowCatalogReadPlan,
   acceptedCatalogFromRow,
@@ -188,10 +189,11 @@ export const loadVisibleWorkflowById$ = command(
       readonly includeInstallingOfficial?: boolean;
     },
     signal: AbortSignal,
-  ): Promise<VisibleWorkflow | null> => {
+  ): Promise<(VisibleWorkflow & { readonly observedXmin: string }) | null> => {
     const [row] = await get(db$)
       .select({
         workflow: workflows,
+        observedXmin: sql`${workflows}.xmin::text`.mapWith(pgTextDecoder),
         agent: {
           id: agents.id,
           orgId: agents.orgId,
@@ -225,7 +227,11 @@ export const loadVisibleWorkflowById$ = command(
     if (!row) {
       return null;
     }
-    return { workflow: row.workflow, agent: row.agent };
+    return {
+      workflow: row.workflow,
+      agent: row.agent,
+      observedXmin: row.observedXmin,
+    };
   },
 );
 

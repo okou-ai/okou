@@ -2,10 +2,6 @@ import type {
   OfficialWorkflowAcceptedRevision,
   OfficialWorkflowAcceptedDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import {
-  getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
@@ -52,10 +48,6 @@ export interface WorkflowCopySource {
         readonly content: string;
       }[]
     | null;
-  readonly storage: {
-    readonly id: string;
-    readonly headVersionId: string | null;
-  } | null;
 }
 
 export interface WorkflowCopyInput {
@@ -65,7 +57,6 @@ export interface WorkflowCopyInput {
   readonly sourceWorkflow: WorkflowRow;
   readonly targetAgentId: string;
   readonly sourceFiles: WorkflowCopySource["files"];
-  readonly sourceStorage: WorkflowCopySource["storage"];
 }
 
 interface OfficialCopyMaterialization {
@@ -181,7 +172,6 @@ export function copySourcePlans(
       ? automations.for("update")
       : automations
     ).as("copy_automation_locks"),
-    storage: workflowCopyStorageQuery(args, mode === "publication"),
   };
 }
 
@@ -237,24 +227,6 @@ export function workflowCopyVisibleQuery(args: {
     )
     .limit(1)
     .as("copy_visible");
-}
-
-export function workflowCopyStorageQuery(
-  args: { readonly orgId: string; readonly sourceWorkflow: WorkflowRow },
-  lock: boolean,
-) {
-  const query = new QueryBuilder()
-    .select({ id: storages.id, headVersionId: storages.headVersionId })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, getCustomSkillStorageName(args.sourceWorkflow.id)),
-      ),
-    )
-    .limit(1);
-  return (lock ? query.for("share") : query).as("copy_storage");
 }
 
 export function copyWebhooksQuery(
@@ -355,14 +327,8 @@ export function copySourceResult(
   visible: WorkflowRow,
   materialization: OfficialCopyMaterialization | null,
   rows: WorkflowCopySource["sourceAutomations"],
-  facts: Pick<WorkflowCopySource, "storage" | "webhooks">,
+  facts: Pick<WorkflowCopySource, "webhooks">,
 ) {
-  if (
-    !materialization &&
-    !isDeepStrictEqual(facts.storage, args.sourceStorage)
-  ) {
-    throw new CopyPreparationConflict();
-  }
   return {
     kind: "ok" as const,
     source: {
@@ -370,7 +336,6 @@ export function copySourceResult(
       sourceWorkflow: materialization?.sourceWorkflow ?? visible,
       sourceAutomations: materialization?.sourceAutomations ?? rows,
       webhooks: facts.webhooks,
-      storage: facts.storage,
       files: materialization?.files ?? args.sourceFiles,
     },
   };

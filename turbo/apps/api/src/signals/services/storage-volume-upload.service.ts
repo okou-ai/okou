@@ -16,8 +16,6 @@ import {
   pgBooleanDecoder,
   nullableDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { workflows } from "@okouai/db/schema/workflow";
-import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { writeDb$ } from "../external/db";
@@ -33,32 +31,11 @@ import {
   type PreparedStorageVersion,
 } from "./storage-version-registration.service";
 import { piResourceProjectionValues } from "./pi-resource-version-index.service";
-import {
-  generationScopeCondition,
-  publicationScopeCondition,
-  type StoragePublicationFence,
-} from "./storage-publication-fence.service";
-import {
-  storagePublicationGenerations,
-  storagePublicationTokens,
-} from "@okouai/db/schema/storage-publication-fence";
-
 interface UploadedVolume {
   readonly storageName: string;
   readonly versionId: string;
 }
-type UploadVolumeServerSideInput = PrepareVolumeServerSideInput & {
-  readonly publicationFence?: StoragePublicationFence;
-  readonly workflowAttachments?: {
-    readonly workflowId: string;
-    readonly orgId: string;
-    readonly attachments: WorkflowAttachments;
-  };
-};
-class StalePublicationFenceError extends Error {}
-export function isStalePublicationFenceError(error: unknown): boolean {
-  return error instanceof StalePublicationFenceError;
-}
+type UploadVolumeServerSideInput = PrepareVolumeServerSideInput;
 
 function storageHeadValues(volume: PreparedServerSideVolume) {
   return {
@@ -71,8 +48,6 @@ function storageHeadValues(volume: PreparedServerSideVolume) {
 
 interface PreparedVolumePublication {
   readonly volume: PreparedServerSideVolume;
-  readonly publicationFence?: StoragePublicationFence;
-  readonly workflowAttachments?: UploadVolumeServerSideInput["workflowAttachments"];
 }
 
 function uploadRowExists(source: WithSubquery) {
@@ -83,95 +58,23 @@ function uploadMutationCompleted(source: WithSubquery) {
   return gte(new QueryBuilder().select({ value: count() }).from(source), 0);
 }
 
-function uploadAttachmentCondition(args: PreparedVolumePublication) {
-  const descriptor = args.workflowAttachments;
-  const fence = args.publicationFence;
-  if (!descriptor || !fence) {
-    throw new Error("Missing Workflow publication fence");
-  }
-  return and(
-    eq(workflows.id, descriptor.workflowId),
-    eq(workflows.orgId, descriptor.orgId),
-    eq(workflows.agentId, fence.scope.agentId),
-    isNull(workflows.officialDefinitionName),
-  );
-}
-
-/** Locks are acquired in Workflow -> Storage -> generation -> token order. */
+/** Real Storage ownership gates registration, HEAD and the resource index. */
 function preparedUploadAdmissionPlan(args: PreparedVolumePublication) {
   const query = new QueryBuilder();
-  const workflow = args.workflowAttachments
-    ? query
-        .$with("retained_upload_workflow")
-        .as(
-          query
-            .select({ id: workflows.id })
-            .from(workflows)
-            .where(uploadAttachmentCondition(args))
-            .for("no key update", { of: workflows })
-            .limit(1),
-        )
-    : undefined;
-  const storage = query.$with("retained_upload_storage").as(
-    query
-      .select({ id: storages.id })
-      .from(storages)
-      .where(
-        and(
-          eq(storages.id, args.volume.version.storageId),
-          workflow ? uploadRowExists(workflow) : undefined,
-        ),
-      )
-      .for("key share", { of: storages })
-      .limit(1),
-  );
-  const fence = args.publicationFence;
-  const generation = fence
-    ? query.$with("retained_upload_generation").as(
-        query
-          .select({ id: storagePublicationGenerations.generation })
-          .from(storagePublicationGenerations)
-          .where(
-            and(
-              generationScopeCondition(fence.scope),
-              uploadRowExists(storage),
-            ),
-          )
-          .for("no key update", { of: storagePublicationGenerations })
-          .limit(1),
-      )
-    : undefined;
-  const token =
-    fence && generation
-      ? query.$with("retained_upload_token").as(
-          query
-            .select({ id: storagePublicationTokens.token })
-            .from(storagePublicationTokens)
-            .where(
-              and(
-                publicationScopeCondition(fence),
-                uploadRowExists(generation),
-              ),
-            )
-            .for("update", { of: storagePublicationTokens })
-            .limit(1),
-        )
-      : undefined;
-  const source = query.$with("admitted_upload_source").as(
-    query
-      .select({ id: storage.id })
-      .from(storage)
-      .where(token ? uploadRowExists(token) : undefined),
-  );
-  const ctes: WithSubquery[] = [storage];
-  if (workflow) {
-    ctes.unshift(workflow);
-  }
-  if (generation && token) {
-    ctes.push(generation, token);
-  }
-  ctes.push(source);
-  return { workflow, storage, generation, token, source, ctes };
+  const storage = query
+    .$with("retained_upload_storage")
+    .as(
+      query
+        .select({ id: storages.id })
+        .from(storages)
+        .where(eq(storages.id, args.volume.version.storageId))
+        .for("key share", { of: storages })
+        .limit(1),
+    );
+  const source = query
+    .$with("admitted_upload_source")
+    .as(query.select({ id: storage.id }).from(storage));
+  return { storage, source, ctes: [storage, source] };
 }
 
 function uploadedVersionSource(version: PreparedStorageVersion) {
@@ -284,9 +187,7 @@ function requirePreparedUploadPublication(
   version: PreparedStorageVersion,
   result:
     | {
-        readonly workflowPresent: boolean;
         readonly storagePresent: boolean;
-        readonly fencePresent: boolean;
         readonly registered: boolean;
         readonly published: boolean;
         readonly settled: boolean;
@@ -296,39 +197,14 @@ function requirePreparedUploadPublication(
   if (!result) {
     throw new Error("Prepared volume publication returned no result");
   }
-  if (!result.workflowPresent) {
-    throw new StalePublicationFenceError(
-      "Workflow was removed before attachment publication",
-    );
-  }
   if (!result.storagePresent) {
     throw new Error("Prepared volume Storage no longer exists");
-  }
-  if (!result.fencePresent) {
-    throw new StalePublicationFenceError(
-      "Storage publication was superseded before Storage HEAD commit",
-    );
   }
   if (!result.registered) {
     throw new StorageVersionIdentityConflictError(version.versionId);
   }
   if (!result.published || !result.settled) {
     throw new Error("Locked prepared volume publication did not complete");
-  }
-}
-
-function requirePreparedUploadDescriptor(args: PreparedVolumePublication) {
-  const fence = args.publicationFence;
-  if (
-    args.workflowAttachments &&
-    (!fence ||
-      fence.publicationKey !==
-        `workflow:${args.workflowAttachments.workflowId}` ||
-      fence.scope.orgId !== args.workflowAttachments.orgId)
-  ) {
-    throw new Error(
-      "Workflow attachment publication requires its exact Storage fence",
-    );
   }
 }
 
@@ -339,22 +215,14 @@ function preparedUploadSelection(
   settled: SQL,
 ) {
   return {
-    workflowPresent: (plan.workflow
-      ? uploadRowExists(plan.workflow)
-      : sql`true`
-    ).mapWith(pgBooleanDecoder),
     storagePresent: uploadRowExists(plan.storage).mapWith(pgBooleanDecoder),
-    fencePresent: (plan.token
-      ? uploadRowExists(plan.token)
-      : sql`true`
-    ).mapWith(pgBooleanDecoder),
     registered: uploadRowExists(registered).mapWith(pgBooleanDecoder),
     published: uploadRowExists(published).mapWith(pgBooleanDecoder),
     settled: settled.mapWith(pgBooleanDecoder),
   };
 }
 
-/** One publication statement gates all writes on the real parent/token/version outcomes. */
+/** One publication statement gates all writes on the real Storage/version outcomes. */
 const commitPreparedVolumeUpload$ = command(
   async (
     { set },
@@ -363,8 +231,6 @@ const commitPreparedVolumeUpload$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const version = args.volume.version;
-    const fence = args.publicationFence;
-    requirePreparedUploadDescriptor(args);
     const projection =
       args.volume.piResourceIndex?.kind === "prepared"
         ? piResourceProjectionValues(
@@ -374,7 +240,7 @@ const commitPreparedVolumeUpload$ = command(
           )
         : undefined;
     const plan = preparedUploadAdmissionPlan(args);
-    const ctes = [...plan.ctes];
+    const ctes: WithSubquery[] = [...plan.ctes];
     const registered = db.$with("registered_upload_version").as(
       db
         .insert(storageVersions)
@@ -433,41 +299,10 @@ const commitPreparedVolumeUpload$ = command(
           .where(uploadMutationCompleted(index)),
       );
     }
-    if (args.workflowAttachments) {
-      const updated = db.$with("published_upload_attachments").as(
-        db
-          .update(workflows)
-          .set({ attachments: args.workflowAttachments.attachments })
-          .where(and(uploadAttachmentCondition(args), completed))
-          .returning({ id: workflows.id }),
-      );
-      ctes.push(updated);
-      completed = uploadRowExists(updated);
-    }
-    let settled = completed;
-    if (fence) {
-      const generation = db.$with("settled_upload_generation").as(
-        db
-          .update(storagePublicationGenerations)
-          .set({ updatedAt: nowDate() })
-          .where(and(generationScopeCondition(fence.scope), completed))
-          .returning({ id: storagePublicationGenerations.agentId }),
-      );
-      const token = db.$with("settled_upload_token").as(
-        db
-          .delete(storagePublicationTokens)
-          .where(
-            and(publicationScopeCondition(fence), uploadRowExists(generation)),
-          )
-          .returning({ id: storagePublicationTokens.token }),
-      );
-      ctes.push(generation, token);
-      settled = uploadRowExists(token);
-    }
     signal.throwIfAborted();
     const [result] = await db
       .with(...ctes)
-      .select(preparedUploadSelection(plan, registered, published, settled))
+      .select(preparedUploadSelection(plan, registered, published, completed))
       .from(sql`(VALUES (1)) AS upload_result_source`);
     signal.throwIfAborted();
     requirePreparedUploadPublication(version, result);
@@ -485,8 +320,6 @@ export const uploadVolumeServerSide$ = command(
       commitPreparedVolumeUpload$,
       {
         volume,
-        publicationFence: args.publicationFence,
-        workflowAttachments: args.workflowAttachments,
       },
       signal,
     );

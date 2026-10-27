@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -179,7 +178,7 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
   });
 
-  it("mounts the same exact workflow version from prefetch and a later independent pick", async () => {
+  it("selects the same current Workflow from prefetch and a later independent pick", async () => {
     context.mocks.s3.getSignedUrl.mockImplementation(() => {
       const url = `https://storage.example.com/context/${randomUUID()}`;
       return Promise.resolve(url);
@@ -195,7 +194,6 @@ describe("chat agent bootstrap prefetch", () => {
     if (workflow.status !== 201) {
       throw new Error("Expected workflow publication");
     }
-    const name = getCustomSkillStorageName(workflow.body.id);
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "prefetched skill",
@@ -203,14 +201,15 @@ describe("chat agent bootstrap prefetch", () => {
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     const firstMount = expectCanonicalStorageManifest(
       firstClaim.claim.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === name;
+    )?.workflowSkills?.find((mount) => {
+      return mount.workflowId === workflow.body.id;
     });
-    expect(firstMount).toMatchObject({ name });
-    expect(firstMount?.writeback).toBeUndefined();
+    expect(firstMount).toMatchObject({
+      workflowId: workflow.body.id,
+      skillMd: expect.stringContaining("Keep this published skill mounted."),
+    });
     expect(firstMount?.mountPath).toStrictEqual(expect.any(String));
-    expect(firstMount?.archiveUrl).toStrictEqual(expect.any(String));
-    expect(firstMount?.versionId).toMatch(/^[0-9a-f]{64}$/);
+    expect(firstMount?.attachments).toBeNull();
     const queuedId = randomUUID();
     await chat.requestSendEvent(
       actor,
@@ -244,16 +243,14 @@ describe("chat agent bootstrap prefetch", () => {
     const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
     const nextMount = expectCanonicalStorageManifest(
       nextClaim.claim.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === name;
+    )?.workflowSkills?.find((mount) => {
+      return mount.workflowId === workflow.body.id;
     });
     expect(nextMount).toMatchObject({
-      name,
+      workflowId: workflow.body.id,
       mountPath: firstMount?.mountPath,
-      versionId: firstMount?.versionId,
-      archiveUrl: firstMount?.archiveUrl,
+      skillMd: firstMount?.skillMd,
     });
-    expect(nextMount?.writeback).toBeUndefined();
     await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
   });
 

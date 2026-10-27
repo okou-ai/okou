@@ -27,7 +27,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR" ]; then
+    if [ "${3:-}" = "7171717171717171717171717171717171717171" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_WORKFLOW_ATTACHMENT_API_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_DATA_ROUTER_RESPONSE_ID_ON_MAIN:-1}" = "1" ]
       elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
@@ -202,7 +208,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
+    if [[ "$*" == *rollback-floors/workflow-attachments-direct* ]]; then
+      printf '%s\n' "${MOCK_WORKFLOW_ATTACHMENT_COMMIT-7171717171717171717171717171717171717171}"
+    elif [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
       printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
     elif [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
@@ -1796,5 +1804,15 @@ assert_failure "Rollback target predates the Stripe invoice-paid automation reti
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Stripe invoice-paid retirement must reject before artifact or host access"
 fi
+
+assert_failure "Cannot resolve the merged direct Workflow attachment runtime" \
+  run_resolver "${tmp_dir}/workflow-attachment-missing.output" MOCK_WORKFLOW_ATTACHMENT_COMMIT=
+[ ! -s "${tmp_dir}/workflow-attachment-missing.output" ] || fail "missing Workflow floor must not publish outputs"
+assert_failure "Rollback target predates direct Workflow attachment ownership" \
+  run_resolver "${tmp_dir}/workflow-attachment-api.output" MOCK_WORKFLOW_ATTACHMENT_API_VALID=0
+[ ! -s "${tmp_dir}/workflow-attachment-api.output" ] || fail "legacy Workflow API must not publish outputs"
+assert_failure "predates verified Workflow attachment delivery" \
+  run_resolver "${tmp_dir}/workflow-attachment-runner.output" MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/workflow-attachment-runner.output" ] || fail "unverified Workflow Runner must not publish outputs"
 
 echo "resolve-production-rollback-target tests passed"

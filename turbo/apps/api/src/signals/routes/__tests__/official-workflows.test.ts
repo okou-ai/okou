@@ -9,7 +9,6 @@ import { debugMorningBriefRoutes } from "../debug-morning-brief";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { claimBudgetRun } from "./helpers/public-autonomy-budget";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { readPublishedArchive } from "./helpers/published-archive";
 
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
@@ -19,7 +18,6 @@ import {
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
@@ -44,10 +42,7 @@ import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 
@@ -823,7 +818,7 @@ describe("Debug Morning Brief", () => {
 });
 
 describe("Workflow Run admission", () => {
-  it("pins ordinary Workflow publications across a normal revision", async () => {
+  it("selects current ordinary Workflows when a queued Run is claimed", async () => {
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
     await owned.run(() => {
@@ -832,93 +827,70 @@ describe("Workflow Run admission", () => {
         "claude-fable-5-1",
       );
     });
-    const published: {
-      workflowId: string;
-      archive: ReturnType<typeof readPublishedArchive>;
-    }[] = [];
+    const published = [];
     for (const name of ["first", "retained"]) {
-      const start = context.mocks.s3.send.mock.calls.length;
+      const instruction = `Read the ${name} publication.`;
       const workflowId = await owned.run(() => {
         return workflowBdd.createWorkflow(owned.actor, {
           agentId: owned.agentId,
           name: `published-${name}-${randomUUID().slice(0, 8)}`,
-          instruction: `Read the ${name} publication.`,
+          instruction,
         });
       });
-      published.push({
-        workflowId,
-        archive: readPublishedArchive(context, start),
-      });
+      published.push({ workflowId, instruction });
     }
     const firstWorkflow = published[0];
-    const retainedWorkflow = published[1];
-    if (!firstWorkflow || !retainedWorkflow) {
-      throw new Error("Expected two published Workflows");
+    if (!firstWorkflow) {
+      throw new Error("Expected the first Workflow");
     }
     const first = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
-      prompt: "Use both original Workflow publications",
+      prompt: "Use available Workflows",
     });
-    const updateStart = context.mocks.s3.send.mock.calls.length;
+    const revised = "Read the revised first publication.";
     await owned.run(() => {
       return accept(
         workflowClient().update({
           headers: authHeaders(owned.actor),
           params: { workflowId: firstWorkflow.workflowId },
-          body: {
-            instruction: "Read the revised first publication.",
-            files: [],
-          },
+          body: { instruction: revised, files: [] },
         }),
         [200],
       );
     });
-    const updated = readPublishedArchive(context, updateStart);
-    expect(updated.versionId).not.toBe(firstWorkflow.archive.versionId);
-    const check = async (runId: string, expected: typeof published) => {
+    for (const run of [first, null]) {
+      const current =
+        run ??
+        (await owned.sendChatRun(owned.actor, {
+          agentId: owned.agentId,
+          prompt: "Use current Workflows again",
+        }));
       const { claim, sandboxHeaders } = await owned.claimChatRun(
         owned.runnerGroup,
-        runId,
+        current.runId,
       );
-      const mounts =
-        expectCanonicalStorageManifest(
-          claim.storageManifest,
-        )?.storageMounts.filter((mount) => {
-          return expected.some((workflow) => {
-            return (
-              mount.name === getCustomSkillStorageName(workflow.workflowId)
-            );
-          });
-        }) ?? [];
-      expect(mounts).toHaveLength(2);
-      for (const workflow of expected) {
-        expect(mounts).toContainEqual(
-          expect.objectContaining({
-            name: getCustomSkillStorageName(workflow.workflowId),
-            versionId: workflow.archive.versionId,
-            archiveSize: workflow.archive.archiveSize,
-            archiveUrl: expect.any(String),
-          }),
+      const skills = claim.storageManifest?.workflowSkills;
+      expect(skills).toHaveLength(2);
+      for (const workflow of published) {
+        expect(
+          skills?.find((skill) => {
+            return skill.workflowId === workflow.workflowId;
+          })?.skillMd,
+        ).toContain(
+          workflow.workflowId === firstWorkflow.workflowId
+            ? revised
+            : workflow.instruction,
         );
       }
       await owned.run(() => {
         return fixture.failChatRun(
-          runId,
+          current.runId,
           sandboxHeaders,
-          "Workflow publications inspected",
+          "Workflow documents inspected",
         );
       });
       await owned.run(flushWaitUntilForTest);
-    };
-    await check(first.runId, published);
-    const later = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
-      prompt: "Use the updated and retained Workflow publications",
-    });
-    await check(later.runId, [
-      { ...firstWorkflow, archive: updated },
-      retainedWorkflow,
-    ]);
+    }
   });
 
   it("launches an idle ordinary workflow input with source annotations", async () => {

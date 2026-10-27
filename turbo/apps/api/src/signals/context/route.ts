@@ -39,6 +39,7 @@ interface HonoSignalHandlerOptions {
   readonly initializeServices$: Command<void, []>;
 
   readonly observeJsonResponse?: JsonResponseObserver;
+  readonly streamJsonResponse?: boolean;
 }
 
 interface RouteResult {
@@ -130,6 +131,7 @@ export function honoSignalHandler(
     requestBodyPolicy,
 
     observeJsonResponse,
+    streamJsonResponse,
   }: HonoSignalHandlerOptions,
 ): Handler {
   return async (context) => {
@@ -196,7 +198,11 @@ export function honoSignalHandler(
       );
     }
 
-    if (!observeJsonResponse || status < 200 || status >= 300) {
+    if (
+      (!observeJsonResponse && !streamJsonResponse) ||
+      status < 200 ||
+      status >= 300
+    ) {
       return context.json(body, status as ContentfulStatusCode);
     }
 
@@ -209,15 +215,35 @@ export function honoSignalHandler(
       0,
       monotonicNow() - serializationStartedAt,
     );
+    // Streaming avoids the function's buffered response ceiling. Bytes are
+    // sliced after UTF-8 encoding, so a boundary cannot corrupt a character.
+    const bytes = streamJsonResponse
+      ? new TextEncoder().encode(serialized)
+      : null;
+    let offset = 0;
+    const stream =
+      bytes === null
+        ? null
+        : new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (offset >= bytes.length) {
+                controller.close();
+                return;
+              }
+              const end = Math.min(offset + 64 * 1024, bytes.length);
+              controller.enqueue(bytes.subarray(offset, end));
+              offset = end;
+            },
+          });
     const jsonResponse = context.body(
-      serialized,
+      stream ?? serialized,
       status as ContentfulStatusCode,
       {
         "Content-Type": "application/json",
       },
     );
     const observationResult = safeSync(() => {
-      observeJsonResponse(context, {
+      observeJsonResponse?.(context, {
         byteLength: Buffer.byteLength(serialized),
         serializationDurationMs,
       });

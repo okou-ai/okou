@@ -1,9 +1,7 @@
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { mockEnv } from "../../../lib/env";
 import { randomUUID } from "node:crypto";
-import {
-  getCustomConnectorSkillStorageName,
-  getCustomSkillStorageName,
-} from "@okouai/core/storage-names";
+import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -64,80 +62,6 @@ describe("workflow skill storage presigned URL cache", () => {
       visibility: "private",
     });
     return { actor, agentId: agent.agentId, runnerGroup };
-  }
-
-  async function createWorkflowSkillRunFixture(): Promise<{
-    readonly actor: ApiTestUser;
-    readonly agentId: string;
-    readonly runnerGroup: string;
-    readonly workflowId: string;
-    readonly workflowName: string;
-    readonly storageName: string;
-  }> {
-    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
-    const workflowName = `cache-${randomUUID().slice(0, 8)}`;
-    const misc = createMiscRoutesApi(context);
-    const workflow = await misc.createWorkflow(
-      actor,
-      agentId,
-      workflowName,
-      {
-        content: "# Cache test workflow\nUse this workflow for cache tests.",
-      },
-      [201],
-    );
-    if (workflow.status !== 201) {
-      throw new Error("Expected workflow creation to succeed");
-    }
-    const workflowId = workflow.body.id;
-    const storageName = getCustomSkillStorageName(workflowId);
-    return {
-      actor,
-      agentId,
-      runnerGroup,
-      workflowId,
-      workflowName,
-      storageName,
-    };
-  }
-
-  async function createRunAndClaimStorageSkill(args: {
-    readonly actor: ApiTestUser;
-    readonly agentId: string;
-    readonly runnerGroup: string;
-    readonly storageName: string;
-    readonly prompt: string;
-  }): Promise<{
-    readonly runId: string;
-    readonly archiveUrl: string;
-    readonly versionId: string;
-  }> {
-    const { sendChatRun, claimChatRun, cancelChatRun } =
-      createChatEventsFixture(context);
-    const run = await sendChatRun(args.actor, {
-      agentId: args.agentId,
-      prompt: args.prompt,
-    });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      args.runnerGroup,
-      run.runId,
-    );
-    const entry = expectCanonicalStorageManifest(
-      claim.storageManifest,
-    )?.storageMounts.find((storage) => {
-      return storage.name === args.storageName;
-    });
-    if (!entry?.archiveUrl) {
-      throw new Error(
-        `Missing storage skill manifest entry ${args.storageName}`,
-      );
-    }
-    await cancelChatRun(args.actor, run.runId, sandboxHeaders);
-    return {
-      runId: run.runId,
-      archiveUrl: entry.archiveUrl,
-      versionId: entry.versionId,
-    };
   }
 
   beforeEach(() => {
@@ -214,18 +138,50 @@ describe("workflow skill storage presigned URL cache", () => {
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("reuses cached workflow skill storage URLs", async () => {
-    const fixture = await createWorkflowSkillRunFixture();
+  it("signs each claim's immutable attachment independently of the Storage URL cache", async () => {
+    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
+    const misc = createMiscRoutesApi(context);
+    installWorkflowVolumeS3Fixture(context);
+    const workflow = await misc.createWorkflow(
+      actor,
+      agentId,
+      `cache-${randomUUID().slice(0, 8)}`,
+      {
+        content: "# Workflow URL test",
+        files: [{ path: "reference.md", content: "immutable attachment" }],
+      },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected a Workflow");
+    }
     mockUniquePresignedUrls();
-    const first = await createRunAndClaimStorageSkill({
-      ...fixture,
-      prompt: "warm the workflow skill URL cache",
-    });
-
-    const second = await createRunAndClaimStorageSkill({
-      ...fixture,
-      prompt: "reuse the workflow skill URL cache",
-    });
-    expect(second.archiveUrl).toBe(first.archiveUrl);
+    const { sendChatRun, claimChatRun, cancelChatRun } =
+      createChatEventsFixture(context);
+    const claimWorkflow = async () => {
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "Read the immutable Workflow attachment",
+      });
+      const { claim, sandboxHeaders } = await claimChatRun(
+        runnerGroup,
+        run.runId,
+      );
+      const skill = claim.storageManifest?.workflowSkills?.find((entry) => {
+        return entry.workflowId === workflow.body.id;
+      });
+      if (!skill?.attachments) {
+        throw new Error("Expected Workflow attachments");
+      }
+      await cancelChatRun(actor, run.runId, sandboxHeaders);
+      return skill.attachments;
+    };
+    const first = await claimWorkflow();
+    const second = await claimWorkflow();
+    expect(second.archiveSha256).toBe(first.archiveSha256);
+    expect(new URL(second.archiveUrl).pathname).toBe(
+      new URL(first.archiveUrl).pathname,
+    );
+    expect(second.archiveUrl).not.toBe(first.archiveUrl);
   });
 });
