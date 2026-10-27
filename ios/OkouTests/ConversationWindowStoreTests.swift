@@ -97,14 +97,17 @@ final class ConversationWindowStoreTests: XCTestCase {
   func testClosingDuringExpansionPreventsPublishingPreparedHistory() async {
     let fixture = ConversationHistoryFixture()
     let conversation = fixture.conversation()
+    defer { conversation.close() }
     await conversation.refresh()
-    let expansion = Task { await conversation.loadEarlierMessages() }
-    let deadline = ContinuousClock.now + .seconds(2)
-    while !conversation.isLoadingEarlier && ContinuousClock.now < deadline { await Task.yield() }
-    XCTAssertTrue(conversation.isLoadingEarlier)
+    XCTAssertTrue(conversation.hasEarlierMessages)
+    let expansion = Task.immediate { await conversation.loadEarlierMessages() }
+    addTeardownBlock {
+      expansion.cancel()
+      await expansion.value
+    }
+    let visibleAtClose = conversation.visibleMessages.map(\.id)
     conversation.close()
     await expansion.value
-    XCTAssertEqual(conversation.visibleMessages.count, 10)
-    XCTAssertFalse(conversation.isLoadingEarlier)
+    XCTAssertEqual(conversation.visibleMessages.map(\.id), visibleAtClose)
   }
 }

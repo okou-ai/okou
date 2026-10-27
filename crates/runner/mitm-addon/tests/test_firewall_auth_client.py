@@ -537,6 +537,40 @@ def _tls_trust_environment(ca_path: Path) -> dict[str, str]:
     return {"SSL_CERT_FILE": str(ca_path), "SSL_CERT_DIR": "", "SSLKEYLOGFILE": ""}
 
 
+class TestPostPlatformJson:
+    @pytest.mark.parametrize("status", [200, 204, 401, 500])
+    async def test_registration_http_status(self, mitm_ctx, status: int):
+        payload = {"runId": str(uuid.uuid4()), "requestId": str(uuid.uuid4())}
+        body = json.dumps(payload).encode()
+        error_body = b"registration rejected"
+        endpoint = FakeAuthEndpoint()
+        endpoint.queue_response(status, body=error_body if status >= 400 else b"")
+
+        with (
+            endpoint.run(),
+            mitm_ctx(api_url=endpoint.api_url),
+            patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
+            patch.object(platform_api, "VERCEL_BYPASS", ""),
+        ):
+            url = f"{endpoint.api_url}/api/webhooks/agent/data-request"
+            if status < 300:
+                assert await auth_client.post_platform_json(url, body, "registration-token") is None
+            else:
+                with pytest.raises(urllib.error.HTTPError) as exc_info:
+                    await auth_client.post_platform_json(url, body, "registration-token")
+                assert exc_info.value.code == status
+                assert exc_info.value.geturl() == url
+                assert exc_info.value.read() == error_body
+
+        assert endpoint.request_count == 1
+        [request] = endpoint.requests
+        assert request.method == "POST"
+        assert request.path == "/api/webhooks/agent/data-request"
+        assert request.json_body() == payload
+        assert request.headers["authorization"] == "Bearer registration-token"
+        assert request.headers["content-type"] == "application/json"
+
+
 class TestFetchFirewallHeaders:
     async def test_sends_request_and_maps_basic_success(self, mitm_ctx):
         endpoint = FakeAuthEndpoint()

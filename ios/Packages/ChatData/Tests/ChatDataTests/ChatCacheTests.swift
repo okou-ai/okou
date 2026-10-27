@@ -26,6 +26,79 @@ final class ChatCacheTests: XCTestCase {
     await reopened.close()
   }
 
+  func testSharedCacheImportsThePrivateCacheWithoutReplacingNewerExtensionHistory() async throws {
+    let legacyRoot = temporaryDirectory()
+    let sharedRoot = temporaryDirectory()
+    defer {
+      try? FileManager.default.removeItem(at: legacyRoot)
+      try? FileManager.default.removeItem(at: sharedRoot)
+    }
+    let legacy = ChatCache(scope: scope(), directory: legacyRoot)
+    try await legacy.replaceThreadList(
+      snapshot: Data(#"{"chatThreads":[]}"#.utf8),
+      cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
+    let navigation = try JSONDecoder().decode(
+      SidebarNavigationSnapshot.self,
+      from: Data(
+        #"{"agents":[{"agentId":"agent-old","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":[]},"featureSwitches":{"effectiveSwitches":{}}}"#
+          .utf8))
+    try await legacy.saveNavigation(navigation)
+    try await legacy.replaceHistory(
+      threadID: "chat", rows: [event(1)],
+      cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
+    try await legacy.replaceHistory(
+      threadID: "other", rows: [event(1)],
+      cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
+    let extensionCache = ChatCache(scope: scope(), directory: sharedRoot)
+    try await extensionCache.replaceHistory(
+      threadID: "chat", rows: [event(1), event(2)],
+      cursor: ChatCacheCursor(eventID: event(2).id, seqID: 2), schemaVersion: 8)
+    let app = ChatCache(scope: scope(), directory: sharedRoot, migratingFrom: legacyRoot)
+    let newest = try await app.loadHistory(threadID: "chat")
+    XCTAssertEqual(newest?.rows, [event(1), event(2)])
+    let imported = try await app.loadHistory(threadID: "other")
+    XCTAssertEqual(imported?.rows, [event(1)])
+    let restoredNavigation = try await app.loadNavigation()
+    XCTAssertEqual(restoredNavigation?.agents.first?.displayName, "Assistant")
+    let retained = try await legacy.loadHistory(threadID: "chat")
+    XCTAssertEqual(retained?.rows, [event(1)])
+  }
+
+  func testOverlappingConnectionsCannotMoveHistoryOrListCursorsBackwards() async throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let first = ChatCache(scope: scope(), directory: directory)
+    let second = ChatCache(scope: scope(), directory: directory)
+    try await first.replaceHistory(
+      threadID: "chat", rows: [event(1)],
+      cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
+    try await second.appendHistory(
+      threadID: "chat", rows: [event(2)],
+      cursor: ChatCacheCursor(eventID: event(2).id, seqID: 2), schemaVersion: 8)
+    try await first.replaceHistory(
+      threadID: "chat", rows: [event(1)],
+      cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
+    try await first.appendHistory(
+      threadID: "chat", rows: [event(1)],
+      cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
+    let latest = try await second.loadHistory(threadID: "chat")
+    XCTAssertEqual(latest?.cursor.seqID, 2)
+    XCTAssertEqual(latest?.rows, [event(1), event(2)])
+    try await first.replaceThreadList(
+      snapshot: Data("old".utf8),
+      cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [event(1)])
+    try await second.replaceThreadList(
+      snapshot: Data("new".utf8),
+      cursor: ChatCacheCursor(eventID: event(2).id, seqID: 2), events: [event(3)])
+    try await first.replaceThreadList(
+      snapshot: Data("old".utf8),
+      cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [event(1)])
+    try await first.appendThreadEvents([event(1)])
+    let list = try await second.loadThreadList()
+    XCTAssertEqual(list?.snapshot, Data("new".utf8))
+    XCTAssertEqual(list?.events, [event(3)])
+  }
+
   func testThreadListSurvivesRestartAndIsScopedToIdentity() async throws {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

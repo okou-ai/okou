@@ -5,26 +5,6 @@ import Observation
 import UIKit
 import UserNotifications
 
-struct NotificationDestination: Decodable, Hashable, Sendable {
-  let version: Int
-  let userId: String
-  let workspaceId: String
-  let threadId: String
-  let runId: String
-  let notificationId: String
-
-  init?(userInfo: [AnyHashable: Any]) {
-    guard let value = userInfo["okou"], JSONSerialization.isValidJSONObject(value),
-      let data = try? JSONSerialization.data(withJSONObject: value),
-      let destination = try? JSONDecoder().decode(Self.self, from: data),
-      destination.version == 1, !destination.userId.isEmpty, !destination.workspaceId.isEmpty,
-      UUID(uuidString: destination.threadId) != nil, UUID(uuidString: destination.runId) != nil,
-      !destination.notificationId.isEmpty
-    else { return nil }
-    self = destination
-  }
-}
-
 /// One immutable authenticated data scope, shared by UI and notification work.
 struct NotificationWorkspace {
   let scopeID: String
@@ -160,9 +140,16 @@ final class NotificationService {
     ) {
       try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
     }
+    let sharedDirectory = PushConfiguration.directory()
     let cache = ChatCache(
       scope: ChatCacheScope(
-        apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID))
+        apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID),
+      directory: sharedDirectory,
+      migratingFrom: sharedDirectory == nil
+        ? nil
+        : FileManager.default.urls(
+          for: .applicationSupportDirectory, in: .userDomainMask
+        ).first)
     return NotificationWorkspace(
       scopeID: scopeID, userID: userID, workspaceID: workspaceID, client: client,
       sync: ChatSync(client: client, cache: cache))
@@ -189,6 +176,22 @@ final class NotificationService {
     }
     await refreshRegistration()
     requestNotificationStateRefresh()
+  }
+
+  /// Called by foreground view tasks; receipt uploads never hold an NSE alert.
+  func flushPrefetchReports() async {
+    guard let workspace else { return }
+    do {
+      for receipt in try await workspace.sync.pendingPrefetchReports() {
+        guard !Task.isCancelled, self.workspace?.scopeID == workspace.scopeID else { return }
+        guard await workspace.client.reportNotificationPrefetch(receipt.report) else { return }
+        try Task.checkCancellation()
+        guard self.workspace?.scopeID == workspace.scopeID else { return }
+        try await workspace.sync.acknowledgePrefetchReport(receipt.id)
+      }
+    } catch {
+      log.info("Cannot flush prefetch receipts: \(error.localizedDescription, privacy: .public)")
+    }
   }
 
   func enable() async {

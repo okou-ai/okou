@@ -3,6 +3,8 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
+  Check,
+  MessageCircle,
   ChevronLeft,
   ChevronRight,
   MessageSquare,
@@ -15,6 +17,8 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
+  prepareAgentSuggestion$,
+  preparedAgentSuggestionId$,
   dismissAgentSuggestion$,
   showAgentSuggestion$,
   startAgentSuggestion$,
@@ -91,8 +95,12 @@ function AgentSuggestionOption({
   starting,
   disabled,
   onClick,
+  custom = false,
+  selected = false,
 }: {
-  readonly option: SuggestionOption;
+  readonly option: Pick<SuggestionOption, "label" | "description" | "threadId">;
+  readonly custom?: boolean;
+  readonly selected?: boolean;
   readonly starting: boolean;
   readonly disabled: boolean;
   readonly onClick: () => void;
@@ -106,11 +114,14 @@ function AgentSuggestionOption({
       aria-label={label}
       aria-description={option.description}
       aria-busy={starting}
+      aria-pressed={custom ? selected : undefined}
       disabled={disabled}
       onClick={onClick}
     >
       {starting ? (
         <LoaderCircle aria-hidden className="animate-spin" />
+      ) : custom ? (
+        <MessageCircle aria-hidden className="text-muted-foreground" />
       ) : option.threadId ? (
         <MessageSquare aria-hidden className="text-muted-foreground" />
       ) : (
@@ -124,8 +135,52 @@ function AgentSuggestionOption({
           </span>
         )}
       </span>
-      <ArrowRight aria-hidden className="text-muted-foreground" />
+      {selected ? (
+        <Check aria-hidden className="text-muted-foreground" />
+      ) : (
+        <ArrowRight aria-hidden className="text-muted-foreground" />
+      )}
     </Button>
+  );
+}
+
+function CustomDirectionOption({
+  selected,
+  preparing,
+  disabled,
+  onClick,
+}: {
+  readonly selected: boolean;
+  readonly preparing: boolean;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <AgentSuggestionOption
+      custom
+      selected={selected}
+      option={{
+        threadId: null,
+        label: selected
+          ? t(($) => {
+              return $.chat.agentSuggestions.customPrepared;
+            })
+          : t(($) => {
+              return $.chat.agentSuggestions.customDirection;
+            }),
+        description: selected
+          ? t(($) => {
+              return $.chat.agentSuggestions.customPreparedDescription;
+            })
+          : t(($) => {
+              return $.chat.agentSuggestions.customDirectionDescription;
+            }),
+      }}
+      starting={preparing}
+      disabled={disabled}
+      onClick={onClick}
+    />
   );
 }
 
@@ -134,6 +189,9 @@ export function AgentSuggestions() {
   const result = useLastLoadable(visibleAgentSuggestions$);
   const [operation, start] = useLoadableSet(startAgentSuggestion$);
   const [dismissal, dismiss] = useLoadableSet(dismissAgentSuggestion$);
+  const [preparation, prepare] = useLoadableSet(prepareAgentSuggestion$);
+  const preparedId = useGet(preparedAgentSuggestionId$);
+  const preparing = preparation.state === "loading";
   const starting = operation.state === "loading";
   const dismissing = dismissal.state === "loading";
   const signal = useGet(pageSignal$);
@@ -158,7 +216,10 @@ export function AgentSuggestions() {
       {behind >= 1 && (
         <div aria-hidden className={cn(DECK_EDGE, "inset-x-3 bottom-1.5")} />
       )}
-      <fieldset disabled={starting || dismissing} className="relative min-w-0">
+      <fieldset
+        disabled={starting || dismissing || preparing}
+        className="relative min-w-0"
+      >
         <article className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4">
           <AgentSuggestionHeader index={index} total={items.length} />
           <div
@@ -185,7 +246,7 @@ export function AgentSuggestions() {
                     key={option.id}
                     option={option}
                     starting={starting}
-                    disabled={starting || dismissing}
+                    disabled={starting || dismissing || preparing}
                     onClick={() => {
                       detach(
                         start(item, option.id, signal),
@@ -195,6 +256,14 @@ export function AgentSuggestions() {
                   />
                 );
               })}
+              <CustomDirectionOption
+                selected={preparedId === item.id}
+                preparing={preparing}
+                disabled={starting || dismissing || preparing}
+                onClick={() => {
+                  detach(prepare(item, signal), Reason.DomCallback);
+                }}
+              />
               <div className="border-t border-border pt-1">
                 <Button
                   type="button"

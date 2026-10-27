@@ -428,7 +428,7 @@ final class WorkspaceStore {
         id = threadID
         runID = nil
       }
-      await list.restoreCached(threadID: id)
+      await list.restoreCached()
       guard ownsRequest() else { return false }
       if !list.threads.contains(where: { $0.id == id }) {
         await list.refresh(waitForCurrent: true)

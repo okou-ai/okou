@@ -398,6 +398,8 @@ export interface ChatAttachment {
   /** Stable identity for this attachment inside its owning composer. */
   key: string;
   readonly source: "upload" | "restored";
+  /** Persisted identity available synchronously for restored references. */
+  readonly restoredFileId?: string;
   filename: string;
   contentType: string;
   size: number;
@@ -637,6 +639,7 @@ export function createRestoredAttachment(
   return {
     key: crypto.randomUUID(),
     source: "restored",
+    restoredFileId: persisted.id,
     filename: persisted.filename,
     contentType: persisted.contentType,
     size: persisted.size,

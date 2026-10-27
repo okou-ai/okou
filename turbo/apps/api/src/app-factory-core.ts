@@ -730,6 +730,7 @@ export function createAppWithRoutes({
       requestBodyPolicy: entry.requestBodyPolicy,
       responseTransforms: entry.responseTransforms,
       observeJsonResponse: entry.observeJsonResponse,
+      streamJsonResponse: entry.streamJsonResponse,
     });
     app.on(route.method, route.path, routeHandler);
   }

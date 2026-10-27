@@ -1,3 +1,4 @@
+import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   chatThreadsContract,
@@ -28,6 +29,7 @@ import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
 import {
   talkDraft$,
   type DraftSignals,
+  type ChatAttachment,
   type PendingThreadIdentity,
 } from "../okou-page/chat-draft.ts";
 import { chatPageModelSelection$ } from "../okou-page/chat-page.ts";
@@ -571,6 +573,136 @@ const mintNewThreadSubmission$ = command(
   },
 );
 
+// A prepared quote carries its own persisted nonce. Routing defaults can change
+// across reloads; the same saved user message must still reconcile one input.
+async function customDirectionIdentity(intent: string) {
+  const identities = await Promise.all(
+    ["thread", "input", "created"].map(async (kind) => {
+      const bytes = new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(`suggestion:${kind}:${intent}`),
+        ),
+      ).slice(0, 16);
+      bytes[6] = (bytes[6] & 0x0f) | 0x80;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes)
+        .map((byte) => {
+          return byte.toString(16).padStart(2, "0");
+        })
+        .join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }),
+  );
+  return {
+    threadId: identities[0],
+    clientEventId: identities[1],
+    chatThreadEventId: identities[2],
+  };
+}
+
+const reserveNewThreadSubmissionIdentity$ = command(
+  async (
+    { set },
+    args: {
+      readonly request: SendNewThreadMessageRequest;
+      readonly draft: DraftSignals;
+      readonly userMessage: UserMessageDocument;
+      readonly modelSelection: ModelProviderSelection;
+    },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const { request, draft, userMessage, modelSelection } = args;
+    const customDirection = suggestionFeedbacks(userMessage).length > 0;
+    const identity = customDirection
+      ? await customDirectionIdentity(
+          JSON.stringify({
+            agentId: request.agentId,
+            userMessage: {
+              ...userMessage,
+              parts: userMessage.parts.filter((part) => {
+                return part.type !== "model";
+              }),
+            },
+          }),
+        )
+      : set(
+          draft.reserveThreadIdentity$,
+          JSON.stringify({
+            agentId: request.agentId,
+            userMessage,
+            modelSelection,
+            computerUseHostId: request.computerUseHostId,
+            cloudBrowserEnabled: request.cloudBrowserEnabled,
+            connectorSelections: request.connectorSelections,
+            initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+          }),
+        );
+    signal.throwIfAborted();
+    return { ...identity, customDirection };
+  },
+);
+
+const clearSubmittedNewThreadDraft$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly request: SendNewThreadMessageRequest;
+      readonly draft: DraftSignals;
+      readonly submittedInput: string;
+      readonly submittedDocument: EditorDocumentSnapshot | null;
+      readonly submittedAttachments: readonly ChatAttachment[];
+      readonly submittedTemplate: GenerationTemplateRequest | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { draft, request } = args;
+    const unchanged =
+      get(draft.input$) === args.submittedInput &&
+      set(draft.readEditorDocument$) === args.submittedDocument &&
+      get(draft.attachments$) === args.submittedAttachments &&
+      get(draft.generationTemplate$) === args.submittedTemplate;
+    if (!unchanged) {
+      return;
+    }
+    set(draft.clear$);
+    if (!request.forward && !request.preserveAgentDraft) {
+      await set(clearAgentDraftById$, request.agentId, signal);
+    }
+  },
+);
+
+function newThreadRecordOptions(args: {
+  readonly createClient: ApiClientFactory;
+  readonly request: SendNewThreadMessageRequest;
+  readonly identity: {
+    readonly threadId: string;
+    readonly chatThreadEventId: string;
+  };
+  readonly resolved: {
+    readonly modelSelection: ModelProviderSelection;
+    readonly models: AvailableRunModelsResponse;
+    readonly catalog: ModelCatalog;
+  };
+  readonly codexExecution: boolean;
+}): Parameters<typeof createChatThread>[0] {
+  const { createClient, request, identity, resolved, codexExecution } = args;
+  return {
+    createClient,
+    agentId: request.agentId,
+    title: undefined,
+    clientThreadId: identity.threadId,
+    eventId: identity.chatThreadEventId,
+    modelSelection: resolved.modelSelection,
+    models: resolved.models,
+    catalog: resolved.catalog,
+    codexExecution,
+    connectorSelections: request.connectorSelections,
+    initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+  };
+}
+
 const sendNewThreadMessage$ = command(
   async (
     { get, set },
@@ -612,43 +744,54 @@ const sendNewThreadMessage$ = command(
         userMessageForNewThread(request, prepared),
         resolvedModelSelection,
       );
-    // An unknown create outcome retains the identity for an explicit resend of
-    // the same submission. A changed draft or account choice is a new intent.
-    const { threadId, clientEventId, chatThreadEventId } = set(
-      draft.reserveThreadIdentity$,
-      JSON.stringify({
-        agentId,
-        userMessage: annotatedUserMessage,
-        modelSelection: resolvedModelSelection,
-        computerUseHostId,
-        cloudBrowserEnabled,
-        connectorSelections: request.connectorSelections,
-        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
-      }),
-    );
+    const { threadId, clientEventId, chatThreadEventId, customDirection } =
+      await set(
+        reserveNewThreadSubmissionIdentity$,
+        {
+          request,
+          draft,
+          userMessage: annotatedUserMessage,
+          modelSelection: resolvedModelSelection,
+        },
+        signal,
+      );
     const createClient = get(apiClient$);
     L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
-    const creation = {
+    const creation = newThreadRecordOptions({
       createClient,
-      agentId,
-      title: undefined,
-      clientThreadId: threadId,
-      eventId: chatThreadEventId,
-      modelSelection: resolvedModelSelection,
-      models: resolved.models,
-      catalog: resolved.catalog,
+      request,
+      identity: { threadId, chatThreadEventId },
+      resolved,
       codexExecution: features[FeatureSwitchKey.CodexExecution],
-      connectorSelections: request.connectorSelections,
-      initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
-    };
-    const createResult = request.connectorSelections?.length
-      ? createNewThreadRecord(creation, signal)
-      : null;
+    });
+    const createResult =
+      request.connectorSelections?.length || customDirection
+        ? createNewThreadRecord(creation, signal)
+        : null;
     // An explicit account choice must be accepted before publishing an
     // optimistic chat or clearing its composer. A rejected creation leaves the
     // entire draft and its pending connector/remote preferences in place.
     if (createResult) {
       await createResult;
+      signal.throwIfAborted();
+    }
+    const sendBody = newThreadSendBody({
+      agentId,
+      threadId,
+      clientEventId,
+      prepared,
+      modelSelection: resolvedModelSelection,
+      realAgentInPreviewEnabled:
+        features[FeatureSwitchKey.RealAgentInPreview] ?? false,
+      userMessage: annotatedUserMessage,
+      computerUseHostId,
+      cloudBrowserEnabled,
+      sourceRunId: request.forward?.runId,
+    });
+    // Custom follow-ups keep the complete composer and card until the input is
+    // durably accepted. A failed or unknown delivery can replay the same IDs.
+    if (customDirection) {
+      await sendChatEvent(createClient, sendBody, signal);
       signal.throwIfAborted();
     }
     await set(
@@ -665,31 +808,18 @@ const sendNewThreadMessage$ = command(
       set(rememberComposerTaskForThread$, threadId, request.composerTask);
     }
     request.onOptimisticSend?.();
-    const draftUnchanged =
-      get(draft.input$) === submittedInput &&
-      set(draft.readEditorDocument$) === submittedDocument &&
-      get(draft.attachments$) === submittedAttachments &&
-      get(draft.generationTemplate$) === submittedTemplate;
-    if (draftUnchanged) {
-      set(draft.clear$);
-    }
-    const clearDraftResult =
-      !draftUnchanged || request.forward || request.preserveAgentDraft
-        ? Promise.resolve()
-        : set(clearAgentDraftById$, agentId, signal);
-    const sendBody = newThreadSendBody({
-      agentId,
-      threadId,
-      clientEventId,
-      prepared,
-      modelSelection: resolvedModelSelection,
-      realAgentInPreviewEnabled:
-        features[FeatureSwitchKey.RealAgentInPreview] ?? false,
-      userMessage: annotatedUserMessage,
-      computerUseHostId,
-      cloudBrowserEnabled,
-      sourceRunId: request.forward?.runId,
-    });
+    const clearDraftResult = set(
+      clearSubmittedNewThreadDraft$,
+      {
+        request,
+        draft,
+        submittedInput,
+        submittedDocument,
+        submittedAttachments,
+        submittedTemplate,
+      },
+      signal,
+    );
     const sendResult = (async (): Promise<void> => {
       await Promise.all([
         clearDraftResult,
@@ -697,7 +827,9 @@ const sendNewThreadMessage$ = command(
       ]);
       signal.throwIfAborted();
       set(draft.confirmThreadIdentity$, threadId);
-      await sendChatEvent(createClient, sendBody, signal);
+      if (!customDirection) {
+        await sendChatEvent(createClient, sendBody, signal);
+      }
       signal.throwIfAborted();
       L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });
     })();

@@ -5,6 +5,132 @@
 	};
 	"objectVersion" = 77;
 	"objects" = {
+		"000000000000000000000040" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "000000000000000000000043";
+			"buildPhases" = ("000000000000000000000046", "000000000000000000000047", "000000000000000000000048", );
+			"buildRules" = ();
+			"dependencies" = ();
+			"fileSystemSynchronizedGroups" = ("000000000000000000000044", "000000000000000000000055", );
+			"name" = "OkouNotificationService";
+			"packageProductDependencies" = ("00000000000000000000000E", "00000000000000000000002D", );
+			"productName" = "OkouNotificationService";
+			"productReference" = "000000000000000000000049";
+			"productType" = "com.apple.product-type.app-extension";
+		};
+		"000000000000000000000043" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("000000000000000000000041", "000000000000000000000042", );
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"000000000000000000000044" = {
+			"isa" = "PBXFileSystemSynchronizedRootGroup";
+			"exceptions" = ("000000000000000000000045", );
+			"path" = "NotificationExtension";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000045" = {
+			"isa" = "PBXFileSystemSynchronizedBuildFileExceptionSet";
+			"membershipExceptions" = ("Info.plist", );
+			"target" = "000000000000000000000040";
+		};
+		"000000000000000000000046" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000047" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("000000000000000000000050", "000000000000000000000051", );
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000048" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000049" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.app-extension";
+			"includeInIndex" = 0;
+			"path" = "OkouNotificationService.appex";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"000000000000000000000050" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "00000000000000000000000E";
+		};
+		"000000000000000000000051" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "00000000000000000000002D";
+		};
+		"000000000000000000000053" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "000000000000000000000049";
+			"settings" = {
+				"ATTRIBUTES" = ("RemoveHeadersOnCopy", );
+			};
+		};
+		"000000000000000000000054" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"dstPath" = "";
+			"dstSubfolderSpec" = 13;
+			"files" = ("000000000000000000000053", );
+			"name" = "Embed App Extensions";
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000055" = {
+			"isa" = "PBXFileSystemSynchronizedRootGroup";
+			"path" = "Push";
+			"sourceTree" = "<group>";
+		};
+		"00000000000000000000005A" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "000000000000000000000001";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "000000000000000000000040";
+			"remoteInfo" = "OkouNotificationService";
+		};
+		"00000000000000000000005B" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "000000000000000000000040";
+			"targetProxy" = "00000000000000000000005A";
+		};
+		"000000000000000000000041" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"CODE_SIGN_ENTITLEMENTS" = "NotificationExtension/NotificationExtension.entitlements";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"INFOPLIST_FILE" = "NotificationExtension/Info.plist";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
+				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.notifications";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"SKIP_INSTALL" = "YES";
+				"SWIFT_EMIT_LOC_STRINGS" = "NO";
+			};
+			"name" = "Debug";
+		};
+		"000000000000000000000042" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"CODE_SIGN_ENTITLEMENTS" = "NotificationExtension/NotificationExtension.entitlements";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"INFOPLIST_FILE" = "NotificationExtension/Info.plist";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
+				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios.notifications";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"SKIP_INSTALL" = "YES";
+				"SWIFT_EMIT_LOC_STRINGS" = "NO";
+			};
+			"name" = "Release";
+		};
 		"00000000000000000000002C" = {
 			"isa" = "XCLocalSwiftPackageReference";
 			"relativePath" = "Packages/ChatData";
@@ -85,13 +211,13 @@
 		};
 		"000000000000000000000007" = {
 			"isa" = "PBXGroup";
-			"children" = ("000000000000000000000009", "00000000000000000000000A",);
+			"children" = ("000000000000000000000009", "00000000000000000000000A", "000000000000000000000049",);
 			"name" = "Products";
 			"sourceTree" = "<group>";
 		};
 		"000000000000000000000008" = {
 			"isa" = "PBXGroup";
-			"children" = ("000000000000000000000005", "000000000000000000000006", "000000000000000000000004", "000000000000000000000007",);
+			"children" = ("000000000000000000000005", "000000000000000000000006", "000000000000000000000004", "000000000000000000000044", "000000000000000000000055", "000000000000000000000007",);
 			"sourceTree" = "<group>";
 		};
 		"00000000000000000000000C" = {
@@ -300,10 +426,10 @@
 		"000000000000000000000002" = {
 			"isa" = "PBXNativeTarget";
 			"buildConfigurationList" = "000000000000000000000021";
-			"buildPhases" = ("000000000000000000000014", "000000000000000000000015", "000000000000000000000016",);
+			"buildPhases" = ("000000000000000000000014", "000000000000000000000015", "000000000000000000000016", "000000000000000000000054",);
 			"buildRules" = ();
-			"dependencies" = ();
-			"fileSystemSynchronizedGroups" = ("000000000000000000000005",);
+			"dependencies" = ("00000000000000000000005B",);
+			"fileSystemSynchronizedGroups" = ("000000000000000000000005", "000000000000000000000055",);
 			"name" = "Okou";
 			"packageProductDependencies" = ("00000000000000000000000E", "000000000000000000000010", "000000000000000000000012", "000000000000000000000026", "000000000000000000000029", "00000000000000000000002D",);
 			"productName" = "Okou";
@@ -350,7 +476,7 @@
 			"productRefGroup" = "000000000000000000000007";
 			"projectDirPath" = "";
 			"projectRoot" = "";
-			"targets" = ("000000000000000000000002", "000000000000000000000003",);
+			"targets" = ("000000000000000000000002", "000000000000000000000003", "000000000000000000000040",);
 		};
 	};
 	"rootObject" = "000000000000000000000001";

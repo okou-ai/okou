@@ -147,6 +147,8 @@ pub struct VncRuntime {
     pub(crate) native_services: Mutex<Option<crate::tailscale::TestServices>>,
     #[cfg(test)]
     access_tls: Mutex<Option<Arc<rustls::ClientConfig>>>,
+    #[cfg(test)]
+    list_observer: tests::list_lifecycle::ListObserver,
 }
 
 impl VncRuntime {
@@ -175,6 +177,8 @@ impl VncRuntime {
             native_services: Mutex::new(None),
             #[cfg(test)]
             access_tls: Mutex::new(None),
+            #[cfg(test)]
+            list_observer: tests::list_lifecycle::ListObserver::default(),
         })))
     }
 

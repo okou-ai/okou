@@ -2,6 +2,7 @@
 
 //! Real ApiClient/Unix transport contracts; no KVM or Guest completion claim.
 
+mod body_bound;
 mod response;
 mod routing;
 
@@ -273,13 +274,12 @@ async fn mismatched_actual_transition_is_never_forwarded() {
 }
 
 #[tokio::test]
-async fn rejects_ambiguous_unsupported_oversized_and_truncated_requests() {
+async fn rejects_ambiguous_unsupported_and_truncated_requests() {
     for request in [
         b"PATCH /vm HTTP/1.1\r\nContent-Length: 0\r\ncontent-length: 0\r\n\r\n".to_vec(),
         b"PATCH /vm HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n".to_vec(),
         b"PATCH /vm HTTP/1.1\r\nContent-Length: +19\r\n\r\n".to_vec(),
         b"PATCH /vm HTTP/1.1\r\nContent-Length: 19\nignored\r\n\r\n".to_vec(),
-        b"PATCH /vm HTTP/1.1\r\nContent-Length: 65537\r\n\r\n".to_vec(),
         b"PATCH /vm HTTP/1.1\r\nContent-Length: 19\r\n\r\n{}".to_vec(),
         b"PATCH /vm HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}extra".to_vec(),
         b"PATCH /vm HTTP/1.1\r\n".to_vec(),
@@ -308,7 +308,6 @@ async fn malformed_or_truncated_backend_response_is_uncertainty_not_completion()
         &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"[..],
         &b"HTTP/1.1 200 OK\r\n\r\n"[..],
         &b"HTTP/1.1 100 Continue\r\nContent-Length: 0\r\n\r\n"[..],
-        &b"HTTP/1.1 200 OK\r\nContent-Length: 65537\r\n\r\n"[..],
         &b"HTTP/1.1 204 No Content\r\nContent-Length: 1\r\n\r\nx"[..],
         &b"HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n"[..],
         &b"HTTP/1.1 200 OK\rignored\r\nContent-Length: 0\r\n\r\n"[..],

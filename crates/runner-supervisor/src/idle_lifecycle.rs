@@ -146,6 +146,18 @@ impl IdleDestroyTracker {
         self.spawn_payload_retaining_lease(payload, lease, context)
     }
 
+    /// Pressure reclamation requires the captured original backing's positive exit.
+    pub(crate) fn spawn_confirmed_job(
+        &self,
+        job: IdleDestroyJob,
+        context: &'static str,
+    ) -> IdleCleanupTask<RetainedIdleDestroyResult> {
+        self.track(
+            job.run_retaining_lease_with_confirmed_exit(context),
+            context,
+        )
+    }
+
     pub fn spawn_payload_retaining_lease(
         &self,
         payload: IdleDestroyPayload,

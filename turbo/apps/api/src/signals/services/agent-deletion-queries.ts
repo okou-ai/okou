@@ -1,15 +1,17 @@
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { blobs } from "@okouai/db/schema/blob";
 import { workflows } from "@okouai/db/schema/workflow";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
-import { and, asc, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, exists, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
+  boolean as zBoolean,
   array,
   object,
   string,
@@ -20,6 +22,7 @@ import {
 
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { safeSqlStateCode } from "../../lib/pg-errors";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { deletedRunHistoryReferences } from "./conversation-history-deletion.service";
 
 export interface DeleteAgentArgs {
@@ -41,6 +44,7 @@ const runRows = array(
     orgId: string(),
     agentId: string().nullable(),
     status: string(),
+    workflowAttachmentsRetained: zBoolean(),
   }),
 );
 interface AdmissionStatement {
@@ -174,6 +178,14 @@ export function* agentDeletionAdmissionPlan(
           orgId: sql`${agentRuns.orgId}`.as("orgId"),
           agentId: sql`${agentRuns.agentId}`.as("agentId"),
           status: agentRuns.status,
+          workflowAttachmentsRetained: exists(
+            new QueryBuilder()
+              .select({ id: claimedWorkflowAttachments.runId })
+              .from(claimedWorkflowAttachments)
+              .where(eq(claimedWorkflowAttachments.runId, agentRuns.id)),
+          )
+            .mapWith(pgBooleanDecoder)
+            .as("workflowAttachmentsRetained"),
         })
         .from(agentRuns)
         .where(agentRunDeletionMembership([args.agentId]))
@@ -195,7 +207,11 @@ export function* agentDeletionAdmissionPlan(
   }
   if (
     runs.some((run) => {
-      return run.status === "pending" || run.status === "running";
+      return (
+        run.status === "pending" ||
+        run.status === "running" ||
+        run.workflowAttachmentsRetained
+      );
     })
   ) {
     return { kind: "active-run" };

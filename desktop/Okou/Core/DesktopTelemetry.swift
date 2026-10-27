@@ -23,6 +23,23 @@ public enum DesktopTelemetry {
       options.enableAutoBreadcrumbTracking = false
       options.enableNetworkTracking = false
       options.enableNetworkBreadcrumbs = false
+      options.beforeSend = { event in
+        // HostRuntime reports one correlated failure/recovery episode instead of
+        // a second SDK HTTPClientError for every failed heartbeat attempt.
+        if event.exceptions?.contains(where: { $0.type == "HTTPClientError" }) == true,
+          event.request?.method == "POST", let value = event.request?.url,
+          let url = URL(string: value)
+        {
+          let parts = url.path.split(separator: "/")
+          if parts.count == 5, parts[0] == "api", parts[1] == "computer-use",
+            parts[2] == "hosts", UUID(uuidString: String(parts[3])) != nil,
+            parts[4] == "heartbeat"
+          {
+            return nil
+          }
+        }
+        return event
+      }
       options.enableUncaughtNSExceptionReporting = true
       options.appHangTimeoutInterval = 5
       options.initialScope = { scope in
@@ -99,6 +116,20 @@ public enum DesktopTelemetry {
     let event = Event(level: .error)
     event.message = SentryMessage(formatted: "Desktop startup failed")
     event.fingerprint = ["desktop-startup"]
+    SentrySDK.capture(event: event)
+  }
+
+  static func captureHeartbeatEpisode(
+    id: String, outcome: HeartbeatDiagnostics.Outcome, context: [String: Any]
+  ) {
+    let event = Event(level: outcome == .failed ? .error : .info)
+    event.message = SentryMessage(formatted: "Desktop host heartbeat \(outcome.rawValue)")
+    event.fingerprint = ["desktop-host-heartbeat"]
+    event.tags = ["heartbeatOutcome": outcome.rawValue, "heartbeatEpisodeId": id]
+    var diagnostics = context
+    diagnostics["method"] = "POST"
+    diagnostics["pathTemplate"] = "/api/computer-use/hosts/:hostId/heartbeat"
+    event.context = ["heartbeat": diagnostics]
     SentrySDK.capture(event: event)
   }
 

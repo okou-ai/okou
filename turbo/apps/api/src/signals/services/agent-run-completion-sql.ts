@@ -9,6 +9,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
+import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { and, count, countDistinct, eq, sql, type SQL } from "drizzle-orm";
 import { PgDialect, QueryBuilder, type PgColumn } from "drizzle-orm/pg-core";
 import {
@@ -242,11 +243,20 @@ function terminalCleanup() {
         runId: agentRunConnectorDiagnosticRegistrations.runId,
       }),
     }),
+    workflowAttachments: dialect.buildDeleteQuery({
+      table: claimedWorkflowAttachments,
+      where: sql`EXISTS (SELECT 1 FROM completion_decision AS d
+        WHERE d.decision = 'ready' AND d.id = ${claimedWorkflowAttachments.runId}
+          AND d.org_id = ${claimedWorkflowAttachments.orgId})
+        AND (SELECT ${count()} FROM completion_changed_run) >= 0`,
+      returning: returned({ runId: claimedWorkflowAttachments.runId }),
+    }),
     slots: dialect.buildDeleteQuery({
       table: activeAgentRuns,
       where: sql`${activeAgentRuns.runId} IN (SELECT id FROM completion_decision WHERE decision = 'ready')
       AND (SELECT ${count()} FROM completion_changed_run) >= 0 AND (SELECT ${count()} FROM completion_native_thread) >= 0
-      AND (SELECT ${count()} FROM completion_billing) >= 0 AND (SELECT ${count()} FROM completion_diagnostics) >= 0`,
+      AND (SELECT ${count()} FROM completion_billing) >= 0 AND (SELECT ${count()} FROM completion_diagnostics) >= 0
+      AND (SELECT ${count()} FROM completion_workflow_attachments) >= 0`,
       returning: returned({
         runId: activeAgentRuns.runId,
         orgId: activeAgentRuns.orgId,
@@ -312,6 +322,11 @@ export function completionPublicationPlan(input: CompletionPublicationInput) {
         }),
       ),
       qb.$with("completion_diagnostics", {}).as(cleanup.diagnostics),
+      // Only an accepted Runner completion releases its exact packages. Keep
+      // this in the publication statement and before releasing the active slot.
+      qb
+        .$with("completion_workflow_attachments", {})
+        .as(cleanup.workflowAttachments),
       qb.$with("completion_released_slots", {}).as(cleanup.slots),
     ],
     from: locked,

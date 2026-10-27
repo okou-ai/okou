@@ -180,12 +180,25 @@ class CollectorTests(unittest.TestCase):
         os.symlink(self.root, alias)
         self.unavailable(self.collect(alias / self.cache.name))
 
-    def test_entry_limit_reports_partial_observation(self):
-        for index in range(1025):
+    def test_entry_limit_reports_complete_then_partial_observation(self):
+        for index in range(4096):
             self.entry(index)
         text = self.collect()
+        self.assertEqual(self.metric(text, "entries"), 4096)
+        self.assertEqual(self.metric(text, "entries_complete"), 1)
+        self.assertEqual(self.metric(text, "measurements_complete"), 1)
+
+        for index in range(4096, 8192):
+            self.entry(index)
+        text = self.collect()
+        self.assertEqual(self.metric(text, "entries"), 8192)
+        self.assertEqual(self.metric(text, "entries_complete"), 1)
+        self.assertEqual(self.metric(text, "measurements_complete"), 1)
+
+        self.entry(8192)
+        text = self.collect()
         self.assertEqual(self.metric(text, "snapshot_available"), 1)
-        self.assertEqual(self.metric(text, "entries"), 1024)
+        self.assertEqual(self.metric(text, "entries"), 8192)
         self.assertEqual(self.metric(text, "entries_complete"), 0)
         self.assertEqual(self.metric(text, "measurements_complete"), 0)
         self.assertEqual(self.metric(text, "allocation_lower_bound"), 1)

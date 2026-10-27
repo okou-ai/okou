@@ -73,7 +73,9 @@ async fn assert_pending_poll_cadence(ignore_exclusions: bool) {
             .await
     });
     let request = claim_entered.await.unwrap();
-    assert!(request.starts_with(&format!("POST /api/runners/jobs/{slow}/claim ")));
+    assert!(request.starts_with(&format!(
+        "POST /api/runners/jobs/{slow}/claim?workflowSkills=1 "
+    )));
     let candidate = tokio::time::timeout(POLL_FAST + Duration::from_secs(5), provider.discover())
         .await
         .unwrap()
@@ -153,7 +155,9 @@ async fn poll_excludes_an_in_flight_claim_and_discovers_other_work() {
         .await
         .unwrap()
         .unwrap();
-    assert!(request.starts_with(&format!("POST /api/runners/jobs/{slow}/claim ")));
+    assert!(request.starts_with(&format!(
+        "POST /api/runners/jobs/{slow}/claim?workflowSkills=1 "
+    )));
 
     let candidate = tokio::time::timeout(Duration::from_secs(5), provider.discover())
         .await
@@ -271,7 +275,9 @@ async fn pending_claim_has_exclusion_priority_without_evicting_full_cooldown_inv
         for run_id in server_cooldowns {
             let (mut claim, _) = listener.accept().await.unwrap();
             let request = read_http_request(&mut claim).await.unwrap();
-            assert!(request.starts_with(&format!("POST /api/runners/jobs/{run_id}/claim ")));
+            assert!(request.starts_with(&format!(
+                "POST /api/runners/jobs/{run_id}/claim?workflowSkills=1 "
+            )));
             claim.write_all(&status_response(400)).await.unwrap();
         }
         let (mut claim, _) = listener.accept().await.unwrap();

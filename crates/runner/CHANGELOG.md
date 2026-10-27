@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.16...runner-rs-v0.237.17) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** avoid decoding ignored transfer-encoding values ([#43367](https://github.com/okou-ai/okou/issues/43367)) ([461f19d](https://github.com/okou-ai/okou/commit/461f19db0015ecd73a4d3c1600c1a30ef4ea36e5))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.15...runner-rs-v0.237.16) (2026-10-27)
 
 ## [0.237.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.14...runner-rs-v0.237.15) (2026-10-27)

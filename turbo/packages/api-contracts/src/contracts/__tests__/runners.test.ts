@@ -202,8 +202,8 @@ describe("runner claim response contract", () => {
   });
 });
 
-describe("Workflow claim reader preparation", () => {
-  it("preserves both legacy selection and claim-time invocation intent for admission", () => {
+describe("stored Workflow selection contract", () => {
+  it("preserves legacy selection and current claim-time invocation intent", () => {
     const context = {
       storageMounts: [],
       connectorRuntimeTargets: [],
@@ -1369,7 +1369,7 @@ describe("runner reuse preference contract", () => {
         homeAffinityVersion: 1 as const,
       };
     });
-    const heldHomeStates = Array.from({ length: 128 }, (_, index) => {
+    const heldHomeStates = Array.from({ length: 512 }, (_, index) => {
       return {
         reuseKey: `thread:${index}`,
         lastCompletedAt: "2026-07-15T00:00:00.000Z",

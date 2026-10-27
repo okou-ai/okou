@@ -3,41 +3,97 @@ use runner_rpc_proto::{
     stream::{Frame, Reader},
 };
 use serde_json::json;
-use std::sync::Arc;
-use tokio::sync::Semaphore;
+use std::{
+    future::{Future, poll_fn},
+    sync::{Arc, OnceLock},
+};
+use tokio::sync::{Semaphore, mpsc};
+use uuid::Uuid;
 
 use super::{
     closed,
-    harness::{Harness, read, send},
+    harness::{CONNECTION, Harness, bounded, read, send},
     mode,
     peer::Event,
 };
 
+#[derive(Debug)]
+enum ListEvent {
+    Admitted(Uuid),
+    WaitingForEngine(Uuid),
+}
+
+/// Reports real list progress without delaying or replacing the operation.
+#[derive(Default)]
+pub(in crate::vnc) struct ListObserver {
+    events: OnceLock<mpsc::UnboundedSender<ListEvent>>,
+}
+
+impl ListObserver {
+    fn emit(&self, event: ListEvent) {
+        if let Some(events) = self.events.get() {
+            let _ = events.send(event);
+        }
+    }
+
+    pub(in crate::vnc) fn admitted(&self, session: Uuid) {
+        self.emit(ListEvent::Admitted(session));
+    }
+
+    pub(in crate::vnc) async fn locking<T>(
+        &self,
+        session: Uuid,
+        future: impl Future<Output = T>,
+    ) -> T {
+        let mut future = std::pin::pin!(future);
+        let mut reported = false;
+        poll_fn(|cx| {
+            let result = future.as_mut().poll(cx);
+            if result.is_pending() && !reported {
+                self.emit(ListEvent::WaitingForEngine(session));
+                reported = true;
+            }
+            result
+        })
+        .await
+    }
+}
+
 async fn list_during_close(close_capturing: bool) {
+    const OTHER_CONNECTION: &str = "58629e7e-6504-46f7-a294-ce1732b83b82";
     let mut h = Harness::new().await;
     let _resolve = h.resolve().await;
-    let _other_resolve = h
-        .resolve_connection("58629e7e-6504-46f7-a294-ce1732b83b82")
-        .await;
+    let _other_resolve = h.resolve_connection(OTHER_CONNECTION).await;
     let check = h.check("valid", 200).await;
-    let other_check = h
-        .check_connection("58629e7e-6504-46f7-a294-ce1732b83b82", "valid", 200)
-        .await;
+    let other_check = h.check_connection(OTHER_CONNECTION, "valid", 200).await;
     let first = h.start("shared").await.session();
     mode(&h, 1).await;
     let second = h
         .run
         .request(
             "vnc.session.start",
-            json!({"connectionId":"58629e7e-6504-46f7-a294-ce1732b83b82","mode":"shared"}),
+            json!({"connectionId":OTHER_CONNECTION,"mode":"shared"}),
         )
         .await
         .session();
     mode(&h, 1).await;
+    // Match snapshot's UUID order so the sibling is admitted before capture
+    // blocks list on the later session, regardless of session creation order.
+    let mut sessions = [
+        (Uuid::parse_str(&first).unwrap(), CONNECTION),
+        (Uuid::parse_str(&second).unwrap(), OTHER_CONNECTION),
+    ];
+    sessions.sort_by_key(|(id, _)| *id);
+    let [
+        (sibling, sibling_connection),
+        (capturing, capturing_connection),
+    ] = sessions;
+    let (events, mut progress) = mpsc::unbounded_channel();
+    h.runtime.list_observer.events.set(events).unwrap();
     let gate = Arc::new(Semaphore::new(0));
     *h.peer.capture_gate.lock().await = Some(Arc::clone(&gate));
     let mut capture = h.run.open().await;
-    send(&mut capture, &json!({"version":1,"method":"vnc.capture","remaining_ms":60000,"params":{"sessionId":first}}).to_string()).await;
+    send(&mut capture, &json!({"version":1,"method":"vnc.capture","remaining_ms":60000,"params":{"sessionId":capturing}}).to_string()).await;
     assert!(matches!(h.peer.event().await, Event::Capture));
     let mut list = h.run.open().await;
     send(
@@ -46,10 +102,27 @@ async fn list_during_close(close_capturing: bool) {
             .to_string(),
     )
     .await;
+    bounded(async {
+        let mut admitted = false;
+        loop {
+            match progress.recv().await.expect("list observer closed") {
+                ListEvent::Admitted(id) if id == sibling => admitted = true,
+                ListEvent::WaitingForEngine(id) if id == capturing => {
+                    assert!(
+                        admitted,
+                        "sibling must be admitted before capture blocks list"
+                    );
+                    break;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await;
     let (closing, surviving, connection) = if close_capturing {
-        (&first, &second, "58629e7e-6504-46f7-a294-ce1732b83b82")
+        (capturing, sibling, sibling_connection)
     } else {
-        (&second, &first, super::harness::CONNECTION)
+        (sibling, capturing, capturing_connection)
     };
     assert_eq!(
         h.run
@@ -62,14 +135,14 @@ async fn list_during_close(close_capturing: bool) {
     read(capture).await;
     closed(&h).await;
     let listed = read(list).await;
-    assert_eq!(
-        listed.result(),
-        &json!({"outcome":"listed","sessions":[{"sessionId":surviving,"connectionId":connection,"mode":"shared"}]})
-    );
     check.assert_calls_async(1).await;
     other_check.assert_calls_async(1).await;
     h.run.shutdown().await;
     closed(&h).await;
+    assert_eq!(
+        listed.result(),
+        &json!({"outcome":"listed","sessions":[{"sessionId":surviving,"connectionId":connection,"mode":"shared"}]})
+    );
 }
 
 #[tokio::test]

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OSLog
 import SQLite3
 
 public struct ChatCacheScope: Sendable {
@@ -97,10 +98,13 @@ public actor ChatCache {
   private static let version = 1
 
   private let fileURL: URL
+  private let legacyFileURL: URL?
   private var connection: CacheDatabase?
   private var isClosed = false
 
-  public init(scope: ChatCacheScope, directory: URL? = nil) {
+  public init(
+    scope: ChatCacheScope, directory: URL? = nil, migratingFrom legacyDirectory: URL? = nil
+  ) {
     let root =
       directory
       ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -111,6 +115,49 @@ public actor ChatCache {
     let filename = digest.map { String(format: "%02x", $0) }.joined() + ".sqlite"
     fileURL = root.appendingPathComponent("ChatCache", isDirectory: true)
       .appendingPathComponent(filename)
+    legacyFileURL = legacyDirectory?.appendingPathComponent("ChatCache", isDirectory: true)
+      .appendingPathComponent(filename)
+  }
+
+  /// NSE completion is durable before the alert is released; foreground owns upload.
+  public func savePrefetchReport(_ report: NotificationPrefetchReport) throws {
+    let encoded = try JSONEncoder().encode(report)
+    try withDatabase { database in
+      try database.transaction {
+        let insert = try database.prepare(
+          "INSERT INTO notification_prefetch_reports (report) VALUES (?)")
+        try insert.bind(encoded, at: 1)
+        try insert.run()
+        try database.execute(
+          "DELETE FROM notification_prefetch_reports WHERE id NOT IN (SELECT id FROM notification_prefetch_reports ORDER BY id DESC LIMIT 100)"
+        )
+      }
+    }
+  }
+
+  public func prefetchReports() throws -> [(id: Int, report: NotificationPrefetchReport)] {
+    try withDatabase { database in
+      let query = try database.prepare(
+        "SELECT id, report FROM notification_prefetch_reports ORDER BY id")
+      var reports: [(id: Int, report: NotificationPrefetchReport)] = []
+      while try query.step() {
+        reports.append(
+          (
+            try query.integer(at: 0),
+            try JSONDecoder().decode(
+              NotificationPrefetchReport.self, from: query.blob(at: 1))
+          ))
+      }
+      return reports
+    }
+  }
+
+  public func acknowledgePrefetchReport(_ id: Int) throws {
+    try withDatabase { database in
+      let delete = try database.prepare("DELETE FROM notification_prefetch_reports WHERE id = ?")
+      try delete.bind(id, at: 1)
+      try delete.run()
+    }
   }
 
   /// Retire this connection even when a completed task still retains its owner.
@@ -168,6 +215,17 @@ public actor ChatCache {
     try Self.validate(events, after: cursor.seqID)
     try withDatabase { database in
       try database.transaction {
+        // Another process may have committed a newer snapshot/tail while this
+        // request was in flight. Never replace that committed state with an older one.
+        let latest = try database.prepare(
+          "SELECT MAX(seq_id) FROM (SELECT snapshot_seq_id AS seq_id FROM thread_list UNION ALL SELECT seq_id FROM thread_events)"
+        )
+        _ = try latest.step()
+        if let current = try latest.optionalInteger(at: 0),
+          current > (events.last?.seqID ?? cursor.seqID)
+        {
+          return
+        }
         try database.execute("DELETE FROM thread_events")
         try database.execute("DELETE FROM thread_list")
         let insert = try database.prepare(
@@ -194,6 +252,8 @@ public actor ChatCache {
         _ = try latest.step()
         var previous = max(snapshotSeqID, try latest.optionalInteger(at: 0) ?? snapshotSeqID)
         for event in events {
+          // A newer snapshot already includes events from an older in-flight page.
+          if event.seqID <= snapshotSeqID { continue }
           if event.seqID <= previous {
             guard
               try Self.existingEvent(id: event.id, in: "thread_events", database: database)
@@ -221,6 +281,22 @@ public actor ChatCache {
         eventID: query.optionalText(at: 0), seqID: try query.integer(at: 1))
       guard Self.validHistoryCursor(cursor) else { throw ChatCacheError.corrupt }
       return cursor
+    }
+  }
+
+  /// Inspect a terminal marker without loading an entire conversation into the NSE.
+  public func containsRun(threadID: String, runID: String) throws -> Bool {
+    try withDatabase { database in
+      let query = try database.prepare(
+        """
+        SELECT 1 FROM history_rows WHERE thread_id = ?
+          AND json_extract(CAST(data AS TEXT), '$.runId') = ?
+          AND json_extract(CAST(data AS TEXT), '$.eventType') IN ('run.completed', 'run.failed', 'run.cancelled')
+        LIMIT 1
+        """)
+      try query.bind(threadID, at: 1)
+      try query.bind(runID, at: 2)
+      return try query.step()
     }
   }
 
@@ -264,6 +340,14 @@ public actor ChatCache {
     try Self.validateHistory(rows: rows, cursor: cursor, schemaVersion: schemaVersion)
     try withDatabase { database in
       try database.transaction {
+        let existing = try database.prepare(
+          "SELECT cursor_seq_id, schema_version FROM histories WHERE thread_id = ?")
+        try existing.bind(threadID, at: 1)
+        if try existing.step() {
+          let schema = try existing.integer(at: 1)
+          guard schema <= schemaVersion else { throw ChatCacheError.incompatibleHistorySchema }
+          if schema == schemaVersion, try existing.integer(at: 0) > cursor.seqID { return }
+        }
         let delete = try database.prepare("DELETE FROM histories WHERE thread_id = ?")
         try delete.bind(threadID, at: 1)
         try delete.run()
@@ -311,6 +395,9 @@ public actor ChatCache {
             previous = row.seqID
           }
         }
+        // An overlapping app/extension page can already be present. Preserve
+        // the newer durable cursor after validating every replayed row above.
+        if cursor.seqID < previousCursor.seqID { return }
         guard cursor.seqID >= previousCursor.seqID,
           rows.isEmpty ? cursor == previousCursor : cursor.seqID == previous
         else { throw ChatCacheError.invalidCursor }
@@ -370,6 +457,15 @@ public actor ChatCache {
     try mutableDirectory.setResourceValues(values)
     let opened = try CacheDatabase(url: fileURL)
     try opened.initialize(version: Self.version)
+    if let legacyFileURL, legacyFileURL != fileURL {
+      do {
+        try opened.importLegacy(from: legacyFileURL)
+      } catch {
+        // A damaged old cache must not reset a newer store created by the NSE.
+        Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+          .error("Cannot import previous cache: \(error.localizedDescription, privacy: .public)")
+      }
+    }
     for suffix in ["", "-wal", "-shm"] {
       let path = fileURL.path + suffix
       if FileManager.default.fileExists(atPath: path) {
@@ -498,6 +594,10 @@ private final class CacheDatabase {
   func initialize(version: Int) throws {
     try execute("PRAGMA journal_mode = WAL")
     try execute("PRAGMA foreign_keys = ON")
+    try execute("CREATE TABLE IF NOT EXISTS cache_migrations (id INTEGER PRIMARY KEY)")
+    try execute(
+      "CREATE TABLE IF NOT EXISTS notification_prefetch_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report BLOB NOT NULL)"
+    )
     let currentVersion: Int
     do {
       let check = try prepare("PRAGMA quick_check")
@@ -560,6 +660,88 @@ private final class CacheDatabase {
         )
         """)
       try execute("PRAGMA user_version = \(version)")
+    }
+  }
+
+  /// The extension can create the shared store before the first app launch.
+  /// Merge the old app-private cache once, preserving newer shared cursors.
+  func importLegacy(from url: URL) throws {
+    let imported: Bool = try {
+      let check = try prepare("SELECT 1 FROM cache_migrations WHERE id = 1")
+      return try check.step()
+    }()
+    guard !imported else { return }
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      try execute("INSERT OR IGNORE INTO cache_migrations (id) VALUES (1)")
+      return
+    }
+    do {
+      let attach = try prepare("ATTACH DATABASE ? AS legacy")
+      try attach.bind(url.path, at: 1)
+      try attach.run()
+    }
+    defer { try? execute("DETACH DATABASE legacy") }
+    try transaction {
+      let legacyVersion: Int = try {
+        let query = try prepare("PRAGMA legacy.user_version")
+        guard try query.step() else { throw ChatCacheError.unsupportedVersion }
+        return try query.integer(at: 0)
+      }()
+      guard legacyVersion == 1 else { throw ChatCacheError.unsupportedVersion }
+      let hasNavigation: Bool = try {
+        let query = try prepare(
+          "SELECT 1 FROM legacy.sqlite_master WHERE name = 'sidebar_navigation'")
+        return try query.step()
+      }()
+      if hasNavigation {
+        try execute(
+          "INSERT OR IGNORE INTO sidebar_navigation SELECT * FROM legacy.sidebar_navigation")
+      }
+      func listCursor(_ prefix: String) throws -> Int? {
+        let query = try prepare(
+          "SELECT MAX(seq_id) FROM (SELECT snapshot_seq_id AS seq_id FROM \(prefix)thread_list UNION ALL SELECT seq_id FROM \(prefix)thread_events)"
+        )
+        _ = try query.step()
+        return try query.optionalInteger(at: 0)
+      }
+      if let old = try listCursor("legacy."), old > (try listCursor("") ?? -1) {
+        try execute("DELETE FROM thread_events")
+        try execute("DELETE FROM thread_list")
+        try execute("INSERT INTO thread_list SELECT * FROM legacy.thread_list")
+        try execute("INSERT INTO thread_events SELECT * FROM legacy.thread_events")
+      }
+      let histories: [(String, Int, Int)] = try {
+        let query = try prepare(
+          "SELECT thread_id, cursor_seq_id, schema_version FROM legacy.histories")
+        var rows: [(String, Int, Int)] = []
+        while try query.step() {
+          guard let id = query.optionalText(at: 0) else { throw ChatCacheError.corrupt }
+          rows.append((id, try query.integer(at: 1), try query.integer(at: 2)))
+        }
+        return rows
+      }()
+      for (id, sequence, schema) in histories {
+        let shouldCopy: Bool = try {
+          let query = try prepare(
+            "SELECT cursor_seq_id, schema_version FROM histories WHERE thread_id = ?")
+          try query.bind(id, at: 1)
+          guard try query.step() else { return true }
+          let currentSchema = try query.integer(at: 1)
+          let currentSequence = try query.integer(at: 0)
+          return schema > currentSchema || (schema == currentSchema && sequence > currentSequence)
+        }()
+        guard shouldCopy else { continue }
+        let delete = try prepare("DELETE FROM histories WHERE thread_id = ?")
+        try delete.bind(id, at: 1)
+        try delete.run()
+        for table in ["histories", "history_rows"] {
+          let copy = try prepare(
+            "INSERT INTO \(table) SELECT * FROM legacy.\(table) WHERE thread_id = ?")
+          try copy.bind(id, at: 1)
+          try copy.run()
+        }
+      }
+      try execute("INSERT OR IGNORE INTO cache_migrations (id) VALUES (1)")
     }
   }
 

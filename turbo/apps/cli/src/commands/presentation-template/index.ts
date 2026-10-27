@@ -1,6 +1,6 @@
 import { Command } from "commander";
 
-import { publishPresentationTemplate } from "../../lib/api/domains/presentation-templates";
+import { publishUserTemplate } from "../../lib/api/domains/user-templates";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface PublishOptions {
@@ -13,7 +13,7 @@ interface PublishOptions {
 const publishCommand = new Command()
   .name("publish")
   .description(
-    "Publish an analysed deck as a reusable presentation template. Uploads the source deck, the ordered page images, and the guidance package, then commits them together.",
+    "Publish an analysed deck as a reusable custom presentation template. Uploads the source deck, the ordered page images, and the guidance package, then commits them together.",
   )
   .requiredOption("--title <title>", "Template name shown to the user")
   .requiredOption("--source <path>", "The original .ppt, .pptx, or .pdf")
@@ -28,16 +28,24 @@ const publishCommand = new Command()
   .addHelpText(
     "after",
     `
-This is the publish step, not page rendering. First follow the authoritative reverse-template guide and render ordered page images with okou presentation screenshot. publish uploads the original deck, ordered page PNGs, and guidance package, then commits them together.`,
+This is the publish step, not page rendering. First follow the authoritative reverse-template guide and render ordered page images with okou presentation screenshot. publish uploads the original deck, ordered page PNGs, and guidance package, then commits them together.
+
+The published deck appears under Custom in the template picker, private to you until you share it with your organization. This command uses the same catalog as okou user-template publish --kind presentation.`,
   )
   .action(
     withErrorHandler(async (options: PublishOptions) => {
-      const template = await publishPresentationTemplate({
+      const template = await publishUserTemplate({
+        kind: "presentation",
         title: options.title,
         sourcePath: options.source,
         pagesDir: options.pages,
         packageDir: options.package,
       });
+      if (template.pageCount === null) {
+        throw new Error(
+          "Published presentation template is missing its page count",
+        );
+      }
       console.log(
         `Published ${template.title} (${template.id}) with ${template.pageCount.toString()} pages`,
       );

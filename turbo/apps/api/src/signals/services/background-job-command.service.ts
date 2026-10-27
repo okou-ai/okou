@@ -149,6 +149,7 @@ function activeLease(job: ClaimedBackgroundJob) {
 type BackgroundJobTransition =
   | { readonly kind: "checkpoint"; readonly checkpoint: BackgroundJobData }
   | { readonly kind: "complete"; readonly checkpoint: BackgroundJobData }
+  | { readonly kind: "defer"; readonly availableAt: Date }
   | {
       readonly kind: "retry";
       readonly error: string;
@@ -160,6 +161,14 @@ function transitionValues(
   transition: BackgroundJobTransition,
 ): PgUpdateSetSource<typeof backgroundJobs> {
   switch (transition.kind) {
+    case "defer": {
+      return {
+        status: "pending",
+        availableAt: transition.availableAt,
+        leaseId: null,
+        leaseExpiresAt: null,
+      };
+    }
     case "checkpoint": {
       return {
         checkpoint: transition.checkpoint,

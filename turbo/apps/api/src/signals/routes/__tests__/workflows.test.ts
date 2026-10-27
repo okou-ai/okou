@@ -1,16 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
+import { randomUUID } from "node:crypto";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
 import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -21,8 +15,6 @@ import {
   type WorkflowCreateRequest,
   type WorkflowUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
-import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 
@@ -49,10 +41,7 @@ import {
   mockGoogleFormsConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
@@ -1015,7 +1004,7 @@ describe("workflows", () => {
     },
   );
 
-  it("does not publish an empty attachment package when the legacy source is unavailable", async () => {
+  it("preserves attachment metadata during a body-only edit when its package is unavailable", async () => {
     const actor = user();
     const agent = await createAgent(actor, { visibility: "private" });
     const destination = await createAgent(actor, { visibility: "private" });
@@ -1040,13 +1029,19 @@ describe("workflows", () => {
         body: { toAgentId: destination.agentId },
       }),
     ).rejects.toThrow("Workflow attachment source is unavailable");
-    await expect(
+    const edited = await accept(
       client.update({
         headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { instruction: "Updated instruction" },
       }),
-    ).rejects.toThrow("Workflow attachment source is unavailable");
+      [200],
+    );
+    expect(edited.body).toMatchObject({
+      instruction: "Updated instruction",
+      files: [{ path: "keep.txt", size: 8 }],
+      fileContents: null,
+    });
     expect(s3.writes).toHaveLength(0);
     // An explicit replacement remains recoverable without guessing old content.
     await accept(
@@ -1172,7 +1167,7 @@ describe("workflows", () => {
     );
   });
 
-  it("rejects publication while the current private-scope volume update is unfinished", async () => {
+  it("rejects a slow attachment update after its private Workflow is published", async () => {
     const actor = user();
     const agent = await createAgent(actor, {
       displayName: "Pending Publication Agent",
@@ -1192,23 +1187,25 @@ describe("workflows", () => {
       await uploadReleased.promise;
     });
 
-    const update = updateWorkflow(actor, workflow.body.id, {
-      instruction: "# metadata committed before this volume",
-    });
+    const update = requestUpdateWorkflow(
+      actor,
+      workflow.body.id,
+      {
+        instruction: "# body and files must commit together",
+        files: [{ path: "late.txt", content: "late" }],
+      },
+      [409],
+    );
     await uploadEntered.promise;
-    const blocked = await accept(
+    await accept(
       visibilityClient().publish({
         headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
-      [409],
+      [200],
     );
-    expect(blocked.body.error.message).toBe(
-      "Workflow changed during publish; retry the request",
-    );
-
     uploadReleased.resolve();
-    await expect(update).resolves.toMatchObject({ status: 200 });
+    await expect(update).resolves.toMatchObject({ status: 409 });
     await expect(
       accept(
         visibilityClient().publish({
@@ -1278,7 +1275,7 @@ describe("workflows", () => {
       });
       expect(newer.body).toMatchObject({
         instruction: "# newer Workflow",
-        fileContents: [{ path: "notes.md", content: "newer notes" }],
+        files: [{ path: "notes.md", size: 11 }],
       });
       released = true;
       uploadReleased.resolve();
@@ -1299,99 +1296,64 @@ describe("workflows", () => {
     },
   );
 
-  it.each(["private", "public"] as const)(
-    "keeps a rejected %s upload from registering a conflicting attachment identity",
-    async (visibility) => {
-      const actor = user();
-      const agent = await createAgent(actor, { visibility: "public" });
-      const s3 = installVolumeS3Fixture();
-      const workflow = await createWorkflow(actor, {
-        agentId: agent.agentId,
-        name: `rejected-volume-${randomUUID().slice(0, 8)}`,
-        visibility,
-        instruction: "Keep the winning attachment revision",
-        files: [{ path: "original.txt", content: "original" }],
-      });
-      const rejectedFiles = [
-        { path: "aa", content: "X" },
-        { path: "bb", content: "Y" },
-      ];
-      const winningFiles = [
-        {
-          path: `aa:${createHash("sha256").update("X").digest("hex")}\nbb`,
-          content: "Y",
+  it("rejects an older attachment publication after a metadata-only edit at the same clock instant", async () => {
+    const actor = user();
+    const agent = await createAgent(actor, {
+      displayName: "Concurrent Workflow Metadata Agent",
+      visibility: "public",
+    });
+    const s3 = installVolumeS3Fixture();
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `metadata-edit-${randomUUID().slice(0, 8)}`,
+      instruction: "# original Workflow",
+    });
+    mockNow(now());
+    const signal = AbortSignal.timeout(10_000);
+    const uploadEntered = createDeferredPromise<void>(signal);
+    const uploadReleased = createDeferredPromise<void>(signal);
+    s3.beforeNextArchiveWrite(async () => {
+      uploadEntered.resolve();
+      await uploadReleased.promise;
+    });
+    const older = accept(
+      detailClient().update({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+        body: {
+          displayName: "Older label",
+          files: [{ path: "notes.md", content: "older attachment" }],
         },
-      ];
-      const signal = AbortSignal.timeout(10_000);
-      const rejectedEntered = createDeferredPromise<void>(signal);
-      const rejectedReleased = createDeferredPromise<void>(signal);
-      const winningEntered = createDeferredPromise<void>(signal);
-      const winningReleased = createDeferredPromise<void>(signal);
-      let rejectedArchiveKey: string | undefined;
-      let winningArchiveKey: string | undefined;
-      function beforeNextVolumeWrite(callback: (key: string) => Promise<void>) {
-        const onWrite = async (key: string) => {
-          if (key.startsWith("workflow-attachments/")) {
-            s3.beforeNextArchiveWrite(onWrite);
-            return;
-          }
-          await callback(key);
-        };
-        s3.beforeNextArchiveWrite(onWrite);
+      }),
+      [200, 409],
+    );
+    let released = false;
+    onTestFinished(async () => {
+      if (!released) {
+        uploadReleased.resolve();
       }
-      beforeNextVolumeWrite(async (key) => {
-        rejectedArchiveKey = key;
-        rejectedEntered.resolve();
-        await rejectedReleased.promise;
-      });
-      const rejected = requestUpdateWorkflow(
-        actor,
-        workflow.body.id,
-        { files: rejectedFiles },
-        [409],
-      );
-      const winning = (async () => {
-        await rejectedEntered.promise;
-        beforeNextVolumeWrite(async (key) => {
-          winningArchiveKey = key;
-          winningEntered.resolve();
-          await winningReleased.promise;
-        });
-        return await updateWorkflow(actor, workflow.body.id, {
-          files: winningFiles,
-        });
-      })();
-      onTestFinished(async () => {
-        if (!rejectedReleased.settled()) {
-          rejectedReleased.resolve();
-        }
-        if (!winningReleased.settled()) {
-          winningReleased.resolve();
-        }
-        await Promise.all([rejected, winning]);
-      });
-      await winningEntered.promise;
-      expect(winningArchiveKey).toBe(rejectedArchiveKey);
-      rejectedReleased.resolve();
-      expect((await rejected).body.error.message).toBe(
-        "Workflow changed during update; retry the request",
-      );
-      winningReleased.resolve();
-      expect((await winning).body.fileContents).toStrictEqual(winningFiles);
-      const retried = await updateWorkflow(actor, workflow.body.id, {
-        files: winningFiles,
-      });
-      expect(retried.body.fileContents).toStrictEqual(winningFiles);
-      const current = await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [200],
-      );
-      expect(current.body.fileContents).toStrictEqual(winningFiles);
-    },
-  );
+      await older;
+    });
+    await uploadEntered.promise;
+    await updateWorkflow(actor, workflow.body.id, {
+      displayName: "Newer label",
+    });
+    released = true;
+    uploadReleased.resolve();
+    expect((await older).status).toBe(409);
+    const current = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      displayName: "Newer label",
+      instruction: "# original Workflow",
+      fileContents: [],
+    });
+  });
 
   it("keeps concurrent Workflow instruction updates on the same Agent", async () => {
     const actor = user();
@@ -2491,348 +2453,103 @@ describe("workflows", () => {
     expect(copiedAutomation.eventConfig.connectorId).toBe(firstAccount.id);
   });
 
-  it("reuses registered workflow volumes without uploading or reconciling archive size", async () => {
+  it("reuses current attachment bytes across body edits and file ordering, and never reactivates retired packages", async () => {
     const actor = user();
-    await api.grantProEntitlement(actor);
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    const runnerGroup = api.configureRunnerGroup();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
+    const agent = await createAgent(actor, { visibility: "private" });
     const s3 = installVolumeS3Fixture();
-    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Immutable Volume Agent",
-      visibility: "private",
-    });
-    const activeRuns = new Set<string>();
-    const ownedWorkflows = new Set<string>();
-    onTestFinished(async () => {
-      // Global teardown resets external mocks before this owned cleanup.
-      context.mocks.s3.send.mockImplementation(sendS3);
-      for (const runId of activeRuns) {
-        await api.requestCancelRun(actor, runId, [200]);
-        await flushWaitUntilForTest();
-      }
-      for (const workflowId of ownedWorkflows) {
-        await miscApi.deleteWorkflow(actor, workflowId, [204]);
-      }
-      await bdd.deleteAgent(actor, agent.agentId);
-    });
-    s3.clearWrites();
-    const name = `immutable-volume-${randomUUID().slice(0, 8)}`;
-    const description = "Exercises immutable workflow volume publication.";
-    const firstInstruction = "# immutable volume one";
-    const firstFiles = [
-      { path: "zeta.txt", content: "zeta one" },
-      { path: "alpha.txt", content: "alpha one" },
+    const files = [
+      { path: "zeta.txt", content: "附件" },
+      { path: "alpha.txt", content: "alpha" },
     ];
     const workflow = await createWorkflow(actor, {
       agentId: agent.agentId,
-      name,
-      description,
-      instruction: firstInstruction,
-      files: firstFiles,
+      name: `attachment-reuse-${randomUUID().slice(0, 8)}`,
+      instruction: "first body",
+      files,
     });
-    ownedWorkflows.add(workflow.body.id);
-
-    const firstArchiveWrites = s3.writes.filter(({ key }) => {
-      return (
-        !key.startsWith("workflow-attachments/") &&
-        key.endsWith("/archive.tar.gz")
-      );
-    });
-    expect(firstArchiveWrites).toHaveLength(1);
-    const firstArchiveKey = firstArchiveWrites[0]!.key;
-    const firstVersionId = firstArchiveKey.split("/").at(-2);
-    expect(firstVersionId).toMatch(/^[0-9a-f]{64}$/u);
-    const firstArchive = s3.objects.get(firstArchiveKey);
-    if (!firstArchive) {
-      throw new Error("Expected the first workflow archive");
-    }
-    const firstSkillMd = synthesizeWorkflowSkillMd({
-      name,
-      description,
-      instruction: firstInstruction,
-    });
-    const firstArchiveFiles = [
-      { path: "SKILL.md", content: firstSkillMd },
-      ...firstFiles,
-    ].sort((left, right) => {
-      return left.path.localeCompare(right.path);
-    });
-    const firstSize = firstArchiveFiles.reduce((sum, file) => {
-      return sum + Buffer.byteLength(file.content, "utf8");
-    }, 0);
-    const firstManifestKey = firstArchiveKey.replace(
-      /archive\.tar\.gz$/u,
-      "manifest.json",
-    );
-    const firstManifest = s3.objects.get(firstManifestKey);
-    if (!firstManifest) {
-      throw new Error("Expected the first workflow manifest");
-    }
-    expect(JSON.parse(firstManifest.toString("utf8"))).toMatchObject({
-      version: firstVersionId,
-      totalSize: firstSize,
-      fileCount: 3,
-      files: expect.arrayContaining(
-        firstArchiveFiles.map((file) => {
-          return {
-            path: file.path,
-            size: Buffer.byteLength(file.content, "utf8"),
-            hash: createHash("sha256").update(file.content).digest("hex"),
-          };
-        }),
-      ),
-    });
-    expect(
-      [...extractFilesFromTarGz(firstArchive)].sort((left, right) => {
-        return left.path.localeCompare(right.path);
-      }),
-    ).toStrictEqual(firstArchiveFiles);
-
-    const tar = gunzipSync(firstArchive);
-    const encodedMtime = tar
-      .subarray(136, 148)
-      .toString("ascii")
-      .replaceAll("\0", "")
-      .trim();
-    expect(Number.parseInt(encodedMtime, 8)).toBe(0);
-
-    const claimCurrentArchive = async () => {
-      const run = await runWorkflowAndLaunch(actor, workflow.body.id);
-      activeRuns.add(run.runId);
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
-      const mount = expectCanonicalStorageManifest(
-        claim.storageManifest,
-      )?.storageMounts.find((candidate) => {
-        return candidate.name === getCustomSkillStorageName(workflow.body.id);
-      });
-      if (!mount?.archiveUrl) {
-        throw new Error("Expected the selected workflow archive mount");
-      }
-      await api.requestCancelRun(actor, run.runId, [200]);
-      // A claimed Run keeps the thread slot until its Runner acknowledges
-      // cancellation; finish that protocol before launching this Workflow again.
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-        { authorization: `Bearer ${claim.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      activeRuns.delete(run.runId);
-      return mount;
-    };
-    await expect(claimCurrentArchive()).resolves.toMatchObject({
-      versionId: firstVersionId,
-      archiveSize: firstArchive.length,
-    });
-
-    const readCurrentArchive = async (
-      instruction: string,
-      files: readonly { readonly path: string; readonly content: string }[],
-      archiveKey: string,
-    ) => {
-      const firstCall = context.mocks.s3.send.mock.calls.length;
-      const detail = await accept(
-        detailClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
-        }),
-        [200],
-      );
-      expect(detail.body.instruction).toBe(instruction);
-      expect(detail.body.fileContents).toStrictEqual(
-        [...files].sort((left, right) => {
-          return left.path.localeCompare(right.path);
-        }),
-      );
-      expect(
-        context.mocks.s3.send.mock.calls
-          .slice(firstCall)
-          .flatMap(([command]) => {
-            return command instanceof GetObjectCommand &&
-              command.input.Key?.endsWith("/archive.tar.gz")
-              ? [command.input.Key]
-              : [];
-          }),
-      ).toStrictEqual([archiveKey]);
-    };
-
-    const secondInstruction = "# immutable volume two";
-    const secondFiles = [
-      { path: "alpha.txt", content: "alpha two" },
-      { path: "zeta.txt", content: "zeta two" },
-    ];
-    s3.clearWrites();
-    await updateWorkflow(actor, workflow.body.id, {
-      instruction: secondInstruction,
-      files: secondFiles,
-    });
-    const secondArchiveWrites = s3.writes.filter(({ key }) => {
-      return (
-        !key.startsWith("workflow-attachments/") &&
-        key.endsWith("/archive.tar.gz")
-      );
-    });
-    expect(secondArchiveWrites).toHaveLength(1);
-    const secondArchiveKey = secondArchiveWrites[0]!.key;
-    const secondVersionId = secondArchiveKey.split("/").at(-2);
-    expect(secondVersionId).not.toBe(firstVersionId);
-    await expect(claimCurrentArchive()).resolves.toMatchObject({
-      versionId: secondVersionId,
-    });
-
-    s3.clearWrites();
-    await updateWorkflow(actor, workflow.body.id, {
-      instruction: firstInstruction,
-      files: [...firstFiles].reverse(),
-    });
-    expect(
-      s3.writes.filter(({ key }) => {
-        return !key.startsWith("workflow-attachments/");
-      }),
-    ).toHaveLength(0);
-    // Returning to retired content gets a fresh attachment identity. Legacy
-    // content-addressed volume reuse remains independent of attachment ownership.
-    expect(
-      s3.writes.filter(({ key }) => {
-        return key.startsWith("workflow-attachments/");
-      }),
-    ).toHaveLength(1);
-    await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
-
-    s3.clearWrites();
-    await updateWorkflow(actor, workflow.body.id, {
-      instruction: secondInstruction,
-      files: secondFiles,
-    });
-    expect(
-      s3.writes.filter(({ key }) => {
-        return !key.startsWith("workflow-attachments/");
-      }),
-    ).toHaveLength(0);
-    expect(
-      s3.writes.filter(({ key }) => {
-        return key.startsWith("workflow-attachments/");
-      }),
-    ).toHaveLength(1);
-    await readCurrentArchive(secondInstruction, secondFiles, secondArchiveKey);
-
-    // The synthetic archive_size corruption branch was explicitly retired in
-    // #37440. Reuse still exercises immutable metadata validation through the
-    // public update and reads the exact selected archive through public detail.
+    expect(s3.writes).toHaveLength(1);
+    const first = s3.writes[0]!;
+    expect(extractFilesFromTarGz(first.body)).toStrictEqual([
+      { path: "alpha.txt", content: "alpha" },
+      { path: "zeta.txt", content: "附件" },
+    ]);
     s3.clearWrites();
     context.mocks.s3.send.mockClear();
-    await updateWorkflow(actor, workflow.body.id, {
-      instruction: firstInstruction,
-      files: firstFiles,
+    const edited = await updateWorkflow(actor, workflow.body.id, {
+      instruction: "second body",
     });
-    expect(
-      s3.writes.filter(({ key }) => {
-        return !key.startsWith("workflow-attachments/");
+    expect(edited.body).toMatchObject({
+      instruction: "second body",
+      fileContents: null,
+      files: [
+        { path: "alpha.txt", size: 5 },
+        { path: "zeta.txt", size: 6 },
+      ],
+    });
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    await updateWorkflow(actor, workflow.body.id, {
+      files: [...files].reverse(),
+    });
+    expect(s3.writes).toHaveLength(0);
+    await updateWorkflow(actor, workflow.body.id, { files: [] });
+    await updateWorkflow(actor, workflow.body.id, { files });
+    expect(s3.writes).toHaveLength(1);
+    expect(s3.writes[0]!.key).not.toBe(first.key);
+    const detail = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
       }),
-    ).toHaveLength(0);
-    await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
-    // Detail reads may GET the manifest on a cache miss. Registered-version
-    // reuse must not probe or PUT the archive/manifest again.
-    const registeredKeys = new Set([firstArchiveKey, firstManifestKey]);
-    expect(
-      context.mocks.s3.send.mock.calls.filter(([command]) => {
-        return (
-          (command instanceof HeadObjectCommand ||
-            command instanceof PutObjectCommand) &&
-          command.input.Key !== undefined &&
-          registeredKeys.has(command.input.Key)
-        );
-      }),
-    ).toHaveLength(0);
+      [200],
+    );
+    expect(detail.body.fileContents).toStrictEqual([
+      { path: "alpha.txt", content: "alpha" },
+      { path: "zeta.txt", content: "附件" },
+    ]);
   });
 
-  it("reuses an existing workflow archive across path order and umask", async () => {
+  it("normalizes duplicate attachment paths consistently across order and umask", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Duplicate Path Volume Agent",
-      visibility: "private",
-    });
+    const agent = await createAgent(actor, { visibility: "private" });
     const s3 = installVolumeS3Fixture();
-    const duplicateFiles = [
+    const files = [
       { path: "duplicate.txt", content: "first duplicate" },
       { path: "duplicate.txt", content: "second duplicate" },
     ];
-    const originalUmask = process.umask(0o022);
-    onTestFinished(() => {
-      process.umask(originalUmask);
-    });
     const workflow = await createWorkflow(actor, {
       agentId: agent.agentId,
-      name: `duplicate-volume-${randomUUID().slice(0, 8)}`,
-      description: "Exercises deterministic duplicate-path archives.",
-      instruction: "# duplicate path volume",
-      files: duplicateFiles,
+      name: `duplicate-${randomUUID().slice(0, 8)}`,
+      instruction: "body",
+      files,
     });
-
-    const archiveWrites = s3.writes.filter(({ key }) => {
-      return (
-        !key.startsWith("workflow-attachments/") &&
-        key.endsWith("/archive.tar.gz")
-      );
-    });
-    expect(archiveWrites).toHaveLength(1);
-    const archiveKey = archiveWrites[0]!.key;
-    const initialArchive = s3.objects.get(archiveKey);
-    if (!initialArchive) {
-      throw new Error("Expected the duplicate-path workflow archive");
-    }
-    const initial = await accept(
+    const first = await accept(
       detailClient().get({
         headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
     );
-    expect(initial.body.instruction).toBe("# duplicate path volume");
-    // Public detail preserves both archive entries. Packaging reads the final
-    // contents of the repeated path for each entry.
-    expect(initial.body.fileContents).toStrictEqual([
-      { path: "duplicate.txt", content: "second duplicate" },
+    expect(first.body.fileContents).toStrictEqual([
       { path: "duplicate.txt", content: "second duplicate" },
     ]);
-
     s3.clearWrites();
-    context.mocks.s3.send.mockClear();
-    process.umask(0o077);
-    await updateWorkflow(actor, workflow.body.id, {
-      files: [...duplicateFiles].reverse(),
+    const previous = process.umask(0o077);
+    onTestFinished(() => {
+      process.umask(previous);
     });
-    process.umask(originalUmask);
-
+    await updateWorkflow(actor, workflow.body.id, {
+      files: [...files].reverse(),
+    });
+    process.umask(previous);
     expect(s3.writes).toHaveLength(0);
-    expect(s3.objects.get(archiveKey)).toStrictEqual(initialArchive);
-    context.mocks.s3.send.mockClear();
-    const updated = await accept(
+    const second = await accept(
       detailClient().get({
         headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
     );
-    expect(updated.body.instruction).toBe(initial.body.instruction);
-    expect(updated.body.fileContents).toStrictEqual(initial.body.fileContents);
-    expect(
-      context.mocks.s3.send.mock.calls
-        .map(([command]) => {
-          return command instanceof GetObjectCommand
-            ? command.input.Key
-            : undefined;
-        })
-        .filter((key) => {
-          return key?.endsWith("/archive.tar.gz");
-        }),
-    ).toStrictEqual([archiveKey]);
+    expect(second.body.fileContents).toStrictEqual(first.body.fileContents);
   });
 
   it("reads and updates workflow content, audit metadata, and deletion through API responses", async () => {

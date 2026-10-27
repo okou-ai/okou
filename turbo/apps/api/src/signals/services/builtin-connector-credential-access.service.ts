@@ -284,6 +284,19 @@ export function builtinConnectorCredentialVariableReadCondition(args: {
   return conditions.length === 0 ? isNull(variables.id) : or(...conditions);
 }
 
+export function builtinConnectorAccountDeletionReadPlan(connectorId: string) {
+  return {
+    columns: {
+      id: connectors.id,
+      authMethod: connectors.authMethod,
+      storageVersion: connectors.storageVersion,
+    },
+    from: connectors,
+    where: eq(connectors.id, connectorId),
+    limit: 1,
+  };
+}
+
 export function builtinConnectorTokenRevokeReadPlan(
   access: BuiltinConnectorCredentialAccess,
 ) {
@@ -385,6 +398,26 @@ export function prepareBuiltinTokenRevoke(
     featureSwitchContext: args.featureSwitchContext,
   };
   return context;
+}
+
+export function prepareBuiltinConnectorAccountDeletionRevoke(
+  args: Omit<
+    BuiltinConnectorPendingTokenRevokeArgs,
+    "snapshot" | "featureSwitchContext" | "replacement"
+  > & {
+    readonly snapshot: ConnectorRuntimeAuthLookup | null;
+    readonly featureSwitchContext: FeatureSwitchContext | null;
+  },
+) {
+  if (args.snapshot === null || args.featureSwitchContext === null) {
+    return null;
+  }
+  return prepareBuiltinTokenRevoke({
+    ...args,
+    snapshot: args.snapshot,
+    featureSwitchContext: args.featureSwitchContext,
+    replacement: "local",
+  });
 }
 
 export function builtinTokenRevokeFromRows(

@@ -1,3 +1,7 @@
+import {
+  suggestionContextPart,
+  suggestionFeedbacks,
+} from "@okouai/api-contracts/contracts/suggestion-context";
 import { Schema, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import {
   userMessageDocumentSchema,
@@ -75,6 +79,7 @@ function createEditorSchema(): Schema {
           sourceSentId: { default: null },
           sourceStatus: { default: null },
           sourceType: { default: null },
+          suggestionContext: { default: null },
         },
         content: "paragraph*",
         group: "block",
@@ -664,4 +669,41 @@ test("A template-only message remains sendable", () => {
   expect(messageDocumentToPrompt(saved)).toBe(
     "Select Pitch deck presentation template",
   );
+});
+
+test("Suggestion quote and typed direction round-trip through the saved editor document", () => {
+  const context = {
+    suggestionId: "a0000000-0000-4000-a000-000000000001",
+    draftId: "a0000000-0000-4000-a000-000000000002",
+    optionId: "custom" as const,
+    titleSnapshot: "Review this partnership",
+    rationaleSnapshot: "The budget is unresolved",
+    contextVersion: "verified-context-version",
+    attachmentIds: [],
+  };
+  const document: UserMessageDocument = {
+    version: 1,
+    parts: [
+      { type: "text", text: "My existing draft" },
+      suggestionContextPart(context),
+      {
+        type: "feedback",
+        quote:
+          "Complete background. Source MAIL-42 and proposal-v2. No direction chosen.",
+        note: [{ type: "text", text: "Assess whether this is worth pursuing" }],
+      },
+    ],
+  };
+  const restored = saveRestoredMessage(document);
+  expect(suggestionFeedbacks(restored)).toStrictEqual(
+    suggestionFeedbacks(document),
+  );
+  expect(messageDocumentToPrompt(restored)).toContain("MAIL-42");
+  expect(messageDocumentToPrompt(restored)).toContain(
+    "Assess whether this is worth pursuing",
+  );
+  expect(messageDocumentToDisplayText(restored)).toContain(
+    "Review this partnership",
+  );
+  expect(messageDocumentToDisplayText(restored)).not.toContain("MAIL-42");
 });

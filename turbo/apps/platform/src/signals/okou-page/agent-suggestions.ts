@@ -22,6 +22,169 @@ import {
 import { ensureAgentDraft$ } from "./agent-draft.ts";
 import { now } from "../../lib/time.ts";
 import { setLoop } from "../utils.ts";
+import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
+import { createRestoredAttachment } from "./chat-draft.ts";
+import {
+  messageDocumentToPrompt,
+  textToMessageDocument,
+} from "./user-message-document-codec.ts";
+import {
+  readSuggestionContext,
+  suggestionContextPart,
+  suggestionFeedbacks,
+} from "@okouai/api-contracts/contracts/suggestion-context";
+import type {
+  UserMessageDocument,
+  FeedbackNotePart,
+  ComposerDraft,
+} from "@okouai/api-contracts/contracts/chat-threads";
+
+export const preparedAgentSuggestionId$ = computed((get) => {
+  return (
+    get(get(agentChatComposerSignals$).feedback.items$).find((item) => {
+      return item.suggestionContext;
+    })?.suggestionContext?.suggestionId ?? null
+  );
+});
+
+async function suggestionDraftVersion(draft: ComposerDraft): Promise<string> {
+  return Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(JSON.stringify(draft)),
+      ),
+    ),
+  )
+    .map((byte) => {
+      return byte.toString(16).padStart(2, "0");
+    })
+    .join("");
+}
+
+/** Prepare the saved, complete context in the existing composer without consuming it. */
+export const prepareAgentSuggestion$ = command(
+  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+    const agentId = await get(defaultAgentId$);
+    signal.throwIfAborted();
+    if (!agentId || get(agentChatComposerSignals$).agentId !== agentId) {
+      throw new Error("Suggestion target is unavailable");
+    }
+    const entry = set(ensureAgentDraft$, agentId);
+    await set(entry.load$, signal);
+    const draft = entry.draft;
+    const contextVersion = await suggestionDraftVersion(
+      item.customOption.draft,
+    );
+    signal.throwIfAborted();
+    const current =
+      set(draft.readEditorDocument$)?.toMessageDocument({
+        selectedTemplate: get(draft.generationTemplate$),
+      }) ??
+      set(draft.peekRestoredUserMessage$) ??
+      textToMessageDocument(get(draft.input$));
+    const previous = current ? suggestionFeedbacks(current) : [];
+    const currentAttachmentIds = new Set(
+      get(draft.attachments$).map((attachment) => {
+        return attachment.restoredFileId;
+      }),
+    );
+    if (
+      previous.some(({ context }) => {
+        return (
+          context.suggestionId === item.id &&
+          context.contextVersion === contextVersion &&
+          (item.customOption.draft.draftAttachments ?? []).every((file) => {
+            return currentAttachmentIds.has(file.id);
+          })
+        );
+      })
+    ) {
+      set(get(agentChatComposerSignals$).editor.focus$);
+      return;
+    }
+    const oldAttachmentIds = new Set(
+      previous.flatMap(({ context }) => {
+        return context.attachmentIds;
+      }),
+    );
+    for (const attachment of get(draft.attachments$)) {
+      if (oldAttachmentIds.has(attachment.restoredFileId ?? "")) {
+        set(attachment.cancel$);
+      }
+    }
+    const attachments = get(draft.attachments$).filter((attachment) => {
+      return !oldAttachmentIds.has(attachment.restoredFileId ?? "");
+    });
+    const addedAttachments = (
+      item.customOption.draft.draftAttachments ?? []
+    ).filter((attachment) => {
+      return !attachments.some((existing) => {
+        return existing.restoredFileId === attachment.id;
+      });
+    });
+    const parts =
+      current?.parts.filter((part, index) => {
+        return (
+          readSuggestionContext(part) === null &&
+          !(
+            part.type === "feedback" &&
+            readSuggestionContext(current.parts[index - 1])
+          )
+        );
+      }) ?? [];
+    const note: FeedbackNotePart[] = previous.flatMap(({ part }, index) => {
+      return index === 0
+        ? part.note
+        : [{ type: "text", text: "\n" }, ...part.note];
+    });
+    const background = item.customOption.draft.draftUserMessage?.parts.find(
+      (part) => {
+        return part.type === "feedback";
+      },
+    );
+    if (background?.type !== "feedback") {
+      throw new Error("Missing suggestion background");
+    }
+    const document: UserMessageDocument = {
+      version: 1,
+      parts: [
+        ...parts,
+        suggestionContextPart({
+          draftId: previous[0]?.context.draftId ?? crypto.randomUUID(),
+          suggestionId: item.id,
+          optionId: "custom",
+          titleSnapshot: item.title,
+          rationaleSnapshot: item.rationale,
+          contextVersion,
+          attachmentIds: addedAttachments.map((attachment) => {
+            return attachment.id;
+          }),
+        }),
+        { ...background, note },
+      ],
+    };
+    const content = messageDocumentToPrompt(document);
+    if (content === null) {
+      throw new Error("Invalid suggestion background");
+    }
+    await set(
+      draft.seed$,
+      {
+        content,
+        userMessage: document,
+        generationTemplate: get(draft.generationTemplate$),
+        attachments: [
+          ...attachments,
+          ...addedAttachments.map(createRestoredAttachment),
+        ],
+      },
+      signal,
+    );
+    set(get(agentChatComposerSignals$).editor.focus$);
+    await set(entry.queueDraftSync$, signal);
+  },
+);
 
 export const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {

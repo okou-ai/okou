@@ -415,6 +415,7 @@ runs:
           add_secret OKOU_DATA_ROUTER_URL OKOU_DATA_ROUTER_URL
           add_secret OKOU_DATA_TOKEN OKOU_DATA_TOKEN
           add_secret OKOU_BROWSER_USE_API_KEY OKOU_BROWSER_USE_API_KEY
+          add_var OKOU_BROWSER_USE_EXTENSION_IDS OKOU_BROWSER_USE_EXTENSION_IDS
           # Optional while the default-off hosted-consent pilot is unconfigured.
           add_env LINK_OAUTH_CLIENT_ID "$(doppler_secret LINK_OAUTH_CLIENT_ID)"
           add_env LINK_OAUTH_CLIENT_SECRET "$(doppler_secret LINK_OAUTH_CLIENT_SECRET)"

@@ -11,6 +11,7 @@ export interface RouteEntry {
   readonly requestBodyPolicy?: RequestBodyPolicy;
   readonly responseTransforms?: readonly ClientResponseTransform[];
   readonly observeJsonResponse?: JsonResponseObserver;
+  readonly streamJsonResponse?: boolean;
 }
 
 function routeRegistrationKey(entry: RouteEntry): string {

@@ -31,6 +31,16 @@ public actor ChatSync {
     return true
   }
 
+  public func pendingPrefetchReports() async throws -> [(
+    id: Int, report: NotificationPrefetchReport
+  )] {
+    try await cache?.prefetchReports() ?? []
+  }
+
+  public func acknowledgePrefetchReport(_ id: Int) async throws {
+    try await cache?.acknowledgePrefetchReport(id)
+  }
+
   public func cachedNavigation() async -> SidebarNavigationSnapshot? {
     do {
       return try await cache?.loadNavigation()
@@ -51,10 +61,17 @@ public actor ChatSync {
   }
 
   public func cachedThreads() async -> [ChatThread]? {
+    await cachedThreadList()?.threads
+  }
+
+  public func cachedThreadList() async -> (threads: [ChatThread], cursor: ChatCacheCursor)? {
     guard let cached = await readCachedThreadList() else { return nil }
-    return ChatThreadReplay.sidebarOrder(
-      ChatThreadReplay.replay(
-        snapshot: cached.snapshot.map(\.thread), events: cached.events.map(\.change)))
+    return (
+      ChatThreadReplay.sidebarOrder(
+        ChatThreadReplay.replay(
+          snapshot: cached.snapshot.map(\.thread), events: cached.events.map(\.change))),
+      cached.cursor
+    )
   }
 
   public func cachedHistory(threadID: String) async -> ChatHistory? {
@@ -67,7 +84,7 @@ public actor ChatSync {
   }
 
   public func threadsWithIndicators() async throws -> (
-    threads: [ChatThread], indicators: Indicators?, eventIDs: Set<String>
+    threads: [ChatThread], indicators: Indicators?, eventIDs: Set<String>, cursor: ChatCacheCursor
   ) {
     let result = try await synchronizeThreadList(requirePersistence: false)
     let indicators: Indicators?
@@ -87,7 +104,7 @@ public actor ChatSync {
       if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
       return updated
     }
-    return (threads, indicators, result.eventIDs)
+    return (threads, indicators, result.eventIDs, result.cursor)
   }
 
   /// Cache navigation without fetching indicators or marking any conversation read.
@@ -96,7 +113,7 @@ public actor ChatSync {
   }
 
   private func synchronizeThreadList(requirePersistence: Bool) async throws -> (
-    threads: [ChatThread], eventIDs: Set<String>
+    threads: [ChatThread], eventIDs: Set<String>, cursor: ChatCacheCursor
   ) {
     let cached = await readCachedThreadList()
     var state: ThreadListState
@@ -128,6 +145,10 @@ public actor ChatSync {
     }
     eventIDs.formUnion(state.events.map(\.id))
     if !(await persistThreadList(state)), requirePersistence { throw ChatCacheError.unavailable }
+    if let durable = await readCachedThreadList(), durable.cursor.seqID > state.cursor.seqID {
+      state = durable
+      eventIDs.formUnion(durable.events.map(\.id))
+    }
     let current = ChatThreadReplay.sidebarOrder(
       ChatThreadReplay.replay(
         snapshot: state.snapshot.map(\.thread), events: state.events.map(\.change)))
@@ -141,7 +162,7 @@ public actor ChatSync {
             "Cannot remove deleted chat history: \(error.localizedDescription, privacy: .public)")
       }
     }
-    return (current, eventIDs)
+    return (current, eventIDs, state.cursor)
   }
 
   public func indicators() async throws -> Indicators {
@@ -399,6 +420,74 @@ public actor ChatSync {
     public let containsRun: Bool
   }
 
+  /// Extension catch-up reads only the durable cursor and one event page at a time.
+  /// SQLite arbitrates overlapping app/extension writers; no UI history is retained.
+  public func prefetchHistoryTail(threadID: String, runID: String) async throws -> PrefetchReceipt {
+    guard let cache else { throw ChatCacheError.unavailable }
+    var cursor = try await cache.loadHistoryCursor(
+      threadID: threadID, schemaVersion: chatEventSchemaVersion)
+    var fromSnapshot = false
+    var confirmFreshTail = false
+    func rebuild() async throws -> ChatCacheCursor {
+      let snapshot = try await loadSnapshot(threadID: threadID)
+      guard await persistHistory(snapshot, threadID: threadID),
+        let cursor = try await cache.loadHistoryCursor(
+          threadID: threadID, schemaVersion: chatEventSchemaVersion)
+      else { throw ChatCacheError.unavailable }
+      return cursor
+    }
+    if cursor == nil {
+      cursor = try await rebuild()
+      fromSnapshot = true
+      confirmFreshTail = true
+    }
+    while let current = cursor {
+      try Task.checkCancellation()
+      do {
+        var query = [
+          URLQueryItem(name: "sinceSeqId", value: String(current.seqID)),
+          URLQueryItem(name: "limit", value: "50"),
+        ]
+        if let id = current.eventID { query.append(URLQueryItem(name: "sinceEventId", value: id)) }
+        let response = try await client.data(
+          "/api/chat-threads/\(threadID)/event-rows", query: query)
+        let page = try Self.decode(EventRowsPage.self, from: response.data)
+        let raw = try Self.rawArray("rows", in: response.data)
+        try Self.validate(rows: page.rows, threadID: threadID, after: current.seqID)
+        let expected =
+          page.rows.last.map { EventCursor(lastEventId: $0.id, lastSeqId: $0.seqId) }
+          ?? EventCursor(lastEventId: current.eventID, lastSeqId: current.seqID)
+        guard page.rows.count == raw.count, page.cursor.isValid, page.cursor == expected,
+          !page.hasMore || !page.rows.isEmpty
+        else { throw APIClientError.incompatibleData }
+        let entries = zip(page.rows, raw).map { row, data in
+          ChatCacheEvent(id: row.id, seqID: row.seqId, data: data)
+        }
+        try await cache.appendHistory(
+          threadID: threadID, rows: entries,
+          cursor: ChatCacheCursor(eventID: page.cursor.lastEventId, seqID: page.cursor.lastSeqId),
+          schemaVersion: chatEventSchemaVersion)
+        cursor = try await cache.loadHistoryCursor(
+          threadID: threadID, schemaVersion: chatEventSchemaVersion)
+        if !page.rows.isEmpty { fromSnapshot = false }
+        let more = page.hasMore || confirmFreshTail
+        confirmFreshTail = false
+        if !more { break }
+      } catch let error as APIClientError where error.statusCode == 410 {
+        guard !fromSnapshot else {
+          throw ChatError.invalidContract("History cursor expired immediately after its snapshot.")
+        }
+        cursor = try await rebuild()
+        fromSnapshot = true
+        confirmFreshTail = true
+      }
+    }
+    guard let cursor else { throw ChatCacheError.unavailable }
+    return PrefetchReceipt(
+      lastSeqID: cursor.seqID,
+      containsRun: try await cache.containsRun(threadID: threadID, runID: runID))
+  }
+
   /// Persist raw events without building UI projections or updating read cursors.
   @discardableResult
   public func prefetchHistory(threadID: String, runID: String? = nil) async throws
@@ -475,6 +564,12 @@ public actor ChatSync {
     }
     history.cursorFromServerSnapshot = false
     histories[threadID] = history
+    if let durable = await readCachedHistory(threadID: threadID),
+      durable.cursor.lastSeqId > history.cursor.lastSeqId
+    {
+      histories[threadID] = durable
+      return durable
+    }
     return history
   }
 
@@ -519,8 +614,16 @@ public actor ChatSync {
   }
 
   private func readCachedHistory(threadID: String) async -> CachedHistory? {
-    if let memory = histories[threadID] { return memory }
-    guard let cache else { return nil }
+    let memory = histories[threadID]
+    guard let cache else { return memory }
+    if let memory {
+      do {
+        let cursor = try await cache.loadHistoryCursor(
+          threadID: threadID, schemaVersion: chatEventSchemaVersion)
+        if (cursor?.seqID ?? 0) <= memory.cursor.lastSeqId { return memory }
+      } catch { return memory }
+    }
+    // The NSE is a separate process; its committed cursor can outrun resident memory.
     do {
       guard let stored = try await cache.loadHistory(threadID: threadID),
         stored.schemaVersion == chatEventSchemaVersion

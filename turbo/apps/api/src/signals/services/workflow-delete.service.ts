@@ -1,26 +1,13 @@
-import { nowDate } from "../../lib/time";
-import {
-  publicationGenerationValues,
-  retirePublicationSql,
-  lockPublicationScopeSql,
-  workflowPublicationKey,
-} from "./storage-publication-fence.service";
-import {
-  getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { retireWorkflowAttachmentSql } from "./workflow-attachment-cleanup.service";
+import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import { agents } from "@okouai/db/schema/agent";
-import { storages } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
-import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
-import { storagePublicationGenerations } from "@okouai/db/schema/storage-publication-fence";
-import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 
 interface DeleteWorkflowInput {
   readonly orgId: string;
@@ -29,86 +16,11 @@ interface DeleteWorkflowInput {
   readonly requiredOfficialInstallationState?: "installing";
 }
 
-interface DeleteOrphanedWorkflowVolumeInput {
-  readonly orgId: string;
-  readonly workflowId: string;
-}
-
-/**
- * Remove a prepared Workflow volume only when no Workflow row was published.
- * Copy/Remix uses this after a transaction-time volume publication failure;
- * the absence check keeps cleanup from deleting a concurrently visible fork.
- */
-export const deleteOrphanedWorkflowVolume$ = command(
-  async (
-    { set },
-    args: DeleteOrphanedWorkflowVolumeInput,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const writeDb = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0341; new non-billing transactions are prohibited.
-    const result = await writeDb.transaction(async (tx) => {
-      const [storage] = await tx
-        .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-        .from(storages)
-        .where(
-          and(
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, VOLUME_ORG_USER_ID),
-            eq(storages.name, getCustomSkillStorageName(args.workflowId)),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (!storage) {
-        return { deleted: false as const };
-      }
-
-      signal.throwIfAborted();
-      // Publication holds the storage lock before inserting the Workflow. Read
-      // its reference only after that transaction's commit/rollback is known.
-      const [workflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, args.orgId),
-            eq(workflows.id, args.workflowId),
-          ),
-        )
-        .limit(1);
-      if (workflow) {
-        return { deleted: false as const };
-      }
-
-      signal.throwIfAborted();
-
-      await tx.delete(storages).where(eq(storages.id, storage.id));
-      return {
-        deleted: true as const,
-        s3Prefix: storage.s3Prefix,
-      };
-    });
-    signal.throwIfAborted();
-    if (!result.deleted) {
-      return false;
-    }
-
-    await set(
-      purgeDeletedStoragePrefix$,
-      {
-        bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-        s3Prefix: result.s3Prefix,
-      },
-      signal,
-    );
-    return true;
-  },
-);
-
 function workflowDeletionColumns() {
   return {
     id: workflows.id,
+    orgId: workflows.orgId,
+    attachments: workflows.attachments,
     agentId: workflows.agentId,
     name: workflows.name,
     ownerUserId: workflows.ownerUserId,
@@ -188,42 +100,32 @@ const deleteWorkflowRows$ = command(
         .from(workflowAutomations)
         .where(eq(workflowAutomations.workflowId, workflow.id));
       await tx.delete(workflows).where(eq(workflows.id, workflow.id));
-      const storageName = getCustomSkillStorageName(workflow.id);
-      const [storage] = await tx
-        .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-        .from(storages)
+      await tx.execute(
+        retireWorkflowAttachmentSql(
+          {
+            orgId: workflow.orgId,
+            userId: workflow.ownerUserId,
+            workflowId: workflow.id,
+          },
+          workflow.attachments,
+          sql`true`,
+        ),
+      );
+      // An outgoing Stage 1 upload takes the Workflow row before this token.
+      await tx
+        .delete(storagePublicationTokens)
         .where(
           and(
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, VOLUME_ORG_USER_ID),
-            eq(storages.name, storageName),
+            eq(storagePublicationTokens.orgId, args.orgId),
+            eq(storagePublicationTokens.agentId, workflow.agentId),
+            eq(
+              storagePublicationTokens.publicationKey,
+              `workflow:${workflow.id}`,
+            ),
           ),
-        )
-        .limit(1);
-      if (storage) {
-        await tx.delete(storages).where(eq(storages.id, storage.id));
-      }
-      // Settle both possible publication scopes in deterministic @agent → user order.
-      const scopes = [
-        { orgId: args.orgId, agentId: workflow.agentId },
-        {
-          orgId: args.orgId,
-          agentId: workflow.agentId,
-          userId: workflow.ownerUserId,
-        },
-      ] as const;
-      await tx
-        .insert(storagePublicationGenerations)
-        .values(publicationGenerationValues(scopes))
-        .onConflictDoNothing();
-      const publicationKey = workflowPublicationKey(workflow.id);
-      for (const scope of scopes) {
-        await tx.execute(lockPublicationScopeSql(scope, nowDate()));
-        await tx.execute(retirePublicationSql(scope, publicationKey));
-      }
+        );
       return {
         deleted: true as const,
-        s3Prefix: storage?.s3Prefix ?? null,
         automations,
       };
     });
@@ -250,16 +152,6 @@ export const deleteWorkflow$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.s3Prefix) {
-      await set(
-        purgeDeletedStoragePrefix$,
-        {
-          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-          s3Prefix: result.s3Prefix,
-        },
-        signal,
-      );
-    }
     return true;
   },
 );

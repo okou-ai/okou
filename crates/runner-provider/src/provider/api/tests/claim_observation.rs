@@ -405,7 +405,9 @@ async fn claims_observe_system_dns_and_reused_connection_without_new_setup() {
             index == 0
         );
         assert_eq!(event_field(transport, "outcome"), "response_headers");
-        assert!(request.starts_with(&format!("POST /api/runners/jobs/{run_id}/claim ")));
+        assert!(request.starts_with(&format!(
+            "POST /api/runners/jobs/{run_id}/claim?workflowSkills=1 "
+        )));
         assert_eq!(request_header(request, "content-type"), "application/json");
         let body = request.split_once("\r\n\r\n").unwrap().1;
         assert_eq!(

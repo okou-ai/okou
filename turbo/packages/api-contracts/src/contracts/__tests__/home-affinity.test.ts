@@ -124,7 +124,7 @@ describe("canonical home affinity contracts", () => {
       heldHomeStateSchema.safeParse({ ...home, lastCompletedAt: "not-a-date" })
         .success,
     ).toBe(false);
-    const states = Array.from({ length: 128 }, () => {
+    const states = Array.from({ length: 512 }, () => {
       return {
         ...home,
         homeCaches: Array.from({ length: 8 }, () => {
@@ -151,7 +151,7 @@ describe("canonical home affinity contracts", () => {
     expect(
       heartbeatBodySchema.safeParse({
         ...canonicalHeartbeat(),
-        heldHomeStates: Array.from({ length: 1025 }, () => {
+        heldHomeStates: Array.from({ length: 4097 }, () => {
           return home;
         }),
       }).success,

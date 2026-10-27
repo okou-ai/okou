@@ -778,7 +778,12 @@ function createComposerPrimaryActionSignal(args: {
     const attachments = await get(draft.usableAttachments$);
     const hasContent =
       get(workflowComposer.hasInput$) || attachments.length > 0;
-    const canSend = uploadsReady && hasContent;
+    const needsSuggestionNote = get(workflowComposer.feedback.items$).some(
+      (item) => {
+        return item.suggestionContext && !item.note.trim();
+      },
+    );
+    const canSend = uploadsReady && hasContent && !needsSuggestionNote;
     const sending = await get(eventSignals.sending$);
     if (sending && !canSend) {
       return "stop";
@@ -849,6 +854,13 @@ function createSubmitCurrentInput({
         signal,
       );
       signal.throwIfAborted();
+      if (
+        get(workflowComposer.feedback.items$).some((item) => {
+          return item.suggestionContext && !item.note.trim();
+        })
+      ) {
+        return false;
+      }
       const visiblePrompt = submission.prompt.trim();
       const attachments = await get(draft.usableAttachments$);
       signal.throwIfAborted();

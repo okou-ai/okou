@@ -598,7 +598,7 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
 
 /** Canonical Runner wire representation. */
 export const storageManifestSchema = object({
-  // Reader preparation only: the Stage 1 API never emits this field.
+  // Custom Workflow documents selected at the committed claim boundary.
   workflowSkills: array(workflowSkillDocumentSchema).optional(),
   storageMounts: array(storageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
@@ -921,8 +921,7 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = object({
-  // Reader preparation for #42362: current writers still emit only agentId.
-  // Recognize Stage 2 intent so the preparation API can leave it pending.
+  // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),
     invokedWorkflowId: uuid().nullable().optional(),
@@ -1167,6 +1166,7 @@ export const runnersJobClaimContract = c.router({
     pathParams: object({
       id: uuid(),
     }),
+    query: object({ workflowSkills: literal("1").optional() }),
     body: object({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),
@@ -1348,6 +1348,8 @@ export const runnersBuiltinFirewallsResolveContract = c.router({
   },
 });
 
+const MAX_HEARTBEAT_HOME_CACHES = 4096;
+
 /**
  * Runner heartbeat body — periodic state report from each runner
  */
@@ -1366,18 +1368,18 @@ export const heartbeatBodySchema = object({
   runningCount: number().int().nonnegative(),
   admittableProfiles: runnerProfileListSchema,
   heldSandboxStates: array(heldSandboxStateSchema).max(1024),
-  heldHomeStates: array(heldHomeStateSchema).max(1024),
+  heldHomeStates: array(heldHomeStateSchema).max(MAX_HEARTBEAT_HOME_CACHES),
   activeReuseProducers: array(activeReuseProducerSchema).max(1024),
   mode: zEnum(["starting", "running", "draining", "stopping"]),
 }).superRefine((heartbeat, ctx) => {
   const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {
     return count + state.homeCaches.length;
   }, 0);
-  if (homeCacheCount > 1024) {
+  if (homeCacheCount > MAX_HEARTBEAT_HOME_CACHES) {
     ctx.addIssue({
       code: ZodIssueCode.custom,
       path: ["heldHomeStates"],
-      message: "heartbeat may contain at most 1024 home caches",
+      message: `heartbeat may contain at most ${MAX_HEARTBEAT_HOME_CACHES} home caches`,
     });
   }
 });
