@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.OnboardingSourceOutcomes]: {
+    maintainer: "ming@vm0.ai",
+    displayName: "Onboarding source outcomes",
+    description:
+      "Show industry-specific examples of work prepared from connected tools.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SlackWorkspaceIdentity]: {
     maintainer: "yuma@okou.ai",
     displayName: "Slack workspace identity",

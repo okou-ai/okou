@@ -4219,6 +4219,145 @@
         "teamCopy": "Work together in one workspace.",
         "teamTitle": "Invite a teammate"
       },
+      "outcomes": {
+        "accessibleLabel": "Illustrative {{title}} prepared from {{source}}. All content is sample data.",
+        "examples": {
+          "coaching": {
+            "context": "Thu, 10:00 · 45-minute session",
+            "next": "Set next steps",
+            "nextTime": "10 min",
+            "practice": "Practice the new skill",
+            "practiceTime": "25 min",
+            "review": "Review last session",
+            "reviewTime": "10 min"
+          },
+          "consulting": {
+            "agenda": "Scope and timeline",
+            "background": "Context",
+            "context": "Acme Studio · Thu, 10:00",
+            "discuss": "Discuss",
+            "expansion": "Expansion planned",
+            "goal": "Goal",
+            "objective": "Improve onboarding"
+          },
+          "design": {
+            "brandGuide": "Brand guide",
+            "clientBrief": "Client brief",
+            "deliverables": "Deliverables",
+            "direction": "Visual direction",
+            "photos": "Photos",
+            "positioning": "“Same care. Less waste.” for eco-conscious shoppers.",
+            "project": "Refill skincare launch",
+            "scope": "Landing page + 3 ads",
+            "visuals": "Clean product close-ups"
+          },
+          "finance": {
+            "context": "October · month-end review",
+            "expenses": "Expenses",
+            "income": "Income",
+            "reconcile": "To reconcile",
+            "transactions": "3 transactions"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "Revenue growth",
+            "margin": "Gross margin",
+            "metric": "Metric",
+            "northstar": "Northstar",
+            "watch": "Watch: Customer concentration."
+          },
+          "marketing": {
+            "comparison": "vs prior 7 days",
+            "period": "Last 7 days"
+          },
+          "operations": {
+            "agenda": "Confirm team agenda",
+            "context": "3 priorities · this week",
+            "friday": "Fri",
+            "quote": "Review vendor quote",
+            "today": "Today",
+            "tuesday": "Tue",
+            "update": "Send project update"
+          },
+          "other": {
+            "brief": "Review the shared brief",
+            "call": "Confirm tomorrow’s call",
+            "context": "From your recent emails",
+            "reply": "Reply to Alex"
+          },
+          "research": {
+            "action": "Test a guided first task",
+            "context": "Customer interviews · 5 notes",
+            "evidence": "Evidence",
+            "finding": "Finding",
+            "insight": "Setup takes too long",
+            "interviews": "3 of 5 interviews",
+            "next": "Next"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 deals need attention",
+            "demo": "Demo tomorrow",
+            "next": "Next: Send Acme a follow-up.",
+            "northstar": "Northstar",
+            "proposal": "Proposal sent"
+          },
+          "software": {
+            "context": "2 merged · 1 open issue",
+            "issue": "CSV export fails",
+            "search": "Faster search",
+            "signup": "Simpler signup"
+          }
+        },
+        "expandLabel": "See an example of what you can get",
+        "industries": {
+          "coaching": {
+            "description": "Prepare your next session with clear goals, an agenda, and practical next steps.",
+            "title": "Session plan"
+          },
+          "consulting": {
+            "description": "Turn client conversations into a meeting brief with the context and next steps you need.",
+            "title": "Client meeting brief"
+          },
+          "design": {
+            "description": "Turn client briefs and brand assets into a clear plan for what to create.",
+            "title": "Creative brief"
+          },
+          "finance": {
+            "description": "Bring income, expenses, and items to reconcile into a clear month-end summary.",
+            "title": "Month-end summary"
+          },
+          "investing": {
+            "description": "Bring company metrics and research notes into a clear comparison for your review.",
+            "title": "Company comparison"
+          },
+          "marketing": {
+            "description": "Compare campaign metrics and see where your next improvement could make a difference.",
+            "title": "Campaign summary"
+          },
+          "operations": {
+            "description": "Turn emails and requests into a focused plan for what needs your attention this week.",
+            "title": "This week"
+          },
+          "other": {
+            "description": "Start with your everyday tools and turn recent messages into a useful next step.",
+            "title": "Your next steps"
+          },
+          "research": {
+            "description": "Turn scattered notes into key findings, supporting evidence, and useful next questions.",
+            "title": "Research digest"
+          },
+          "sales": {
+            "description": "See which deals need attention and prepare the next follow-up with useful context.",
+            "title": "Deal follow-ups"
+          },
+          "software": {
+            "description": "Bring recent changes and open issues into a clear update you can share with your team.",
+            "title": "Release summary"
+          }
+        },
+        "title": "Put your everyday tools to work"
+      },
       "prompt": {
         "connectorsDescription": "Connect your tools so Okou can understand your work and tailor how it completes tasks for you. You can also connect later.",
         "connectorsTitle": "Connect your work tools",

@@ -44,6 +44,7 @@ export default defineConfig({
       // connector slug at runtime.
       "onboarding.sourcesFirst.industries.*",
       "onboarding.sourcesFirst.startingPrompt.*",
+      "onboarding.sourcesFirst.outcomes.*",
       // Paid tool rows select copy by the shared tool catalog at runtime.
       "settings.paidTools.tools.*",
     ],

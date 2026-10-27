@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
+import { FeatureSwitchKey } from "@okouai/core";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   captureSourceOnboardingConnected$,
   captureSourceOnboardingConnectStarted$,
@@ -21,6 +23,7 @@ import {
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 import { OnboardingSecurityLink } from "./onboarding-industry-parts.tsx";
+import { OnboardingSourceOutcome } from "./onboarding-source-outcome.tsx";
 
 /** The field answered on the step before decides which sources appear. */
 function featuredSlugsFor(
@@ -47,6 +50,48 @@ function connectedOnboardingSlugs(
   });
 }
 
+function useSourceExplanation(
+  industry: OnboardingIndustry | null,
+  connectors: readonly PlatformConnectorCatalogConnectItem[],
+) {
+  const { t } = useTranslation();
+  const features = useGet(featureSwitch$);
+  const outcomeIndustry = industry ?? "other";
+  const outcomeConnector = connectors.find((connector) => {
+    return connector.slug === INDUSTRY_SOURCE_SLUGS[outcomeIndustry][0];
+  });
+  const showOutcome =
+    features[FeatureSwitchKey.OnboardingSourceOutcomes] &&
+    outcomeConnector !== undefined;
+  const outcomeDescription = t(($) => {
+    return $.onboarding.sourcesFirst.outcomes.industries[outcomeIndustry]
+      .description;
+  });
+  return {
+    title: t(($) => {
+      return showOutcome
+        ? $.onboarding.sourcesFirst.outcomes.title
+        : $.onboarding.sourcesFirst.sources.title;
+    }),
+    description: showOutcome
+      ? outcomeDescription
+      : t(($) => {
+          return $.onboarding.sourcesFirst.sources.copy;
+        }),
+    mobileDescription: showOutcome
+      ? outcomeDescription
+      : t(($) => {
+          return $.onboarding.sourcesFirst.mobile.sourcesCopy;
+        }),
+    illustration: showOutcome && (
+      <OnboardingSourceOutcome
+        industry={outcomeIndustry}
+        connector={outcomeConnector}
+      />
+    ),
+  };
+}
+
 export function OnboardingSourcesPage() {
   const { t, i18n } = useTranslation();
   const captureConnectStarted = useSet(captureSourceOnboardingConnectStarted$);
@@ -55,6 +100,10 @@ export function OnboardingSourcesPage() {
   const rootSignal = useGet(rootSignal$);
   const startRecommendation = useSet(startOnboardingRecommendation$);
   const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
+  const explanation = useSourceExplanation(
+    flow.draft.industry,
+    catalogLoadable.state === "hasData" ? catalogLoadable.data : [],
+  );
   const connectedSlugs =
     catalogLoadable.state === "hasData"
       ? connectedOnboardingSlugs(catalogLoadable.data)
@@ -72,15 +121,7 @@ export function OnboardingSourcesPage() {
     <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
-      title={t(($) => {
-        return $.onboarding.sourcesFirst.sources.title;
-      })}
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.sources.copy;
-      })}
-      mobileDescription={t(($) => {
-        return $.onboarding.sourcesFirst.mobile.sourcesCopy;
-      })}
+      {...explanation}
       mobileFooter={
         <details className="text-sm text-muted-foreground">
           <summary className="cursor-pointer rounded-lg py-3 hover:text-foreground">

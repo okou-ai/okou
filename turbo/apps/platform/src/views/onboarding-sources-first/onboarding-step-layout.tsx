@@ -89,6 +89,7 @@ function OnboardingStepExplanation({
   trustPoints,
   footnote,
   supplement,
+  illustration,
 }: {
   readonly title: string;
   readonly description: string;
@@ -97,12 +98,15 @@ function OnboardingStepExplanation({
   readonly trustPoints?: readonly string[];
   readonly footnote?: ReactNode;
   readonly supplement?: ReactNode;
+  readonly illustration?: ReactNode;
 }) {
   const mobile = useMobileOnboarding();
   const body = mobile ? (mobileDescription ?? description) : description;
   return (
     <>
-      <h1 className="mt-12 text-[30px] max-sm:mt-2 max-sm:text-2xl font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
+      <h1
+        className={`${illustration ? "mt-10" : "mt-12"} text-[30px] max-sm:mt-2 max-sm:text-2xl font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]`}
+      >
         {mobile ? (mobileTitle ?? title) : title}
       </h1>
       {body ? (
@@ -110,6 +114,7 @@ function OnboardingStepExplanation({
           {body}
         </p>
       ) : null}
+      {illustration}
       {mobile ? null : <OnboardingTrustPoints points={trustPoints} />}
       {!mobile && footnote ? (
         <p className="mt-4 text-base leading-[1.7] text-muted-foreground">
@@ -287,6 +292,8 @@ interface OnboardingStepLayoutProps {
   readonly footnote?: ReactNode;
   /** A block closing the explanation, below everything else it says. */
   readonly supplement?: ReactNode;
+  /** An example of the step's outcome, between its introduction and trust copy. */
+  readonly illustration?: ReactNode;
   readonly contentAlign?: "center" | "start";
   readonly children: ReactNode;
 }
@@ -310,6 +317,7 @@ export function OnboardingStepLayout({
   trustPoints,
   footnote,
   supplement,
+  illustration,
   contentAlign = "center",
   children,
 }: OnboardingStepLayoutProps) {
@@ -356,7 +364,9 @@ export function OnboardingStepLayout({
         />
         {/* The rail is 3.5rem wide, so account for half of it in each track:
             the sheet begins at the viewport's actual midpoint. */}
-        <div className="w-full min-w-0 px-6 pt-8 pb-6 max-sm:px-5 max-sm:pt-2 max-sm:pb-0 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
+        <div
+          className={`w-full min-w-0 px-6 pt-8 pb-6 max-sm:px-5 max-sm:pt-2 max-sm:pb-0 lg:overflow-y-auto lg:px-10 ${illustration ? "lg:pt-24" : "lg:pt-28"} lg:pb-10`}
+        >
           <div className="lg:mx-auto lg:w-full lg:max-w-[480px]">
             <div className="max-sm:hidden">
               <OnboardingStepProgress
@@ -372,6 +382,7 @@ export function OnboardingStepLayout({
               trustPoints={trustPoints}
               footnote={footnote}
               supplement={supplement}
+              illustration={illustration}
             />
           </div>
         </div>

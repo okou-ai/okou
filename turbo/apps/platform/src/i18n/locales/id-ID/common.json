@@ -4206,6 +4206,145 @@
         "teamCopy": "Bekerja bersama di satu ruang kerja.",
         "teamTitle": "Undang rekan tim"
       },
+      "outcomes": {
+        "accessibleLabel": "Contoh {{title}} yang disusun dari {{source}}. Semua konten adalah data contoh.",
+        "examples": {
+          "coaching": {
+            "context": "Kamis, 10:00 · sesi 45 menit",
+            "next": "Tentukan langkah berikutnya",
+            "nextTime": "10 mnt",
+            "practice": "Latih keterampilan baru",
+            "practiceTime": "25 mnt",
+            "review": "Tinjau sesi sebelumnya",
+            "reviewTime": "10 mnt"
+          },
+          "consulting": {
+            "agenda": "Cakupan dan jadwal",
+            "background": "Konteks",
+            "context": "Acme Studio · Kamis, 10:00",
+            "discuss": "Bahasan",
+            "expansion": "Rencana ekspansi",
+            "goal": "Tujuan",
+            "objective": "Perbaiki onboarding"
+          },
+          "design": {
+            "brandGuide": "Panduan merek",
+            "clientBrief": "Brief klien",
+            "deliverables": "Hasil kerja",
+            "direction": "Arah visual",
+            "photos": "Foto produk",
+            "positioning": "“Perawatan sama. Limbah lebih sedikit.” untuk pembeli peduli lingkungan.",
+            "project": "Peluncuran skincare isi ulang",
+            "scope": "Landing page + 3 iklan",
+            "visuals": "Close-up produk yang bersih"
+          },
+          "finance": {
+            "context": "Oktober · tinjauan akhir bulan",
+            "expenses": "Pengeluaran",
+            "income": "Pendapatan",
+            "reconcile": "Perlu rekonsiliasi",
+            "transactions": "3 transaksi"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "Pertumbuhan pendapatan",
+            "margin": "Margin kotor",
+            "metric": "Metrik",
+            "northstar": "Northstar",
+            "watch": "Perhatikan: konsentrasi pelanggan."
+          },
+          "marketing": {
+            "comparison": "vs 7 hari sebelumnya",
+            "period": "7 hari terakhir"
+          },
+          "operations": {
+            "agenda": "Konfirmasi agenda tim",
+            "context": "Minggu ini · 3 prioritas",
+            "friday": "Jum.",
+            "quote": "Tinjau penawaran vendor",
+            "today": "Hari ini",
+            "tuesday": "Sel.",
+            "update": "Kirim pembaruan proyek"
+          },
+          "other": {
+            "brief": "Tinjau brief yang dibagikan",
+            "call": "Konfirmasi panggilan besok",
+            "context": "Dari email terbaru",
+            "reply": "Balas Alex"
+          },
+          "research": {
+            "action": "Uji tugas pertama dengan panduan",
+            "context": "Wawancara pelanggan · 5 catatan",
+            "evidence": "Bukti",
+            "finding": "Temuan",
+            "insight": "Penyiapan terlalu lama",
+            "interviews": "3 dari 5 wawancara",
+            "next": "Berikutnya"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 peluang perlu perhatian",
+            "demo": "Demo besok",
+            "next": "Berikutnya: tindak lanjuti Acme.",
+            "northstar": "Northstar",
+            "proposal": "Proposal terkirim"
+          },
+          "software": {
+            "context": "2 digabung · 1 masalah terbuka",
+            "issue": "Ekspor CSV gagal",
+            "search": "Pencarian lebih cepat",
+            "signup": "Pendaftaran lebih mudah"
+          }
+        },
+        "expandLabel": "Lihat contoh hasil yang bisa Anda dapatkan",
+        "industries": {
+          "coaching": {
+            "description": "Siapkan sesi berikutnya dengan tujuan, agenda, dan langkah praktis yang jelas.",
+            "title": "Rencana sesi"
+          },
+          "consulting": {
+            "description": "Susun percakapan klien menjadi brief rapat berisi konteks dan langkah berikutnya.",
+            "title": "Brief rapat klien"
+          },
+          "design": {
+            "description": "Ubah brief klien dan aset merek menjadi rencana produksi yang jelas.",
+            "title": "Brief kreatif"
+          },
+          "finance": {
+            "description": "Rangkum pendapatan, pengeluaran, dan transaksi yang perlu direkonsiliasi.",
+            "title": "Ringkasan akhir bulan"
+          },
+          "investing": {
+            "description": "Rangkum metrik perusahaan dan catatan riset menjadi perbandingan yang jelas.",
+            "title": "Perbandingan perusahaan"
+          },
+          "marketing": {
+            "description": "Bandingkan metrik kampanye dan temukan peluang perbaikan berikutnya.",
+            "title": "Ringkasan kampanye"
+          },
+          "operations": {
+            "description": "Ubah email dan permintaan menjadi rencana kerja yang terarah untuk minggu ini.",
+            "title": "Minggu ini"
+          },
+          "other": {
+            "description": "Hubungkan alat sehari-hari dan temukan langkah berguna dari pesan terbaru.",
+            "title": "Langkah berikutnya"
+          },
+          "research": {
+            "description": "Temukan hasil utama, bukti pendukung, dan pertanyaan berikutnya dari catatan yang tersebar.",
+            "title": "Ringkasan riset"
+          },
+          "sales": {
+            "description": "Lihat peluang yang perlu diperhatikan dan siapkan tindak lanjut dengan konteks yang relevan.",
+            "title": "Tindak lanjut penjualan"
+          },
+          "software": {
+            "description": "Rangkum perubahan terbaru dan masalah terbuka untuk dibagikan kepada tim.",
+            "title": "Ringkasan rilis"
+          }
+        },
+        "title": "Manfaatkan alat kerja sehari-hari Anda"
+      },
       "prompt": {
         "connectorsDescription": "Hubungkan alat kerja Anda agar Okou memahami konteks pekerjaan dan menyelesaikan tugas sesuai kebutuhan Anda. Anda juga bisa menghubungkannya nanti.",
         "connectorsTitle": "Hubungkan alat kerja Anda",

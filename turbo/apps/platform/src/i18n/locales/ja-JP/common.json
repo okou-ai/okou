@@ -4206,6 +4206,145 @@
         "teamCopy": "同じワークスペースで共同作業。",
         "teamTitle": "メンバーを招待"
       },
+      "outcomes": {
+        "accessibleLabel": "{{source}} から作成する {{title}} のイメージ。内容はすべてサンプルです。",
+        "examples": {
+          "coaching": {
+            "context": "木曜 10:00 · 45分間",
+            "next": "次のステップを決める",
+            "nextTime": "10分",
+            "practice": "新しいスキルを練習",
+            "practiceTime": "25分",
+            "review": "前回を振り返る",
+            "reviewTime": "10分"
+          },
+          "consulting": {
+            "agenda": "範囲とスケジュール",
+            "background": "背景",
+            "context": "Acme Studio · 木曜 10:00",
+            "discuss": "議題",
+            "expansion": "事業拡大を計画",
+            "goal": "目標",
+            "objective": "導入体験を改善"
+          },
+          "design": {
+            "brandGuide": "ブランド指針",
+            "clientBrief": "顧客の要件",
+            "deliverables": "制作物",
+            "direction": "ビジュアル方針",
+            "photos": "商品写真",
+            "positioning": "環境を意識する人へ「同じケアで、ごみを減らす」。",
+            "project": "詰め替えスキンケア発売",
+            "scope": "LPと広告3点",
+            "visuals": "すっきりした商品アップ"
+          },
+          "finance": {
+            "context": "10月 · 月次レビュー",
+            "expenses": "支出",
+            "income": "収入",
+            "reconcile": "要照合",
+            "transactions": "3件の取引"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "売上成長率",
+            "margin": "粗利益率",
+            "metric": "指標",
+            "northstar": "Northstar",
+            "watch": "注目：顧客の集中度。"
+          },
+          "marketing": {
+            "comparison": "前の7日間と比較",
+            "period": "直近7日間"
+          },
+          "operations": {
+            "agenda": "チームの議題を確認",
+            "context": "今週の優先事項3件",
+            "friday": "金曜",
+            "quote": "仕入先の見積もりを確認",
+            "today": "今日",
+            "tuesday": "火曜",
+            "update": "進捗を共有"
+          },
+          "other": {
+            "brief": "共有された概要を確認",
+            "call": "明日の通話を確認",
+            "context": "最近のメールから",
+            "reply": "Alexに返信"
+          },
+          "research": {
+            "action": "初回タスクのガイドを試す",
+            "context": "顧客インタビュー · メモ5件",
+            "evidence": "根拠",
+            "finding": "発見",
+            "insight": "設定に時間がかかる",
+            "interviews": "5件中3件で言及",
+            "next": "次"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "対応が必要な商談2件",
+            "demo": "明日デモ",
+            "next": "次：Acmeにフォローアップ。",
+            "northstar": "Northstar",
+            "proposal": "提案送付済み"
+          },
+          "software": {
+            "context": "マージ済み2件 · 未解決1件",
+            "issue": "CSV出力に失敗",
+            "search": "検索を高速化",
+            "signup": "登録を簡単に"
+          }
+        },
+        "expandLabel": "接続後にできることの例を見る",
+        "industries": {
+          "coaching": {
+            "description": "目標、議題、次のステップを整理して、次回のセッションに備えましょう。",
+            "title": "セッション計画"
+          },
+          "consulting": {
+            "description": "顧客とのやり取りから、背景と次のステップを会議資料にまとめましょう。",
+            "title": "顧客ミーティング資料"
+          },
+          "design": {
+            "description": "顧客の要件とブランド素材を、明確な制作計画にまとめましょう。",
+            "title": "クリエイティブブリーフ"
+          },
+          "finance": {
+            "description": "収入、支出、照合が必要な項目を月次サマリーにまとめましょう。",
+            "title": "月次決算サマリー"
+          },
+          "investing": {
+            "description": "企業の指標と調査メモを、比較しやすい形にまとめましょう。",
+            "title": "企業比較"
+          },
+          "marketing": {
+            "description": "広告指標を比較して、次に改善できる点を見つけましょう。",
+            "title": "広告レポート"
+          },
+          "operations": {
+            "description": "メールや依頼を整理して、今週取り組むべきことを明確にしましょう。",
+            "title": "今週の仕事"
+          },
+          "other": {
+            "description": "いつものツールを接続して、最近のメッセージから次の行動を見つけましょう。",
+            "title": "次のステップ"
+          },
+          "research": {
+            "description": "散らばったメモから、発見、根拠、次に調べることを整理しましょう。",
+            "title": "調査ダイジェスト"
+          },
+          "sales": {
+            "description": "対応が必要な商談を把握し、背景を踏まえて次のフォローアップを準備しましょう。",
+            "title": "商談フォローアップ"
+          },
+          "software": {
+            "description": "最近の変更と未解決の課題を、チームに共有できる報告にまとめましょう。",
+            "title": "リリースサマリー"
+          }
+        },
+        "title": "いつものツールを仕事の力に"
+      },
       "prompt": {
         "connectorsDescription": "ツールを接続すると、Okou が仕事の状況を理解し、あなたに合った方法でタスクを進められます。後から接続することもできます。",
         "connectorsTitle": "仕事で使うツールを接続",

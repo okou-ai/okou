@@ -4206,6 +4206,145 @@
         "teamCopy": "在同一个工作区协作。",
         "teamTitle": "邀请同事"
       },
+      "outcomes": {
+        "accessibleLabel": "基于 {{source}} 整理的{{title}}示意，内容均为示例数据。",
+        "examples": {
+          "coaching": {
+            "context": "周四 10:00 · 45 分钟课程",
+            "next": "确定下一步",
+            "nextTime": "10 分钟",
+            "practice": "练习新技能",
+            "practiceTime": "25 分钟",
+            "review": "回顾上次课程",
+            "reviewTime": "10 分钟"
+          },
+          "consulting": {
+            "agenda": "范围与时间安排",
+            "background": "背景",
+            "context": "Acme Studio · 周四 10:00",
+            "discuss": "讨论",
+            "expansion": "计划拓展业务",
+            "goal": "目标",
+            "objective": "改善新用户引导"
+          },
+          "design": {
+            "brandGuide": "品牌规范",
+            "clientBrief": "客户 brief",
+            "deliverables": "交付物",
+            "direction": "视觉方向",
+            "photos": "产品照片",
+            "positioning": "面向环保消费者，传达“同样护理，更少浪费”。",
+            "project": "补充装护肤品上市",
+            "scope": "落地页 + 3 张广告素材",
+            "visuals": "简洁的产品特写"
+          },
+          "finance": {
+            "context": "10 月 · 月结复盘",
+            "expenses": "支出",
+            "income": "收入",
+            "reconcile": "待对账",
+            "transactions": "3 笔交易"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "营收增长",
+            "margin": "毛利率",
+            "metric": "指标",
+            "northstar": "Northstar",
+            "watch": "关注：客户集中度。"
+          },
+          "marketing": {
+            "comparison": "对比此前 7 天",
+            "period": "最近 7 天"
+          },
+          "operations": {
+            "agenda": "确认团队议程",
+            "context": "本周 · 3 项重点",
+            "friday": "周五",
+            "quote": "审核供应商报价",
+            "today": "今天",
+            "tuesday": "周二",
+            "update": "发送项目进展"
+          },
+          "other": {
+            "brief": "查看共享简报",
+            "call": "确认明天的通话",
+            "context": "来自近期邮件",
+            "reply": "回复 Alex"
+          },
+          "research": {
+            "action": "测试有引导的首个任务",
+            "context": "客户访谈 · 5 份笔记",
+            "evidence": "依据",
+            "finding": "发现",
+            "insight": "配置过程耗时过长",
+            "interviews": "5 次访谈中有 3 次提及",
+            "next": "下一步"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 个商机需要关注",
+            "demo": "明天演示",
+            "next": "下一步：跟进 Acme。",
+            "northstar": "Northstar",
+            "proposal": "方案已发送"
+          },
+          "software": {
+            "context": "2 项已合并 · 1 个待解决问题",
+            "issue": "CSV 导出失败",
+            "search": "提升搜索速度",
+            "signup": "简化注册流程"
+          }
+        },
+        "expandLabel": "看看连接后能获得什么",
+        "industries": {
+          "coaching": {
+            "description": "明确目标、议程和下一步行动，为下一次课程做好准备。",
+            "title": "课程准备计划"
+          },
+          "consulting": {
+            "description": "整理客户沟通，准备好会议所需的背景和下一步安排。",
+            "title": "客户会前简报"
+          },
+          "design": {
+            "description": "把客户 brief 和品牌素材整理成清晰的创作计划。",
+            "title": "创意简报"
+          },
+          "finance": {
+            "description": "汇总收入、支出和待对账项目，快速掌握月结情况。",
+            "title": "月结概览"
+          },
+          "investing": {
+            "description": "汇总公司指标和研究笔记，形成清晰的对比。",
+            "title": "公司研究对比"
+          },
+          "marketing": {
+            "description": "对比广告表现，找到下一步值得优化的方向。",
+            "title": "广告表现简报"
+          },
+          "operations": {
+            "description": "从邮件和请求中整理出本周需要关注的重点。",
+            "title": "本周工作计划"
+          },
+          "other": {
+            "description": "连接常用工具，从近期消息中找到一个有用的下一步。",
+            "title": "下一步行动"
+          },
+          "research": {
+            "description": "从零散笔记中提炼关键发现、依据和下一步问题。",
+            "title": "研究要点摘要"
+          },
+          "sales": {
+            "description": "找到需要关注的商机，结合已有沟通准备下一次跟进。",
+            "title": "客户跟进摘要"
+          },
+          "software": {
+            "description": "汇总近期变更和未解决问题，形成可分享的团队进展。",
+            "title": "版本进展摘要"
+          }
+        },
+        "title": "让常用工具帮你完成工作"
+      },
       "prompt": {
         "connectorsDescription": "连接这些工具，让 Okou 更了解你的工作场景，更有针对性地帮你完成任务。也可以稍后再连接。",
         "connectorsTitle": "连接你的工作工具",

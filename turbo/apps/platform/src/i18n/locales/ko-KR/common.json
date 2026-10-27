@@ -4206,6 +4206,145 @@
         "teamCopy": "같은 워크스페이스에서 협업하세요.",
         "teamTitle": "팀원 초대"
       },
+      "outcomes": {
+        "accessibleLabel": "{{source}}에서 정리한 {{title}} 예시입니다. 모든 내용은 샘플 데이터입니다.",
+        "examples": {
+          "coaching": {
+            "context": "목요일 10:00 · 45분 세션",
+            "next": "다음 단계 설정",
+            "nextTime": "10분",
+            "practice": "새로운 기술 연습",
+            "practiceTime": "25분",
+            "review": "지난 세션 복습",
+            "reviewTime": "10분"
+          },
+          "consulting": {
+            "agenda": "범위와 일정",
+            "background": "배경",
+            "context": "Acme Studio · 목요일 10:00",
+            "discuss": "논의",
+            "expansion": "사업 확장 예정",
+            "goal": "목표",
+            "objective": "온보딩 개선"
+          },
+          "design": {
+            "brandGuide": "브랜드 가이드",
+            "clientBrief": "고객 브리프",
+            "deliverables": "제작물",
+            "direction": "시각적 방향",
+            "photos": "제품 사진",
+            "positioning": "친환경 소비자에게 “같은 케어, 더 적은 낭비”.",
+            "project": "리필 스킨케어 출시",
+            "scope": "랜딩 페이지 + 광고 3개",
+            "visuals": "깔끔한 제품 클로즈업"
+          },
+          "finance": {
+            "context": "10월 · 월말 검토",
+            "expenses": "지출",
+            "income": "수입",
+            "reconcile": "대사 필요",
+            "transactions": "거래 3건"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "매출 성장률",
+            "margin": "매출총이익률",
+            "metric": "지표",
+            "northstar": "Northstar",
+            "watch": "주목: 고객 집중도."
+          },
+          "marketing": {
+            "comparison": "이전 7일 대비",
+            "period": "최근 7일"
+          },
+          "operations": {
+            "agenda": "팀 안건 확인",
+            "context": "이번 주 · 우선순위 3개",
+            "friday": "금요일",
+            "quote": "공급업체 견적 검토",
+            "today": "오늘",
+            "tuesday": "화요일",
+            "update": "프로젝트 현황 공유"
+          },
+          "other": {
+            "brief": "공유된 브리프 검토",
+            "call": "내일 통화 확인",
+            "context": "최근 이메일에서",
+            "reply": "Alex에게 답장"
+          },
+          "research": {
+            "action": "안내가 있는 첫 작업 테스트",
+            "context": "고객 인터뷰 · 메모 5개",
+            "evidence": "근거",
+            "finding": "발견",
+            "insight": "설정에 너무 오래 걸림",
+            "interviews": "인터뷰 5건 중 3건",
+            "next": "다음"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "관심이 필요한 거래 2건",
+            "demo": "내일 데모",
+            "next": "다음: Acme에 후속 연락.",
+            "northstar": "Northstar",
+            "proposal": "제안 발송 완료"
+          },
+          "software": {
+            "context": "병합 2건 · 미해결 1건",
+            "issue": "CSV 내보내기 실패",
+            "search": "더 빠른 검색",
+            "signup": "간편한 가입"
+          }
+        },
+        "expandLabel": "연결 후 얻을 수 있는 결과 보기",
+        "industries": {
+          "coaching": {
+            "description": "목표, 진행 순서, 다음 단계를 정리해 다음 세션을 준비하세요.",
+            "title": "세션 계획"
+          },
+          "consulting": {
+            "description": "고객과의 대화에서 배경과 다음 단계를 정리해 미팅을 준비하세요.",
+            "title": "고객 미팅 브리프"
+          },
+          "design": {
+            "description": "고객 브리프와 브랜드 자료를 명확한 제작 계획으로 정리하세요.",
+            "title": "크리에이티브 브리프"
+          },
+          "finance": {
+            "description": "수입, 지출, 대사가 필요한 항목을 월말 요약으로 정리하세요.",
+            "title": "월말 결산 요약"
+          },
+          "investing": {
+            "description": "기업 지표와 조사 메모를 검토하기 쉬운 비교표로 정리하세요.",
+            "title": "기업 비교"
+          },
+          "marketing": {
+            "description": "캠페인 지표를 비교하고 다음으로 개선할 부분을 찾아보세요.",
+            "title": "광고 성과 요약"
+          },
+          "operations": {
+            "description": "이메일과 요청에서 이번 주에 집중할 일을 정리하세요.",
+            "title": "이번 주 할 일"
+          },
+          "other": {
+            "description": "자주 쓰는 도구를 연결하고 최근 메시지에서 다음 행동을 찾아보세요.",
+            "title": "다음 단계"
+          },
+          "research": {
+            "description": "흩어진 메모에서 핵심 발견, 근거, 다음 질문을 정리하세요.",
+            "title": "리서치 요약"
+          },
+          "sales": {
+            "description": "관리가 필요한 거래를 확인하고 맥락에 맞는 후속 조치를 준비하세요.",
+            "title": "영업 후속 조치"
+          },
+          "software": {
+            "description": "최근 변경 사항과 미해결 문제를 팀에 공유할 요약으로 정리하세요.",
+            "title": "릴리스 요약"
+          }
+        },
+        "title": "자주 쓰는 도구로 일을 시작하세요"
+      },
       "prompt": {
         "connectorsDescription": "업무 도구를 연결하면 Okou가 업무 맥락을 이해하고 상황에 맞게 작업을 수행할 수 있어요. 나중에 연결해도 됩니다.",
         "connectorsTitle": "업무 도구 연결",
