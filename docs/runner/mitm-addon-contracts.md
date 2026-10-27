@@ -665,6 +665,18 @@ frame overhead. Within it, the existing hard decoded-output limit, strict
 remain effective. Response capture and JSON-usage decoding keep their existing
 policies.
 
+Brotli request capture likewise admits at most 128 KiB of retained compressed
+input before constructing a decoder. Metadata blocks can consume compressed
+input without producing decoded bytes, so decoded-output limits alone do not
+bound their traversal. Larger inputs omit capture with the existing `binary`
+failure representation, even when an early decoded prefix could otherwise be
+retained. This separate Brotli allowance leaves headroom for incompressible
+64 KiB content and framing. Within it, ordinary captures, bounded decoded
+prefixes, malformed/incomplete-input handling and the decoded-output cap retain
+their existing behavior. The shared Brotli decoder, JSON usage, response capture
+and streaming-response policies are unchanged; the input gate does not create a
+byte-exact transient output-allocation guarantee.
+
 Production zstd decoding uses `compression.zstd` on the pinned standalone's
 Python 3.14.0 interpreter, which is also used by tests and static checks. Every
 `decompress` call supplies a positive `max_length`, bounded by both the remaining
@@ -679,7 +691,7 @@ budget exhaustion. Prefix completion alone does not establish complete compresse
 input: capture and JSON usage retain their separate complete-frame validation
 and failure policies.
 
-These budgets bound repeated decoder construction and zstd compressed input;
+These budgets bound repeated decoder construction and Brotli/zstd capture input;
 they are not general CPU deadlines for every compression pattern within a frame
 or member.
 

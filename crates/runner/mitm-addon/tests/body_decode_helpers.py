@@ -136,6 +136,8 @@ def track_brotli_decompressor(monkeypatch):
     real_decompressor = brotli.Decompressor
     stats = {
         "calls": 0,
+        "objects": 0,
+        "input_bytes": 0,
         "max_input": 0,
         "max_output": 0,
         "max_output_buffer_limit": 0,
@@ -143,10 +145,12 @@ def track_brotli_decompressor(monkeypatch):
 
     class CountingDecompressor:
         def __init__(self):
+            stats["objects"] += 1
             self._inner = real_decompressor()
 
         def process(self, chunk: bytes, output_buffer_limit: int = 0) -> bytes:
             stats["calls"] += 1
+            stats["input_bytes"] += len(chunk)
             stats["max_input"] = max(stats["max_input"], len(chunk))
             stats["max_output_buffer_limit"] = max(
                 stats["max_output_buffer_limit"],
