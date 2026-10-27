@@ -237,7 +237,7 @@ private struct ComposerRemoteControls: View {
           }
         }
         Section {
-          ForEach(remotes.computerUseHosts) { host in
+          ForEach(store.visibleComputerUseHosts) { host in
             Toggle(
               isOn: Binding(
                 get: { store.computerAccess.computerUseHostId == host.id },
@@ -259,8 +259,8 @@ private struct ComposerRemoteControls: View {
             .tint(.green)
             .disabled(store.isSaving)
           }
-          if remotes.computerUseHosts.isEmpty {
-            Text("No computers connected").foregroundStyle(.secondary)
+          if store.visibleComputerUseHosts.isEmpty {
+            Text("No online computers").foregroundStyle(.secondary)
           }
           Button("Connect my computer") { showsDesktopSetup = true }
         } header: {
