@@ -128,9 +128,11 @@ export const disconnectConnectorAccountCommand = accountCommand(
     `
 Disconnect removes this saved account for the user across all Agents, not just
 this Agent's access. Use account impact to inspect affected references first.
-Reconnecting may be difficult: the user may need to sign in to the target website
-again. Do not disconnect as a routine troubleshooting step. To remove only this
-Agent's access while keeping the saved account, use connector unauthorize.
+Reconnecting after disconnect may require the user to sign in to the target
+website again or provide the API token again. If the user has forgotten their
+password, cannot sign in, or has lost the API token, they may be unable to
+reconnect. To remove only this Agent's access while keeping the saved account,
+use connector unauthorize.
 
 Examples:
   okou connector account disconnect github --connection-id <uuid>

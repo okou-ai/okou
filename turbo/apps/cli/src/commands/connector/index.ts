@@ -48,8 +48,7 @@ Connection and access:
   flows. Neither command changes Agent grants or fine-grained permissions.
   Use unauthorize to remove an Agent's connector grant directly.
   Use account disconnect --connection-id <uuid> to remove a saved account across
-  all Agents. Reconnecting may require signing in to the target website again;
-  do not disconnect as routine troubleshooting.
+  all Agents. See account disconnect --help for reconnection risks.
 
 Run context:
   Inside a run, omit --agent to use the current Agent (OKOU_AGENT_ID).
