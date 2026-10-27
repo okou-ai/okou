@@ -4,11 +4,12 @@
 //! capacity from the RPC result through this owned job and executor handoff.
 
 use std::panic::AssertUnwindSafe;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use runner_provider::{ClaimedJob, RunCancellationRegistration};
 use runner_types::ids::RunId;
+use tracing::{info, warn};
 
 use super::job_discovery::{
     DiscoveredJobProfile, build_spawn_job_request, claimed_activation_resources,
@@ -18,10 +19,13 @@ use crate::claimed_activation::{
     ClaimedActivationError, ClaimedActivationGuard, ClaimedJobSetup, ReadyClaimedResource,
 };
 use crate::executor::{
-    BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
+    BlankPoolSelection, PeerHomeWaitOutcome, RunnerPreSpawnTiming, validate_resume_session_id,
 };
 use crate::resource_budget::BudgetLease;
 use runner_types::types::SandboxReuseResult;
+
+const HOME_RECHECK_INITIAL_DELAY: Duration = Duration::from_millis(50);
+const HOME_RECHECK_MAX_DELAY: Duration = Duration::from_secs(1);
 
 pub(super) struct PeerHomeClaimRequest {
     pub(super) source_run_id: RunId,
@@ -108,8 +112,8 @@ impl PeerHomeClaim {
                 .await);
         }
         let started_at = Instant::now();
-        let home_source_run_id = match self.wait_for_home(&ctx).await {
-            Ok(source) => source,
+        let (home_source_run_id, outcome) = match self.wait_for_home(&ctx).await {
+            Ok(result) => result,
             Err(error) => {
                 return Ok(self
                     .activation
@@ -120,9 +124,17 @@ impl PeerHomeClaim {
             }
         };
         let setup = self.activation.setup()?;
+        let elapsed = started_at.elapsed();
+        info!(
+            run_id = %setup.claimed.context().run_id,
+            source_run_id = %self.source_run_id,
+            outcome = outcome.as_str(),
+            elapsed_ms = elapsed.as_millis(),
+            "claimed peer Home wait completed"
+        );
         setup
             .pre_spawn_timing
-            .record_phase_elapsed(RunnerPreSpawnPhase::FinalizingWait, started_at);
+            .record_peer_home_wait(elapsed, outcome);
         if setup.cancellation.handle().is_cancelled() {
             return Ok(self
                 .activation
@@ -165,30 +177,72 @@ impl PeerHomeClaim {
     async fn wait_for_home(
         &mut self,
         ctx: &SpawnContext,
-    ) -> Result<Option<RunId>, ClaimedActivationError> {
-        if ctx.exec_config.home_cache.is_none() {
-            return Ok(None);
-        }
+    ) -> Result<(Option<RunId>, PeerHomeWaitOutcome), ClaimedActivationError> {
+        let Some(cache) = ctx.exec_config.home_cache.as_ref() else {
+            return Ok((None, PeerHomeWaitOutcome::Unavailable));
+        };
         let setup = self.activation.setup()?;
         let Some(reuse_key) = setup.claimed.context().reuse_key().map(str::to_owned) else {
-            return Ok(None);
+            return Ok((None, PeerHomeWaitOutcome::Unavailable));
         };
+        let run_id = setup.claimed.context().run_id;
         let profile = setup.profile_name.clone();
+        let image_size_bytes = u64::from(setup.home_disk_mb) * 1024 * 1024;
         let cancelled = setup.cancellation.handle().token();
         let mut committed = ctx.home_cache_snapshot.subscribe_committed();
         let deadline = tokio::time::Instant::from_std(self.deadline);
+        let mut recheck_delay = HOME_RECHECK_INITIAL_DELAY;
+        let mut recheck_at = tokio::time::Instant::now() + recheck_delay;
         loop {
+            if cancelled.is_cancelled() {
+                return Ok((None, PeerHomeWaitOutcome::Cancelled));
+            }
             if ctx.home_cache_snapshot.contains_source_home(
                 &reuse_key,
                 &profile,
                 self.source_run_id,
             ) {
-                return Ok(Some(self.source_run_id));
+                return Ok((Some(self.source_run_id), PeerHomeWaitOutcome::SnapshotReady));
             }
             tokio::select! {
                 biased;
-                () = cancelled.cancelled() => return Ok(None),
-                () = tokio::time::sleep_until(deadline) => return Ok(None),
+                () = cancelled.cancelled() => return Ok((None, PeerHomeWaitOutcome::Cancelled)),
+                () = tokio::time::sleep_until(deadline) => return Ok((None, PeerHomeWaitOutcome::PreferenceExpired)),
+                () = tokio::time::sleep_until(recheck_at) => {
+                    // The claimed job owns this read through completion. Busy
+                    // never blocks on a predecessor and a positive observation
+                    // still requires ordinary source-bound locked checkout.
+                    let observed = cache.probe_source_home(
+                        &reuse_key,
+                        &profile,
+                        image_size_bytes,
+                        self.source_run_id,
+                    ).await;
+                    #[cfg(test)]
+                    ctx.test_observer.record(super::StartLoopEvent::PeerHomeRecheckCompleted {
+                        run_id,
+                        ready: observed.as_ref().is_ok_and(|ready| *ready),
+                    });
+                    if cancelled.is_cancelled() {
+                        return Ok((None, PeerHomeWaitOutcome::Cancelled));
+                    }
+                    let now = tokio::time::Instant::now();
+                    if now >= deadline {
+                        return Ok((None, PeerHomeWaitOutcome::PreferenceExpired));
+                    }
+                    match observed {
+                        Ok(true) => return Ok((Some(self.source_run_id), PeerHomeWaitOutcome::RevalidatedReady)),
+                        Ok(false) => {}
+                        Err(error) => warn!(
+                            %run_id,
+                            source_run_id = %self.source_run_id,
+                            %error,
+                            "claimed peer Home revalidation failed; retaining original wait"
+                        ),
+                    }
+                    recheck_delay = (recheck_delay * 2).min(HOME_RECHECK_MAX_DELAY);
+                    recheck_at = now + recheck_delay;
+                },
                 update = committed.changed() => {
                     // This task retains the snapshot and its sender through ctx.
                     update?;

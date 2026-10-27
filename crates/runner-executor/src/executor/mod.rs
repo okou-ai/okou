@@ -59,8 +59,8 @@ use sandbox_run::{FreshPreparation, NewSandboxHooks, execute_new_sandbox_with_pr
 pub use telemetry::{
     BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
     FinalizingDiagnostics, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
-    FinalizingHandoffReason, RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming,
-    RunnerPreSpawnPhase, RunnerPreSpawnTiming,
+    FinalizingHandoffReason, PeerHomeWaitOutcome, RunnerPreSpawnConcurrency,
+    RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
 use telemetry::{RunnerSpawnTiming, record_api_latency};
 

@@ -16,7 +16,7 @@ use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
 use super::super::env::guest_connector_account_context_file_path;
 use super::super::telemetry::{
-    RunnerPreSpawnPhase, RunnerSpawnTiming, elapsed_since_api_start_ms,
+    PeerHomeWaitOutcome, RunnerPreSpawnPhase, RunnerSpawnTiming, elapsed_since_api_start_ms,
     record_api_startup_boundaries,
 };
 use super::super::{
@@ -100,6 +100,30 @@ fn pre_finalization_deadline_records_bounded_handoff_outcome() {
                     && operation.3.as_deref() == Some("pre_finalization_deadline")
             })
     );
+}
+
+#[test]
+fn peer_home_wait_records_its_outcome_and_preserves_the_aggregate() {
+    for outcome in [
+        PeerHomeWaitOutcome::RevalidatedReady,
+        PeerHomeWaitOutcome::PreferenceExpired,
+    ] {
+        let mut telemetry = new_telemetry();
+        let mut timing = RunnerPreSpawnTiming::start_after_claim();
+        timing.record_peer_home_wait(Duration::from_millis(123), outcome);
+        RunnerSpawnTiming::start(Some(timing)).record_claim_to_executor_start(&mut telemetry);
+        assert_action_once_with_duration(&telemetry, "runner_claim_finalizing_wait", 123);
+        assert_action_once_with_duration(&telemetry, "runner_claim_peer_home_wait", 123);
+        assert!(
+            telemetry
+                .pending_ops_with_outcome_snapshot()
+                .iter()
+                .any(|operation| {
+                    operation.0 == "runner_claim_peer_home_wait"
+                        && operation.2.as_deref() == Some(outcome.as_str())
+                })
+        );
+    }
 }
 
 #[test]

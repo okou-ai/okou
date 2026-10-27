@@ -1184,7 +1184,7 @@ impl HomeImageCache {
         })
     }
 
-    async fn metadata_is_publishable_held_home_state(
+    pub(super) async fn metadata_is_publishable_held_home_state(
         &self,
         cache_key: &str,
         metadata: &HomeCacheMetadata,
