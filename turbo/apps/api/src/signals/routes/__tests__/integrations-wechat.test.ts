@@ -1,4 +1,6 @@
 import { integrationsWechatMessagesContract } from "@okouai/api-contracts/contracts/integrations-wechat-messages";
+import { cronAuditRunSettlementContract } from "@okouai/api-contracts/contracts/run-settlement";
+import { cronAuditRunSettlementRoutes } from "../cron-audit-run-settlement";
 import {
   integrationsWechatUploadInitContract,
   integrationsWechatUploadMaterializeContract,
@@ -543,6 +545,13 @@ describe("WeChat reply presentation and processing status", () => {
   it.each([false, true])(
     "recovers a reply after a pre-send failure (partial=%s)",
     async (partial) => {
+      const audit = (
+        await setupApp({
+          context,
+          routes: cronAuditRunSettlementRoutes,
+          isolatePg: true,
+        })
+      )(cronAuditRunSettlementContract);
       const fixture = await responseFixture();
       await fixture.receive("Recover my reply");
       const run = await fixture.claim();
@@ -607,6 +616,23 @@ describe("WeChat reply presentation and processing status", () => {
         [500],
       );
       expect(chunks).toHaveLength(partial ? 1 : 0);
+      const blocked = await accept(
+        audit.audit({
+          headers: { authorization: "Bearer test-cron-secret" },
+          query: { limit: 100 },
+        }),
+        [200],
+      );
+      expect(blocked.body).toMatchObject({
+        scannedRuns: 1,
+        observedCompleteRuns: 0,
+        blockedRuns: 1,
+        callbacks: { pending: 1, recoverableFailure: 1, policyFinished: 0 },
+      });
+      expect(blocked.body.blockers).toStrictEqual([
+        { reason: "callback_pending", runs: 1 },
+        { reason: "callback_recoverable_failure", runs: 1 },
+      ]);
       unavailable = false;
       if (partial) {
         // Recovery also runs without another completion request from the runner.
@@ -637,8 +663,64 @@ describe("WeChat reply presentation and processing status", () => {
       );
       expect(chunks).toHaveLength(2);
       expect(chunks.join("")).toBe(`${text}\n\nClaude Fable 5.1`);
+      const recovered = await accept(
+        audit.audit({
+          headers: { authorization: "Bearer test-cron-secret" },
+          query: { limit: 100 },
+        }),
+        [200],
+      );
+      expect(recovered.body).toMatchObject({
+        scannedRuns: 1,
+        observedCompleteRuns: 1,
+        blockedRuns: 0,
+        blockers: [],
+      });
     },
   );
+
+  it("reports an ambiguous reply as finished under the existing no-resend policy", async () => {
+    const audit = (
+      await setupApp({
+        context,
+        routes: cronAuditRunSettlementRoutes,
+        isolatePg: true,
+      })
+    )(cronAuditRunSettlementContract);
+    const fixture = await responseFixture();
+    await fixture.receive("Return an answer once");
+    const run = await fixture.claim();
+    let sends = 0;
+    server.use(
+      http.post(`${origin}/ilink/bot/sendmessage`, () => {
+        sends++;
+        return HttpResponse.error();
+      }),
+    );
+    await fixture.finish(run, "Ambiguous reply");
+    await flushWaitUntilForTest();
+    const request = {
+      headers: { authorization: "Bearer test-cron-secret" },
+      query: { limit: 100 },
+    };
+    const report = await accept(audit.audit(request), [200]);
+    expect(report.body).toMatchObject({
+      scannedRuns: 1,
+      observedCompleteRuns: 1,
+      blockedRuns: 0,
+      blockers: [],
+      callbacks: {
+        delivered: 1,
+        policyFinished: 1,
+        pending: 0,
+        recoverableFailure: 0,
+        unknown: 0,
+      },
+    });
+    const repeated = await accept(audit.audit(request), [200]);
+    expect(repeated.body.callbacks).toStrictEqual(report.body.callbacks);
+    expect(sends).toBe(1);
+  });
 
   it("accepts new input while reply recovery is waiting for WeChat", async () => {
     const fixture = await responseFixture();
