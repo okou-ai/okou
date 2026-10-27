@@ -3624,8 +3624,8 @@
         "manageConnection": "Manage connected account",
         "open": "Open Telegram",
         "openSetup": "Open setup",
-        "setupDescription": "Choose a default agent in setup, then return here to connect Telegram.",
-        "setupMemberDescription": "Ask a workspace administrator to choose a default agent, then return here.",
+        "setupDescription": "Finish workspace setup to initialize Okou, then return here to connect Telegram.",
+        "setupMemberDescription": "Ask a workspace administrator to finish setup and initialize Okou, then return here.",
         "setupTitle": "Finish account setup",
         "successDescription": "Send the bot a message in Telegram to start chatting.",
         "successTitle": "Connected to Telegram!"
@@ -5520,7 +5520,7 @@
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent.",
         "description": "Daily priorities by 7:00 AM in your time zone.",
         "errorMessage": "Morning Brief settings could not be loaded or updated.",
-        "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
+        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
@@ -5529,7 +5529,7 @@
       "proactiveLearning": {
         "description": "Review your activity overnight and improve personal memory.",
         "errorMessage": "Could not load or update this setting.",
-        "missingDefaultAgent": "Choose an available default Agent.",
+        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "This workflow is temporarily unavailable.",
         "preparing": "Preparing this workflow.",
@@ -5538,7 +5538,7 @@
       "proactivePlanningAction": {
         "description": "Plan and carry out your delegated work, and notify you when your input is needed.",
         "errorMessage": "Could not load or update this setting.",
-        "missingDefaultAgent": "Choose an available default Agent.",
+        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "This workflow is temporarily unavailable.",
         "preparing": "Preparing this workflow.",
@@ -5547,7 +5547,7 @@
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
         "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
-        "missingDefaultAgent": "Choose a usable default Agent to receive proactive suggestions.",
+        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",

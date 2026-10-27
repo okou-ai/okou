@@ -542,7 +542,6 @@
         "label": "How they sound"
       },
       "visibility": {
-        "defaultDescription": "The workspace default agent must remain public for all workspace members.",
         "description": "Visible to everyone in this workspace.",
         "label": "Make public"
       }

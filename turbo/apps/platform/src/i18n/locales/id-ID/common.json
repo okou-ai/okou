@@ -3611,8 +3611,8 @@
         "manageConnection": "Kelola akun terhubung",
         "open": "Buka Telegram",
         "openSetup": "Buka pengaturan awal",
-        "setupDescription": "Pilih agen default di pengaturan, lalu kembali ke sini untuk menghubungkan Telegram.",
-        "setupMemberDescription": "Minta administrator ruang kerja memilih agen default, lalu kembali ke sini.",
+        "setupDescription": "Selesaikan pengaturan ruang kerja untuk menginisialisasi Okou, lalu kembali ke sini untuk menghubungkan Telegram.",
+        "setupMemberDescription": "Minta administrator ruang kerja menyelesaikan pengaturan dan menginisialisasi Okou, lalu kembali ke sini.",
         "setupTitle": "Selesaikan pengaturan akun",
         "successDescription": "Kirim pesan ke bot di Telegram untuk mulai mengobrol.",
         "successTitle": "Berhasil tersambung ke Telegram!"
@@ -5505,7 +5505,7 @@
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten.",
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
         "errorMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
@@ -5514,7 +5514,7 @@
       "proactiveLearning": {
         "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
         "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang tersedia.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
@@ -5523,7 +5523,7 @@
       "proactivePlanningAction": {
         "description": "Rencanakan dan kerjakan tugas yang Anda delegasikan, serta beri tahu saat masukan Anda diperlukan.",
         "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang tersedia.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
         "preparing": "Menyiapkan alur kerja ini.",
@@ -5532,7 +5532,7 @@
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",

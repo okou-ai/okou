@@ -3680,8 +3680,8 @@
         "manageConnection": "Gérer le compte connecté",
         "open": "Ouvrir Telegram",
         "openSetup": "Ouvrir la configuration",
-        "setupDescription": "Choisissez un agent par défaut dans la configuration, puis revenez ici pour connecter Telegram.",
-        "setupMemberDescription": "Demandez à un administrateur de l’espace de travail de choisir un agent par défaut, puis revenez ici.",
+        "setupDescription": "Terminez la configuration de l’espace de travail pour initialiser Okou, puis revenez ici pour connecter Telegram.",
+        "setupMemberDescription": "Demandez à un administrateur de terminer la configuration de l’espace de travail et d’initialiser Okou, puis revenez ici.",
         "setupTitle": "Terminer la configuration du compte",
         "successDescription": "Envoyez un message au bot dans Telegram pour commencer à discuter.",
         "successTitle": "Connecté à Telegram !"
@@ -5585,7 +5585,7 @@
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent.",
         "description": "Vos priorités quotidiennes avant 7 h dans votre fuseau horaire.",
         "errorMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "preparationFailed": "Temporairement indisponible.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
@@ -5594,7 +5594,7 @@
       "proactiveLearning": {
         "description": "Passe en revue votre activité la nuit et améliore la mémoire personnelle.",
         "errorMessage": "Impossible de charger ou modifier ce réglage.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut disponible.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Ce workflow est temporairement indisponible.",
         "preparing": "Préparation de ce workflow.",
@@ -5603,7 +5603,7 @@
       "proactivePlanningAction": {
         "description": "Planifie et réalise le travail que vous déléguez et vous prévient lorsque votre intervention est nécessaire.",
         "errorMessage": "Impossible de charger ou modifier ce réglage.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut disponible.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Ce workflow est temporairement indisponible.",
         "preparing": "Préparation de ce workflow.",
@@ -5612,7 +5612,7 @@
       "proactiveSuggestions": {
         "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
         "errorMessage": "Impossible de charger ou de modifier ces paramètres.",
-        "missingDefaultAgent": "Choisissez un Agent par défaut disponible pour recevoir des suggestions proactives.",
+        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Temporairement indisponible.",
         "preparing": "Préparation des suggestions horaires. Vous pouvez les désactiver à tout moment.",

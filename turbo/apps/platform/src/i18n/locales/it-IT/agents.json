@@ -542,7 +542,6 @@
         "label": "Come comunica"
       },
       "visibility": {
-        "defaultDescription": "L’agente predefinito dell’area di lavoro deve rimanere pubblico per tutti i membri.",
         "description": "Visibile a tutti in quest'area di lavoro.",
         "label": "Rendi pubblico"
       }

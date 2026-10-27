@@ -31,7 +31,6 @@ import {
   AlertTitle,
 } from "@okouai/ui/components/ui/alert";
 import { type Tone, TONE_OPTIONS } from "./tone-constants.ts";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { detach, Reason } from "../../signals/utils.ts";
 import { UnsavedBar } from "./unsaved-bar.tsx";
 import type { Command } from "ccstate";
@@ -49,7 +48,6 @@ import {
 import { resolveAvatarSvgConfig } from "./avatar-utils.ts";
 import { AvatarSvgPreview } from "./avatar-svg-preview.tsx";
 import { AvatarMaker } from "./avatar-maker.tsx";
-import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import {
   type AgentDeleteWorkflow,
   settingsFormDraft$,
@@ -91,33 +89,17 @@ interface SettingsTabProps {
     ]
   >;
   inputId?: string;
-  /** Authoritative identity; undefined keeps protected controls read-only. */
-  isDefaultAgent?: boolean;
   /** Callback to delete the agent. */
   onDelete?: () => Promise<void>;
 }
 
 function AvatarSettingsControl({
-  isDefaultAgent,
   avatarUrl,
-  alt,
   onConfirm,
 }: {
-  isDefaultAgent: boolean | undefined;
   avatarUrl: string | null;
-  alt: string;
   onConfirm: (config: AvatarSvgConfig, signal: AbortSignal) => Promise<void>;
 }) {
-  if (isDefaultAgent !== false) {
-    return (
-      <AvatarFromUrl
-        avatarUrl={avatarUrl}
-        alt={alt}
-        className="h-12 w-12 shrink-0 rounded-full object-cover object-top"
-      />
-    );
-  }
-
   // An existing avatar is its own edit entry, so the dashed circle stays
   // exclusive to the empty state and never reads as "add another avatar".
   const resolved = resolveAvatarSvgConfig(avatarUrl);
@@ -177,47 +159,19 @@ function AvatarEditButton({
   );
 }
 
-function resolveAgentName(
-  name: string,
-  isDefaultAgent: boolean | undefined,
-): string {
-  if (isDefaultAgent) {
-    return DEFAULT_AGENT_DISPLAY_NAME;
-  }
-  return name;
-}
-
-function omitForDefaultAgent<T>(
-  value: T,
-  isDefaultAgent: boolean | undefined,
-): T | undefined {
-  if (isDefaultAgent !== false) {
-    return undefined;
-  }
-  return value;
-}
-
 function AgentNameControl({
   name,
-  isDefaultAgent,
   inputId,
   label,
   placeholder,
   onChange,
 }: {
   name: string;
-  isDefaultAgent: boolean | undefined;
   inputId: string;
   label: string;
   placeholder: string;
   onChange: (name: string) => void;
 }) {
-  if (isDefaultAgent !== false) {
-    return (
-      <p className="flex h-9 items-center text-sm text-foreground">{name}</p>
-    );
-  }
-
   return (
     <Input
       id={inputId}
@@ -229,39 +183,6 @@ function AgentNameControl({
       className="h-9 w-full"
       aria-label={label}
     />
-  );
-}
-
-function DefaultAgentVisibility({
-  isDefaultAgent,
-  visibility,
-}: {
-  isDefaultAgent: boolean | undefined;
-  visibility: "public" | "private";
-}) {
-  const { t } = useTranslation("agents");
-  if (isDefaultAgent !== true) {
-    return null;
-  }
-  return (
-    <InlineSettingsRow
-      label={t(($) => {
-        return $.list.create.visibilityLabel;
-      })}
-      description={t(($) => {
-        return $.profile.fields.visibility.defaultDescription;
-      })}
-    >
-      <p className="text-sm text-foreground">
-        {visibility === "public"
-          ? t(($) => {
-              return $.list.tabs.public;
-            })
-          : t(($) => {
-              return $.list.tabs.private;
-            })}
-      </p>
-    </InlineSettingsRow>
   );
 }
 
@@ -287,7 +208,6 @@ export function SettingsTab({
   canEditVisibility = true,
   updateSettings$,
   inputId = "okou-agent-name",
-  isDefaultAgent,
   onDelete,
   deleteWorkflows,
   deleteWorkflowsState,
@@ -295,12 +215,8 @@ export function SettingsTab({
   onCopyWorkflowBeforeDelete,
 }: SettingsTabProps) {
   const { t } = useTranslation("agents");
-  const presentedAgentName = resolveAgentName(
-    resolvedAgentName,
-    isDefaultAgent,
-  );
   const defaults = {
-    name: presentedAgentName,
+    name: resolvedAgentName,
     description: initialDescription,
     tone: initialSound,
     avatarUrl: initialAvatarUrl,
@@ -310,13 +226,12 @@ export function SettingsTab({
   const values =
     draft?.agentId === agentId ? { ...defaults, ...draft.patch } : defaults;
   const {
-    name: draftAgentName,
+    name: agentName,
     description: desc,
     tone,
     avatarUrl,
     visibility,
   } = values;
-  const agentName = resolveAgentName(draftAgentName, isDefaultAgent);
   const isSettingsDirty =
     agentName !== defaults.name ||
     desc !== defaults.description ||
@@ -339,9 +254,8 @@ export function SettingsTab({
 
   const demoteConfirmOpen = useGet(agentDemoteConfirmOpen$);
   const setDemoteConfirmOpen = useSet(setAgentDemoteConfirmOpen$);
-  const canChangeVisibility = canEditVisibility && isDefaultAgent === false;
   const willDemoteVisibility = willDemoteAgentVisibility(
-    canChangeVisibility,
+    canEditVisibility,
     initialVisibility,
     visibility,
   );
@@ -412,11 +326,11 @@ export function SettingsTab({
       (async () => {
         await triggerUpdateSettings(
           {
-            displayName: omitForDefaultAgent(agentName, isDefaultAgent),
+            displayName: agentName,
             description: desc,
             sound: tone,
-            avatarUrl: omitForDefaultAgent(avatarUrl, isDefaultAgent),
-            ...(canChangeVisibility ? { visibility } : {}),
+            avatarUrl,
+            ...(canEditVisibility ? { visibility } : {}),
           },
           pageSignal,
         );
@@ -447,21 +361,15 @@ export function SettingsTab({
               label={t(($) => {
                 return $.profile.fields.avatar.label;
               })}
-              description={
-                isDefaultAgent
-                  ? undefined
-                  : t(($) => {
-                      return $.profile.fields.avatar.description;
-                    })
-              }
+              description={t(($) => {
+                return $.profile.fields.avatar.description;
+              })}
               wideControls
             >
               <div className="min-w-0 w-full">
                 <div className="flex flex-wrap gap-2 items-center">
                   <AvatarSettingsControl
-                    isDefaultAgent={isDefaultAgent}
                     avatarUrl={avatarUrl}
-                    alt={resolvedAgentName}
                     onConfirm={async (cfg, signal) => {
                       const newAvatarUrl = serializeAvatarSvgConfig(cfg);
                       patchForm({
@@ -470,14 +378,11 @@ export function SettingsTab({
                       });
                       await updateSettings(
                         {
-                          displayName: omitForDefaultAgent(
-                            agentName,
-                            isDefaultAgent,
-                          ),
+                          displayName: agentName,
                           description: desc,
                           sound: tone,
                           avatarUrl: newAvatarUrl,
-                          ...(canChangeVisibility ? { visibility } : {}),
+                          ...(canEditVisibility ? { visibility } : {}),
                         },
                         signal,
                       );
@@ -497,18 +402,14 @@ export function SettingsTab({
               label={t(($) => {
                 return $.profile.fields.name.label;
               })}
-              description={omitForDefaultAgent(
-                t(($) => {
-                  return $.profile.fields.name.description;
-                }),
-                isDefaultAgent,
-              )}
+              description={t(($) => {
+                return $.profile.fields.name.description;
+              })}
               wideControls
             >
               <div className="min-w-0 w-full">
                 <AgentNameControl
                   name={agentName}
-                  isDefaultAgent={isDefaultAgent}
                   inputId={inputId}
                   label={t(($) => {
                     return $.profile.fields.name.label;
@@ -570,7 +471,7 @@ export function SettingsTab({
                   ($) => {
                     return $.profile.fields.tone.accessibilityLabel;
                   },
-                  { agentName: presentedAgentName },
+                  { agentName: resolvedAgentName },
                 )}
               >
                 <div
@@ -625,11 +526,7 @@ export function SettingsTab({
                 </div>
               </div>
             </InlineSettingsRow>
-            <DefaultAgentVisibility
-              isDefaultAgent={isDefaultAgent}
-              visibility={initialVisibility}
-            />
-            {canChangeVisibility && (
+            {canEditVisibility && (
               <InlineSettingsRow
                 label={t(($) => {
                   return $.profile.fields.visibility.label;
@@ -655,10 +552,10 @@ export function SettingsTab({
           </CardContent>
         </Card>
 
-        {isDefaultAgent === false && onDelete && (
+        {onDelete && (
           <AgentDeleteDialog
             agentId={agentId}
-            resolvedAgentName={presentedAgentName}
+            resolvedAgentName={resolvedAgentName}
             onDelete={onDelete}
             deleteWorkflows={deleteWorkflows}
             deleteWorkflowsState={deleteWorkflowsState}
@@ -685,10 +582,7 @@ export function SettingsTab({
         />
       )}
 
-      <Dialog
-        open={isDefaultAgent === false && demoteConfirmOpen}
-        onOpenChange={setDemoteConfirmOpen}
-      >
+      <Dialog open={demoteConfirmOpen} onOpenChange={setDemoteConfirmOpen}>
         <DialogContent
           closeLabel={t(($) => {
             return $.actions.close;
@@ -700,7 +594,7 @@ export function SettingsTab({
                 ($) => {
                   return $.profile.makePrivate.title;
                 },
-                { agentName: presentedAgentName },
+                { agentName: resolvedAgentName },
               )}
             </DialogTitle>
             <DialogDescription>
@@ -721,7 +615,7 @@ export function SettingsTab({
                 ($) => {
                   return $.profile.makePrivate.warningDescription;
                 },
-                { agentName: presentedAgentName },
+                { agentName: resolvedAgentName },
               )}
             </AlertDescription>
           </Alert>

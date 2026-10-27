@@ -3611,8 +3611,8 @@
         "manageConnection": "接続済みアカウントを管理",
         "open": "Telegram を開く",
         "openSetup": "セットアップを開く",
-        "setupDescription": "セットアップで既定のエージェントを選び、このページに戻って Telegram を接続してください。",
-        "setupMemberDescription": "ワークスペース管理者に既定のエージェントの選択を依頼し、このページに戻ってください。",
+        "setupDescription": "ワークスペースの設定を完了して Okou を初期化してから、このページに戻って Telegram を接続してください。",
+        "setupMemberDescription": "ワークスペースの管理者に設定の完了と Okou の初期化を依頼してから、このページに戻ってください。",
         "setupTitle": "アカウント設定を完了",
         "successDescription": "Telegram でボットにメッセージを送信すると、チャットを始められます。",
         "successTitle": "Telegram に接続しました!"
@@ -5505,7 +5505,7 @@
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。",
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "errorMessage": "Morning Brief の設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
@@ -5514,7 +5514,7 @@
       "proactiveLearning": {
         "description": "夜間に活動を振り返り、個人の記憶と理解を更新します。",
         "errorMessage": "設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
@@ -5523,7 +5523,7 @@
       "proactivePlanningAction": {
         "description": "依頼された作業を計画・実行し、あなたの対応が必要なときに通知します。",
         "errorMessage": "設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
@@ -5532,7 +5532,7 @@
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
         "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
-        "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
+        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",

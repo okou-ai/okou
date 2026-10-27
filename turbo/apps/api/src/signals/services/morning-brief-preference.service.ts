@@ -82,7 +82,8 @@ function unavailableFailure(
     : {
         kind: "bad-request",
         code: "MORNING_BRIEF_MISSING_DEFAULT_AGENT",
-        message: "Choose a usable default Agent before enabling Morning Brief.",
+        message:
+          "Okou is unavailable in this workspace. Contact a workspace administrator.",
       };
 }
 
