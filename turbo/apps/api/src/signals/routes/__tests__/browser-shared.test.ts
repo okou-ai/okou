@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
@@ -6,6 +7,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -92,7 +94,7 @@ function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
       };
     }
     if (command.method === "Page.captureScreenshot") {
-      return { data: Buffer.from("shared-window-preview").toString("base64") };
+      return { data: Buffer.from(`preview:${targetId}`).toString("base64") };
     }
     throw new Error(`Unexpected external CDP operation: ${command.method}`);
   };
@@ -321,6 +323,125 @@ describe("shared Browser public consumers", () => {
       );
       expect(sleepingSibling.body.browser.status).toBe("suspended");
       expect(sleepingSibling.body.browser.window).toBeUndefined();
+    });
+  });
+
+  it("preserves a new window's preview when the old window's screenshot upload finishes late", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      nativeCommands(f);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await use(a);
+      await use(b);
+      const window = first.browser.window;
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === window?.primaryWindowId;
+      });
+      if (!window || !page) {
+        throw new Error("Expected A's first Browser window and page");
+      }
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const uploads: { readonly key: string; readonly bytes: Buffer }[] = [];
+      const send = context.mocks.s3.send.getMockImplementation();
+      if (!send) {
+        throw new Error("Expected the external object-storage fixture");
+      }
+      context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+        if (
+          command instanceof PutObjectCommand &&
+          command.input.ContentType === "image/webp"
+        ) {
+          if (!command.input.Key || !Buffer.isBuffer(command.input.Body)) {
+            throw new Error("Expected an immutable screenshot upload");
+          }
+          uploads.push({ key: command.input.Key, bytes: command.input.Body });
+          if (uploads.length === 1) {
+            entered.resolve();
+            await release.promise;
+          }
+        }
+        return await send(command);
+      });
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        (_client: unknown, command: unknown) => {
+          if (!(command instanceof GetObjectCommand) || !command.input.Key) {
+            throw new Error("Expected a private screenshot download");
+          }
+          return Promise.resolve(
+            `https://screenshots.example.test/${encodeURIComponent(command.input.Key)}`,
+          );
+        },
+      );
+      const oldCapture = settleIncludingAbort(
+        accept(
+          client().close({
+            headers,
+            params: { threadId: a.threadId },
+            body: {},
+          }),
+          [200],
+        ),
+      );
+      const publication = await settleIncludingAbort(async () => {
+        await Promise.race([
+          entered.promise,
+          oldCapture.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("The screenshot never reached its upload");
+          }),
+        ]);
+        accepted(
+          await a.request({ kind: "retire", ...window, reason: "closed" }),
+        );
+        f.provider.native.targets.delete(page.targetId);
+        accepted(await a.request({ kind: "completeWindowClose", ...window }));
+        const replacement = await use(a);
+        expect(replacement.browser.window?.primaryWindowId).not.toBe(
+          window.primaryWindowId,
+        );
+        await accept(
+          client().close({
+            headers,
+            params: { threadId: a.threadId },
+            body: {},
+          }),
+          [200],
+        );
+        const viewed = await accept(
+          client().get({ headers, params: { threadId: a.threadId } }),
+          [200],
+        );
+        const preview = viewed.body.browser.screenshotUrl;
+        const oldUpload = uploads[0];
+        const newUpload = uploads[1];
+        if (!oldUpload || !newUpload) {
+          throw new Error("Expected both native-window screenshot uploads");
+        }
+        expect(oldUpload.bytes.toString()).toBe(`preview:${page.targetId}`);
+        expect(preview).toBe(
+          `https://screenshots.example.test/${encodeURIComponent(newUpload.key)}`,
+        );
+        expect(preview).not.toBeNull();
+        return preview;
+      });
+      release.resolve();
+      const completed = await oldCapture;
+      if (!publication.ok) {
+        throw publication.error;
+      }
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      const latest = await accept(
+        client().get({ headers, params: { threadId: a.threadId } }),
+        [200],
+      );
+      expect(latest.body.browser.screenshotUrl).toBe(publication.value);
+      expect(uploads).toHaveLength(2);
     });
   });
 
