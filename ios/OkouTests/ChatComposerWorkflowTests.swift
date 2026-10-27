@@ -21,8 +21,11 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("Before @")
-    let agent = try XCTUnwrap(workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .agent })
-    try await waitForBusinessResult { workspace.newComposer.editor.mentionSuggestions.contains(agent) }
+    let agent = try XCTUnwrap(
+      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .agent })
+    try await waitForBusinessResult {
+      workspace.newComposer.editor.mentionSuggestions.contains(agent)
+    }
     workspace.newComposer.editor.insertMention(agent)
     let references = workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }
     XCTAssertEqual(references.map { $0["type"]?.string }, ["agent"])
@@ -44,8 +47,11 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await eventually { input.text.contains("/release after") }
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
     input.insertText(" @")
-    let chat = try XCTUnwrap(workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .chat })
-    try await waitForBusinessResult { workspace.newComposer.editor.mentionSuggestions.contains(chat) }
+    let chat = try XCTUnwrap(
+      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .chat })
+    try await waitForBusinessResult {
+      workspace.newComposer.editor.mentionSuggestions.contains(chat)
+    }
     workspace.newComposer.editor.insertMention(chat)
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }.map {
@@ -88,7 +94,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(conversation.draft.contains("edited"))
   }
 
-  func testNativeSelectionAndEscapePreventWorkflowInsertionAndNumericQueryInsertsOnlyItsMatch() async throws {
+  func testNativeSelectionAndEscapePreventWorkflowInsertionAndNumericQueryInsertsOnlyItsMatch()
+    async throws
+  {
     let fixture = workflowFixture()
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })

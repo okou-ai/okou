@@ -35,7 +35,8 @@ final class RecommendedFollowupTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
     input.undoManager?.removeAllActions()
     let beforeLongPrompt = conversation.draft
-    let longPrompt = "What risks should we discuss next? " + String(repeating: "More context. ", count: 20)
+    let longPrompt =
+      "What risks should we discuss next? " + String(repeating: "More context. ", count: 20)
     editor.selectOrAppendText(longPrompt)
     try await eventually {
       conversation.draft.hasSuffix(longPrompt.trimmingCharacters(in: .whitespacesAndNewlines))

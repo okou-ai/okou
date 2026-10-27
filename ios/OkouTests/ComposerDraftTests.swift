@@ -22,7 +22,8 @@ final class ComposerDraftTests: XCTestCase {
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
     let source = workspace.mentionTestSource
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer, source: source))
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(state: composer, source: source))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(
@@ -32,7 +33,8 @@ final class ComposerDraftTests: XCTestCase {
     input.insertText("🌷 new ")
     try await waitForBusinessResult { composer.text == "Review 🌷 new this " }
     let note = try XCTUnwrap(
-      mentionInputs(in: host.view).first { $0.accessibilityLabel == "Ask or comment on this quote" })
+      mentionInputs(in: host.view).first { $0.accessibilityLabel == "Ask or comment on this quote" }
+    )
     try await focusMentionInput(note)
     note.selectedRange = NSRange(location: note.text.utf16.count, length: 0)
     note.insertText(" @project")
@@ -40,14 +42,17 @@ final class ComposerDraftTests: XCTestCase {
     try await waitForBusinessResult { composer.editor.mentionSuggestions.contains(reference) }
     composer.editor.insertMention(reference)
     try await waitForBusinessResult {
-      composer.editorBlocks.first(where: \.isFeedback)?.content.parts.contains(reference.part) == true
+      composer.editorBlocks.first(where: \.isFeedback)?.content.parts.contains(reference.part)
+        == true
     }
     XCTAssertEqual(composer.document.parts.first, remote.draftUserMessage?.parts.first)
     XCTAssertEqual(
       composer.document.parts.first { $0["type"]?.string == "file" },
       remote.draftUserMessage?.parts.first { $0["type"]?.string == "file" })
-    XCTAssertEqual(composer.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
-    XCTAssertEqual(composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
+    XCTAssertEqual(
+      composer.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
+    XCTAssertEqual(
+      composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
     let saved = composer.value
     try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
@@ -110,10 +115,11 @@ final class ComposerDraftTests: XCTestCase {
     await composer.synchronize()
     let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
     var content = note.content
-    content.parts.append(.object([
-      "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
-      "titleSnapshot": .string("Project 30"),
-    ]))
+    content.parts.append(
+      .object([
+        "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
+        "titleSnapshot": .string("Project 30"),
+      ]))
     composer.editBlock(note.id, document: content)
     await composer.synchronize()
     let saved = composer.value
@@ -150,7 +156,8 @@ final class ComposerDraftTests: XCTestCase {
           $0 !== restoredNote && $0.text == "Compare \u{fffc}now"
         }
     }
-    XCTAssertEqual(reopened.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
+    XCTAssertEqual(
+      reopened.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
   }
 
   func testQuotedDraftRoundTripsNotesSourcesOrderAndConflictRecovery() async throws {
@@ -655,9 +662,10 @@ private func quotedRichDraft() throws -> ComposerDraft {
       #"{"type":"feedback","quote":"PWA passage","eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"},"note":[{"type":"text","text":"Compare "},{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"},{"type":"text","text":"now"}]}"#
         .utf8))
   return ComposerDraft(
-    document: ChatDraftDocument(parts: [
-      .object(["type": .string("additional_info"), "text": .string("Keep the source context")])
-    ] + (rich.draftUserMessage?.parts ?? []) + [quote]),
+    document: ChatDraftDocument(
+      parts: [
+        .object(["type": .string("additional_info"), "text": .string("Keep the source context")])
+      ] + (rich.draftUserMessage?.parts ?? []) + [quote]),
     attachments: rich.draftAttachments)
 }
 
