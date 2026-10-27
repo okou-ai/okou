@@ -33,6 +33,7 @@ import {
 import type {
   UserMessageDocument,
   FeedbackNotePart,
+  ComposerDraft,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 export const preparedAgentSuggestionId$ = computed((get) => {
@@ -42,6 +43,21 @@ export const preparedAgentSuggestionId$ = computed((get) => {
     })?.suggestionContext?.suggestionId ?? null
   );
 });
+
+async function suggestionDraftVersion(draft: ComposerDraft): Promise<string> {
+  return Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(JSON.stringify(draft)),
+      ),
+    ),
+  )
+    .map((byte) => {
+      return byte.toString(16).padStart(2, "0");
+    })
+    .join("");
+}
 
 /** Prepare the saved, complete context in the existing composer without consuming it. */
 export const prepareAgentSuggestion$ = command(
@@ -54,18 +70,9 @@ export const prepareAgentSuggestion$ = command(
     const entry = set(ensureAgentDraft$, agentId);
     await set(entry.load$, signal);
     const draft = entry.draft;
-    const contextVersion = Array.from(
-      new Uint8Array(
-        await crypto.subtle.digest(
-          "SHA-256",
-          new TextEncoder().encode(JSON.stringify(item.customOption.draft)),
-        ),
-      ),
-    )
-      .map((byte) => {
-        return byte.toString(16).padStart(2, "0");
-      })
-      .join("");
+    const contextVersion = await suggestionDraftVersion(
+      item.customOption.draft,
+    );
     signal.throwIfAborted();
     const current =
       set(draft.readEditorDocument$)?.toMessageDocument({
