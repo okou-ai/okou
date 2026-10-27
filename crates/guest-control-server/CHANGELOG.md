@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.50](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.49...guest-control-server-v0.24.50) (2026-10-27)
+
+
+### Refactoring
+
+* **guest-control:** share connection worker retirement ([#43395](https://github.com/okou-ai/okou/issues/43395)) ([6fd0746](https://github.com/okou-ai/okou/commit/6fd07463b7224a9bb4c33a80ad9f373f335e1b05))
+
 ## [0.24.49](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.48...guest-control-server-v0.24.49) (2026-10-27)
 
 ## [0.24.48](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.47...guest-control-server-v0.24.48) (2026-10-26)

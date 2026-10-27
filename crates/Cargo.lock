@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ably-subscriber"
-version = "2.0.2"
+version = "2.0.3"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -2013,7 +2013,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.11"
+version = "0.109.12"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.84"
+version = "0.1.85"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2118,7 +2118,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.49"
+version = "0.24.50"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2135,7 +2135,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.115"
+version = "0.12.116"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2167,7 +2167,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.35"
+version = "0.20.36"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -4044,7 +4044,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.237.16"
+version = "0.237.17"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4117,7 +4117,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.15.41"
+version = "0.15.42"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4251,7 +4251,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.11.24"
+version = "0.11.25"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4291,7 +4291,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.29.40"
+version = "0.29.41"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4434,7 +4434,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.20.41"
+version = "0.20.42"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4756,7 +4756,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.41"
+version = "0.53.42"
 dependencies = [
  "api-contracts",
  "async-trait",

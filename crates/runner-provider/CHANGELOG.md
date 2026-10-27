@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.25](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.24...runner-provider-v0.11.25) (2026-10-27)
+
+
+### Refactoring
+
+* **runner-provider:** share retained worker joins ([#43368](https://github.com/okou-ai/okou/issues/43368)) ([49c76d3](https://github.com/okou-ai/okou/commit/49c76d37f4c59c8119ed6005463c54bd2aa7916e))
+
 ## [0.11.24](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.23...runner-provider-v0.11.24) (2026-10-27)
 
 ## [0.11.23](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.22...runner-provider-v0.11.23) (2026-10-27)

@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.14.3](https://github.com/okou-ai/okou/compare/api-v2.14.2...api-v2.14.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** make notification prefetch independent of view startup ([#43351](https://github.com/okou-ai/okou/issues/43351)) ([31755af](https://github.com/okou-ai/okou/commit/31755af2464549923535e305a545ab1cf5618fd0))
+* **slack:** preserve receiving workspace during ingress status reconciliation ([#43345](https://github.com/okou-ai/okou/issues/43345)) ([8772664](https://github.com/okou-ai/okou/commit/8772664ecc18c29da2fe5e6ceea0a3aa6e994757)) [#43286](https://github.com/okou-ai/okou/issues/43286)
+
+
+### Refactoring
+
+* **api:** publish no-auth connector accounts atomically ([#43371](https://github.com/okou-ai/okou/issues/43371)) ([d10c0e5](https://github.com/okou-ai/okou/commit/d10c0e5cec9745765701f150cda6d01e1b79b713))
+
+
+### Performance Improvements
+
+* **api:** streamline low-credit alert scenario preparation ([#43370](https://github.com/okou-ai/okou/issues/43370)) ([d57eeba](https://github.com/okou-ai/okou/commit/d57eeba4ee87ceb2e295a07b123d535c35126175))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.2
+    * @okouai/core bumped to 8.793.2
+    * @okouai/db bumped to 2.6.10
+    * @okouai/pi-agent-runtime bumped to 1.51.3
+
 ## [2.14.2](https://github.com/okou-ai/okou/compare/api-v2.14.1...api-v2.14.2) (2026-10-27)
 
 

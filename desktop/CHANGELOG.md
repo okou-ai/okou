@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.8](https://github.com/okou-ai/okou/compare/desktop-v0.54.7...desktop-v0.54.8) (2026-10-27)
+
+
+### Bug Fixes
+
+* correlate desktop heartbeat failures in sentry ([#43377](https://github.com/okou-ai/okou/issues/43377)) ([d53535f](https://github.com/okou-ai/okou/commit/d53535f7f3df0a3f09e8b208501d409b1e060edb))
+
 ## [0.54.7](https://github.com/okou-ai/okou/compare/desktop-v0.54.6...desktop-v0.54.7) (2026-10-27)
 
 

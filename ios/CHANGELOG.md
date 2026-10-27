@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.6](https://github.com/okou-ai/okou/compare/ios-v0.20.5...ios-v0.20.6) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** make notification prefetch independent of view startup ([#43351](https://github.com/okou-ai/okou/issues/43351)) ([31755af](https://github.com/okou-ai/okou/commit/31755af2464549923535e305a545ab1cf5618fd0))
+
 ## [0.20.5](https://github.com/okou-ai/okou/compare/ios-v0.20.4...ios-v0.20.5) (2026-10-27)
 
 

@@ -12,6 +12,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1068.3](https://github.com/okou-ai/okou/compare/app-v0.1068.2...app-v0.1068.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* **app:** classify already-member invitation conflicts as expected ([#43341](https://github.com/okou-ai/okou/issues/43341)) ([2c571c7](https://github.com/okou-ai/okou/commit/2c571c7bddcf6e4da67dd335ca42a94ce5a94e62)) [#43288](https://github.com/okou-ai/okou/issues/43288)
+* **app:** restore run failure retry actions ([#43375](https://github.com/okou-ai/okou/issues/43375)) ([87e2d34](https://github.com/okou-ai/okou/commit/87e2d3418a956618ef33f06a35c47750db678dc0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.2
+    * @okouai/core bumped to 8.793.2
+
 ## [0.1068.2](https://github.com/okou-ai/okou/compare/app-v0.1068.1...app-v0.1068.2) (2026-10-27)
 
 
