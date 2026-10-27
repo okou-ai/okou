@@ -11,7 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
-import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
+import { agentConfigurationUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
@@ -36,6 +36,7 @@ import {
   agentExists,
   agentList,
   visibleJoinedAgentCondition,
+  nonDefaultAgentCondition,
 } from "../services/agent-data.service";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
 
@@ -503,25 +504,17 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
       .for("update");
 
-    const existingDb = tx;
-    const existingOrgId = auth.orgId;
-    const existingAgentId = params.id;
-    const existing: ExistingAgentForUpdate | null = await (async () => {
-      const rows = await existingDb
-        .select({
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          defaultAgentId: orgMetadata.defaultAgentId,
-        })
-        .from(agents)
-        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-        .where(
-          and(eq(agents.orgId, existingOrgId), eq(agents.id, existingAgentId)),
-        )
-        .limit(1);
-      return rows[0] ?? null;
-    })();
+    const [existing] = await tx
+      .select({
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+        defaultAgentId: orgMetadata.defaultAgentId,
+      })
+      .from(agents)
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+      .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
+      .limit(1);
     if (!existing) {
       return { response: agentNotFound(params.id) };
     }
@@ -535,9 +528,8 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       return { response: permissionError };
     }
 
-    const identityError = agentIdentityUpdateError(
+    const identityError = agentConfigurationUpdateError(
       existing.id === existing.defaultAgentId,
-      updateBody,
     );
     if (identityError) {
       return {
@@ -561,10 +553,20 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       return { response: visibilityError };
     }
 
-    await tx
+    const [updated] = await tx
       .update(agents)
       .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
-      .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
+      .where(
+        and(
+          eq(agents.orgId, auth.orgId),
+          eq(agents.id, params.id),
+          nonDefaultAgentCondition(auth.orgId),
+        ),
+      )
+      .returning({ id: agents.id });
+    if (!updated) {
+      throw new Error("Agent became read-only during configuration update");
+    }
     const responseDb = tx;
     const responseOrgId = auth.orgId;
     const responseAgentId = params.id;
@@ -633,28 +635,17 @@ const updateAgentMetadataInner$ = command(
         .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
         .for("update");
 
-      const existingDb = tx;
-      const existingOrgId = auth.orgId;
-      const existingAgentId = params.id;
-      const existing: ExistingAgentForUpdate | null = await (async () => {
-        const rows = await existingDb
-          .select({
-            id: agents.id,
-            owner: agents.owner,
-            visibility: agents.visibility,
-            defaultAgentId: orgMetadata.defaultAgentId,
-          })
-          .from(agents)
-          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-          .where(
-            and(
-              eq(agents.orgId, existingOrgId),
-              eq(agents.id, existingAgentId),
-            ),
-          )
-          .limit(1);
-        return rows[0] ?? null;
-      })();
+      const [existing] = await tx
+        .select({
+          id: agents.id,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          defaultAgentId: orgMetadata.defaultAgentId,
+        })
+        .from(agents)
+        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
+        .limit(1);
       if (!existing) {
         return { response: agentNotFound(params.id) };
       }
@@ -672,9 +663,8 @@ const updateAgentMetadataInner$ = command(
         return { response: permissionError };
       }
 
-      const identityError = agentIdentityUpdateError(
+      const identityError = agentConfigurationUpdateError(
         existing.id === existing.defaultAgentId,
-        updateBody,
       );
       if (identityError) {
         return {
@@ -699,10 +689,20 @@ const updateAgentMetadataInner$ = command(
         }
       }
 
-      await tx
+      const [updated] = await tx
         .update(agents)
         .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
-        .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
+        .where(
+          and(
+            eq(agents.orgId, auth.orgId),
+            eq(agents.id, params.id),
+            nonDefaultAgentCondition(auth.orgId),
+          ),
+        )
+        .returning({ id: agents.id });
+      if (!updated) {
+        throw new Error("Agent became read-only during configuration update");
+      }
       const responseDb = tx;
       const responseOrgId = auth.orgId;
       const responseAgentId = params.id;

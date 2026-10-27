@@ -3,14 +3,17 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
+import { agentInstructionsRoutes } from "../agent-instructions";
 import { env, mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { expectApiError } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
@@ -33,7 +36,6 @@ helper gap:
 
 const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
-const bdd = createBddApi(context);
 const runsApi = createRunsApi(context);
 const connectors = createConnectorBddApi(context);
 const DEFAULT_AGENT_AVATAR_URL =
@@ -67,7 +69,6 @@ async function onboardAdmin(
   api.mockClerkOrg(admin, orgState);
   const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
     displayName: options.displayName ?? "BDD Default Agent",
-    sound: "calm",
   });
   if (bootstrap.status !== 200) {
     throw new Error(
@@ -142,7 +143,7 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
     expect(after.defaultAgentId).toBe(defaultAgentId);
     expect(after.defaultAgentMetadata).toMatchObject({
       displayName: "Okou",
-      sound: "calm",
+      sound: "professional",
       avatarUrl: DEFAULT_AGENT_AVATAR_URL,
     });
 
@@ -523,8 +524,8 @@ describe("ORG-01 and ORG-02", () => {
 });
 
 describe("ORG-03 onboarding status mapping", () => {
-  it.each(["admin", "member"] as const)(
-    "protects the default Okou for its %s owner",
+  it.each(["admin", "member", "other-admin"] as const)(
+    "keeps the default Okou read-only for an %s editor",
     async (role) => {
       const admin = api.user();
       api.acceptAgentStorageWrites();
@@ -537,10 +538,22 @@ describe("ORG-03 onboarding status mapping", () => {
         role === "admin"
           ? admin
           : api.user({
-              userId: admin.userId,
+              ...(role === "member" ? { userId: admin.userId } : {}),
               orgId: admin.orgId,
-              orgRole: "org:member",
+              orgRole: role === "member" ? "org:member" : "org:admin",
             });
+      const instructions = setupApp({
+        context,
+        routes: agentInstructionsRoutes,
+      })(agentInstructionsContract);
+      const instructionRequest = {
+        headers: api.authenticate(owner),
+        params: { id: defaultAgentId },
+      };
+      const originalInstructions = await accept(
+        instructions.get(instructionRequest),
+        [200],
+      );
       const before = await api.readAgent(owner, defaultAgentId);
       expect(before).toMatchObject({
         isDefaultAgent: true,
@@ -549,35 +562,37 @@ describe("ORG-03 onboarding status mapping", () => {
       });
       await expect(api.listAgents(owner)).resolves.toContainEqual(before);
 
-      for (const update of [
-        { displayName: "Renamed default", code: "DEFAULT_AGENT_NAME_LOCKED" },
-        { avatarUrl: "preset:4", code: "DEFAULT_AGENT_AVATAR_LOCKED" },
+      for (const fields of [
+        { displayName: "Renamed default" },
+        { avatarUrl: "preset:4" },
+        { visibility: "private" as const },
+        { description: "Changed responsibility" },
+        { sound: "friendly" },
         {
-          visibility: "private" as const,
-          code: "DEFAULT_AGENT_VISIBILITY_LOCKED",
+          displayName: "Okou",
+          avatarUrl: DEFAULT_AGENT_AVATAR_URL,
+          visibility: "public" as const,
         },
       ]) {
-        const { code, ...fields } = update;
-        const body = {
-          ...fields,
-          isDefaultAgent: false,
-          description: "Must not be saved",
-          sound: "friendly",
-        };
+        const body = { ...fields, isDefaultAgent: false };
         const patched = await api.requestUpdateAgentMetadata(
           owner,
           defaultAgentId,
           body,
           [400],
         );
-        expect(patched.body).toMatchObject({ error: { code } });
+        expect(patched.body).toMatchObject({
+          error: { code: "DEFAULT_AGENT_READ_ONLY" },
+        });
         const replaced = await api.requestUpdateAgent(
           owner,
           defaultAgentId,
           body,
           [400],
         );
-        expect(replaced.body).toMatchObject({ error: { code } });
+        expect(replaced.body).toMatchObject({
+          error: { code: "DEFAULT_AGENT_READ_ONLY" },
+        });
         await expect(
           api.readAgent(owner, defaultAgentId),
         ).resolves.toStrictEqual(before);
@@ -589,7 +604,7 @@ describe("ORG-03 onboarding status mapping", () => {
         [400],
       );
       expect(clearedAvatar.body).toMatchObject({
-        error: { code: "DEFAULT_AGENT_AVATAR_LOCKED" },
+        error: { code: "DEFAULT_AGENT_READ_ONLY" },
       });
       const deletion = await api.requestDeleteAgent(
         owner,
@@ -606,33 +621,21 @@ describe("ORG-03 onboarding status mapping", () => {
         defaultAgentId,
       );
 
-      const permitted = {
-        displayName: "Okou",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-        visibility: "public" as const,
-        description: "Workspace role",
-        sound: "friendly",
-      };
-      await expect(
-        api.updateAgent(owner, defaultAgentId, permitted),
-      ).resolves.toMatchObject(permitted);
-      await expect(
-        api.updateAgentMetadata(owner, defaultAgentId, {
-          description: "Updated role",
-          sound: "direct",
+      const deniedInstructions = await accept(
+        instructions.update({
+          ...instructionRequest,
+          body: { content: "Must not replace the system instructions" },
         }),
-      ).resolves.toMatchObject({
-        description: "Updated role",
-        sound: "direct",
-        isDefaultAgent: true,
+        [400],
+      );
+      expect(deniedInstructions.body).toMatchObject({
+        error: { code: "DEFAULT_AGENT_READ_ONLY" },
       });
-      await expect(
-        bdd.updateAgentInstructions(
-          owner,
-          defaultAgentId,
-          "Workspace-specific instructions",
-        ),
-      ).resolves.toMatchObject({ isDefaultAgent: true });
+      const afterInstructions = await accept(
+        instructions.get(instructionRequest),
+        [200],
+      );
+      expect(afterInstructions.body).toStrictEqual(originalInstructions.body);
       const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
       await expect(
         api.readAgent(member, defaultAgentId),

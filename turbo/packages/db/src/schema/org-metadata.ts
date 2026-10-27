@@ -131,7 +131,7 @@ export const orgMetadata = pgTable(
         name: "org_metadata_default_agent_id_agents_id_fk",
         columns: [table.defaultAgentId],
         foreignColumns: [agents.id],
-      }).onDelete("set null"),
+      }).onDelete("restrict"),
       uniqueIndex("uq_org_stripe_customer").on(table.stripeCustomerId),
       index("idx_org_metadata_acquisition_campaign_id").on(
         table.acquisitionCampaignId,

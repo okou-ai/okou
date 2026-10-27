@@ -259,57 +259,16 @@ describe("okou agent edit command", () => {
 
   describe("default agent protection", () => {
     it.each([
-      ["--display-name", "Renamed", "must keep the name Okou"],
-      ["--avatar", "preset:2", "must keep its default avatar"],
-      ["--visibility", "private", "must remain public"],
-    ])(
-      "rejects %s before metadata and instructions writes",
-      async (flag, value, message) => {
-        let writes = 0;
-        server.use(
-          http.get("http://localhost:3000/api/agents/my-agent", () => {
-            return HttpResponse.json({
-              ...mockAgent,
-              isDefaultAgent: true,
-              displayName: "Okou",
-              visibility: "public",
-            });
-          }),
-          http.put("http://localhost:3000/api/agents/my-agent", () => {
-            writes++;
-            return HttpResponse.json(mockAgent);
-          }),
-          http.put(
-            "http://localhost:3000/api/agents/my-agent/instructions",
-            () => {
-              writes++;
-              return HttpResponse.json(mockAgent);
-            },
-          ),
-        );
-        await expect(
-          editCommand.parseAsync([
-            "node",
-            "cli",
-            "my-agent",
-            flag!,
-            value!,
-            "--description",
-            "Must not be saved",
-            "--instructions-file",
-            "/unused-on-rejected-edit.md",
-          ]),
-        ).rejects.toThrow("process.exit called");
-        expect(mockExit).toHaveBeenCalledWith(1);
-        expect(mockConsoleError).toHaveBeenCalledWith(
-          expect.stringContaining(message!),
-        );
-        expect(writes).toBe(0);
-      },
-    );
-
-    it("edits a default description and repeats canonical fields", async () => {
-      const requests: unknown[] = [];
+      ["--display-name", "Renamed"],
+      ["--display-name", "Okou"],
+      ["--avatar", "preset:2"],
+      ["--visibility", "private"],
+      ["--visibility", "public"],
+      ["--description", "New role"],
+      ["--sound", "friendly"],
+      ["--instructions-file", "/unused-on-rejected-edit.md"],
+    ])("rejects %s before any writes", async (flag, value) => {
+      let writes = 0;
       server.use(
         http.get("http://localhost:3000/api/agents/my-agent", () => {
           return HttpResponse.json({
@@ -319,36 +278,26 @@ describe("okou agent edit command", () => {
             visibility: "public",
           });
         }),
+        http.put("http://localhost:3000/api/agents/my-agent", () => {
+          writes++;
+          return HttpResponse.json(mockAgent);
+        }),
         http.put(
-          "http://localhost:3000/api/agents/my-agent",
-          async ({ request }) => {
-            requests.push(await request.json());
+          "http://localhost:3000/api/agents/my-agent/instructions",
+          () => {
+            writes++;
             return HttpResponse.json(mockAgent);
           },
         ),
       );
-      await editCommand.parseAsync([
-        "node",
-        "cli",
-        "my-agent",
-        "--description",
-        "New role",
-        "--sound",
-        "friendly",
-      ]);
-      await editCommand.parseAsync([
-        "node",
-        "cli",
-        "my-agent",
-        "--display-name",
-        "Okou",
-        "--visibility",
-        "public",
-      ]);
-      expect(requests).toStrictEqual([
-        { description: "New role", sound: "friendly" },
-        { displayName: "Okou", visibility: "public" },
-      ]);
+      await expect(
+        editCommand.parseAsync(["node", "cli", "my-agent", flag!, value!]),
+      ).rejects.toThrow("process.exit called");
+      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining("read-only"),
+      );
+      expect(writes).toBe(0);
     });
   });
 

@@ -1,5 +1,5 @@
 import type { AgentVisibility } from "@okouai/api-contracts/contracts/agents";
-import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
+import { agentConfigurationUpdateError } from "@okouai/core/agent-protection";
 import { Command, Option } from "commander";
 import { readFileSync } from "node:fs";
 import chalk from "chalk";
@@ -40,31 +40,6 @@ function hasAgentFieldUpdate(options: AgentEditOptions): boolean {
     options.visibility !== undefined ||
     hasAvatarUpdate(options)
   );
-}
-
-async function applyAgentUpdate(
-  agentId: string,
-  options: AgentEditOptions,
-): Promise<void> {
-  const hasAvatar = hasAvatarUpdate(options);
-  const resolvedAvatarUrl = hasAvatar ? resolveAvatarUrl(options) : undefined;
-
-  const current = await getAgent(agentId);
-  const update = {
-    displayName: options.displayName,
-    description: options.description,
-    sound: options.sound,
-    visibility: options.visibility,
-    avatarUrl: resolvedAvatarUrl,
-  };
-  const identityError = agentIdentityUpdateError(
-    current.isDefaultAgent,
-    update,
-  );
-  if (identityError) {
-    throw new Error(identityError.message);
-  }
-  await updateAgent(agentId, update);
 }
 
 export const editCommand = new Command()
@@ -131,10 +106,10 @@ Examples:
   Quick preset avatar:     okou agent edit <agent-id> --avatar preset:2
   Custom avatar:           okou agent edit <agent-id> --avatar-skin dark --avatar-hair-color teal --avatar-intensity hyped
   Update instructions:     okou agent edit <agent-id> --instructions-file ./instructions.md
-  Update yourself:         okou agent edit $OKOU_AGENT_ID --description "new role"
+  Update a custom agent:   okou agent edit <custom-agent-id> --description "new role"
 
 Notes:
-  - The workspace default Okou agent's name, avatar, and Public visibility are fixed
+  - The workspace default Okou agent is read-only; only custom agents can be edited
   - At least one option is required
   - Unspecified fields are preserved (not cleared)
   - To attach workflows to agents, use: okou workflow attach --help`,
@@ -149,8 +124,25 @@ Notes:
         );
       }
 
+      const avatarUrl = hasAvatarUpdate(options)
+        ? resolveAvatarUrl(options)
+        : undefined;
+      const current = await getAgent(agentId);
+      const configurationError = agentConfigurationUpdateError(
+        current.isDefaultAgent,
+      );
+      if (configurationError) {
+        throw new Error(configurationError.message);
+      }
+
       if (hasAgentUpdate) {
-        await applyAgentUpdate(agentId, options);
+        await updateAgent(agentId, {
+          displayName: options.displayName,
+          description: options.description,
+          sound: options.sound,
+          visibility: options.visibility,
+          avatarUrl,
+        });
       }
 
       if (options.instructionsFile) {

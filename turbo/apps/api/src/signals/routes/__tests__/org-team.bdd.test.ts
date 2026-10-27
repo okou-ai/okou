@@ -79,7 +79,6 @@ async function onboardAdmin(
   api.mockClerkOrg(admin, orgState);
   const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
     displayName: options.displayName ?? "BDD Org Team Agent",
-    sound: "calm",
   });
   if (bootstrap.status !== 200) {
     throw new Error(
@@ -950,7 +949,7 @@ describe("ORG-01/AGENT-02: agent listing", () => {
       ownerId: admin.userId,
       displayName: "Okou",
       description: null,
-      sound: "calm",
+      sound: "professional",
       avatarUrl: DEFAULT_AGENT_AVATAR_URL,
       visibility: "public",
     });

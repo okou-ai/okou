@@ -10,11 +10,12 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, asc, desc, eq, or } from "drizzle-orm";
+import { and, asc, desc, eq, notExists, or } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
 import { db$ } from "../external/db";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 export function agentResponse(row: {
   readonly agentId: string;
@@ -44,6 +45,23 @@ export function agentResponse(row: {
     }),
     visibility: row.visibility,
   };
+}
+
+export function defaultAgentJoinCondition() {
+  return and(
+    eq(agents.id, orgMetadata.defaultAgentId),
+    eq(agents.orgId, orgMetadata.orgId),
+  );
+}
+
+/** Apply the immutable workspace default identity at the write boundary. */
+export function nonDefaultAgentCondition(orgId: string) {
+  return notExists(
+    new QueryBuilder()
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(and(eq(orgMetadata.orgId, orgId), defaultAgentJoinCondition())),
+  );
 }
 
 function visibleAgentCondition(userId: string) {
