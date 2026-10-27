@@ -17,7 +17,4 @@ export const apiGetStartedHandlers = [
   mockApi(getStartedContract.checkin, ({ respond }) => {
     return respond(403, unavailable);
   }),
-  mockApi(getStartedContract.submitShare, ({ respond }) => {
-    return respond(403, unavailable);
-  }),
 ];

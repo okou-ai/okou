@@ -1468,40 +1468,8 @@
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
-        "notEligible": "対象外",
         "pendingState": "{{amount}} 件承諾待ち",
-        "rejected": {
-          "alreadyRedeemed": "投稿は使用済み",
-          "authorAlreadyRewarded": "このアカウントは報酬受取済み",
-          "authorUnavailable": "投稿者を確認できません",
-          "officialAccount": "{{assistantName}} 公式の投稿は対象外",
-          "postMustMention": "{{assistantName}} に触れる必要あり"
-        },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
-        "share": {
-          "action": "シェア",
-          "description": "投稿して、リンクを貼り付け",
-          "name": "X でシェア"
-        },
-        "shareDialog": {
-          "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
-          "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
-          "inputLabel": "投稿のリンク",
-          "openX": "X を開く",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "あとは何もありません。クレジットは自動で届きます。",
-          "reviewDone": "完了",
-          "reviewExplain": "投稿が公開されていて{{assistantName}}に触れていれば、報酬は自動で付与されます。問題があれば、このステップが理由付きで再び開きます。",
-          "reviewOpenPost": "投稿を開く",
-          "reviewPending": "通常は1時間以内",
-          "reviewTime": "確認はたいてい1時間以内に終わります。",
-          "reviewTitle": "投稿を確認しています",
-          "stepPaste": "リンクを貼る",
-          "stepWrite": "投稿を書く",
-          "submit": "送信",
-          "title": "{{assistantName}} を X でシェア",
-          "writingPrompt": "{{assistantName}}で実際に試したことを、自分の言葉で書いてください。"
-        },
         "slack": {
           "action": "追加",
           "description": "チームがすでに使っている場所へ",

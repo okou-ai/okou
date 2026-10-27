@@ -1468,40 +1468,8 @@
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
-        "notEligible": "대상 아님",
         "pendingState": "{{amount}}명 대기 중",
-        "rejected": {
-          "alreadyRedeemed": "이미 사용된 게시물",
-          "authorAlreadyRewarded": "이미 보상받은 계정",
-          "authorUnavailable": "작성자 확인 불가",
-          "officialAccount": "{{assistantName}} 공식 게시물은 제외",
-          "postMustMention": "{{assistantName}} 언급 필요"
-        },
         "rewardsNote": "보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
-        "share": {
-          "action": "공유",
-          "description": "게시한 뒤 링크를 붙여넣기",
-          "name": "X에 공유하기"
-        },
-        "shareDialog": {
-          "description": "공개 게시물을 제출하면 검토해요. 1인당 한 번 보상을 받을 수 있어요.",
-          "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
-          "inputLabel": "게시물 링크",
-          "openX": "X 열기",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "더 하실 일은 없습니다. 크레딧은 자동으로 지급됩니다.",
-          "reviewDone": "완료",
-          "reviewExplain": "게시물이 공개되어 있고 {{assistantName}}을(를) 언급하면 보상이 자동으로 지급됩니다. 문제가 있으면 이 단계가 사유와 함께 다시 열립니다.",
-          "reviewOpenPost": "게시물 열기",
-          "reviewPending": "보통 한 시간 이내",
-          "reviewTime": "검토는 보통 한 시간 안에 끝납니다.",
-          "reviewTitle": "게시물을 검토하고 있어요",
-          "stepPaste": "링크 붙여넣기",
-          "stepWrite": "게시물 작성하기",
-          "submit": "제출",
-          "title": "X에 {{assistantName}} 공유하기",
-          "writingPrompt": "{{assistantName}}에서 실제로 해 본 일을 자신의 말로 적어 주세요."
-        },
         "slack": {
           "action": "추가",
           "description": "팀이 이미 일하고 있는 곳으로",

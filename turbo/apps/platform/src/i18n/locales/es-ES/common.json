@@ -1493,40 +1493,8 @@
           "name": "Invita a tu equipo",
           "unit": "por miembro"
         },
-        "notEligible": "No elegible",
         "pendingState": "{{amount}} pendientes",
-        "rejected": {
-          "alreadyRedeemed": "Publicación ya usada",
-          "authorAlreadyRewarded": "Cuenta ya recompensada",
-          "authorUnavailable": "No se pudo verificar el autor",
-          "officialAccount": "Las publicaciones oficiales de {{assistantName}} no cuentan",
-          "postMustMention": "Debe mencionar a {{assistantName}}"
-        },
         "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
-        "share": {
-          "action": "Compartir",
-          "description": "Publícalo y pega el enlace",
-          "name": "Compartir en X"
-        },
-        "shareDialog": {
-          "description": "Envía una publicación pública para revisión. Una recompensa aprobada por persona.",
-          "helper": "La publicación tiene que ser pública y mencionar a {{assistantName}}.",
-          "inputLabel": "Enlace de la publicación",
-          "openX": "Abrir X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "No hay nada más que hacer: los créditos llegan solos.",
-          "reviewDone": "Listo",
-          "reviewExplain": "Si la publicación es pública y menciona a {{assistantName}}, la recompensa se concede automáticamente. Si algo no encaja, este paso se vuelve a abrir con el motivo.",
-          "reviewOpenPost": "Abrir la publicación",
-          "reviewPending": "Normalmente en menos de una hora",
-          "reviewTime": "La revisión suele terminar en menos de una hora.",
-          "reviewTitle": "Tu publicación está en revisión",
-          "stepPaste": "Pega el enlace",
-          "stepWrite": "Escribe la publicación",
-          "submit": "Enviar",
-          "title": "Comparte {{assistantName}} en X",
-          "writingPrompt": "Escribe con tus propias palabras sobre algo que hayas probado con {{assistantName}}."
-        },
         "slack": {
           "action": "Añadir",
           "description": "Donde tu equipo ya trabaja",

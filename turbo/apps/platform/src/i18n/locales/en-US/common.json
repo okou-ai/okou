@@ -1470,40 +1470,8 @@
           "name": "Invite your team",
           "unit": "per member"
         },
-        "notEligible": "Not eligible",
         "pendingState": "{{amount}} pending",
-        "rejected": {
-          "alreadyRedeemed": "Post already used",
-          "authorAlreadyRewarded": "Account already rewarded",
-          "authorUnavailable": "Couldn't verify the author",
-          "officialAccount": "Official {{assistantName}} posts don't count",
-          "postMustMention": "Must mention {{assistantName}}"
-        },
         "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
-        "share": {
-          "action": "Share",
-          "description": "Post it, then paste the link",
-          "name": "Share on X"
-        },
-        "shareDialog": {
-          "description": "Submit a public post for review. One successful reward per person.",
-          "helper": "The post has to be public and mention {{assistantName}}.",
-          "inputLabel": "Post link",
-          "openX": "Open X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "Nothing more to do — the credits land on their own.",
-          "reviewDone": "Done",
-          "reviewExplain": "If the post is public and mentions {{assistantName}}, the reward is granted automatically. If something is off, this step reopens with the reason.",
-          "reviewOpenPost": "Open the post",
-          "reviewPending": "Usually under an hour",
-          "reviewTime": "Review usually finishes within the hour.",
-          "reviewTitle": "Your post is with the reviewer",
-          "stepPaste": "Paste the link",
-          "stepWrite": "Write the post",
-          "submit": "Submit",
-          "title": "Share {{assistantName}} on X",
-          "writingPrompt": "Write about something you actually tried with {{assistantName}}, in your own words."
-        },
         "slack": {
           "action": "Add",
           "description": "Where your team already works",

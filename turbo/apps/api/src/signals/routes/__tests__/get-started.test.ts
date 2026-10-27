@@ -1,13 +1,9 @@
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
-import {
-  cronGetStartedContract,
-  getStartedContract,
-} from "@okouai/api-contracts/contracts/get-started";
+import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { randomUUID } from "node:crypto";
 import { beforeEach, expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
@@ -22,21 +18,6 @@ const client = () => {
 const status = async () => {
   return (await accept(client().status({ headers }), [200])).body;
 };
-const personalCredits = async () => {
-  return (
-    await accept(
-      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-        billingUsagePackCreditsContract,
-      ).get({ headers }),
-      [200],
-    )
-  ).body;
-};
-const postId = () => {
-  return BigInt(
-    `0x${randomUUID().replaceAll("-", "").slice(0, 15)}`,
-  ).toString();
-};
 
 function signedInSession(
   userId = `user_${randomUUID()}`,
@@ -49,8 +30,6 @@ function signedInSession(
 }
 
 beforeEach(() => {
-  mockEnv("OKOU_DATA_ROUTER_URL", "https://data.okou.ai/mcp");
-  mockEnv("OKOU_DATA_TOKEN", "synthetic-data-token");
   signedInSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
@@ -206,116 +185,6 @@ test("concurrent check-ins across organizations return one personal award and pu
       expiresAt: "2026-09-22T08:00:00.000Z",
     }),
   ]);
-});
-
-test("x submission returns canonical pending state and deduplicates", async () => {
-  const userId = `user_${randomUUID()}`;
-  const orgId = `org_${randomUUID()}`;
-  signedInSession(userId, orgId);
-  const id = postId();
-  mockNow(new Date("2026-09-15T08:00:00.000Z"));
-  const submitted = await accept(
-    client().submitShare({
-      headers,
-      body: { url: `https://twitter.com/example/status/${id}?s=20` },
-    }),
-    [202],
-  );
-  expect(submitted.body).toMatchObject({
-    status: "pending",
-    grantedAt: null,
-    expiresAt: null,
-    // The post travels back with the claim: a user waiting on review has no
-    // other way to see which link is in the queue. It is the canonical form
-    // the submit route stored, not the one that was pasted -- the handle and
-    // the tracking parameter are dropped on the way in.
-    postUrl: `https://x.com/i/status/${id}`,
-  });
-  expect((await status()).shareClaim).toStrictEqual(submitted.body);
-  expect(
-    (
-      await accept(
-        client().submitShare({
-          headers,
-          body: { url: `https://x.com/another/status/${id}` },
-        }),
-        [202],
-      )
-    ).body.id,
-  ).toBe(submitted.body.id);
-});
-
-test("concurrent submissions return the same pending claim to their owner", async () => {
-  const id = postId();
-  signedInSession();
-  const submissions = await Promise.all(
-    Array.from({ length: 2 }, () => {
-      return accept(
-        client().submitShare({
-          headers,
-          body: { url: `https://x.com/example/status/${id}` },
-        }),
-        [202],
-      );
-    }),
-  );
-  const first = submissions[0];
-  if (!first) {
-    throw new Error("Missing submitted claim");
-  }
-  expect(submissions[1]?.body.id).toBe(first.body.id);
-  expect((await status()).shareClaim).toStrictEqual(first.body);
-  expect((await personalCredits()).bonusCredits).toBe(0);
-});
-
-test("different posts have distinct pending claims across organizations", async () => {
-  const firstActor = signedInSession();
-  const firstId = postId();
-  const first = await accept(
-    client().submitShare({
-      headers,
-      body: { url: `https://x.com/example/status/${firstId}` },
-    }),
-    [202],
-  );
-  const secondActor = signedInSession(firstActor.userId);
-  const secondId = postId();
-  const second = await accept(
-    client().submitShare({
-      headers,
-      body: { url: `https://x.com/example/status/${secondId}` },
-    }),
-    [202],
-  );
-  expect(second.body.id).not.toBe(first.body.id);
-  expect(first.body.status).toBe("pending");
-  expect(second.body.status).toBe("pending");
-  const pending = (await status()).shareClaim;
-  expect([first.body.id, second.body.id]).toContain(pending?.id);
-  expect(pending?.status).toBe("pending");
-  for (const actor of [firstActor, secondActor]) {
-    mocks.clerk.session(actor.userId, actor.orgId);
-    expect((await status()).shareClaim).toStrictEqual(pending);
-    expect((await personalCredits()).bonusCredits).toBe(0);
-  }
-});
-
-test("invalid URLs and missing cron authorization are rejected", async () => {
-  for (const url of [
-    "https://example.com/status/123",
-    "https://x.com@evil.example/status/123",
-    "http://x.com/example/status/123",
-  ]) {
-    await expect(
-      client().submitShare({ headers, body: { url } }),
-    ).resolves.toMatchObject({ status: 400 });
-  }
-  await accept(
-    setupApp({ context, routes: getStartedRoutes })(
-      cronGetStartedContract,
-    ).process({ headers: {} }),
-    [401],
-  );
 });
 
 test("a personal check-in bonus is visible without a purchased Usage Pack and disappears exactly at expiry", async () => {

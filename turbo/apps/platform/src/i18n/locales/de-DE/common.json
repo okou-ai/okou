@@ -1470,40 +1470,8 @@
           "name": "Team einladen",
           "unit": "pro Mitglied"
         },
-        "notEligible": "Nicht berechtigt",
         "pendingState": "{{amount}} ausstehend",
-        "rejected": {
-          "alreadyRedeemed": "Post bereits verwendet",
-          "authorAlreadyRewarded": "Konto bereits belohnt",
-          "authorUnavailable": "Autor nicht überprüfbar",
-          "officialAccount": "Offizielle {{assistantName}}-Posts zählen nicht",
-          "postMustMention": "Muss {{assistantName}} erwähnen"
-        },
         "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
-        "share": {
-          "action": "Teilen",
-          "description": "Poste es und füge den Link hier ein",
-          "name": "Auf X teilen"
-        },
-        "shareDialog": {
-          "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
-          "helper": "Der Post muss öffentlich sein und {{assistantName}} erwähnen.",
-          "inputLabel": "Post-Link",
-          "openX": "X öffnen",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "Mehr ist nicht zu tun — die Credits kommen von selbst.",
-          "reviewDone": "Fertig",
-          "reviewExplain": "Wenn der Beitrag öffentlich ist und {{assistantName}} erwähnt, wird die Belohnung automatisch gutgeschrieben. Stimmt etwas nicht, öffnet sich dieser Schritt wieder mit der Begründung.",
-          "reviewOpenPost": "Beitrag öffnen",
-          "reviewPending": "Meist unter einer Stunde",
-          "reviewTime": "Die Prüfung ist meist innerhalb einer Stunde durch.",
-          "reviewTitle": "Dein Beitrag liegt bei der Prüfung",
-          "stepPaste": "Link einfügen",
-          "stepWrite": "Beitrag schreiben",
-          "submit": "Einreichen",
-          "title": "{{assistantName}} auf X teilen",
-          "writingPrompt": "Schreibe in deinen eigenen Worten über etwas, das du mit {{assistantName}} tatsächlich ausprobiert hast."
-        },
         "slack": {
           "action": "Hinzufügen",
           "description": "Da, wo dein Team schon arbeitet",
