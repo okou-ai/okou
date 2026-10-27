@@ -87,6 +87,44 @@ export async function getAgentUserBuiltinConnectors(
   handleError(result, `Failed to get connector permissions for agent "${id}"`);
 }
 
+export async function removeAgentUserBuiltinConnector(
+  id: string,
+  connectorSlug: ConnectorSlug,
+): Promise<ConnectorSlug[]> {
+  const config = await getClientConfig();
+  const client = initClient(userBuiltinConnectorsContract, config);
+  const result = await client.update({
+    params: { id },
+    body: { enabledConnectorSlugs: [connectorSlug], operation: "remove" },
+  });
+  if (result.status === 200) {
+    return result.body.enabledConnectorSlugs;
+  }
+  handleError(result, `Failed to remove connector access for agent "${id}"`);
+}
+
+export async function removeAgentCustomConnectorGrant(
+  id: string,
+  customConnectorId: string,
+): Promise<AgentCustomConnectorGrant[]> {
+  const config = await getClientConfig();
+  const client = initClient(agentCustomConnectorsContract, config);
+  const result = await client.update({
+    params: { id },
+    body: {
+      grants: [{ customConnectorId, permissionNames: [] }],
+      operation: "remove",
+    },
+  });
+  if (result.status === 200) {
+    return agentCustomConnectorGrantsSchema.parse(result.body).grants;
+  }
+  handleError(
+    result,
+    `Failed to remove custom connector access for agent "${id}"`,
+  );
+}
+
 export async function getAgentCustomConnectorGrants(
   id: string,
 ): Promise<AgentCustomConnectorGrant[]> {
