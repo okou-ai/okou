@@ -7,7 +7,7 @@ export function retainedSuggestionEntry(at: Date) {
   const cutoff = new Date(at.getTime() - SUGGESTION_RETENTION_MS).toISOString();
   const timestamp = at.toISOString();
   return sql`CASE WHEN item->>'status' = 'active' THEN
-    ${gt(sql`(item->>'createdAt')::timestamptz`, sql`${cutoff}::timestamptz`)}
+    ${gt(sql`(item->>'updatedAt')::timestamptz`, sql`${cutoff}::timestamptz`)}
     AND (${isNull(sql`item->>'expiresAt'`)} OR ${gt(sql`(item->>'expiresAt')::timestamptz`, sql`${timestamp}::timestamptz`)})
     ELSE ${gt(sql`(item->>'updatedAt')::timestamptz`, sql`${cutoff}::timestamptz`)} END`;
 }

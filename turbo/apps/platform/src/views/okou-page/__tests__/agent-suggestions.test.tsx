@@ -189,6 +189,37 @@ test("A cached suggestion expires without a realtime event and preserves the dra
   expect(composer()).toHaveTextContent("Keep my draft");
 });
 
+test("Selecting a cached card restores its draft after server cleanup", async () => {
+  const suggestion = { ...makeSuggestion(), consumeToken: "a".repeat(64) };
+  const pool = mockPool([suggestion]);
+  context.mocks.api(suggestionsContract.consume, ({ body, respond }) => {
+    if (body.snapshot?.consumeToken !== suggestion.consumeToken) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Unavailable" },
+      });
+    }
+    return respond(200, {
+      ...suggestion,
+      status: "consumed",
+      selectedOptionId: body.optionId,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(suggestion.title);
+  await fill(composer(), "My original draft");
+  pool.withdrawAll();
+  click(button(makeOption().label));
+  await waitFor(() => {
+    expect(composer()).toHaveTextContent("Referenced decision");
+    expect(composer()).toHaveTextContent("My original draft");
+  });
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+});
+
 test("Selecting a task hides the categories, focuses the composer, and restores Suggestions when cleared", async () => {
   const user = userEvent.setup();
   mockPool();

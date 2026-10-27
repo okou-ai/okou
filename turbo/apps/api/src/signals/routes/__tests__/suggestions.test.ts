@@ -117,9 +117,10 @@ async function primaryRun(enabled = true, secondary = false) {
 }
 
 describe("Agent suggestions", () => {
-  it("expires a card after 24 hours without extending its lifetime on update", async () => {
+  it("renews a card for 24 hours after an update and retains it through cleanup", async () => {
     const start = Date.parse("2026-10-27T00:00:00.000Z");
     mockNow(start);
+    mockEnv("CRON_SECRET", cronSecret);
     const fixture = await primaryRun();
     const suggestion = input();
     const created = await accept(
@@ -137,28 +138,22 @@ describe("Agent suggestions", () => {
       }),
       [200],
     );
-    expect(updated.body.expiresAt).toBe(created.body.expiresAt);
-    mockNow(start + SUGGESTION_RETENTION_MS - 1);
+    expect(updated.body.expiresAt).toBe("2026-10-28T00:01:00.000Z");
+    expect(updated.body.createdAt).toBe(created.body.createdAt);
+    mockNow(start + SUGGESTION_RETENTION_MS);
+    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
     const current = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
     expect(current.body.suggestions).toHaveLength(1);
 
-    mockNow(start + SUGGESTION_RETENTION_MS);
+    mockNow(start + SUGGESTION_RETENTION_MS + 60_000);
     const expired = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
     expect(expired.body.suggestions).toStrictEqual([]);
-    await accept(
-      client().consume({
-        headers: humanHeaders,
-        params: { id: suggestion.id },
-        body: { optionId: "review" },
-      }),
-      [409],
-    );
   });
 
   it("honors an earlier deadline and caps a later deadline at 24 hours", async () => {
@@ -179,6 +174,14 @@ describe("Agent suggestions", () => {
     );
     expect(capped.body.expiresAt).toBe("2026-10-28T00:00:00.000Z");
     await accept(
+      client().update({
+        headers: fixture.headers,
+        params: { id: capped.body.id },
+        body: { expiresAt: "2026-10-27T00:02:00.000Z" },
+      }),
+      [200],
+    );
+    await accept(
       client().create({
         headers: fixture.headers,
         body: { ...input(), expiresAt: "2026-10-26T23:59:59.000Z" },
@@ -197,14 +200,6 @@ describe("Agent suggestions", () => {
       }),
     ).toStrictEqual([capped.body.id]);
     await accept(
-      client().consume({
-        headers: humanHeaders,
-        params: { id: early.id },
-        body: { optionId: "review" },
-      }),
-      [409],
-    );
-    await accept(
       client().update({
         headers: fixture.headers,
         params: { id: early.id },
@@ -212,6 +207,171 @@ describe("Agent suggestions", () => {
       }),
       [409],
     );
+    const consumed = await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: early.id },
+        body: { optionId: "review" },
+      }),
+      [200],
+    );
+    expect(consumed.body).toMatchObject({
+      id: early.id,
+      status: "consumed",
+      selectedOptionId: "review",
+      options: early.options,
+    });
+    mockNow(start + 120_000);
+    const expired = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(expired.body.suggestions).toStrictEqual([]);
+  });
+
+  it.each(["review", null])(
+    "records a cached choice once after physical cleanup (option %s)",
+    async (optionId) => {
+      const start = Date.parse("2026-10-27T00:00:00.000Z");
+      mockNow(start);
+      mockEnv("CRON_SECRET", cronSecret);
+      const fixture = await primaryRun();
+      const cached = await accept(
+        client().create({ headers: fixture.headers, body: input() }),
+        [200],
+      );
+      mockNow(start + SUGGESTION_RETENTION_MS);
+      const cleaned = await accept(
+        cleanupClient().cleanup({ headers: cronHeaders }),
+        [200],
+      );
+      expect(cleaned.body.deleted).toBeGreaterThanOrEqual(1);
+      const choices = await Promise.all(
+        [0, 1].map(() => {
+          return accept(
+            client().consume({
+              headers: humanHeaders,
+              params: { id: cached.body.id },
+              body: { optionId, snapshot: cached.body },
+            }),
+            [200, 409],
+          );
+        }),
+      );
+      expect(
+        choices
+          .map((choice) => {
+            return choice.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 409]);
+      const accepted = choices.find((choice) => {
+        return choice.status === 200;
+      });
+      expect(accepted?.body).toMatchObject({
+        id: cached.body.id,
+        status: "consumed",
+        selectedOptionId: optionId,
+        options: cached.body.options,
+      });
+      const listed = await accept(
+        client().list({ headers: humanHeaders }),
+        [200],
+      );
+      expect(listed.body.receipts).toContainEqual(
+        expect.objectContaining({
+          id: cached.body.id,
+          status: "consumed",
+          selectedOptionId: optionId,
+        }),
+      );
+    },
+  );
+
+  it("preserves a cached choice when the same action is concurrently republished", async () => {
+    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    mockNow(start);
+    mockEnv("CRON_SECRET", cronSecret);
+    const fixture = await primaryRun();
+    const suggestion = input();
+    const cached = await accept(
+      client().create({
+        headers: fixture.headers,
+        body: { ...suggestion, expiresAt: "2026-10-27T00:01:00.000Z" },
+      }),
+      [200],
+    );
+    mockNow(start + 60_000);
+    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
+    const [chosen] = await Promise.all([
+      accept(
+        client().consume({
+          headers: humanHeaders,
+          params: { id: suggestion.id },
+          body: { optionId: "review", snapshot: cached.body },
+        }),
+        [200],
+      ),
+      accept(
+        client().create({ headers: fixture.headers, body: suggestion }),
+        [200, 409],
+      ),
+    ]);
+    expect(chosen.body).toMatchObject({
+      id: suggestion.id,
+      status: "consumed",
+      selectedOptionId: "review",
+    });
+    const listed = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(listed.body.suggestions).toStrictEqual([]);
+    expect(listed.body.receipts).toContainEqual(
+      expect.objectContaining({
+        id: suggestion.id,
+        status: "consumed",
+        selectedOptionId: "review",
+      }),
+    );
+  });
+
+  it("requires the original owner's unmodified snapshot after cleanup", async () => {
+    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    mockNow(start);
+    mockEnv("CRON_SECRET", cronSecret);
+    const fixture = await primaryRun();
+    const cached = await accept(
+      client().create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    mockNow(start + SUGGESTION_RETENTION_MS);
+    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
+    await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: cached.body.id },
+        body: {
+          optionId: "review",
+          snapshot: { ...cached.body, rationale: "Changed after publication" },
+        },
+      }),
+      [409],
+    );
+    await primaryRun();
+    await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: cached.body.id },
+        body: { optionId: "review", snapshot: cached.body },
+      }),
+      [409],
+    );
+    const listed = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(listed.body.receipts).toStrictEqual([]);
   });
 
   it("reclaims expired capacity when publication overlaps scheduled cleanup", async () => {

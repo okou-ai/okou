@@ -128,7 +128,10 @@ const consumeAgentSuggestion$ = command(
     const result = await accept(
       get(apiClient$)(suggestionsContract).consume({
         params: { id: item.id },
-        body: { optionId },
+        body: {
+          optionId,
+          snapshot: item.consumeToken === undefined ? undefined : item,
+        },
         fetchOptions: { signal },
       }),
       [200, 409],

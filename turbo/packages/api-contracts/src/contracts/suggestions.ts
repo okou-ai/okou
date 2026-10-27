@@ -74,6 +74,9 @@ export const suggestionSchema = suggestionContentSchema.extend({
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
   expiresAt: iso.datetime().optional(),
+  consumeToken: string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .optional(),
 });
 export const suggestionReceiptSchema = suggestionSchema
   .pick({
@@ -90,23 +93,31 @@ export const suggestionCreateSchema = suggestionContentSchema.extend({
   priority: suggestionContentSchema.shape.priority.default(0),
   expiresAt: iso.datetime().optional(),
 });
-export const suggestionUpdateSchema = suggestionContentSchema.partial().refine(
-  (body) => {
-    return Object.keys(body).length > 0;
-  },
-  {
-    message: "Provide at least one suggestion field to update",
-  },
-);
+export const suggestionUpdateSchema = suggestionContentSchema
+  .extend({ expiresAt: iso.datetime().optional() })
+  .partial()
+  .refine(
+    (body) => {
+      return Object.keys(body).length > 0;
+    },
+    {
+      message: "Provide at least one suggestion field to update",
+    },
+  );
 export type Suggestion = zInfer<typeof suggestionSchema>;
 export type SuggestionCreate = zInfer<typeof suggestionCreateSchema>;
 export type SuggestionUpdate = zInfer<typeof suggestionUpdateSchema>;
+const suggestionConsumeSchema = object({
+  optionId: suggestionOptionIdSchema.nullable(),
+  snapshot: suggestionSchema.optional(),
+});
+export type SuggestionConsume = zInfer<typeof suggestionConsumeSchema>;
 
-/** An explicit deadline can shorten, but never extend, a card's lifetime. */
+/** An explicit deadline can shorten the 24-hour window after the last update. */
 export function getSuggestionExpiresAt(
-  suggestion: Pick<Suggestion, "createdAt" | "expiresAt">,
+  suggestion: Pick<Suggestion, "updatedAt" | "expiresAt">,
 ): number {
-  const maximum = Date.parse(suggestion.createdAt) + SUGGESTION_RETENTION_MS;
+  const maximum = Date.parse(suggestion.updatedAt) + SUGGESTION_RETENTION_MS;
   return suggestion.expiresAt === undefined
     ? maximum
     : Math.min(maximum, Date.parse(suggestion.expiresAt));
@@ -165,7 +176,7 @@ export const suggestionsContract = c.router({
     path: "/api/suggestions/:id/consume",
     headers: authHeadersSchema,
     pathParams: params,
-    body: object({ optionId: suggestionOptionIdSchema.nullable() }),
+    body: suggestionConsumeSchema,
     responses: { 200: suggestionSchema, ...errors },
     summary: "Choose a suggestion option, or dismiss it with a null option ID",
   },

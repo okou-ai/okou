@@ -16,6 +16,7 @@ import {
   type Suggestion,
   type SuggestionCreate,
   type SuggestionUpdate,
+  type SuggestionConsume,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
@@ -34,6 +35,10 @@ import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/mo
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 import { retainedSuggestionEntry } from "./agent-suggestions-lifecycle";
+import {
+  hasValidSuggestionConsumeToken,
+  withSuggestionConsumeToken,
+} from "./agent-suggestion-consumption-token";
 import {
   PROACTIVE_LEARNING_DEFINITION_NAME,
   PROACTIVE_PLANNING_DEFINITION_NAME,
@@ -59,6 +64,9 @@ function contains(id: string, active: boolean, at: Date) {
 }
 function containsOption(id: string, optionId: string) {
   return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([{ id, options: [{ id: optionId }] }]))}::jsonb`;
+}
+function containsActive(id: string) {
+  return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([{ id, status: "active" }]))}::jsonb`;
 }
 /** Compact terminal receipts and prune entries outside their lifetime. */
 function compactEntries(at: Date) {
@@ -211,10 +219,10 @@ export const readSuggestions$ = command(
         return item.status === "active" && getSuggestionExpiresAt(item) > at;
       })
       .map((item) => {
-        return {
+        return withSuggestionConsumeToken(owner, {
           ...item,
           expiresAt: new Date(getSuggestionExpiresAt(item)).toISOString(),
-        };
+        });
       })
       .sort((a, b) => {
         return (
@@ -263,7 +271,7 @@ export const createSuggestion$ = command(
     const timestamp = at.toISOString();
     const expiresAt = new Date(
       getSuggestionExpiresAt({
-        createdAt: timestamp,
+        updatedAt: timestamp,
         expiresAt: input.expiresAt,
       }),
     ).toISOString();
@@ -305,7 +313,10 @@ export const createSuggestion$ = command(
     if (rows.length > 0) {
       await publishAgentSuggestionsChangedSafely(owner);
       signal.throwIfAborted();
-      return { status: 200 as const, body: item };
+      return {
+        status: 200 as const,
+        body: withSuggestionConsumeToken(owner, item),
+      };
     }
     const entries = await set(storedEntries$, owner, signal);
     const existing = entries.find((entry) => {
@@ -318,7 +329,10 @@ export const createSuggestion$ = command(
       existing.priority === input.priority &&
       isDeepStrictEqual(existing.options, input.options)
     ) {
-      return { status: 200 as const, body: existing };
+      return {
+        status: 200 as const,
+        body: withSuggestionConsumeToken(owner, existing),
+      };
     }
     return conflict(
       "Suggestion identity already exists with different content or has been consumed/removed. Update an active suggestion or use a new ID for a new action.",
@@ -338,16 +352,32 @@ const changeSuggestion$ = command(
     signal: AbortSignal,
   ) => {
     const at = nowDate();
-    const data = { ...patch, updatedAt: at.toISOString() };
+    const timestamp = at.toISOString();
+    const data = {
+      ...patch,
+      updatedAt: timestamp,
+      ...(patch.status === undefined
+        ? {
+            expiresAt: new Date(
+              getSuggestionExpiresAt({
+                updatedAt: timestamp,
+                expiresAt: patch.expiresAt,
+              }),
+            ).toISOString(),
+          }
+        : {}),
+    };
     const [row] = await set(writeDb$)
       .update(agentSuggestions)
       .set({
-        entries: sql`(SELECT jsonb_agg(CASE WHEN item->>'id' = ${id} THEN item || ${sql.param(JSON.stringify(data))}::jsonb WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${retainedSuggestionEntry(at)})`,
+        entries: sql`(SELECT jsonb_agg(CASE WHEN item->>'id' = ${id} THEN item || ${sql.param(JSON.stringify(data))}::jsonb WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${eq(sql`item->>'id'`, id)} OR ${retainedSuggestionEntry(at)})`,
       })
       .where(
         and(
           scope(owner),
-          contains(id, true, at),
+          patch.status === "consumed"
+            ? containsActive(id)
+            : contains(id, true, at),
           typeof patch.selectedOptionId === "string"
             ? containsOption(id, patch.selectedOptionId)
             : undefined,
@@ -376,6 +406,12 @@ export const updateSuggestion$ = command(
     input: SuggestionUpdate,
     signal: AbortSignal,
   ) => {
+    if (
+      input.expiresAt !== undefined &&
+      Date.parse(input.expiresAt) <= nowDate().getTime()
+    ) {
+      return badRequestMessage("Suggestion expiry must be in the future.");
+    }
     if (input.options) {
       for (const option of input.options) {
         const invalid = await set(
@@ -391,7 +427,7 @@ export const updateSuggestion$ = command(
     }
     const item = await set(changeSuggestion$, owner, id, input, signal);
     return item
-      ? { status: 200 as const, body: item }
+      ? { status: 200 as const, body: withSuggestionConsumeToken(owner, item) }
       : conflict("Suggestion is unavailable or no longer active.");
   },
 );
@@ -401,21 +437,88 @@ export const removeSuggestion$ = command(
     return { status: 204 as const, body: undefined };
   },
 );
+
+const consumeCachedSuggestion$ = command(
+  async (
+    { set },
+    owner: Owner,
+    snapshot: Suggestion,
+    optionId: string | null,
+    signal: AbortSignal,
+  ) => {
+    const at = nowDate();
+    const item = suggestionSchema.parse({
+      ...snapshot,
+      consumeToken: undefined,
+      status: "consumed",
+      selectedOptionId: optionId,
+      updatedAt: at.toISOString(),
+    });
+    const rows = await set(writeDb$)
+      .insert(agentSuggestions)
+      .values({ ...owner, entries: [item] })
+      .onConflictDoUpdate({
+        target: [agentSuggestions.orgId, agentSuggestions.userId],
+        set: {
+          entries: sql`${compactEntries(at)} || ${sql.param(JSON.stringify([item]))}::jsonb`,
+        },
+        setWhere: and(
+          not(contains(snapshot.id, false, at)),
+          not(containsActive(snapshot.id)),
+        ),
+      })
+      .returning({ entries: agentSuggestions.entries });
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      // Publication may have won after the first consume found no active card.
+      // Consume its canonical value rather than replacing it with cached data.
+      return await set(
+        changeSuggestion$,
+        owner,
+        snapshot.id,
+        { status: "consumed", selectedOptionId: optionId },
+        signal,
+      );
+    }
+    await publishAgentSuggestionsChangedSafely(owner);
+    signal.throwIfAborted();
+    return item;
+  },
+);
+
 export const consumeSuggestion$ = command(
   async (
     { set },
     owner: Owner,
     id: string,
-    optionId: string | null,
+    input: SuggestionConsume,
     signal: AbortSignal,
   ) => {
-    const item = await set(
+    const { optionId, snapshot } = input;
+    let item = await set(
       changeSuggestion$,
       owner,
       id,
       { status: "consumed", selectedOptionId: optionId },
       signal,
     );
+    if (
+      item === null &&
+      snapshot?.id === id &&
+      hasValidSuggestionConsumeToken(owner, snapshot) &&
+      (optionId === null ||
+        snapshot.options.some((option) => {
+          return option.id === optionId;
+        }))
+    ) {
+      item = await set(
+        consumeCachedSuggestion$,
+        owner,
+        snapshot,
+        optionId,
+        signal,
+      );
+    }
     return item
       ? { status: 200 as const, body: item }
       : conflict("Suggestion or selected option is no longer available.");
