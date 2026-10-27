@@ -28,8 +28,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import {
   and,
@@ -99,7 +97,6 @@ import {
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import { reconcileBrowserUserActions$ } from "./browser-user-actions.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 const RECONCILE_BATCH_SIZE = 20;
 const BROWSER_RESIZE_TIMEOUT_MS = 30_000;
@@ -1963,26 +1960,11 @@ const createAndClaimProviderInstance$ = command(
       readonly screenHeight: number;
     },
   ) => {
-    let extensionIds = env("OKOU_BROWSER_USE_EXTENSION_IDS");
-    if (extensionIds?.length) {
-      const featureContext = await set(
-        loadUserFeatureSwitchContext$,
-        args.context.orgId,
-        args.context.userId,
-        get(rootSignal$),
-      );
-      if (
-        !isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, featureContext)
-      ) {
-        extensionIds = undefined;
-      }
-    }
     const provider = await providerCall(
       createBrowserUseSession(
         {
           profileId: args.profile.providerProfileId,
           proxyCountryCode: args.browser.proxyCountryCode,
-          extensionIds,
           // Okou owns reclamation through the idle lease, so the provider only
           // needs to enforce the absolute upper bound.
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
