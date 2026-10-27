@@ -66,7 +66,7 @@ import {
   closeBrowserUseWindow,
   createBrowserUseWindow,
   createBrowserUseSession,
-  getBrowserUseSession,
+  findBrowserUseSession,
   initialBrowserUseWindow,
   listBrowserUseTabUrls,
   resizeBrowserUseSession,
@@ -929,7 +929,7 @@ function sharedBrowserPresent(
           const session =
             view.profile.status === "active" && view.profile.providerSessionId
               ? await provider(
-                  getBrowserUseSession(view.profile.providerSessionId, signal),
+                  findBrowserUseSession(view.profile.providerSessionId, signal),
                   signal,
                 )
               : null;
@@ -1049,11 +1049,11 @@ function sharedBrowserOpen(
             return unavailable();
           }
           const session = await provider(
-            getBrowserUseSession(profile.providerSessionId, signal),
+            findBrowserUseSession(profile.providerSessionId, signal),
             signal,
           );
           if (
-            session.id !== profile.providerSessionId ||
+            !session ||
             session.status !== "active" ||
             !session.cdpUrl
           ) {
@@ -1199,11 +1199,11 @@ function sharedBrowserResize(
             return unavailable();
           }
           const session = await provider(
-            getBrowserUseSession(view.profile.providerSessionId, signal),
+            findBrowserUseSession(view.profile.providerSessionId, signal),
             signal,
           );
           if (
-            session.id !== view.profile.providerSessionId ||
+            !session ||
             session.status !== "active" ||
             !session.cdpUrl
           ) {
@@ -1294,11 +1294,11 @@ function sharedBrowserViewer(
             return unavailable();
           }
           const session = await provider(
-            getBrowserUseSession(view.profile.providerSessionId, signal),
+            findBrowserUseSession(view.profile.providerSessionId, signal),
             signal,
           );
           if (
-            session.id !== view.profile.providerSessionId ||
+            !session ||
             session.status !== "active" ||
             !session.cdpUrl
           ) {
@@ -1357,11 +1357,11 @@ function sharedBrowserClose(
               return { kind: "ok", value: {} };
             }
             const session = await provider(
-              getBrowserUseSession(view.profile.providerSessionId, signal),
+              findBrowserUseSession(view.profile.providerSessionId, signal),
               signal,
             );
             if (
-              session.id === view.profile.providerSessionId &&
+              session &&
               session.status === "active" &&
               session.cdpUrl
             ) {

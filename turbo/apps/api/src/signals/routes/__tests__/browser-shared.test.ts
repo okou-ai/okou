@@ -3,9 +3,11 @@ import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
@@ -20,6 +22,7 @@ import { uniqueSlackUserId } from "./helpers/slack-public-install";
 import {
   createRunnerBrowserFixtures,
   MINUTE,
+  PROVIDER_URL,
   START,
 } from "./helpers/runner-browser-fixture";
 
@@ -108,6 +111,58 @@ function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("shared Browser public consumers", () => {
+  it("treats a missing provider instance as unavailable while preserving actual provider failures", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      nativeCommands(f);
+      const a = await f.start();
+      await use(a);
+      const [providerSessionId] = f.provider.sessionIds;
+      if (!providerSessionId) {
+        throw new Error("Expected the shared provider instance");
+      }
+      let missing = true;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
+          return HttpResponse.json(
+            { detail: missing ? "Browser missing" : "Provider unavailable" },
+            { status: missing ? 404 : 503 },
+          );
+        }),
+      );
+      const params = { threadId: a.threadId };
+      const viewed = await accept(client().get({ headers, params }), [200]);
+      expect(viewed.body.browser).toMatchObject({
+        status: "suspended",
+        liveUrl: null,
+      });
+      expect(
+        (await client().use({ headers: runHeaders(a), body: {} })).status,
+      ).toBe(409);
+      expect(
+        (
+          await client().resizeByThread({
+            headers,
+            params,
+            body: { aspectRatio: 2 },
+          })
+        ).status,
+      ).toBe(409);
+      expect(
+        (await client().viewerConnection({ headers, params })).status,
+      ).toBe(409);
+      await accept(client().close({ headers, params, body: {} }), [200]);
+      missing = false;
+      const failed = await client().get({ headers, params });
+      expect(failed.status).toBe(502);
+      expect(failed.body).toMatchObject({
+        error: { code: "BROWSER_USE_ERROR" },
+      });
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  });
+
   it("shares the owner Browser with a Slack chat and preserves its window after the Run ends", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
