@@ -16,7 +16,7 @@
   "crates/process-control-ipc": "0.5.36",
   "crates/process-launch": "0.1.2",
   "crates/guest-agent": "0.109.10",
-  "crates/guest-agent-tests": "0.1.80",
+  "crates/guest-agent-tests": "0.1.81",
   "crates/guest-contracts": "0.27.7",
   "crates/guest-tool-exec": "0.3.34",
   "crates/guest-task-exec": "0.2.36",
