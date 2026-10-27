@@ -626,7 +626,7 @@ final class ConversationStore {
       await messageMarkdown.prepareLatest(
         Array(items.prefix(renderWindow.range.lowerBound).compactMap(\.message).suffix(4)))
       print("A02_PROBE_PREPARE_RETURN:\(webURL.absoluteString)")
-      guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+      guard !needsUpgrade else { return }
       // Refresh/send may have changed the projection while preparation was suspended.
       print("A02_PROBE_PUBLISH:\(webURL.absoluteString)")
       renderWindow.expand()
