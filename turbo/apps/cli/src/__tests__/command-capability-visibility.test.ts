@@ -213,6 +213,37 @@ describe("registerCommands", () => {
     expect(visibleCommandNames(prog)).toContain("presentation");
   });
 
+  it("shows both template publishers with the Custom catalog capability", () => {
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      buildOkouToken({ scope: "okou", capabilities: ["user-template:write"] }),
+    );
+    const prog = new Command();
+
+    registerCommands(prog);
+
+    expect(visibleCommandNames(prog)).toEqual(
+      expect.arrayContaining(["presentation-template", "user-template"]),
+    );
+  });
+
+  it("hides both template publishers with only the legacy catalog capability", () => {
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      buildOkouToken({
+        scope: "okou",
+        capabilities: ["presentation-template:write"],
+      }),
+    );
+    const prog = new Command();
+
+    registerCommands(prog);
+
+    expect(hiddenCommandNames(prog)).toEqual(
+      expect.arrayContaining(["presentation-template", "user-template"]),
+    );
+  });
+
   it("should hide unmapped commands and show capable ones with valid token", () => {
     const token = buildOkouToken({
       scope: "okou",

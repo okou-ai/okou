@@ -20,11 +20,12 @@ import { presentationTemplateCommand } from "../index";
 
 const PREPARE_URL = "http://localhost:3000/api/uploads/prepare";
 const COMPLETE_URL = "http://localhost:3000/api/uploads/complete";
-const PUBLISH_URL = "http://localhost:3000/api/presentation-templates";
+const PUBLISH_URL = "http://localhost:3000/api/user-templates";
 const PUT_URL = "https://mock-r2.test/upload/:uploadId";
 const TEMPLATE_ID = "11111111-1111-4111-8111-111111111111";
 
 interface PublishedBody {
+  readonly kind: "presentation";
   readonly title: string;
   readonly sourceFileId: string;
   readonly pageFileIds: readonly string[];
@@ -139,7 +140,7 @@ describe("okou presentation-template publish", () => {
     vi.unstubAllEnvs();
   });
 
-  it("publishes page images in filename order and skips non-page files", async () => {
+  it("publishes to Custom with page images in filename order and skips non-page files", async () => {
     // Written out of order on purpose: the published order must come from the
     // zero-padded names, not from the order the directory happens to list.
     writeFileSync(join(pagesDir, "page-010.png"), Buffer.from("tenth"));
@@ -155,10 +156,16 @@ describe("okou presentation-template publish", () => {
         published = (await request.json()) as PublishedBody;
         return HttpResponse.json({
           id: TEMPLATE_ID,
+          kind: "presentation",
           title: published.title,
           sourceFilename: "brand-system.ppt",
           coverUrl: "https://presigned.example.com/cover.png",
+          coverHasMorePages: true,
           pageCount: published.pageFileIds.length,
+          visibility: "private",
+          ownerUserId: "user_presentation_publisher",
+          ownerDisplayName: "Template Owner",
+          canManage: true,
           createdAt: "2026-08-20T00:00:00.000Z",
           updatedAt: "2026-08-20T00:00:00.000Z",
         });
@@ -183,6 +190,7 @@ describe("okou presentation-template publish", () => {
       throw new Error("Expected the publish route to receive a request");
     }
     expect(published.title).toBe("Brand system");
+    expect(published.kind).toBe("presentation");
     expect(uploads.filenameOf(published.sourceFileId)).toBe("brand-system.ppt");
     expect(uploads.contentTypeOf(published.sourceFileId)).toBe(
       "application/vnd.ms-powerpoint",
