@@ -1052,11 +1052,7 @@ function sharedBrowserOpen(
             findBrowserUseSession(profile.providerSessionId, signal),
             signal,
           );
-          if (
-            !session ||
-            session.status !== "active" ||
-            !session.cdpUrl
-          ) {
+          if (!session || session.status !== "active" || !session.cdpUrl) {
             return unavailable();
           }
           const resolved = await set(
@@ -1202,11 +1198,7 @@ function sharedBrowserResize(
             findBrowserUseSession(view.profile.providerSessionId, signal),
             signal,
           );
-          if (
-            !session ||
-            session.status !== "active" ||
-            !session.cdpUrl
-          ) {
+          if (!session || session.status !== "active" || !session.cdpUrl) {
             return unavailable();
           }
           const height = Math.min(
@@ -1297,11 +1289,7 @@ function sharedBrowserViewer(
             findBrowserUseSession(view.profile.providerSessionId, signal),
             signal,
           );
-          if (
-            !session ||
-            session.status !== "active" ||
-            !session.cdpUrl
-          ) {
+          if (!session || session.status !== "active" || !session.cdpUrl) {
             return unavailable();
           }
           return {
@@ -1360,11 +1348,7 @@ function sharedBrowserClose(
               findBrowserUseSession(view.profile.providerSessionId, signal),
               signal,
             );
-            if (
-              session &&
-              session.status === "active" &&
-              session.cdpUrl
-            ) {
+            if (session && session.status === "active" && session.cdpUrl) {
               await set(
                 saveSharedSnapshot$,
                 {
