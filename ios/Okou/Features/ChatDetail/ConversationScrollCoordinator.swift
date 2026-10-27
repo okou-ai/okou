@@ -92,7 +92,14 @@ final class ConversationScrollCoordinator {
     localSendMessageID = messageID
     anchor.cancel()
     conversation.rememberReadingPosition(nil)
-    sendTransition.begin(messageID: messageID, reduceMotion: reduceMotion)
+    let composer = conversation.composer
+    let canAnimateText =
+      conversation.attachmentDraft.items.isEmpty
+      && composer.document.parts.allSatisfy { $0["type"]?.string == "text" }
+      && composer.editor.view?.markedTextRange == nil
+    sendTransition.begin(
+      messageID: messageID, reduceMotion: reduceMotion,
+      sourceView: canAnimateText ? composer.editor.view : nil)
     if sendTransition.isActive { conversation.preserveRenderWindow() }
   }
 

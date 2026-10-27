@@ -7,6 +7,7 @@ struct UserMessageView: View {
   let webURL: URL
   let viewer: MessageAttachmentStore
   let loadsAttachments: Bool
+  var sendTransition: ConversationSendTransition? = nil
 
   private var document: ChatUserMessage {
     message.userMessage ?? ChatUserMessage(parts: [.init(type: "text", text: message.text)])
@@ -41,6 +42,10 @@ struct UserMessageView: View {
           }
           .padding(14)
           .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+          .background {
+            SendMotionBubbleAnchor(messageID: message.id, transition: sendTransition)
+          }
+          .opacity(sendTransition?.hidesBubbleID == message.id ? 0 : 1)
         }
       }
     }

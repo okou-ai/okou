@@ -207,6 +207,14 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       pendingScroll = nil
       collection.stopScrollingAndZooming()
       animatesScroll = false
+      if let footer = dataSource.indexPath(for: "conversation-bottom"),
+        let frame = collection.layoutAttributesForItem(at: footer)?.frame
+      {
+        let lastContent = source.rows.last(where: { $0.isMessageContent })
+        let spacing: CGFloat =
+          lastContent == nil ? 20 : (lastContent?.message?.role == .user ? 8 : 24)
+        source.sendTransition?.projectFlight(insertionY: frame.minY, topSpacing: spacing)
+      }
       source.phaseChanged(.animating)
     }
     source.sendTransition?.didFinish = { [weak self] in
@@ -424,6 +432,30 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       resizeIDs.removeValue(forKey: id)
     }
     observedHeights = observedHeights.filter { validIDs.contains($0.key) }
+    // Measure the outgoing literal text without mounting temporary SwiftUI trees
+    // on the send's first animation frames. Other rows keep their hosted measurement.
+    let measuresImmediately =
+      source.sendTransition?.hidesBubbleID != nil
+      && missing.allSatisfy { row in
+        switch row {
+        case .message(let message, _, _, _, _, _):
+          message.id == source.sendTransition?.messageID
+            && message.role == .user && message.attachments.isEmpty && message.modelChange == nil
+            && message.inputError == nil
+            && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
+        case .footer(_, let showsAvatar): !showsAvatar
+        default: false
+        }
+      }
+    if measuresImmediately {
+      for (row, height) in zip(missing, measureImmediately(missing, width: width)) {
+        preparedMeasurements[row.id] = Measurement(
+          row: row, width: width, category: category, height: height)
+      }
+      preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
+      applyPreparedRows()
+      return
+    }
     if missing.isEmpty {
       preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
       applyPreparedRows()
@@ -518,6 +550,32 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     return previous
   }
 
+  private func measureImmediately(_ rows: [ConversationCollectionRow], width: CGFloat) -> [CGFloat]
+  {
+    rows.map { row in
+      switch row {
+      case .message(let message, _, let topSpacing, let pendingRetry, _, _):
+        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
+        let text = NSAttributedString(string: message.text, attributes: [.font: font])
+        let size = text.boundingRect(
+          with: CGSize(width: (width - 40) * 0.85 - 28, height: .greatestFiniteMagnitude),
+          options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+        let status =
+          pendingRetry == nil
+          ? 0
+          : 8
+            + UIFont.preferredFont(
+              forTextStyle: .caption1, compatibleWith: traitCollection
+            ).lineHeight
+        return pixelHeight(size.height + 28 + topSpacing + status)
+      case .footer(let state, _):
+        return pixelHeight(45 + (state.isActive ? 48 : 0))
+      default:
+        preconditionFailure("Only outgoing plain text and its footer use immediate metrics")
+      }
+    }
+  }
+
   private func pixelHeight(_ height: CGFloat) -> CGFloat {
     let scale = traitCollection.displayScale
     return max(1, ceil(height * scale) / scale)
@@ -579,9 +637,16 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         return
       }
       if source.sendTransition?.isActive == true {
-        let cell = source.sendTransition?.messageID.flatMap { dataSource.indexPath(for: $0) }
-          .flatMap { collection.cellForItem(at: $0) }
-        source.sendTransition?.presentIfReady(in: ids, arrivingView: cell)
+        let messageID = source.sendTransition?.messageID
+        let indexPath = messageID.flatMap { dataSource.indexPath(for: $0) }
+        let cell = indexPath.flatMap { collection.cellForItem(at: $0) }
+        var messageFrame = indexPath.flatMap { collection.layoutAttributesForItem(at: $0)?.frame }
+        if let id = messageID, let spacing = displayedRows[id]?.readingContentTopSpacing {
+          messageFrame?.origin.y += spacing
+          messageFrame?.size.height -= spacing
+        }
+        source.sendTransition?.presentIfReady(
+          in: ids, arrivingView: cell, messageFrame: messageFrame)
       } else if let pendingScroll {
         self.pendingScroll = nil
         scrollTo(pendingScroll.0, anchor: pendingScroll.1, animated: pendingScroll.2)
