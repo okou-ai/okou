@@ -664,7 +664,6 @@ async def test_payload_dependent_sigv4_holds_admission_until_terminal_cleanup(
     flow = _header_auth_flow(
         real_flow,
         headers,
-        body=body,
         content_length=str(len(body)),
     )
     if auth_location == "query":
@@ -679,10 +678,12 @@ async def test_payload_dependent_sigv4_holds_admission_until_terminal_cleanup(
         patch.object(auth, "get_firewall_headers", get_headers),
     ):
         assert mitm_addon.requestheaders(flow) is None
+        assert flow.request.raw_content is None
         assert aws_sigv4_body_admission.state_for_tests() == (1, len(body))
         assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION in flow.metadata
         get_headers.assert_not_awaited()
 
+        flow.request.raw_content = body
         await mitm_addon.request(flow)
         assert aws_sigv4_body_admission.state_for_tests() == (1, len(body))
         assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION not in flow.metadata
@@ -716,7 +717,7 @@ async def test_prebound_whitespace_sigv4_retains_body_admission_and_signer_rejec
     tmp_path, real_flow, headers, mitm_ctx, prefix
 ) -> None:
     registry_path = _write_aws_registry(tmp_path)
-    flow = _header_auth_flow(real_flow, headers, body=b"body", content_length="4")
+    flow = _header_auth_flow(real_flow, headers, content_length="4")
     authorization = prefix + flow.request.headers["Authorization"]
     flow.request.headers["Authorization"] = authorization
     bind_flow_upstream(flow, host=STS_HOST)
@@ -727,10 +728,12 @@ async def test_prebound_whitespace_sigv4_retains_body_admission_and_signer_rejec
         patch.object(auth, "get_firewall_headers", get_headers),
     ):
         assert mitm_addon.requestheaders(flow) is None
+        assert flow.request.raw_content is None
         assert flow.request.stream is False
         assert aws_sigv4_body_admission.state_for_tests() == (1, 4)
         get_headers.assert_not_awaited()
 
+        flow.request.raw_content = b"body"
         await mitm_addon.request(flow)
         assert flow.response is not None
         assert flow.response.status_code == 502
@@ -804,7 +807,6 @@ async def test_aws_action_rule_uses_buffered_body_for_request_classification(
     flow = _header_auth_flow(
         real_flow,
         headers,
-        body=STS_FORM_BODY,
         content_length=str(len(STS_FORM_BODY)),
         content_type="application/x-www-form-urlencoded",
     )
@@ -815,23 +817,19 @@ async def test_aws_action_rule_uses_buffered_body_for_request_classification(
     with (
         mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
         patch.object(auth, "get_firewall_headers", get_headers),
-        patch.object(
-            matching,
-            "match_compiled_firewall_request",
-            wraps=matching.match_compiled_firewall_request,
-        ) as firewall_match,
     ):
         assert mitm_addon.requestheaders(flow) is None
+        assert flow.request.raw_content is None
+        assert flow.request.stream is False
+        assert aws_sigv4_body_admission.state_for_tests() == (1, len(STS_FORM_BODY))
+        get_headers.assert_not_awaited()
+
+        flow.request.raw_content = STS_FORM_BODY
         await mitm_addon.request(flow)
 
         assert flow.metadata[metadata_keys.FIREWALL_PERMISSION] == _AWS_PERMISSION
-        contexts = [
-            call.args[5]
-            for call in firewall_match.call_args_list
-            if len(call.args) > 5 and isinstance(call.args[5], matching.FirewallRequestContext)
-        ]
-        assert contexts
-        assert contexts[-1].body == STS_FORM_BODY
+        assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
+        assert flow.response is None
 
         flow.response = http.Response.make(200, b"ok")
         mitm_addon.response(flow)
