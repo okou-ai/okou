@@ -4,11 +4,10 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { blobs } from "@okouai/db/schema/blob";
 import { workflows } from "@okouai/db/schema/workflow";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
-import { and, asc, eq, exists, gte, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, exists, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   boolean as zBoolean,
@@ -21,9 +20,7 @@ import {
 } from "zod";
 
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { safeSqlStateCode } from "../../lib/pg-errors";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import { deletedRunHistoryReferences } from "./conversation-history-deletion.service";
 
 export interface DeleteAgentArgs {
   readonly agentId: string;
@@ -222,56 +219,4 @@ export function* agentDeletionAdmissionPlan(
       return run.id;
     }),
   };
-}
-
-export function conversationReferenceBatches(
-  removed: ReturnType<typeof deletedRunHistoryReferences>,
-) {
-  const references = [...removed.references]
-    .sort(([a], [b]) => {
-      return a.localeCompare(b);
-    })
-    .map(([hash, references]) => {
-      return { hash, release_count: references };
-    });
-  const batches: (typeof references)[] = [];
-  for (let offset = 0; offset < references.length; offset += 500) {
-    batches.push(references.slice(offset, offset + 500));
-  }
-  return {
-    batches,
-    receipt: {
-      deletedRuns: removed.deletedRuns,
-      releasedReferences: references.reduce((total, entry) => {
-        return total + entry.release_count;
-      }, 0),
-      releasedHashes: references.length,
-    },
-  };
-}
-type ReferenceBatch = ReturnType<
-  typeof conversationReferenceBatches
->["batches"][number];
-export function conversationBlobLockCondition(batch: ReferenceBatch) {
-  return inArray(
-    blobs.hash,
-    batch.map((entry) => {
-      return entry.hash;
-    }),
-  );
-}
-export function conversationBlobReleaseValues(batch: ReferenceBatch) {
-  return {
-    values: { refCount: sql`${blobs.refCount} - removed.release_count` },
-    from: sql`jsonb_to_recordset(${JSON.stringify(batch)}::jsonb) AS removed(hash text, release_count integer)`,
-    where: and(
-      eq(blobs.hash, sql`removed.hash`),
-      gte(blobs.refCount, sql`removed.release_count`),
-    ),
-  };
-}
-export function conversationDeletionDatabaseError(error: unknown) {
-  return new Error("Conversation history deletion database operation failed", {
-    cause: { code: safeSqlStateCode(error) },
-  });
 }
