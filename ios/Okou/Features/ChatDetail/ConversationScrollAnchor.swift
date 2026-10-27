@@ -3,7 +3,7 @@ import SwiftUI
 /// Restores a message and its viewport offset after explicit presentation changes.
 /// Uses public scroll APIs without replacing the container's delegate.
 @MainActor
-final class ConversationScrollAnchor {
+final class ConversationScrollAnchor: NSObject {
   private let markers = NSHashTable<ConversationRowMarker>.weakObjects()
   private weak var scrollView: UIScrollView?
   private var position: ConversationReadingPosition?
@@ -11,6 +11,8 @@ final class ConversationScrollAnchor {
   private var settlingFrames = 0
   private var followsBottom = false
   private var reportedPosition: ConversationReadingPosition?
+  private var keyboardAnimationDeadline: CFTimeInterval = 0
+  private var keyboardAnimationOptions = UIView.AnimationOptions()
   var isScrolling = false {
     didSet { if !isScrolling { layoutDidChange() } }
   }
@@ -19,6 +21,37 @@ final class ConversationScrollAnchor {
   var readingPositionDidChange: (@MainActor (ConversationReadingPosition) -> Void)?
   var isPresentedMarker: (@MainActor (ConversationRowMarker) -> Bool)?
   var preservedPosition: ConversationReadingPosition? { position }
+
+  override init() {
+    super.init()
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(keyboardWillChangeFrame(_:)),
+      name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+  }
+
+  @objc private func keyboardWillChangeFrame(_ notification: Notification) {
+    guard
+      let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey]
+        as? Double,
+      let curve = notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt
+    else { return }
+    keyboardAnimationDeadline = CACurrentMediaTime() + duration
+    keyboardAnimationOptions = UIView.AnimationOptions(rawValue: curve << 16)
+      .union([.beginFromCurrentState, .allowUserInteraction])
+  }
+
+  private func setContentOffset(_ y: CGFloat, in scrollView: UIScrollView) {
+    let offset = CGPoint(x: scrollView.contentOffset.x, y: y)
+    let duration = keyboardAnimationDeadline - CACurrentMediaTime()
+    guard duration > 0, !UIAccessibility.isReduceMotionEnabled else {
+      scrollView.setContentOffset(offset, animated: false)
+      return
+    }
+    // Frame-delayed anchor correction otherwise jumps ahead of the keyboard's native animation.
+    UIView.animate(withDuration: duration, delay: 0, options: keyboardAnimationOptions) {
+      scrollView.setContentOffset(offset, animated: false)
+    }
+  }
 
   func capture(messageID: String? = nil) -> ConversationReadingPosition? {
     guard let scrollView else { return nil }
@@ -127,7 +160,7 @@ final class ConversationScrollAnchor {
         scrollView.contentSize.height - scrollView.bounds.height
           + scrollView.adjustedContentInset.bottom)
       if abs(y - scrollView.contentOffset.y) > 0.5 {
-        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y), animated: false)
+        setContentOffset(y, in: scrollView)
         layoutDidChange()
       } else {
         followsBottom = false
@@ -158,7 +191,7 @@ final class ConversationScrollAnchor {
         + scrollView.adjustedContentInset.bottom)
     let y = min(maximum, max(minimum, scrollView.contentOffset.y + offset - position.offset))
     guard abs(y - scrollView.contentOffset.y) > 0.5 else { return }
-    scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y), animated: false)
+    setContentOffset(y, in: scrollView)
     // Verify the resulting frame after native layout responds to this move.
     layoutDidChange()
   }
