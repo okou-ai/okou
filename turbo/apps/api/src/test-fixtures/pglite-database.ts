@@ -460,15 +460,20 @@ export async function createApiDatabaseSnapshot(
     `oa_${randomUUID().replaceAll("-", "")}`,
   );
   const template = `${namespace}_template`;
-  const capable = await withNativeClient(connectionString, async (client) => {
-    const result = await client.query(
-      "SELECT rolcreatedb OR rolsuper AS capable FROM pg_roles WHERE rolname = current_user",
-    );
-    return tuple([object({ capable: boolean() })]).parse(result.rows)[0]
-      .capable;
-  });
+  const capabilities = await withNativeClient(
+    connectionString,
+    async (client) => {
+      const result = await client.query(
+        "SELECT rolcreatedb OR rolsuper AS capable, rolsuper AS superuser FROM pg_roles WHERE rolname = current_user",
+      );
+      return tuple([
+        object({ capable: boolean(), superuser: boolean() }),
+      ]).parse(result.rows)[0];
+    },
+  );
   const native =
-    capable && (await createDatabase(connectionString, template, "template0"));
+    capabilities.capable &&
+    (await createDatabase(connectionString, template, "template0"));
   const close = async () => {
     if (native) {
       // Prefix comparison is literal (LIKE would treat underscores as wildcards).
@@ -499,6 +504,11 @@ export async function createApiDatabaseSnapshot(
               return await client.query(sql, values);
             },
           });
+          if (capabilities.superuser) {
+            // The run owns the seeded baseline flush, rather than the first
+            // isolated case paying for it when dropping its database.
+            await client.query("CHECKPOINT");
+          }
         },
       );
       await writeFile(
