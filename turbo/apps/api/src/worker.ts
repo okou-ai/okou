@@ -1,21 +1,12 @@
 import { tracing } from "cloudflare:workers";
 import type { ExecutionContext, Hyperdrive } from "@cloudflare/workers-types";
 import { trace } from "@opentelemetry/api";
-import { withSentry } from "@sentry/cloudflare";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 import { instrumentPgPool } from "./lib/db-instrumentation";
 import type { ApiDb } from "./lib/db-types";
 import { env } from "./lib/env";
-import {
-  filterDiscordOauthSentryBreadcrumb,
-  filterDiscordOauthSentryEvent,
-} from "./lib/discord-oauth-telemetry";
-import {
-  filterTelegramAuthSentryBreadcrumb,
-  filterTelegramAuthSentryEvent,
-} from "./lib/telegram-auth-telemetry";
 import {
   withRequestRuntime,
   type RequestQuerySpan,
@@ -229,26 +220,6 @@ function workerFetch(
   });
 }
 
-export default withSentry(
-  () => {
-    return {
-      dsn: env("SENTRY_DSN"),
-      environment: env("ENV"),
-      release: env("GIT_COMMIT_SHA"),
-      sendDefaultPii: false,
-      tracesSampleRate: 0,
-      enableLogs: false,
-      beforeSend(event) {
-        return filterTelegramAuthSentryEvent(event)
-          ? filterDiscordOauthSentryEvent(event)
-          : null;
-      },
-      beforeBreadcrumb(breadcrumb) {
-        return filterTelegramAuthSentryBreadcrumb(breadcrumb)
-          ? filterDiscordOauthSentryBreadcrumb(breadcrumb)
-          : null;
-      },
-    };
-  },
-  Object.freeze({ fetch: workerFetch }),
-);
+// Workers Logs and traces observe this entry natively; Sentry is not
+// initialized here, so shared captureException calls are no-ops.
+export default { fetch: workerFetch };

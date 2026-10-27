@@ -37,7 +37,8 @@ try {
     // Keep Cloudflare's native modules intact; Wrangler must not rebundle this.
     external: ["cloudflare:*"],
     conditions: ["workerd", "worker"],
-    // Preserve real error reporting using Sentry's Workers-native SDK.
+    // Shared code imports @sentry/node, which cannot run on Workers. The Worker
+    // never initializes Sentry, so these Workers SDK calls remain no-ops.
     alias: { "@sentry/node": "@sentry/cloudflare" },
     banner: {
       js: workerRequireBanner,
