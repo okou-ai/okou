@@ -31,9 +31,8 @@ import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-rou
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command } from "ccstate";
-import { and, asc, desc, eq, isNotNull, lte, not, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
 import { object, string, type infer as zInfer } from "zod";
 
 import type { Tx } from "../../lib/db-types";
@@ -67,6 +66,10 @@ import {
 import { releaseThreadBrowsersForRun$ } from "./browser.service";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  loadCompletedRunOutput$,
+  type CompletedRunOutput,
+} from "./chat-event-row-read.service";
 import {
   clearCanonicalSlackThreadStatusIfIdle$,
   reconcileCanonicalSlackThreadStatus$,
@@ -338,20 +341,8 @@ function terminalCallbackErrorMessage(
   return "Run failed";
 }
 
-interface ResultEventItem {
-  readonly sequenceNumber: number;
-  readonly content: string;
-}
-
-interface DbCompletedChatOutput {
-  readonly latestAssistant: AssistantEventItem | null;
-  readonly resultFallback: ResultEventItem | null;
-}
-
-interface CompletedChatOutputLoad {
+interface CompletedChatOutputLoad extends CompletedRunOutput {
   readonly assistantItemsToInsert: readonly AssistantEventItem[];
-  readonly latestAssistant: AssistantEventItem | null;
-  readonly resultFallback: ResultEventItem | null;
 }
 
 interface AgentForAutoSend {
@@ -689,114 +680,37 @@ export function buildQueuedRunCommand(
   };
 }
 
-async function latestEventBackedAssistantEvent(
-  db: Db,
-  runId: string,
-  options: { readonly maxSequenceNumber?: number } = {},
-): Promise<AssistantEventItem | null> {
-  const [event] = await db
-    .select({
-      content: canonicalChatEventContent(),
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.runId, runId),
-        chatEventTypeIn(["output.message"]),
-        isNotNull(chatEvents.runEventSequenceNumber),
-        isNotNull(canonicalChatEventContent()),
-        not(sql`${canonicalChatEventContent()} ~ '^[[:space:]]*$'`),
-        ...(options.maxSequenceNumber === undefined
-          ? []
-          : [
-              lte(chatEvents.runEventSequenceNumber, options.maxSequenceNumber),
-            ]),
-      ),
-    )
-    .orderBy(desc(chatEvents.runEventSequenceNumber))
-    .limit(1);
-
-  if (!event || event.content === null || event.sequenceNumber === null) {
-    return null;
-  }
-  return {
-    content: event.content,
-    sequenceNumber: event.sequenceNumber,
-  };
-}
-
-async function loadDbCompletedChatOutput(args: {
-  readonly db: Db;
-  readonly runId: string;
-  readonly lastEventSequence: number | null;
-}): Promise<DbCompletedChatOutput> {
-  if (args.lastEventSequence === null) {
-    return {
-      latestAssistant: null,
-      resultFallback: null,
-    };
-  }
-
-  const [state] = await args.db
-    .select({
-      latestResultSequence: runOutputMaterializations.latestResultSequence,
-      latestResultText: runOutputMaterializations.latestResultText,
-    })
-    .from(runOutputMaterializations)
-    .where(eq(runOutputMaterializations.runId, args.runId))
-    .limit(1);
-
-  const latestAssistant = await latestEventBackedAssistantEvent(
-    args.db,
-    args.runId,
-    { maxSequenceNumber: args.lastEventSequence },
-  );
-  const resultFallback =
-    state?.latestResultSequence !== null &&
-    state?.latestResultSequence !== undefined &&
-    state.latestResultSequence <= args.lastEventSequence &&
-    state.latestResultText !== null
-      ? {
-          sequenceNumber: state.latestResultSequence,
-          content: state.latestResultText,
-        }
-      : null;
-  return {
-    latestAssistant,
-    resultFallback,
-  };
-}
-
-async function loadCompletedChatOutput(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly lastEventSequence: number | null;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-  },
-  signal: AbortSignal,
-): Promise<CompletedChatOutputLoad> {
-  const dbOutput = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_load_db_output_state",
-    "nested",
-    () => {
-      return loadDbCompletedChatOutput({
-        db: args.db,
-        runId: args.runId,
-        lastEventSequence: args.lastEventSequence,
-      });
+const loadCompletedChatOutput$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly lastEventSequence: number | null;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
     },
-  );
-  signal.throwIfAborted();
+    signal: AbortSignal,
+  ): Promise<CompletedChatOutputLoad> => {
+    const timing = {
+      actionType:
+        "api_dispatch_pre_create_agent_chat_callback_load_db_output_state" as const,
+      spanKind: "nested" as const,
+      startedAt: now(),
+    };
+    const dbOutput = await set(loadCompletedRunOutput$, {
+      runId: args.runId,
+      lastEventSequence: args.lastEventSequence,
+    }).finally(() => {
+      args.timing.recordElapsed(timing);
+    });
+    signal.throwIfAborted();
 
-  return {
-    assistantItemsToInsert: [],
-    latestAssistant: dbOutput.latestAssistant,
-    resultFallback: dbOutput.resultFallback,
-  };
-}
+    return {
+      assistantItemsToInsert: [],
+      latestAssistant: dbOutput.latestAssistant,
+      resultFallback: dbOutput.resultFallback,
+    };
+  },
+);
 
 interface SlackDeliveryTarget {
   readonly workspaceId?: string;
@@ -1741,7 +1655,6 @@ const handleCompletedChatCallback$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
@@ -1757,9 +1670,9 @@ const handleCompletedChatCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<CompletedChatCallbackResult> => {
-    const output = await loadCompletedChatOutput(
+    const output = await set(
+      loadCompletedChatOutput$,
       {
-        db: args.db,
         runId: args.runId,
         lastEventSequence: args.run.lastEventSequence,
         timing: args.timing,
@@ -2735,7 +2648,6 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
@@ -3381,7 +3293,6 @@ const processTerminalChatCallback$ = command(
         const sourceCallbackId = await terminalChatCallbackSourceId(args);
         signal.throwIfAborted();
         const preparation = {
-          db: args.db,
           runId,
           run,
           chatThread,

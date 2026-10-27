@@ -10,9 +10,94 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
+import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, eq, exists, gt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  isNotNull,
+  lte,
+  not,
+  sql,
+} from "drizzle-orm";
 import { db$ } from "../external/db";
+import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import { chatEventTypeIn } from "./chat-event-type.service";
+
+export interface CompletedRunOutput {
+  readonly latestAssistant: {
+    readonly sequenceNumber: number;
+    readonly content: string;
+  } | null;
+  readonly resultFallback: {
+    readonly sequenceNumber: number;
+    readonly content: string;
+  } | null;
+}
+
+/** The callback observes cancellation after timing this complete read batch. */
+export const loadCompletedRunOutput$ = command(
+  async (
+    { get },
+    args: {
+      readonly runId: string;
+      readonly lastEventSequence: number | null;
+    },
+  ): Promise<CompletedRunOutput> => {
+    if (args.lastEventSequence === null) {
+      return { latestAssistant: null, resultFallback: null };
+    }
+
+    const db = get(db$);
+    const [state] = await db
+      .select({
+        latestResultSequence: runOutputMaterializations.latestResultSequence,
+        latestResultText: runOutputMaterializations.latestResultText,
+      })
+      .from(runOutputMaterializations)
+      .where(eq(runOutputMaterializations.runId, args.runId))
+      .limit(1);
+
+    const [event] = await db
+      .select({
+        content: canonicalChatEventContent(),
+        sequenceNumber: chatEvents.runEventSequenceNumber,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.runId, args.runId),
+          chatEventTypeIn(["output.message"]),
+          isNotNull(chatEvents.runEventSequenceNumber),
+          isNotNull(canonicalChatEventContent()),
+          not(sql`${canonicalChatEventContent()} ~ '^[[:space:]]*$'`),
+          lte(chatEvents.runEventSequenceNumber, args.lastEventSequence),
+        ),
+      )
+      .orderBy(desc(chatEvents.runEventSequenceNumber))
+      .limit(1);
+
+    const latestAssistant =
+      !event || event.content === null || event.sequenceNumber === null
+        ? null
+        : { content: event.content, sequenceNumber: event.sequenceNumber };
+    const resultFallback =
+      state?.latestResultSequence !== null &&
+      state?.latestResultSequence !== undefined &&
+      state.latestResultSequence <= args.lastEventSequence &&
+      state.latestResultText !== null
+        ? {
+            sequenceNumber: state.latestResultSequence,
+            content: state.latestResultText,
+          }
+        : null;
+    return { latestAssistant, resultFallback };
+  },
+);
 
 const THREAD_START_SEQ_ID = 0;
 
