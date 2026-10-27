@@ -25,8 +25,12 @@ final class FailureRecoveryTests: XCTestCase {
         apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"),
       directory: directory)
     let (original, models) = await fixture.conversation(draftStorage: storage)
+    defer {
+      original.close()
+      models.close()
+    }
     original.attachmentDraft.importFiles([source])
-    try await eventually {
+    try await waitForBusinessResult {
       original.attachmentDraft.items.contains { if case .failed = $0.state { true } else { false } }
     }
     let copy = try XCTUnwrap(original.attachmentDraft.items.first?.file.url)
@@ -154,14 +158,18 @@ final class FailureRecoveryTests: XCTestCase {
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
     let gate = ModelResponseGate()
     defer { gate.open() }
-    fixture.state.value.withLock { $0.resetGate = gate }
+    let resetRequested = expectation(description: "Reset request reached the HTTP boundary")
+    fixture.state.value.withLock {
+      $0.resetGate = gate
+      $0.resetRequested = { resetRequested.fulfill() }
+    }
     let recovering = Task { await conversation.recoverFailure(failure.id, resetUsage: true) }
     addTeardownBlock {
       recovering.cancel()
       gate.open()
       await recovering.value
     }
-    try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
+    await fulfillment(of: [resetRequested], timeout: 3)
     fixture.state.value.withLock {
       $0.rows.append(
         FailureRecoveryFixture.row(
@@ -204,7 +212,7 @@ final class FailureRecoveryTests: XCTestCase {
       conversation.close()
       models.close()
     }
-    try await eventually { conversation.attachmentDraft.isReady }
+    try await waitForBusinessResult { conversation.attachmentDraft.isReady }
     let draft = conversation.composer.value
     // A different client changes the thread's model before recovery.
     fixture.state.value.withLock { $0.model = "claude-model" }
@@ -315,7 +323,11 @@ final class FailureRecoveryTests: XCTestCase {
     conversation.setDetailVisible(true, owner: owner)
     let gate = ModelResponseGate()
     defer { gate.open() }
-    fixture.state.value.withLock { $0.resetGate = gate }
+    let resetRequested = expectation(description: "Reset request reached the HTTP boundary")
+    fixture.state.value.withLock {
+      $0.resetGate = gate
+      $0.resetRequested = { resetRequested.fulfill() }
+    }
     let first = Task {
       await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
     }
@@ -324,7 +336,7 @@ final class FailureRecoveryTests: XCTestCase {
       gate.open()
       await first.value
     }
-    try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
+    await fulfillment(of: [resetRequested], timeout: 3)
     await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
     XCTAssertEqual(fixture.state.value.withLock { $0.resetKeys.count }, 1)
     conversation.setDetailVisible(false, owner: owner)

@@ -12,11 +12,9 @@ final class GeneratedResultTests: XCTestCase {
 
   func testReplacingResultResourcesAndScopesUsesTheirOwnAuthorizedContent() async throws {
     let first = try await GeneratedResultFixture.make()
+    defer { first.server.stop() }
     let second = try await GeneratedResultFixture.make(text: "Result owned by the second workspace")
-    defer {
-      first.server.stop()
-      second.server.stop()
-    }
+    defer { second.server.stop() }
     let original = first.history.conversation()
     let replacement = second.history.conversation()
     defer {
@@ -31,13 +29,13 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertEqual(videoCard.artifact.filename, "Campaign recording.mp4")
     let text = try XCTUnwrap(original.artifacts.resource("/artifacts/text000001.txt"))
     original.artifacts.open(text)
-    try await eventually { original.artifacts.preview?.file != nil }
+    try await waitForBusinessResult { original.artifacts.preview?.file != nil }
     let firstFile = try XCTUnwrap(original.artifacts.preview?.file)
     XCTAssertTrue(
       try String(contentsOf: firstFile.url, encoding: .utf8).hasPrefix("Synthetic generated text"))
     original.artifacts.deactivate()
     replacement.artifacts.open(text)
-    try await eventually { replacement.artifacts.preview?.file != nil }
+    try await waitForBusinessResult { replacement.artifacts.preview?.file != nil }
     let nextFile = try XCTUnwrap(replacement.artifacts.preview?.file)
     XCTAssertEqual(
       try String(contentsOf: nextFile.url, encoding: .utf8), "Result owned by the second workspace")
@@ -54,7 +52,7 @@ final class GeneratedResultTests: XCTestCase {
     }
     viewer.open(images[0], images: images)
     for (index, image) in images.enumerated() {
-      try await eventually {
+      try await waitForBusinessResult {
         viewer.preview?.file != nil && viewer.preview?.artifact.source == image.source
       }
       let file = try XCTUnwrap(viewer.preview?.file)
@@ -71,7 +69,9 @@ final class GeneratedResultTests: XCTestCase {
     for name in ["json000001.json", "csv0000001.csv"] {
       let resource = try XCTUnwrap(viewer.resource("/artifacts/" + name))
       viewer.open(resource)
-      try await eventually { viewer.preview?.file != nil || viewer.preview?.error != nil }
+      try await waitForBusinessResult {
+        viewer.preview?.file != nil || viewer.preview?.error != nil
+      }
       XCTAssertNil(viewer.preview?.error, name)
       let preview = try XCTUnwrap(viewer.preview)
       if name == "json000001.json" { XCTAssertTrue(preview.text?.text.contains("\n") == true) }
@@ -93,30 +93,28 @@ final class GeneratedResultTests: XCTestCase {
     let source = try XCTUnwrap(viewer.resource("/artifacts/text000001.txt"))
     fixture.state.denied.withLock { $0 = true }
     viewer.open(source)
-    try await eventually { viewer.preview?.error != nil }
+    try await waitForBusinessResult { viewer.preview?.error != nil }
     XCTAssertTrue(viewer.preview?.error?.contains("permission") == true)
     fixture.state.denied.withLock { $0 = false }
     for status in [403, 404] {
       fixture.state.storageStatus.withLock { $0 = status }
       viewer.retry()
-      try await eventually { viewer.preview?.error != nil }
+      try await waitForBusinessResult { viewer.preview?.error != nil }
       XCTAssertTrue(viewer.preview?.error?.contains(status == 403 ? "denied" : "deleted") == true)
     }
     fixture.state.storageStatus.withLock { $0 = nil }
     viewer.retry()
-    try await eventually { viewer.preview?.file != nil }
+    try await waitForBusinessResult { viewer.preview?.file != nil }
     let url = try XCTUnwrap(viewer.preview?.file?.url)
-    viewer.deactivate()
+    try await waitForFileRemoval(at: url) { viewer.deactivate() }
     XCTAssertNil(viewer.preview)
-    try await eventually { !FileManager.default.fileExists(atPath: url.path) }
     viewer.open(source)
-    try await eventually { viewer.preview?.file != nil }
+    try await waitForBusinessResult { viewer.preview?.file != nil }
     let current = try XCTUnwrap(viewer.preview?.file?.url)
-    viewer.close()
+    try await waitForFileRemoval(at: current) { viewer.close() }
     XCTAssertNil(viewer.preview)
     viewer.open(source)
     XCTAssertNil(viewer.preview)
-    try await eventually { !FileManager.default.fileExists(atPath: current.path) }
   }
 
   func testShareConsumerKeepsAuthorizedFileAfterPreviewDismissal() async throws {
@@ -126,7 +124,7 @@ final class GeneratedResultTests: XCTestCase {
     defer { conversation.close() }
     let viewer = conversation.artifacts
     viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
-    try await eventually { viewer.preview?.file != nil }
+    try await waitForBusinessResult { viewer.preview?.file != nil }
     viewer.share()
     var consumer = viewer.sharing
     let url = try XCTUnwrap(consumer?.file.url)
@@ -138,8 +136,7 @@ final class GeneratedResultTests: XCTestCase {
         try String(contentsOf: url, encoding: .utf8),
         "Synthetic generated text\nRead, copy, share, or save to Files.")
     }
-    consumer = nil
-    try await eventually { !FileManager.default.fileExists(atPath: url.path) }
+    try await waitForFileRemoval(at: url) { consumer = nil }
   }
 
   func testLeavingDetailCancelsPendingAuthorizationAndCannotPublishIntoReentry() async throws {
@@ -181,11 +178,10 @@ final class GeneratedResultTests: XCTestCase {
     continuation.yield(())
     XCTAssertNil(viewer.preview)
     viewer.open(resource)
-    try await eventually { viewer.preview?.file != nil }
+    try await waitForBusinessResult { viewer.preview?.file != nil }
     XCTAssertEqual(viewer.preview?.text?.text, "New detail scope")
     let url = try XCTUnwrap(viewer.preview?.file?.url)
-    viewer.dismiss()
-    try await eventually { !FileManager.default.fileExists(atPath: url.path) }
+    try await waitForFileRemoval(at: url) { viewer.dismiss() }
   }
 
 }

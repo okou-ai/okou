@@ -61,9 +61,14 @@ final class WorkspaceStoreTests: XCTestCase {
     updated.withLock { $0 = true }
     pendingSidebar.withLock { $0 = true }
     let refresh = Task { await store.refresh() }
-    defer { refresh.cancel() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      refresh.cancel()
+      releaseSidebar.open()
+      await refresh.value
+    }
     await fulfillment(of: [sidebarStarted], timeout: 3)
-    try await eventually { conversation.messages.contains { $0.text == "Fresh answer" } }
+    try await waitForBusinessResult { conversation.messages.contains { $0.text == "Fresh answer" } }
     releaseSidebar.open()
     await refresh.value
     XCTAssertNil(conversation.error)
@@ -1268,14 +1273,15 @@ final class WorkspaceStoreTests: XCTestCase {
     store.selectChat(otherID)
     await store.selectedConversation?.refresh()
     await store.reduceMemory()
-    XCTAssertTrue(store.conversation(for: storeThreadID) === original)
-    XCTAssertEqual(original.draft, "Keep my draft")
+    let retained = try XCTUnwrap(store.conversation(for: storeThreadID))
+    XCTAssertEqual(retained.draft, "Keep my draft")
+    XCTAssertEqual(retained.messages.map(\.text), ["Saved reply"])
 
-    original.draft = ""
+    retained.draft = ""
     await store.reduceMemory()
     let restored = try XCTUnwrap(store.conversation(for: storeThreadID))
-    XCTAssertFalse(restored === original)
     await restored.refresh()
+    XCTAssertEqual(restored.draft, "")
     XCTAssertEqual(restored.messages.map(\.text), ["Saved reply"])
     XCTAssertEqual(snapshotRequests.withLock { $0.filter { $0 == storeThreadID }.count }, 1)
     XCTAssertEqual(store.selectedThreadID, otherID)

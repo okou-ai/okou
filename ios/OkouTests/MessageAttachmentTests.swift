@@ -50,19 +50,19 @@ final class MessageAttachmentTests: XCTestCase {
     defer { viewer.close() }
     let file = ChatMessageAttachment(id: "file", filename: "notes.txt", contentType: "text/plain")
     viewer.open(file)
-    try await eventually { viewer.preview?.error != nil }
+    try await waitForBusinessResult { viewer.preview?.error != nil }
     XCTAssertTrue(
       viewer.preview?.error?.contains("permission") == true,
       viewer.preview?.error ?? "Missing error")
     denied.withLock { $0 = false }
     viewer.open(file)
-    try await eventually { viewer.preview?.file != nil }
+    try await waitForBusinessResult { viewer.preview?.file != nil }
     let url = try XCTUnwrap(viewer.preview?.file?.url)
     XCTAssertEqual(try Data(contentsOf: url), Data("local-file".utf8))
     viewer.dismiss()
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     viewer.open(file)
-    try await eventually { viewer.preview?.file != nil }
+    try await waitForBusinessResult { viewer.preview?.file != nil }
     let second = try XCTUnwrap(viewer.preview?.file?.url)
     viewer.close()
     XCTAssertNil(viewer.preview)
@@ -102,7 +102,7 @@ final class MessageAttachmentTests: XCTestCase {
     XCTAssertNil(viewer.preview)
     continuation.yield(())
     viewer.open(.init(id: "new", filename: "new.txt", contentType: "text/plain"))
-    try await eventually { viewer.preview?.file != nil }
+    try await waitForBusinessResult { viewer.preview?.file != nil }
     XCTAssertEqual(viewer.preview?.attachment.id, "new")
     XCTAssertEqual(viewer.preview?.file?.url.lastPathComponent, "new.txt")
   }
@@ -120,7 +120,7 @@ final class MessageAttachmentTests: XCTestCase {
     conversation.setDetailVisible(true, owner: currentOwner)
     conversation.attachmentViewer.open(
       .init(id: "file", filename: "notes.txt", contentType: "text/plain"))
-    try await eventually { conversation.attachmentViewer.preview?.file != nil }
+    try await waitForBusinessResult { conversation.attachmentViewer.preview?.file != nil }
     let url = try XCTUnwrap(conversation.attachmentViewer.preview?.file?.url)
     conversation.setDetailVisible(false, owner: previousOwner)
     XCTAssertEqual(conversation.attachmentViewer.preview?.attachment.id, "file")
