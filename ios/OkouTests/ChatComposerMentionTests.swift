@@ -305,13 +305,17 @@ final class ChatComposerMentionTests: XCTestCase {
     addTeardownBlock { @MainActor in unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     let pasteDelegate = try XCTUnwrap(input.pasteDelegate)
+    let consumed = expectation(description: "UIKit consumed the production paste result")
+    let observer = PasteResultObserver(delegate: pasteDelegate, completed: consumed)
+    input.pasteDelegate = observer
+    addTeardownBlock { @MainActor in
+      withExtendedLifetime(observer) { input.pasteDelegate = nil }
+    }
     try await focusMentionInput(input)
     input.insertText("@pl")
     try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
     let retiredRow = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     let started = expectation(description: "Structured clipboard provider started")
-    let probeStarted = expectation(description: "The production paste transform requested its data")
-    let consumed = expectation(description: "The production paste transform resolved its result")
     let delivery = DelayedProviderTasks(owner: self)
     let data = Data(
       #"{"version":1,"parts":[{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"}]}"#
@@ -324,24 +328,12 @@ final class ChatComposerMentionTests: XCTestCase {
       return delivery.hold { callback(data, nil) }
     }
     input.paste(itemProviders: [provider])
-    // Keep the native paste above, and independently observe the real delegate's
-    // consumer result through UIKit's public paste-item protocol.
-    let probeProvider = NSItemProvider()
-    probeProvider.registerDataRepresentation(
-      forTypeIdentifier: ComposerAttributedDocument.pasteboardType, visibility: .all
-    ) { callback in
-      probeStarted.fulfill()
-      return delivery.hold { callback(data, nil) }
-    }
-    let item = PasteResultItem(provider: probeProvider, completed: consumed)
-    pasteDelegate.textPasteConfigurationSupporting?(input, transform: item)
-    await fulfillment(of: [started, probeStarted], timeout: 3)
+    await fulfillment(of: [started], timeout: 3)
     workspace.startNewChat(agentID: MentionNavigationFixture.agent(2))
     try await eventually { mentionInputs(in: host.view).first !== input && input.delegate == nil }
     XCTAssertTrue(retiredRow.accessibilityActivate())
     delivery.release()
     await fulfillment(of: [consumed], timeout: 3)
-    XCTAssertEqual(item.outcome, .noResult)
     await hostingPresentationFrame()
     XCTAssertFalse(workspace.newComposer.hasContent)
     XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(2))
