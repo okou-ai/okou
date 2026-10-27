@@ -87,6 +87,11 @@ export interface MessageListSignals {
     Promise<AssistantErrorRecovery | null>
   >;
   readonly assistantErrorRecoveryEventId$: Computed<Promise<string | null>>;
+  readonly retryAssistantError$: Command<Promise<boolean>, [AbortSignal]>;
+  readonly resetCodexSubscriptionAndRetry$: Command<
+    Promise<boolean>,
+    [AbortSignal]
+  >;
   readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly subscribeBrowserSessions$: Command<void, [AbortSignal]>;
@@ -142,6 +147,11 @@ export interface ChatPanelSignals {
     Promise<AssistantErrorRecovery | null>
   >;
   readonly assistantErrorRecoveryEventId$: Computed<Promise<string | null>>;
+  readonly retryAssistantError$: Command<Promise<boolean>, [AbortSignal]>;
+  readonly resetCodexSubscriptionAndRetry$: Command<
+    Promise<boolean>,
+    [AbortSignal]
+  >;
   readonly scrollContainerOnRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
