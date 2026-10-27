@@ -127,7 +127,8 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual([item["root"] for item in invocations], [False, False, True])
         self.assertEqual([item["probe"] for item in invocations], ["runtime", "user", "root"])
         for label in ["user", "root"]:
-            self.assertIn(f"{label} environment inventory: 8 checks in 1 runner-exec probe", result.stdout)
+            self.assertIn(f"{label} environment inventory: 9 checks in 1 runner-exec probe", result.stdout)
+            self.assertIn(f"{label} AGENT_BROWSER_USE_SYSTEM_CA=1", result.stdout)
 
     def test_runtime_failures_are_not_hidden_by_version_output(self):
         for command in ["node", "javac", "redis-server"]:
