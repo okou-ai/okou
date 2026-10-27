@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.23](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.22...runner-provider-v0.11.23) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-provider:** retain api shutdown worker custody ([#43234](https://github.com/okou-ai/okou/issues/43234)) ([cf1747d](https://github.com/okou-ai/okou/commit/cf1747dbffeed580afd6d9fb2f083aa410aa6a31))
+* **runner-provider:** retain local watcher shutdown custody ([#43201](https://github.com/okou-ai/okou/issues/43201)) ([8255f46](https://github.com/okou-ai/okou/commit/8255f4602118ae7e97976d89c4afb53f4c2c5882))
+* **runner-provider:** retain runtime sync dispatcher shutdown custody ([#43227](https://github.com/okou-ai/okou/issues/43227)) ([6c9872d](https://github.com/okou-ai/okou/commit/6c9872d5e42b197456d14df7681d711a46fca323))
+
+
+### Refactoring
+
+* **runner-provider:** reuse cancellation mode for ably notifications ([#43257](https://github.com/okou-ai/okou/issues/43257)) ([758c422](https://github.com/okou-ai/okou/commit/758c422693b6d581660a07770c1988b5667ebf03))
+
 ## [0.11.22](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.21...runner-provider-v0.11.22) (2026-10-26)
 
 
