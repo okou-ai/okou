@@ -1555,10 +1555,11 @@
       "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
-      "customDirection": "自己指定方向",
-      "customDirectionDescription": "带上完整背景，继续追问或补充你的要求",
-      "customPrepared": "已加入输入框",
-      "customPreparedDescription": "在上方补充要求，发送后开启新对话",
+      "customDirection": "我想……",
+      "customDirectionDescription": "提个问题，或说说你想做什么。",
+      "customPlaceholder": "你有什么想法？",
+      "customPrepared": "接着说……",
+      "customPreparedDescription": "在上方输入消息，然后发送。",
       "dismiss": "忽略",
       "label": "建议",
       "next": "下一条建议",

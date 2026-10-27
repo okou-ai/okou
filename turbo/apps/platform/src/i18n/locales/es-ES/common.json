@@ -1580,10 +1580,11 @@
       "viewAgentProfile": "Ver perfil del agente"
     },
     "agentSuggestions": {
-      "customDirection": "Elegir tu propia dirección",
-      "customDirectionDescription": "Usar todo el contexto para hacer una pregunta o añadir tus requisitos",
-      "customPrepared": "Añadido a tu mensaje",
-      "customPreparedDescription": "Añade tus requisitos arriba y envía para iniciar un nuevo chat",
+      "customDirection": "Me gustaría…",
+      "customDirectionDescription": "Haz una pregunta o describe lo que te gustaría hacer.",
+      "customPlaceholder": "¿Qué tienes en mente?",
+      "customPrepared": "Continúa…",
+      "customPreparedDescription": "Escribe tu mensaje arriba y envíalo.",
       "dismiss": "Descartar",
       "label": "Sugerencias",
       "next": "Siguiente sugerencia",

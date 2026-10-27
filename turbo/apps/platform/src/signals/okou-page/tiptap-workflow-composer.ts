@@ -197,7 +197,14 @@ function composerPlaceholder(): string {
   });
 }
 
-function feedbackPlaceholder(): string {
+function feedbackPlaceholder(
+  suggestionContext: SuggestionContext | null,
+): string {
+  if (suggestionContext) {
+    return i18n.t(($) => {
+      return $.chat.agentSuggestions.customPlaceholder;
+    });
+  }
   return i18n.t(($) => {
     return $.chat.feedback.placeholder;
   });
@@ -686,7 +693,12 @@ function createFeedbackItemNodeView(
 
   let currentNode = node;
   function localize(): void {
-    dom.setAttribute("aria-label", runtime.feedbackPlaceholder());
+    dom.setAttribute(
+      "aria-label",
+      runtime.feedbackPlaceholder(
+        feedbackItemNodeAttributes(currentNode).suggestionContext,
+      ),
+    );
   }
   function render(nextNode: ProseMirrorNode): void {
     const { showDivider, fill } = feedbackItemNodeAttributes(nextNode);
@@ -716,6 +728,7 @@ function createFeedbackItemNodeView(
       }
       currentNode = nextNode;
       render(nextNode);
+      localize();
       return true;
     },
     destroy() {
@@ -792,7 +805,7 @@ function buildFeedbackChromeDecorations(
           childPosition + 1 + child.child(0).nodeSize,
           {
             class: FEEDBACK_PLACEHOLDER_PARAGRAPH_CLASS,
-            "data-placeholder": runtime.feedbackPlaceholder(),
+            "data-placeholder": runtime.feedbackPlaceholder(suggestionContext),
           },
         ),
       );
@@ -1672,7 +1685,7 @@ interface WorkflowComposerRuntime {
   replaceFeedbackItems(items: readonly FeedbackItem[]): void;
   removeFeedback(id: number): void;
   localizedUi: Set<() => void>;
-  feedbackPlaceholder: () => string;
+  feedbackPlaceholder: (suggestionContext: SuggestionContext | null) => string;
 }
 
 function createTemplateAttachmentNode(
@@ -3050,7 +3063,9 @@ function createInsertUserMessageCommand(editor: Editor) {
 }
 
 function createWorkflowComposerRuntime(
-  resolveFeedbackPlaceholder: () => string,
+  resolveFeedbackPlaceholder: (
+    suggestionContext: SuggestionContext | null,
+  ) => string,
 ): WorkflowComposerRuntime {
   return {
     update(_editor: Editor): void {},

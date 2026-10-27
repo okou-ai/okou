@@ -815,9 +815,9 @@ test("Custom direction is a full row before Dismiss and only prepares the saved 
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  const custom = button("Choose your own direction");
+  const custom = button("I’d like to…");
   expect(custom).toHaveTextContent(
-    "Bring the full context to ask a follow-up or add your requirements",
+    "Ask a question or describe what you’d like to do.",
   );
   expect(
     custom.compareDocumentPosition(button("Dismiss")) &
@@ -826,11 +826,14 @@ test("Custom direction is a full row before Dismiss and only prepares the saved 
   await fill(composer(), "Keep my original draft");
   await userEvent.setup().click(custom);
   await waitFor(() => {
-    return expect(button("Added to your message")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    return expect(button("Go on…")).toHaveAttribute("aria-pressed", "true");
   });
+  expect(button("Go on…")).toHaveTextContent(
+    "Add your message above, then send.",
+  );
+  expect(
+    screen.getByRole("textbox", { name: "What do you have in mind?" }),
+  ).toBeInTheDocument();
   expect(composer()).toHaveTextContent("Keep my original draft");
   expect(composer()).toHaveTextContent(makeSuggestion().title);
   expect(composer()).not.toHaveTextContent("launch-plan-v2");
@@ -893,15 +896,15 @@ test("Browsing preserves prepared context; explicitly choosing another card repl
     featureSwitches: features,
   });
   await screen.findByText(first.title);
-  await userEvent.setup().click(button("Choose your own direction"));
+  await userEvent.setup().click(button("I’d like to…"));
   await waitFor(() => {
-    return expect(button("Added to your message")).not.toBeDisabled();
+    return expect(button("Go on…")).not.toBeDisabled();
   });
   await userEvent.setup().keyboard("Assess the risks first");
   await userEvent.setup().click(button("Next suggestion"));
   expect(composer()).toHaveTextContent(first.title);
   expect(composer()).not.toHaveTextContent(second.title);
-  await userEvent.setup().click(button("Choose your own direction"));
+  await userEvent.setup().click(button("I’d like to…"));
   await waitFor(() => {
     return expect(composer()).toHaveTextContent(second.title);
   });
@@ -959,9 +962,9 @@ test("A custom follow-up retains its draft on failure and reuses its identities 
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
-  await userEvent.setup().click(button("Choose your own direction"));
+  await userEvent.setup().click(button("I’d like to…"));
   await waitFor(() => {
-    return expect(button("Added to your message")).not.toBeDisabled();
+    return expect(button("Go on…")).not.toBeDisabled();
   });
   await userEvent.setup().keyboard("Assess the budget risk first");
   await waitFor(() => {
@@ -1046,10 +1049,10 @@ test("Removing custom context preserves the member's original draft and files", 
   });
   await screen.findByText(suggestion.title);
   await screen.findByText("my-original.txt");
-  await userEvent.setup().click(button("Choose your own direction"));
+  await userEvent.setup().click(button("I’d like to…"));
   await screen.findByText("suggestion-background.txt");
   await waitFor(() => {
-    return expect(button("Added to your message")).not.toBeDisabled();
+    return expect(button("Go on…")).not.toBeDisabled();
   });
   await userEvent.setup().keyboard("Keep my own requirements");
   await userEvent.setup().click(button("Remove feedback"));
