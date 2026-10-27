@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { BROWSER_SHARED_OWNER_ENV_VAR } from "@okouai/api-contracts/contracts/browser";
 import { HttpResponse, http } from "msw";
 import {
   afterAll,
@@ -43,6 +48,7 @@ function browser(status: "active" | "suspended" = "active") {
 }
 
 describe("okou browser command", () => {
+  let temporary: string;
   const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   const processExit = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -50,6 +56,9 @@ describe("okou browser command", () => {
   }) as never);
 
   beforeEach(() => {
+    temporary = mkdtempSync(join(tmpdir(), "okou-browser-legacy-test-"));
+    vi.stubEnv("TMPDIR", temporary);
+    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, undefined);
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
@@ -62,6 +71,7 @@ describe("okou browser command", () => {
     processExit.mockClear();
     spawnSyncMock.mockReset();
     vi.unstubAllEnvs();
+    rmSync(temporary, { recursive: true, force: true });
   });
 
   afterAll(() => {
@@ -122,6 +132,32 @@ describe("okou browser command", () => {
     expect(help).toContain(
       "An explicit user request to view the Browser is not a takeover",
     );
+    expect(help).toContain("Each thread keeps an isolated login profile");
+    expect(help).not.toContain("Shared-owner chats");
+  });
+
+  it("shows shared window guidance in help only for an enabled Run", () => {
+    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, "true");
+    let help = "";
+    browserCommand.configureOutput({
+      writeOut: (text: string) => {
+        help += text;
+      },
+    });
+    try {
+      browserCommand.outputHelp();
+    } finally {
+      browserCommand.configureOutput({
+        writeOut: (text: string) => {
+          process.stdout.write(text);
+        },
+      });
+    }
+    expect(help).toContain(
+      "Shared-owner chats use the same cookies and localStorage",
+    );
+    expect(help).toContain("When use reports a chat Browser window");
+    expect(help).not.toContain("Each thread keeps an isolated login profile");
   });
 
   it("prints the existing Browser viewer URL for a user takeover", async () => {
@@ -355,6 +391,7 @@ describe("okou browser command", () => {
           tabs: [
             {
               tabId: "t1",
+              targetId: "A".repeat(32),
               url: `https://user:password@accounts.example.test/login?code=${secret}#fragment`,
               title: `title-${secret}`,
               label: `label-${secret}`,
@@ -362,6 +399,7 @@ describe("okou browser command", () => {
             },
             {
               tabId: "t2",
+              targetId: "B".repeat(32),
               url: "about:blank",
               title: `title-${secret}`,
               active: true,
@@ -405,11 +443,13 @@ describe("okou browser command", () => {
           tabs: [
             {
               tabId: "t1",
+              targetId: "A".repeat(32),
               url: "https://login.example.test/one",
               active: true,
             },
             {
               tabId: "t2",
+              targetId: "B".repeat(32),
               url: "https://login.example.test/two",
               active: false,
             },
@@ -443,11 +483,13 @@ describe("okou browser command", () => {
             tabs: [
               {
                 tabId: "t1",
+                targetId: "A".repeat(32),
                 url: "https://other.example.test/",
                 active: false,
               },
               {
                 tabId: "t2",
+                targetId: "B".repeat(32),
                 url: `https://accounts.example.test/login?code=${secret}`,
                 title: secret,
                 active: true,
@@ -481,6 +523,60 @@ describe("okou browser command", () => {
       tab: { id: "t2", origin: "https://accounts.example.test", active: true },
     });
     expect(output).not.toContain(secret);
+  });
+
+  it("keeps per-thread tab listing and selection local when shared mode is disabled", async () => {
+    vi.stubEnv("OKOU_TOKEN", undefined);
+    let currentRequests = 0;
+    server.use(
+      http.get("http://localhost:3000/api/browsers/current", () => {
+        currentRequests += 1;
+        return HttpResponse.json({ error: "API unavailable" }, { status: 503 });
+      }),
+    );
+    const list = {
+      status: 0,
+      stdout: JSON.stringify({
+        success: true,
+        data: {
+          tabs: [
+            {
+              tabId: "t1",
+              targetId: "A".repeat(32),
+              url: "https://example.test",
+              active: true,
+            },
+          ],
+        },
+      }),
+    };
+    spawnSyncMock.mockReturnValue(list);
+    await browserCommand.parseAsync(["node", "okou", "tab", "list", "--json"]);
+    expect(JSON.parse(consoleLog.mock.calls.flat().join("\n"))).toStrictEqual({
+      tabs: [{ id: "t1", origin: "https://example.test", active: true }],
+    });
+    consoleLog.mockClear();
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "tab",
+      "select",
+      "t1",
+      "--json",
+    ]);
+    expect(JSON.parse(consoleLog.mock.calls.flat().join("\n"))).toStrictEqual({
+      tab: { id: "t1", origin: "https://example.test", active: true },
+    });
+    expect(currentRequests).toBe(0);
+    expect(
+      spawnSyncMock.mock.calls.map((call) => {
+        return call[1];
+      }),
+    ).toStrictEqual([
+      ["--session", "okou-browser", "tab", "list", "--json"],
+      ["--session", "okou-browser", "tab", "t1"],
+      ["--session", "okou-browser", "tab", "list", "--json"],
+    ]);
   });
 
   it("does not echo invalid tab IDs or session names in command errors", async () => {
@@ -534,7 +630,14 @@ describe("okou browser command", () => {
         stdout: JSON.stringify({
           success: true,
           data: {
-            tabs: [{ tabId: "t1", url: "https://example.test", active: false }],
+            tabs: [
+              {
+                tabId: "t1",
+                targetId: "A".repeat(32),
+                url: "https://example.test",
+                active: false,
+              },
+            ],
           },
         }),
       });

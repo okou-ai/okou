@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { browserSessionChangedPayloadSchema } from "./realtime";
-import { browserContract } from "./browser";
+import { browserContract, browserWindowContextSchema } from "./browser";
 
 const threadId = "22222222-2222-4222-8222-222222222222";
 
@@ -33,6 +33,24 @@ describe("managed browser contracts", () => {
     expect(parsed.browser).toMatchObject({
       threadId,
     });
+  });
+
+  it("preserves an assigned shared window, including native window zero", () => {
+    const window = {
+      instanceId: "33333333-3333-4333-8333-333333333333",
+      primaryWindowId: 0,
+    };
+    const response = browserResponse();
+    expect(
+      browserContract.use.responses[200].parse({
+        ...response,
+        browser: { ...response.browser, window },
+      }).browser.window,
+    ).toStrictEqual(window);
+    expect(
+      browserWindowContextSchema.safeParse({ ...window, primaryWindowId: -1 })
+        .success,
+    ).toBe(false);
   });
 
   it("parses a thread-keyed realtime payload", () => {
