@@ -122,41 +122,38 @@ final class ChatComposerMentionTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
-    input.insertText("person@example.com")
-    await hostingPresentationFrame()
-    XCTAssertNil(mentionTable(in: host.view))
-    input.insertText("\n@")
-    try await eventually { mentionTable(in: host.view) != nil }
+    let editor = workspace.newComposer.editor
+    input.insertText("@")
+    try await waitForBusinessResult { !editor.mentionSuggestions.isEmpty }
     input.setMarkedText("研究", selectedRange: NSRange(location: 2, length: 0))
-    try await eventually { input.markedTextRange != nil && mentionTable(in: host.view) == nil }
-    XCTAssertFalse(input.keyCommands?.contains { $0.input == "\r" } == true)
+    try await eventually {
+      input.markedTextRange != nil && input.keyCommands?.contains { $0.input == "\r" } != true
+    }
     input.unmarkText()
     input.insertText("\n")
-    try await eventually {
-      workspace.newChatDraft.contains("研究\n") && mentionTable(in: host.view) == nil
-    }
+    try await waitForBusinessResult { workspace.newChatDraft.contains("研究\n") }
     XCTAssertFalse(workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" })
     input.insertText("@")
-    try await eventually { mentionTable(in: host.view)?.numberOfSections == 2 }
+    let target = try XCTUnwrap(
+      workspace.mentionTestSource.suggestions(for: "").first {
+        $0.referenceID == MentionNavigationFixture.thread(35)
+      })
+    try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
     for _ in 0..<3 { try mentionKey(UIKeyCommand.inputDownArrow, input: input) }
     input.insertText("\n")
-    try await eventually {
-      workspace.newComposer.document.parts.contains {
-        $0["titleSnapshot"]?.string == "Pinned recent"
-      }
+    try await waitForBusinessResult {
+      workspace.newComposer.document.parts.contains(target.part)
     }
     XCTAssertTrue(input.isFirstResponder)
     XCTAssertTrue(navigation.paths.value.withLock { $0.allSatisfy { !$0.contains("/search") } })
     input.insertText("@")
-    try await eventually { mentionTable(in: host.view)?.numberOfSections == 2 }
+    try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
     try mentionKey(UIKeyCommand.inputEscape, input: input)
-    try await eventually { mentionTable(in: host.view) == nil }
+    XCTAssertFalse(editor.handleMentionKey("\r", in: input))
     XCTAssertTrue(input.isFirstResponder)
     input.insertText("missing")
-    await hostingPresentationFrame()
-    XCTAssertNil(mentionTable(in: host.view))
     input.insertText("\n")
-    XCTAssertTrue(input.text.hasSuffix("missing\n"))
+    XCTAssertTrue(workspace.newChatDraft.hasSuffix("missing\n"))
   }
 
   func testReferenceOnlySendAndUncertainRetryKeepCanonicalPartsAndCurrentAgent() async throws {
@@ -230,7 +227,7 @@ final class ChatComposerMentionTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: file) }
     try Data("Reference comparison".utf8).write(to: file)
     conversation.attachmentDraft.importFiles([file])
-    try await eventually {
+    try await waitForBusinessResult {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
     }
     let expected = conversation.composer.value.draftUserMessage

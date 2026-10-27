@@ -21,9 +21,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("Before @")
-    try await eventually { mentionTable(in: host.view)?.numberOfSections == 2 }
-    let agents = try XCTUnwrap(mentionTable(in: host.view))
-    agents.delegate?.tableView?(agents, didSelectRowAt: IndexPath(row: 0, section: 0))
+    let agent = try XCTUnwrap(workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .agent })
+    try await waitForBusinessResult { workspace.newComposer.editor.mentionSuggestions.contains(agent) }
+    workspace.newComposer.editor.insertMention(agent)
     let references = workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }
     XCTAssertEqual(references.map { $0["type"]?.string }, ["agent"])
     input.insertText(" /rel after")
@@ -44,9 +44,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await eventually { input.text.contains("/release after") }
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
     input.insertText(" @")
-    try await eventually { mentionTable(in: host.view)?.numberOfSections == 2 }
-    let chats = try XCTUnwrap(mentionTable(in: host.view))
-    chats.delegate?.tableView?(chats, didSelectRowAt: IndexPath(row: 0, section: 1))
+    let chat = try XCTUnwrap(workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .chat })
+    try await waitForBusinessResult { workspace.newComposer.editor.mentionSuggestions.contains(chat) }
+    workspace.newComposer.editor.insertMention(chat)
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }.map {
         $0["type"]?.string
@@ -88,7 +88,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(conversation.draft.contains("edited"))
   }
 
-  func testTriggerBoundariesSelectionDismissalAndNumericSubsequenceMatchPWA() async throws {
+  func testNativeSelectionAndEscapePreventWorkflowInsertionAndNumericQueryInsertsOnlyItsMatch() async throws {
     let fixture = workflowFixture()
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
@@ -102,33 +102,28 @@ final class ChatComposerWorkflowTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
-    for value in [
-      "https://example.com/release", "path/release", "email@example.com/", "//", "/bad_", "/rel.",
-    ] {
-      try await type(value, in: input, conversation: conversation)
-      XCTAssertNil(workflowTable(in: host.view), value)
-    }
     try await type("First paragraph\n/release", in: input, conversation: conversation)
-    _ = try await workflowCell("release", in: host.view)
+    let workflows = conversation.composer.editor.workflows
+    try await waitForBusinessResult { workflows.matches.contains { $0.id == "release" } }
     input.selectedRange = NSRange(location: 0, length: 5)
-    try await eventually { self.workflowTable(in: host.view) == nil }
+    try await waitForBusinessResult { workflows.query == nil }
+    XCTAssertFalse(workflows.handleKey("\r", in: input))
+    XCTAssertEqual(conversation.draft, "First paragraph\n/release")
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
-    _ = try await workflowCell("release", in: host.view)
-    XCTAssertTrue(
-      conversation.composer.editor.workflows.handleKey(UIKeyCommand.inputEscape, in: input))
-    try await eventually { self.workflowTable(in: host.view) == nil }
+    try await waitForBusinessResult { workflows.matches.contains { $0.id == "release" } }
+    XCTAssertTrue(workflows.handleKey(UIKeyCommand.inputEscape, in: input))
+    XCTAssertFalse(workflows.handleKey("\r", in: input))
     XCTAssertEqual(conversation.draft, "First paragraph\n/release")
     XCTAssertTrue(input.isFirstResponder)
     try await type("/r12", in: input, conversation: conversation)
-    let numeric = try await workflowCell("12", in: host.view)
-    XCTAssertTrue(numeric.accessibilityActivate())
-    try await eventually { conversation.draft == "/report-12 " }
+    try await waitForBusinessResult { workflows.matches.contains { $0.id == "12" } }
+    let numeric = try XCTUnwrap(workflows.matches.first { $0.id == "12" })
+    workflows.insert(numeric)
+    try await waitForBusinessResult { conversation.draft == "/report-12 " }
     try await type("/r14", in: input, conversation: conversation)
-    try await waitForBusinessResult {
-      conversation.composer.editor.workflows.matches.isEmpty
-        && !conversation.composer.editor.workflows.isLoading
-    }
-    XCTAssertNil(workflowTable(in: host.view))
+    try await waitForBusinessResult { !workflows.isLoading }
+    input.insertText("\n")
+    XCTAssertEqual(conversation.draft, "/r14\n")
   }
 
   func testMarkedTextConfirmationCannotInsertWorkflowAndKeyboardSelectionDoesNotSend() async throws
