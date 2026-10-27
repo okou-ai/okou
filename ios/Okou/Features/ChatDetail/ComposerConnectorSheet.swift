@@ -78,7 +78,6 @@ struct ComposerConnectorSheet: View {
       }
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
       .task { await store.refresh() }
-      .refreshable { await store.refresh() }
       .onChange(of: scenePhase) { _, phase in
         if phase == .active { Task { await store.refresh() } }
       }
