@@ -35,6 +35,13 @@ struct ComposerConnectorSheet: View {
       List {
         if let error = store.error { ConnectorLoadError(error: error) { await store.refresh() } }
         Section {
+          NavigationLink {
+            ComposerRemoteControls(store: store)
+          } label: {
+            Label("Remote control", systemImage: "desktopcomputer")
+          }
+        }
+        Section {
           if let error = store.connectorError {
             ConnectorLoadError(error: error) { await store.refresh() }
           } else if store.isLoading && store.connectors.isEmpty {
@@ -61,13 +68,6 @@ struct ComposerConnectorSheet: View {
           Text("Services")
         } footer: {
           Text("Service access applies to this Agent. Account choices apply to this conversation.")
-        }
-        Section {
-          NavigationLink {
-            ComposerRemoteControls(store: store)
-          } label: {
-            Label("Remote control", systemImage: "desktopcomputer")
-          }
         }
       }
       .searchable(text: $search, prompt: "Find connectors")
