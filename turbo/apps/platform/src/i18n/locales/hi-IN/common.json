@@ -1557,10 +1557,11 @@
       "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
     "agentSuggestions": {
-      "customDirection": "अपनी दिशा चुनें",
-      "customDirectionDescription": "पूरा संदर्भ लेकर आगे पूछें या अपनी ज़रूरतें जोड़ें",
-      "customPrepared": "संदेश में जोड़ दिया गया",
-      "customPreparedDescription": "ऊपर अपनी ज़रूरतें जोड़ें, फिर नई चैट शुरू करने के लिए भेजें",
+      "customDirection": "मैं चाहता हूँ…",
+      "customDirectionDescription": "कोई सवाल पूछें या बताएँ कि आप क्या करना चाहते हैं।",
+      "customPlaceholder": "आपके मन में क्या है?",
+      "customPrepared": "आगे बताएँ…",
+      "customPreparedDescription": "ऊपर अपना संदेश लिखें, फिर भेजें।",
       "dismiss": "खारिज करें",
       "label": "सुझाव",
       "next": "अगला सुझाव",

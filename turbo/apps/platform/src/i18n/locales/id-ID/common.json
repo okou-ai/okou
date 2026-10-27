@@ -1555,10 +1555,11 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "customDirection": "Tentukan arah sendiri",
-      "customDirectionDescription": "Bawa konteks lengkap untuk bertanya lebih lanjut atau menambahkan kebutuhan",
-      "customPrepared": "Ditambahkan ke pesan",
-      "customPreparedDescription": "Tambahkan kebutuhan di atas, lalu kirim untuk memulai percakapan baru",
+      "customDirection": "Saya ingin…",
+      "customDirectionDescription": "Ajukan pertanyaan atau jelaskan apa yang ingin Anda lakukan.",
+      "customPlaceholder": "Apa yang Anda pikirkan?",
+      "customPrepared": "Silakan lanjutkan…",
+      "customPreparedDescription": "Tulis pesan Anda di atas, lalu kirim.",
       "dismiss": "Abaikan",
       "label": "Saran",
       "next": "Saran berikutnya",

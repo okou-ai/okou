@@ -1580,10 +1580,11 @@
       "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
-      "customDirection": "Choisir votre propre direction",
-      "customDirectionDescription": "Reprendre le contexte complet pour poser une question ou préciser votre demande",
-      "customPrepared": "Ajouté à votre message",
-      "customPreparedDescription": "Précisez votre demande ci-dessus, puis envoyez pour ouvrir une nouvelle discussion",
+      "customDirection": "J’aimerais…",
+      "customDirectionDescription": "Posez une question ou décrivez ce que vous aimeriez faire.",
+      "customPlaceholder": "Qu’avez-vous en tête ?",
+      "customPrepared": "Continuez…",
+      "customPreparedDescription": "Ajoutez votre message ci-dessus, puis envoyez-le.",
       "dismiss": "Ignorer",
       "label": "Suggestions",
       "next": "Suggestion suivante",

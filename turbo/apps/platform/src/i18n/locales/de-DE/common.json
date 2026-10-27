@@ -1557,10 +1557,11 @@
       "viewAgentProfile": "Agentenprofil anzeigen"
     },
     "agentSuggestions": {
-      "customDirection": "Eigene Richtung wählen",
-      "customDirectionDescription": "Mit dem vollständigen Kontext nachfragen oder eigene Anforderungen ergänzen",
-      "customPrepared": "Zur Nachricht hinzugefügt",
-      "customPreparedDescription": "Oben Anforderungen ergänzen und senden, um einen neuen Chat zu starten",
+      "customDirection": "Ich möchte…",
+      "customDirectionDescription": "Stelle eine Frage oder beschreibe, was du tun möchtest.",
+      "customPlaceholder": "Was hast du im Sinn?",
+      "customPrepared": "Erzähl weiter…",
+      "customPreparedDescription": "Schreibe deine Nachricht oben und sende sie ab.",
       "dismiss": "Verwerfen",
       "label": "Vorschläge",
       "next": "Nächster Vorschlag",
