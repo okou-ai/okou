@@ -637,6 +637,16 @@ policy until updated; the log schema and its consumers do not change.
 
 ### Request capture compression work
 
+Gzip and zlib-wrapped `deflate` request capture admit at most 128 KiB of retained
+compressed input before constructing a decompressor. A single member can consume
+large gzip metadata or empty DEFLATE blocks without producing decoded bytes;
+neither decoded-output limits nor member counts bound that traversal. Larger
+inputs omit capture with the existing `request_body_encoding: "binary"` failure
+representation, including otherwise valid bodies with an early decoded prefix.
+The allowance leaves headroom for incompressible 64 KiB capture content and
+framing. Within it, ordinary captures, malformed/incomplete-input handling and
+decoded-output overflow retain their existing policies.
+
 Opt-in request body capture inspects at most 64 complete gzip or zlib-wrapped
 `deflate` members, independently of its 64 KiB decoded capture-output limit.
 Empty members count toward the budget, including empty tails after the exact

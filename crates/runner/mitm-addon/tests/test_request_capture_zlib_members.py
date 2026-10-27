@@ -65,7 +65,12 @@ async def test_buffered_sigv4_request_capture_bounds_empty_member_work(
         assert mitm_addon.response(flow) is None
 
     get_headers.assert_awaited_once()
-    assert stats["objects"] == 64
+    # Oversized input is rejected before member traversal; within-budget
+    # concatenation still exercises all 64 allowed members.
+    assert stats["objects"] == (0 if many_members else 64)
+    if many_members:
+        assert stats["input_bytes"] == 0
+        assert stats["calls"] == 0
     assert stats["calls"] <= 66
     assert stats["max_input"] <= 1024
     assert stats["max_unused_data"] <= 1024
