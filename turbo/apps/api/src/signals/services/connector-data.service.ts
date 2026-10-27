@@ -192,10 +192,8 @@ import {
   workflowAutomationDefaultAccountReadPlan,
 } from "./workflow-automation-account.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
-import {
-  builtinTokenConnectionPublicationSql,
-  tokenConnectionWalletClauses,
-} from "./builtin-token-connection-publication";
+import { builtinTokenConnectionPublicationSql } from "./builtin-token-connection-publication";
+import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
 import type { TokenAutomationProjection } from "./builtin-token-connection-projection";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 
