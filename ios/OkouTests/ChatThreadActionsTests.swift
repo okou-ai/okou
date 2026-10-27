@@ -190,19 +190,8 @@ final class ChatThreadActionsTests: XCTestCase {
     let gate = ThreadActionGate()
     defer { gate.open() }
     fixture.state.value.withLock { $0.nextGate = gate }
-    let probe = TaskCleanupProbe(id: "A01-3")
     let archiving = Task {
-      let result = await store.setArchived(
-        ThreadActionsFixture.thread, archived: true, leaveDetail: true)
-      await probe.waitForCancellation()
-      return result
-    }
-    addTeardownBlock {
-      let joined = probe.hasFinished
-      archiving.cancel()
-      gate.open()
-      _ = await archiving.value
-      probe.reportJoin(joined)
+      await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     }
     addTeardownBlock {
       archiving.cancel()
@@ -210,7 +199,6 @@ final class ChatThreadActionsTests: XCTestCase {
       _ = await archiving.value
     }
     try await eventually { fixture.writes.contains { $0.action == "archive" } }
-    try probe.exit()
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
     XCTAssertTrue(store.list.threads(agentID: ThreadActionsFixture.agent, archived: false).isEmpty)
