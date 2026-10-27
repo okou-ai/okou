@@ -14,6 +14,7 @@ import {
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
+import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import {
   captureSourceOnboardingConnected$,
   captureSourceOnboardingConnectStarted$,
@@ -24,7 +25,6 @@ import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboard
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
-import { noConnectorImg } from "../okou-page/platform-assets.ts";
 import { securityPageUrl } from "./onboarding-security.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
@@ -33,6 +33,11 @@ import {
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 import { OnboardingSecurityLink } from "./onboarding-industry-parts.tsx";
+
+// Brand assets / Illustration, Figma group 102:1590: Reachable across every channel.
+const connectToolsIllustrationImg = platformStaticAssetUrl(
+  "views/okou-page/assets/get-started-slack-12b969d9d2a7.png",
+);
 
 /** The field answered on the step before decides which sources appear. */
 function featuredSlugsFor(
@@ -69,9 +74,9 @@ function SourcesSkipDialogContent({ onSkip }: { readonly onSkip: () => void }) {
       })}
     >
       <img
-        src={noConnectorImg}
+        src={connectToolsIllustrationImg}
         alt=""
-        className="mx-auto size-40 object-contain"
+        className="mx-auto h-40 max-w-full object-contain"
       />
       <DialogHeader className="space-y-3 sm:text-center">
         <DialogTitle className="leading-6">
