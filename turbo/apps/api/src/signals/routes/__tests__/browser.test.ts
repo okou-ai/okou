@@ -7701,7 +7701,7 @@ describe("okou browser route", () => {
     const claim = await runs.claimRunnerJob(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
-      "Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser",
+      "Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes this chat's managed Browser",
     );
     expect(appendSystemPrompt).toContain(
       "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
@@ -7711,6 +7711,16 @@ describe("okou browser route", () => {
       "Browser tab continuity: When resuming a page after `okou browser use`",
     );
     expect(appendSystemPrompt).toContain("`okou browser tab list`");
+    expect(appendSystemPrompt).toContain(
+      "confirm the selected tab still belongs to the reported chat window",
+    );
+    expect(appendSystemPrompt).toContain("Every CDP API remains callable");
+    expect(appendSystemPrompt).toContain(
+      "source-less `Target.createTarget` pages",
+    );
+    expect(appendSystemPrompt).toContain(
+      "login, logout and account switching affect sibling chats",
+    );
     expect(appendSystemPrompt).toContain(
       "Keep the selected tab only if non-sensitive page evidence confirms it",
     );

@@ -54,6 +54,11 @@ describe("okou browser command", () => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
     spawnSyncMock.mockReturnValue({ status: 0 });
+    server.use(
+      http.get("http://localhost:3000/api/browsers/current", () => {
+        return HttpResponse.json({ browser: browser() });
+      }),
+    );
   });
 
   afterEach(() => {
@@ -169,7 +174,7 @@ describe("okou browser command", () => {
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
       ["--session", "okou-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      { stdio: "ignore", timeout: 30_000 },
     );
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).toContain(
@@ -199,7 +204,7 @@ describe("okou browser command", () => {
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
       ["--session", "okou-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      { stdio: "ignore", timeout: 30_000 },
     );
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("2026-07-24T10:10:00.000Z");
@@ -255,7 +260,7 @@ describe("okou browser command", () => {
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
       ["--session", "okou-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      { stdio: "ignore", timeout: 30_000 },
     );
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).not.toContain("secret-cdp-token");
@@ -294,7 +299,7 @@ describe("okou browser command", () => {
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
       ["--session", agentBrowserSession, "connect", CDP_URL],
-      { stdio: "ignore" },
+      { stdio: "ignore", timeout: 30_000 },
     );
 
     // The help text is an instruction agents copy verbatim: a session name that
@@ -341,7 +346,7 @@ describe("okou browser command", () => {
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
       ["--session", "booking-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      { stdio: "ignore", timeout: 30_000 },
     );
   });
 
@@ -355,6 +360,7 @@ describe("okou browser command", () => {
           tabs: [
             {
               tabId: "t1",
+              targetId: "A".repeat(32),
               url: `https://user:password@accounts.example.test/login?code=${secret}#fragment`,
               title: `title-${secret}`,
               label: `label-${secret}`,
@@ -362,6 +368,7 @@ describe("okou browser command", () => {
             },
             {
               tabId: "t2",
+              targetId: "B".repeat(32),
               url: "about:blank",
               title: `title-${secret}`,
               active: true,
@@ -405,11 +412,13 @@ describe("okou browser command", () => {
           tabs: [
             {
               tabId: "t1",
+              targetId: "A".repeat(32),
               url: "https://login.example.test/one",
               active: true,
             },
             {
               tabId: "t2",
+              targetId: "B".repeat(32),
               url: "https://login.example.test/two",
               active: false,
             },
@@ -443,11 +452,13 @@ describe("okou browser command", () => {
             tabs: [
               {
                 tabId: "t1",
+                targetId: "A".repeat(32),
                 url: "https://other.example.test/",
                 active: false,
               },
               {
                 tabId: "t2",
+                targetId: "B".repeat(32),
                 url: `https://accounts.example.test/login?code=${secret}`,
                 title: secret,
                 active: true,
@@ -473,7 +484,7 @@ describe("okou browser command", () => {
         return call[1];
       }),
     ).toStrictEqual([
-      ["--session", "booking-browser", "tab", "t2"],
+      ["--session", "booking-browser", "--pin-tab", "tab", "t2"],
       ["--session", "booking-browser", "tab", "list", "--json"],
     ]);
     const output = consoleLog.mock.calls.flat().join("\n");
@@ -534,7 +545,14 @@ describe("okou browser command", () => {
         stdout: JSON.stringify({
           success: true,
           data: {
-            tabs: [{ tabId: "t1", url: "https://example.test", active: false }],
+            tabs: [
+              {
+                tabId: "t1",
+                targetId: "A".repeat(32),
+                url: "https://example.test",
+                active: false,
+              },
+            ],
           },
         }),
       });
