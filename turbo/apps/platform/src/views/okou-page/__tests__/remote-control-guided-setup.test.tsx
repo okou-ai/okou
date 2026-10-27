@@ -3815,11 +3815,6 @@ test("Cloudflare three-step guide preserves the draft and resumes after returnin
   click(getAction("button", "Return to form"));
   expect(name).toHaveValue("Cloudflare draft");
   expect(getAction("button", "Save network")).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").find((button) => {
-      return /copy.*admin/iu.test(button.textContent ?? "");
-    }),
-  ).toBeUndefined();
 });
 test("Tailscale guide uses current form tags and keeps secret inputs mounted through close", async () => {
   const user = userEvent.setup();

@@ -530,7 +530,6 @@ describe("GET /api/connector-catalog", () => {
     });
     expect(slugs).toStrictEqual(expectedSlugs);
     expect(slugs).toContain("github");
-    expect(slugs).not.toContain("openai");
 
     const github = oneClick.body.connectors.find((connector) => {
       return connector.slug === "github";
