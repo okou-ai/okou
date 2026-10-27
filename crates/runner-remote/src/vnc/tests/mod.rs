@@ -6,7 +6,7 @@ mod diagnostics;
 pub(crate) mod harness;
 mod history;
 mod list;
-mod list_lifecycle;
+pub(super) mod list_lifecycle;
 pub(crate) mod native;
 mod notifications;
 mod observations;
