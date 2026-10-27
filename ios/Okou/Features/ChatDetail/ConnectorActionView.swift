@@ -57,7 +57,8 @@ struct ConnectorActionCard: View {
       }
     case .unavailable:
       ChatCardHeader(
-        title: String(localized: "Action unavailable"), systemImage: "link.badge.plus", titleLineLimit: 1
+        title: String(localized: "Action unavailable"), systemImage: "link.badge.plus",
+        titleLineLimit: 1
       ) {
         Text("This action no longer matches an available connector in this conversation.")
           .lineLimit(2, reservesSpace: true)
