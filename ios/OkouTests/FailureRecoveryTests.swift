@@ -326,18 +326,17 @@ final class FailureRecoveryTests: XCTestCase {
 
   func testHTTPFailureFactsSurviveSQLiteReplay() async throws {
     let fixture = FailureRecoveryFixture(reason: "provider_image_too_large", error: "Image limit")
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
     let (conversation, models) = await fixture.conversation(
-      cache: ChatCache(scope: scope, directory: directory))
+      cache: cacheDirectory.cache(scope: scope))
     defer {
       conversation.close()
       models.close()
     }
     let restarted = ChatSync(
-      client: fixture.http.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.http.client, cache: cacheDirectory.cache(scope: scope))
     let history = await restarted.cachedHistory(threadID: ModelHTTPFixtures.threadID)
     let failure = try XCTUnwrap(history?.messages.last?.failure)
     XCTAssertEqual(failure.reason, "provider_image_too_large")
