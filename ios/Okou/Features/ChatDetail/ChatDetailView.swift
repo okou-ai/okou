@@ -130,7 +130,7 @@ struct ChatDetailView: View {
       .frame(width: 44, height: 44)
       .animation(.easeOut(duration: 0.14), value: scrolling.showsBottomButton)
       .allowsHitTesting(scrolling.showsBottomButton)
-      .padding(.bottom, 16)
+      .padding(.bottom, 4)
     }
     .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
     .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
