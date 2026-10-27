@@ -33,7 +33,11 @@ const rpcSchema = object({
   method: string(),
   params: record(string(), zUnknown()).optional(),
 });
-let pages: { tools: DataRouterTool[]; nextCursor?: string }[];
+let pages: {
+  tools: DataRouterTool[];
+  nextCursor?: string;
+  _meta?: Record<string, unknown>;
+}[];
 let calls: unknown[];
 let returnedBody: unknown;
 let returnedStatus: number;
@@ -105,30 +109,63 @@ describe("Data Router discovery and JSON calls", () => {
     vi.unstubAllEnvs();
   });
 
-  it("discovers all pages and applies individual and family preferences to new tools", async () => {
+  it("discovers all pages and applies preferences to families Okou does not know", async () => {
+    const family = (id: string, title: string) => {
+      return {
+        id,
+        title: { "en-US": title, "zh-Hans": `${title} (zh)` },
+        description: { "en-US": `${title} description` },
+        summary: `Use ${id} tools.`,
+      };
+    };
+    const familiesMeta = {
+      "ai.okou/data": {
+        families: [
+          family("future-family", "Future research"),
+          family("hidden-family", "Hidden research"),
+          family("empty-family", "Empty research"),
+        ],
+      },
+    };
     pages = [
       {
         tools: [
-          { ...futureTool, name: "hidden_tool" },
           {
             ...futureTool,
-            name: "hidden_family",
-            _meta: { "ai.okou/data": { family: "social" } },
+            name: "hidden_tool",
+            _meta: { "ai.okou/data": { family: "hidden-family" } },
           },
+          { ...futureTool, name: "billing_get", _meta: undefined },
         ],
         nextCursor: "second-page",
+        _meta: familiesMeta,
       },
-      { tools: [futureTool] },
+      {
+        tools: [
+          {
+            ...futureTool,
+            _meta: { "ai.okou/data": { family: "future-family" } },
+          },
+        ],
+        _meta: familiesMeta,
+      },
     ];
-    vi.stubEnv("OKOU_DISABLED_PAID_TOOLS", '["data:hidden_tool","social"]');
+    vi.stubEnv("OKOU_DISABLED_PAID_TOOLS", '["hidden-family"]');
     await run(["tools", "--json"]);
     expect(JSON.parse(output)).toEqual({
+      families: [
+        {
+          id: "future-family",
+          title: "Future research",
+          summary: "Use future-family tools.",
+        },
+      ],
       tools: [
         {
           name: futureTool.name,
           title: futureTool.title,
           description: futureTool.description,
-          family: "data-search",
+          family: "future-family",
         },
       ],
     });
@@ -140,10 +177,7 @@ describe("Data Router discovery and JSON calls", () => {
   });
 
   it("passes new arguments and result fields unchanged for an explicitly called tool", async () => {
-    vi.stubEnv(
-      "OKOU_DISABLED_PAID_TOOLS",
-      '["data:future_research","data-search"]',
-    );
+    vi.stubEnv("OKOU_DISABLED_PAID_TOOLS", '["data-search"]');
     await run([
       "call",
       "future_research",

@@ -5338,37 +5338,9 @@
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
       "title": "組み込みツール",
       "tools": {
-        "data-search": {
-          "description": "職業プロフィールを補完し、企業、トラフィック、広告、クリエイターなどのビジネスデータを調査します。",
-          "name": "高度なデータ調査"
-        },
-        "finance": {
-          "description": "企業、株価、市場データを調べます。",
-          "name": "金融データ"
-        },
         "image-generation": {
           "description": "組み込みモデルで画像を生成します。",
           "name": "画像生成"
-        },
-        "maps": {
-          "description": "場所、住所、経路を検索します。",
-          "name": "地図と場所"
-        },
-        "people-search": {
-          "description": "公開されている職業プロフィールを検索します。",
-          "name": "人物検索"
-        },
-        "scrape": {
-          "description": "ウェブページの内容を読み取り、抽出します。",
-          "name": "ページ抽出"
-        },
-        "seo": {
-          "description": "検索順位、キーワード、被リンクを調べます。",
-          "name": "SEO 調査"
-        },
-        "social": {
-          "description": "公開投稿を調べ、メディアを収集します。",
-          "name": "ソーシャル調査"
         },
         "web-search": {
           "description": "ウェブで最新の情報を検索します。",

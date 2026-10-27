@@ -149,6 +149,15 @@ export function resolveArtifactImageTransformOrigin():
     : "https://cdn.vm7.io";
 }
 
+/** Data Router publishes its MCP tool catalog to unauthenticated callers. */
+export function resolveDataRouterUrl():
+  | "https://data.okou.ai/mcp"
+  | "https://okou-data-router-staging.vm0.workers.dev/mcp" {
+  return resolvePlatformEnvironment() === "production"
+    ? "https://data.okou.ai/mcp"
+    : "https://okou-data-router-staging.vm0.workers.dev/mcp";
+}
+
 export function resolveOfficeDocumentViewerBaseUrl(): string {
   return OFFICE_DOCUMENT_VIEWER_BASE_URL;
 }

@@ -7,6 +7,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { dataRouterHistoryContract } from "@okouai/api-contracts/contracts/data-router";
 import {
   dataRouterToolsPageSchema,
+  type DataRouterFamily,
   type DataRouterTool,
 } from "@okouai/api-contracts/contracts/data-router-tools";
 import {
@@ -73,11 +74,17 @@ async function withDataRouter<T>(
   }
 }
 
-async function discoverTools(
+interface DataRouterCatalog {
+  readonly tools: DataRouterTool[];
+  readonly families: DataRouterFamily[];
+}
+
+async function discoverCatalog(
   client: Client,
   options: RequestOptions,
-): Promise<DataRouterTool[]> {
+): Promise<DataRouterCatalog> {
   const tools: DataRouterTool[] = [];
+  const families = new Map<string, DataRouterFamily>();
   let cursor: string | undefined;
   const cursors = new Set<string>();
   do {
@@ -88,16 +95,20 @@ async function discoverTools(
       ),
     );
     tools.push(...page.tools);
+    for (const family of page._meta?.["ai.okou/data"]?.families ?? []) {
+      if (!families.has(family.id)) families.set(family.id, family);
+    }
     cursor = page.nextCursor;
     if (cursor && cursors.has(cursor))
       throw new Error("Data Router returned a repeated discovery cursor");
     if (cursor) cursors.add(cursor);
   } while (cursor);
-  return tools;
+  return { tools, families: [...families.values()] };
 }
 
-export async function listDataRouterTools(): Promise<DataRouterTool[]> {
-  return withDataRouter(discoverTools);
+/** Router owns family IDs and their text; the CLI never enumerates them. */
+export async function listDataRouterCatalog(): Promise<DataRouterCatalog> {
+  return withDataRouter(discoverCatalog);
 }
 
 /** MITM injects authentication and records the billing identity returned by Router. */
@@ -106,7 +117,7 @@ export async function callDataRouterTool(
   input: Record<string, unknown>,
 ): Promise<{ status: number; body: unknown }> {
   return withDataRouter(async (client, options) => {
-    const tools = await discoverTools(client, options);
+    const { tools } = await discoverCatalog(client, options);
     const tool = tools.find((entry) => {
       return entry.name === name;
     });

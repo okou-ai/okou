@@ -1,12 +1,19 @@
 import {
+  dataRouterToolsPageSchema,
+  type DataRouterFamily,
+} from "@okouai/api-contracts/contracts/data-router-tools";
+import {
   AVAILABLE_PAID_TOOL_IDS,
   paidToolsContract,
   type PaidToolId,
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
+import { object } from "zod";
 import { accept } from "../../../lib/accept.ts";
+import { resolveDataRouterUrl } from "../../../lib/platform-host.ts";
+import { fetchResource } from "../../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../../auth.ts";
 import { effectiveImageModel$ } from "../../external/user-model-preference.ts";
@@ -16,6 +23,66 @@ import {
   settingsDialogOpen$,
   settingsVisit$,
 } from "./settings-dialog.ts";
+
+const OKOU_PAID_TOOL_IDS: ReadonlySet<string> = new Set(
+  AVAILABLE_PAID_TOOL_IDS,
+);
+
+/**
+ * Router publishes its MCP tool catalog without credentials and owns every
+ * family ID and its text. Only families with a listed tool become controls.
+ */
+async function readDataRouterFamilies(): Promise<DataRouterFamily[]> {
+  const families = new Map<string, DataRouterFamily>();
+  const listed = new Set<string>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const response = await fetchResource(resolveDataRouterUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: cursors.size + 1,
+        method: "tools/list",
+        params: cursor ? { cursor } : {},
+      }),
+      redirect: "error",
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Data Router discovery failed (HTTP ${String(response.status)})`,
+      );
+    }
+    const page = object({ result: dataRouterToolsPageSchema }).parse(
+      await response.json(),
+    ).result;
+    for (const tool of page.tools) {
+      const family = tool._meta?.["ai.okou/data"]?.family;
+      if (family) {
+        listed.add(family);
+      }
+    }
+    for (const family of page._meta?.["ai.okou/data"]?.families ?? []) {
+      if (!families.has(family.id)) {
+        families.set(family.id, family);
+      }
+    }
+    cursor = page.nextCursor;
+    if (cursor && cursors.has(cursor)) {
+      throw new Error("Data Router repeated a discovery cursor");
+    }
+    if (cursor) {
+      cursors.add(cursor);
+    }
+  } while (cursor);
+  return [...families.values()].filter((family) => {
+    return listed.has(family.id);
+  });
+}
 
 function createPaidToolsSignals(
   createClient: ApiClientFactory,
@@ -57,12 +124,27 @@ function createPaidToolsSignals(
     );
     return { toolId, enabled$, update$ };
   }
-  const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
-    return createTool(toolId);
+  const webSearch = createTool("web-search");
+  const imageGeneration = createTool("image-generation");
+  // Okou owns web search and image generation; Router's family with an Okou
+  // tool ID is controlled by that Okou row.
+  const dataFamilies$ = computed(async () => {
+    assertCurrent();
+    const families = await readDataRouterFamilies();
+    assertCurrent();
+    return families
+      .filter((family) => {
+        return !OKOU_PAID_TOOL_IDS.has(family.id);
+      })
+      .map((family) => {
+        return { ...createTool(family.id), family };
+      });
   });
   return {
     disabledTools$,
-    tools,
+    webSearch,
+    imageGeneration,
+    dataFamilies$,
     imageModel,
   };
 }
@@ -169,5 +251,12 @@ export const paidToolsSettings$ = computed(async (get) => {
 export type PaidToolsSettings = ReturnType<typeof createPaidToolsSignals> & {
   readonly key: string;
 };
-export type PaidToolSettings = PaidToolsSettings["tools"][number];
+export type PaidToolSettings =
+  PaidToolsSettings["webSearch"] | PaidToolsSettings["imageGeneration"];
+export type DataFamilySettings =
+  PaidToolsSettings["dataFamilies$"] extends Computed<Promise<infer Families>>
+    ? Families extends readonly (infer Family)[]
+      ? Family
+      : never
+    : never;
 export type ImageModelSettings = PaidToolsSettings["imageModel"];

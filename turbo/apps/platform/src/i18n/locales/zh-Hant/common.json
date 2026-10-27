@@ -5338,37 +5338,9 @@
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
       "title": "內建工具",
       "tools": {
-        "data-search": {
-          "description": "補充職業資料，研究公司、流量、廣告、創作者及其他商業資料。",
-          "name": "進階資料研究"
-        },
-        "finance": {
-          "description": "查詢公司、行情和市場資料。",
-          "name": "金融資料"
-        },
         "image-generation": {
           "description": "用內建模型生成圖片。",
           "name": "圖片生成"
-        },
-        "maps": {
-          "description": "查詢地點、地址和路線。",
-          "name": "地圖與地點"
-        },
-        "people-search": {
-          "description": "查詢公開的職業資料。",
-          "name": "人物搜尋"
-        },
-        "scrape": {
-          "description": "讀取並提取網頁內容。",
-          "name": "網頁內容提取"
-        },
-        "seo": {
-          "description": "研究搜尋排名、關鍵詞和外鏈。",
-          "name": "SEO 研究"
-        },
-        "social": {
-          "description": "研究公開的社交內容並收集素材。",
-          "name": "社交研究"
         },
         "web-search": {
           "description": "在網上查詢最新資訊。",

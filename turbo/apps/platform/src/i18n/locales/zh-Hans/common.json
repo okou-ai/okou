@@ -5338,37 +5338,9 @@
       "timing": "修改对之后的运行生效。正在运行和已准备好的任务可能仍沿用原来的设置。",
       "title": "内置工具",
       "tools": {
-        "data-search": {
-          "description": "补充职业资料，研究公司、流量、广告、创作者及其他商业数据。",
-          "name": "高级数据研究"
-        },
-        "finance": {
-          "description": "查询公司、行情和市场数据。",
-          "name": "金融数据"
-        },
         "image-generation": {
           "description": "用内置模型生成图片。",
           "name": "图片生成"
-        },
-        "maps": {
-          "description": "查找地点、地址和路线。",
-          "name": "地图与地点"
-        },
-        "people-search": {
-          "description": "查找公开的职业资料。",
-          "name": "人物搜索"
-        },
-        "scrape": {
-          "description": "读取并提取网页内容。",
-          "name": "网页内容提取"
-        },
-        "seo": {
-          "description": "研究搜索排名、关键词和外链。",
-          "name": "SEO 研究"
-        },
-        "social": {
-          "description": "研究公开的社交内容并收集素材。",
-          "name": "社交研究"
         },
         "web-search": {
           "description": "在网上查找最新信息。",

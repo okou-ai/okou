@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { state } from "ccstate";
 import {
@@ -53,7 +54,10 @@ function button(name: string, container: ParentNode = document.body) {
   return element;
 }
 
-async function openPaidTools(path = "/?settings=tools") {
+async function openPaidTools(
+  path = "/?settings=tools",
+  locale: "en-US" | "zh-Hans" = "en-US",
+) {
   context.mocks.data.org({
     id: "org_default",
     name: "Research team",
@@ -62,6 +66,7 @@ async function openPaidTools(path = "/?settings=tools") {
   await setupPage({
     context,
     path,
+    locale,
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -163,6 +168,95 @@ test("Advanced data research saves independently and retains preferences across 
     { toolId: "data-search", disabled: true },
     { toolId: "data-search", disabled: false },
   ]);
+});
+
+function mockDataRouter(result: unknown, status = 200) {
+  for (const url of [
+    "https://data.okou.ai/mcp",
+    "https://okou-data-router-staging.vm0.workers.dev/mcp",
+  ]) {
+    context.mocks.http.post(url, async ({ request }) => {
+      expect(request.headers.get("authorization")).toBeNull();
+      const message = (await request.json()) as { id: unknown };
+      return status === 200
+        ? HttpResponse.json({ jsonrpc: "2.0", id: message.id, result })
+        : HttpResponse.json({ error: "Unavailable" }, { status });
+    });
+  }
+}
+
+test("Router families appear with Router text and toggle by their own IDs", async () => {
+  const updates = mockPaidTools();
+  mockDataRouter({
+    tools: [
+      {
+        name: "web_search",
+        inputSchema: { type: "object" },
+        _meta: { "ai.okou/data": { family: "web-search" } },
+      },
+      {
+        name: "future_tool",
+        inputSchema: { type: "object" },
+        _meta: { "ai.okou/data": { family: "future-family" } },
+      },
+    ],
+    _meta: {
+      "ai.okou/data": {
+        families: [
+          {
+            id: "web-search",
+            title: { "en-US": "Router web search" },
+            description: { "en-US": "Router search copy" },
+          },
+          {
+            id: "future-family",
+            title: { "en-US": "Future research", "zh-Hans": "未来研究" },
+            description: { "en-US": "Researches new sources." },
+          },
+          {
+            id: "empty-family",
+            title: { "en-US": "Empty research" },
+            description: { "en-US": "No listed tools." },
+          },
+        ],
+      },
+    },
+  });
+  const dialog = await openPaidTools("/?settings=tools", "zh-Hans");
+  const future = await readySwitch("未来研究");
+  expect(within(dialog).getByText("Researches new sources.")).toBeVisible();
+  expect(
+    within(dialog).getAllByRole("switch", { name: "Web search" }),
+  ).toHaveLength(1);
+  expect(
+    within(dialog).queryByRole("switch", { name: "Router web search" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("switch", { name: "Empty research" }),
+  ).not.toBeInTheDocument();
+  expect(future).toBeChecked();
+  click(future);
+  await waitFor(() => {
+    return expect(future).not.toBeChecked();
+  });
+  expect(updates).toStrictEqual([{ toolId: "future-family", disabled: true }]);
+});
+
+test("A failed Router catalog is reported while Okou tools stay manageable", async () => {
+  const updates = mockPaidTools();
+  mockDataRouter(null, 503);
+  const dialog = await openPaidTools();
+  await within(dialog).findByText("Your tool settings could not be loaded.");
+  expect(
+    within(dialog).queryByRole("switch", { name: "Financial data" }),
+  ).not.toBeInTheDocument();
+  const webSearch = await readySwitch("Web search");
+  click(webSearch);
+  await waitFor(() => {
+    return expect(webSearch).not.toBeChecked();
+  });
+  await expect(readySwitch("Image generation")).resolves.toBeChecked();
+  expect(updates).toStrictEqual([{ toolId: "web-search", disabled: true }]);
 });
 
 test("A failed load shows no assumed enabled tools", async () => {
