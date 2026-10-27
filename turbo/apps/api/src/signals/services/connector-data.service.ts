@@ -1615,15 +1615,24 @@ const prepareManualGrantPublication$ = command(
   ) => {
     const db = set(writeDb$);
     const mutationReadArgs = builtinConnectorLocalMutationValues(args);
+    const observedRevisions = new Map<string, string>();
     const resolution = await (async () => {
       let read = connectionMutationReadPlan(mutationReadArgs);
       for (;;) {
         const rows = await db
-          .select(read.columns)
+          .select({
+            ...read.columns,
+            publicationRevision: sql`${connectors}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
           .from(read.from)
           .where(read.where)
           .orderBy(...read.orderBy)
           .limit(read.limit);
+        for (const row of rows) {
+          observedRevisions.set(row.id, row.publicationRevision);
+        }
         const result = connectionMutationReadResult(
           mutationReadArgs,
           read,
@@ -1671,6 +1680,13 @@ const prepareManualGrantPublication$ = command(
       resolution.mutation.kind === "update"
         ? resolution.mutation.existing.id
         : randomUUID();
+    const accountRevision =
+      resolution.mutation.kind === "update"
+        ? observedRevisions.get(accountId)
+        : null;
+    if (accountRevision === undefined) {
+      throw new Error("Manual reconnect has no observed publication revision");
+    }
     return {
       kind: "ready" as const,
       metadata: {
@@ -1678,10 +1694,7 @@ const prepareManualGrantPublication$ = command(
         insertConnectionId: accountId,
       },
       accountId,
-      accountRevision:
-        resolution.mutation.kind === "update"
-          ? resolution.mutation.existing.stateRevision
-          : null,
+      accountRevision,
       credentials: manualGrantCredentialArgs(args, accountId),
       secretCleanup: manualGrantCleanupValues(args, "secret"),
       variableCleanup: manualGrantCleanupValues(args, "variable"),
