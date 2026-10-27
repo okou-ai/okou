@@ -324,6 +324,48 @@ final class WorkspaceStoreTests: XCTestCase {
     }
   }
 
+  func testRepeatedListRestoreFindsASeparateWritersNewerCommittedCacheWhileOffline() async throws {
+    let directory = CacheTestDirectory(owner: self)
+    let updated = Mutex(false)
+    let offline = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
+      case "/api/chat-threads/events":
+        let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        let events =
+          updated.withLock { $0 } && since == nil
+          ? """
+          {"id":"\(storeEventID(1))","seqId":1,"kind":"renamed",\
+          "chatThreadId":"\(storeThreadID)","agentId":"\(storeAgentID)",\
+          "title":"Prefetched title","createdAt":"\(storeDate)"}
+          """ : ""
+        return ChatHTTPResponse(body: "{\"events\":[\(events)],\"hasMore\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "cache-reader", workspaceID: "cache-workspace")
+    let writer = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    try await writer.prefetchThreadList()
+    let reader = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, cache: directory.cache(scope: scope))
+    defer { reader.close() }
+    await reader.list.restoreCached()
+    await reader.list.restoreCached()
+    XCTAssertEqual(reader.list.threads.map(\.title), ["Cached chat"])
+
+    updated.withLock { $0 = true }
+    try await writer.prefetchThreadList()
+    offline.withLock { $0 = true }
+    await reader.list.restoreCached()
+    XCTAssertEqual(reader.list.threads.map(\.title), ["Prefetched title"])
+    await reader.list.restoreCached()
+    XCTAssertEqual(reader.list.threads.map(\.title), ["Prefetched title"])
+  }
+
   func testStartupRestoresNavigationAndChatsBeforeNetworkAndPersistsFreshNavigation() async throws {
     let cacheDirectory = CacheTestDirectory(owner: self)
     let updated = Mutex(false)

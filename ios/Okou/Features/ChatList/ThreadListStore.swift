@@ -87,7 +87,8 @@ final class ThreadListStore {
       restoredNavigation = true
     }
     let revision = creationRevision
-    guard let cached = await sync.cachedThreadList(), !closed, !Task.isCancelled,
+    let sequence = hasLoadedThreads ? appliedThreadSequence : nil
+    guard let cached = await sync.cachedThreadList(newerThan: sequence), !closed, !Task.isCancelled,
       revision == creationRevision,
       !hasLoadedThreads || cached.cursor.seqID > appliedThreadSequence
     else { return }

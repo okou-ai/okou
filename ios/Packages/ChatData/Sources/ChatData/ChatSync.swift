@@ -64,8 +64,11 @@ public actor ChatSync {
     await cachedThreadList()?.threads
   }
 
-  public func cachedThreadList() async -> (threads: [ChatThread], cursor: ChatCacheCursor)? {
-    guard let cached = await readCachedThreadList() else { return nil }
+  /// A committed list at or below `sequence` needs no new presentation projection.
+  public func cachedThreadList(newerThan sequence: Int? = nil) async -> (
+    threads: [ChatThread], cursor: ChatCacheCursor
+  )? {
+    guard let cached = await readCachedThreadList(newerThan: sequence) else { return nil }
     return (
       ChatThreadReplay.sidebarOrder(
         ChatThreadReplay.replay(
@@ -145,7 +148,7 @@ public actor ChatSync {
     }
     eventIDs.formUnion(state.events.map(\.id))
     if !(await persistThreadList(state)), requirePersistence { throw ChatCacheError.unavailable }
-    if let durable = await readCachedThreadList(), durable.cursor.seqID > state.cursor.seqID {
+    if let durable = await readCachedThreadList(newerThan: state.cursor.seqID) {
       state = durable
       eventIDs.formUnion(durable.events.map(\.id))
     }
@@ -180,15 +183,22 @@ public actor ChatSync {
     var cursorFromServerSnapshot: Bool
   }
 
-  private func readCachedThreadList() async -> ThreadListState? {
+  private func readCachedThreadList(newerThan sequence: Int? = nil) async -> ThreadListState? {
     guard let cache else { return nil }
     do {
       guard let stored = try await cache.loadThreadList() else { return nil }
-      let snapshot = try APIClient.decoder().decode(
+      let cursor =
+        stored.events.last.map { ChatCacheCursor(eventID: $0.id, seqID: $0.seqID) }
+        ?? stored.snapshotCursor
+      // Consult shared storage on every read so NSE commits remain visible, but
+      // avoid decoding and replaying a list the caller has already applied.
+      if let sequence, cursor.seqID <= sequence { return nil }
+      let decoder = APIClient.decoder()
+      let snapshot = try decoder.decode(
         ThreadSnapshotArchive.self, from: stored.snapshot
       ).chatThreads
       let events = try stored.events.map { row in
-        let event = try APIClient.decoder().decode(ThreadEvent.self, from: row.data)
+        let event = try decoder.decode(ThreadEvent.self, from: row.data)
         guard event.id == row.id, event.seqId == row.seqID else {
           throw ChatError.invalidContract("Cached chat list event identity is invalid.")
         }
@@ -204,8 +214,7 @@ public actor ChatSync {
       return ThreadListState(
         snapshot: snapshot, snapshotData: stored.snapshot,
         snapshotCursor: stored.snapshotCursor, events: events, newEvents: [],
-        cursor: events.last.map { ChatCacheCursor(eventID: $0.id, seqID: $0.seqId) }
-          ?? stored.snapshotCursor,
+        cursor: cursor,
         replaced: false, cursorFromServerSnapshot: false)
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
@@ -302,9 +311,10 @@ public actor ChatSync {
     }
   }
 
-  private static func decode<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value
-  {
-    do { return try APIClient.decoder().decode(type, from: data) } catch {
+  private static func decode<Value: Decodable>(
+    _ type: Value.Type, from data: Data, using decoder: JSONDecoder = APIClient.decoder()
+  ) throws -> Value {
+    do { return try decoder.decode(type, from: data) } catch {
       throw APIClientError.incompatibleData
     }
   }
@@ -628,8 +638,9 @@ public actor ChatSync {
       guard let stored = try await cache.loadHistory(threadID: threadID),
         stored.schemaVersion == chatEventSchemaVersion
       else { return nil }
+      let decoder = APIClient.decoder()
       let rows = try stored.rows.map { entry in
-        let row = try Self.decode(ChatEventRow.self, from: entry.data)
+        let row = try Self.decode(ChatEventRow.self, from: entry.data, using: decoder)
         guard row.id == entry.id, row.seqId == entry.seqID else {
           throw ChatError.invalidContract("Cached chat event identity is invalid.")
         }
