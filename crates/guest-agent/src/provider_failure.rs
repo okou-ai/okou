@@ -297,6 +297,7 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
         Some("usage_limit_reached" | "usage_not_included") => Some(FailureReason::UsageLimit),
         Some("content_policy_violation") => Some(FailureReason::SafetyPolicyRefusal),
         Some("model_not_found" | "unsupported_model") => Some(FailureReason::UnsupportedModel),
+        _ if is_provider_model_restriction(error) => Some(FailureReason::ProviderModelRestricted),
         Some("invalid_request_error")
             if error
                 .get("message")
@@ -322,6 +323,31 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
                     .and_then(http_failure_reason)
             }),
     }
+}
+
+fn is_provider_model_restriction(error: &Value) -> bool {
+    if error.get("code").and_then(Value::as_f64) != Some(404.0) {
+        return false;
+    }
+    let Some(metadata) = error.get("metadata") else {
+        return false;
+    };
+    let Some(input_count) = metadata
+        .get("input_endpoint_count")
+        .and_then(Value::as_f64)
+        .filter(|count| *count > 0.0 && count.fract() == 0.0)
+    else {
+        return false;
+    };
+    metadata
+        .get("ineligibility_reasons")
+        .and_then(Value::as_array)
+        .is_some_and(|reasons| {
+            reasons.iter().any(|reason| {
+                reason.get("reason").and_then(Value::as_str) == Some("model-ignored-by-guardrail")
+                    && reason.get("endpoint_count").and_then(Value::as_f64) == Some(input_count)
+            })
+        })
 }
 
 fn is_prompt_too_long(message: &str) -> bool {

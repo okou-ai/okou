@@ -527,6 +527,7 @@ describe("agent completion failure reasons", () => {
       "reconnect_required",
       "codex_access_program_unavailable",
       "unsupported_model",
+      "provider_model_restricted",
       "usage_limit",
     ]);
     for (const failureReason of knownRunFailureReasonSchema.options) {

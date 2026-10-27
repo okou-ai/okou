@@ -5373,6 +5373,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.unavailableTitle;
     });
   },
+  provider_model_restricted: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.unavailableTitle;
+    });
+  },
   usage_limit: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.usageFallbackTitle;
@@ -5480,6 +5485,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
   reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
   unsupported_model: FAILURE_DESCRIPTIONS.unavailable,
+  provider_model_restricted: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.modelUnavailable;
+    });
+  },
   usage_limit: FAILURE_DESCRIPTIONS.usage,
 } satisfies Record<KnownRunFailureReason, StructuredFailureDescription>);
 

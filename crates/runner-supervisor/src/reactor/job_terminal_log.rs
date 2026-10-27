@@ -965,6 +965,39 @@ mod tests {
     }
 
     #[test]
+    fn pi_model_restriction_remains_error_with_observed_request_evidence() {
+        let mut diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::Pi,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_failure_reason(FailureReason::ProviderModelRestricted)
+        .with_failure_detail_source(FailureDetailSource::PiResult)
+        .with_cli_exit_code(1)
+        .with_cli_observed_exit(CliObservedExitDiagnostic::from_exit_code(0));
+        diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+            http_status: Some(404),
+            transport_attempts: 1,
+            retry_attempts: 0,
+            retry_limit: None,
+            transport_failure: None,
+        });
+        let failure = executor::ExecutionFailure::new(1, "model policy refusal", Some(diagnostic));
+
+        let event = capture_job_failure_log(&failure);
+
+        assert_eq!(event.level, Level::ERROR);
+        assert_field_eq(&event, "failure_reason", "provider_model_restricted");
+        assert_field_eq(&event, "failure_framework", "pi");
+        assert_field_eq(&event, "exit_code", "1");
+        assert_field_eq(&event, "failure_cli_exit_code", "1");
+        assert_field_eq(&event, "cli_observed_exit_code", "0");
+        assert_field_eq(&event, "model_http_status", "404");
+        assert_field_eq(&event, "model_transport_attempts", "1");
+        assert_field_eq(&event, "model_retry_attempts", "0");
+    }
+
+    #[test]
     fn pi_provider_failures_log_info_with_observed_request_and_retry_evidence() {
         for (reason, status, retries, retry_limit, message) in [
             (

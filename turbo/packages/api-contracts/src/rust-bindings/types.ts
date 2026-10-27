@@ -644,6 +644,9 @@ export const rustTypeBindings = [
             "Codex sent an access-program selector unavailable to the account.",
           ],
           unsupported_model: ["The selected model is unsupported."],
+          provider_model_restricted: [
+            "The provider's model policy excluded every candidate endpoint.",
+          ],
           usage_limit: ["The provider reported a usage limit."],
         },
       },

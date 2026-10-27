@@ -3542,6 +3542,9 @@ pub mod webhooks {
                 /// The selected model is unsupported.
                 #[serde(rename = "unsupported_model")]
                 UnsupportedModel,
+                /// The provider's model policy excluded every candidate endpoint.
+                #[serde(rename = "provider_model_restricted")]
+                ProviderModelRestricted,
                 /// The provider reported a usage limit.
                 #[serde(rename = "usage_limit")]
                 UsageLimit,

@@ -18,6 +18,20 @@ import {
 } from "../errors";
 
 describe("formatRunErrorForExternalSurface", () => {
+  it.each(["built-in", "openrouter-codex"] as const)(
+    "presents model restrictions as unavailable for %s without exposing provider configuration",
+    (modelProviderType) => {
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message:
+            "private provider diagnostic https://example.invalid/settings",
+          failureReason: "provider_model_restricted",
+          modelProviderType,
+        }),
+      ).toBe("The current model is unavailable.");
+    },
+  );
   it.each([
     ["usage_limit", CHAT_RUN_USAGE_LIMIT_MESSAGE],
     ["unsupported_model", CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE],
