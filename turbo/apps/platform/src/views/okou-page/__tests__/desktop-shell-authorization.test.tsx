@@ -169,15 +169,13 @@ test("Attaching realtime does not refetch a shell card, but a shell event update
     ).toBeTruthy();
   });
   expect(button(card, "Allow for 1 hour")).toBeEnabled();
-  expect(
-    within(card).queryByText("Shell access allowed"),
-  ).not.toBeInTheDocument();
+  expect(within(card).queryByText("Allowed")).not.toBeInTheDocument();
 
   context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
   await waitFor(() => {
     expect(button(card, "Revoke access")).toBeEnabled();
   });
-  expect(within(card).getByText("Shell access allowed")).toBeInTheDocument();
+  expect(within(card).getByText("Allowed")).toBeInTheDocument();
 
   current = { ...current, status: "revoked" };
   context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
@@ -369,7 +367,7 @@ test("A delayed approval event restores a later grant after the local request de
   await waitFor(() => {
     expect(button(card, "Revoke access")).toBeEnabled();
   });
-  expect(within(card).getByText("Shell access allowed")).toBeInTheDocument();
+  expect(within(card).getByText("Allowed")).toBeInTheDocument();
   expect(
     within(card).queryByText("Authorization expired"),
   ).not.toBeInTheDocument();
