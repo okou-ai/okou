@@ -48,7 +48,7 @@ from tests.requestheaders_helpers import (
     await_requestheaders_result,
     track_trusted_authority_validations,
 )
-from tests.upstream_connection_helpers import mark_connected_tls_upstream
+from tests.upstream_connection_helpers import bind_flow_upstream, mark_connected_tls_upstream
 
 _CLIENT_IP = "10.200.0.5"
 _AWS_PERMISSION = "aws-request"
@@ -649,11 +649,15 @@ async def test_payload_independent_sigv4_disconnect_during_auth_prepares_native_
     assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION not in flow.metadata
 
 
+@pytest.mark.parametrize("prebound", [False, True])
+@pytest.mark.parametrize("auth_location", ["header", "query"])
 async def test_payload_dependent_sigv4_holds_admission_until_terminal_cleanup(
     tmp_path,
     real_flow,
     headers,
     mitm_ctx,
+    prebound,
+    auth_location,
 ) -> None:
     registry_path = _write_aws_registry(tmp_path)
     body = b"body"
@@ -663,6 +667,11 @@ async def test_payload_dependent_sigv4_holds_admission_until_terminal_cleanup(
         body=body,
         content_length=str(len(body)),
     )
+    if auth_location == "query":
+        del flow.request.headers["Authorization"]
+        flow.request.path = aws_sigv4_presigned_query_path()
+    if prebound:
+        bind_flow_upstream(flow, host=STS_HOST)
     get_headers = AsyncMock(return_value=_resolved_token_meta())
 
     with (
@@ -677,7 +686,14 @@ async def test_payload_dependent_sigv4_holds_admission_until_terminal_cleanup(
         await mitm_addon.request(flow)
         assert aws_sigv4_body_admission.state_for_tests() == (1, len(body))
         assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION not in flow.metadata
-        assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
+        if auth_location == "header":
+            assert (
+                f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
+            )
+        else:
+            assert flow.request.query["X-Amz-Credential"].startswith(
+                f"{RESOLVED_AWS_ACCESS_KEY_ID}/"
+            )
 
         flow.response = http.Response.make(200, b"ok")
         mitm_addon.response(flow)
@@ -686,6 +702,43 @@ async def test_payload_dependent_sigv4_holds_admission_until_terminal_cleanup(
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
     assert metadata_keys.AWS_SIGV4_BODY_ADMISSION not in flow.metadata
     assert metadata_keys.AWS_SIGV4_REQUEST_INSPECTION not in flow.metadata
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        pytest.param("\u00a0", id="unicode-whitespace"),
+        pytest.param("\u00a0" + " " * 60, id="partial-scheme-at-sample-end"),
+        pytest.param("\u00a0" + " " * 61 + "\u3000", id="split-unicode-whitespace"),
+    ],
+)
+async def test_prebound_whitespace_sigv4_retains_body_admission_and_signer_rejection(
+    tmp_path, real_flow, headers, mitm_ctx, prefix
+) -> None:
+    registry_path = _write_aws_registry(tmp_path)
+    flow = _header_auth_flow(real_flow, headers, body=b"body", content_length="4")
+    authorization = prefix + flow.request.headers["Authorization"]
+    flow.request.headers["Authorization"] = authorization
+    bind_flow_upstream(flow, host=STS_HOST)
+    get_headers = AsyncMock(return_value=_resolved_token_meta())
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        patch.object(auth, "get_firewall_headers", get_headers),
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        assert flow.request.stream is False
+        assert aws_sigv4_body_admission.state_for_tests() == (1, 4)
+        get_headers.assert_not_awaited()
+
+        await mitm_addon.request(flow)
+        assert flow.response is not None
+        assert flow.response.status_code == 502
+        assert flow.response.json()["error"] == "aws_sigv4_auth_failed"
+        assert flow.request.headers["Authorization"] == authorization
+        mitm_addon.response(flow)
+
+    assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
 
 
 async def test_bounded_payload_dependent_sigv4_classifies_once_before_buffering(
@@ -736,11 +789,13 @@ async def test_bounded_payload_dependent_sigv4_classifies_once_before_buffering(
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
 
 
+@pytest.mark.parametrize("prebound", [False, True])
 async def test_aws_action_rule_uses_buffered_body_for_request_classification(
     tmp_path,
     real_flow,
     headers,
     mitm_ctx,
+    prebound,
 ) -> None:
     registry_path = _write_aws_registry(
         tmp_path,
@@ -753,6 +808,8 @@ async def test_aws_action_rule_uses_buffered_body_for_request_classification(
         content_length=str(len(STS_FORM_BODY)),
         content_type="application/x-www-form-urlencoded",
     )
+    if prebound:
+        bind_flow_upstream(flow, host=STS_HOST)
     get_headers = AsyncMock(return_value=_resolved_token_meta())
 
     with (
