@@ -13,6 +13,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import request_classification
 import upstream_destination_binding
+from tests.auth_base_client_header_helpers import UnconvertedHeaderValue
 from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
 from tests.buffered_auth_body_framing_cases import (
     BufferedAuthBodyFramingRejectionCase,
@@ -675,8 +676,9 @@ async def test_auth_base_requestheaders_admission_released_when_resolved_base_mi
     assert auth_base_forwarder.forward_request_admission_state_for_tests() == (0, 0)
 
 
+@pytest.mark.parametrize("nominate_content_type", [False, True], ids=["ordinary", "nominated"])
 async def test_auth_base_duplicate_content_type_releases_requestheaders_admission(
-    tmp_path, real_flow, mitm_ctx, headers
+    tmp_path, real_flow, mitm_ctx, headers, nominate_content_type
 ):
     reg_path = _write_auth_base_firewall_registry(tmp_path)
     declared_size = mitm_addon.STREAM_BUFFER_LIMIT + 1
@@ -693,6 +695,10 @@ async def test_auth_base_duplicate_content_type_releases_requestheaders_admissio
             ("content-type", "text/plain"),
         ),
         request_body=b"ok",
+    )
+    flow.request.headers.fields += (
+        (b"X-Discard-Me", UnconvertedHeaderValue(b"x" * (1024 * 1024))),
+        (b"Connection", b"CoNtEnT-TyPe" if nominate_content_type else b"X-Discard-Me"),
     )
     get_headers = AsyncMock()
     mock_forward = AsyncMock()
@@ -714,6 +720,74 @@ async def test_auth_base_duplicate_content_type_releases_requestheaders_admissio
     assert flow.response is not None
     assert flow.response.status_code == 400
     assert json.loads(flow.response.content)["error"] == ("invalid_auth_base_request_headers")
+    assert metadata_keys.AUTH_BASE_FORWARD_ADMISSION not in flow.metadata
+    assert auth_base_forwarder.forward_request_admission_state_for_tests() == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "nominations",
+    [(), (b"CoNtEnT-TyPe",), (b"CONTENT-encoding",), (b"content-type", b"content-encoding")],
+    ids=["none", "content-type", "content-encoding", "both-repeated-connection"],
+)
+async def test_auth_base_hooks_skip_discarded_values_and_forward_representation_headers(
+    tmp_path, real_flow, mitm_ctx, headers, nominations
+):
+    reg_path = _write_auth_base_firewall_registry(
+        tmp_path,
+        auth_config={
+            "headers": {"Authorization": "Bearer ${{ secrets.WEBHOOK_TOKEN }}"},
+            "base": "${{ secrets.WEBHOOK_URL }}",
+        },
+    )
+    request_body = b'{"message":"hello"}'
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="placeholder.example.com",
+        method="POST",
+        request_headers=headers(
+            ("Host", "placeholder.example.com"),
+            ("Content-Length", str(len(request_body))),
+            ("cOnTeNt-TyPe", "application/json; charset=utf-8"),
+            ("Content-Encoding", "identity"),
+        ),
+        request_body=request_body,
+    )
+    ignored_value = UnconvertedHeaderValue(b"x" * (1024 * 1024))
+    flow.request.headers.fields += (
+        (b"X-Discard-Me", ignored_value),
+        (b"x-dIsCaRd-Me", ignored_value),
+        (b"X-Discard-Me", ignored_value),
+        *((b"cOnNeCtIoN", value) for value in nominations),
+    )
+    token_meta = firewall_auth_response(
+        headers={"Authorization": "Bearer resolved"},
+        base="https://real.example.com/webhook",
+        resolved_secrets=["WEBHOOK_URL"],
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        patch.object(auth, "get_firewall_headers", AsyncMock(return_value=token_meta)),
+        fake_forwarder_upstream(status=202, body=b"accepted") as upstream,
+    ):
+        mitm_addon.requestheaders(flow)
+        await mitm_addon.request(flow)
+
+    assert flow.response is not None
+    assert flow.response.status_code == 202
+    assert flow.response.content == b"accepted"
+    nominated_names = {name.lower() for name in nominations}
+    assert upstream.socket.request_header_values("Content-Type") == (
+        [] if b"content-type" in nominated_names else ["application/json; charset=utf-8"]
+    )
+    assert upstream.socket.request_header_values("Content-Encoding") == (
+        [] if b"content-encoding" in nominated_names else ["identity"]
+    )
+    assert upstream.socket.request_header_values("Authorization") == ["Bearer resolved"]
+    assert upstream.socket.request_header_values("X-Discard-Me") == []
+    assert upstream.socket.request_header_values("Connection") == []
+    assert bytes(upstream.socket.sent).endswith(b"\r\n\r\n" + request_body)
     assert metadata_keys.AUTH_BASE_FORWARD_ADMISSION not in flow.metadata
     assert auth_base_forwarder.forward_request_admission_state_for_tests() == (0, 0)
 

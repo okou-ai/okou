@@ -349,6 +349,14 @@ def forwarded_auth_base_client_header_pairs(
     headers,
 ) -> list[tuple[str, str]]:
     """Select representation metadata allowed to cross an auth.base rewrite."""
+    if isinstance(headers, http.Headers):
+        # Skip discarded raw values before mitmproxy decodes them. Connection
+        # must remain available to exclude nominated representation fields.
+        headers = http.Headers(
+            (name, value)
+            for name, value in headers.fields
+            if name.lower() in {b"content-type", b"content-encoding", b"connection"}
+        )
     raw_pairs = header_pairs(headers)
     content_type_count = sum(1 for name, _value in raw_pairs if name.lower() == "content-type")
     if content_type_count > 1:
