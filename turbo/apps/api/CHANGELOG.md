@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.13.5](https://github.com/okou-ai/okou/compare/api-v2.13.4...api-v2.13.5) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** synchronize notification read state and icon badges ([#43254](https://github.com/okou-ai/okou/issues/43254)) ([3f5d6fc](https://github.com/okou-ai/okou/commit/3f5d6fcaf6de5148ea3266d0e0eec538f136df94))
+
+
+### Refactoring
+
+* **api:** publish custom connector values atomically ([#43278](https://github.com/okou-ai/okou/issues/43278)) ([9dc07c0](https://github.com/okou-ai/okou/commit/9dc07c0cc0e633716f58a2c65b0040054699bbc6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.9.0
+    * @okouai/core bumped to 8.792.0
+    * @okouai/db bumped to 2.6.7
+    * @okouai/pi-agent-runtime bumped to 1.51.0
+
 ## [2.13.4](https://github.com/okou-ai/okou/compare/api-v2.13.3...api-v2.13.4) (2026-10-27)
 
 

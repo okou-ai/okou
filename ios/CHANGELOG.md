@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.4](https://github.com/okou-ai/okou/compare/ios-v0.20.3...ios-v0.20.4) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** synchronize notification read state and icon badges ([#43254](https://github.com/okou-ai/okou/issues/43254)) ([3f5d6fc](https://github.com/okou-ai/okou/commit/3f5d6fcaf6de5148ea3266d0e0eec538f136df94))
+
 ## [0.20.3](https://github.com/okou-ai/okou/compare/ios-v0.20.2...ios-v0.20.3) (2026-10-27)
 
 

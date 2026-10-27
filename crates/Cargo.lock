@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.79"
+version = "0.1.80"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4044,7 +4044,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.237.12"
+version = "0.237.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4756,7 +4756,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.39"
+version = "0.53.40"
 dependencies = [
  "api-contracts",
  "async-trait",
