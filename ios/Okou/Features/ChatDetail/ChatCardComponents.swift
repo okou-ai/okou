@@ -38,7 +38,7 @@ struct ChatCardHeader<Details: View>: View {
       VStack(alignment: .leading, spacing: 2) {
         Group {
           if let titleLineLimit {
-            Text(title).lineLimit(titleLineLimit, reservesSpace: true)
+            Text(title).lineLimit(titleLineLimit)
           } else {
             Text(title)
           }

@@ -23,6 +23,7 @@ struct MessageArtifactCard: View {
   @State private var prepared: Prepared?
   @State private var retry = 0
   @Environment(\.openURL) private var openURL
+  @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 56
 
   private var loadKey: LoadKey {
     LoadKey(
@@ -68,6 +69,7 @@ struct MessageArtifactCard: View {
             ChatCardHeader(title: title, systemImage: artifact.symbol, titleLineLimit: 2) {
               Text(error ?? artifact.subtitle).font(.caption).lineLimit(1, reservesSpace: true)
             }
+            .frame(height: informationHeight)
             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(
               .tertiary)
           }
