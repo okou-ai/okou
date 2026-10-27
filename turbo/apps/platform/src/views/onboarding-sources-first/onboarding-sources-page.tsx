@@ -68,7 +68,8 @@ function SourcesSkipDialogContent({ onSkip }: { readonly onSkip: () => void }) {
   const { t } = useTranslation();
   return (
     <DialogContent
-      maxWidth="md"
+      maxWidth={560}
+      contentClassName="gap-8 px-6 py-10 sm:p-10"
       closeLabel={t(($) => {
         return $.connectors.actions.close;
       })}
@@ -76,10 +77,10 @@ function SourcesSkipDialogContent({ onSkip }: { readonly onSkip: () => void }) {
       <img
         src={connectToolsIllustrationImg}
         alt=""
-        className="mx-auto h-40 max-w-full object-contain"
+        className="mx-auto h-44 max-w-full object-contain sm:h-52"
       />
-      <DialogHeader className="space-y-3 sm:text-center">
-        <DialogTitle className="leading-6">
+      <DialogHeader className="space-y-4 sm:text-center">
+        <DialogTitle className="text-xl leading-7">
           {t(($) => {
             return $.onboarding.sourcesFirst.sources.skipDialog.title;
           })}
@@ -90,14 +91,14 @@ function SourcesSkipDialogContent({ onSkip }: { readonly onSkip: () => void }) {
           })}
         </DialogDescription>
       </DialogHeader>
-      <DialogFooter className="flex-col sm:flex-col">
-        <DialogClose render={<Button type="button" />}>
+      <DialogFooter className="mx-auto w-full max-w-xs flex-col gap-3 sm:flex-col">
+        <DialogClose render={<Button type="button" size="lg" />}>
           {t(($) => {
             return $.onboarding.sourcesFirst.sources.skipDialog.connect;
           })}
         </DialogClose>
         <DialogClose
-          render={<Button type="button" variant="quiet" />}
+          render={<Button type="button" size="lg" variant="quiet" />}
           onClick={onSkip}
         >
           {t(($) => {
