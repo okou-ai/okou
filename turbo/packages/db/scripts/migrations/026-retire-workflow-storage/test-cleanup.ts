@@ -46,12 +46,6 @@ let listCount = 0;
 let deleteCount = 0;
 let beforeList: (() => Promise<void>) | undefined;
 let deleteFailure: "partial" | "lost-reply" | undefined;
-const xml = (value: string) => {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-};
 
 async function handle(
   request: IncomingMessage,
@@ -74,11 +68,13 @@ async function handle(
       })
       .sort();
     const page = keys.slice(0, limit);
+    // This fixture generates UUIDs and fixed path segments, not arbitrary XML text.
+    for (const key of page) assert.doesNotMatch(key, /[<>&]/u);
     response.writeHead(200, { "content-type": "application/xml" });
     response.end(
       `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>${keys.length > limit}</IsTruncated><KeyCount>${page.length}</KeyCount>${page
         .map((key) => {
-          return `<Contents><Key>${xml(key)}</Key><Size>1</Size></Contents>`;
+          return `<Contents><Key>${key}</Key><Size>1</Size></Contents>`;
         })
         .join("")}</ListBucketResult>`,
     );
@@ -94,11 +90,7 @@ async function handle(
       .toString()
       .matchAll(/<Key>([^<]+)<\/Key>/gu),
   ].map((match) => {
-    return string()
-      .parse(match[1])
-      .replaceAll("&lt;", "<")
-      .replaceAll("&gt;", ">")
-      .replaceAll("&amp;", "&");
+    return string().parse(match[1]);
   });
   assert.ok(keys.length > 0 && keys.length <= 1000);
   const failure = deleteFailure;
@@ -111,7 +103,7 @@ async function handle(
   }
   response.writeHead(200, { "content-type": "application/xml" });
   response.end(
-    `<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${failure === "partial" ? `<Error><Key>${xml(string().parse(keys[0]))}</Key><Code>AccessDenied</Code></Error>` : ""}</DeleteResult>`,
+    `<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${failure === "partial" ? `<Error><Key>${string().parse(keys[0])}</Key><Code>AccessDenied</Code></Error>` : ""}</DeleteResult>`,
   );
 }
 const server = createServer((request, response) => {
