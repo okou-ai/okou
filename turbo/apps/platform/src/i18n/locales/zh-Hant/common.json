@@ -3580,8 +3580,8 @@
         "manageConnection": "管理已連接帳號",
         "open": "開啟 Telegram",
         "openSetup": "開啟設定流程",
-        "setupDescription": "在設定中選擇預設代理，然後返回此頁面連接 Telegram。",
-        "setupMemberDescription": "請工作區管理員選擇預設代理，然後返回此頁面。",
+        "setupDescription": "請完成工作區設定以初始化 Okou，然後返回此頁面連接 Telegram。",
+        "setupMemberDescription": "請工作區管理員完成設定並初始化 Okou，然後返回此頁面。",
         "setupTitle": "完成帳號設定",
         "successDescription": "在 Telegram 中傳送訊息給機器人，即可開始聊天。",
         "successTitle": "已連線到 Telegram！"
@@ -5474,7 +5474,7 @@
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。",
         "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
         "errorMessage": "晨報設定無法載入或更新。",
-        "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
@@ -5483,7 +5483,7 @@
       "proactiveLearning": {
         "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
         "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
@@ -5492,7 +5492,7 @@
       "proactivePlanningAction": {
         "description": "在你交辦的範圍內規劃並推進任務，需要你處理時提醒你。",
         "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "請先選擇可用的預設 Agent。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "此工作流程暫不可用。",
         "preparing": "正在準備此工作流程。",
@@ -5501,7 +5501,7 @@
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
         "errorMessage": "無法載入或更新主動建議設定。",
-        "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
+        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",

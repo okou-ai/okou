@@ -542,7 +542,6 @@
         "label": "Klang"
       },
       "visibility": {
-        "defaultDescription": "Der Standard-Agent des Arbeitsbereichs muss für alle Mitglieder öffentlich bleiben.",
         "description": "Für jeden in diesem Arbeitsbereich sichtbar.",
         "label": "Öffentlich machen"
       }

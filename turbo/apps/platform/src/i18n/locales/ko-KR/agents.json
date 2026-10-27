@@ -542,7 +542,6 @@
         "label": "음성 스타일"
       },
       "visibility": {
-        "defaultDescription": "워크스페이스의 기본 에이전트는 모든 멤버에게 공개 상태로 유지되어야 합니다.",
         "description": "이 워크스페이스의 모든 사람이 볼 수 있습니다.",
         "label": "공개로 설정"
       }

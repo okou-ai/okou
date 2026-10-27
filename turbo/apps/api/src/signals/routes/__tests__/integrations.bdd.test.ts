@@ -6386,7 +6386,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(
       decodeURIComponent(installWithoutAgent.headers.get("location") ?? ""),
-    ).toContain("Please select a default agent");
+    ).toContain("Finish workspace setup");
 
     await integrations.readGithubInstallation(admin);
     const requestSetup = await integrations.requestGithubAppSetupCallback(

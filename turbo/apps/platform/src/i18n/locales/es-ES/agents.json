@@ -542,7 +542,6 @@
         "label": "Cómo suena"
       },
       "visibility": {
-        "defaultDescription": "El agente predeterminado del espacio de trabajo debe permanecer público para todos sus miembros.",
         "description": "Visible para todos en este espacio de trabajo.",
         "label": "Hacer público"
       }

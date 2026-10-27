@@ -3580,8 +3580,8 @@
         "manageConnection": "管理已连接账号",
         "open": "打开 Telegram",
         "openSetup": "打开设置流程",
-        "setupDescription": "在设置中选择默认智能体，然后返回此页面连接 Telegram。",
-        "setupMemberDescription": "请让工作区管理员选择默认智能体，然后返回此页面。",
+        "setupDescription": "请完成工作区设置以初始化 Okou，然后返回此页面连接 Telegram。",
+        "setupMemberDescription": "请让工作区管理员完成设置并初始化 Okou，然后返回此页面。",
         "setupTitle": "完成账号设置",
         "successDescription": "在 Telegram 中向机器人发送消息，即可开始聊天。",
         "successTitle": "已连接到 Telegram！"
@@ -5474,7 +5474,7 @@
         "conflict": "晨报的安装状态不一致，暂时无法使用。",
         "description": "每天早上 7:00 前（按你的时区）接收当日重点。",
         "errorMessage": "晨报设置无法加载或更新。",
-        "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
@@ -5483,7 +5483,7 @@
       "proactiveLearning": {
         "description": "夜间回顾你的信息和工作，整理个人记忆、更新理解。",
         "errorMessage": "无法加载或更新此设置。",
-        "missingDefaultAgent": "请先选择可用的默认 Agent。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "此工作流暂不可用。",
         "preparing": "正在准备此工作流。",
@@ -5492,7 +5492,7 @@
       "proactivePlanningAction": {
         "description": "在你交办的范围内规划并推进任务，需要你处理时提醒你。",
         "errorMessage": "无法加载或更新此设置。",
-        "missingDefaultAgent": "请先选择可用的默认 Agent。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "此工作流暂不可用。",
         "preparing": "正在准备此工作流。",
@@ -5501,7 +5501,7 @@
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
         "errorMessage": "无法加载或更新主动建议设置。",
-        "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
+        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",

@@ -18,7 +18,7 @@ import { getCategories } from "./ideation-data.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
-import { currentAgentId$ } from "../../signals/agent.ts";
+import { agents$, currentAgentId$ } from "../../signals/agent.ts";
 import {
   ideationActiveTab$,
   setIdeationActiveTab$,
@@ -32,6 +32,13 @@ import {
 
 export function IdeationPage() {
   const { t } = useTranslation("agents");
+  const agentId = useGet(currentAgentId$);
+  const agentsLoadable = useLoadable(agents$);
+  const isCustomAgent =
+    agentsLoadable.state === "hasData" &&
+    agentsLoadable.data.some((agent) => {
+      return agent.agentId === agentId && agent.isDefaultAgent === false;
+    });
   const features = useLastResolved(featureSwitch$);
   const connectorStatusLoadable = useLoadable(connectorCatalogStatusBySlug$);
   const lastConnectorStatusBySlug = useLastResolved(
@@ -56,7 +63,10 @@ export function IdeationPage() {
     { returnObjects: true },
   );
   const categories = localizeIdeationCategories(
-    getCategories({ features, visibleConnectorSlugs }).slice(0, 8),
+    getCategories({ features, visibleConnectorSlugs, isCustomAgent }).slice(
+      0,
+      8,
+    ),
     catalogCopy,
   );
   const activeTab = useGet(ideationActiveTab$);
@@ -64,7 +74,6 @@ export function IdeationPage() {
   const searchQuery = useGet(ideationSearchQuery$);
   const setSearchQuery = useSet(setIdeationSearchQuery$);
   const navigate = useSet(detachedNavigateTo$);
-  const agentId = useGet(currentAgentId$);
   const selectedTab =
     activeTab === "all" ||
     categories.some((category) => {

@@ -173,6 +173,59 @@ test("The ideas catalog still offers connector-free use cases", async () => {
   ).resolves.toBeVisible();
 });
 
+function configureWorkspaceAgents(): void {
+  context.mocks.data.agents([
+    {
+      ...agentFixture(),
+      agentId: DEFAULT_AGENT_ID,
+      isDefaultAgent: true,
+      displayName: "Okou",
+    },
+    agentFixture(),
+  ]);
+  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
+}
+
+test.each(["/ideas", `/agents/${DEFAULT_AGENT_ID}/ideas`])(
+  "Keep default Okou instruction self-management unavailable on %s",
+  async (path) => {
+    configureWorkspaceAgents();
+    mockCatalog([]);
+
+    await setupPage({ context, path });
+    await screen.findByText("Browser screenshots");
+
+    expect(
+      screen.queryByText("Self-update instructions"),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("A custom Agent can start the instruction self-management example", async () => {
+  configureWorkspaceAgents();
+  mockCatalog([]);
+
+  await setupPage({ context, path: IDEAS_PATH });
+  const title = await screen.findByText("Self-update instructions");
+  const idea = queryAllByRoleFast("link", screen.getByRole("main")).find(
+    (link) => {
+      return link.contains(title);
+    },
+  );
+  if (!idea) {
+    throw new Error("Expected the custom Agent instruction example link");
+  }
+  click(idea);
+
+  const composer = await findComposer();
+  await waitFor(() => {
+    expect(composer.textContent).toBe(
+      "Update yourself: add the following instructions — ...",
+    );
+  });
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+});
+
 test("Connector-dependent ideas fail closed when availability cannot be verified", async () => {
   configureAgent();
   const failCatalog = context.mocks.deferred<void>();

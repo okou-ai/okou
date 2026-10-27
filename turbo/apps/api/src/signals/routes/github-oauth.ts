@@ -744,7 +744,7 @@ const installGithubOauth$ = command(
     const composeId = query.composeId ?? metadata?.defaultAgentId;
     if (!composeId) {
       return worksErrorRedirect(
-        "Please select a default agent before connecting GitHub.",
+        "Finish workspace setup to initialize Okou before connecting GitHub.",
       );
     }
     const [agent] = await db

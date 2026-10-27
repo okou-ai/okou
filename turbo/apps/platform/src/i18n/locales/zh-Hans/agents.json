@@ -542,7 +542,6 @@
         "label": "说话风格"
       },
       "visibility": {
-        "defaultDescription": "工作区的默认智能体必须对所有工作区成员保持公开。",
         "description": "这个工作区里的所有人都可见。",
         "label": "设为公开"
       }

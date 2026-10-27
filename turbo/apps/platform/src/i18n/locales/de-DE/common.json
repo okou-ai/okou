@@ -3595,8 +3595,8 @@
         "manageConnection": "Verbundenes Konto verwalten",
         "open": "Öffnen Sie Telegram",
         "openSetup": "Einrichtung öffnen",
-        "setupDescription": "Wähle in der Einrichtung einen Standardagenten aus und kehre dann hierher zurück, um Telegram zu verbinden.",
-        "setupMemberDescription": "Bitte einen Workspace-Administrator, einen Standardagenten auszuwählen, und kehre dann hierher zurück.",
+        "setupDescription": "Schließe die Einrichtung des Arbeitsbereichs ab, um Okou zu initialisieren. Kehre dann hierher zurück, um Telegram zu verbinden.",
+        "setupMemberDescription": "Bitte einen Administrator des Arbeitsbereichs, die Einrichtung abzuschließen und Okou zu initialisieren. Kehre dann hierher zurück.",
         "setupTitle": "Kontoeinrichtung abschließen",
         "successDescription": "Sende dem Bot eine Nachricht in Telegram, um einen Chat zu starten.",
         "successTitle": "Mit Telegram verbunden!"
@@ -5491,7 +5491,7 @@
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist.",
         "description": "Tägliche Prioritäten bis 7 Uhr in deiner Zeitzone.",
         "errorMessage": "Die Morning-Brief-Einstellungen konnten nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
+        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
         "preparationFailed": "Vorübergehend nicht verfügbar.",
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",
@@ -5500,7 +5500,7 @@
       "proactiveLearning": {
         "description": "Aktivitäten nachts überprüfen und persönliche Erinnerungen verbessern.",
         "errorMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
+        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
         "preparing": "Dieser Workflow wird vorbereitet.",
@@ -5509,7 +5509,7 @@
       "proactivePlanningAction": {
         "description": "Okou plant und erledigt deine übertragenen Aufgaben und benachrichtigt dich, wenn deine Eingabe nötig ist.",
         "errorMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Wählen Sie einen verfügbaren Standard-Agent.",
+        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
         "preparing": "Dieser Workflow wird vorbereitet.",
@@ -5518,7 +5518,7 @@
       "proactiveSuggestions": {
         "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
         "errorMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Wähle einen verfügbaren Standard-Agent für proaktive Vorschläge.",
+        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Vorübergehend nicht verfügbar.",
         "preparing": "Stündliche Vorschläge werden vorbereitet. Du kannst sie jederzeit deaktivieren.",

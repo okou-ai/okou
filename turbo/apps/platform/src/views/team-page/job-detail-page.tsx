@@ -1011,7 +1011,6 @@ function AgentProfileSettings({
   description,
   avatarUrl,
   resolvedSound,
-  isDefaultAgent,
   visibility,
   canEditVisibility,
   onDelete,
@@ -1021,7 +1020,6 @@ function AgentProfileSettings({
   description: string;
   avatarUrl: string | null;
   resolvedSound: Tone;
-  isDefaultAgent: boolean | undefined;
   visibility: "public" | "private";
   canEditVisibility: boolean;
   onDelete: () => Promise<void>;
@@ -1072,7 +1070,6 @@ function AgentProfileSettings({
       canEditVisibility={canEditVisibility}
       updateSettings$={updateAgentSettings$}
       inputId="job-agent-name"
-      isDefaultAgent={isDefaultAgent}
       onDelete={onDelete}
       deleteWorkflows={deleteWorkflows}
       deleteWorkflowsState={
@@ -1095,7 +1092,6 @@ function AgentTabContent({
   description,
   avatarUrl,
   resolvedSound,
-  isDefaultAgent,
   visibility,
   canEditVisibility,
 }: {
@@ -1105,7 +1101,6 @@ function AgentTabContent({
   description: string;
   avatarUrl: string | null;
   resolvedSound: Tone;
-  isDefaultAgent: boolean | undefined;
   visibility: "public" | "private";
   canEditVisibility: boolean;
 }) {
@@ -1130,7 +1125,6 @@ function AgentTabContent({
           description={description}
           avatarUrl={avatarUrl}
           resolvedSound={resolvedSound}
-          isDefaultAgent={isDefaultAgent}
           visibility={visibility}
           canEditVisibility={canEditVisibility}
           onDelete={handleDelete}
@@ -1259,7 +1253,6 @@ export function JobDetailPage() {
           description={fields.description}
           avatarUrl={fields.avatarUrl}
           resolvedSound={fields.resolvedSound}
-          isDefaultAgent={isDefaultAgent}
           visibility={fields.visibility}
           canEditVisibility={isOwner}
         />
