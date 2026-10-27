@@ -122,10 +122,21 @@ private final class HTTPBoundary: @unchecked Sendable {
 
 private final class URLProtocolFixture: URLProtocol, @unchecked Sendable {
   static let boundary = HTTPBoundary()
+  private let stopLock = NSLock()
+  private var onStop: (@Sendable () -> Void)?
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() { Self.boundary.serve(self) }
-  override func stopLoading() {}
+  override func stopLoading() {
+    let handler = stopLock.withLock {
+      defer { onStop = nil }
+      return onStop
+    }
+    handler?()
+  }
+  func whenStopped(_ handler: @escaping @Sendable () -> Void) {
+    stopLock.withLock { onStop = handler }
+  }
   func reply(_ body: JSONValue, status: Int = 200, headers: [String: String] = [:]) {
     replyData(try! JSONEncoder().encode(body), status: status, headers: headers)
   }
@@ -742,9 +753,9 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await fulfillment(of: [stopped], timeout: 3)
   }
 
-  func testAPIBoundsAnUnfinishedClaimRequest() async throws {
-    let began = expectation(description: "Server received a claim")
-    URLProtocolFixture.boundary.set { _ in began.fulfill() }
+  func testAPIBoundsAnUnfinishedClaimRequest() async {
+    // The budget may expire before URLSession reaches the fixture.
+    URLProtocolFixture.boundary.set { _ in }
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [URLProtocolFixture.self]
     let session = URLSession(configuration: configuration)
@@ -760,10 +771,90 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     } catch let error as DesktopFailure {
       XCTAssertEqual(error.code, "network_error")
       XCTAssertTrue(error.message.contains("timed out"))
+    } catch let error as URLError {
+      XCTAssertEqual(error.code, .timedOut)
+    } catch {
+      XCTFail("Expected a request timeout, received \(error)")
     }
-    await fulfillment(of: [began], timeout: 1)
     XCTAssertLessThan(started.duration(to: .now).seconds, 2)
   }
+
+  func testAPIPreservesANativeClaimTimeout() async {
+    URLProtocolFixture.boundary.set { connection in
+      connection.client?.urlProtocol(connection, didFailWithError: URLError(.timedOut))
+    }
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session)
+    do {
+      _ = try await api.request(
+        ApiRoutes.computerUseHostCommandNext(hostId: "host"), token: "host-token",
+        body: .object([:]))
+      XCTFail("A native timeout must fail the claim")
+    } catch let error as URLError {
+      XCTAssertEqual(error.code, .timedOut)
+    } catch {
+      XCTFail("Expected the native timeout, received \(error)")
+    }
+  }
+
+  func testAPIExpiresAnExhaustedClaimBudget() async {
+    URLProtocolFixture.boundary.set { _ in }
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    // Keep a finite transport guard if the explicit deadline regresses.
+    configuration.timeoutIntervalForResource = 1
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session)
+    do {
+      _ = try await api.request(
+        ApiRoutes.computerUseHostCommandNext(hostId: "host"), token: "host-token",
+        body: .object([:]), timeout: 0)
+      XCTFail("An exhausted budget must fail without waiting for transport")
+    } catch let error as DesktopFailure {
+      XCTAssertEqual(error.code, "network_error")
+      XCTAssertTrue(error.message.contains("timed out"))
+    } catch {
+      XCTFail("Expected the total request deadline, received \(error)")
+    }
+  }
+
+  func testAPICancelsAnUnfinishedClaimRequest() async {
+    let began = expectation(description: "Server received a claim")
+    let stopped = expectation(description: "The pending claim transport was cancelled")
+    URLProtocolFixture.boundary.set { connection in
+      connection.whenStopped { stopped.fulfill() }
+      began.fulfill()
+    }
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.49.71", session: session)
+    let request = Task {
+      try await api.request(
+        ApiRoutes.computerUseHostCommandNext(hostId: "host"), token: "host-token",
+        body: .object([:]))
+    }
+    await fulfillment(of: [began], timeout: 1)
+    request.cancel()
+    switch await request.result {
+    case .success:
+      XCTFail("Cancelling an unfinished claim must fail the request")
+    case .failure(let error):
+      XCTAssertTrue(
+        error is CancellationError || (error as? URLError)?.code == .cancelled,
+        "Expected cancellation, received \(error)")
+    }
+    await fulfillment(of: [stopped], timeout: 1)
+  }
+
   func testStopKeepsHeartbeatAliveUntilRunningCommandIsReported() async throws {
     let transitions = StateTransitions()
     let claimReceived = expectation(description: "Server receives the initial claim request")
