@@ -440,6 +440,11 @@ export default [
                 "Use DialogContent from @okouai/ui so dialogs retain their safe-area boundary.",
             },
             {
+              name: "docx-preview",
+              message:
+                "Only src/lib/word-document-renderer.ts imports the optional renderer; load it through the Word preview runtime.",
+            },
+            {
               name: "@clerk/ui",
               allowTypeImports: true,
               message:
@@ -467,6 +472,15 @@ export default [
     files: ["src/clerk-ui.ts"],
     rules: {
       // Only this independent build entry may import the optional UI at runtime.
+      "no-restricted-imports": [
+        "error",
+        { paths: [...runtimeImportRestrictions] },
+      ],
+    },
+  },
+  {
+    files: ["src/lib/word-document-renderer.ts"],
+    rules: {
       "no-restricted-imports": [
         "error",
         { paths: [...runtimeImportRestrictions] },

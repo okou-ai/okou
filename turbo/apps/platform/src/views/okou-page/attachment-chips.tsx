@@ -995,6 +995,7 @@ function ArtifactDialogOfficeDocumentBody({
           focusKey={`${preview.url}:dialog`}
           focusOnMount={false}
           testId="artifact-dialog-body-office"
+          wordDocumentHtml$={preview.wordDocumentHtml$}
         />
       </div>
     </ArtifactDialogStage>

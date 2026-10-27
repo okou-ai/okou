@@ -10,6 +10,7 @@ import platformPackage from "./package.json";
 import { applicationResourcePriorityHtmlPlugin } from "./scripts/app-resource-priority-html.ts";
 import { clerkCoreHtmlPlugin } from "./scripts/clerk-html.ts";
 import { clerkUiAssetPlugin } from "./scripts/clerk-ui.ts";
+import { wordPreviewAssetPlugin } from "./scripts/word-preview.ts";
 import { MESSAGE_PDF_WORKER_FILE_PATTERN } from "./scripts/message-pdf-worker.ts";
 import {
   SHARED_DATABASE_WORKER_FILE_PATTERN,
@@ -92,6 +93,7 @@ export default defineConfig(({ command }) => ({
     devArtifactFetchProxy(),
     clerkCoreHtmlPlugin(),
     clerkUiAssetPlugin(),
+    wordPreviewAssetPlugin(),
     runtimeBuildInfoHtmlPlugin,
     vendor.plugin,
     applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),

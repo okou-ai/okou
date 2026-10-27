@@ -19,6 +19,11 @@ import {
 } from "./single-bundle.ts";
 import { clerkUiAssetPlugin } from "./clerk-ui.ts";
 import {
+  wordPreviewAssetPlugin,
+  WORD_PREVIEW_ASSET_PATTERN,
+  WORD_PREVIEW_LIMIT_BYTES,
+} from "./word-preview.ts";
+import {
   MESSAGE_PDF_WORKER_FILE_PATTERN,
   MESSAGE_PDF_WORKER_LIMIT_BYTES,
 } from "./message-pdf-worker.ts";
@@ -159,9 +164,11 @@ const RUNTIME_FILE = "assets/rolldown-runtime-Runtime1.js";
 
 function applicationBundleViolations(
   outputs: Parameters<typeof validateApplicationBundle>[0],
+  includeWordPreview = true,
 ) {
   return validateApplicationBundle([
     ...outputs,
+    ...(includeWordPreview ? [wordPreviewAsset()] : []),
     {
       type: "asset",
       fileName: "assets/clerk-ui-UiHash01.js",
@@ -228,6 +235,14 @@ function pdfWorkerAsset() {
   return {
     fileName: "assets/message-pdf-worker-PdfHash1.js",
     source: "pdf-worker",
+    type: "asset" as const,
+  };
+}
+
+function wordPreviewAsset() {
+  return {
+    fileName: "assets/word-preview-WordHash1.js",
+    source: "word-preview",
     type: "asset" as const,
   };
 }
@@ -377,6 +392,58 @@ await test("budgets on-demand PDF bytes separately without relaxing the app cap"
   );
 });
 
+await test("requires one optional Word renderer and preserves the eager app budget", () => {
+  const outputs = validApplicationOutputs();
+  const expected = [
+    "Expected exactly one separately built on-demand Word preview asset",
+  ];
+  assert.deepEqual(applicationBundleViolations(outputs, false), expected);
+  assert.deepEqual(
+    applicationBundleViolations([...outputs, wordPreviewAsset()]),
+    expected,
+  );
+  const atLimit = {
+    ...wordPreviewAsset(),
+    source: new Uint8Array(WORD_PREVIEW_LIMIT_BYTES),
+  };
+  assert.deepEqual(
+    applicationBundleViolations([...outputs, atLimit], false),
+    [],
+  );
+  assert.deepEqual(
+    applicationBundleViolations(
+      [
+        ...outputs,
+        {
+          ...wordPreviewAsset(),
+          source: "x".repeat(WORD_PREVIEW_LIMIT_BYTES - 1) + "é",
+        },
+      ],
+      false,
+    ),
+    [
+      `On-demand Word preview: ${WORD_PREVIEW_LIMIT_BYTES + 1} raw bytes exceeds ${WORD_PREVIEW_LIMIT_BYTES}`,
+    ],
+  );
+  assert.match(
+    applicationBundleViolations(
+      [
+        ...outputs.map((output) => {
+          return output.fileName === APP_FILE
+            ? {
+                ...applicationChunk(),
+                code: "x".repeat(RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES),
+              }
+            : output;
+        }),
+        atLimit,
+      ],
+      false,
+    )[0] ?? "",
+    /JavaScript output: .* raw bytes exceeds 8566743/u,
+  );
+});
+
 await test("rejects raw-size regressions", () => {
   const violations = applicationBundleViolations([
     {
@@ -432,6 +499,31 @@ await test("keeps third-party modules only in vendor and rejects extra edges", (
       );
     }),
   );
+});
+
+await test("rejects the Word renderer or ZIP reader in the eager graph", () => {
+  for (const dependency of ["docx-preview", "jszip"]) {
+    const violations = applicationBundleViolations(
+      validApplicationOutputs().map((output) => {
+        return output.fileName === VENDOR_FILE
+          ? {
+              ...vendorChunk(),
+              moduleIds: [
+                ...vendorChunk().moduleIds,
+                `/repo/node_modules/${dependency}/dist/index.js`,
+              ],
+            }
+          : output;
+      }),
+    );
+    assert.ok(
+      violations.some((violation) => {
+        return violation.includes(
+          `forbidden packages reached the bundle: ${dependency}`,
+        );
+      }),
+    );
+  }
 });
 
 await test("keeps only the generated Mermaid workspace module in vendor", () => {
@@ -692,6 +784,19 @@ function assertBuiltPageDiscovery(
     !/<(?:script|link)[^>]*(?:src|href)="[^"]*clerk-ui-/u.test(htmlSource),
     "default routes must not eagerly download Clerk UI",
   );
+  const wordAsset = outputs.find((item) => {
+    return WORD_PREVIEW_ASSET_PATTERN.test(item.fileName);
+  });
+  assert.ok(wordAsset);
+  assert.ok(
+    htmlSource.includes(
+      `content="https://static.okou.io/okou-app/${wordAsset.fileName}"`,
+    ),
+  );
+  assert.doesNotMatch(
+    htmlSource,
+    /<(?:script|link)[^>]*(?:src|href)="[^"]*word-preview-/u,
+  );
   assertClerkDiscoveryOrder(htmlSource);
   assert.equal((htmlSource.match(/<script type="module"/gu) ?? []).length, 1);
   assert.equal((htmlSource.match(/rel="modulepreload"/gu) ?? []).length, 2);
@@ -797,6 +902,7 @@ await test("emits the fixed page topology and two external workers", async () =>
       },
       plugins: [
         clerkUiAssetPlugin(),
+        wordPreviewAssetPlugin(),
         applicationJavaScriptBundlePlugin(),
         applicationResourcePriorityHtmlPlugin(),
         sharedDatabaseWorkerHtmlPlugin(),
@@ -814,8 +920,8 @@ await test("emits the fixed page topology and two external workers", async () =>
       return item.fileName.endsWith(".js");
     });
     // App entry, vendor, Rolldown runtime, SharedWorker, the lazy chunk group,
-    // the separately built optional Clerk UI asset, and the on-demand PDF worker.
-    assert.equal(javaScriptOutputs.length, 7);
+    // optional Clerk UI, Word renderer, and the on-demand PDF worker.
+    assert.equal(javaScriptOutputs.length, 8);
     assert.equal(
       javaScriptOutputs.filter((item) => {
         return item.type === "chunk" && item.isEntry;
@@ -847,6 +953,7 @@ await test("emits the fixed page topology and two external workers", async () =>
       /^assets\/shared-database-worker-[^/]+\.js$/u,
       /^assets\/clerk-ui-[^/]+\.js$/u,
       MESSAGE_PDF_WORKER_FILE_PATTERN,
+      WORD_PREVIEW_ASSET_PATTERN,
     ]) {
       assert.ok(
         javaScriptOutputs.some((item) => {

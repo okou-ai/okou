@@ -1,6 +1,10 @@
 import type { Plugin } from "vite";
 import { CLERK_UI_ASSET_PATTERN } from "./clerk-ui.ts";
 import {
+  WORD_PREVIEW_ASSET_PATTERN,
+  WORD_PREVIEW_LIMIT_BYTES,
+} from "./word-preview.ts";
+import {
   MESSAGE_PDF_WORKER_FILE_PATTERN,
   MESSAGE_PDF_WORKER_LIMIT_BYTES,
 } from "./message-pdf-worker.ts";
@@ -35,6 +39,8 @@ const FORBIDDEN_BUNDLED_PACKAGES = [
   "@clerk/clerk-js",
   "@clerk/ui",
   "@coinbase",
+  "docx-preview",
+  "jszip",
   "@solana",
   "@wallet-standard",
   APPLICATION_LAZY_CHUNK.name,
@@ -298,13 +304,25 @@ export function applicationBundleViolations(
   if (pdfWorkerAssets.length !== 1) {
     return ["Expected exactly one separately built on-demand PDF worker asset"];
   }
-  // Only this exact optional asset is excluded. Unknown JavaScript outputs,
+  const wordPreviewAssets = outputs.filter((output) => {
+    return (
+      output.type === "asset" &&
+      WORD_PREVIEW_ASSET_PATTERN.test(output.fileName)
+    );
+  });
+  if (wordPreviewAssets.length !== 1) {
+    return [
+      "Expected exactly one separately built on-demand Word preview asset",
+    ];
+  }
+  // Only these exact optional assets are excluded. Unknown JavaScript outputs,
   // the shared database worker, and the lazy chunk keep their existing budget.
   const javaScriptOutputs = outputs.filter((output) => {
     return (
       output.fileName.endsWith(".js") &&
       !uiAssets.includes(output) &&
-      !pdfWorkerAssets.includes(output)
+      !pdfWorkerAssets.includes(output) &&
+      !wordPreviewAssets.includes(output)
     );
   });
   const violations = eagerApplicationBundleViolations(
@@ -315,6 +333,12 @@ export function applicationBundleViolations(
   if (pdfWorkerBytes > MESSAGE_PDF_WORKER_LIMIT_BYTES) {
     violations.push(
       `On-demand PDF worker: ${pdfWorkerBytes} raw bytes exceeds ${MESSAGE_PDF_WORKER_LIMIT_BYTES}`,
+    );
+  }
+  const wordPreviewBytes = rawJavaScriptBytes(wordPreviewAssets);
+  if (wordPreviewBytes > WORD_PREVIEW_LIMIT_BYTES) {
+    violations.push(
+      `On-demand Word preview: ${wordPreviewBytes} raw bytes exceeds ${WORD_PREVIEW_LIMIT_BYTES}`,
     );
   }
   return violations;

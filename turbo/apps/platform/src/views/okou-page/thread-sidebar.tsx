@@ -425,6 +425,7 @@ function ThreadArtifactDetail({
         artifactRef={{
           url: preview.url,
           resourceUrl$: sidebar.selectedArtifactResourceUrl$,
+          wordDocumentHtml$: sidebar.selectedArtifactWordHtml$,
           shareUrl$: sidebar.selectedArtifactShareUrl$,
           kind: preview.kind,
           filename: preview.filename,

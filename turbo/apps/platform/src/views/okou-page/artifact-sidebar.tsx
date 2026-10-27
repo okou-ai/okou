@@ -5,6 +5,7 @@ import {
   hostedSiteRecoveryReason,
 } from "../../lib/hosted-site-access.ts";
 import type { ReactNode } from "react";
+import type { Computed } from "ccstate";
 import {
   ArrowLeft,
   Maximize2,
@@ -252,6 +253,7 @@ export function ArtifactSidebarContent({
 
   return (
     <ArtifactSidebarResolvedContent
+      wordDocumentHtml$={artifactRef.wordDocumentHtml$}
       recovery={recovery}
       resourceUrl={resourceUrl}
       shareUrl={shareUrl}
@@ -270,6 +272,7 @@ export function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
+  readonly wordDocumentHtml$: Computed<Promise<string>>;
   readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
@@ -286,6 +289,7 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
+  wordDocumentHtml$,
   recovery,
   resourceUrl,
   shareUrl,
@@ -335,6 +339,7 @@ function ArtifactSidebarResolvedContent({
       <div className="min-h-0 flex-1 overflow-hidden bg-background">
         {recovery ?? (
           <ArtifactBody
+            wordDocumentHtml$={wordDocumentHtml$}
             resourceUrl={resourceUrl}
             shareUrl={shareUrl}
             url={display.url}
@@ -763,6 +768,7 @@ function ArtifactCloseAction({ onClose }: { onClose: () => void }) {
 }
 
 function ArtifactBody({
+  wordDocumentHtml$,
   resourceUrl,
   shareUrl,
   url,
@@ -775,6 +781,7 @@ function ArtifactBody({
   markdownTree$,
   text$,
 }: {
+  wordDocumentHtml$: Computed<Promise<string>>;
   resourceUrl: string | null;
   shareUrl: string | null | undefined;
   url: string;
@@ -853,6 +860,7 @@ function ArtifactBody({
   if (isOfficeFilePreview(filename)) {
     return (
       <ArtifactOfficeDocumentBody
+        wordDocumentHtml$={wordDocumentHtml$}
         resourceUrl={shareUrl === undefined ? null : (shareUrl ?? resourceUrl)}
         filename={filename}
         fullscreen={fullscreen}
@@ -1330,11 +1338,13 @@ function ArtifactIframeBody({
 }
 
 function ArtifactOfficeDocumentBody({
+  wordDocumentHtml$,
   resourceUrl,
   filename,
   fullscreen,
   url,
 }: {
+  wordDocumentHtml$: Computed<Promise<string>>;
   resourceUrl: string | null;
   filename: string;
   fullscreen: boolean;
@@ -1344,6 +1354,7 @@ function ArtifactOfficeDocumentBody({
     <ArtifactStageShell scrollable={false}>
       <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden rounded-xl border border-border/70 bg-background shadow-sm">
         <OfficeDocumentPreview
+          wordDocumentHtml$={wordDocumentHtml$}
           resourceUrl={resourceUrl}
           filename={filename}
           focusKey={`${url}:${fullscreen ? "fullscreen" : "sidebar"}`}

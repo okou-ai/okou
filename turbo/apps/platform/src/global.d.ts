@@ -1,6 +1,7 @@
 import type { ClerkUIConstructor } from "@clerk/shared/ui";
 import type { ClerkOptions } from "@clerk/shared/types";
 import type { ui } from "@clerk/ui";
+import type { WordPreviewRuntime } from "./types/word-preview-runtime.ts";
 import type { DebugLoggers } from "./types/global-method";
 
 interface OkouClerkBootstrapRuntime {
@@ -64,6 +65,8 @@ declare global {
     /** Route-owned handlers used by the callbacks captured during Clerk load. */
     __okouClerkRouter?: OkouClerkRouterHandlers;
     __okouClerkUI?: typeof ui;
+    /** Installed only when an inline DOCX preview requests its renderer. */
+    __okouWordPreview?: WordPreviewRuntime;
     /** Installed by `index.html`; claimed once by the shared database bridge. */
     __okouSharedDatabaseWorkerBootstrap?: OkouSharedDatabaseWorkerBootstrap;
     /**

@@ -6,6 +6,7 @@ type AutoFocusedArtifactIframeProps = Omit<
 > & {
   focusKey: string;
   focusOnMount: boolean;
+  onFrameRef?: (element: HTMLIFrameElement | null) => (() => void) | undefined;
 };
 
 export function AutoFocusedArtifactIframe({
@@ -13,6 +14,7 @@ export function AutoFocusedArtifactIframe({
   focusOnMount,
   onLoad,
   tabIndex,
+  onFrameRef,
   ...props
 }: AutoFocusedArtifactIframeProps) {
   const handleLoad: ReactEventHandler<HTMLIFrameElement> = (event) => {
@@ -25,6 +27,7 @@ export function AutoFocusedArtifactIframe({
       {...props}
       ref={(element) => {
         deferIframeFocus(element, focusKey, focusOnMount, "mount");
+        return onFrameRef?.(element);
       }}
       onLoad={handleLoad}
       tabIndex={focusOnMount && tabIndex === undefined ? -1 : tabIndex}
