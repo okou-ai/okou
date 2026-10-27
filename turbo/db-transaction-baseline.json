@@ -87,11 +87,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0218",
-      "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
-      "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
-    },
-    {
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
