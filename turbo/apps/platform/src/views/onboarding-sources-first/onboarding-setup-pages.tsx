@@ -550,7 +550,9 @@ function SubscriptionConnect({
         className={cn(
           "w-full",
           !connected &&
-            "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed",
+            (provider === "claudeCode"
+              ? "bg-[#c97d5d] text-[#fff] hover:bg-[#b57154] active:bg-[#a9694e]"
+              : "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"),
         )}
         disabled={connected || connecting}
         aria-busy={connecting}
@@ -561,7 +563,12 @@ function SubscriptionConnect({
         {connected ? (
           <Check size={16} aria-hidden="true" />
         ) : (
-          <span className={provider === "codex" ? "invert" : undefined}>
+          <span
+            className={cn(
+              "invert",
+              provider === "claudeCode" && "brightness-0",
+            )}
+          >
             <ProductMark
               name={provider === "codex" ? "openai" : "anthropic"}
               alt=""
