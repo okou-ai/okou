@@ -1664,174 +1664,6 @@ test("receives an owner DM once, resumes its native session and delivers the can
     [404],
   );
   const objectStore = createChatCallbacksApi(context).acceptChatObjectStorage();
-  const fileBody = {
-    filename: "report.csv",
-    length: attachmentBytes.length,
-    contentType: "text/csv",
-    checksumSha256: createHash("sha256").update(attachmentBytes).digest("hex"),
-    operationId: randomUUID(),
-    channelId: connectionId,
-  };
-  const fileInit = fileApp(integrationsWechatUploadInitContract).init;
-  const [initialized, repeatedInit] = await Promise.all([
-    accept(fileInit({ headers, body: fileBody }), [200]),
-    accept(fileInit({ headers, body: fileBody }), [200]),
-  ]);
-  expect(repeatedInit.body.assetId).toBe(initialized.body.assetId);
-  expect(repeatedInit.body.url).toBe(initialized.body.url);
-  await accept(
-    fileInit({
-      headers,
-      body: { ...fileBody, comment: "Changed destination" },
-    }),
-    [409],
-  );
-  objectStore.addObject({
-    bucket: "test-private-artifacts",
-    key: `private-artifacts/${initialized.body.assetId}/${sanitizeArtifactFilename(fileBody.filename)}`,
-    size: attachmentBytes.length,
-    body: attachmentBytes,
-    contentType: fileBody.contentType,
-    metadata: { "artifact-id": initialized.body.assetId },
-  });
-  const fileOperation = {
-    assetId: initialized.body.assetId,
-    operationId: fileBody.operationId,
-  };
-  const published = await accept(
-    fileApp(integrationsWechatUploadMaterializeContract).materialize({
-      headers,
-      body: fileOperation,
-    }),
-    [200],
-  );
-  expect(published.body.delivery.status).toBe("pending");
-  let cdnUploads = 0;
-  const overlappingUploads = createDeferredPromise<void>(context.signal);
-  server.use(
-    http.post(`${origin}/ilink/bot/getuploadurl`, () => {
-      return HttpResponse.json({
-        ret: 0,
-        upload_param: "private-upload-query",
-      });
-    }),
-    http.post("https://novac2c.cdn.weixin.qq.com/c2c/upload", async () => {
-      cdnUploads++;
-      if (cdnUploads <= 3) {
-        return new HttpResponse(null, { status: 503 });
-      }
-      if (cdnUploads === 5) {
-        overlappingUploads.resolve();
-      }
-      await overlappingUploads.promise;
-      return new HttpResponse(null, {
-        headers: { "x-encrypted-param": "private-file-query" },
-      });
-    }),
-  );
-  const sendsBeforeUpload = sends.length;
-  const failedUpload = await accept(
-    fileApp(integrationsWechatUploadCompleteContract).complete({
-      headers,
-      body: fileOperation,
-    }),
-    [503],
-  );
-  expect(failedUpload.body.error.message).toContain("before sending");
-  expect(cdnUploads).toBe(3);
-  expect(sends).toHaveLength(sendsBeforeUpload);
-  const completions = await Promise.all([
-    accept(
-      fileApp(integrationsWechatUploadCompleteContract).complete({
-        headers,
-        body: fileOperation,
-      }),
-      [200],
-    ),
-    accept(
-      fileApp(integrationsWechatUploadCompleteContract).complete({
-        headers,
-        body: fileOperation,
-      }),
-      [200],
-    ),
-  ]);
-  const completed = completions.find((completion) => {
-    return completion.body.delivery.status === "delivered";
-  });
-  if (!completed) {
-    throw new Error("Expected a confirmed WeChat file delivery");
-  }
-  expect(cdnUploads).toBe(5);
-  expect(sends).toHaveLength(sendsBeforeUpload + 1);
-  expect(completed.body.url).toBe(published.body.url);
-  const fileSendCount = sends.length;
-  expect(
-    (
-      await accept(
-        fileApp(integrationsWechatUploadCompleteContract).complete({
-          headers,
-          body: fileOperation,
-        }),
-        [200],
-      )
-    ).body,
-  ).toStrictEqual(completed.body);
-  expect(sends).toHaveLength(fileSendCount);
-  const ambiguousInit = await accept(
-    fileInit({
-      headers,
-      body: { ...fileBody, operationId: randomUUID() },
-    }),
-    [200],
-  );
-  objectStore.addObject({
-    bucket: "test-private-artifacts",
-    key: `private-artifacts/${ambiguousInit.body.assetId}/${sanitizeArtifactFilename(fileBody.filename)}`,
-    size: attachmentBytes.length,
-    body: attachmentBytes,
-    contentType: fileBody.contentType,
-    metadata: { "artifact-id": ambiguousInit.body.assetId },
-  });
-  const ambiguousOperation = {
-    assetId: ambiguousInit.body.assetId,
-    operationId: ambiguousInit.body.operationId,
-  };
-  await accept(
-    fileApp(integrationsWechatUploadMaterializeContract).materialize({
-      headers,
-      body: ambiguousOperation,
-    }),
-    [200],
-  );
-  server.use(
-    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
-      sends.push(await request.json());
-      return HttpResponse.error();
-    }),
-  );
-  const ambiguous = await accept(
-    fileApp(integrationsWechatUploadCompleteContract).complete({
-      headers,
-      body: ambiguousOperation,
-    }),
-    [200],
-  );
-  expect(ambiguous.body).toMatchObject({
-    url: ambiguousInit.body.url,
-    delivery: { status: "failed", retryable: false },
-  });
-  const afterAmbiguousSend = sends.length;
-  expect(afterAmbiguousSend).toBe(fileSendCount + 1);
-  const inspected = await accept(
-    fileApp(integrationsWechatUploadCompleteContract).complete({
-      headers,
-      body: ambiguousOperation,
-    }),
-    [200],
-  );
-  expect(inspected.body).toStrictEqual(ambiguous.body);
-  expect(sends).toHaveLength(afterAmbiguousSend);
   // Image-only inputs have no filename or MIME; preserve the detected encoding.
   for (const image of [
     {
@@ -2002,6 +1834,191 @@ test("receives an owner DM once, resumes its native session and delivers the can
     .toBe(true);
 
   expect(sends).toHaveLength(beforeDisconnectSendCount);
+});
+
+test("publishes owner files once across retry, overlapping completion and uncertain delivery", async () => {
+  const owner = await responseFixture();
+  await owner.receive("Please send report.csv");
+  await flushWaitUntilForTest();
+  const { connectionId } = owner;
+  const sends: unknown[] = [];
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      sends.push(await request.json());
+      return HttpResponse.json({ ret: 0 });
+    }),
+  );
+  const attachmentBytes = Buffer.from("a,b\n1,2\n");
+  const fileApp = setupApp({ context, routes: integrationsWechatFileRoutes });
+  const objectStore = createChatCallbacksApi(context).acceptChatObjectStorage();
+  const fileBody = {
+    filename: "report.csv",
+    length: attachmentBytes.length,
+    contentType: "text/csv",
+    checksumSha256: createHash("sha256").update(attachmentBytes).digest("hex"),
+    operationId: randomUUID(),
+    channelId: connectionId,
+  };
+  const fileInit = fileApp(integrationsWechatUploadInitContract).init;
+  const [initialized, repeatedInit] = await Promise.all([
+    accept(fileInit({ headers, body: fileBody }), [200]),
+    accept(fileInit({ headers, body: fileBody }), [200]),
+  ]);
+  expect(repeatedInit.body.assetId).toBe(initialized.body.assetId);
+  expect(repeatedInit.body.url).toBe(initialized.body.url);
+  await accept(
+    fileInit({
+      headers,
+      body: { ...fileBody, comment: "Changed destination" },
+    }),
+    [409],
+  );
+  objectStore.addObject({
+    bucket: "test-private-artifacts",
+    key: `private-artifacts/${initialized.body.assetId}/${sanitizeArtifactFilename(fileBody.filename)}`,
+    size: attachmentBytes.length,
+    body: attachmentBytes,
+    contentType: fileBody.contentType,
+    metadata: { "artifact-id": initialized.body.assetId },
+  });
+  const fileOperation = {
+    assetId: initialized.body.assetId,
+    operationId: fileBody.operationId,
+  };
+  const published = await accept(
+    fileApp(integrationsWechatUploadMaterializeContract).materialize({
+      headers,
+      body: fileOperation,
+    }),
+    [200],
+  );
+  expect(published.body.delivery.status).toBe("pending");
+  let cdnUploads = 0;
+  const overlappingUploads = createDeferredPromise<void>(context.signal);
+  server.use(
+    http.post(`${origin}/ilink/bot/getuploadurl`, () => {
+      return HttpResponse.json({
+        ret: 0,
+        upload_param: "private-upload-query",
+      });
+    }),
+    http.post("https://novac2c.cdn.weixin.qq.com/c2c/upload", async () => {
+      cdnUploads++;
+      if (cdnUploads <= 3) {
+        return new HttpResponse(null, { status: 503 });
+      }
+      if (cdnUploads === 5) {
+        overlappingUploads.resolve();
+      }
+      await overlappingUploads.promise;
+      return new HttpResponse(null, {
+        headers: { "x-encrypted-param": "private-file-query" },
+      });
+    }),
+  );
+  const sendsBeforeUpload = sends.length;
+  const failedUpload = await accept(
+    fileApp(integrationsWechatUploadCompleteContract).complete({
+      headers,
+      body: fileOperation,
+    }),
+    [503],
+  );
+  expect(failedUpload.body.error.message).toContain("before sending");
+  expect(cdnUploads).toBe(3);
+  expect(sends).toHaveLength(sendsBeforeUpload);
+  const completions = await Promise.all([
+    accept(
+      fileApp(integrationsWechatUploadCompleteContract).complete({
+        headers,
+        body: fileOperation,
+      }),
+      [200],
+    ),
+    accept(
+      fileApp(integrationsWechatUploadCompleteContract).complete({
+        headers,
+        body: fileOperation,
+      }),
+      [200],
+    ),
+  ]);
+  const completed = completions.find((completion) => {
+    return completion.body.delivery.status === "delivered";
+  });
+  if (!completed) {
+    throw new Error("Expected a confirmed WeChat file delivery");
+  }
+  expect(cdnUploads).toBe(5);
+  expect(sends).toHaveLength(sendsBeforeUpload + 1);
+  expect(completed.body.url).toBe(published.body.url);
+  const fileSendCount = sends.length;
+  expect(
+    (
+      await accept(
+        fileApp(integrationsWechatUploadCompleteContract).complete({
+          headers,
+          body: fileOperation,
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual(completed.body);
+  expect(sends).toHaveLength(fileSendCount);
+  const ambiguousInit = await accept(
+    fileInit({
+      headers,
+      body: { ...fileBody, operationId: randomUUID() },
+    }),
+    [200],
+  );
+  objectStore.addObject({
+    bucket: "test-private-artifacts",
+    key: `private-artifacts/${ambiguousInit.body.assetId}/${sanitizeArtifactFilename(fileBody.filename)}`,
+    size: attachmentBytes.length,
+    body: attachmentBytes,
+    contentType: fileBody.contentType,
+    metadata: { "artifact-id": ambiguousInit.body.assetId },
+  });
+  const ambiguousOperation = {
+    assetId: ambiguousInit.body.assetId,
+    operationId: ambiguousInit.body.operationId,
+  };
+  await accept(
+    fileApp(integrationsWechatUploadMaterializeContract).materialize({
+      headers,
+      body: ambiguousOperation,
+    }),
+    [200],
+  );
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      sends.push(await request.json());
+      return HttpResponse.error();
+    }),
+  );
+  const ambiguous = await accept(
+    fileApp(integrationsWechatUploadCompleteContract).complete({
+      headers,
+      body: ambiguousOperation,
+    }),
+    [200],
+  );
+  expect(ambiguous.body).toMatchObject({
+    url: ambiguousInit.body.url,
+    delivery: { status: "failed", retryable: false },
+  });
+  const afterAmbiguousSend = sends.length;
+  expect(afterAmbiguousSend).toBe(fileSendCount + 1);
+  const inspected = await accept(
+    fileApp(integrationsWechatUploadCompleteContract).complete({
+      headers,
+      body: ambiguousOperation,
+    }),
+    [200],
+  );
+  expect(inspected.body).toStrictEqual(ambiguous.body);
+  expect(sends).toHaveLength(afterAmbiguousSend);
 });
 
 test("native WeChat commands isolate users and workspaces and honor live revocation", async () => {
