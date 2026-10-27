@@ -10,7 +10,8 @@ archive=$2
 proof=false
 if [ "$1" = --verify-archive ]; then proof=true; fi
 required=(RUNNER_TEMP IOS_VERSION IOS_BUILD_NUMBER
-  IOS_DISTRIBUTION_P12_BASE64 IOS_DISTRIBUTION_P12_PASSWORD IOS_PROVISIONING_PROFILE_BASE64)
+  IOS_DISTRIBUTION_P12_BASE64 IOS_DISTRIBUTION_P12_PASSWORD IOS_PROVISIONING_PROFILE_BASE64
+  IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64)
 if [ "$proof" = false ]; then
   required+=(IOS_APP_ID APP_STORE_CONNECT_API_KEY_BASE64 APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID)
 fi
@@ -37,10 +38,10 @@ fi
 umask 077
 work=$(mktemp -d "$RUNNER_TEMP/okou-ios-release.XXXXXX")
 keychain="$work/signing.keychain-db"
-profile_path=""
+profile_paths=()
 cleanup() {
   security delete-keychain "$keychain" >/dev/null 2>&1 || true
-  if [ -n "$profile_path" ]; then rm -f "$profile_path"; fi
+  for profile_path in "${profile_paths[@]}"; do rm -f "$profile_path"; done
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -48,42 +49,32 @@ trap cleanup EXIT
 python3 ios/scripts/archive-proof.py prepare "$archive" "$work/Okou.xcarchive" \
   --version "$IOS_VERSION" --build-number "$IOS_BUILD_NUMBER"
 printf '%s' "$IOS_DISTRIBUTION_P12_BASE64" | base64 -D > "$work/distribution.p12"
-printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -D > "$work/profile.mobileprovision"
-security cms -D -i "$work/profile.mobileprovision" > "$work/profile.plist"
-profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print UUID' "$work/profile.plist")
-# Verify distribution scope before installing the profile or contacting Apple.
-python3 - "$work/profile.plist" "$work/signing-entitlements.plist" <<'PY'
-import datetime, plistlib, sys, uuid
-with open(sys.argv[1], 'rb') as f:
-    profile = plistlib.load(f)
-uuid.UUID(profile['UUID'])
-if profile['TeamIdentifier'] != ['C5UWSXYB67']: raise ValueError('Wrong signing team')
-if profile['Entitlements']['application-identifier'] != 'C5UWSXYB67.ai.okou.ios': raise ValueError('Wrong bundle ID')
-if profile['Entitlements'].get('aps-environment') != 'production': raise ValueError('Distribution profile must enable production APNs')
-if profile['Entitlements'].get('get-task-allow'): raise ValueError('Development profile is not a distribution profile')
-if profile.get('ProvisionedDevices') or profile.get('ProvisionsAllDevices'): raise ValueError('An App Store Connect distribution profile is required')
-if profile['ExpirationDate'] <= datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None): raise ValueError('Expired provisioning profile')
-with open('ios/Okou/Resources/Okou.entitlements', 'rb') as f:
-    source = f.read().replace(b'$(APS_ENVIRONMENT)', b'production')
-if b'$(' in source: raise ValueError('Unresolved signing entitlement build setting')
-entitlements = plistlib.loads(source)
-if entitlements.get('aps-environment') != 'production': raise ValueError('Application must request production APNs')
-for key in ('application-identifier', 'com.apple.developer.team-identifier'):
-    entitlements[key] = profile['Entitlements'][key]
-entitlements['get-task-allow'] = False
-with open(sys.argv[2], 'wb') as f:
-    plistlib.dump(entitlements, f)
-PY
 profiles="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 mkdir -p "$profiles"
-profile_path="$profiles/$profile_uuid.mobileprovision"
-# Hosted runners are ephemeral. Never replace an existing user's profile locally.
-if [ -e "$profile_path" ]; then
-  profile_path=""
-  echo 'Provisioning profile already exists; use a clean CI runner' >&2
-  exit 1
-fi
-cp "$work/profile.mobileprovision" "$profile_path"
+# Validate both identities and shared capabilities before installing profiles or signing.
+for bundle in app extension; do
+  if [ "$bundle" = app ]; then
+    encoded_profile=$IOS_PROVISIONING_PROFILE_BASE64
+    bundle_id=ai.okou.ios
+  else
+    encoded_profile=$IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64
+    bundle_id=ai.okou.ios.notifications
+  fi
+  printf '%s' "$encoded_profile" | base64 -D > "$work/$bundle.mobileprovision"
+  security cms -D -i "$work/$bundle.mobileprovision" > "$work/$bundle-profile.plist"
+  profile_uuid=$(python3 ios/scripts/distribution-profile.py "$work/$bundle-profile.plist" \
+    "$work/$bundle-entitlements.plist" --bundle-id "$bundle_id")
+  if [ "$bundle" = app ]; then app_profile_uuid=$profile_uuid; else extension_profile_uuid=$profile_uuid; fi
+  profile_path="$profiles/$profile_uuid.mobileprovision"
+  # Hosted runners are ephemeral. Never replace an existing user's profile locally.
+  if [ -e "$profile_path" ]; then
+    echo 'Provisioning profile already exists; use a clean CI runner' >&2
+    exit 1
+  fi
+  cp "$work/$bundle.mobileprovision" "$profile_path"
+  profile_paths+=("$profile_path")
+done
+unset encoded_profile
 keychain_password=$(openssl rand -hex 32)
 security create-keychain -p "$keychain_password" "$keychain"
 security set-keychain-settings -lut 21600 "$keychain"
@@ -97,23 +88,27 @@ identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*) 
 # An unsigned archive has no signature from which export can recover app capabilities.
 # Sign only the prepared copy so export retains the source-declared APNs entitlement.
 app="$work/Okou.xcarchive/Products/Applications/Okou.app"
-cp "$work/profile.mobileprovision" "$app/embedded.mobileprovision"
+extension="$app/PlugIns/OkouNotificationService.appex"
+cp "$work/extension.mobileprovision" "$extension/embedded.mobileprovision"
 codesign --force --sign "$identity" --keychain "$keychain" --generate-entitlement-der \
-  --entitlements "$work/signing-entitlements.plist" "$app"
+  --entitlements "$work/extension-entitlements.plist" "$extension"
+cp "$work/app.mobileprovision" "$app/embedded.mobileprovision"
+codesign --force --sign "$identity" --keychain "$keychain" --generate-entitlement-der \
+  --entitlements "$work/app-entitlements.plist" "$app"
 
-python3 - "$work/ExportOptions.plist" "$profile_uuid" "$identity" <<'PY'
+python3 - "$work/ExportOptions.plist" "$app_profile_uuid" "$extension_profile_uuid" "$identity" <<'PYEXPORT'
 import plistlib, sys
 with open(sys.argv[1], 'wb') as f:
     plistlib.dump({
         'method': 'app-store-connect', 'destination': 'export',
         'signingStyle': 'manual', 'teamID': 'C5UWSXYB67',
-        'signingCertificate': sys.argv[3],
-        'provisioningProfiles': {'ai.okou.ios': sys.argv[2]},
+        'signingCertificate': sys.argv[4],
+        'provisioningProfiles': {'ai.okou.ios': sys.argv[2], 'ai.okou.ios.notifications': sys.argv[3]},
         'manageAppVersionAndBuildNumber': False,
         'testFlightInternalTestingOnly': True,
         'uploadSymbols': True,
     }, f)
-PY
+PYEXPORT
 xcodebuild -exportArchive -archivePath "$work/Okou.xcarchive" \
   -exportOptionsPlist "$work/ExportOptions.plist" -exportPath "$work/export"
 python3 ios/scripts/archive-proof.py verify-export "$archive" "$work/export/Okou.ipa" \
@@ -121,20 +116,30 @@ python3 ios/scripts/archive-proof.py verify-export "$archive" "$work/export/Okou
 mkdir "$work/unpacked"
 ditto -x -k "$work/export/Okou.ipa" "$work/unpacked"
 codesign --verify --deep --strict "$work/unpacked/Payload/Okou.app"
-codesign --display --entitlements - --xml "$work/unpacked/Payload/Okou.app" > "$work/entitlements.plist" 2>/dev/null
-python3 - "$work/entitlements.plist" <<'PY'
+for bundle_id in ai.okou.ios ai.okou.ios.notifications; do
+  signed_bundle="$work/unpacked/Payload/Okou.app"
+  if [ "$bundle_id" = ai.okou.ios.notifications ]; then
+    signed_bundle="$signed_bundle/PlugIns/OkouNotificationService.appex"
+  fi
+  codesign --display --entitlements - --xml "$signed_bundle" > "$work/entitlements.plist" 2>/dev/null
+  python3 - "$work/entitlements.plist" "$bundle_id" <<'PYVERIFY'
 import plistlib, sys
 with open(sys.argv[1], 'rb') as file:
     entitlements = plistlib.load(file)
-if entitlements['application-identifier'] != 'C5UWSXYB67.ai.okou.ios':
-    raise ValueError('Exported IPA has the wrong application entitlement')
+if entitlements['application-identifier'] != 'C5UWSXYB67.' + sys.argv[2]:
+    raise ValueError('Exported bundle has the wrong application entitlement')
 if entitlements['com.apple.developer.team-identifier'] != 'C5UWSXYB67':
-    raise ValueError('Exported IPA has the wrong signing team')
-if entitlements.get('aps-environment') != 'production':
-    raise ValueError('Exported IPA must have the production APNs entitlement')
+    raise ValueError('Exported bundle has the wrong signing team')
+if sys.argv[2] == 'ai.okou.ios' and entitlements.get('aps-environment') != 'production':
+    raise ValueError('Exported app must have production APNs')
+if entitlements.get('com.apple.security.application-groups') != ['group.ai.okou.ios']:
+    raise ValueError('Exported bundle must share the Okou cache App Group')
+if entitlements.get('keychain-access-groups') != ['C5UWSXYB67.ai.okou.ios']:
+    raise ValueError('Exported bundle must share the existing Okou Keychain group')
 if entitlements.get('get-task-allow'):
-    raise ValueError('Exported IPA is development-signed')
-PY
+    raise ValueError('Exported bundle is development-signed')
+PYVERIFY
+done
 if [ "$proof" = true ]; then
   echo 'Archive promotion proof passed: distribution export, build number, compiled sections, and signature verified; nothing uploaded.'
   exit 0

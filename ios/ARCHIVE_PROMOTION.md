@@ -150,15 +150,20 @@ The same record is retained as a private workflow artifact for 90 days.
 
 The existing App Store Connect preparation obtains the next build number and
 internal group. `release-testflight.sh --archive <Original.xcarchive>` copies the
-archive and changes only its application/archive Info.plist build numbers before
-signing. It expands the source entitlements for production, embeds the validated
-distribution profile in that private copy, and signs it with a disposable
-keychain so export retains the requested capabilities. It then calls
+archive and changes only the archive, application and notification extension
+Info.plist build numbers before signing. Both bundle versions must agree.
+It expands each bundle's source entitlements for production, embeds its validated
+distribution profile in that private copy, and signs the extension before the
+containing app with a disposable keychain. Both profiles must authorize the
+shared App Group and existing app Keychain group. Runtime Keychain identity is
+fixed in each Info.plist, because `AppIdentifierPrefix` is empty while producing
+the unsigned archive; validation checks it before promotion. It then calls
 `xcodebuild -exportArchive`, never `archive`, `test`, or package resolution.
 Before uploading, it verifies compiled Mach-O sections against the original,
 release version/build number, `codesign --verify --deep --strict`, and the expected
-team/application distribution entitlements, production APNs, and disabled
-`get-task-allow`.
+team/bundle identities, both shared storage entitlements, production APNs on
+the app, and disabled `get-task-allow`. The extension's compiled sections and
+symbols have the same immutable archive contract as the main executable.
 
 Internal-only upload, processing/group availability checks, and private symbol
 retention remain unchanged. Signing material and temporary IPA files are deleted

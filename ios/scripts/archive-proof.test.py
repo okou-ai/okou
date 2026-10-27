@@ -48,6 +48,8 @@ class ArchiveProofTests(unittest.TestCase):
             "CFBundleVersion": "1",
             "CFBundleExecutable": "Okou",
             "CFBundleSupportedPlatforms": ["iPhoneOS"],
+            "ClerkKeychainAccessGroup": "C5UWSXYB67.ai.okou.ios",
+            "NotificationAppGroup": "group.ai.okou.ios",
         }
         write_plist(self.app / "Info.plist", self.info)
         write_plist(
@@ -71,6 +73,27 @@ class ArchiveProofTests(unittest.TestCase):
         symbols.parent.mkdir(parents=True)
         symbols.write_bytes(b"original symbols")
         (self.app / "resource.txt").write_bytes(b"original resource")
+
+        self.extension = self.app / "PlugIns/OkouNotificationService.appex"
+        self.extension_info = {
+            **self.info,
+            "CFBundleIdentifier": "ai.okou.ios.notifications",
+            "CFBundleExecutable": "OkouNotificationService",
+            "NSExtension": {
+                "NSExtensionPointIdentifier": "com.apple.usernotifications.service",
+                "NSExtensionPrincipalClass": "OkouNotificationService.NotificationServiceExtension",
+            },
+        }
+        write_plist(self.extension / "Info.plist", self.extension_info)
+        (self.extension / "OkouNotificationService").write_bytes(
+            compiled_executable(b"compiled extension code")
+        )
+        symbols = (
+            self.source
+            / "dSYMs/OkouNotificationService.appex.dSYM/Contents/Resources/DWARF/OkouNotificationService"
+        )
+        symbols.parent.mkdir(parents=True)
+        symbols.write_bytes(b"extension symbols")
 
     def invoke(self, command, output=None, build_number="42", success=True):
         result = subprocess.run(
@@ -104,7 +127,9 @@ class ArchiveProofTests(unittest.TestCase):
             if path.is_file()
         }
 
-    def package(self, executable=None, build_number="42", signed=True):
+    def package(
+        self, executable=None, build_number="42", signed=True, extension_executable=None
+    ):
         ipa = self.work / "Okou.ipa"
         info = {**self.info, "CFBundleVersion": build_number}
         with ZipFile(ipa, "w") as package:
@@ -120,23 +145,63 @@ class ArchiveProofTests(unittest.TestCase):
                     "Payload/Okou.app/_CodeSignature/CodeResources",
                     b"signature placeholder",
                 )
+            prefix = "Payload/Okou.app/PlugIns/OkouNotificationService.appex/"
+            package.writestr(
+                prefix + "Info.plist",
+                plistlib.dumps(
+                    {**self.extension_info, "CFBundleVersion": build_number}
+                ),
+            )
+            package.writestr(
+                prefix + "OkouNotificationService",
+                extension_executable
+                or (self.extension / "OkouNotificationService").read_bytes(),
+            )
+            if signed:
+                package.writestr(
+                    prefix + "embedded.mobileprovision", b"extension profile"
+                )
+                package.writestr(
+                    prefix + "_CodeSignature/CodeResources", b"extension signature"
+                )
         return ipa
 
-    def test_prepare_changes_only_both_build_numbers_and_preserves_source(self):
+    def test_prepare_changes_only_bundle_build_numbers_and_preserves_source(self):
         original = self.digests(self.source)
         result = self.invoke("prepare")
         self.assertEqual(result["buildNumber"], "42")
         self.assertEqual(self.digests(self.source), original)
         copied = self.digests(self.destination)
         for name, digest in original.items():
-            if name not in ("Info.plist", str(APP_PATH / "Info.plist")):
+            if name not in (
+                "Info.plist",
+                str(APP_PATH / "Info.plist"),
+                str(APP_PATH / "PlugIns/OkouNotificationService.appex/Info.plist"),
+            ):
                 self.assertEqual(copied[name], digest)
         app_info = plistlib.loads(
             (self.destination / APP_PATH / "Info.plist").read_bytes()
         )
         archive_info = plistlib.loads((self.destination / "Info.plist").read_bytes())
+        extension_info = plistlib.loads(
+            (
+                self.destination
+                / APP_PATH
+                / "PlugIns/OkouNotificationService.appex/Info.plist"
+            ).read_bytes()
+        )
+        self.assertEqual(extension_info["CFBundleVersion"], "42")
         self.assertEqual(app_info["CFBundleVersion"], "42")
         self.assertEqual(archive_info["ApplicationProperties"]["CFBundleVersion"], "42")
+
+    def test_prepare_rejects_teamless_runtime_keychain_identity(self):
+        write_plist(
+            self.app / "Info.plist",
+            {**self.info, "ClerkKeychainAccessGroup": "ai.okou.ios"},
+        )
+        self.assertIn(
+            "signed shared storage identities", self.invoke("prepare", success=False)
+        )
 
     def test_prepare_rejects_invalid_number_and_overwrite(self):
         for number in ("0", "10000", "1.2", "0001"):
@@ -158,13 +223,15 @@ class ArchiveProofTests(unittest.TestCase):
                 self.assertFalse(self.destination.exists())
 
     def test_prepare_rejects_inconsistent_archive_metadata(self):
-        write_plist(self.app / "Info.plist", {**self.info, "CFBundleVersion": "2"})
+        archive_info = plistlib.loads((self.source / "Info.plist").read_bytes())
+        archive_info["ApplicationProperties"]["CFBundleVersion"] = "2"
+        write_plist(self.source / "Info.plist", archive_info)
         self.assertIn("metadata disagree", self.invoke("prepare", success=False))
 
     def test_prepare_rejects_nested_app_and_escaping_symlink(self):
         extension = self.app / "PlugIns/Extension.appex"
         extension.mkdir(parents=True)
-        self.assertIn("Nested application", self.invoke("prepare", success=False))
+        self.assertIn("extension inventory", self.invoke("prepare", success=False))
         extension.rmdir()
         outside = self.work / "outside"
         outside.write_bytes(b"must not be changed")
@@ -175,8 +242,16 @@ class ArchiveProofTests(unittest.TestCase):
     def test_export_allows_signing_bytes_but_not_recompiled_sections(self):
         executable = (self.app / "Okou").read_bytes() + b"new code signature"
         result = self.invoke("verify-export", self.package(executable))
-        self.assertEqual(result["verifiedMachOFiles"], 1)
+        self.assertEqual(result["verifiedMachOFiles"], 2)
         ipa = self.package(compiled_executable(b"changed app code!"))
+        self.assertIn(
+            "compiled Mach-O", self.invoke("verify-export", ipa, success=False)
+        )
+
+    def test_export_rejects_recompiled_extension_code(self):
+        ipa = self.package(
+            extension_executable=compiled_executable(b"different extension code")
+        )
         self.assertIn(
             "compiled Mach-O", self.invoke("verify-export", ipa, success=False)
         )
@@ -224,6 +299,7 @@ class ArchiveProofTests(unittest.TestCase):
                 "IOS_DISTRIBUTION_P12_BASE64": "not-a-certificate",
                 "IOS_DISTRIBUTION_P12_PASSWORD": "not-a-password",
                 "IOS_PROVISIONING_PROFILE_BASE64": "not-a-profile",
+                "IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64": "not-an-extension-profile",
             },
             capture_output=True,
             text=True,

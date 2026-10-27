@@ -5093,7 +5093,7 @@ describe("CHAT-02: push notification gating", () => {
       issuer: "TESTTEAM01",
     });
     expect(request.payload).toMatchObject({
-      aps: { "content-available": 1, badge: 1 },
+      aps: { "content-available": 1, "mutable-content": 1, badge: 1 },
       okou: {
         version: 1,
         userId: actor.userId,
@@ -5163,7 +5163,7 @@ describe("CHAT-02: push notification gating", () => {
     await flushWaitUntilForTest();
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]?.payload).toMatchObject({
-      aps: { "content-available": 1, sound: "default" },
+      aps: { "content-available": 1, "mutable-content": 1, sound: "default" },
       okou: { threadId: run.threadId, runId: run.runId },
     });
     expect(provider.requests[0]?.payload).not.toHaveProperty("aps.badge");
