@@ -776,11 +776,16 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
       [200],
     );
     // Prime and observe both CLI roles before the debit changes membership.
-    // These independent reads and the forbidden update cannot change billing.
+    // The idempotent admin update and independent observations retain disabled
+    // recharge while proving both callers' original write authority.
     const [disabled, startingBalance, memberCredits, memberUpdate] =
       await Promise.all([
-        owner.run(() => {
-          return accept(config.get({ headers: adminHeaders }), [200]);
+        owner.run(async () => {
+          await accept(
+            config.update({ headers: adminHeaders, body: { enabled: false } }),
+            [200],
+          );
+          return await accept(config.get({ headers: adminHeaders }), [200]);
         }),
         owner.run(() => {
           return accept(status.get({ headers: billingHeaders }), [200]);
