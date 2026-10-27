@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.3.9](https://github.com/okou-ai/okou/compare/cli-v10.3.8...cli-v10.3.9) (2026-10-27)
+
+
+### Refactoring
+
+* **cli:** publish legacy presentation imports to custom templates ([#43181](https://github.com/okou-ai/okou/issues/43181)) ([2a57d16](https://github.com/okou-ai/okou/commit/2a57d167dd6c424076735311424ce8b0b9a1e274))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.10.2
+    * @okouai/core bumped to 8.793.2
+    * @okouai/pi-agent-runtime bumped to 1.51.3
+
 ## [10.3.8](https://github.com/okou-ai/okou/compare/cli-v10.3.7...cli-v10.3.8) (2026-10-27)
 
 

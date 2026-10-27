@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.42](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.41...sandbox-firecracker-v0.53.42) (2026-10-27)
+
+
+### Documentation
+
+* **sandbox-firecracker:** document dns activation cancellation recovery ([#43366](https://github.com/okou-ai/okou/issues/43366)) ([603be45](https://github.com/okou-ai/okou/commit/603be455ada370555ccf32929f27d3708ccac3e7))
+
 ## [0.53.41](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.40...sandbox-firecracker-v0.53.41) (2026-10-27)
 
 ## [0.53.40](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.39...sandbox-firecracker-v0.53.40) (2026-10-27)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.3](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.2...ably-subscriber-v2.0.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ably-subscriber:** fail subscribe example on terminal errors ([#43369](https://github.com/okou-ai/okou/issues/43369)) ([36392b5](https://github.com/okou-ai/okou/commit/36392b5ff1581eb7457efa32456eedce6203a60d))
+
 ## [2.0.2](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.1...ably-subscriber-v2.0.2) (2026-10-22)
 
 

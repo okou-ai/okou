@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.42](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.41...runner-supervisor-v0.20.42) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** reclaim idle sandboxes from available memory ([#43374](https://github.com/okou-ai/okou/issues/43374)) ([bab7580](https://github.com/okou-ai/okou/commit/bab758057ab28609d93a83ab2b1cfd79b054c4e4))
+
 ## [0.20.41](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.40...runner-supervisor-v0.20.41) (2026-10-27)
 
 ## [0.20.40](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.39...runner-supervisor-v0.20.40) (2026-10-27)
