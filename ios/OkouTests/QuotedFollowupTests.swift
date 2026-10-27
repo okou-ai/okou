@@ -9,6 +9,50 @@ import XCTest
 
 @MainActor
 final class QuotedFollowupTests: XCTestCase {
+  func testRemovingQuotesKeepsNativeTypingInTheRemainingDraft() async throws {
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    conversation.draft = "Keep the ordinary draft."
+    let message = output("Selected passage")
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
+    let first = try XCTUnwrap(conversation.composer.addFeedback(selection))
+    let last = try XCTUnwrap(conversation.composer.addFeedback(selection))
+    let host = UIHostingController(rootView: MentionComposerHarness(state: conversation.composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+
+    for (index, id) in [first, last].enumerated() {
+      let input = try XCTUnwrap(
+        mentionInputs(in: host.view).first {
+          $0.accessibilityIdentifier == "feedback-note-\(id)"
+        })
+      try await focusMentionInput(input)
+      input.insertText("Discard this note.")
+      input.setMarkedText("拼音", selectedRange: NSRange(location: 2, length: 0))
+      conversation.composer.removeFeedback(id)
+      let expected = "Keep the ordinary draft." + (index == 0 ? "" : " Edited.")
+      try await eventually { input.text == expected }
+      XCTAssertTrue(input.isFirstResponder)
+      input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
+      input.insertText(index == 0 ? " Edited." : " Continue.")
+    }
+
+    await conversation.send()
+    let data = try XCTUnwrap(fixture.state.value.withLock { $0.messages.first })
+    let sent = try JSONDecoder().decode(QuotedSend.self, from: data)
+    XCTAssertEqual(
+      sent.userMessage,
+      ChatDraftDocument(parts: [
+        .object([
+          "type": .string("text"),
+          "text": .string("Keep the ordinary draft. Edited. Continue."),
+        ])
+      ]))
+  }
+
   func testNativeQuoteActionFocusesANoteWithUndoAndMarkedText() async throws {
     let text = "👋 **First paragraph.**\n\nSelected 🌷 é passage.\n\nLast paragraph."
     let payload = String(decoding: try JSONEncoder().encode(["content": text]), as: UTF8.self)

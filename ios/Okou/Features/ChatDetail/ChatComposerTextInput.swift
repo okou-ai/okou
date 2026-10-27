@@ -12,6 +12,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
   var editor: ComposerEditor? = nil
+  var editorBlockID: UUID? = nil
   var editorOrder = 0
   var isAppendTarget = true
   var document: Binding<ChatDraftDocument>? = nil
@@ -56,7 +57,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.isCurrent = isCurrent
     view.usesStructuredDocument = document != nil
     editor?.register(
-      view, order: editorOrder, canAppend: isAppendTarget,
+      view, blockID: editorBlockID, order: editorOrder, canAppend: isAppendTarget,
       isCurrent: { [weak coordinator = context.coordinator] in
         coordinator?.input.isCurrent() == true
       },

@@ -107,49 +107,25 @@ struct ChatComposerView: View {
       }
 
       let inputID = attachments.inputID
-      let generation = draftState?.editorGeneration
       if let editor = draftState?.editor, !editor.mentionSuggestions.isEmpty {
         ComposerMentionMenu(editor: editor, suggestions: editor.mentionSuggestions)
       }
       Group {
-        if let state = draftState, state.document.hasFeedback {
+        if let state = draftState {
           ChatFeedbackComposer(
             state: state, inputID: inputID, isFocused: $isFocused,
             acceptsImages: !isBusy && !needsUpgrade
           )
           .id(inputID)
+          .disabled(!state.document.isSupported)
         } else {
           ChatComposerTextInput(
             text: $draft, isFocused: $isFocused,
             acceptsImages: !isBusy && !needsUpgrade,
-            isCurrent: {
-              attachments.inputID == inputID && draftState?.editorGeneration == generation
-            },
-            pasteImages: attachments.importPastedImages,
-            editor: draftState?.editor,
-            document: draftState.map { state in
-              Binding(
-                get: { state.editorBlocks.first?.content ?? ChatDraftDocument() },
-                set: { content in
-                  if let block = state.editorBlocks.first {
-                    state.editBlock(block.id, document: content)
-                  }
-                })
-            },
-            searchableRanges: {
-              draftState?.editorBlocks.first?.searchableRanges ?? [
-                NSRange(location: 0, length: draft.utf16.count)
-              ]
-            }
+            isCurrent: { attachments.inputID == inputID },
+            pasteImages: attachments.importPastedImages
           )
           .id(inputID)
-          .id(generation)
-          .disabled(draftState?.document.isSupported == false)
-          .onAppear {
-            guard let state = draftState, let request = state.focusRequest else { return }
-            isFocused = true
-            state.consumeFocusRequest(request)
-          }
         }
       }
       .accessibilityIdentifier("message-input")

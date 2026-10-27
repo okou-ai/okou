@@ -64,7 +64,8 @@ struct ChatFeedbackComposer: View {
                       && state.editorBlocks.contains(where: { $0.id == block.id })
                   },
                   pasteImages: state.attachments.importPastedImages,
-                  editor: state.editor, editorOrder: order, isAppendTarget: block.id == appendID,
+                  editor: state.editor, editorBlockID: block.id, editorOrder: order,
+                  isAppendTarget: block.id == appendID,
                   document: Binding(
                     get: {
                       state.editorBlocks.first(where: { $0.id == block.id })?.content
