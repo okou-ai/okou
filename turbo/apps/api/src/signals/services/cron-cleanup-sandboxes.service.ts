@@ -3,19 +3,15 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { exportJobs } from "@okouai/db/schema/export-job";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
-import { and, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { env } from "../../lib/env";
+import { eq, inArray, isNull, or } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { now } from "../../lib/time";
+import { writeDb$ } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishRunQueueChangedForOrgSafely,
 } from "../external/realtime";
-import { deleteS3Objects } from "../external/s3";
 import { settle, settleIncludingAbort, tapError } from "../utils";
 import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
@@ -27,11 +23,13 @@ import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-proc
 import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
-import { runnerJobQueueExpiredCondition } from "./runner-job-queue-lifecycle.service";
+import { cleanupExpiredRunnerJobs$ } from "./runner-job-queue-lifecycle.service";
 import {
   cleanupThreadlessRuns$,
   type ThreadlessRunCleanupResult,
 } from "./threadless-run-cleanup.service";
+
+import { cleanupExpiredExportJobs$ } from "./user-export-cleanup.service";
 
 const L = logger("CronCleanupSandboxes");
 
@@ -39,7 +37,6 @@ const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
 const DEBUG_HEARTBEAT_TIMEOUT_MS = 60 * 60 * 1000;
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000;
 const DEBUG_COMPOSE_PREFIX = "debug-";
-const EXPORT_JOB_TIMEOUT_MS = 10 * 60 * 1000;
 const CONNECTOR_DIAGNOSTIC_REGISTRATION_CLEANUP_BATCH_SIZE = 20;
 const TERMINAL_RUN_STATUSES = [
   "completed",
@@ -107,97 +104,6 @@ function staleRunCutoff(run: StaleRun, cutoffs: CleanupCutoffs): Date {
 function isExpiredRun(run: StaleRun, cutoffs: CleanupCutoffs): boolean {
   return run.lastHeartbeatAt < staleRunCutoff(run, cutoffs);
 }
-
-const cleanupExportJobs$ = command(
-  async (
-    { get },
-    db: Db,
-    signal: AbortSignal,
-  ): Promise<{
-    readonly exportJobsCleaned: number;
-    readonly exportJobsStuck: number;
-  }> => {
-    let exportJobsCleaned = 0;
-    let exportJobsStuck = 0;
-    const currentTime = nowDate();
-
-    const expiredExports = await db
-      .select({ id: exportJobs.id, s3Key: exportJobs.s3Key })
-      .from(exportJobs)
-      .where(
-        and(
-          eq(exportJobs.status, "completed"),
-          isNotNull(exportJobs.expiresAt),
-          lt(exportJobs.expiresAt, currentTime),
-        ),
-      );
-    signal.throwIfAborted();
-
-    if (expiredExports.length > 0) {
-      const s3Keys = expiredExports
-        .map((entry) => {
-          return entry.s3Key;
-        })
-        .filter((key): key is string => {
-          return key !== null;
-        });
-      if (s3Keys.length > 0) {
-        await get(deleteS3Objects(env("R2_USER_STORAGES_BUCKET_NAME"), s3Keys));
-        signal.throwIfAborted();
-      }
-
-      await db.delete(exportJobs).where(
-        inArray(
-          exportJobs.id,
-          expiredExports.map((entry) => {
-            return entry.id;
-          }),
-        ),
-      );
-      signal.throwIfAborted();
-
-      exportJobsCleaned = expiredExports.length;
-      L.debug("Cleaned up expired export jobs", { count: exportJobsCleaned });
-    }
-
-    const stuckCutoffTime = new Date(now() - EXPORT_JOB_TIMEOUT_MS);
-    const stuckExportJobs = await db
-      .select({ id: exportJobs.id })
-      .from(exportJobs)
-      .where(
-        and(
-          inArray(exportJobs.status, ["pending", "running"]),
-          lt(exportJobs.createdAt, stuckCutoffTime),
-          isNull(exportJobs.executionMode),
-        ),
-      );
-    signal.throwIfAborted();
-
-    for (const job of stuckExportJobs) {
-      await db
-        .update(exportJobs)
-        .set({
-          status: "failed",
-          completedAt: currentTime,
-          error: "Export job timed out",
-        })
-        .where(
-          and(
-            eq(exportJobs.id, job.id),
-            inArray(exportJobs.status, ["pending", "running"]),
-          ),
-        );
-      signal.throwIfAborted();
-      exportJobsStuck++;
-    }
-
-    if (exportJobsStuck > 0) {
-      L.debug("Failed stuck export jobs", { count: exportJobsStuck });
-    }
-
-    return { exportJobsCleaned, exportJobsStuck };
-  },
-);
 
 const dispatchMaintenanceTerminalSideEffects$ = command(
   async (
@@ -355,25 +261,6 @@ const cleanupExpiredRuns$ = command(
   },
 );
 
-async function cleanupExpiredRunnerJobs(
-  db: Db,
-  signal: AbortSignal,
-): Promise<number> {
-  const { rowCount } = await db
-    .delete(runnerJobQueue)
-    .where(runnerJobQueueExpiredCondition());
-  signal.throwIfAborted();
-
-  const deletedCount = rowCount ?? 0;
-
-  if (deletedCount > 0) {
-    L.debug("Cleaned up expired runner job queue entries", {
-      count: deletedCount,
-    });
-  }
-  return deletedCount;
-}
-
 const cleanupGlobalMaintenance$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     // Release silent terminal runs first so the org pick can admit the
@@ -447,7 +334,7 @@ export const cleanupSandboxes$ = command(
     const threadlessRuns = await set(cleanupThreadlessRuns$, signal);
     signal.throwIfAborted();
 
-    await cleanupExpiredRunnerJobs(db, signal);
+    await set(cleanupExpiredRunnerJobs$, signal);
     signal.throwIfAborted();
     await (async (signal: AbortSignal): Promise<number> => {
       const candidates = db
@@ -498,8 +385,7 @@ export const cleanupSandboxes$ = command(
     signal.throwIfAborted();
 
     const { exportJobsCleaned, exportJobsStuck } = await set(
-      cleanupExportJobs$,
-      db,
+      cleanupExpiredExportJobs$,
       signal,
     );
 
