@@ -5,6 +5,7 @@ import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
+import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { measureApiDispatchTiming } from "./api-dispatch-timing.service";
@@ -215,10 +216,11 @@ function createStorageInputSignal(
       body: {},
       resolved,
     });
+    // Initialize the existing database dependency before returning captured data.
+    get(db$);
     return {
       kind: "requested",
       args: {
-        db: get(db$),
         agentOrgId: resolved.orgId,
         runtimeOrgId: bootstrap.orgId,
         userId: bootstrap.userId,
@@ -293,8 +295,8 @@ function createStorageBaseIndexSignal(
   );
   const capturedStorageBaseIndex$ = computed(async (get) => {
     const selection = await get(storageSelection$);
+    const db = get(db$);
     const input = {
-      db: selection.args.db,
       requests: selection.requests,
       timing: selection.args.timing,
     };
@@ -308,30 +310,32 @@ function createStorageBaseIndexSignal(
         ),
       );
     });
-    const index = mergeStorageIndexes(
-      prefetched.index,
-      await (async () => {
-        return await measureApiDispatchTiming(
-          input.timing,
+    const timing = input.timing;
+    const startedAt = timing ? performance.now() : undefined;
+    const ownedIndex = await (async () => {
+      const readPlan = storageBaseIndexReadPlan(ownedRequests);
+      if (readPlan === null) {
+        return new Map();
+      }
+      const rows = await db
+        .select(readPlan.columns)
+        .from(readPlan.from)
+        .innerJoin(readPlan.requested, readPlan.requestedCondition)
+        .leftJoin(readPlan.head, readPlan.headCondition)
+        .leftJoin(readPlan.exact, readPlan.exactCondition)
+        .leftJoin(readPlan.cache, readPlan.cacheCondition);
+      return storageBaseIndexFromRows(rows);
+    })().finally(() => {
+      if (timing && startedAt !== undefined) {
+        timing.recordDuration(
           "api_dispatch_prepare_storage_manifest_load_storage_index",
           "nested",
-          async () => {
-            const readPlan = storageBaseIndexReadPlan(ownedRequests);
-            if (readPlan === null) {
-              return new Map();
-            }
-            const rows = await input.db
-              .select(readPlan.columns)
-              .from(readPlan.from)
-              .innerJoin(readPlan.requested, readPlan.requestedCondition)
-              .leftJoin(readPlan.head, readPlan.headCondition)
-              .leftJoin(readPlan.exact, readPlan.exactCondition)
-              .leftJoin(readPlan.cache, readPlan.cacheCondition);
-            return storageBaseIndexFromRows(rows);
-          },
+          performance.now() - startedAt,
+          now(),
         );
-      })(),
-    );
+      }
+    });
+    const index = mergeStorageIndexes(prefetched.index, ownedIndex);
     // Keep the query and its selection together so dependent version reads
     // reuse this snapshot without walking the same upstream graph again.
     const capturedVersionKeys = new Set(
@@ -361,12 +365,17 @@ function createStorageIndexSignals(
   );
   const capturedStorageIndex$ = computed(async (get) => {
     const { selection, input, index } = await get(capturedStorageBaseIndex$);
+    const db = get(db$);
     return {
       selection,
       storageIndex: await (async () => {
-        const queries = storagePrefixVersionRequests(input.requests, index).map(
-          (request) => {
-            return input.db
+        const queries = [];
+        for (const request of storagePrefixVersionRequests(
+          input.requests,
+          index,
+        )) {
+          queries.push(
+            db
               .select({
                 storageId: storageVersions.storageId,
                 id: storageVersions.id,
@@ -404,9 +413,9 @@ function createStorageIndexSignals(
                 ),
               )
               .orderBy(desc(eq(storageVersions.id, request.version)))
-              .limit(2);
-          },
-        );
+              .limit(2),
+          );
+        }
         const [first, second, ...remaining] = queries;
         const versions = first
           ? await (second ? unionAll(first, second, ...remaining) : first)
