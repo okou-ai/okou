@@ -11,8 +11,12 @@
 //! ChatGPT mode without ever holding real OAuth credentials inside the
 //! sandbox. Newer Codex versions compare the local account ID with workspace
 //! discovery, so the selected workspace ID is copied into auth.json. The
-//! bearer and refresh tokens remain placeholders; the mitm firewall injects
-//! real credentials on egress.
+//! bearer and refresh tokens remain placeholders. The mitm firewall injects
+//! the real access token on ChatGPT API egress. Real OAuth refresh belongs to
+//! the API lifecycle (`refreshAccessTokenForSource$` in
+//! `turbo/apps/api/src/signals/services/agent-webhook-firewall-auth.service.ts`).
+//! Guest refresh is blocked by `REFRESH_TOKEN_NOOP_URL` and the firewall's
+//! deny policy for `auth.openai.com`.
 //!
 //! Codex `decode_jwt_payload` (`codex-rs/login/src/token_data.rs:117-128`)
 //! base64url-decodes only the payload segment; the header and signature
@@ -156,10 +160,10 @@ fn build_chatgpt_auth_json(now: DateTime<Utc>, account_id: &str) -> Result<Value
         "tokens": {
             "id_token": id_jwt,
             "access_token": access_jwt,
-            // Non-empty placeholder per #12077 — empty refresh_token caused
-            // codex CLI to exit 1 at boot before reaching any HTTP egress,
-            // bypassing the firewall replacement entirely. The opaque marker
-            // is replaced with the real refresh_token on /oauth/token egress.
+            // Non-empty placeholder per #12077 — an empty refresh_token caused
+            // Codex to exit at boot before any HTTP egress. It only satisfies
+            // local auth/bootstrap; guest refresh is blocked, and the API
+            // refreshes real credentials (see the module documentation).
             "refresh_token": PLACEHOLDER_CHATGPT_REFRESH_TOKEN,
             "account_id": account_id,
         },
