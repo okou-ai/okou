@@ -39,12 +39,11 @@ Conversation history renders durable user messages and assistant results using
 Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
-transient token output is not rendered. The native composer Connector sheet is available through the staff-enabled
-`iosComposerConnectors` feature switch. It supports service access, conversation
-account choices, permission grants, discovery and connection, Cloud Browser,
-Computer Use, and SSH/VNC conversation access. Separate setup/settings destinations
-open in Safari and refresh on return. Conversation sharing and artifact publishing
-remain outside this local UI.
+transient token output is not rendered. The native composer Connector sheet supports
+service access, conversation account choices, permission grants, discovery and
+connection, Cloud Browser, Computer Use, and SSH/VNC conversation access. Separate
+setup/settings destinations open in Safari and refresh on return. Conversation
+sharing and artifact publishing remain outside this local UI.
 Generated results retain inline link labels and show native cards for Markdown image
 embeds. Images support enlarged system viewing and navigation within their transcript
 group. Video/audio use system playback; PDF and supported Office files use Quick Look.

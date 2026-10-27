@@ -199,8 +199,7 @@ private struct WorkspaceRootView: View {
               conversation: conversation, topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
                 agentID: conversation.thread.agentID, agents: store.list.agents,
-                threads: store.list.threads),
-              connectorsEnabled: store.list.canUseComposerConnectors
+                threads: store.list.threads)
             )
             .id(conversation.thread.id)
           } else {
@@ -216,8 +215,7 @@ private struct WorkspaceRootView: View {
                   draftState: composer,
                   submit: { await store.sendNewChat() }, refresh: nil,
                   modelSelection: store.newModelSelection,
-                  connectorSelection: store.list.canUseComposerConnectors
-                    ? store.newModelSelection.connectors : nil,
+                  connectorSelection: store.newModelSelection.connectors,
                   mentionSource: ComposerMentionSource(
                     agentID: store.selectedAgentID, agents: store.list.agents,
                     threads: store.list.threads),
