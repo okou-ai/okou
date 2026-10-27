@@ -313,7 +313,8 @@ struct ChatDetailView: View {
           }
           UserMessageView(
             message: message, webURL: conversation.webURL,
-            viewer: conversation.attachmentViewer, loadsAttachments: loadsAttachments)
+            viewer: conversation.attachmentViewer, loadsAttachments: loadsAttachments,
+            sendTransition: loadsAttachments ? scrolling.sendTransition : nil)
           deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
         }
       } else {

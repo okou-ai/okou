@@ -4,6 +4,17 @@ import SwiftUI
 /// Keeps a local send on one native viewport transition, after its measured row is ready.
 @MainActor @Observable
 final class ConversationSendTransition {
+  private static let flightDuration: CFTimeInterval = 0.2
+  private static let flightCurve = UnitCurve.bezier(
+    startControlPoint: UnitPoint(x: 0.2, y: 0.4),
+    endControlPoint: UnitPoint(x: 0.4, y: 1))
+  private(set) var hidesBubbleID: String?
+  @ObservationIgnored private var flight: SendMotionFlight?
+  @ObservationIgnored private var flightStartedAt: CFTimeInterval = 0
+  @ObservationIgnored private var flightFraction: CGFloat = 0
+  @ObservationIgnored private var flightHasMeasuredRow = false
+  @ObservationIgnored private var projectedContentHeight: CGFloat?
+  @ObservationIgnored private var viewportFractionOrigin: CGFloat = 0
   private(set) var composerAnimation = Animation.easeInOut(duration: 0.22)
   @ObservationIgnored private(set) var messageID: String?
   @ObservationIgnored private(set) var isAnimating = false
@@ -32,15 +43,28 @@ final class ConversationSendTransition {
     self.collection = collection
   }
 
-  func begin(messageID: String, reduceMotion: Bool) {
+  func begin(messageID: String, reduceMotion: Bool, sourceView: ComposerTextView? = nil) {
     cancel()
     guard let collection else { return }
     self.messageID = messageID
     self.reduceMotion = reduceMotion
+    if !reduceMotion,
+      let sourceView, !sourceView.text.isEmpty {
+      flight = SendMotionFlight(source: sourceView)
+      if flight != nil {
+        hidesBubbleID = messageID
+      }
+    }
     offset = collection.contentOffset
     curve = 0
-    composerAnimation = .easeInOut(duration: 0.22)
+    composerAnimation = flight != nil
+      ? .timingCurve(0.2, 0.4, 0.4, 1, duration: Self.flightDuration)
+      : .easeInOut(duration: 0.22)
     didBegin?()
+    if flight?.messageFrame != nil {
+      isAnimating = true
+      animateToBottom()
+    }
     keyboardObserver = NotificationCenter.default.addObserver(
       forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
     ) { [weak self] notification in
@@ -56,8 +80,28 @@ final class ConversationSendTransition {
     }
   }
 
+  func registerBubble(messageID: String, view: UIView) {
+    guard self.messageID == messageID, view.window != nil else { return }
+    flight?.destination = view
+  }
+
+  func projectFlight(insertionY: CGFloat, topSpacing: CGFloat) {
+    guard let flight, let collection else { return }
+    let height = flight.measuredBubbleSize(width: collection.bounds.width).height
+    flight.collection = collection
+    flight.messageFrame = CGRect(x: 0, y: insertionY + topSpacing,
+      width: collection.bounds.width, height: height)
+    projectedContentHeight = insertionY + topSpacing + height + 93
+  }
+
   private func keyboardWillChange(duration: Double, curve: UInt) {
     guard isActive else { return }
+    if flight != nil {
+      // Keep the bubble clock while native keyboard dismissal changes the viewport.
+      deadline = max(deadline, CACurrentMediaTime() + duration)
+      layoutDidChange()
+      return
+    }
     // Later zero-duration keyboard geometry must not cut a visible send short.
     deadline = max(deadline, CACurrentMediaTime() + duration)
     self.curve = curve
@@ -88,7 +132,7 @@ final class ConversationSendTransition {
 
   func preserveOffset() {
     guard let collection, isActive, !updatesOffset else { return }
-    guard isAnimating else {
+    guard isAnimating, flight == nil || flightHasMeasuredRow else {
       offset = collection.contentOffset
       return
     }
@@ -99,7 +143,19 @@ final class ConversationSendTransition {
     UIView.performWithoutAnimation { collection.setContentOffset(offset, animated: false) }
   }
 
-  func presentIfReady(in ids: Set<String>, arrivingView: UIView?) {
+  func presentIfReady(in ids: Set<String>, arrivingView: UIView?, messageFrame: CGRect? = nil) {
+    if let messageID, ids.contains(messageID) {
+      flight?.collection = collection
+      flight?.messageFrame = messageFrame
+    }
+    if let messageID, ids.contains(messageID), flight != nil, !flightHasMeasuredRow {
+      flightHasMeasuredRow = true
+      projectedContentHeight = nil
+      self.arrivingView = arrivingView
+      isAnimating = true
+      animateToBottom()
+      return
+    }
     guard let messageID, ids.contains(messageID), !isAnimating else {
       layoutDidChange()
       return
@@ -118,6 +174,11 @@ final class ConversationSendTransition {
   /// Structural/height updates join the running send from its presented position.
   func prepareForSnapshot() {
     guard isAnimating else { return }
+    if flight != nil {
+      // Snapshot work can change the destination, never the flight's elapsed time.
+      if flightHasMeasuredRow { target = nil }
+      return
+    }
     displayLink?.invalidate()
     displayLink = nil
     previousFrame = nil
@@ -128,13 +189,18 @@ final class ConversationSendTransition {
     guard let collection, isActive, isAnimating else { return }
     let insets = collection.adjustedContentInset
     let y = max(
-      -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
+      -insets.top, (projectedContentHeight ?? collection.contentSize.height)
+        - collection.bounds.height + insets.bottom)
     if let target, abs(target - y) <= 0.5 { return }
     target = y
     animationOrigin = offset
     alphaOrigin = arrivingView?.alpha ?? 1
-    duration = max(0, duration - elapsed)
-    elapsed = 0
+    if flight != nil {
+      viewportFractionOrigin = flightFraction
+    } else {
+      duration = max(0, duration - elapsed)
+      elapsed = 0
+    }
     if reduceMotion {
       presentFrame(fraction: 1, in: collection, target: y)
       if CACurrentMediaTime() >= deadline {
@@ -157,6 +223,20 @@ final class ConversationSendTransition {
 
   fileprivate func advanceFrame(_ link: CADisplayLink) {
     guard displayLink === link, let collection, let target, isAnimating else { return }
+    if flight != nil {
+      if flightStartedAt == 0 {
+        flightStartedAt = link.timestamp
+      }
+      let progress = min(1, max(0, (link.timestamp - flightStartedAt) / Self.flightDuration))
+      flightFraction = CGFloat(Self.flightCurve.value(at: progress))
+      let viewportFraction: CGFloat = progress >= 1 ? 1 : min(1, max(0,
+        (flightFraction - viewportFractionOrigin) / max(0.0001, 1 - viewportFractionOrigin)))
+      presentFrame(fraction: viewportFraction, in: collection, target: target,
+        flightFraction: flightFraction)
+      guard displayLink === link, self.target == target else { return }
+      if progress >= 1, flightHasMeasuredRow, CACurrentMediaTime() >= deadline { finish() }
+      return
+    }
     if let previousFrame {
       elapsed += max(0, link.timestamp - previousFrame)
     }
@@ -182,14 +262,25 @@ final class ConversationSendTransition {
     if progress >= 1, CACurrentMediaTime() >= deadline { finish() }
   }
 
-  private func presentFrame(fraction: CGFloat, in collection: UICollectionView, target: CGFloat) {
+  private func presentFrame(fraction: CGFloat, in collection: UICollectionView, target: CGFloat,
+    flightFraction: CGFloat? = nil) {
+    if let flight, !flightHasMeasuredRow {
+      // The pending row is not in the collection yet. Only the overlay may move;
+      // scrolling to its projected height would scroll past the existing cells.
+      UIView.performWithoutAnimation {
+        flight.present(fraction: flightFraction ?? fraction,
+          remainingScroll: target - collection.contentOffset.y)
+      }
+      return
+    }
     let y = animationOrigin.y + (target - animationOrigin.y) * fraction
     let alpha = alphaOrigin + (1 - alphaOrigin) * fraction
     // Move the native viewport every frame so collection reuse keeps the visible rows mounted.
     offset = CGPoint(x: animationOrigin.x, y: y)
     UIView.performWithoutAnimation {
-      arrivingView?.alpha = alpha
+      arrivingView?.alpha = flight == nil ? alpha : 1
       collection.setContentOffset(offset, animated: false)
+      flight?.present(fraction: flightFraction ?? fraction, remainingScroll: target - offset.y)
     }
   }
 
@@ -208,6 +299,14 @@ final class ConversationSendTransition {
     elapsed = 0
     UIView.performWithoutAnimation { arrivingView?.alpha = 1 }
     arrivingView = nil
+    flight?.remove()
+    flight = nil
+    flightStartedAt = 0
+    flightFraction = 0
+    flightHasMeasuredRow = false
+    projectedContentHeight = nil
+    viewportFractionOrigin = 0
+    hidesBubbleID = nil
     if wasActive { didEnd?() }
   }
 

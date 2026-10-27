@@ -238,6 +238,10 @@ struct ChatComposerView: View {
       .animation(
         reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
         value: isFocused)
+      .animation(
+        !reduceMotion && sendTransition?.hidesBubbleID != nil
+          ? sendTransition?.composerAnimation : nil,
+        value: hasText)
     }
     .padding(.horizontal, 16)
     .padding(.top, 8)
