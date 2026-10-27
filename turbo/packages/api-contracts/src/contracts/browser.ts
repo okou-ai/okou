@@ -25,6 +25,8 @@ export const BROWSER_SCREEN_WIDTH = 1440;
 export const BROWSER_INITIAL_SCREEN_HEIGHT = 900;
 export const BROWSER_MIN_SCREEN_HEIGHT = 320;
 export const BROWSER_MAX_SCREEN_HEIGHT = 3456;
+// Captured Run mode hint; Browser API authorization remains authoritative.
+export const BROWSER_SHARED_OWNER_ENV_VAR = "OKOU_BROWSER_SHARED_OWNER_ENABLED";
 
 export const browserStatusSchema = zEnum([
   "creating",

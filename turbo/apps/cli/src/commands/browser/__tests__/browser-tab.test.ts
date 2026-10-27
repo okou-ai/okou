@@ -6,6 +6,7 @@ import type {
   BrowserSession,
   BrowserWindowContext,
 } from "@okouai/api-contracts/contracts/browser";
+import { BROWSER_SHARED_OWNER_ENV_VAR } from "@okouai/api-contracts/contracts/browser";
 import { HttpResponse, http, ws } from "msw";
 import {
   afterAll,
@@ -124,6 +125,7 @@ describe("chat-window Browser commands", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
+    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, "true");
     window = { instanceId: INSTANCE_ID, primaryWindowId: 0 };
     status = "active";
     tabs = [
@@ -284,8 +286,38 @@ describe("chat-window Browser commands", () => {
       CDP_URL,
     ]);
     expect(statSync(attachmentFile()).mode & 0o777).toBe(0o600);
+    expect(spawnSyncMock.mock.calls.at(0)?.[2]).toStrictEqual({
+      stdio: "ignore",
+      timeout: 30_000,
+    });
     expect(output()).not.toContain("private-");
     expect(output()).not.toContain("user:password");
+  });
+
+  it("rejects shared attachment when this Run has no captured shared-mode flag", async () => {
+    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, undefined);
+
+    await expect(run("use")).rejects.toThrow("process.exit called");
+
+    expect(selections).toStrictEqual([]);
+    expect(spawnSyncMock).not.toHaveBeenCalled();
+    expect(output()).toBe("");
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "not enabled for this Run",
+    );
+  });
+
+  it("rejects a known shared attachment after the captured mode is disabled", async () => {
+    await run("use");
+    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, undefined);
+    clearOutput();
+
+    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
+
+    expect(output()).toBe("");
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "does not match this chat's current window",
+    );
   });
 
   it("lists current native membership after intentional moves and omits a disappeared target", async () => {

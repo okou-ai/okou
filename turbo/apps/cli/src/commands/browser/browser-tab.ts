@@ -9,6 +9,7 @@ import {
 import { array, boolean, literal, number, object, string, url } from "zod";
 
 import { getCurrentBrowser } from "../../lib/api/domains/browser";
+import { isOkouBrowserSharedOwnerEnabled } from "../../lib/okou-env";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   readBrowserAttachment,
@@ -108,6 +109,11 @@ function windowContext(browser: BrowserSession): BrowserWindowContext | null {
   if (browser.window === undefined) {
     return null;
   }
+  if (!isOkouBrowserSharedOwnerEnabled()) {
+    throw new Error(
+      "Shared Browser is not enabled for this Run; start a new Run",
+    );
+  }
   if (browser.status !== "active") {
     throw reconnectError();
   }
@@ -141,9 +147,15 @@ function verifyDriverConnection(session: string, cdpUrl: string): void {
 async function currentAttachment(
   session: string,
 ): Promise<BrowserAttachment | null> {
+  const attachment = await readBrowserAttachment(session);
+  if (!isOkouBrowserSharedOwnerEnabled()) {
+    if (attachment) {
+      throw reconnectError();
+    }
+    return null;
+  }
   const browser = await getCurrentBrowser();
   const window = windowContext(browser);
-  const attachment = await readBrowserAttachment(session);
   if (!window) {
     if (attachment) {
       throw reconnectError();
@@ -416,7 +428,7 @@ const selectCommand = new Command()
           client.close();
         }
       } else {
-        runAgentBrowser(session, ["--pin-tab", "tab", parsedId]);
+        runAgentBrowser(session, ["tab", parsedId]);
         selected = driverTabs(session).find((item) => {
           return item.tabId === parsedId && item.active;
         });
