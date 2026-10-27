@@ -33,7 +33,10 @@ export function ChatHomeCompliance() {
       aria-label={title}
       className="hidden shrink-0 justify-center px-6 pt-2 pb-4 sm:flex"
     >
-      <ComplianceBadges quiet className="flex flex-wrap justify-center gap-2" />
+      <ComplianceBadges
+        quiet
+        className="flex flex-wrap justify-center gap-x-5 gap-y-1.5"
+      />
     </section>
   );
 }
