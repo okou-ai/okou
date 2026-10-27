@@ -8,6 +8,9 @@ inputs:
   restore-compilation:
     description: Restore the compiler cache as well as SwiftPM sources
     default: "true"
+  skip-restore-on-hit:
+    description: Only restore when an exact cache entry is missing
+    default: "false"
 
 outputs:
   dependencies-path:
@@ -24,10 +27,10 @@ outputs:
     value: ${{ steps.identity.outputs.compilation-key }}
   dependencies-hit:
     description: Whether the locked SwiftPM source cache matched exactly
-    value: ${{ steps.dependencies.outputs.cache-hit }}
+    value: ${{ steps.dependencies.outcome == 'skipped' && steps.lookup-dependencies.outputs.cache-hit || steps.dependencies.outputs.cache-hit }}
   compilation-hit:
     description: Whether the compiler cache matched this source tree exactly
-    value: ${{ steps.compilation.outputs.cache-hit }}
+    value: ${{ steps.compilation.outcome == 'skipped' && steps.lookup-compilation.outputs.cache-hit || steps.compilation.outputs.cache-hit }}
   toolchain-file:
     description: Captured Xcode and SDK identity for promotion input checks
     value: ${{ steps.identity.outputs.toolchain-file }}
@@ -75,8 +78,27 @@ runs:
           echo "toolchain-file=$toolchain_file"
         } >> "$GITHUB_OUTPUT"
 
+    - name: Look up exact SwiftPM sources
+      id: lookup-dependencies
+      if: inputs.skip-restore-on-hit == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.identity.outputs.dependencies-path }}
+        key: ${{ steps.identity.outputs.dependencies-key }}
+        lookup-only: true
+
+    - name: Look up exact Xcode compilation cache
+      id: lookup-compilation
+      if: inputs.skip-restore-on-hit == 'true' && inputs.restore-compilation == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.identity.outputs.compilation-path }}
+        key: ${{ steps.identity.outputs.compilation-key }}
+        lookup-only: true
+
     - name: Restore locked SwiftPM sources
       id: dependencies
+      if: inputs.skip-restore-on-hit != 'true' || steps.lookup-dependencies.outputs.cache-hit != 'true' || (inputs.restore-compilation == 'true' && steps.lookup-compilation.outputs.cache-hit != 'true')
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.identity.outputs.dependencies-path }}
@@ -84,7 +106,7 @@ runs:
 
     - name: Restore native Xcode compilation cache
       id: compilation
-      if: inputs.restore-compilation == 'true'
+      if: inputs.restore-compilation == 'true' && (inputs.skip-restore-on-hit != 'true' || steps.lookup-dependencies.outputs.cache-hit != 'true' || steps.lookup-compilation.outputs.cache-hit != 'true')
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.identity.outputs.compilation-path }}
@@ -95,12 +117,14 @@ runs:
     - name: Report native cache selection
       shell: bash
       env:
-        DEPENDENCIES_HIT: ${{ steps.dependencies.outputs.cache-hit }}
-        COMPILATION_HIT: ${{ steps.compilation.outputs.cache-hit }}
+        DEPENDENCIES_HIT: ${{ steps.dependencies.outcome == 'skipped' && steps.lookup-dependencies.outputs.cache-hit || steps.dependencies.outputs.cache-hit }}
+        COMPILATION_HIT: ${{ steps.compilation.outcome == 'skipped' && steps.lookup-compilation.outputs.cache-hit || steps.compilation.outputs.cache-hit }}
         COMPILATION_MATCH: ${{ steps.compilation.outputs.cache-matched-key }}
+        RESTORE_SKIPPED: ${{ steps.dependencies.outcome == 'skipped' }}
       run: |
         {
           echo "### iOS build cache"
+          echo "- Cache download skipped: $RESTORE_SKIPPED"
           echo "- SwiftPM exact hit: ${DEPENDENCIES_HIT:-false}"
           echo "- Compilation exact hit: ${COMPILATION_HIT:-false}"
           echo "- Compilation restored key: ${COMPILATION_MATCH:-none}"
