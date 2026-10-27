@@ -2,15 +2,14 @@ import {
   GET_STARTED_REWARDS,
   getStartedQuestKeySchema,
   type GetStartedClaim,
-  type GetStartedQuestKey,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
 
@@ -57,91 +56,17 @@ export function getStartedClaimResponse(
 ): GetStartedClaim {
   return {
     id: row.id,
-    questKey: row.questKey,
+    // Retired share receipts are never selected for a response.
+    questKey: getStartedQuestKeySchema.parse(row.questKey),
     status: row.status,
     rewardAmount: row.rewardAmount,
     rewardTarget: row.rewardTarget,
     reason: row.reason,
-    postUrl: row.postUrl,
     submittedAt: row.createdAt.toISOString(),
     grantedAt: row.grantedAt?.toISOString() ?? null,
     expiresAt: row.expiresAt?.toISOString() ?? null,
   };
 }
-
-export const createGetStartedClaim$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly actorUserId?: string;
-      readonly questKey: GetStartedQuestKey;
-      readonly sourceKey: string;
-      readonly completedAt?: Date;
-      readonly invitationId?: string;
-      readonly inviteeUserId?: string;
-      readonly postUrl?: string;
-      readonly runId?: string;
-      readonly workflowId?: string;
-      readonly sourceEventId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<GetStartedClaimRow> => {
-    const db = set(writeDb$);
-    const reward = GET_STARTED_REWARDS[args.questKey];
-    const actorUserId = args.actorUserId ?? args.userId;
-    const [created] = await db
-      .insert(getStartedClaims)
-      .values({
-        orgId: args.orgId,
-        actorUserId,
-        beneficiaryUserId: reward.target === "user" ? args.userId : null,
-        questKey: args.questKey,
-        sourceKey: args.sourceKey,
-        rewardAmount: reward.amount,
-        rewardTarget: reward.target,
-        completedAt: args.completedAt,
-        invitationId: args.invitationId,
-        inviteeUserId: args.inviteeUserId,
-        postUrl: args.postUrl,
-        runId: args.runId,
-        workflowId: args.workflowId,
-        sourceEventId: args.sourceEventId,
-        nextAttemptAt: nowDate(),
-        createdAt: nowDate(),
-        updatedAt: nowDate(),
-      })
-      .onConflictDoNothing({
-        target: [
-          getStartedClaims.actorUserId,
-          getStartedClaims.questKey,
-          getStartedClaims.sourceKey,
-        ],
-      })
-      .returning();
-    signal.throwIfAborted();
-    if (created) {
-      return created;
-    }
-    const [existing] = await db
-      .select()
-      .from(getStartedClaims)
-      .where(
-        and(
-          eq(getStartedClaims.actorUserId, actorUserId),
-          eq(getStartedClaims.questKey, args.questKey),
-          eq(getStartedClaims.sourceKey, args.sourceKey),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!existing) {
-      throw new Error("Get started claim was not persisted");
-    }
-    return existing;
-  },
-);
 
 type RewardAvailability =
   | {
@@ -158,7 +83,9 @@ export function getRewardAvailabilityFromAwards(
     readonly rewardSlot: number | null;
   }[],
 ): RewardAvailability {
-  const limit = GET_STARTED_REWARDS[claim.questKey].limit;
+  // A retired share receipt is never granted again.
+  const limit =
+    GET_STARTED_REWARDS[getStartedQuestKeySchema.parse(claim.questKey)].limit;
   if (
     awards.some((award) => {
       return award.rewardKey === rewardKey;
@@ -257,7 +184,7 @@ export const getStartedStatus$ = command(
         eq(getStartedClaims.questKey, "slack"),
       ),
     );
-    const [groups, [today], checkinDays, [share], recent] = await Promise.all([
+    const [groups, [today], checkinDays, recent] = await Promise.all([
       db
         .select({
           questKey: getStartedClaims.questKey,
@@ -295,24 +222,13 @@ export const getStartedStatus$ = command(
         .from(getStartedClaims)
         .where(
           and(
-            eq(getStartedClaims.beneficiaryUserId, args.userId),
-            eq(getStartedClaims.questKey, "share"),
-          ),
-        )
-        .orderBy(
-          desc(sql`${getStartedClaims.status} = 'granted'`),
-          desc(getStartedClaims.createdAt),
-          desc(getStartedClaims.id),
-        )
-        .limit(1),
-      db
-        .select()
-        .from(getStartedClaims)
-        .where(
-          and(
             owner,
             eq(getStartedClaims.orgId, args.orgId),
             eq(getStartedClaims.status, "granted"),
+            inArray(
+              getStartedClaims.questKey,
+              getStartedQuestKeySchema.options,
+            ),
           ),
         )
         .orderBy(desc(getStartedClaims.grantedAt), desc(getStartedClaims.id))
@@ -335,7 +251,6 @@ export const getStartedStatus$ = command(
         getStartedUtcDay(at),
       ),
       quests,
-      shareClaim: share ? getStartedClaimResponse(share) : null,
       recentGrants: recent.map(getStartedClaimResponse),
     };
   },

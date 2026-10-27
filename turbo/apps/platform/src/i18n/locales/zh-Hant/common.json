@@ -1468,40 +1468,8 @@
           "name": "邀請你的團隊",
           "unit": "每位成員"
         },
-        "notEligible": "不符合條件",
         "pendingState": "{{amount}} 待發放",
-        "rejected": {
-          "alreadyRedeemed": "貼文已被使用",
-          "authorAlreadyRewarded": "該帳號已領取過獎勵",
-          "authorUnavailable": "無法確認作者",
-          "officialAccount": "{{assistantName}} 官方貼文不計入",
-          "postMustMention": "需要提到 {{assistantName}}"
-        },
         "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
-        "share": {
-          "action": "分享",
-          "description": "發帖後把連結貼過來",
-          "name": "分享到 X"
-        },
-        "shareDialog": {
-          "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
-          "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
-          "inputLabel": "貼文連結",
-          "openX": "開啟 X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "不用再做什麼，點數會自己入帳。",
-          "reviewDone": "知道了",
-          "reviewExplain": "只要貼文是公開的並且提到了 {{assistantName}}，獎勵就會自動發放。如果有問題，這一步會帶著原因重新開啟。",
-          "reviewOpenPost": "開啟貼文",
-          "reviewPending": "通常一小時內",
-          "reviewTime": "審核通常一小時內完成。",
-          "reviewTitle": "貼文已經在審核了",
-          "stepPaste": "把連結貼回來",
-          "stepWrite": "寫這則貼文",
-          "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}",
-          "writingPrompt": "用自己的話寫下你實際用 {{assistantName}} 嘗試過的事。"
-        },
         "slack": {
           "action": "新增",
           "description": "團隊日常辦公的地方",

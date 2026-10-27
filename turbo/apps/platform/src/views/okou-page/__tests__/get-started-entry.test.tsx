@@ -216,15 +216,8 @@ function configureQuestPage(
   });
   const roleKeys =
     role === "admin"
-      ? ([
-          "connector",
-          "slack",
-          "workflow",
-          "invite",
-          "share",
-          "checkin",
-        ] as const)
-      : (["connector", "workflow", "share", "checkin"] as const);
+      ? (["connector", "slack", "workflow", "invite", "checkin"] as const)
+      : (["connector", "workflow", "checkin"] as const);
   const keys = imessage
     ? [...roleKeys.slice(0, 1), "imessage" as const, ...roleKeys.slice(1)]
     : roleKeys;
@@ -254,28 +247,10 @@ function configureQuestPage(
           key === "slack" ? !slackClaimed : key !== "checkin" || !claimedToday,
       };
     }),
-    shareClaim: null,
     recentGrants: [],
   };
   context.mocks.api(getStartedContract.status, ({ respond }) => {
     return respond(200, data);
-  });
-  context.mocks.api(getStartedContract.submitShare, ({ body, respond }) => {
-    expect(body.url).toBe("https://x.com/molly/status/1873");
-    const claim = {
-      id: "11111111-1111-4111-a111-111111111111",
-      questKey: "share" as const,
-      status: "pending" as const,
-      rewardAmount: 2000,
-      rewardTarget: "user" as const,
-      reason: null,
-      postUrl: "https://x.com/molly/status/1873",
-      submittedAt: data.serverNow,
-      grantedAt: null,
-      expiresAt: null,
-    };
-    data.shareClaim = claim;
-    return respond(202, claim);
   });
   context.mocks.api(getStartedContract.checkin, ({ respond }) => {
     const checkin = data.quests.find((q) => {
@@ -300,7 +275,6 @@ function configureQuestPage(
       rewardAmount: 100,
       rewardTarget: "user",
       reason: null,
-      postUrl: "https://x.com/molly/status/1873",
       submittedAt: data.serverNow,
       grantedAt: data.serverNow,
       expiresAt: new Date(
@@ -333,7 +307,7 @@ test("An admin sees every step and what each one pays", async () => {
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get more credits3/6");
+  expect(normalizedText(entry)).toBe("Get more credits3/5");
 
   const panel = await openQuestPanel();
   expect(within(panel).getByText("How rewards work")).toBeInTheDocument();
@@ -369,11 +343,10 @@ test("A member is only offered the steps they can finish themselves", async () =
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get more credits2/4");
+  expect(normalizedText(entry)).toBe("Get more credits2/3");
 
   const panel = await openQuestPanel();
   expect(screen.getByTestId("get-started-quest-workflow")).toBeInTheDocument();
-  expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
   expect(within(panel).queryByText("Invite your team")).not.toBeInTheDocument();
   expect(within(panel).queryByText("Add to Slack")).not.toBeInTheDocument();
 });
@@ -403,121 +376,36 @@ test("A workflow reward still with the reviewer stops offering the step again", 
   expect(row.getAttribute("role")).not.toBe("menuitem");
 });
 
-test("The X step opens a blank composer for an original post", async () => {
-  configureQuestPage(context, "member");
-  await setupPage({
-    context,
-    path: questChatPath(),
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-share"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Share Okou on X",
-  });
-  expect(
-    within(dialog).getByText(
-      "Write about something you actually tried with Okou, in your own words.",
-    ),
-  ).toBeInTheDocument();
-  // The only editable field in the dialog is still the post link.
-  expect(within(dialog).getAllByRole("textbox")).toHaveLength(1);
-
-  const openX = linkNamed("Open X", dialog);
-  expect(openX).toHaveAttribute("href", "https://x.com/intent/post");
-  expect(openX).toHaveAttribute("target", "okou-share-post");
-  expect(buttonNamed("Submit", dialog)).toBeDisabled();
-});
-
-test("Sharing on X restores pending state and an Ably review notification updates the open panel", async () => {
+test("A review notification brings a granted workflow reward into the open panel", async () => {
   const data = configureQuestPage(context, "admin");
+  const workflow = data.quests.find((quest) => {
+    return quest.key === "workflow";
+  });
+  if (!workflow) {
+    throw new Error("Missing workflow fixture");
+  }
+  workflow.pendingCount = 1;
   await setupPage({
     context,
     path: questChatPath(),
   });
 
   await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-share"));
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "Share Okou on X",
-  });
-  const submit = buttonNamed("Submit", dialog);
-  // Nothing can be claimed without a link.
-  expect(submit).toBeDisabled();
-
-  fireEvent.change(within(dialog).getByRole("textbox", { name: "Post link" }), {
-    target: { value: "https://x.com/molly/status/1873" },
-  });
-  expect(submit).toBeEnabled();
-  click(submit);
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  const panel = await openQuestPanel();
-  expect(within(panel).getByText("In review")).toBeInTheDocument();
-  expect(within(panel).queryByText("Share on X")).toBeInTheDocument();
-  // The row no longer offers the reward, but it stays pressable: the step is
-  // the one waiting quest that still has something to show.
-  const waitingRow = queryAllByRoleFast("menuitem", panel).find((candidate) => {
-    return normalizedText(candidate).includes("Share on X");
-  });
-  if (!waitingRow) {
-    throw new Error("Missing waiting X row");
-  }
-  expect(normalizedText(waitingRow)).not.toContain("Share on XShare");
-  click(waitingRow);
-  const waitingDialog = await screen.findByRole("dialog", {
-    name: "Your post is with the reviewer",
-  });
-  const openPost = linkNamed("Open the post", waitingDialog);
-  expect(openPost).toHaveAttribute("href", "https://x.com/molly/status/1873");
-  expect(openPost).toHaveAttribute("target", "okou-share-post");
-  // The post itself is the thing the reader cannot reconstruct from the row.
-  expect(
-    within(waitingDialog).getByText("https://x.com/molly/status/1873"),
-  ).toBeInTheDocument();
-  // Nothing to submit, because there is nothing left to submit.
-  expect(
-    queryAllByRoleFast("button", waitingDialog).find((candidate) => {
-      return normalizedText(candidate) === "Submit";
-    }),
-  ).toBeUndefined();
-  click(buttonNamed("Done", waitingDialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  // Pressing the row closed the panel, as every quest row does.
-  const afterReview = await openQuestPanel();
-
-  if (!data.shareClaim) {
-    throw new Error("Missing submitted X claim");
-  }
-  const share = data.quests.find((quest) => {
-    return quest.key === "share";
-  });
-  if (!share) {
-    throw new Error("Missing X quest");
-  }
-  data.shareClaim.status = "granted";
-  data.shareClaim.grantedAt = data.serverNow;
-  data.shareClaim.expiresAt = "2026-09-22T12:00:00.000Z";
-  Object.assign(share, {
+  const entry = screen.getByTestId("get-started-entry");
+  expect(normalizedText(entry)).toBe("Get more credits3/5");
+  Object.assign(workflow, {
     claimedCount: 1,
-    earnedCredits: 2000,
+    earnedCredits: 1000,
+    pendingCount: 0,
     canEarnMore: false,
   });
   context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
-  // The granted post leaves a finished row, with nothing left to open.
   await waitFor(() => {
-    expect(screen.getByTestId("get-started-quest-share")).not.toHaveAttribute(
-      "role",
-      "menuitem",
-    );
+    expect(normalizedText(entry)).toBe("Get more credits4/5");
   });
-  expect(within(afterReview).queryByText("In review")).not.toBeInTheDocument();
+  expect(
+    within(screen.getByRole("menu")).getByTestId("get-started-quest-workflow"),
+  ).toBeInTheDocument();
 });
 
 function mockPhoneLinkCode(code: string): void {
@@ -552,7 +440,7 @@ test("Adding iMessage opens the phone connect dialog with its reward", async () 
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get more credits2/5");
+  expect(normalizedText(entry)).toBe("Get more credits2/4");
   await openQuestPanel();
   const row = screen.getByTestId("get-started-quest-imessage");
   expect(normalizedText(row)).toBe("Add to iMessage+1,000Add");
@@ -624,7 +512,7 @@ test("Linking the phone closes the Get started dialog and completes the quest", 
   });
   await waitFor(() => {
     expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
-      "Get more credits3/5",
+      "Get more credits3/4",
     );
   });
 });
@@ -645,7 +533,7 @@ test("A phone linked before the quest existed reads as done, without credits", a
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get more credits3/5");
+  expect(normalizedText(entry)).toBe("Get more credits3/4");
   await openQuestPanel();
   const row = screen.getByTestId("get-started-quest-imessage");
   // Finished: a status line with the completion check, nothing to press.
@@ -664,10 +552,10 @@ test("Slack installed before the quest existed reads as done, without credits", 
     return screen.getByTestId("get-started-entry");
   });
   // The installed Slack counts toward the finished steps.
-  expect(normalizedText(entry)).toBe("Get more credits3/6");
+  expect(normalizedText(entry)).toBe("Get more credits3/5");
   const panel = await openQuestPanel();
   // The Slack reward is not among what is still claimable.
-  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
+  expect(within(panel).getByText("1,200 to go")).toBeInTheDocument();
   const row = screen.getByTestId("get-started-quest-slack");
   expect(row.getAttribute("role")).not.toBe("menuitem");
   expect(within(row).queryByText("Add")).not.toBeInTheDocument();
@@ -692,9 +580,9 @@ test("Slack not yet installed keeps the step and its reward on offer", async () 
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get more credits2/6");
+  expect(normalizedText(entry)).toBe("Get more credits2/5");
   const panel = await openQuestPanel();
-  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
+  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
   const row = screen.getByTestId("get-started-quest-slack");
   expect(row.getAttribute("role")).toBe("menuitem");
   expect(within(row).getByText("+2,000")).toBeInTheDocument();
@@ -719,9 +607,9 @@ test("A failed Slack status read leaves the Slack step actionable on canonical s
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get more credits2/6");
+  expect(normalizedText(entry)).toBe("Get more credits2/5");
   const panel = await openQuestPanel();
-  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
+  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
   expect(
     within(screen.getByTestId("get-started-quest-slack")).getByText("+2,000"),
   ).toBeInTheDocument();
@@ -758,36 +646,6 @@ test("Invitation progress separates successful rewards from pending members and 
     within(panel).getByText("3 pending", { exact: false }),
   ).toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-invite")).toBeInTheDocument();
-});
-
-test("A rejected X claim can be replaced and survives opening the task panel", async () => {
-  const data = configureQuestPage(context, "member");
-  data.shareClaim = {
-    id: "33333333-3333-4333-a333-333333333333",
-    questKey: "share",
-    status: "rejected",
-    rewardAmount: 2000,
-    rewardTarget: "user",
-    reason: "post_must_mention_okou",
-    postUrl: "https://x.com/molly/status/1873",
-    submittedAt: data.serverNow,
-    grantedAt: null,
-    expiresAt: null,
-  };
-  await setupPage({
-    context,
-    path: questChatPath(),
-  });
-  await openQuestPanel();
-  // The reviewer's own reason, not a bare refusal: a reader told only that the
-  // claim failed submits the same link again.
-  expect(
-    normalizedText(screen.getByTestId("get-started-quest-share")),
-  ).toContain("Must mention Okou");
-  click(screen.getByTestId("get-started-quest-share"));
-  await expect(
-    screen.findByRole("dialog", { name: "Share Okou on X" }),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Daily rewards are claimed by selecting check in", async () => {
@@ -1130,7 +988,7 @@ test.each(["blocked", "closed", "open"] as const)(
     });
     const retry = await openSlackIntro();
     expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
-      "Get more credits2/6",
+      "Get more credits2/5",
     );
     expect(buttonNamed("Add to Slack", retry)).toBeEnabled();
     timestamp += 1;
@@ -1177,7 +1035,7 @@ test.each([
     });
     await waitFor(() => {
       expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
-        "Get more credits2/6",
+        "Get more credits2/5",
       );
       expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();
     });
@@ -1214,7 +1072,7 @@ test.each([
         ),
       ).toBeInTheDocument();
       expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
-        installed || rewarded ? "Get more credits3/6" : "Get more credits2/6",
+        installed || rewarded ? "Get more credits3/5" : "Get more credits2/5",
       );
     });
     expect(pathname()).toBe(questChatPath());
@@ -1229,7 +1087,7 @@ test("Reopening Get Started recovers a Slack installation missed by realtime", a
   });
   await setupPage({ context, path: questChatPath() });
   const panel = await openQuestPanel();
-  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
+  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
   fireEvent.keyDown(document.body, { key: "Escape" });
   await waitFor(() => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -1237,14 +1095,14 @@ test("Reopening Get Started recovers a Slack installation missed by realtime", a
   org = { ...slackInstalled(), isConnected: false };
   const reopened = await openQuestPanel();
   await expect(
-    within(reopened).findByText("3,200 to go"),
+    within(reopened).findByText("1,200 to go"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-slack")).not.toHaveAttribute(
     "role",
     "menuitem",
   );
   expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
-    "Get more credits3/6",
+    "Get more credits3/5",
   );
 });
 

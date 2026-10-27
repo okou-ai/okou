@@ -1493,40 +1493,8 @@
           "name": "Invitez votre équipe",
           "unit": "par membre"
         },
-        "notEligible": "Non éligible",
         "pendingState": "{{amount}} en attente",
-        "rejected": {
-          "alreadyRedeemed": "Publication déjà utilisée",
-          "authorAlreadyRewarded": "Compte déjà récompensé",
-          "authorUnavailable": "Auteur non vérifiable",
-          "officialAccount": "Les publications officielles de {{assistantName}} ne comptent pas",
-          "postMustMention": "Doit mentionner {{assistantName}}"
-        },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
-        "share": {
-          "action": "Partager",
-          "description": "Publiez, puis collez le lien",
-          "name": "Partager sur X"
-        },
-        "shareDialog": {
-          "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
-          "helper": "La publication doit être publique et mentionner {{assistantName}}.",
-          "inputLabel": "Lien de la publication",
-          "openX": "Ouvrir X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "Rien de plus à faire : les crédits arrivent tout seuls.",
-          "reviewDone": "Terminé",
-          "reviewExplain": "Si la publication est publique et mentionne {{assistantName}}, la récompense est accordée automatiquement. Si quelque chose ne va pas, cette étape se rouvre avec le motif.",
-          "reviewOpenPost": "Ouvrir la publication",
-          "reviewPending": "Généralement en moins d'une heure",
-          "reviewTime": "La vérification se termine généralement en moins d'une heure.",
-          "reviewTitle": "Votre publication est en cours de vérification",
-          "stepPaste": "Collez le lien",
-          "stepWrite": "Rédigez la publication",
-          "submit": "Envoyer",
-          "title": "Partager {{assistantName}} sur X",
-          "writingPrompt": "Racontez avec vos propres mots quelque chose que vous avez réellement essayé avec {{assistantName}}."
-        },
         "slack": {
           "action": "Ajouter",
           "description": "Là où votre équipe travaille déjà",

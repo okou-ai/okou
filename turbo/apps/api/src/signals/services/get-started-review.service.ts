@@ -8,60 +8,8 @@ import { randomUUID } from "node:crypto";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { safeUrlParse } from "../utils";
 import { grantGetStartedClaim$ } from "./get-started-member-reward.service";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
-import { readGetStartedRewardPost } from "./get-started-reward-post";
-
-export function normalizeGetStartedPostUrl(
-  input: string,
-): { readonly id: string; readonly url: string } | null {
-  const url = safeUrlParse(input);
-  if (!url) {
-    return null;
-  }
-  if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    url.port ||
-    !["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(
-      url.hostname,
-    )
-  ) {
-    return null;
-  }
-  const match =
-    /^\/(?:[A-Za-z0-9_]+\/status|i\/web\/status)\/([1-9][0-9]{0,19})\/?$/.exec(
-      url.pathname,
-    );
-  if (!match?.[1]) {
-    return null;
-  }
-  return { id: match[1], url: `https://x.com/i/status/${match[1]}` };
-}
-
-/**
- * Okou's official X account, as a lowercased handle. Its posts mention Okou by
- * definition, so pasting one proves nothing about the claimant.
- */
-const OFFICIAL_OKOU_X_HANDLE = "okou_ai";
-
-/**
- * "Okou" as its own token: matches "Okou", "@okou_ai", "#okou", "okou.ai",
- * "Okou's" and Okou next to CJK text, but not an ASCII word that merely
- * contains it, such as "tokou".
- */
-const OKOU_MENTION = /(?<![a-z0-9])okou(?![a-z0-9])/i;
-
-/**
- * One share reward per X author, enforced by the global unique reward key.
- * Grants made before author keys existed used `share:{postId}`; post IDs are
- * numeric, so the two forms cannot collide.
- */
-function shareAuthorRewardKey(handle: string): string {
-  return `share:author:${handle}`;
-}
 
 type Review =
   | {
@@ -76,52 +24,6 @@ type Review =
     }
   | { readonly kind: "retry"; readonly reason: string };
 
-function reject(reason: string, evidence: string): Review {
-  return { kind: "reject", reason, evidence };
-}
-
-const reviewShareClaim$ = command(
-  async (
-    { set },
-    claim: GetStartedClaimRow,
-    signal: AbortSignal,
-  ): Promise<Review> => {
-    const db = set(writeDb$);
-    if (!claim.postUrl) {
-      throw new Error("X reward claim has no post URL");
-    }
-    const post = await readGetStartedRewardPost(claim.postUrl, signal);
-    if (post.kind === "retry") {
-      return post;
-    }
-    if (post.id !== claim.sourceKey) {
-      return { kind: "retry", reason: "post_id_mismatch" };
-    }
-    if (!OKOU_MENTION.test(post.text)) {
-      return reject("post_must_mention_okou", post.text);
-    }
-    if (!post.authorHandle) {
-      return reject("post_author_unavailable", post.text);
-    }
-    if (post.authorHandle === OFFICIAL_OKOU_X_HANDLE) {
-      return reject("post_by_official_account", post.text);
-    }
-    const rewardKey = shareAuthorRewardKey(post.authorHandle);
-    const [rewarded] = await db
-      .select({ id: getStartedClaims.id })
-      .from(getStartedClaims)
-      .where(eq(getStartedClaims.rewardKey, rewardKey))
-      .limit(1);
-    signal.throwIfAborted();
-    if (rewarded) {
-      // A concurrent grant for the same author is still caught by the unique
-      // reward key and recorded as already_redeemed.
-      return reject("author_already_rewarded", post.text);
-    }
-    return { kind: "approve", rewardKey, evidence: post.text };
-  },
-);
-
 const reviewClaim$ = command(
   async (
     { set },
@@ -129,9 +31,6 @@ const reviewClaim$ = command(
     signal: AbortSignal,
   ): Promise<Review> => {
     const db = set(writeDb$);
-    if (claim.questKey === "share") {
-      return await set(reviewShareClaim$, claim, signal);
-    }
     if (!claim.sourceEventId || !claim.workflowId || !claim.beneficiaryUserId) {
       throw new Error("Workflow reward claim has no source provenance");
     }
@@ -204,7 +103,7 @@ export const processGetStartedClaims$ = command(
       signal.throwIfAborted();
       const at = nowDate();
       const eligible = and(
-        inArray(getStartedClaims.questKey, ["share", "workflow"]),
+        eq(getStartedClaims.questKey, "workflow"),
         inArray(getStartedClaims.status, ["pending", "reviewing"]),
         lte(getStartedClaims.nextAttemptAt, at),
         or(

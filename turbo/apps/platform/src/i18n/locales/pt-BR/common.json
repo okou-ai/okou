@@ -1493,40 +1493,8 @@
           "name": "Convide seu time",
           "unit": "por membro"
         },
-        "notEligible": "Não elegível",
         "pendingState": "{{amount}} pendentes",
-        "rejected": {
-          "alreadyRedeemed": "Publicação já usada",
-          "authorAlreadyRewarded": "Conta já recompensada",
-          "authorUnavailable": "Não foi possível verificar o autor",
-          "officialAccount": "Publicações oficiais do {{assistantName}} não contam",
-          "postMustMention": "Precisa mencionar o {{assistantName}}"
-        },
         "rewardsNote": "As recompensas expiram 7 dias após a concessão. O check-in reinicia às 00:00 UTC. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
-        "share": {
-          "action": "Compartilhar",
-          "description": "Publique e cole o link aqui",
-          "name": "Compartilhar no X"
-        },
-        "shareDialog": {
-          "description": "Envie uma publicação pública para análise. Uma recompensa aprovada por pessoa.",
-          "helper": "A publicação precisa ser pública e mencionar o {{assistantName}}.",
-          "inputLabel": "Link da publicação",
-          "openX": "Abrir o X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "Nada mais a fazer — os créditos chegam sozinhos.",
-          "reviewDone": "Concluído",
-          "reviewExplain": "Se a publicação for pública e mencionar o {{assistantName}}, a recompensa é concedida automaticamente. Se algo estiver errado, esta etapa reabre com o motivo.",
-          "reviewOpenPost": "Abrir a publicação",
-          "reviewPending": "Geralmente em menos de uma hora",
-          "reviewTime": "A revisão costuma terminar em até uma hora.",
-          "reviewTitle": "Sua publicação está com o revisor",
-          "stepPaste": "Cole o link",
-          "stepWrite": "Escreva a publicação",
-          "submit": "Enviar",
-          "title": "Compartilhe o {{assistantName}} no X",
-          "writingPrompt": "Escreva com suas próprias palavras sobre algo que você realmente tentou fazer com o {{assistantName}}."
-        },
         "slack": {
           "action": "Adicionar",
           "description": "Onde seu time já trabalha",

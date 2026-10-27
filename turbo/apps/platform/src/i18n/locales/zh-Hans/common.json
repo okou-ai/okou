@@ -1468,40 +1468,8 @@
           "name": "邀请你的团队",
           "unit": "每位成员"
         },
-        "notEligible": "不符合条件",
         "pendingState": "{{amount}} 待发放",
-        "rejected": {
-          "alreadyRedeemed": "帖子已被使用",
-          "authorAlreadyRewarded": "该账号已领取过奖励",
-          "authorUnavailable": "无法确认作者",
-          "officialAccount": "{{assistantName}} 官方帖子不计入",
-          "postMustMention": "需要提到 {{assistantName}}"
-        },
         "rewardsNote": "奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
-        "share": {
-          "action": "分享",
-          "description": "发帖后把链接贴过来",
-          "name": "分享到 X"
-        },
-        "shareDialog": {
-          "description": "提交一条公开帖子供审核。每人只能成功领取一次奖励。",
-          "helper": "帖子必须是公开的，并且提到 {{assistantName}}。",
-          "inputLabel": "帖子链接",
-          "openX": "打开 X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "不用再做什么，积分会自己到账。",
-          "reviewDone": "知道了",
-          "reviewExplain": "只要帖子是公开的并且提到了 {{assistantName}}，奖励就会自动发放。如果有问题，这一步会带着原因重新打开。",
-          "reviewOpenPost": "打开帖子",
-          "reviewPending": "通常一小时内",
-          "reviewTime": "审核通常一小时内完成。",
-          "reviewTitle": "帖子已经在审核了",
-          "stepPaste": "把链接贴回来",
-          "stepWrite": "写这条帖子",
-          "submit": "提交",
-          "title": "在 X 上分享 {{assistantName}}",
-          "writingPrompt": "用自己的话写下你实际用 {{assistantName}} 尝试过的事。"
-        },
         "slack": {
           "action": "添加",
           "description": "团队日常办公的地方",

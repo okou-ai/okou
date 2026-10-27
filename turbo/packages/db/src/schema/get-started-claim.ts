@@ -24,8 +24,10 @@ export const getStartedClaims = pgTable(
     orgId: text("org_id").notNull(),
     actorUserId: text("actor_user_id").notNull(),
     beneficiaryUserId: text("beneficiary_user_id"),
+    // The retired X share quest keeps its historical receipts; nothing
+    // creates or reviews new ones.
     questKey: varchar("quest_key", { length: 20 })
-      .$type<GetStartedQuestKey>()
+      .$type<GetStartedQuestKey | "share">()
       .notNull(),
     sourceKey: text("source_key").notNull(),
     rewardKey: text("reward_key"),

@@ -1493,40 +1493,8 @@
           "name": "Invita il tuo team",
           "unit": "per membro"
         },
-        "notEligible": "Non idoneo",
         "pendingState": "{{amount}} in sospeso",
-        "rejected": {
-          "alreadyRedeemed": "Post già utilizzato",
-          "authorAlreadyRewarded": "Account già premiato",
-          "authorUnavailable": "Impossibile verificare l'autore",
-          "officialAccount": "I post ufficiali di {{assistantName}} non valgono",
-          "postMustMention": "Deve menzionare {{assistantName}}"
-        },
         "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
-        "share": {
-          "action": "Condividi",
-          "description": "Pubblica, poi incolla il link",
-          "name": "Condividi su X"
-        },
-        "shareDialog": {
-          "description": "Invia un post pubblico per la verifica. Un premio approvato per persona.",
-          "helper": "Il post deve essere pubblico e menzionare {{assistantName}}.",
-          "inputLabel": "Link del post",
-          "openX": "Apri X",
-          "placeholder": "https://x.com/...",
-          "reviewDescription": "Non c'è altro da fare: i crediti arrivano da soli.",
-          "reviewDone": "Fatto",
-          "reviewExplain": "Se il post è pubblico e cita {{assistantName}}, la ricompensa viene assegnata automaticamente. Se qualcosa non va, questo passaggio si riapre con il motivo.",
-          "reviewOpenPost": "Apri il post",
-          "reviewPending": "Di solito entro un'ora",
-          "reviewTime": "La revisione di solito si chiude entro un'ora.",
-          "reviewTitle": "Il tuo post è in revisione",
-          "stepPaste": "Incolla il link",
-          "stepWrite": "Scrivi il post",
-          "submit": "Invia",
-          "title": "Condividi {{assistantName}} su X",
-          "writingPrompt": "Scrivi con parole tue qualcosa che hai provato davvero con {{assistantName}}."
-        },
         "slack": {
           "action": "Aggiungi",
           "description": "Dove il tuo team lavora già",
