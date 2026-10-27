@@ -89,7 +89,7 @@ export const updateIosPushRegistration$ = command(
               badgeClearedRevision: sql`CASE
                 WHEN ${iosPushRegistrations.userId} = ${binding.userId}
                   AND ${iosPushRegistrations.badgeClearedRevision} = ${iosPushRegistrations.revision}
-                THEN ${binding.revision}
+                THEN ${binding.revision}::bigint
                 ELSE NULL
               END`,
             }

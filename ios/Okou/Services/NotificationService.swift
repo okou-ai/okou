@@ -97,8 +97,8 @@ final class NotificationService {
   private var notificationStateRevision = UUID()
   private var notificationStateTask: Task<Void, Never>?
   private var notificationStateRequest: Task<NotificationStateResponse, Error>?
+  private var badgeUpdateTask: Task<Void, Never>?
   private var isForeground = false
-  private var badgeNeedsClear = false
   private var badgeClearSequence: Int?
   private var pendingBadgeClearSequence: Int?
   private let log = Logger(subsystem: "ai.okou.ios", category: "Notifications")
@@ -324,7 +324,7 @@ final class NotificationService {
       pendingBadgeClearSequence = sequence
       defaults.set(sequence, forKey: "ios-pending-badge-clear-sequence")
     }
-    badgeNeedsClear = true
+    enqueueBadgeCount(0)
     notificationStateRequest?.cancel()
     requestNotificationStateRefresh()
   }
@@ -334,6 +334,20 @@ final class NotificationService {
     let sequence = defaults.integer(forKey: key) + 1
     defaults.set(sequence, forKey: key)
     return sequence
+  }
+
+  /// Serialize only OS writes; a foreground clear must never wait for an HTTP or token request.
+  @discardableResult
+  private func enqueueBadgeCount(_ count: Int) -> Task<Void, Never> {
+    let previous = badgeUpdateTask
+    let task = Task { [system, log] in
+      await previous?.value
+      do { try await system.setBadgeCount(count) } catch {
+        log.error("Cannot update app icon badge: \(error.localizedDescription, privacy: .public)")
+      }
+    }
+    badgeUpdateTask = task
+    return task
   }
 
   private func rememberBadgeClear(_ sequence: Int, userID: String) {
@@ -354,7 +368,7 @@ final class NotificationService {
         defaults.removeObject(forKey: "ios-pending-badge-clear-sequence")
       } else if isForeground {
         rememberBadgeClear(nextBadgeClearSequence(), userID: userID)
-        badgeNeedsClear = true
+        enqueueBadgeCount(0)
       }
     }
   }
@@ -365,9 +379,9 @@ final class NotificationService {
     await notificationStateTask?.value
   }
 
-  /// One service-owned worker serializes OS updates and coalesces read/realtime invalidations.
+  /// One service-owned worker coalesces read/realtime invalidations.
   func requestNotificationStateRefresh() {
-    guard notificationAccount != .unresolved || badgeNeedsClear else { return }
+    guard notificationAccount != .unresolved else { return }
     notificationStateRevision = UUID()
     guard notificationStateTask == nil else { return }
     notificationStateTask = Task { [weak self] in
@@ -390,11 +404,6 @@ final class NotificationService {
         && notificationAccount == account && self.generation == generation
     }
     do {
-      if badgeNeedsClear {
-        try await system.setBadgeCount(0)
-        guard ownsRequest() else { return }
-        badgeNeedsClear = false
-      }
       let delivered = await system.deliveredNotifications()
       guard ownsRequest() else { return }
       switch account {
@@ -402,7 +411,7 @@ final class NotificationService {
         return
       case .signedOut:
         system.removeDeliveredNotifications(identifiers: delivered.map(\.identifier))
-        try await system.setBadgeCount(0)
+        await enqueueBadgeCount(0).value
       case .user(let userID):
         guard let workspace, workspace.userID == userID else { return }
         system.removeDeliveredNotifications(
@@ -435,7 +444,7 @@ final class NotificationService {
           else { throw APIClientError.incompatibleData }
           system.removeDeliveredNotifications(identifiers: response.removeIdentifiers)
           // Older APIs expose chat unread counts, which must not restore an acknowledged badge.
-          try await system.setBadgeCount(response.badgeCount ?? 0)
+          await enqueueBadgeCount(response.badgeCount ?? 0).value
           guard ownsRequest() else { return }
         }
       }

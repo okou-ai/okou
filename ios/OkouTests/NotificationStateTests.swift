@@ -127,6 +127,49 @@ final class NotificationStateTests: XCTestCase {
     XCTAssertEqual(system.badgeCount, 0)
   }
 
+  func testOpeningClearsTheBadgeWhileAnEarlierTokenRequestIsStillBlocked() async throws {
+    let system = NotificationSystemFixture()
+    system.badgeCount = 9
+    let gate = AuthenticationRequestGate()
+    await gate.hold()
+    let observation = await gate.observeRequests()
+    var arrivals = observation.arrivals.makeAsyncIterator()
+    let fixture = ChatHTTPFixture { _ in
+      ChatHTTPResponse(body: #"{"unreadCount":9,"badgeCount":0,"removeIdentifiers":[]}"#)
+    }
+    let client = APIClient(
+      baseURL: fixture.baseURL, clientVersion: fixture.clientVersion, session: fixture.session
+    ) {
+      await gate.enter()
+      return "fixture-token"
+    }
+    let service = notifications(system)
+    await service.update(
+      workspace: NotificationWorkspace(
+        scopeID: "current", userID: "current", workspaceID: "org_test", client: client,
+        sync: ChatSync(client: client)))
+    let syncing = Task { await service.refreshNotificationState(userID: "current") }
+    addTeardownBlock {
+      syncing.cancel()
+      await gate.releaseAll()
+      await syncing.value
+      await gate.stopObserving(observation.id)
+    }
+    _ = await arrivals.next()
+    let cleared = expectation(description: "Icon clears before the token request is released")
+    system.didSetBadgeCount = { count in
+      if count == 0 {
+        cleared.fulfill()
+        system.didSetBadgeCount = nil
+      }
+    }
+    service.setForeground(true)
+    await fulfillment(of: [cleared], timeout: 3)
+    XCTAssertEqual(system.badgeCount, 0)
+    await gate.releaseAll()
+    await syncing.value
+  }
+
   func testOpeningPersistsTheBadgeCursorForLaterBackgroundReconciliation() async throws {
     let suite = "notification-badge-" + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
