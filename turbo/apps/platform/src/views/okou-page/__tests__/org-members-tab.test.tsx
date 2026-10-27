@@ -23,6 +23,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 
 const context = testContext();
 
@@ -563,14 +564,24 @@ test.each(["limited-free-1", "pro"])(
 );
 
 test.each([
+  [409, "INVITEE_ALREADY_MEMBER", "This person is already a member.", false],
   [
     409,
     "INVITATION_ALREADY_EXISTS",
     "This person already has a pending invitation.",
+    true,
+  ],
+  [
+    500,
+    "INTERNAL_SERVER_ERROR",
+    "The invitation service is unavailable.",
+    true,
   ],
 ] as const)(
-  "shows an invitation refusal (%s) without closing the invite dialog",
-  async (status, code, message) => {
+  "shows an invitation refusal (%s %s) and reports unexpected failures",
+  async (status, code, message, reportFailure) => {
+    const sentry = context.mocks.sentry();
+    initSentry();
     mockMembersStory(undefined, "admin", "owner");
     mockMemberInviteEntitlement(false, {
       tier: "limited-free-1",
@@ -598,6 +609,18 @@ test.each([
 
     await expect(screen.findByText(message)).resolves.toBeInTheDocument();
     expect(inviteDialog).toBeInTheDocument();
+    expect(
+      within(inviteDialog).getByPlaceholderText("email@example.com"),
+    ).toHaveValue("rejected.invitee@example.com");
+    await waitFor(() => {
+      expect(buttonByText("Send invitation", inviteDialog)).toBeEnabled();
+    });
+    expect(sentry.reports).toHaveLength(reportFailure ? 1 : 0);
+    expect(sentry.reports).toMatchObject(
+      reportFailure
+        ? [{ type: "exception", error: { code, status, message } }]
+        : [],
+    );
   },
 );
 
