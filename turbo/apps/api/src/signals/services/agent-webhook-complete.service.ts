@@ -7,6 +7,7 @@ import {
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { command, computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import type { infer as zInfer } from "zod";
@@ -580,6 +581,17 @@ export function createAgentRunCompletion(runId: string, userId: string) {
         return notFound("Agent run not found");
       }
       if (initialRun.status === "timeout") {
+        // Terminal status or silence did not release the claim's packages.
+        // This authenticated completion is the Runner's actual acknowledgement.
+        await db
+          .delete(claimedWorkflowAttachments)
+          .where(
+            and(
+              eq(claimedWorkflowAttachments.runId, runId),
+              eq(claimedWorkflowAttachments.orgId, initialRun.orgId),
+            ),
+          );
+        signal.throwIfAborted();
         return settledRunCompletionResponse(initialRun);
       }
       let expectedChatThreadId = initialRun.chatThreadId;

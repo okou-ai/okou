@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 import { Client } from "pg";
 import { create } from "tar";
 import {
+  boolean as zBoolean,
   array,
   literal,
   number,
@@ -165,7 +166,44 @@ const expectBlocked = async (
     });
   });
 };
+let movedCutoverTable = false;
 try {
+  const [cutover] = array(zObject({ installed: zBoolean() })).parse(
+    (
+      await db.query(
+        "SELECT to_regclass('public.claimed_workflow_attachments') IS NOT NULL AS installed",
+      )
+    ).rows,
+  );
+  if (cutover?.installed) {
+    await assert.rejects(run(), (error: unknown) => {
+      const result = zObject({ stderr: string() }).safeParse(error);
+      return (
+        result.success &&
+        result.data.stderr.includes(
+          '"classification":"WorkflowStorageCutoverInstalled"',
+        )
+      );
+    });
+    const [inventory] = array(zObject({ empty: zBoolean() })).parse(
+      (
+        await db.query(
+          "SELECT NOT EXISTS (SELECT 1 FROM claimed_workflow_attachments) AS empty",
+        )
+      ).rows,
+    );
+    assert.equal(
+      inventory?.empty,
+      true,
+      "The Stage 1 fixture requires an empty disposable cutover table",
+    );
+    // Exercise the retained Stage 1 operator against its pre-cutover contract,
+    // then restore the current schema before migration consistency compares it.
+    await db.query(
+      "ALTER TABLE claimed_workflow_attachments RENAME TO claimed_workflow_attachments_stage1_fixture",
+    );
+    movedCutoverTable = true;
+  }
   await db.query(
     "INSERT INTO agents (id, org_id, owner, name) VALUES ($1, $2, 'owner', 'attachment-test')",
     [agentId, orgId],
@@ -881,6 +919,10 @@ try {
     "Workflow attachment operator: dry-run, apply, archive audit, instruction preservation, overlap reconciliation, canonical legacy duplicates, retained manifest identity, reviewed unpublished empty sources and stale-plan protection passed",
   );
 } finally {
+  if (movedCutoverTable)
+    await db.query(
+      "ALTER TABLE claimed_workflow_attachments_stage1_fixture RENAME TO claimed_workflow_attachments",
+    );
   await db.query("DELETE FROM storage_publication_tokens WHERE org_id=$1", [
     orgId,
   ]);

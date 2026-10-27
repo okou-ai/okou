@@ -77,6 +77,7 @@ mod finalizing_claim;
 mod heartbeat;
 mod home_cache_observation;
 mod home_cache_refresh;
+mod idle_memory;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
@@ -99,6 +100,7 @@ use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
 use home_cache_observation::HomeCacheObservationEvent;
+use idle_memory::IdleMemoryReclaimer;
 use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{JobResult, SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
@@ -360,6 +362,9 @@ struct RunTestHooks {
     manual_routine_heartbeat_rx: Option<mpsc::UnboundedReceiver<()>>,
     manual_home_cache_gc_rx: Option<mpsc::UnboundedReceiver<()>>,
     manual_home_cache_pressure_rx: Option<mpsc::UnboundedReceiver<()>>,
+    manual_idle_memory_rx: Option<mpsc::UnboundedReceiver<()>>,
+    host_memory_source:
+        Option<Arc<dyn runner_lifecycle::host_memory_operations::MemoryObservationSource>>,
 }
 
 pub enum SignalSource {
@@ -381,6 +386,8 @@ enum StartLoopEvent {
     HomeCacheChangeObserved,
     HomeCacheGcTickConsumed,
     HomeCachePressureTickConsumed,
+    IdleMemoryTickConsumed,
+    IdleMemoryCompleted,
     ClaimsDrainEntered,
     MaintenanceDrainEntered,
     HomeInventoryDrainEntered,
@@ -1173,6 +1180,30 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     );
     home_cache_reconciliation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut maintenance = MaintenanceTasks::new();
+    let mut idle_memory = IdleMemoryReclaimer::new(
+        runner
+            .profiles
+            .values()
+            .map(|profile| profile.memory_mb)
+            .fold(capacity.min_memory_mb, u32::max),
+    );
+    #[cfg(test)]
+    if let Some(source) = test_hooks.host_memory_source.take() {
+        idle_memory.set_source(source);
+    }
+    #[cfg(test)]
+    let mut idle_memory_tick = match test_hooks.manual_idle_memory_rx.take() {
+        Some(receiver) => MaintenanceTrigger::Manual(receiver),
+        None => MaintenanceTrigger::interval(idle_memory::SAMPLE_PERIOD),
+    };
+    #[cfg(not(test))]
+    let mut idle_memory_tick = MaintenanceTrigger::interval(idle_memory::SAMPLE_PERIOD);
+    idle_memory.request(
+        &shared.idle_pool,
+        &shared.status,
+        &idle_destroy_tracker,
+        &mode_rx,
+    );
     let mut soft_drain = soft_drain::SoftDrain::new();
     let mut pending_candidate = PendingCandidate::new();
     let mut ready_direct_candidates_left = 0;
@@ -1246,16 +1277,20 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             }
         }
 
-        blank_pool
-            .maybe_start(
-                mode,
-                &shared.idle_pool,
-                &capacity.budget,
-                &exec_config.pre_spawn_admission,
-                &shared.status,
-                &idle_destroy_tracker,
-            )
-            .await;
+        if idle_memory.can_prepare_blank() {
+            blank_pool
+                .maybe_start(
+                    mode,
+                    &shared.idle_pool,
+                    &capacity.budget,
+                    &exec_config.pre_spawn_admission,
+                    &shared.status,
+                    &idle_destroy_tracker,
+                )
+                .await;
+        } else {
+            blank_pool.cancel_preparation();
+        }
 
         // Spawn background restart task when timer fires
         mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
@@ -1466,6 +1501,18 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     break;
                 }
             }
+            result = idle_memory.wait() => {
+                if let Err(error) = result {
+                    warn!(%error, "host memory reclamation stopped; foreground work continues");
+                }
+                #[cfg(test)]
+                test_hooks.test_observer.record(StartLoopEvent::IdleMemoryCompleted);
+            }
+            _ = idle_memory_tick.tick() => {
+                idle_memory.request(&shared.idle_pool, &shared.status, &idle_destroy_tracker, &mode_rx);
+                #[cfg(test)]
+                test_hooks.test_observer.record(StartLoopEvent::IdleMemoryTickConsumed);
+            }
             _ = home_cache_gc_tick.tick() => {
                 maintenance.request_home_cache_gc(exec_config.home_cache.as_ref(), &mode_rx);
                 #[cfg(test)]
@@ -1675,6 +1722,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     test_hooks
         .test_observer
         .record(StartLoopEvent::MaintenanceDrainEntered);
+    if let Err(error) = idle_memory.drain().await {
+        terminal_error.get_or_insert(error);
+    }
     if let Err(error) = maintenance.drain().await {
         terminal_error.get_or_insert(error);
     }

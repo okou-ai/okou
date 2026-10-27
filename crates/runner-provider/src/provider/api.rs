@@ -1649,7 +1649,7 @@ impl ApiClient {
             ),
             &self.token,
         );
-        let request = request.json(&body);
+        let request = request.query(&[("workflowSkills", "1")]).json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let request = request.prepare("claim").map_err(|error| match error {
             ProviderError::Api(message) => ProviderError::Api(format!("claim: {message}")),
@@ -7098,7 +7098,9 @@ mod tests {
                     .await
             });
             let request = server.next_request("claim before eligibility").await;
-            assert!(request.starts_with(&format!("POST /api/runners/jobs/{run_id}/claim ")));
+            assert!(request.starts_with(&format!(
+                "POST /api/runners/jobs/{run_id}/claim?workflowSkills=1 "
+            )));
             assert!(!registration.is_cancelled());
             release.send(()).unwrap();
             let claimed = claim_task.await.unwrap().unwrap();

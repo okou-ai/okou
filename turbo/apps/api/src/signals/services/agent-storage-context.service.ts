@@ -5,7 +5,6 @@ import {
   MEMORY_ARTIFACT_NAME,
   VOLUME_ORG_USER_ID,
   getSkillStorageName,
-  getCustomSkillStorageName,
   getCustomConnectorSkillStorageName,
 } from "@okouai/core/storage-names";
 import {
@@ -68,9 +67,7 @@ function agentStorageRequests(
     if (SEED_SKILLS.includes(workflow.name)) {
       continue;
     }
-    if (workflow.officialDefinitionName === null) {
-      add(orgId, getCustomSkillStorageName(workflow.workflowId));
-    } else {
+    if (workflow.officialDefinitionName !== null) {
       const accepted = official?.catalog.payload.definitions.find(
         (definition) => {
           return definition.name === workflow.officialDefinitionName;

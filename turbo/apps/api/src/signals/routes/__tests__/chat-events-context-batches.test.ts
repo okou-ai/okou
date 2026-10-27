@@ -11,8 +11,6 @@ import {
   mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
-import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 
 const context = testContext();
 const {
@@ -161,22 +159,18 @@ describe("shared context statement projections through normal sends", () => {
         } else {
           expect(targets).toStrictEqual([]);
         }
-        const mounts =
-          expectCanonicalStorageManifest(claimed.claim.storageManifest)
-            ?.storageMounts ?? [];
+        const skills = claimed.claim.storageManifest?.workflowSkills ?? [];
         if (workflowId) {
-          expect(mounts).toContainEqual(
+          expect(skills).toContainEqual(
             expect.objectContaining({
-              name: getCustomSkillStorageName(workflowId),
-              versionId: expect.stringMatching(/^[0-9a-f]{64}$/),
+              workflowId,
+              skillMd: expect.stringContaining(
+                "Preserve this selected workflow.",
+              ),
             }),
           );
         } else {
-          expect(
-            mounts.some((mount) => {
-              return mount.name.startsWith("custom-skill@");
-            }),
-          ).toBeFalsy();
+          expect(skills).toStrictEqual([]);
         }
         await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
       }

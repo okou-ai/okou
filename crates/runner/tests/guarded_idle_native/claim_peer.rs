@@ -55,7 +55,8 @@ impl Gate {
         let body: Value = serde_json::from_slice(bytes)?;
         let path = format!("/api/runners/jobs/{}/claim", self.run);
         if parts.method != Method::POST
-            || parts.uri.path_and_query().map(|p| p.as_str()) != Some(path.as_str())
+            || parts.uri.path() != path
+            || parts.uri.query() != Some("workflowSkills=1")
             || parts
                 .headers
                 .get("authorization")

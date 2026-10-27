@@ -126,12 +126,15 @@ private final class URLProtocolFixture: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() { Self.boundary.serve(self) }
   override func stopLoading() {}
-  func reply(_ body: JSONValue, status: Int = 200) {
+  func reply(_ body: JSONValue, status: Int = 200, headers: [String: String] = [:]) {
+    replyData(try! JSONEncoder().encode(body), status: status, headers: headers)
+  }
+  func replyData(_ data: Data, status: Int, headers: [String: String] = [:]) {
     let response = HTTPURLResponse(
       url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-      headerFields: ["Content-Type": "application/json"])!
+      headerFields: ["Content-Type": "application/json"].merging(headers) { _, value in value })!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: try! JSONEncoder().encode(body))
+    client?.urlProtocol(self, didLoad: data)
     client?.urlProtocolDidFinishLoading(self)
   }
   var body: JSONValue {
@@ -197,6 +200,181 @@ private final class StateTransitions: @unchecked Sendable {
 }
 
 final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
+  @MainActor
+  func testHeartbeatFailureAndRecoveryDeliverCorrelatedSafeSentryDiagnostics() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let recovering = expectation(description: "HTML heartbeat failure enters recovery")
+    let recovered = expectation(description: "A later heartbeat restores the host")
+    let transitions = StateTransitions()
+    let beats = RequestCount()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/heartbeat") {
+        XCTAssertNotNil(connection.request.value(forHTTPHeaderField: "x-client-request-id"))
+        XCTAssertNotNil(connection.request.value(forHTTPHeaderField: "x-client-session-id"))
+        switch beats.next() {
+        case 1:
+          connection.reply(.object([:]), status: 401)
+        case 2:
+          connection.replyData(
+            Data("<html>private-response-body</html>".utf8), status: 502,
+            headers: [
+              "Content-Type": "text/html", "CF-Ray": "test-first-ray-LAX",
+              "X-Vercel-ID": String(repeating: "v", count: 300),
+              "Set-Cookie": "private-response-cookie",
+            ])
+        case 3:
+          connection.reply(
+            .object(["error": .string("private-response-body")]), status: 503,
+            headers: ["CF-Ray": "test-second-ray-LAX", "X-Vercel-ID": "test-vercel-id"])
+        default:
+          connection.reply(heartbeatResponse(pending: false), headers: ["CF-Ray": "recovered-ray"])
+        }
+      } else if path.hasSuffix("/next") {
+        connection.reply(.object(["status": .string("idle")]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(
+      session: session, notifications: NotificationBoundary(),
+      tokenProvider: { force in force ? "private-refreshed-token" : "private-cached-token" },
+      onChange: { state in
+        if state.status == "recovering" {
+          transitions.notify("recovering", expectation: recovering)
+        } else if state.status == "online" && transitions.hasSeen("recovering") {
+          transitions.notify("recovered", expectation: recovered)
+        }
+      })
+    addTeardownBlock { await runtime.stop() }
+    await runtime.start()
+    await fulfillment(of: [recovering, recovered], timeout: 12, enforceOrder: true)
+    await runtime.stop()
+
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 2)
+    let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
+    let restored = try XCTUnwrap(
+      events.first { $0["tags"]["heartbeatOutcome"].string == "recovered" })
+    let first = failed["contexts"]["heartbeat"]
+    let summary = restored["contexts"]["heartbeat"]
+    XCTAssertEqual(first["episodeId"], summary["episodeId"])
+    XCTAssertEqual(failed["tags"]["heartbeatEpisodeId"], first["episodeId"])
+    XCTAssertEqual(restored["tags"]["heartbeatEpisodeId"], first["episodeId"])
+    XCTAssertNotNil(first["episodeId"].string.flatMap(UUID.init(uuidString:)))
+    XCTAssertEqual(summary["failedAttempts"].number, 2)
+    XCTAssertEqual(summary["pathTemplate"].string, "/api/computer-use/hosts/:hostId/heartbeat")
+    let requests = try XCTUnwrap(first["firstFailure"]["requests"].array)
+    XCTAssertEqual(requests.compactMap { $0["status"].number }, [401, 502])
+    XCTAssertNotEqual(requests[0]["clientRequestId"], requests[1]["clientRequestId"])
+    XCTAssertEqual(requests[0]["clientSessionId"], requests[1]["clientSessionId"])
+    XCTAssertEqual(requests[1]["responseHeaders"]["cf-ray"].string, "test-first-ray-LAX")
+    XCTAssertEqual(requests[1]["responseHeaders"]["content-type"].string, "text/html")
+    XCTAssertEqual(requests[1]["responseHeaders"]["x-vercel-id"].string?.count, 256)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(requests[1]["durationMs"].number), 0)
+    let retries = try XCTUnwrap(summary["recentFailures"].array)
+    XCTAssertEqual(retries.count, 2)
+    XCTAssertEqual(retries[1]["requests"].array?.last?["status"].number, 503)
+    XCTAssertEqual(summary["finalRequests"].array?.last?["status"].number, 200)
+    XCTAssertEqual(
+      summary["finalRequests"].array?.last?["clientSessionId"], requests[1]["clientSessionId"])
+    for event in events {
+      XCTAssertFalse(event.formatted.contains("private-response-body"))
+      XCTAssertFalse(event.formatted.contains("private-response-cookie"))
+      XCTAssertFalse(event.formatted.contains("private-cached-token"))
+      XCTAssertFalse(event.formatted.contains("private-refreshed-token"))
+      XCTAssertFalse(event.formatted.contains("00000000-0000-0000-0000-000000000001"))
+    }
+  }
+
+  @MainActor
+  func testStoppingAfterHeartbeatTransportFailureClosesItsSentryEpisode() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let recovering = expectation(description: "Transport failure enters recovery")
+    let transitions = StateTransitions()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/heartbeat") {
+        connection.client?.urlProtocol(
+          connection,
+          didFailWithError: URLError(
+            .cannotFindHost, userInfo: [NSLocalizedDescriptionKey: "private-transport-description"]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(.object(["status": .string("idle")]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(
+      session: session, notifications: NotificationBoundary(),
+      onChange: { state in
+        if state.status == "recovering" {
+          transitions.notify("recovering", expectation: recovering)
+        }
+      })
+    addTeardownBlock { await runtime.stop() }
+    await runtime.start()
+    await fulfillment(of: [recovering], timeout: 4)
+    await runtime.stop()
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 2)
+    let failed = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
+    let stopped = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "stopped" })
+    XCTAssertEqual(
+      failed["contexts"]["heartbeat"]["episodeId"], stopped["contexts"]["heartbeat"]["episodeId"])
+    let request = try XCTUnwrap(
+      failed["contexts"]["heartbeat"]["firstFailure"]["requests"].array?.first)
+    XCTAssertEqual(request["urlErrorCode"].number, Double(URLError.cannotFindHost.rawValue))
+    XCTAssertNotNil(request["clientRequestId"].string)
+    XCTAssertFalse(stopped.formatted.contains("private-transport-description"))
+  }
+
+  @MainActor
+  func testHealthyHeartbeatAndStopDoNotUploadSentryEvents() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let heartbeat = expectation(description: "Healthy heartbeat reaches the online state")
+    let beats = RequestCount()
+    let transitions = StateTransitions()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse())
+      } else if path.hasSuffix("/heartbeat") {
+        _ = beats.next()
+        connection.reply(heartbeatResponse(pending: false))
+      } else if path.hasSuffix("/next") {
+        connection.reply(.object(["status": .string("idle")]))
+      } else {
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(
+      session: session, notifications: NotificationBoundary(),
+      onChange: { state in
+        if state.status == "online" && beats.value > 0 {
+          transitions.notify("heartbeat", expectation: heartbeat)
+        }
+      })
+    addTeardownBlock { await runtime.stop() }
+    await runtime.start()
+    await fulfillment(of: [heartbeat], timeout: 4)
+    await runtime.stop()
+    XCTAssertEqual(try collector.events().count, 0)
+  }
+
   func testIdleHostWaitsForAnotherNotificationAndKeepsHeartbeatOperational() async throws {
     let first = expectation(description: "Initial subscription checks the queue")
     let unexpected = expectation(description: "Idle host must not poll")

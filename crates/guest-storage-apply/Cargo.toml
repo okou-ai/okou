@@ -6,11 +6,13 @@ edition.workspace = true
 [dependencies]
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 guest-contracts.workspace = true
+hex = { workspace = true, features = ["std"] }
 libc = { workspace = true, features = ["std"] }
 linux-mountinfo.workspace = true
 roxmltree = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+sha2 = { workspace = true, features = ["alloc", "oid"] }
 tar = { workspace = true, features = ["xattr"] }
 ureq = { workspace = true, features = ["gzip", "platform-verifier", "rustls"] }
 guest-telemetry.workspace = true

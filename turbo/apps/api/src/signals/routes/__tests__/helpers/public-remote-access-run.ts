@@ -206,6 +206,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
       setupApp({ context, routes: runnersRoutes })(
         runnersJobClaimContract,
       ).claim({
+        query: { workflowSkills: "1" },
         headers: runnerHeaders,
         extraHeaders: { "X-Client-Version": "0.234.18" },
         params: { id: run.runId },

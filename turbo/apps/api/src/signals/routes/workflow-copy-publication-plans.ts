@@ -1,4 +1,3 @@
-import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { gmailLabelAppliedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import {
   workflows,
@@ -6,7 +5,6 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { storages } from "@okouai/db/schema/storage";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
@@ -31,7 +29,6 @@ import {
   workflowUserAutomationThreadOwnerCondition,
   type WorkflowThreadPreparation,
 } from "../services/workflow-user-automation-thread.service";
-import type { PreparedServerSideVolume } from "../services/storage-volume-publication.service";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import {
   CopyPreparationConflict,
@@ -64,7 +61,7 @@ export interface WorkflowCopyPublicationArgs extends WorkflowCopyInput {
   readonly currentTime: Date;
   readonly inheritedAutonomyBudget: number | undefined;
   readonly source: WorkflowCopySource;
-  readonly volume: PreparedServerSideVolume;
+  readonly cleanupJobId: string | null;
   readonly preparedWebhooks: ReadonlyMap<string, PreparedCopiedWebhook>;
 }
 
@@ -157,15 +154,6 @@ export function workflowCopySlugQuery(args: {
 export function copySlugConflict(name: string) {
   return `You already have a private workflow named "/${name}" on this agent. Rename the existing workflow or choose a different name.`;
 }
-export function workflowCopyPreparedStorageQuery(storageId: string) {
-  return new QueryBuilder()
-    .select({ id: storages.id })
-    .from(storages)
-    .where(eq(storages.id, storageId))
-    .for("update")
-    .as("copy_prepared_storage");
-}
-
 const copyProjectionEventTypes = {
   gmail: ["gmail-new-message", "gmail-label-applied"],
   "google-calendar": [...GOOGLE_CALENDAR_EVENT_TYPES],
@@ -290,9 +278,6 @@ export function copyPublicationPlans(args: WorkflowCopyPublicationArgs) {
       ...args,
       sourceWorkflow: args.source.sourceWorkflow,
     }),
-    preparedStorage: workflowCopyPreparedStorageQuery(
-      args.volume.version.storageId,
-    ),
     workflow: workflowCopyRowValues({
       ...args,
       sourceWorkflow: args.source.sourceWorkflow,
@@ -315,7 +300,6 @@ export function copyPublicationPlans(args: WorkflowCopyPublicationArgs) {
       workflowId: args.targetWorkflowId,
     }),
     idColumns: { id: workflows.id },
-    storageError: `Prepared workflow storage not found: ${args.targetWorkflowId}`,
     workflowError: "Failed to copy workflow",
     automationError: "Failed to copy workflow automation",
     threadError: "Failed to create workflow automation chat thread",
@@ -461,13 +445,5 @@ export function requireCopySlugAvailable(
 ): void {
   if (row) {
     throw new CopyPreparationConflict(copySlugConflict(name));
-  }
-}
-export function requireCopyVolumePublished(
-  count: number | null,
-  versionId: string,
-): void {
-  if (count !== 1) {
-    throw new StorageVersionIdentityConflictError(versionId);
   }
 }

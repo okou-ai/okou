@@ -172,11 +172,6 @@
       "owner": "commitWorkflowInput$"
     },
     {
-      "id": "TX-0341",
-      "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
-      "owner": "deleteOrphanedWorkflowVolume$"
-    },
-    {
       "id": "TX-0342",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteWorkflowRows$"

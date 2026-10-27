@@ -1,3 +1,4 @@
+import { installWorkflowVolumeS3Fixture } from "./workflow-volume-s3";
 import { createHash } from "node:crypto";
 
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
@@ -175,6 +176,11 @@ async function requestLogsList<TStatus extends 200 | 400 | 401 | 403>(
 
 export function createMiscRoutesApi(context: TestContext) {
   const s3Objects = new Map<string, Buffer>();
+  installWorkflowVolumeS3Fixture(context, s3Objects);
+  const multipartTransport = context.mocks.s3.send.getMockImplementation();
+  if (!multipartTransport) {
+    throw new Error("Expected the S3 multipart fixture");
+  }
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     const input = commandInput(command);
     const key = typeof input.Key === "string" ? input.Key : "";
@@ -207,7 +213,7 @@ export function createMiscRoutesApi(context: TestContext) {
         body ? { ContentLength: body.length, ETag: objectEtag(body) } : {},
       );
     }
-    return Promise.resolve({});
+    return multipartTransport(command);
   });
 
   return {

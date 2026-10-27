@@ -202,8 +202,8 @@ describe("runner claim response contract", () => {
   });
 });
 
-describe("Workflow claim reader preparation", () => {
-  it("preserves both legacy selection and claim-time invocation intent for admission", () => {
+describe("stored Workflow selection contract", () => {
+  it("preserves legacy selection and current claim-time invocation intent", () => {
     const context = {
       storageMounts: [],
       connectorRuntimeTargets: [],

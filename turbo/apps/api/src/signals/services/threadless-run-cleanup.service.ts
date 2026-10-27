@@ -3,6 +3,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { claimedWorkflowAttachments } from "@okouai/db/schema/claimed-workflow-attachment";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";
 import {
@@ -156,6 +157,14 @@ async function hasDeletionBlocker(
   db: Pick<Db, "select">,
   runId: string,
 ): Promise<boolean> {
+  const [retained] = await db
+    .select({ id: claimedWorkflowAttachments.runId })
+    .from(claimedWorkflowAttachments)
+    .where(eq(claimedWorkflowAttachments.runId, runId))
+    .limit(1);
+  if (retained) {
+    return true;
+  }
   const [pendingCallback] = await db
     .select({ id: agentRunCallbacks.id })
     .from(agentRunCallbacks)

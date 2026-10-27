@@ -1,3 +1,4 @@
+import { captureInvokedWorkflow$ } from "./execution-agent-workflows.service";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
@@ -870,7 +871,10 @@ function isDirectSendContext(contextType: string | null): boolean {
 }
 
 /** Runner payload facts the Thread assembles privately for one run. */
-type ThreadRunnerFacts = Omit<BuildRunnerJobPayloadInput, "run" | "timing">;
+type ThreadRunnerFacts = Omit<
+  BuildRunnerJobPayloadInput,
+  "run" | "timing" | "workflowAutomationId"
+>;
 
 interface RunPlan {
   readonly args: ProductRunArgs;
@@ -3408,6 +3412,8 @@ export function createThreadClaimRunObjects(
     }
     return {
       ...input.runner,
+      workflowAutomationId:
+        input.args.agentRunMetadata?.workflowAutomationId ?? null,
       run: {
         id: identity.runId,
       },
@@ -3753,7 +3759,24 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const contextDraft = claimRunStoredContextDraft(runnerInput, encrypted);
+      const invokedWorkflowId =
+        runnerInput && !isRouteError(runnerInput)
+          ? await set(
+              captureInvokedWorkflow$,
+              {
+                agentId: runnerInput.args.resolved.agentId,
+                userId: runnerInput.args.userId,
+                orgId: runnerInput.args.orgId,
+                prompt: runnerInput.body.prompt,
+              },
+              signal,
+            )
+          : null;
+      const contextDraft = claimRunStoredContextDraft(
+        runnerInput,
+        encrypted,
+        invokedWorkflowId,
+      );
       return {
         kind: "prepared" as const,
         resources: [
@@ -5097,6 +5120,7 @@ function claimRunStoredContextDraft<
 >(
   input: RunnerInputResult,
   encrypted: TEncrypted | CreateRunErrorResult | null | undefined,
+  invokedWorkflowId: string | null,
 ) {
   if (!input || isRouteError(input)) {
     return input;
@@ -5111,14 +5135,32 @@ function claimRunStoredContextDraft<
       body,
       platformEnvironment,
       runId: args.run.id,
+      workflowAutomationId: args.workflowAutomationId,
+      invokedWorkflowId,
     },
     encrypted.encryptedSecrets,
   );
 }
 
+function protectedWorkflowMountPaths(
+  volumes: readonly AgentRunCreateAdditionalVolume[] | undefined,
+  sources: AdditionalVolumeSources,
+) {
+  return (volumes ?? []).flatMap((volume, index) => {
+    const source = sources?.[index];
+    return source === "official_workflow" ||
+      source === "request_additional_volume" ||
+      source === "unknown"
+      ? [volume.mountPath]
+      : [];
+  });
+}
+
 function buildStoredExecutionContextDraft(
   args: {
     readonly runId: string;
+    readonly workflowAutomationId: string | null;
+    readonly invokedWorkflowId: string | null;
     readonly userId: string;
     readonly orgId: string;
     readonly chatThreadId: string | undefined;
@@ -5134,6 +5176,7 @@ function buildStoredExecutionContextDraft(
     readonly apiStartTime: number | undefined;
     readonly additionalVolumes:
       readonly AgentRunCreateAdditionalVolume[] | undefined;
+    readonly additionalVolumeSources: AdditionalVolumeSources;
     readonly platformEnvironment: Record<string, string> | undefined;
     readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
@@ -5193,10 +5236,21 @@ function buildStoredExecutionContextDraft(
   return {
     context: {
       environment,
-      // Invocation identity remains in the Run's workflowAutomationId; names
-      // and content are not frozen by this API-only discovery selector.
+      // Capture invocation identity and mount precedence, never Workflow content.
       ...(args.resolved.agentId !== null
-        ? { customWorkflowSelection: { agentId: args.resolved.agentId } }
+        ? {
+            customWorkflowSelection: {
+              agentId: args.resolved.agentId,
+              invokedWorkflowId: args.invokedWorkflowId,
+              ...(args.workflowAutomationId === null
+                ? {}
+                : { automationId: args.workflowAutomationId }),
+              protectedMountPaths: protectedWorkflowMountPaths(
+                args.additionalVolumes,
+                args.additionalVolumeSources,
+              ),
+            },
+          }
         : {}),
       platformEnvironment,
       secretValueEnvironmentKeys,
@@ -5266,6 +5320,7 @@ interface BuildRunnerJobPayloadInput {
   readonly capturedStorageMounts?: readonly PersistedStorageMount[];
   readonly deferredPiResources?: PreparedPiLaunchResources;
   readonly run: Pick<RunRecord, "id">;
+  readonly workflowAutomationId: string | null;
   readonly userId: string;
   readonly orgId: string;
   readonly resolved: ResolvedRunExecution;

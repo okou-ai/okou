@@ -69,6 +69,7 @@ public actor HostRuntime {
   }
   private var connection: Connection?
   private var heartbeatTask: Task<Void, Never>?
+  private var heartbeatDiagnostics = HeartbeatDiagnostics()
   private var notificationTask: Task<Void, Never>?
   private var notificationStops = 0
   private var drainTask: Task<Void, Never>?
@@ -113,11 +114,11 @@ public actor HostRuntime {
   }
   private func request(
     _ route: ApiRoute, connection: Connection, body: JSONValue, timeout: TimeInterval,
-    generation current: Int
+    generation current: Int, trace: APIRequestTrace? = nil
   ) async throws -> APIResponse {
     let provider = tokenProvider
     return try await api.authenticatedRequest(
-      route, body: connection.body(body), timeout: timeout,
+      route, body: connection.body(body), timeout: timeout, trace: trace,
       tokenProvider: { forceRefresh in
         let token = try await provider(forceRefresh)
         try await self.checkGeneration(current)
@@ -256,6 +257,7 @@ public actor HostRuntime {
     generation += 1
     heartbeatTask?.cancel()
     heartbeatTask = nil
+    heartbeatDiagnostics.finish(outcome: .stopped)
     if let connection {
       do {
         let response = try await api.authenticatedRequest(
@@ -288,19 +290,22 @@ public actor HostRuntime {
     var attempt = 0
     var wait: Double = 2
     while running && generation == current {
+      let trace = APIRequestTrace()
       do {
         try await Task.sleep(for: .seconds(wait))
         try Task.checkCancellation()
         guard running, generation == current else { return }
         let response = try await request(
           connection.heartbeat, connection: connection, body: await body(), timeout: 10,
-          generation: current)
+          generation: current, trace: trace)
+        let requests = await trace.snapshot()
         guard running, generation == current else { return }
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Heartbeat failed (HTTP \(response.status))")
         }
         let heartbeat = try response.decode(ComputerUseHostHeartbeat.self)
+        heartbeatDiagnostics.finish(outcome: .recovered, requests: requests)
         state.lastHeartbeat = Date()
         if acceptingCommands { state.status = "online" }
         state.lastError = nil
@@ -313,10 +318,13 @@ public actor HostRuntime {
         }
         await publish()
       } catch is CancellationError { return } catch {
+        let requests = await trace.snapshot()
         guard running, generation == current else { return }
         if await rejectAuthentication(error) { return }
         attempt += 1
         wait = delay(attempt)
+        heartbeatDiagnostics.failed(
+          error: error, requests: requests, retryDelay: wait)
         await recover(error, attempt: attempt)
       }
     }
@@ -325,6 +333,7 @@ public actor HostRuntime {
     guard let failure = error as? DesktopFailure, failure.code == "unauthenticated" else {
       return false
     }
+    heartbeatDiagnostics.finish(outcome: .authorityRejected)
     running = false
     acceptingCommands = false
     await executor.stop()
@@ -337,6 +346,7 @@ public actor HostRuntime {
   }
   private func rejectAuthority(_ response: APIResponse) async -> Bool {
     guard [401, 403, 409, 426].contains(response.status) else { return false }
+    heartbeatDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
     if response.status == 426 {
       // Close admission without invalidating completion reports for claimed work.
       acceptingCommands = false

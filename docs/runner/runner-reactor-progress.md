@@ -39,10 +39,20 @@ Persistence timeouts do not bound a wait that happens before persistence starts.
 | Routine home-cache GC          | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup and completion-marker cadence.                                                                                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                                   |
 | Poll wakeups                   | Short synchronous mutex sections protect only in-memory scheduling state. No I/O, await, or long nested work is permitted under this lock.                                                                                                 | Notification registration before state recheck, generation fencing, deferred-poll caps, and cancellation remain unchanged.                                                                                                                                                                                                                                                                          |
 
-Task join failures stop the reactor through its existing lifecycle and common
+Required task join failures stop the reactor through its existing lifecycle and common
 teardown path and are returned as terminal errors. Ordinary optional GC or status
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
+
+Memory-triggered idle maintenance has one independently scheduled observation or
+cleanup at a time. It accepts selected cleanup with `IdleDestroyTracker` before
+awaiting status publication, then observes the original backing's exit and reads
+availability again after completion. Normal teardown joins this owner before
+dependent idle/cache/factory teardown. Unknown observations suspend optional
+preparation; an uncertain cleanup or lost maintenance producer fences further
+pressure maintenance while foreground work continues. Returned uncertain cleanup
+retains its full logical lease until owner teardown. These scheduling outcomes
+provide no predicted physical-memory credit.
 
 ## Startup-fact delivery
 

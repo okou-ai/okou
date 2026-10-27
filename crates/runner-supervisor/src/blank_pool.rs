@@ -324,6 +324,11 @@ impl BlankPoolReplenisher {
         if mode == RunnerMode::Running {
             return;
         }
+        self.cancel_preparation();
+    }
+
+    /// Suppress accepted optional preparation through its existing cleanup owner.
+    pub(crate) fn cancel_preparation(&self) {
         if let Some(preparation) = self.preparation.as_ref() {
             self.diagnostics.unknown();
             preparation.cancel();
