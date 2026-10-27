@@ -582,6 +582,8 @@ export const inviteMember$ = command(
         fetchOptions: { signal },
       }),
       [200],
+      signal,
+      { expectedErrors: { 409: ["INVITEE_ALREADY_MEMBER"] } },
     );
     signal.throwIfAborted();
     toast.success(
