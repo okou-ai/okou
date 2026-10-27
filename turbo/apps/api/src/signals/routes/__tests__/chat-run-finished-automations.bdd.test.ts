@@ -591,13 +591,8 @@ describe("chat-run-finished workflow automations", () => {
       if (!automationRunId) {
         throw new Error("Expected a triggered automation run");
       }
-      const claimed = await api.requestClaimRunnerJob(
-        true,
-        automationRunId,
-        [200],
-      );
-      ownedRuns.rememberClaim(automationRunId, claimed.body.sandboxToken);
-      expect(claimed.body.prompt).toContain('"failureReason": null');
+      const claimed = await ownedRuns.claim(automationRunId);
+      expect(claimed.prompt).toContain('"failureReason": null');
     },
   );
 
@@ -764,14 +759,9 @@ describe("chat-run-finished workflow automations", () => {
         automationId,
         sourceRun,
       );
-      const claimed = await api.requestClaimRunnerJob(
-        true,
-        recovery.runId,
-        [200],
-      );
-      ownedRuns.rememberClaim(recovery.runId, claimed.body.sandboxToken);
-      expect(claimed.body.prompt).toContain('"runStatus": "failed"');
-      expect(claimed.body.prompt).toContain(
+      const claimed = await ownedRuns.claim(recovery.runId);
+      expect(claimed.prompt).toContain('"runStatus": "failed"');
+      expect(claimed.prompt).toContain(
         `"failureReason": ${JSON.stringify(expectedReason)}`,
       );
     },
@@ -810,14 +800,9 @@ describe("chat-run-finished workflow automations", () => {
         automationId,
         sourceRun,
       );
-      const claimed = await api.requestClaimRunnerJob(
-        true,
-        recovery.runId,
-        [200],
-      );
-      ownedRuns.rememberClaim(recovery.runId, claimed.body.sandboxToken);
-      expect(claimed.body.prompt).toContain('"runStatus": "cancelled"');
-      expect(claimed.body.prompt).toContain('"failureReason": null');
+      const claimed = await ownedRuns.claim(recovery.runId);
+      expect(claimed.prompt).toContain('"runStatus": "cancelled"');
+      expect(claimed.prompt).toContain('"failureReason": null');
     },
   );
 });
