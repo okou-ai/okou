@@ -45,12 +45,10 @@ export const dataRouterToolsPageSchema = object({
   tools: array(dataRouterToolSchema),
   nextCursor: string().optional(),
   _meta: object({
-    "ai.okou/data": object({ families: array(dataRouterFamilySchema) })
-      .catchall(zUnknown())
-      .optional(),
-  })
-    .catchall(zUnknown())
-    .optional(),
+    "ai.okou/data": object({
+      families: array(dataRouterFamilySchema),
+    }).catchall(zUnknown()),
+  }).catchall(zUnknown()),
 });
 export type DataRouterTool = zInfer<typeof dataRouterToolSchema>;
 export type DataRouterFamily = zInfer<typeof dataRouterFamilySchema>;

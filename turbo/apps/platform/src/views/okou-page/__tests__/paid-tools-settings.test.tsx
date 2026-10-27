@@ -283,6 +283,17 @@ test.each([
                   _meta: { "ai.okou/data": { family: "future-family" } },
                 },
               ],
+              _meta: {
+                "ai.okou/data": {
+                  families: [
+                    {
+                      id: "future-family",
+                      title: { "en-US": title },
+                      description: { "en-US": "Researches new sources." },
+                    },
+                  ],
+                },
+              },
             }
           : {
               tools: [],

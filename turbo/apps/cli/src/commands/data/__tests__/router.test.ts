@@ -21,6 +21,7 @@ import {
 } from "zod";
 import {
   DATA_ROUTER_PROTOCOL_VERSION,
+  type DataRouterFamily,
   type DataRouterTool,
 } from "@okouai/api-contracts/contracts/data-router-tools";
 import { server } from "../../../mocks/server";
@@ -59,7 +60,7 @@ const rpcSchema = object({
 let pages: {
   tools: DataRouterTool[];
   nextCursor?: string;
-  _meta?: Record<string, unknown>;
+  _meta: { "ai.okou/data": { families: DataRouterFamily[] } };
 }[];
 let methods: string[];
 let calls: unknown[];
@@ -89,7 +90,12 @@ describe("Data Router discovery and JSON calls", () => {
     vi.stubEnv("OKOU_DATA_ROUTER_URL", endpoint);
     vi.stubEnv("OKOU_DISABLED_PAID_TOOLS", "[]");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    pages = [{ tools: [futureTool] }];
+    pages = [
+      {
+        tools: [futureTool],
+        _meta: { "ai.okou/data": { families: [] } },
+      },
+    ];
     methods = [];
     calls = [];
     returnedBody = { newField: [null, true, { count: 2 }] };
@@ -249,6 +255,7 @@ describe("Data Router discovery and JSON calls", () => {
             },
           },
         ],
+        _meta: { "ai.okou/data": { families: [] } },
       },
     ];
     const ownedId = "00000000-0000-4000-8000-000000000001";

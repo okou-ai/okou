@@ -54,7 +54,7 @@ async function readDataRouterFamilies(
         listed.add(family);
       }
     }
-    for (const family of page._meta?.["ai.okou/data"]?.families ?? []) {
+    for (const family of page._meta["ai.okou/data"].families) {
       if (!families.has(family.id)) {
         families.set(family.id, family);
       }
