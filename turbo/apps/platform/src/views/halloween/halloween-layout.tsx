@@ -43,6 +43,25 @@ export const goldButton = cn(
   typography.labelClassName,
 );
 
+function HalloweenBrand() {
+  return (
+    <Link
+      pathname="/"
+      aria-label={copy.brand}
+      className="flex h-8 shrink-0 items-center transition-opacity hover:opacity-75"
+    >
+      <img
+        src={platformOkouWordmarkLightImg}
+        alt=""
+        aria-hidden
+        width={91}
+        height={24}
+        className="h-6 w-[91px]"
+      />
+    </Link>
+  );
+}
+
 export function HalloweenHeader({
   embedded = false,
 }: {
@@ -58,25 +77,18 @@ export function HalloweenHeader({
   const [operation, leave] = useLoadableSet(leaveHalloween$);
   const playing = screen === "question";
   return (
-    <header className="relative z-20 flex min-h-[76px] shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-5 py-4 text-[#eef1f5] md:px-12">
-      <Link
-        pathname="/"
-        aria-label={copy.brand}
-        className="flex h-8 shrink-0 items-center transition-opacity hover:opacity-75"
-      >
-        <img
-          src={platformOkouWordmarkLightImg}
-          alt=""
-          aria-hidden
-          width={91}
-          height={24}
-          className="h-6 w-[91px]"
-        />
-      </Link>
+    <header
+      className={cn(
+        "relative z-20 flex min-h-[76px] shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-5 py-4 text-[#eef1f5] md:px-12",
+        embedded && "px-4 md:px-8",
+      )}
+    >
+      <HalloweenBrand />
       <div
         className={cn(
           "ml-auto flex max-w-[74%] flex-wrap items-center justify-end gap-x-3 gap-y-2 md:max-w-none md:gap-5",
           typography.labelClassName,
+          embedded && "max-w-none flex-nowrap gap-x-2 md:gap-4",
         )}
       >
         <span className="hidden text-[#c5cfdd] md:inline">
@@ -95,6 +107,7 @@ export function HalloweenHeader({
             className={cn(
               "h-8 gap-1 p-0 text-[#aebcd0] hover:bg-transparent hover:text-[#e8c68d]",
               typography.labelClassName,
+              embedded && "hidden md:inline-flex",
             )}
             onClick={() => {
               detach(leave(signal), Reason.DomCallback);

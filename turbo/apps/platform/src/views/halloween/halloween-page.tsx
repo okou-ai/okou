@@ -22,7 +22,7 @@ import {
 import { HalloweenResultScreen } from "./halloween-result.tsx";
 import { halloweenTypography as typography } from "./halloween-typography.ts";
 
-function StartScreen() {
+function StartScreen({ embedded }: { readonly embedded: boolean }) {
   const phase = useGet(halloweenPhase$);
   const signal = useGet(pageSignal$);
   const [operation, start] = useLoadableSet(startHalloween$);
@@ -45,6 +45,7 @@ function StartScreen() {
         className={cn(
           "mb-9 max-w-[900px] text-balance text-[#f6f3ed]",
           typography.titleClassName,
+          embedded && "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
         )}
       >
         {open ? (
@@ -137,11 +138,11 @@ export function HalloweenPage({
       {screen !== "result" && <HalloweenStage />}
       <HalloweenHeader embedded={embedded} />
       {screen === "question" ? (
-        <HalloweenQuestionScreen />
+        <HalloweenQuestionScreen embedded={embedded} />
       ) : screen === "result" ? (
         <HalloweenResultScreen />
       ) : (
-        <StartScreen />
+        <StartScreen embedded={embedded} />
       )}
       <HalloweenFooter />
       <HalloweenRules />

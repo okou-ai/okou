@@ -131,7 +131,11 @@ function AnswerOptions({
   );
 }
 
-export function HalloweenQuestionScreen() {
+export function HalloweenQuestionScreen({
+  embedded = false,
+}: {
+  readonly embedded?: boolean;
+}) {
   const round = useGet(halloweenRound$);
   const signal = useGet(pageSignal$);
   const [answerOperation, answer] = useLoadableSet(answerHalloween$);
@@ -143,7 +147,12 @@ export function HalloweenQuestionScreen() {
   const busy =
     answerOperation.state === "loading" || nextOperation.state === "loading";
   return (
-    <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14">
+    <main
+      className={cn(
+        "relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14",
+        embedded && "gap-6 py-6 pb-8 md:py-10",
+      )}
+    >
       <div className="min-w-0 text-center">
         <p className={cn("mb-5 text-[#b5a07e]", typography.labelClassName)}>
           {copy.round} {String(round.questionNumber).padStart(2, "0")} ·{" "}
@@ -156,6 +165,8 @@ export function HalloweenQuestionScreen() {
           className={cn(
             "mx-auto mb-9 max-w-[640px] text-balance text-[#f4f1eb] outline-none",
             typography.titleClassName,
+            embedded &&
+              "mb-7 text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
           )}
         >
           {round.question.text}
