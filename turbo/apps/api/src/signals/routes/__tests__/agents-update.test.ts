@@ -15,6 +15,7 @@ import {
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { createStore } from "ccstate";
 
+import { mockNow } from "../../../lib/time";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
@@ -159,7 +160,9 @@ describe("PUT /api/agents/:id", () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {
       displayName: "Old Agent",
+      description: "Retained description",
       sound: "calm",
+      avatarUrl: "preset:4",
     });
 
     const response = await accept(
@@ -177,7 +180,9 @@ describe("PUT /api/agents/:id", () => {
       agentId: agent.agentId,
       ownerId: user.userId,
       displayName: "Updated Agent",
+      description: "Retained description",
       sound: "calm",
+      avatarUrl: "preset:4",
       visibility: "public",
     });
 
@@ -208,38 +213,45 @@ describe("PUT /api/agents/:id", () => {
     expect(response.body.description).toBe("Updated description");
   });
 
-  it("allows an owner member to update their own agent", async () => {
-    const user = newOrgUser();
-    const agent = await createAgentAs(user, {
-      displayName: "Member Agent",
-    });
-    mocks.clerk.session(user.userId, user.orgId, "org:member");
+  it.each(["public", "private"] as const)(
+    "allows an owner member to update their own %s agent",
+    async (visibility) => {
+      const user = newOrgUser();
+      const agent = await createAgentAs(user, {
+        displayName: "Member Agent",
+        visibility,
+      });
+      mocks.clerk.session(user.userId, user.orgId, "org:member");
 
-    const response = await accept(
-      agentsClient().update({
-        params: { id: agent.agentId },
-        headers: authHeaders(),
-        body: { displayName: "Member Updated" },
-      }),
-      [200],
-    );
+      const response = await accept(
+        agentsClient().update({
+          params: { id: agent.agentId },
+          headers: authHeaders(),
+          body: { displayName: "Member Updated" },
+        }),
+        [200],
+      );
 
-    expect(response.body).toMatchObject({
-      agentId: agent.agentId,
-      ownerId: user.userId,
-      displayName: "Member Updated",
-    });
-  });
+      expect(response.body).toMatchObject({
+        agentId: agent.agentId,
+        ownerId: user.userId,
+        displayName: "Member Updated",
+        visibility,
+      });
+    },
+  );
   it("returns 403 when a non-owner member updates another user's agent", async () => {
     const user = newOrgUser();
-    const agent = await createAgentAs(user);
+    const agent = await createAgentAs(user, {
+      description: "Retained configuration",
+    });
     mocks.clerk.session(`user_${randomUUID()}`, user.orgId, "org:member");
 
     const response = await accept(
       agentsClient().update({
         params: { id: agent.agentId },
         headers: authHeaders(),
-        body: { displayName: "Nope" },
+        body: { displayName: "Nope", description: "Rejected\0configuration" },
       }),
       [403],
     );
@@ -251,6 +263,15 @@ describe("PUT /api/agents/:id", () => {
         code: "FORBIDDEN",
       },
     });
+    mocks.clerk.session(user.userId, user.orgId);
+    const current = await accept(
+      agentsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(current.body.description).toBe("Retained configuration");
   });
 
   it("returns 404 for an unknown agent", async () => {
@@ -270,6 +291,208 @@ describe("PUT /api/agents/:id", () => {
     expect(response.body).toStrictEqual({
       error: { message: `Agent not found: ${agentId}`, code: "NOT_FOUND" },
     });
+  });
+
+  it.each(["public", "private"] as const)(
+    "applies administrator configuration permissions to another owner's %s agent",
+    async (visibility) => {
+      const owner = newOrgUser();
+      const agent = await createAgentAs(owner, {
+        description: "Original configuration",
+        visibility,
+      });
+      mocks.clerk.session(`user_${randomUUID()}`, owner.orgId, "org:admin");
+      const response = await accept(
+        agentsClient().update({
+          params: { id: agent.agentId },
+          headers: authHeaders(),
+          body: { description: "Administrator configuration" },
+        }),
+        [200, 403],
+      );
+      expect(response.status).toBe(visibility === "public" ? 200 : 403);
+      mocks.clerk.session(owner.userId, owner.orgId);
+      const current = await accept(
+        agentsClient().get({
+          params: { id: agent.agentId },
+          headers: authHeaders(),
+        }),
+        [200],
+      );
+      expect(current.body.description).toBe(
+        visibility === "public"
+          ? "Administrator configuration"
+          : "Original configuration",
+      );
+    },
+  );
+
+  it("rejects an administrator visibility request before admitting its text", async () => {
+    const owner = newOrgUser();
+    const agent = await createAgentAs(owner, {
+      description: "Retained description",
+    });
+    mocks.clerk.session(`user_${randomUUID()}`, owner.orgId, "org:admin");
+    const response = await accept(
+      agentsClient().update({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+        body: { visibility: "public", description: "Rejected\0description" },
+      }),
+      [403],
+    );
+    expect(response.body.error.message).toBe(
+      "Only the agent owner can update agent visibility",
+    );
+    mocks.clerk.session(owner.userId, owner.orgId);
+    const current = await accept(
+      agentsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      visibility: "public",
+      description: "Retained description",
+    });
+  });
+
+  it("keeps default configuration and its permission-error precedence", async () => {
+    const owner = newOrgUser();
+    mocks.clerk.session(owner.userId, owner.orgId, "org:admin");
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.test/default-agent.tar.gz?signature=test",
+    );
+    const onboarding = await accept(
+      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+      [200],
+    );
+    const agentId = onboarding.body.defaultAgentId;
+    if (!agentId) {
+      throw new Error("Expected onboarding to create a default Agent");
+    }
+    const before = await accept(
+      agentsClient().get({ params: { id: agentId }, headers: authHeaders() }),
+      [200],
+    );
+    for (const body of [{ description: "Rejected\0configuration" }, {}]) {
+      const response = await accept(
+        agentsClient().update({
+          params: { id: agentId },
+          headers: authHeaders(),
+          body,
+        }),
+        [400],
+      );
+      expect(response.body.error.code).toBe("DEFAULT_AGENT_READ_ONLY");
+    }
+    mocks.clerk.session(`user_${randomUUID()}`, owner.orgId, "org:member");
+    const forbidden = await accept(
+      agentsClient().update({
+        params: { id: agentId },
+        headers: authHeaders(),
+        body: { description: "Rejected\0configuration" },
+      }),
+      [403],
+    );
+    expect(forbidden.body.error.code).toBe("FORBIDDEN");
+    mocks.clerk.session(owner.userId, owner.orgId);
+    const after = await accept(
+      agentsClient().get({ params: { id: agentId }, headers: authHeaders() }),
+      [200],
+    );
+    expect(after.body).toStrictEqual(before.body);
+  });
+
+  it("keeps private configuration when the public limit rejects promotion", async () => {
+    const owner = newOrgUser();
+    for (let index = 0; index < 7; index += 1) {
+      await createAgentAs(owner, { visibility: "public" });
+    }
+    const agent = await createAgentAs(owner, {
+      visibility: "private",
+      description: "Retained private configuration",
+    });
+    await accept(
+      agentsClient().update({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+        body: { visibility: "public", description: "Rejected\0promotion" },
+      }),
+      [409],
+    );
+    const current = await accept(
+      agentsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      visibility: "private",
+      description: "Retained private configuration",
+    });
+  });
+
+  it("lets the owner publish and demote an Agent with its other configuration", async () => {
+    const owner = newOrgUser();
+    const agent = await createAgentAs(owner, {
+      visibility: "private",
+      displayName: "Custom Agent",
+    });
+    for (const visibility of ["public", "private"] as const) {
+      const response = await accept(
+        agentsClient().update({
+          params: { id: agent.agentId },
+          headers: authHeaders(),
+          body: { visibility, description: `${visibility} configuration` },
+        }),
+        [200],
+      );
+      expect(response.body).toMatchObject({
+        agentId: agent.agentId,
+        isDefaultAgent: false,
+        displayName: "Custom Agent",
+        visibility,
+        description: `${visibility} configuration`,
+      });
+      const current = await accept(
+        agentsClient().get({
+          params: { id: agent.agentId },
+          headers: authHeaders(),
+        }),
+        [200],
+      );
+      expect(current.body).toStrictEqual(response.body);
+    }
+  });
+
+  it("orders a saved Agent using the application clock", async () => {
+    const owner = newOrgUser();
+    mockNow(new Date("2030-10-27T00:00:00.123Z"));
+    const first = await createAgentAs(owner, { displayName: "First" });
+    mockNow(new Date("2030-10-27T00:01:00.456Z"));
+    const second = await createAgentAs(owner, { displayName: "Second" });
+    mockNow(new Date("2030-10-27T00:02:00.789Z"));
+    await accept(
+      agentsClient().update({
+        params: { id: first.agentId },
+        headers: authHeaders(),
+        body: { description: "Most recently saved" },
+      }),
+      [200],
+    );
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(
+      listed.body.map((agent) => {
+        return agent.agentId;
+      }),
+    ).toStrictEqual([first.agentId, second.agentId]);
   });
 });
 

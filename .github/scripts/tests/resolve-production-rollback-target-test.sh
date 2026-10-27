@@ -28,7 +28,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "7171717171717171717171717171717171717171" ]; then
+    if [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
+      [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7171717171717171717171717171717171717171" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID:-1}" = "1" ]
       else
@@ -430,6 +432,16 @@ assert_failure() {
   fi
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
+
+# Outgoing configuration requests must not overlap a rollback that can adopt
+# already-visible custom Agents as the workspace default.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates immutable default Agent identity" \
+  run_resolver "${tmp_dir}/immutable-default-agent.output" MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID=0
+[ ! -s "${tmp_dir}/immutable-default-agent.output" ] || fail "mutable default Agent API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "mutable default Agent API must fail before provider or host access"
+fi
 
 # The prepared API reader is required even when the rollback selects an older
 # Runner, because a larger current Runner may still own claimed/finalizing work.
