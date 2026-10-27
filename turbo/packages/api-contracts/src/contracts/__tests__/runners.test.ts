@@ -1369,7 +1369,7 @@ describe("runner reuse preference contract", () => {
         homeAffinityVersion: 1 as const,
       };
     });
-    const heldHomeStates = Array.from({ length: 128 }, (_, index) => {
+    const heldHomeStates = Array.from({ length: 512 }, (_, index) => {
       return {
         reuseKey: `thread:${index}`,
         lastCompletedAt: "2026-07-15T00:00:00.000Z",
