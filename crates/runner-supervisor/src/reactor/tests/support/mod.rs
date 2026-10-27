@@ -32,3 +32,14 @@ pub(super) use self::wait::{
     wait_home_cache_reuse_keys, wait_idle_pool_len, wait_idle_pool_reuse_keys, wait_parking_state,
     wait_sandbox_lifecycle_counts, wait_usage_flush_requested,
 };
+pub(in super::super) struct FileMemorySource(pub(in super::super) std::path::PathBuf);
+
+impl runner_lifecycle::host_memory_operations::MemoryObservationSource for FileMemorySource {
+    fn observe(
+        &self,
+    ) -> futures_util::future::BoxFuture<'_, runner_host::host_memory::HostMemoryObservation> {
+        Box::pin(runner_host::host_memory::HostMemoryObservation::read_at(
+            &self.0,
+        ))
+    }
+}
