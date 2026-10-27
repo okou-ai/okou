@@ -160,6 +160,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     let item = NSToolbarItem(itemIdentifier: itemIdentifier)
     item.label = "Okou"
     item.view = container
+    // Keep the decorative wordmark off the toolbar's automatic Liquid Glass background.
+    item.isBordered = false
     return item
   }
   func windowDidUpdate(_ notification: Notification) {
