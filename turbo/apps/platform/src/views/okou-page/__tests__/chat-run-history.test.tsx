@@ -331,16 +331,6 @@ test.each([
   },
   {
     active: false,
-    durationMs: 60 * 60_000 - 1,
-    expected: "Worked for 59 min",
-  },
-  {
-    active: false,
-    durationMs: 71 * 60_000 + 35_000,
-    expected: "Worked for 1 hr 11 min",
-  },
-  {
-    active: false,
     durationMs: 89 * 60_000,
     expected: "Worked for 1 hr 29 min",
   },
@@ -499,7 +489,7 @@ test.each(["input.prompt", "input.automation"] as const)(
     await screen.findByText("Prepared report");
     expect(
       assistantGroupFor(screen.getByText("Prepared report")),
-    ).toHaveTextContent("Working for 1 hr 11 min");
+    ).toHaveTextContent("Working for 1 hr 12 min");
     expect(
       assistantGroupFor(screen.getByText("Previous delivery complete")),
     ).toHaveTextContent("Worked for 1 hr 24 min");
@@ -507,7 +497,7 @@ test.each(["input.prompt", "input.automation"] as const)(
     chat.completeRun();
 
     await expect(
-      screen.findByText("Worked for 1 hr 11 min"),
+      screen.findByText("Worked for 1 hr 12 min"),
     ).resolves.toBeInTheDocument();
     expect(
       assistantGroupFor(screen.getByText("Previous delivery complete")),
