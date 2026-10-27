@@ -57,7 +57,6 @@ const SKILL_NAME = "weekly-report";
 /** A skill on another agent, which this step is not importing into. */
 const OTHER_AGENT_SKILL = "Someone else's skill";
 
-/** One connected source, which every step after the source step requires. */
 function mockConnectedSource(): void {
   mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
 }
