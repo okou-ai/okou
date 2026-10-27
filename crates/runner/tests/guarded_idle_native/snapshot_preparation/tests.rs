@@ -323,6 +323,37 @@ fn record_reader_refuses_tampering_nonregular_and_duplicate_evidence() -> TestRe
 }
 
 #[test]
+fn record_reader_requires_a_positive_numeric_start_clock() -> TestResult<()> {
+    let fixture = Fixture::new()?;
+    let creation = fixture.capture()?;
+    fixture.output()?;
+    creation.publish()?;
+    let mut artifacts = fixture.artifacts()?;
+    let mut value: serde_json::Value = serde_json::from_slice(&std::fs::read(fixture.record())?)?;
+
+    // Keep the type and digest valid so only the semantic zero-clock guard
+    // distinguishes rejection from the positive control.
+    for started_unix_ns in [1_u64, 0] {
+        value["started_unix_ns"] = started_unix_ns.into();
+        let raw = serde_json::to_vec(&value)?;
+        let record: Record = serde_json::from_slice(&raw)?;
+        assert_eq!(record.started_unix_ns, u128::from(started_unix_ns));
+        std::fs::write(fixture.record(), &raw)?;
+        artifacts.snapshot_preparation_sha256 = hex::encode(Sha256::digest(&raw));
+        let result = verify_record(&fixture.config.output_dir, &artifacts);
+        if started_unix_ns == 0 {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "snapshot preparation input/output binding mismatch"
+            );
+        } else {
+            result?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn record_reader_rejects_invalid_format_boot_and_observation_clocks() -> TestResult<()> {
     for (field, item) in [
         ("format", serde_json::json!("unobserved-v0")),
