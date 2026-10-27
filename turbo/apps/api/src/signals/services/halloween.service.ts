@@ -5,12 +5,13 @@ import {
   halloweenStoredQuestionsSchema,
   type HalloweenStoredQuestions,
 } from "@okouai/db/jsonb-contracts/halloween";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { authContext$ } from "../auth/auth-context";
+import { db$, writeDb$ } from "../external/db";
 import { HALLOWEEN_QUESTION_BANK } from "./halloween-question-bank";
 
 function roundSelection() {
@@ -120,30 +121,25 @@ const receipt = (row: StoredRound) => {
   };
 };
 
-export const getCurrentHalloweenRound$ = command(
-  async ({ set }, userId: string, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const [row] = await db
-      .select(roundSelection())
-      .from(halloweenRounds)
-      .where(eq(halloweenRounds.userId, userId))
-      .orderBy(desc(halloweenRounds.startedAt), desc(halloweenRounds.id))
-      .limit(1);
-    signal.throwIfAborted();
-    return row && row.outcome !== "left" && row.outcome !== "interrupted"
-      ? receipt(row)
-      : notFound("Game result not found");
-  },
-);
+export const currentHalloweenRound$ = computed(async (get) => {
+  const db = get(db$);
+  const userId = get(authContext$).userId;
+  const [row] = await db
+    .select(roundSelection())
+    .from(halloweenRounds)
+    .where(eq(halloweenRounds.userId, userId))
+    .orderBy(desc(halloweenRounds.startedAt), desc(halloweenRounds.id))
+    .limit(1);
+  return row && row.outcome !== "left" && row.outcome !== "interrupted"
+    ? receipt(row)
+    : notFound("Game result not found");
+});
 
 export const startHalloweenRound$ = command(
-  async ({ set }, input: NewRound, signal: AbortSignal) => {
+  async ({ get, set }, input: NewRound, signal: AbortSignal) => {
     if (!input.restart) {
-      const current = await set(
-        getCurrentHalloweenRound$,
-        input.userId,
-        signal,
-      );
+      const current = await get(currentHalloweenRound$);
+      signal.throwIfAborted();
       if (current.status === 200) {
         return current;
       }

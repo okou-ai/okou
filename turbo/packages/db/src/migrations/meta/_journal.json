@@ -2773,6 +2773,13 @@
       "when": 1793088722850,
       "tag": "1470_halloween_account_rounds",
       "breakpoints": true
+    },
+    {
+      "idx": 1471,
+      "version": "7",
+      "when": 1793093190294,
+      "tag": "1471_retire_halloween_anonymous_round_columns",
+      "breakpoints": true
     }
   ]
 }

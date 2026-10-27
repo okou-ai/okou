@@ -210,20 +210,7 @@ test("restores a completed result until the user plays again", async () => {
   await within(dialog).findByRole("heading", { name: question.text });
 });
 
-test("keeps server copy for a question introduced by a newer API", async () => {
-  const serverQuestion = {
-    id: "QUIZ-54",
-    text: "A question from a newer API",
-    options: [
-      { id: "A", text: "First new option" },
-      { id: "B", text: "Second new option" },
-      { id: "C", text: "Third new option" },
-    ],
-  };
-  context.store.set(currentRound$, {
-    ...round(roundIds[0]!),
-    question: serverQuestion,
-  });
+test("keeps the current question when leaving the round fails", async () => {
   await setupPage({ context, path: "/", featureSwitches: switches });
   const entry = await waitFor(() => {
     return button("Play the Halloween quiz");
@@ -232,8 +219,18 @@ test("keeps server copy for a question introduced by a newer API", async () => {
   const dialog = await screen.findByRole("dialog", {
     name: "Spooky Halloween",
   });
-  await within(dialog).findByRole("heading", { name: serverQuestion.text });
-  expect(button(/First new option/, dialog)).toBeInTheDocument();
+  click(button("Let’s play", dialog));
+  await within(dialog).findByRole("heading", { name: question.text });
+  context.mocks.api(halloweenContract.leave, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Leave request failed" },
+    });
+  });
+  click(button("Leave quiz", dialog));
+  await screen.findByText("Leave request failed");
+  expect(
+    within(dialog).getByRole("heading", { name: question.text }),
+  ).toBeInTheDocument();
 });
 
 test("rules open over the quiz and return to the same answer and feedback", async () => {

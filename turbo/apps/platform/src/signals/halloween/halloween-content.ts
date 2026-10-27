@@ -312,15 +312,27 @@ function isHalloweenOptionId(value: string): value is HalloweenOptionId {
   return value === "A" || value === "B" || value === "C";
 }
 
+function assertHalloweenQuestionId(
+  value: string,
+): asserts value is HalloweenQuestionId {
+  if (!isHalloweenQuestionId(value)) {
+    throw new Error(`Unsupported Halloween question: ${value}`);
+  }
+}
+
+function assertHalloweenOptionId(
+  value: string,
+): asserts value is HalloweenOptionId {
+  if (!isHalloweenOptionId(value)) {
+    throw new Error(`Unsupported Halloween answer option: ${value}`);
+  }
+}
+
 function localizeQuestion(
   t: TFunction<"common">,
   question: HalloweenQuestion,
 ): HalloweenQuestion {
-  if (!isHalloweenQuestionId(question.id)) {
-    // API and App deploy independently. Preserve server copy if a newer API
-    // introduces a question before this App knows its translation key.
-    return question;
-  }
+  assertHalloweenQuestionId(question.id);
   const questionId = question.id;
   return {
     ...question,
@@ -328,9 +340,7 @@ function localizeQuestion(
       return $.halloween.questions[questionId].text;
     }),
     options: question.options.map((option) => {
-      if (!isHalloweenOptionId(option.id)) {
-        return option;
-      }
+      assertHalloweenOptionId(option.id);
       const optionId = option.id;
       return {
         ...option,
@@ -346,9 +356,10 @@ export function useLocalizedHalloweenRound(
   round: HalloweenRound | null,
 ): HalloweenRound | null {
   const { t } = useTranslation();
-  if (!round?.question || !isHalloweenQuestionId(round.question.id)) {
+  if (!round?.question) {
     return round;
   }
+  assertHalloweenQuestionId(round.question.id);
   const questionId = round.question.id;
   return {
     ...round,

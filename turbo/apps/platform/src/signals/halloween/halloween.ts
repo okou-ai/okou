@@ -8,7 +8,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { detach, Reason, settle, setLoop, resetSignal } from "../utils.ts";
+import { detach, Reason, setLoop, resetSignal } from "../utils.ts";
 
 const soundStorage = localStorageSignals("halloween_2026_sound");
 const homeAnimationStorage = localStorageSignals(
@@ -288,27 +288,21 @@ export const leaveHalloween$ = command(
     set(resetHalloweenAction$);
     const round = get(roundState$);
     if (round?.outcome === "playing") {
-      set(screenState$, "start");
-      set(roundState$, null);
-      await settle(
-        accept(
-          get(apiClient$)(halloweenContract).leave({
-            body: {
-              id: round.id,
-              reason: "left",
-            },
-            fetchOptions: { signal },
-          }),
-          [200],
-          signal,
-          { showErrorToast: false },
-        ),
+      await accept(
+        get(apiClient$)(halloweenContract).leave({
+          body: {
+            id: round.id,
+            reason: "left",
+          },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
       );
       signal.throwIfAborted();
-    } else {
-      set(screenState$, "start");
-      set(roundState$, null);
     }
+    set(screenState$, "start");
+    set(roundState$, null);
     await set(refreshHalloweenPhase$, signal);
   },
 );

@@ -13,7 +13,7 @@ import { getUserEmail$ } from "../services/email-common.service";
 import {
   answerHalloweenRound$,
   advanceHalloweenRound$,
-  getCurrentHalloweenRound$,
+  currentHalloweenRound$,
   leaveHalloweenRound$,
   startHalloweenRound$,
 } from "../services/halloween.service";
@@ -45,7 +45,9 @@ const current$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ((await set(phase$, signal)) !== "open") {
     return conflict("This Halloween quiz is not open");
   }
-  return await set(getCurrentHalloweenRound$, get(authContext$).userId, signal);
+  const current = await get(currentHalloweenRound$);
+  signal.throwIfAborted();
+  return current;
 });
 const start$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(bodyResultOf(halloweenContract.start));

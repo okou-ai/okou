@@ -18,9 +18,6 @@ export const halloweenRounds = pgTable(
   "halloween_2026_rounds",
   {
     id: uuid("id").primaryKey(),
-    // Kept nullable until the preceding anonymous-round API has drained. New
-    // account-owned rounds do not use this retired bearer credential.
-    tokenHash: text("token_hash"),
     questions: jsonb("questions").$type<HalloweenStoredQuestions>().notNull(),
     questionIndex: integer("question_index").notNull().default(0),
     correct: integer("correct").notNull().default(0),
@@ -32,8 +29,6 @@ export const halloweenRounds = pgTable(
     userId: text("user_id"),
     orgId: text("org_id"),
     email: text("email"),
-    // Compatibility-only until the preceding association API has drained.
-    linkedAt: timestamp("linked_at"),
     startedAt: timestamp("started_at").notNull().defaultNow(),
     completedAt: timestamp("completed_at"),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
