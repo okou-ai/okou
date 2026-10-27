@@ -224,6 +224,53 @@ test("does not reserve a Workflow name when its files conflict with a directory"
   await accept(collection().create({ headers: headers(actor), body }), [201]);
 });
 
+test("rejects publication when Agent access is revoked during attachment upload", async () => {
+  const { actor, agent, s3, body } = await fixture();
+  const creator = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+  const entered = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  s3.beforeNextArchiveWrite(async () => {
+    entered.resolve();
+    await released.promise;
+  });
+  const pending = collection().create({ headers: headers(creator), body });
+  onTestFinished(async () => {
+    if (!released.settled()) {
+      released.resolve();
+    }
+    await pending;
+  });
+  await entered.promise;
+  await bdd.updateAgentMetadata(actor, agent.agentId, {
+    visibility: "private",
+  });
+  released.resolve();
+  await accept(pending, [403]);
+
+  await bdd.updateAgentMetadata(actor, agent.agentId, { visibility: "public" });
+  const listed = await accept(
+    collection().list({ headers: headers(creator) }),
+    [200],
+  );
+  expect(
+    listed.body.map((workflow) => {
+      return workflow.name;
+    }),
+  ).not.toContain(body.name);
+  const created = await accept(
+    collection().create({ headers: headers(creator), body }),
+    [201],
+  );
+  const read = await accept(
+    detail().get({
+      headers: headers(creator),
+      params: { workflowId: created.body.id },
+    }),
+    [200],
+  );
+  expect(read.body.fileContents).toStrictEqual(body.files);
+});
+
 test("cannot resurrect a parent deleted while its attachment upload is in flight", async () => {
   await setupApp({
     context,
