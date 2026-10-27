@@ -81,7 +81,7 @@ test.each(["app.okou.ai", "okou.ai", "localhost", "127.0.0.1"])(
   },
 );
 
-test("The preview shortcut is limited to the onboarding entry page", async () => {
+test("Skipping sources in a preview continues onboarding", async () => {
   mockOnboardingNeeded();
   await setupPage({
     context,
@@ -92,7 +92,12 @@ test("The preview shortcut is limited to the onboarding entry page", async () =>
   expect(
     screen.getByRole("heading", { name: "Connect a work tool" }),
   ).toBeInTheDocument();
-  expect(buttonsNamed("Skip")).toHaveLength(0);
+  click(buttonNamed("Skip"));
+
+  await screen.findByRole("heading", {
+    name: "Make Okou useful to your whole team",
+  });
+  expect(pathname()).toBe(ROUTES.onboardingTeam);
 });
 
 test("Skip waits for completion and remains retryable after a failure", async () => {

@@ -137,6 +137,10 @@ export function OnboardingSourcesPage() {
         flow.goNext();
       }}
       primaryDisabled={connectedSlugs.length === 0}
+      secondaryLabel={t(($) => {
+        return $.onboarding.common.skip;
+      })}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       <OnboardingConnectorSetup

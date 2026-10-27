@@ -167,7 +167,7 @@ function OnboardingStepTopBar({
         <Button
           type="button"
           size="lg"
-          variant="ghost"
+          variant="quiet"
           className="px-3"
           onClick={onSecondary}
           disabled={secondaryDisabled}
@@ -234,7 +234,7 @@ function OnboardingStepActions({
           <Button
             type="button"
             size="lg"
-            variant="ghost"
+            variant="quiet"
             onClick={onSecondary}
             disabled={secondaryDisabled}
             aria-busy={secondaryBusy}
