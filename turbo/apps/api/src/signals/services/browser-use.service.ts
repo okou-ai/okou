@@ -86,7 +86,7 @@ const browserUseCdpTargetsSchema = object({
   ),
 });
 const browserUseCdpWindowSchema = object({
-  windowId: number().int().nonnegative(),
+  windowId: number().int().nonnegative().safe(),
 });
 const browserUseCdpAttachedTargetSchema = object({
   sessionId: string().min(1),
@@ -549,6 +549,175 @@ function restorableBrowserUseTabUrl(url: string): boolean {
   }
   const protocol = new URL(url).protocol;
   return protocol === "http:" || protocol === "https:";
+}
+
+export interface BrowserUseWindowCandidate {
+  readonly targetId: string;
+  readonly primaryWindowId: number;
+}
+
+async function nativeWindowForTarget(
+  socket: WebSocket,
+  targetId: string,
+  sequence: { next: number },
+  signal: AbortSignal,
+): Promise<number | null> {
+  const result = await settle(
+    sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: sequence.next++,
+        method: "Browser.getWindowForTarget",
+        params: { targetId },
+      },
+      signal,
+    ),
+  );
+  signal.throwIfAborted();
+  if (result.ok) {
+    return browserUseCdpWindowSchema.parse(result.value).windowId;
+  }
+  if (result.error instanceof BrowserUseCdpCommandError) {
+    const targets = await browserWindowTargets(socket, sequence, signal);
+    signal.throwIfAborted();
+    if (
+      !targets.some((target) => {
+        return target.targetId === targetId;
+      })
+    ) {
+      return null;
+    }
+  }
+  throw result.error;
+}
+
+async function browserWindowTargets(
+  socket: WebSocket,
+  sequence: { next: number },
+  signal: AbortSignal,
+) {
+  return browserUseCdpTargetsSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: sequence.next++,
+        method: "Target.getTargets",
+        params: {},
+        maxResponseBytes: MAX_BROWSER_USE_RESPONSE_BYTES,
+      },
+      signal,
+    ),
+  ).targetInfos;
+}
+
+/** Creation is never retried: an unknown response may already have a window. */
+export async function createBrowserUseWindow(
+  cdpUrl: string,
+  signal: AbortSignal,
+): Promise<BrowserUseWindowCandidate> {
+  const created = await settleIncludingAbort(
+    withBrowserUseCdpDeadline(signal, async (deadline) => {
+      return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+        const target = object({ targetId: string().min(1) }).parse(
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: 1,
+              method: "Target.createTarget",
+              params: { url: "about:blank", newWindow: true },
+            },
+            deadline,
+          ),
+        );
+        const primaryWindowId = await nativeWindowForTarget(
+          socket,
+          target.targetId,
+          { next: 2 },
+          deadline,
+        );
+        if (primaryWindowId === null) {
+          throw new Error("The created Browser window is no longer available");
+        }
+        return { targetId: target.targetId, primaryWindowId };
+      });
+    }),
+  );
+  signal.throwIfAborted();
+  if (!created.ok) {
+    if (created.error instanceof BrowserUseProviderError) {
+      throw created.error;
+    }
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_WINDOW_CREATION_UNCERTAIN",
+      "Managed Browser window creation could not be confirmed",
+    );
+  }
+  return created.value;
+}
+
+export async function browserUseWindowExists(
+  cdpUrl: string,
+  primaryWindowId: number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+      const sequence = { next: 1 };
+      const targets = await browserWindowTargets(socket, sequence, deadline);
+      for (const target of targets) {
+        if (
+          target.type === "page" &&
+          (await nativeWindowForTarget(
+            socket,
+            target.targetId,
+            sequence,
+            deadline,
+          )) === primaryWindowId
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
+  });
+}
+
+/** A moved page belongs to its current window; never close it as a loser. */
+export async function closeBrowserUseWindowCandidate(
+  cdpUrl: string,
+  candidate: BrowserUseWindowCandidate,
+  signal: AbortSignal,
+): Promise<void> {
+  await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+      const sequence = { next: 1 };
+      if (
+        (await nativeWindowForTarget(
+          socket,
+          candidate.targetId,
+          sequence,
+          deadline,
+        )) !== candidate.primaryWindowId
+      ) {
+        return;
+      }
+      const closed = object({ success: boolean() }).parse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: sequence.next++,
+            method: "Target.closeTarget",
+            params: { targetId: candidate.targetId },
+          },
+          deadline,
+        ),
+      );
+      if (!closed.success) {
+        throw new Error("The Browser window candidate could not be closed");
+      }
+    });
+  });
 }
 
 function boundedRestorableBrowserUseTabUrls(
