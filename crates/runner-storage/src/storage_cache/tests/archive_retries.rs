@@ -246,18 +246,26 @@ async fn archive_retry_recovers_after_first_headers_deadline_for_storage_and_art
         // This reply writes no bytes: observing its request proves the first
         // send and both production deadlines are armed before clock advance.
         server.wait_for_response(1).await;
-        advance_timer_phase(FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT).await;
-        server.wait_for_response(2).await;
+        if artifact {
+            advance_timer_phase(FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT).await;
+        }
         let sandbox = MockSandbox::new("archive-first-headers-deadline");
-        populate_cache_with_fresh_delivery(
-            &mut plan,
-            &sandbox,
-            &home,
-            &mut telemetry,
-            Some(&mut delivery),
-            None,
+        // The storage arm uses the real clock/socket deadline. The artifact
+        // arm advances only the armed timer; both must recover well before
+        // the unchanged 30-second whole-request limit could expire.
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                Some(&mut delivery),
+                None,
+            ),
         )
         .await
+        .expect("first-header recovery must precede the whole-request timeout")
         .unwrap();
         delivery.cancel_and_drain(&mut telemetry).await;
         server.finish(2).await;
