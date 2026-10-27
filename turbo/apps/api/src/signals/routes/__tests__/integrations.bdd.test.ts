@@ -2191,6 +2191,41 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
+  it("keeps external Slack sessions processing after enqueue while the home bot is installed", async () => {
+    const { actor, entry, slackUserId, runnerGroup } =
+      await externalSlackIdentityScenario(true);
+    cleanUpCanonicalSlackScenario(actor);
+    integrations.clearSlackCallHistory();
+
+    const channelId = "C_BDD_EXTERNAL_STATUS";
+    const threadTs = "6101.000100";
+    await integrations.postSlackEvent(entry.teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "keep this external task processing",
+      ts: threadTs,
+      channel: channelId,
+    });
+    const runId = await pollSlackRun(runnerGroup);
+    expect((await runs.readRun(actor, runId)).status).toBe("pending");
+    expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "processing",
+      },
+    );
+    expect(context.mocks.slack.apiCall).not.toHaveBeenCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "active",
+      },
+    );
+  });
+
   it("routes external Slack mentions to the connected owner without a home bot and preserves status, replies and Stop", async () => {
     const { actor, entry, slackUserId, runnerGroup } =
       await externalSlackIdentityScenario();
