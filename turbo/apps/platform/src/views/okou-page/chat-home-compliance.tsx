@@ -3,7 +3,6 @@ import { useLastResolved } from "ccstate-react";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   ComplianceBadges,
-  SecurityDetailsLink,
   useComplianceTitle,
 } from "../components/compliance-badges.tsx";
 
@@ -32,12 +31,8 @@ export function ChatHomeCompliance() {
   return (
     <section
       aria-label={title}
-      className="hidden shrink-0 flex-col items-center gap-2 px-6 pt-3 pb-5 sm:flex"
+      className="hidden shrink-0 justify-center px-6 pt-2 pb-4 sm:flex"
     >
-      <p className="flex flex-wrap items-baseline justify-center gap-x-2 text-xs text-gray-700">
-        <span>{title}</span>
-        <SecurityDetailsLink className="underline decoration-gray-400 underline-offset-2 hover:text-foreground hover:decoration-current" />
-      </p>
       <ComplianceBadges quiet className="flex flex-wrap justify-center gap-2" />
     </section>
   );
