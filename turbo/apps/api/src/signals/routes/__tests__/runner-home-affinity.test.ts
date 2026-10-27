@@ -136,9 +136,25 @@ describe("canonical API home affinity", () => {
     });
   });
 
-  it("finds another holder and clears its preference after an accepted empty state", async () => {
+  it("finds a holder at the end of 4096 entries and clears it after an accepted empty state", async () => {
     const f = await setup();
-    await heartbeat(f);
+    const heldHomeStates = [
+      ...Array.from({ length: 4095 }, () => {
+        return {
+          reuseKey: `thread:${randomUUID()}`,
+          lastCompletedAt: nowDate().toISOString(),
+          homeCaches: [
+            {
+              sourceRunId: randomUUID(),
+              profile: "vm0/default",
+              homeAffinityVersion: 1 as const,
+            },
+          ],
+        };
+      }),
+      ...f.heldHomeStates,
+    ];
+    await heartbeat(f, { heldHomeStates });
     const reader = randomUUID();
     await heartbeat(f, { runnerId: reader, heldHomeStates: [] });
     expect((await poll(f, reader))?.runnerPreference).toMatchObject({
@@ -240,7 +256,7 @@ describe("canonical API home affinity", () => {
         group: f.group,
         snapshotGeneration: 7,
         snapshotSequence: 2,
-        heldHomeStates: Array.from({ length: 129 }, (_, index) => {
+        heldHomeStates: Array.from({ length: 513 }, (_, index) => {
           return {
             reuseKey: `thread:${index}`,
             lastCompletedAt: nowDate().toISOString(),

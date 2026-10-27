@@ -1348,6 +1348,8 @@ export const runnersBuiltinFirewallsResolveContract = c.router({
   },
 });
 
+const MAX_HEARTBEAT_HOME_CACHES = 4096;
+
 /**
  * Runner heartbeat body — periodic state report from each runner
  */
@@ -1366,18 +1368,18 @@ export const heartbeatBodySchema = object({
   runningCount: number().int().nonnegative(),
   admittableProfiles: runnerProfileListSchema,
   heldSandboxStates: array(heldSandboxStateSchema).max(1024),
-  heldHomeStates: array(heldHomeStateSchema).max(1024),
+  heldHomeStates: array(heldHomeStateSchema).max(MAX_HEARTBEAT_HOME_CACHES),
   activeReuseProducers: array(activeReuseProducerSchema).max(1024),
   mode: zEnum(["starting", "running", "draining", "stopping"]),
 }).superRefine((heartbeat, ctx) => {
   const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {
     return count + state.homeCaches.length;
   }, 0);
-  if (homeCacheCount > 1024) {
+  if (homeCacheCount > MAX_HEARTBEAT_HOME_CACHES) {
     ctx.addIssue({
       code: ZodIssueCode.custom,
       path: ["heldHomeStates"],
-      message: "heartbeat may contain at most 1024 home caches",
+      message: `heartbeat may contain at most ${MAX_HEARTBEAT_HOME_CACHES} home caches`,
     });
   }
 });
