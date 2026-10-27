@@ -114,12 +114,11 @@ test.each([
   ["organization", "organization"],
   ["public", "public"],
 ] as const)(
-  "creation establishes %s visibility before publishing bytes",
+  "creation establishes %s visibility without opting into settings",
   async (visibility, expected) => {
     const owner = createBddApi(context).user();
     const api = createHostBddApi(context);
     api.captureHostedSitesS3();
-    await enable(owner);
     const prepared = await api.prepareHostedSite(owner, {
       site: `private-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site",
@@ -156,6 +155,7 @@ test.each([
 
 test("rejects explicit visibility publication when the switch is disabled", async () => {
   const owner = createBddApi(context).user();
+  await enable(owner, false);
   const input = {
     site: `unavailable-${randomUUID().slice(0, 8)}`,
     artifactKind: "hosted-site" as const,
@@ -220,6 +220,7 @@ test("an explicitly private redeployment restricts the site before new bytes are
 
 async function publish() {
   const owner = createBddApi(context).user();
+  await enable(owner, false);
   const api = createHostBddApi(context);
   api.captureHostedSitesS3();
   const site = `access-${randomUUID().slice(0, 8)}`;

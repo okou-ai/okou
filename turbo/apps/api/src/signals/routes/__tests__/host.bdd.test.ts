@@ -1,5 +1,6 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { describe, expect, it } from "vitest";
 
@@ -11,6 +12,7 @@ import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fi
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createChatEventsFixture,
   okouTokenFromClaim,
@@ -117,6 +119,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     ).toBe(1);
     for (const result of results) {
       expect(result.publicSlug).toBe(body.site);
+      expect(result.visibility).toBe("private");
     }
     expect(
       new Set(
@@ -403,6 +406,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     if (!actor.orgId) {
       throw new Error("Expected hosted site actor to have an org");
     }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.HostedSiteVisibility]: false },
+    );
     // First test in the file: install the S3 boundary explicitly before any
     // host call (mock defaults only arrive in afterEach resets).
     const capture = api.captureHostedSitesS3();

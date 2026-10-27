@@ -49,10 +49,6 @@ describe("thread email list", () => {
   it("lists linked drafts, then sent emails, and refuses to delete sent mail", async () => {
     const fixture = await createPublicGmailMailCardFixture();
     await fixture.run(async () => {
-      fixture.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(fixture.actor, {
-        threadEmailManager: true,
-      });
       mockGmailDraftApi();
       const linked = await linkDraft(fixture);
       const list = () => {

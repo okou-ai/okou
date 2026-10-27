@@ -37,6 +37,7 @@ import {
   okouTokenFromClaim,
 } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const host = createHostBddApi(context);
@@ -192,6 +193,14 @@ describe("sandbox hosted previews", () => {
     });
     const api = app(hostContract);
     const owner = createBddApi(context).user();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...owner, orgId: owner.orgId },
+      { [FeatureSwitchKey.HostedSiteVisibility]: false },
+    );
     previewStorage();
     const prepared = await host.prepareHostedSite(owner, {
       site: "sproutpop-launch-deck-p9jk",
@@ -427,6 +436,7 @@ describe("sandbox hosted previews", () => {
       site: `og-html-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site",
       spaFallback: false,
+      visibility: "public",
       files: [hostedTextFile("/index.html", html)],
     });
     await host.completeHostedSite(actor, prepared.deploymentId);
@@ -493,6 +503,7 @@ describe("sandbox hosted previews", () => {
       site,
       artifactKind: "hosted-site",
       spaFallback: false,
+      visibility: "public",
       files: [hostedTextFile("/index.html", html)],
       preview: preview(bytes),
     });
@@ -621,6 +632,7 @@ describe("sandbox hosted previews", () => {
       site: `preview-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
+      visibility: "public" as const,
       files: [hostedTextFile("/index.html", "<main>Website</main>")],
     };
     const first = await host.prepareHostedSite(runner, {

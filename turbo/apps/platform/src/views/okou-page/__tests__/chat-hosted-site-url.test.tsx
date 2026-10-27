@@ -154,6 +154,7 @@ async function setupHostedSite(
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: {
       [FeatureSwitchKey.HostedSiteUrlEditing]: true,
+      [FeatureSwitchKey.HostedSiteVisibility]: false,
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
