@@ -101,7 +101,8 @@ final class ChatComposerPasteTests: XCTestCase {
     let started = expectation(description: "Image provider started")
     addTeardownBlock { try FileManager.default.removeItem(at: file) }
     let cancelled = expectation(description: "The closed workspace cancelled the image load")
-    let completed = expectation(description: "The cancelled provider still returned its late result")
+    let completed = expectation(
+      description: "The cancelled provider still returned its late result")
     let delivery = DelayedProviderTasks(owner: self)
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
