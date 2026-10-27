@@ -213,7 +213,8 @@ impl RunnerResourceBudgetOccupancy {
     }
 }
 
-/// Shared cohort label that becomes inactive when startup terminates before spawn.
+/// Shared admission-time cohort label deactivated when startup timing drops early.
+/// Successful Agent readiness preserves it for the startup-boundary rows.
 #[derive(Clone)]
 pub(crate) struct RunnerPreSpawnAttribution {
     bucket: RunnerPreSpawnConcurrencyBucket,
