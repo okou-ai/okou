@@ -1,4 +1,4 @@
-use tokio_util::sync::CancellationToken;
+use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{Instrument, warn};
 
 use crate::error::{RunnerError, RunnerResult};
@@ -23,7 +23,8 @@ impl ChildCustody {
 pub(crate) struct NetworkLogProcess {
     child_label: &'static str,
     cancel: CancellationToken,
-    task: Option<tokio::task::JoinHandle<DrainableLineReaderExit>>,
+    // Retain abort custody when stop moves the monitor into its terminal wait.
+    task: Option<AbortOnDropHandle<DrainableLineReaderExit>>,
     child_custody: ChildCustody,
     #[cfg(any(test, feature = "test-support"))]
     reap_gate: Option<crate::test_fixtures::ReapGate>,
@@ -41,7 +42,7 @@ impl NetworkLogProcess {
         Self {
             child_label,
             cancel,
-            task: Some(task),
+            task: Some(AbortOnDropHandle::new(task)),
             child_custody: ChildCustody::Owned(child),
             #[cfg(any(test, feature = "test-support"))]
             reap_gate: None,
@@ -145,7 +146,7 @@ impl NetworkLogProcess {
         Self {
             child_label,
             cancel,
-            task: Some(tokio::spawn(async move {
+            task: Some(AbortOnDropHandle::new(tokio::spawn(async move {
                 loop {
                     tokio::select! {
                         _ = token.cancelled() => {
@@ -159,7 +160,7 @@ impl NetworkLogProcess {
                         }
                     }
                 }
-            })),
+            }))),
             child_custody: ChildCustody::Empty,
             reap_gate: None,
             drain,
@@ -193,7 +194,7 @@ impl NetworkLogProcess {
         let task_trigger = std::sync::Arc::clone(&trigger);
         let (drain, mut drain_rx) = NetworkLogDrainProducer::channel(drain_source);
         self.drain = drain;
-        self.task = Some(tokio::spawn(async move {
+        self.task = Some(AbortOnDropHandle::new(tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = token.cancelled() => {
@@ -210,7 +211,7 @@ impl NetworkLogProcess {
                     }
                 }
             }
-        }));
+        })));
         trigger
     }
 }
@@ -221,48 +222,9 @@ impl Drop for NetworkLogProcess {
             kill_and_reap_child_on_drop(self.child_label, &mut Some(child));
         }
         self.cancel.cancel();
-        if let Some(task) = &self.task {
-            task.abort();
-        }
     }
 }
 
 #[cfg(test)]
 #[cfg(target_os = "linux")]
-mod tests {
-    use super::*;
-    use runner_host::process::read_process_stat;
-    use std::time::Duration;
-
-    #[tokio::test]
-    async fn drop_reaps_owned_child() {
-        let child = tokio::process::Command::new("sleep")
-            .arg("60")
-            .spawn()
-            .unwrap();
-        let pid = child.id().unwrap();
-        let starttime = read_process_stat(pid).await.unwrap().starttime;
-        let cancel = CancellationToken::new();
-        let task_cancel = cancel.clone();
-        let task = tokio::spawn(async move {
-            task_cancel.cancelled().await;
-            DrainableLineReaderExit::Cancelled
-        });
-        let (drain, _drain_rx) = NetworkLogDrainProducer::channel("drop-test");
-        let process = NetworkLogProcess::new("drop-test", cancel, task, child, drain);
-
-        drop(process);
-
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                let observed_starttime = read_process_stat(pid).await.map(|stat| stat.starttime);
-                if observed_starttime != Some(starttime) {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("dropped network-log process should reap its child");
-    }
-}
+mod tests;
