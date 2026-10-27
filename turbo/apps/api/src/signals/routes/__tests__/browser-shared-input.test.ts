@@ -187,6 +187,28 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("shared-window native Browser input", () => {
+  it("preserves a newer window lease when input requests arrive with older timestamps", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const s = await scenario(f);
+      mockNow(START + 2 * MINUTE);
+      const params = await s.request();
+      // Different API instances can arrive with an older captured timestamp.
+      mockNow(START + MINUTE);
+      await accept(client().preflight({ headers, params, body: {} }), [200]);
+      expect(
+        accepted(await s.a.request({ kind: "inspect" })).window?.expiresAt,
+      ).toBe(START + 12 * MINUTE);
+      await s.request();
+      expect(
+        accepted(await s.a.request({ kind: "inspect" })).window?.expiresAt,
+      ).toBe(START + 12 * MINUTE);
+      expect(
+        accepted(await s.b.request({ kind: "inspect" })).window?.expiresAt,
+      ).toBe(START + 10 * MINUTE);
+    });
+  });
+
   it("captures window zero and applies only the owned page without exposing sealed identities or values", async () => {
     const f = await fixture();
     await f.owned.run(async () => {

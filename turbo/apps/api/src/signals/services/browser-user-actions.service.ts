@@ -553,7 +553,7 @@ const touchExactProvider$ = command(
       const [touched] = await db
         .update(browserOwnerWindows)
         .set({
-          expiresAt: sql`least(${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserOwnerWindows.expiresAt)}::timestamp, (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
+          expiresAt: sql`least(greatest(${browserOwnerWindows.expiresAt}, ${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserOwnerWindows.expiresAt)}::timestamp), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
           updatedAt: leaseTime,
         })
         .where(
@@ -1469,7 +1469,7 @@ const persistBrowserUserAction = command(
           db
             .update(browserOwnerWindows)
             .set({
-              expiresAt: sql`least(${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond', (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, prepared.window.instanceId))}))`,
+              expiresAt: sql`least(greatest(${browserOwnerWindows.expiresAt}, ${plan.leaseClock.at} + ${IDLE_LEASE_MS} * interval '1 millisecond'), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, prepared.window.instanceId))}))`,
               updatedAt: sql`${plan.leaseClock.at}`,
             })
             .from(plan.leaseClock)

@@ -39,14 +39,20 @@ async function use(chat: Chat) {
   ).body;
 }
 function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
-  const resize: number[] = [];
+  const sizes = new Map<
+    number,
+    { readonly width: number; readonly height: number }
+  >();
   f.provider.native.command = (command) => {
     const targetId = command.sessionId?.replace(/^page-/u, "");
     if (command.method === "Target.attachToTarget") {
       return { sessionId: `page-${String(command.params.targetId)}` };
     }
     if (command.method === "Browser.setContentsSize") {
-      resize.push(Number(command.params.windowId));
+      sizes.set(Number(command.params.windowId), {
+        width: Number(command.params.width),
+        height: Number(command.params.height),
+      });
       return {};
     }
     if (command.method === "Page.getFrameTree") {
@@ -98,7 +104,7 @@ function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
     }
     throw new Error(`Unexpected external CDP operation: ${command.method}`);
   };
-  return { resize };
+  return { sizes };
 }
 
 describe("shared Browser public consumers", () => {
@@ -175,18 +181,6 @@ describe("shared Browser public consumers", () => {
       const a = await f.start();
       const b = await f.start();
       const first = await use(a);
-      const second = await use(b);
-      expect(first.browser.window?.instanceId).toBe(
-        second.browser.window?.instanceId,
-      );
-      expect(first.browser.window?.primaryWindowId).not.toBe(
-        second.browser.window?.primaryWindowId,
-      );
-      expect(f.provider.createdIds).toHaveLength(1);
-      expect(f.provider.sessionRequests).toHaveLength(1);
-      expect(f.provider.sessionRequests[0]).toMatchObject({
-        profileId: f.provider.createdIds[0],
-      });
       const current = await accept(
         client().current({ headers: runHeaders(a) }),
         [200],
@@ -201,9 +195,24 @@ describe("shared Browser public consumers", () => {
         [200],
       );
       expect(resized.body.browser.screen?.height).toBe(720);
-      expect(external.resize).toStrictEqual([
-        first.browser.window?.primaryWindowId,
-      ]);
+      const second = await use(b);
+      expect(first.browser.window?.instanceId).toBe(
+        second.browser.window?.instanceId,
+      );
+      expect(first.browser.window?.primaryWindowId).not.toBe(
+        second.browser.window?.primaryWindowId,
+      );
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+      expect(f.provider.sessionRequests[0]).toMatchObject({
+        profileId: f.provider.createdIds[0],
+      });
+      expect(
+        external.sizes.get(Number(first.browser.window?.primaryWindowId)),
+      ).toStrictEqual({ width: 1440, height: 720 });
+      expect(
+        external.sizes.get(Number(second.browser.window?.primaryWindowId)),
+      ).toStrictEqual({ width: 1440, height: 900 });
       const unchanged = await accept(
         client().get({ headers, params: { threadId: b.threadId } }),
         [200],

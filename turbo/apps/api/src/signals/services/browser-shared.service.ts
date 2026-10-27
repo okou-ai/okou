@@ -15,6 +15,7 @@ import {
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { array, string } from "zod";
 import {
+  BROWSER_INITIAL_SCREEN_HEIGHT,
   BROWSER_MAX_SCREEN_HEIGHT,
   BROWSER_MIN_SCREEN_HEIGHT,
   BROWSER_PROVIDER_TIMEOUT_MINUTES,
@@ -521,6 +522,16 @@ const settleSharedWindowAdmission$ = command(
     let uncertain = false;
     const admission = await settleIncludingAbort(
       (async () => {
+        await provider(
+          resizeBrowserUseSession(
+            args.cdpUrl,
+            BROWSER_SCREEN_WIDTH,
+            BROWSER_INITIAL_SCREEN_HEIGHT,
+            signal,
+            candidate.primaryWindowId,
+          ),
+          signal,
+        );
         await restoreSharedWindow(args, candidate, signal);
         uncertain = true;
         const result = await set(
