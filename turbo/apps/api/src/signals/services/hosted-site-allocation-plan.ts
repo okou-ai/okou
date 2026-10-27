@@ -24,15 +24,23 @@ import {
   hostedDeployments,
   hostedSites,
   privateHostedDeployments,
-} from "@okouai/db/runtime/hosted-site";
-import { and, eq, isNotNull, isNull, ne, sql, type SQL } from "drizzle-orm";
+} from "@okouai/db/schema/hosted-site";
+import {
+  and,
+  eq,
+  isNotNull,
+  isNull,
+  max,
+  ne,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 
-function hostedSiteCondition(args: PrepareDeploymentArgs, publicSlug?: string) {
+function hostedSiteCondition(args: PrepareDeploymentArgs) {
   return and(
     eq(hostedSites.orgId, args.orgId),
-    publicSlug === undefined
-      ? eq(hostedSites.requestedSlug, args.body.site)
-      : eq(hostedSites.slug, publicSlug),
+    eq(hostedSites.requestedSlug, args.body.site),
     eq(hostedSites.linkLayoutSegment, linkLayoutSegment(CURRENT_LINK_LAYOUT)),
     isNull(hostedSites.deletedAt),
   );
@@ -58,7 +66,7 @@ function hostedSiteAllocationValues(
   };
 }
 
-function hostedAssetConflictQuery(
+export function hostedAssetConflictQuery(
   siteId: string,
   assets: Readonly<Record<string, string>>,
 ) {
@@ -112,10 +120,20 @@ export type SiteDeploymentCreationResult =
     }
   | { readonly kind: "slug_conflict" }
   | { readonly kind: "owner_conflict" }
+  | { readonly kind: "allocation_conflict" }
   | { readonly kind: "content_conflict"; readonly message: string };
 
+type HostedSiteIdentity = Pick<
+  HostedSiteRow,
+  "id" | "publicSlug" | "linkLayoutSegment"
+>;
+
 type HostedSiteResolution =
-  | { readonly kind: "ok"; readonly site: HostedSiteRow }
+  | {
+      readonly kind: "ok";
+      readonly site: HostedSiteIdentity;
+      readonly create: typeof hostedSites.$inferInsert | null;
+    }
   | { readonly kind: "slug_conflict" }
   | { readonly kind: "owner_conflict" };
 
@@ -203,7 +221,7 @@ function resolvedHostedSite(
   // Redeploying replaces what a site serves, so only its creator may do it.
   // Organization membership alone never carries that authority.
   return site.userId === args.userId
-    ? { kind: "ok", site }
+    ? { kind: "ok", site, create: null }
     : { kind: "owner_conflict" };
 }
 
@@ -221,9 +239,9 @@ function immutableHostedAssetHashes(files: readonly HostedSiteFile[]) {
 function hostedDeploymentValues(
   args: PrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
-  site: HostedSiteRow,
+  site: HostedSiteIdentity,
   deploymentVersion: number,
-): typeof hostedDeployments.$inferInsert {
+) {
   const { deploymentId } = context;
   // Every publication owns its bytes; only the site's alias is reused.
   // Only current-layout sites are allocated for new publications.
@@ -267,34 +285,24 @@ function hostedDeploymentValues(
     }, 0),
     url: aliasUrl,
     updatedAt: context.now,
-  };
+  } satisfies typeof hostedDeployments.$inferInsert;
 }
 
 type HostedAllocationQuery =
   | {
       readonly kind: "site";
       readonly condition: SQL | undefined;
-      readonly lock: boolean;
-    }
-  | {
-      readonly kind: "site-insert";
-      readonly values: typeof hostedSites.$inferInsert;
     }
   | {
       readonly kind: "public-version" | "private-version";
       readonly siteId: string;
     }
-  | { readonly kind: "asset-conflict"; readonly query: SQL }
-  | {
-      readonly kind: "deployment-insert";
-      readonly values: typeof hostedDeployments.$inferInsert;
-    };
+  | { readonly kind: "asset-conflict"; readonly query: SQL };
 
 export interface HostedAllocationQueryResult {
   readonly site?: HostedSiteRow;
   readonly version?: number | null;
   readonly path?: string;
-  readonly deployment?: HostedDeploymentRow;
 }
 
 type SiteAllocationPlan = Generator<
@@ -306,11 +314,11 @@ type SiteAllocationPlan = Generator<
 function* hostedSiteAllocationPlan(
   args: PrepareDeploymentArgs,
   now: Date,
+  siteId: string,
 ): SiteAllocationPlan {
   const existing = (yield {
     kind: "site",
     condition: hostedSiteCondition(args),
-    lock: true,
   }).site;
   if (existing) {
     return resolvedHostedSite(existing, args);
@@ -325,9 +333,6 @@ function* hostedSiteAllocationPlan(
     const previousOwner = (yield {
       kind: "site",
       condition: hostedSiteAddressCondition(publicSlug),
-      // This lookup may discover a concurrent creation missed above. Reusing
-      // that site must serialize deployment-version allocation on its row.
-      lock: true,
     }).site;
     // A renamed website keeps its publication history and old R2 pointers.
     // Reusing those names for another site would fail publication or hijack links.
@@ -344,41 +349,43 @@ function* hostedSiteAllocationPlan(
       }
       continue;
     }
-    const created = (yield {
-      kind: "site-insert",
-      values: hostedSiteAllocationValues(args, publicSlug, attempt, now),
-    }).site;
-    if (created) {
-      return { kind: "ok", site: created };
-    }
-    const concurrent =
-      (yield {
-        kind: "site",
-        condition: hostedSiteCondition(args),
-        lock: true,
-      }).site ??
-      (yield {
-        kind: "site",
-        condition: hostedSiteCondition(args, publicSlug),
-        lock: true,
-      }).site;
-    if (concurrent) {
-      return resolvedHostedSite(concurrent, args);
-    }
+    return {
+      kind: "ok",
+      site: {
+        id: siteId,
+        publicSlug,
+        linkLayoutSegment: linkLayoutSegment(CURRENT_LINK_LAYOUT),
+      },
+      create: {
+        ...hostedSiteAllocationValues(args, publicSlug, attempt, now),
+        id: siteId,
+      },
+    };
   }
   return { kind: "slug_conflict" };
 }
 
-/** Pure query/value plans; only the owning native transaction executes SQL. */
+export interface PreparedHostedAllocation {
+  readonly kind: "prepared";
+  readonly site: HostedSiteIdentity;
+  readonly create: typeof hostedSites.$inferInsert | null;
+  readonly deployment: ReturnType<typeof hostedDeploymentValues>;
+  readonly version: number;
+  readonly assets: Readonly<Record<string, string>>;
+}
+
+/** Preparation reads only; publication rechecks these facts in one statement. */
 export function* hostedDeploymentAllocationPlan(
   args: PrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
+  siteId: string,
 ): Generator<
   HostedAllocationQuery,
-  SiteDeploymentCreationResult,
+  | PreparedHostedAllocation
+  | Exclude<SiteDeploymentCreationResult, { readonly kind: "ok" }>,
   HostedAllocationQueryResult
 > {
-  const resolution = yield* hostedSiteAllocationPlan(args, context.now);
+  const resolution = yield* hostedSiteAllocationPlan(args, context.now, siteId);
   if (resolution.kind !== "ok") {
     return resolution;
   }
@@ -403,9 +410,102 @@ export function* hostedDeploymentAllocationPlan(
     }
   }
   const values = hostedDeploymentValues(args, context, site, deploymentVersion);
-  const deployment = (yield { kind: "deployment-insert", values }).deployment;
-  if (!deployment) {
-    throw new Error("Failed to create hosted deployment");
-  }
-  return { kind: "ok", site, deployment };
+  return {
+    kind: "prepared",
+    site,
+    create: resolution.create,
+    deployment: values,
+    version: deploymentVersion,
+    assets,
+  };
+}
+
+export function hostedAllocationSiteCondition(
+  prepared: PreparedHostedAllocation,
+  args: PrepareDeploymentArgs,
+) {
+  return and(
+    eq(hostedSites.id, prepared.site.id),
+    eq(hostedSites.orgId, args.orgId),
+    eq(hostedSites.userId, args.userId),
+    eq(hostedSites.publicSlug, prepared.site.publicSlug),
+    eq(hostedSites.linkLayoutSegment, prepared.site.linkLayoutSegment),
+    isNull(hostedSites.deletedAt),
+  );
+}
+
+/** History and immutable paths use the same publication snapshot. */
+export function hostedAllocationVersionSql(siteId: string) {
+  return sql`greatest(
+    coalesce((select ${max(sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`)}
+      from ${hostedDeployments} where ${eq(hostedDeployments.siteId, siteId)}), 0),
+    coalesce((select ${max(sql`(${privateHostedDeployments.manifest}->>'deploymentVersion')::integer`)}
+      from ${privateHostedDeployments} where ${eq(privateHostedDeployments.siteId, siteId)}), 0)
+  ) + 1`;
+}
+
+/** INSERT SELECT preserves the original column encoders and database defaults. */
+export function hostedAllocationDeploymentSelection(
+  value: PreparedHostedAllocation["deployment"],
+) {
+  return {
+    id: sql`${value.id}::uuid`.mapWith(hostedDeployments.id).as("id"),
+    siteId: sql`${value.siteId}::uuid`
+      .mapWith(hostedDeployments.siteId)
+      .as("site_id"),
+    orgId: sql`${value.orgId}`.mapWith(hostedDeployments.orgId).as("org_id"),
+    userId: sql`${value.userId}`
+      .mapWith(hostedDeployments.userId)
+      .as("user_id"),
+    runId: sql`${value.runId ?? null}`
+      .mapWith(nullableDriverValueDecoder(hostedDeployments.runId))
+      .as("run_id"),
+    linkLayoutSegment: sql`${value.linkLayoutSegment}`
+      .mapWith(hostedDeployments.linkLayoutSegment)
+      .as("link_layout_segment"),
+    status: sql`${value.status}`.mapWith(hostedDeployments.status).as("status"),
+    artifactUrl: sql`${value.artifactUrl}`
+      .mapWith(nullableDriverValueDecoder(hostedDeployments.artifactUrl))
+      .as("artifact_url"),
+    r2Prefix: sql`${value.r2Prefix}`
+      .mapWith(hostedDeployments.r2Prefix)
+      .as("r2_prefix"),
+    manifest:
+      sql`${sql.param(value.manifest, hostedDeployments.manifest)}::jsonb`
+        .mapWith(hostedDeployments.manifest)
+        .as("manifest"),
+    manifestHash: sql`${value.manifestHash}`
+      .mapWith(hostedDeployments.manifestHash)
+      .as("manifest_hash"),
+    contentHash: sql`${value.contentHash}`
+      .mapWith(hostedDeployments.contentHash)
+      .as("content_hash"),
+    entrypoint: sql`${value.entrypoint}`
+      .mapWith(hostedDeployments.entrypoint)
+      .as("entrypoint"),
+    spaFallback: sql`${value.spaFallback}::boolean`
+      .mapWith(hostedDeployments.spaFallback)
+      .as("spa_fallback"),
+    fileCount: sql`${value.fileCount}::integer`
+      .mapWith(hostedDeployments.fileCount)
+      .as("file_count"),
+    sizeBytes:
+      sql`${sql.param(value.sizeBytes, hostedDeployments.sizeBytes)}::bigint`
+        .mapWith(hostedDeployments.sizeBytes)
+        .as("size_bytes"),
+    url: sql`${value.url}`.mapWith(hostedDeployments.url).as("url"),
+    error: sql`null`
+      .mapWith(nullableDriverValueDecoder(hostedDeployments.error))
+      .as("error"),
+    createdAt: sql`now()::timestamp`
+      .mapWith(hostedDeployments.createdAt)
+      .as("created_at"),
+    updatedAt:
+      sql`${sql.param(value.updatedAt, hostedDeployments.updatedAt)}::timestamp`
+        .mapWith(hostedDeployments.updatedAt)
+        .as("updated_at"),
+    readyAt: sql`null::timestamp`
+      .mapWith(nullableDriverValueDecoder(hostedDeployments.readyAt))
+      .as("ready_at"),
+  };
 }

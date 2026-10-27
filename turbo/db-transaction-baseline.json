@@ -72,11 +72,6 @@
       "owner": "deleteCustomConnectorAccount$"
     },
     {
-      "id": "TX-0169",
-      "file": "turbo/apps/api/src/signals/services/host.service.ts",
-      "owner": "createHostedSiteDeployment$"
-    },
-    {
       "id": "TX-0170",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "bindHostedSiteDeployment$"
