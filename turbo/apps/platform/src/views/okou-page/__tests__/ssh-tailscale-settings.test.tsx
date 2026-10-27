@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   tailscaleContract,
   type TailscaleConfig,
@@ -95,6 +96,7 @@ async function page(path = "/connectors?scope=remote-control&type=ssh") {
   });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     auth,
     path,
   });

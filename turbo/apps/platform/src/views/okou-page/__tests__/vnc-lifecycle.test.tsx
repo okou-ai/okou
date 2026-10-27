@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
   vncCredentialsContract,
@@ -62,6 +63,7 @@ function mockEmptySettings() {
 async function credentialPage() {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=vnc",
     auth: {
       user: owner,
@@ -174,6 +176,7 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
   });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=vnc",
     auth: {
       user: owner,

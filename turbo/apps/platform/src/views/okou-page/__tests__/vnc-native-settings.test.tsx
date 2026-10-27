@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   vncConnectionsContract,
   type VncConnectionResponse,
@@ -101,6 +102,7 @@ function mockSettings(
 async function page() {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=vnc",
     auth,
   });
@@ -170,6 +172,7 @@ test("Network settings can create a reusable Tailscale configuration for VNC", a
   });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=private-network",
     auth,
   });

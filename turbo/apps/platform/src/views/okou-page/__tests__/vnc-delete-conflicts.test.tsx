@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   vncConnectionsContract,
   type VncConnectionResponse,
@@ -68,6 +69,7 @@ function mockSettings(
 async function page() {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=vnc",
     auth: {
       user: { id: "vnc-delete-owner", fullName: "VNC Owner" },

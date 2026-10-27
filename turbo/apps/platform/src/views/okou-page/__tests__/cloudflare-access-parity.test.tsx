@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cloudflareAccessContract,
   type CloudflareAccessImpactPreview,
@@ -56,6 +57,7 @@ async function page(
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path,
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },

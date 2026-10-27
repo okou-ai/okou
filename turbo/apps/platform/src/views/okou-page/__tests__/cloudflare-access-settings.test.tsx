@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
@@ -48,6 +49,7 @@ async function page(
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path,
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
@@ -393,6 +395,7 @@ test("The private network panel refreshes from the neutral realtime event", asyn
   });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=private-network",
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },

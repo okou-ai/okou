@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
@@ -84,6 +85,7 @@ beforeEach(() => {
 async function page(add = false) {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=ssh",
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },

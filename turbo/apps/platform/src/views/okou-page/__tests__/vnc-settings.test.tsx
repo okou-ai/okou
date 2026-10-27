@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   vncConnectionsContract,
   type VncConnectionResponse,
@@ -188,6 +189,7 @@ function mockSettings(
 async function page(path = "/connectors?scope=remote-control&type=vnc") {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path,
     auth,
   });
@@ -782,6 +784,7 @@ test("VNC host settings update the chat remote access default", async () => {
   );
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=vnc",
     auth,
   });

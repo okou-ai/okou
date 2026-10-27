@@ -98,10 +98,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Remote control guided setup",
     description:
       "Set up and manage remote connections and private networks step by step.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    // Preserve the maintainer's access outside the staff organization.
-    enabledUserHashes: ["032a75d8", "35679123"],
+    enabled: true,
   },
   [FeatureSwitchKey.ThreadEmailManager]: {
     maintainer: "yuma@okou.ai",
