@@ -32,7 +32,16 @@ import {
   privateHostedDeployments,
   hostedSites,
 } from "@okouai/db/runtime/hosted-site";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { env } from "../../lib/env";
 import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
 import {
@@ -42,9 +51,10 @@ import {
 import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,
+  pgTextDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { parseRawRows } from "../../lib/db-raw-rows";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import type { HostedSitePointer } from "../../lib/hosted-site-pointer";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
@@ -83,6 +93,10 @@ import {
 } from "./hosted-site-dependencies.service";
 import {
   hostedDeploymentAllocationPlan,
+  hostedAllocationSiteCondition,
+  hostedAllocationVersionSql,
+  hostedAllocationDeploymentSelection,
+  hostedAssetConflictQuery,
   type HostedAllocationQueryResult,
   type PrepareDeploymentArgs,
   type SiteDeploymentCreationResult,
@@ -556,89 +570,129 @@ function hostedSiteArtifactArgs(
   };
 }
 
-const publishedAssetRowSchema = object({ path: string() });
-
 const createHostedSiteDeployment$ = command(
   async (
-    { set },
+    { get, set },
     args: PrepareDeploymentArgs,
     context: CreateHostedSiteDeploymentContext,
   ): Promise<SiteDeploymentCreationResult> => {
+    const readDb = get(db$);
+    const plan = hostedDeploymentAllocationPlan(
+      args,
+      context,
+      crypto.randomUUID(),
+    );
+    let step = plan.next();
+    while (!step.done) {
+      const query = step.value;
+      let result: HostedAllocationQueryResult;
+      if (query.kind === "site") {
+        const [site] = await readDb
+          .select()
+          .from(hostedSites)
+          .where(query.condition)
+          .limit(1);
+        result = { site };
+      } else if (query.kind === "asset-conflict") {
+        const rows = await readDb
+          .select({
+            path: sql`hosted_asset_conflict.path`.mapWith(pgTextDecoder),
+          })
+          .from(sql`(${query.query}) AS hosted_asset_conflict`);
+        result = { path: rows[0]?.path };
+      } else {
+        const table =
+          query.kind === "public-version"
+            ? hostedDeployments
+            : privateHostedDeployments;
+        const [row] = await readDb
+          .select({
+            version:
+              sql`max((${table.manifest}->>'deploymentVersion')::integer)`.mapWith(
+                nullableDriverValueDecoder(pgIntegerDecoder),
+              ),
+          })
+          .from(table)
+          .where(eq(table.siteId, query.siteId));
+        result = { version: row?.version };
+      }
+      step = plan.next(result);
+    }
+    const prepared = step.value;
+    if (prepared.kind !== "prepared") {
+      return prepared;
+    }
     const db = set(writeDb$);
-    const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0169; new non-billing transactions are prohibited.
-      db.transaction(async (tx): Promise<SiteDeploymentCreationResult> => {
-        const plan = hostedDeploymentAllocationPlan(args, context);
-        let step = plan.next();
-        while (!step.done) {
-          const query = step.value;
-          let result: HostedAllocationQueryResult;
-          switch (query.kind) {
-            case "site": {
-              const lookup = tx
-                .select()
-                .from(hostedSites)
-                .where(query.condition);
-              const [site] = query.lock
-                ? await lookup.for("update").limit(1)
-                : await lookup.limit(1);
-              result = { site };
-              break;
-            }
-            case "site-insert": {
-              const [site] = await tx
-                .insert(hostedSites)
-                .values(query.values)
-                .onConflictDoNothing()
-                .returning();
-              result = { site };
-              break;
-            }
-            case "public-version":
-            case "private-version": {
-              const table =
-                query.kind === "public-version"
-                  ? hostedDeployments
-                  : privateHostedDeployments;
-              const [row] = await tx
-                .select({
-                  version:
-                    sql`max((${table.manifest}->>'deploymentVersion')::integer)`.mapWith(
-                      nullableDriverValueDecoder(pgIntegerDecoder),
+    const site = db
+      .$with("allocation_site")
+      .as(
+        prepared.create
+          ? db
+              .insert(hostedSites)
+              .values(prepared.create)
+              .onConflictDoNothing()
+              .returning()
+          : db
+              .select()
+              .from(hostedSites)
+              .where(hostedAllocationSiteCondition(prepared, args))
+              .for("update")
+              .limit(1),
+      );
+    const deployment = db.$with("allocation_deployment").as(
+      db
+        .insert(hostedDeployments)
+        .select(
+          db
+            .select(hostedAllocationDeploymentSelection(prepared.deployment))
+            .from(site)
+            .where(
+              and(
+                eq(
+                  hostedAllocationVersionSql(prepared.site.id),
+                  prepared.version,
+                ),
+                Object.keys(prepared.assets).length === 0
+                  ? undefined
+                  : notExists(
+                      sql`(${hostedAssetConflictQuery(
+                        prepared.site.id,
+                        prepared.assets,
+                      )})`,
                     ),
-                })
-                .from(table)
-                .where(eq(table.siteId, query.siteId));
-              result = { version: row?.version };
-              break;
-            }
-            case "asset-conflict": {
-              const conflictQuery = query.query;
-              const rowSchema = publishedAssetRowSchema;
-              const rows = await (async () => {
-                return parseRawRows(rowSchema, await tx.execute(conflictQuery));
-              })();
-              result = { path: rows[0]?.path };
-              break;
-            }
-            case "deployment-insert": {
-              const [deployment] = await tx
-                .insert(hostedDeployments)
-                .values(query.values)
-                .returning();
-              result = { deployment };
-              break;
-            }
-          }
-          step = plan.next(result);
-        }
-        return step.value;
-      }),
+              ),
+            ),
+        )
+        .returning(),
+    );
+    // Retain the existing site lock. A writer that committed after this
+    // statement's snapshot is rejected by the existing version unique key.
+    const result = await settle(
+      db
+        .with(site, deployment)
+        .select()
+        .from(deployment)
+        .innerJoin(site, eq(site.id, deployment.siteId)),
     );
     if (!result.ok) {
+      if (
+        isUniqueViolation(
+          result.error,
+          "idx_hosted_deployments_site_manifest_version",
+        )
+      ) {
+        return { kind: "allocation_conflict" };
+      }
       throw result.error;
     }
-    return result.value;
+    const written = result.value[0];
+    return written
+      ? {
+          kind: "ok",
+          site: written.allocation_site,
+          deployment: written.allocation_deployment,
+        }
+      : { kind: "allocation_conflict" };
   },
 );
 
@@ -676,6 +730,13 @@ export const prepareHostedSiteDeployment$ = command(
     signal.throwIfAborted();
     if (siteAndDeployment.kind === "content_conflict") {
       return { status: "conflict", message: siteAndDeployment.message };
+    }
+    if (siteAndDeployment.kind === "allocation_conflict") {
+      return {
+        status: "conflict",
+        message:
+          "Hosted site allocation changed. Retry publishing the same site.",
+      };
     }
     if (siteAndDeployment.kind === "owner_conflict") {
       return {

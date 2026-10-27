@@ -104,7 +104,7 @@ describe("thread-independent hosted publication through host APIs", () => {
     await otherRun.complete();
   });
 
-  it("serializes concurrent cross-chat redeploys and rejects other owners", async () => {
+  it("resubmits concurrent cross-chat allocation conflicts and rejects other owners", async () => {
     const site = `host-${randomUUID().slice(0, 8)}`;
     const { first, entitled } = await prepareCaseSite(site);
     const runs = [];
@@ -120,14 +120,31 @@ describe("thread-independent hosted publication through host APIs", () => {
         }),
       ).size,
     ).toBe(3);
-    const created = await Promise.all(
+    const attempts = await Promise.all(
       runs.map(async (run, index) => {
-        return await fixture.chat.prepareHostedSiteWithBearer(
+        const body = hostedSiteBody(site, `concurrent ${index}`);
+        const response = await fixture.chat.requestPrepareHostedSiteWithBearer(
           run.bearer,
-          hostedSiteBody(site, `concurrent ${index}`),
+          body,
+          [200, 409],
         );
+        return { run, body, response };
       }),
     );
+    const created = [];
+    for (const { run, body, response } of attempts) {
+      if (response.status === 200) {
+        created.push(response.body);
+      } else {
+        expectApiError(response.body);
+        expect(response.body.error.message).toBe(
+          "Hosted site allocation changed. Retry publishing the same site.",
+        );
+        created.push(
+          await fixture.chat.prepareHostedSiteWithBearer(run.bearer, body),
+        );
+      }
+    }
     for (const deployment of created) {
       expect(deployment.siteId).toBe(first.siteId);
       expect(deployment.publicSlug).toBe(first.publicSlug);
