@@ -212,27 +212,23 @@ async fn finish_dns_startup(
         Err(error) => (None, error),
     };
 
-    if let Some(handle) = dns_handle
-        && let Err(error) = handle.stop().await
-    {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
-    runtime.shutdown().await;
-    if let Err(error) = mitm.kill_now().await {
-        let context = match &failure {
-            DnsStartupFailure::MissingInterfacePattern(_) => {
-                "failed to kill proxy after DNS interface resolution failed"
-            }
-            DnsStartupFailure::Proxy(_) => "failed to kill proxy after DNS startup failed",
-            DnsStartupFailure::Readiness(_) => {
-                "failed to kill proxy after namespace DNS readiness failed"
-            }
-        };
-        warn!(%error, "{context}");
-    }
-    if let Err(error) = kmsg_handle.stop().await {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
+    let proxy_failure_context = match &failure {
+        DnsStartupFailure::MissingInterfacePattern(_) => {
+            "failed to kill proxy after DNS interface resolution failed"
+        }
+        DnsStartupFailure::Proxy(_) => "failed to kill proxy after DNS startup failed",
+        DnsStartupFailure::Readiness(_) => {
+            "failed to kill proxy after namespace DNS readiness failed"
+        }
+    };
+    shutdown_startup_runtime_resources(
+        runtime.as_mut(),
+        dns_handle,
+        mitm,
+        kmsg_handle,
+        proxy_failure_context,
+    )
+    .await;
     Err(match failure {
         DnsStartupFailure::MissingInterfacePattern(_reservation) => {
             RunnerError::Internal("sandbox runtime did not provide DNS interface pattern".into())
@@ -242,6 +238,27 @@ async fn finish_dns_startup(
             RunnerError::Internal(format!("sandbox runtime DNS readiness: {error}"))
         }
     })
+}
+
+async fn shutdown_startup_runtime_resources(
+    runtime: &mut dyn SandboxRuntime,
+    dns_handle: Option<dns::DnsProxy>,
+    mitm: &mut proxy::MitmProxy,
+    kmsg_handle: kmsg_log::KmsgHandle,
+    proxy_failure_context: &'static str,
+) {
+    if let Some(handle) = dns_handle
+        && let Err(error) = handle.stop().await
+    {
+        warn!(%error, "failed to clean up network-log helper after startup failure");
+    }
+    runtime.shutdown().await;
+    if let Err(error) = mitm.kill_now().await {
+        warn!(%error, "{proxy_failure_context}");
+    }
+    if let Err(error) = kmsg_handle.stop().await {
+        warn!(%error, "failed to clean up network-log helper after startup failure");
+    }
 }
 
 async fn publish_live_runner_instance_or_shutdown_startup_resources(
@@ -257,16 +274,14 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
         Ok(handle) => Ok((handle, resources.kmsg_handle, resources.dns_handle)),
         Err(e) => {
             resources.provider.shutdown().await;
-            if let Err(error) = resources.dns_handle.stop().await {
-                warn!(%error, "failed to clean up network-log helper after startup failure");
-            }
-            resources.runtime.shutdown().await;
-            if let Err(kill_error) = resources.mitm.kill_now().await {
-                warn!(error = %kill_error, "failed to kill proxy after live runner instance publish failed");
-            }
-            if let Err(error) = resources.kmsg_handle.stop().await {
-                warn!(%error, "failed to clean up network-log helper after startup failure");
-            }
+            shutdown_startup_runtime_resources(
+                resources.runtime,
+                Some(resources.dns_handle),
+                resources.mitm,
+                resources.kmsg_handle,
+                "failed to kill proxy after live runner instance publish failed",
+            )
+            .await;
             if let Err(status_error) = resources.status.set_mode(RunnerMode::Stopped).await {
                 warn!(
                     error = %status_error,
