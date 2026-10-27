@@ -35,6 +35,7 @@ Grouped rows explicitly enumerate every catalog identity they cover.
 | ---------------- | ------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `openai-codex`   | `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-luna`     | 272,000 / 128,000   | Existing official subscription default retained.                                                                   |
 | `openai-codex`   | `gpt-6.1-sol`                                                | 272,000 / 128,000   | Correct the hand pin that copied the API's 1,050,000 context into a subscription binding.                          |
+| `openai-codex`   | `gpt-6.1-terra`                                              | 500,000 / 128,000   | Added 2026-10-27 with the hand pin; Codex ships a 500,000 subscription default for this model.                     |
 | `openrouter`     | `deepseek/deepseek-v4.1-flash`                               | 1,048,576 / 943,718 | Correct the old output snapshot to the live primary-provider ceiling. This is not the direct DeepSeek API ceiling. |
 | `openrouter`     | product-owned `okou-1.0` / request preset `@preset/okou-1-0` | 1,050,000 / 128,000 | Existing backing-model metadata matches the OpenRouter GPT-6 Luna route.                                           |
 
@@ -50,6 +51,13 @@ The [configuration reference](https://developers.openai.com/codex/config-referen
 distinguishes the active context budget from the auto-compaction threshold.
 Their existing 128,000 Pi output ceilings are unchanged; this audit does not
 infer subscription capacity or availability from a public API model page.
+
+`gpt-6.1-terra` was added later: the
+[Codex catalog at `126a0ee92ed2c5e73cd8a8f7e37563e8527552d7`](https://github.com/openai/codex/blob/126a0ee92ed2c5e73cd8a8f7e37563e8527552d7/codex-rs/models-manager/models.json)
+gives it `context_window: 500000`, `max_context_window: 872000` and
+`supports_experimental_context: false`. Its 128,000 output ceiling matches the
+other Codex identities; only the hand pin's display prices come from the
+[API model page](https://developers.openai.com/api/docs/models/gpt-6.1-terra).
 
 ### OpenRouter
 
