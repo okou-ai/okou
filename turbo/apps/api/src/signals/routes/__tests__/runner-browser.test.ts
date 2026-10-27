@@ -15,7 +15,11 @@ import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise, settle } from "../../utils";
+import {
+  createDeferredPromise,
+  settle,
+  settleIncludingAbort,
+} from "../../utils";
 import {
   mockNow,
   withMockNowForTest,
@@ -776,25 +780,47 @@ describe("owner provider profiles", () => {
     await f.owned.run(async () => {
       const a = await f.start(),
         b = await f.start();
-      const late = settle(a.request({ kind: "allocate" }));
-      await prepared.promise;
-      const winner = await allocate(b);
-      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
-      accepted(
-        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      const late = settleIncludingAbort(
+        f.owned.run(() => {
+          return a.request({ kind: "allocate" });
+        }),
       );
-      expect(
-        (
-          await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`, {
-            method: "DELETE",
-          })
-        ).status,
-      ).toBe(204);
-      release.resolve();
+      const transition = await settleIncludingAbort(async () => {
+        await prepared.promise;
+        const winner = await allocate(b);
+        accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+        accepted(
+          await b.request({ kind: "completeStop", instanceId: winner.id }),
+        );
+        expect(
+          (
+            await fetch(
+              `${PROVIDER_URL}/profiles/${winner.providerProfileId}`,
+              {
+                method: "DELETE",
+              },
+            )
+          ).status,
+        ).toBe(204);
+        return winner;
+      });
+      if (!release.settled()) {
+        release.resolve();
+      }
       const result = await late;
+      if (!transition.ok && !result.ok) {
+        throw new AggregateError(
+          [transition.error, result.error],
+          "Winner transition and late allocation failed",
+        );
+      }
+      if (!transition.ok) {
+        throw transition.error;
+      }
       if (!result.ok) {
         throw result.error;
       }
+      const winner = transition.value;
       expect(result.value).toStrictEqual({ outcome: "unavailable" });
       expect(accepted(await b.request({ kind: "inspect" }))).toMatchObject({
         id: winner.id,
@@ -847,18 +873,37 @@ describe("owner provider profiles", () => {
         ).status,
       ).toBe(204);
 
-      const late = settle(a.request({ kind: "allocate" }));
-      await prepared.promise;
-      const winner = await allocate(b);
-      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
-      accepted(
-        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      const late = settleIncludingAbort(
+        f.owned.run(() => {
+          return a.request({ kind: "allocate" });
+        }),
       );
-      release.resolve();
+      const transition = await settleIncludingAbort(async () => {
+        await prepared.promise;
+        const winner = await allocate(b);
+        accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+        accepted(
+          await b.request({ kind: "completeStop", instanceId: winner.id }),
+        );
+        return winner;
+      });
+      if (!release.settled()) {
+        release.resolve();
+      }
       const result = await late;
+      if (!transition.ok && !result.ok) {
+        throw new AggregateError(
+          [transition.error, result.error],
+          "Winner transition and late recovery failed",
+        );
+      }
+      if (!transition.ok) {
+        throw transition.error;
+      }
       if (!result.ok) {
         throw result.error;
       }
+      const winner = transition.value;
       expect(result.value).toStrictEqual({ outcome: "unavailable" });
       expect(winner.ownerProfileId).toBe(original.ownerProfileId);
       expect(winner.providerProfileId).not.toBe(original.providerProfileId);
