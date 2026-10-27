@@ -23,7 +23,6 @@ const TEAM_QUESTION = "Make Okou useful to your whole team";
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const TEAMMATE = "rowan@company.com";
 
-/** One connected source, which every step after the source step requires. */
 function mockConnectedCatalog(): void {
   mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
 }

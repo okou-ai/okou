@@ -107,7 +107,7 @@ test("An explicit step URL takes precedence over saved progress", async () => {
   expect(pathname()).toBe(ROUTES.onboardingSources);
 });
 
-test("Resuming a later step rechecks its connected-source requirement", async () => {
+test("Resuming a later step preserves progress without a connected source", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -121,8 +121,14 @@ test("Resuming a later step rechecks its connected-source requirement", async ()
     path: ROUTES.onboarding,
   });
 
-  await screen.findByRole("heading", { name: "What kind of work do you do?" });
-  expect(pathname()).toBe(ROUTES.onboarding);
+  await screen.findByRole("heading", {
+    name: "Start with a task that matters",
+  });
+  expect(pathname()).toBe(ROUTES.onboardingReady);
+  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+    "Draft my launch plan",
+  );
+  expect(getButtonByName("Start with Okou")).toBeEnabled();
 });
 
 test.each([

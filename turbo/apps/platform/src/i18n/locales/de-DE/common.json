@@ -4293,6 +4293,12 @@
         "copy": "Je mehr Okou über deine Arbeit weiß, desto klüger wird es. Verbinde ein Tool, das du täglich nutzt, und starte mit einer Aufgabe aus deiner echten Arbeit.",
         "permissions": "Okou nutzt eine kleine Stichprobe, um deine erste Aufgabe anzupassen. Du entscheidest, was Agents tun dürfen und wie lange.",
         "securityLink": "So schützt Okou deine Daten",
+        "skipDialog": {
+          "connect": "Tool verbinden",
+          "description": "Wir empfehlen, deine Tools zu verbinden, damit Okou deine Arbeit versteht und dich gezielter unterstützt. Du kannst sie auch später verbinden.",
+          "skip": "Vorerst überspringen",
+          "title": "Mit deinen Tools hilft Okou noch besser"
+        },
         "title": "Ein Arbeitstool verbinden"
       },
       "startingPrompt": {

@@ -1,5 +1,4 @@
 import { command, computed, state, type Computed } from "ccstate";
-import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogDiscoveryResponse,
@@ -137,19 +136,6 @@ export const builtinConnectorsReloadVersion$ = computed((get) => {
     get(internalReloadBuiltinConnectors$) +
     get(builtinConnectorAccountProjectionVersion$)
   );
-});
-
-/**
- * Current user's connectors.
- */
-export const builtinConnectors$ = computed(async (get) => {
-  get(builtinConnectorsReloadVersion$);
-  get(featureSwitch$);
-
-  const createClient = get(apiClient$);
-  const client = createClient(builtinConnectorsMainContract);
-  const result = await accept(client.list(), [200]);
-  return result.body;
 });
 
 /**

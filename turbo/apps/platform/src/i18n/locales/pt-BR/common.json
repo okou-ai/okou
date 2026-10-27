@@ -4348,6 +4348,12 @@
         "copy": "Quanto mais o Okou conhece o seu trabalho, mais inteligente ele fica. Conecte uma ferramenta que você usa todo dia para começar com uma tarefa baseada no seu trabalho real.",
         "permissions": "O Okou usa uma pequena amostra para personalizar sua primeira tarefa. Você decide o que os Agents podem fazer e por quanto tempo.",
         "securityLink": "Como a Okou protege seus dados",
+        "skipDialog": {
+          "connect": "Conectar uma ferramenta",
+          "description": "Recomendamos conectar suas ferramentas para que o Okou entenda seu trabalho e ofereça uma ajuda mais relevante. Você também pode conectá-las depois.",
+          "skip": "Pular por enquanto",
+          "title": "Okou ajuda melhor com suas ferramentas"
+        },
         "title": "Conecte uma ferramenta de trabalho"
       },
       "startingPrompt": {

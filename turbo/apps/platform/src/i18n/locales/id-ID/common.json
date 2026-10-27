@@ -4277,6 +4277,12 @@
         "copy": "Semakin Okou memahami pekerjaan Anda, semakin cerdas ia bekerja. Hubungkan alat yang Anda gunakan setiap hari untuk memulai dengan tugas dari pekerjaan nyata Anda.",
         "permissions": "Okou menggunakan sedikit sampel untuk menyesuaikan tugas pertama Anda. Anda yang menentukan apa yang dapat dilakukan Agent dan berapa lama.",
         "securityLink": "Cara Okou melindungi data Anda",
+        "skipDialog": {
+          "connect": "Hubungkan alat",
+          "description": "Sebaiknya hubungkan alat kerja Anda agar Okou memahami pekerjaan Anda dan memberikan bantuan yang lebih sesuai. Anda juga dapat menghubungkannya nanti.",
+          "skip": "Lewati untuk sekarang",
+          "title": "Okou lebih membantu dengan alat kerja Anda"
+        },
         "title": "Hubungkan alat kerja"
       },
       "startingPrompt": {

@@ -41,16 +41,15 @@ function mockOnboardingNeeded(): void {
 }
 
 /**
- * One source already connected, so the steps behind the connect requirement
- * are reachable, and one that is not, to connect during the run.
+ * One source whose connection is configurable, and one to connect during the run.
  */
-function mockCatalog(): void {
+function mockCatalog(connected = true): void {
   mockOnboardingConnectorCatalog(context, [
     onboardingSourceItem({
       slug: "gmail",
       label: "Gmail",
       description: "Mail for your workspace",
-      hasAccount: true,
+      hasAccount: connected,
     }),
     onboardingSourceItem({
       slug: "notion",
@@ -106,9 +105,10 @@ async function openIndustryStep(): Promise<void> {
   ).resolves.toBeInTheDocument();
 }
 
-test("One run of the source-first flow reports a single onboarding start", async () => {
+test("Skipping sources reports the step skip and keeps a single onboarding start", async () => {
+  const posthog = context.mocks.posthog();
   mockOnboardingNeeded();
-  mockCatalog();
+  mockCatalog(false);
   const tags: string[] = [];
   context.mocks.api(marketingEventsContract.record, ({ body, respond }) => {
     tags.push(body.tag);
@@ -129,13 +129,48 @@ test("One run of the source-first flow reports a single onboarding start", async
   await expect(
     screen.findByRole("heading", { name: SOURCES_QUESTION }),
   ).resolves.toBeInTheDocument();
-  click(getButtonByName("Continue"));
+  click(getButtonByName("Skip"));
+
+  await screen.findByRole("dialog", {
+    name: "Okou works better with your tools",
+  });
+  expect(
+    posthog.events.filter((event) => {
+      return event.name === "Onboarding: Skip";
+    }),
+  ).toStrictEqual([]);
+  click(getButtonByName("Connect a tool"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(
+    posthog.events.filter((event) => {
+      return event.name === "Onboarding: Skip";
+    }),
+  ).toStrictEqual([]);
+
+  click(getButtonByName("Skip"));
+  await screen.findByRole("dialog", {
+    name: "Okou works better with your tools",
+  });
+  click(getButtonByName("Skip for now"));
 
   await expect(
     screen.findByRole("heading", { name: TEAM_QUESTION }),
   ).resolves.toBeInTheDocument();
   // The steps and the guard all belong to the same run.
   expect(tags).toStrictEqual(["onboarding-start"]);
+  expect(
+    posthog.events.filter((event) => {
+      return event.name === "Onboarding: Skip";
+    }),
+  ).toStrictEqual([
+    onboardingEvent("Skip", {
+      step_key: "sources",
+      route_path: ROUTES.onboardingSources,
+      is_owner: true,
+    }),
+  ]);
 });
 
 test("Each step reports its own funnel event, counting invitees rather than naming them", async () => {
