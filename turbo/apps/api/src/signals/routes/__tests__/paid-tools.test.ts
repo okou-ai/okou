@@ -1,4 +1,5 @@
 import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
+import { DATA_ROUTER_PROTOCOL_VERSION } from "@okouai/api-contracts/contracts/data-router-tools";
 import { http, HttpResponse } from "msw";
 import { literal, object, string } from "zod";
 import { server } from "../../../mocks/server";
@@ -287,10 +288,24 @@ test("discovers Router tools and schemas across pages without a local tool catal
       expect(request.headers.get("authorization")).toBe(
         "Bearer test-router-token",
       );
+      // A stateless 2026-07-28 request that accepts only a JSON response.
+      expect(request.headers.get("accept")).toBe("application/json");
+      expect(request.headers.get("mcp-protocol-version")).toBe(
+        DATA_ROUTER_PROTOCOL_VERSION,
+      );
+      expect(request.headers.get("mcp-method")).toBe("tools/list");
       const message = object({
         id: string(),
         method: literal("tools/list"),
-        params: object({ cursor: string().optional() }),
+        params: object({
+          cursor: string().optional(),
+          _meta: object({
+            "io.modelcontextprotocol/protocolVersion": literal(
+              DATA_ROUTER_PROTOCOL_VERSION,
+            ),
+            "io.modelcontextprotocol/clientCapabilities": object({}),
+          }),
+        }),
       }).parse(await request.json());
       return HttpResponse.json({
         jsonrpc: "2.0",

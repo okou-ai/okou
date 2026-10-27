@@ -62,6 +62,11 @@ The token remains required for local authentication and for the main API's
 user-owned Data request history, which supplies owned request IDs to tools that
 declare that context.
 
+Router serves only the stateless `2026-07-28` MCP revision with JSON
+responses: no `initialize` handshake, sessions or SSE. The CLI pins that
+revision and never falls back to the 2025 handshake, so a mock must answer
+`server/discover` and return the result fields that revision requires.
+
 Mock the external MCP endpoint with MSW and inspect the actual tool name and
 arguments, as in `src/commands/data/__tests__/router.test.ts`. Keep command
 registration, argument validation and MCP transport real. Data commands print
