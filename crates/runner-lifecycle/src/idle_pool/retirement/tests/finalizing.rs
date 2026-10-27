@@ -87,12 +87,48 @@ async fn finalizing_readiness_does_not_transfer_and_commit_rejects_changed_backi
 }
 
 #[tokio::test]
+async fn finalizing_source_mismatch_refuses_before_broker_projection() {
+    let (_, backing) = MockBackingProcess::channel();
+    let mut fixture = JobFixture::new("thread:finalizing-source", Some(backing)).await;
+    let mut candidate = fixture.candidate();
+    let predecessor = candidate
+        .resources
+        .home_promotion
+        .as_ref()
+        .unwrap()
+        .run_id();
+    candidate.metadata.source_run_id = Some(RunId::new_v4());
+    assert_ne!(candidate.metadata.source_run_id, Some(predecessor));
+    let mut owner = GuardedFinalizingHandoffOwner::undelivered(
+        IdleParkCandidate::Ordinary(candidate),
+        predecessor,
+    );
+    assert!(matches!(
+        owner.take_undelivered_candidate(),
+        Err(MemoryOperationError::OwnershipInvariant)
+    ));
+    assert!(owner.take_cleanup_owner().is_err());
+    fixture.untouched().await;
+}
+
+#[tokio::test]
 async fn finalizing_original_promotion_mismatch_refuses_before_broker_projection() {
     let (_, backing) = MockBackingProcess::channel();
     let mut fixture = JobFixture::new("thread:finalizing-promotion", Some(backing)).await;
     let mut candidate = fixture.candidate();
     let incorrect = RunId::new_v4();
-    candidate.metadata.native_generation_run_id = Some(incorrect);
+    // Keep the source binding valid so the original promotion rejects this predecessor.
+    candidate.metadata.source_run_id = Some(incorrect);
+    assert_eq!(candidate.metadata.source_run_id, Some(incorrect));
+    assert_ne!(
+        candidate
+            .resources
+            .home_promotion
+            .as_ref()
+            .unwrap()
+            .run_id(),
+        incorrect
+    );
     let mut owner = GuardedFinalizingHandoffOwner::undelivered(
         IdleParkCandidate::Ordinary(candidate),
         incorrect,
