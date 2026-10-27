@@ -1008,6 +1008,8 @@ const chatThreadCreateBodySchema = object({
   clientThreadId: string().uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
   connectorSelections: array(connectorAccountSelectionSchema).optional(),
+  /** Opt in after the client preserves its draft until creation is accepted. */
+  connectorSelectionPolicy: literal("required").optional(),
   initialRemoteAccessOverrides: array(initialRemoteAccessOverrideSchema)
     .superRefine((overrides, ctx) => {
       const seen = new Set<string>();

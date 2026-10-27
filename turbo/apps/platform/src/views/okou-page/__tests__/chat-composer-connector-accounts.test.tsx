@@ -1,11 +1,23 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import {
+  chatEventsContract,
+  chatThreadsContract,
+  type ChatEventSendBody,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import type { infer as zInfer } from "zod";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import {
   ACME_CONNECTOR_ID,
   builtinConnector,
@@ -62,6 +74,19 @@ async function openConnectors(
   await expect(
     findFastControl("button", "Add connectors"),
   ).resolves.toBeEnabled();
+}
+
+function enabledSendButton(): Promise<HTMLElement> {
+  return waitFor(() => {
+    const button = queryAllByRoleFast("button").find((candidate) => {
+      return candidate.getAttribute("aria-label") === "Send";
+    });
+    if (!button) {
+      throw new Error("Send button not found");
+    }
+    expect(button).toBeEnabled();
+    return button;
+  });
 }
 
 async function openAccountChooser(
@@ -357,6 +382,212 @@ test("Carry a connector account choice into a new chat", async () => {
       `/chats/${fixture.createdThreadRequests[0]!.threadId}`,
     );
   });
+});
+
+test.each([false, true])(
+  "An unavailable account keeps the new-chat draft and attachments (edited while creating: %s)",
+  async (editWhileCreating) => {
+    const user = userEvent.setup({ delay: null });
+    const accounts = githubAccounts();
+    installComposerConnectorFixture({
+      catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
+      builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
+      accounts,
+    });
+    const started = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const createRequests: zInfer<typeof chatThreadsContract.create.body>[] = [];
+    const sends: ChatEventSendBody[] = [];
+    const clearedDrafts: unknown[] = [];
+    const message =
+      "The selected GitHub account is unavailable. Choose another account or use default, then send again.";
+    context.mocks.api(chatThreadsContract.create, async ({ body, respond }) => {
+      createRequests.push(body);
+      if (body.connectorSelections?.length) {
+        started.resolve();
+        await release.promise;
+        return respond(400, {
+          error: { code: "CONNECTOR_ACCOUNT_UNAVAILABLE", message },
+        });
+      }
+      if (!body.clientThreadId) {
+        throw new Error("Expected a client thread ID");
+      }
+      return respond(201, {
+        id: body.clientThreadId,
+        title: null,
+        selectedModel: body.model ?? null,
+        serviceTier: body.serviceTier ?? null,
+        createdAt: "2026-10-27T00:00:00Z",
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      sends.push(body);
+      if (!body.threadId) {
+        throw new Error("Expected a created chat thread");
+      }
+      return respond(201, {
+        threadId: body.threadId,
+        createdAt: "2026-10-27T00:00:00Z",
+      });
+    });
+    context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+      if (body.draftUserMessage === null) {
+        clearedDrafts.push(body);
+      }
+      return respond(204);
+    });
+    const filename = "account-selection-notes.txt";
+    context.mocks.upload.success({
+      id: "f0000000-0000-4000-a000-000000000951",
+      filename,
+      contentType: "text/plain",
+      size: 5,
+      url: "https://files.example.test/account-selection-notes.txt",
+    });
+
+    const newChatPath = `/agents/${SCOUT_AGENT_ID}/chat`;
+    await setupPage({ context, path: newChatPath, locale: "en-US" });
+    await loadComposer();
+    await openConnectors();
+    const chooser = await openAccountChooser(
+      user,
+      "GitHub · Account for this chat",
+    );
+    await user.click(
+      within(chooser).getByRole("option", { name: /Personal/u }),
+    );
+    await user.keyboard("{Escape}");
+    const composer = await findComposer();
+    await fill(composer, "Use my personal GitHub account");
+    const fileInput =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) {
+      throw new Error("Expected a composer file input");
+    }
+    await user.upload(
+      fileInput,
+      new File(["notes"], filename, { type: "text/plain" }),
+    );
+    await screen.findByText(filename);
+    click(await enabledSendButton());
+    await started.promise;
+    const retainedPrompt = editWhileCreating
+      ? "Keep this newer message while creation is pending"
+      : "Use my personal GitHub account";
+    if (editWhileCreating) {
+      await fill(composer, retainedPrompt);
+    }
+    release.resolve();
+    await screen.findByText(message);
+
+    expect(window.location.pathname).toBe(newChatPath);
+    expect(composer).toHaveTextContent(retainedPrompt);
+    expect(screen.getByText(filename)).toBeInTheDocument();
+    expect(sends).toHaveLength(0);
+    expect(clearedDrafts).toHaveLength(0);
+    await openConnectors();
+    const retryChooser = await openAccountChooser(
+      user,
+      "GitHub · Selected account: Personal",
+    );
+    await user.click(
+      within(retryChooser).getByRole("option", { name: /Use default/u }),
+    );
+    await user.keyboard("{Escape}");
+    click(await enabledSendButton());
+    await waitFor(() => {
+      expect(sends).toHaveLength(1);
+      expect(window.location.pathname).toBe(
+        `/chats/${createRequests[1]!.clientThreadId}`,
+      );
+    });
+    expect(createRequests[0]!.connectorSelections).toStrictEqual([
+      { target: githubTarget(), connectionId: accounts[1]!.id },
+    ]);
+    expect(createRequests[0]!.connectorSelectionPolicy).toBe("required");
+    expect(createRequests[1]!.connectorSelections).toBeUndefined();
+    expect(sends[0]).toMatchObject({
+      prompt: retainedPrompt,
+      userMessage: {
+        parts: expect.arrayContaining([
+          expect.objectContaining({ type: "file", filenameSnapshot: filename }),
+        ]),
+      },
+    });
+  },
+);
+
+test("Resending an unconfirmed creation reuses its chat and event identities", async () => {
+  const user = userEvent.setup({ delay: null });
+  const accounts = githubAccounts();
+  installComposerConnectorFixture({
+    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
+    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
+    accounts,
+  });
+  const creates: zInfer<typeof chatThreadsContract.create.body>[] = [];
+  const sends: ChatEventSendBody[] = [];
+  const message = "The create response was interrupted. Please try again.";
+  context.mocks.http.post("*/api/chat-threads", async ({ request }) => {
+    const body = chatThreadsContract.create.body.parse(await request.json());
+    creates.push(body);
+    if (creates.length === 1) {
+      // A failure after database commit does not establish that creation failed.
+      return Response.json(
+        { error: { code: "INTERNAL_ERROR", message } },
+        { status: 500 },
+      );
+    }
+    return Response.json(
+      {
+        id: body.clientThreadId,
+        title: null,
+        selectedModel: body.model ?? null,
+        serviceTier: body.serviceTier ?? null,
+        createdAt: "2026-10-27T00:00:00Z",
+      },
+      { status: 201 },
+    );
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    sends.push(body);
+    if (!body.threadId) {
+      throw new Error("Expected a created thread ID");
+    }
+    return respond(201, {
+      threadId: body.threadId,
+      createdAt: "2026-10-27T00:00:00Z",
+    });
+  });
+
+  const newChatPath = `/agents/${SCOUT_AGENT_ID}/chat`;
+  await setupPage({ context, path: newChatPath, locale: "en-US" });
+  await loadComposer();
+  await openConnectors();
+  const chooser = await openAccountChooser(
+    user,
+    "GitHub · Account for this chat",
+  );
+  await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
+  await user.keyboard("{Escape}");
+  const composer = await findComposer();
+  await fill(composer, "Use my personal GitHub account");
+  click(await enabledSendButton());
+  await screen.findByText(message);
+  expect(window.location.pathname).toBe(newChatPath);
+  expect(composer).toHaveTextContent("Use my personal GitHub account");
+  expect(sends).toHaveLength(0);
+
+  click(await enabledSendButton());
+  await waitFor(() => {
+    expect(sends).toHaveLength(1);
+    expect(window.location.pathname).toBe(
+      `/chats/${creates[0]!.clientThreadId}`,
+    );
+  });
+  expect(creates).toHaveLength(2);
+  expect(creates[1]).toStrictEqual(creates[0]);
 });
 
 test("Choose an account for a custom MCP connector", async () => {

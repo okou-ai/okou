@@ -5,7 +5,12 @@ import { and, eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
 import { env } from "../../lib/env";
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import {
+  badRequestMessage,
+  conflict,
+  connectorAccountUnavailable,
+  notFound,
+} from "../../lib/error";
 import { welcomeThreadContent } from "../../lib/welcome-thread-content";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
@@ -109,6 +114,9 @@ export const createWelcomeChatThread$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (result.kind === "connector_account_unavailable") {
+      return connectorAccountUnavailable();
+    }
     if (
       result.kind === "invalid_connector_selection" ||
       result.kind === "invalid_remote_access_selection"
