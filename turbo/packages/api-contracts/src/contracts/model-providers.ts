@@ -15,6 +15,7 @@ import {
 
 import {
   MODEL_PROVIDER_TYPE_IDS,
+  modelProviderTypeSchema,
   isBuiltInModelProviderType,
   type ModelProviderFramework,
   type ModelProviderType,
@@ -38,6 +39,7 @@ export type {
 export {
   isBuiltInModelProviderType,
   isPersonalSubscriptionProviderType,
+  modelProviderTypeSchema,
 } from "./model-provider-types";
 export type {
   BuiltInModelProviderType,
@@ -268,8 +270,6 @@ const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, string>> = {
 export function normalizeRunModelId(model: string): string {
   return CANONICAL_RUN_MODEL_ALIASES[model] ?? model;
 }
-
-export const modelProviderTypeSchema = zEnum(MODEL_PROVIDER_TYPE_IDS);
 
 export const modelProviderFrameworkSchema = zEnum(["claude-code", "codex"]);
 

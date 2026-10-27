@@ -7,7 +7,7 @@ import {
   type ModelCatalog,
   catalogBuiltInRoute,
 } from "./model-catalog.service";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
   ResolvedModelProviderEnvironment,

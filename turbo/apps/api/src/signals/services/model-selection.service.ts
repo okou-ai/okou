@@ -2,11 +2,11 @@ import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   type ChatThreadServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
 import {
   modelProviderTypeSchema,
-  type ModelProviderCredentialScope,
   type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+} from "@okouai/api-contracts/contracts/model-provider-types";
 import { formatReplacementSubscriptionRequiredMessage } from "@okouai/api-contracts/contracts/errors";
 import {
   AUTO_SELECTED_MODEL,

@@ -186,6 +186,7 @@
     "src/signals/services/connector-runtime-wakeup.service.ts",
     "src/signals/services/connector-server-firewall-catalog.service.ts",
     "src/signals/services/credit-low-balance-alert.service.ts",
+    "src/signals/services/credit-low-balance-threshold.ts",
     "src/signals/services/credit-usage-batch-prepare.service.ts",
     "src/signals/services/credit-usage-batch.ts",
     "src/signals/services/credit-usage-financial-plan.service.ts",

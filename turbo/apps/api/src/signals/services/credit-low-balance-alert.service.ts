@@ -16,6 +16,7 @@ import {
 import { listAllOrganizationMemberships } from "../external/clerk-organization-lists";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
+import type { CreditLowBalanceAlertArgs } from "./credit-low-balance-threshold";
 import {
   buildOneClickUnsubscribeUrl,
   buildTeamFromAddress,
@@ -28,17 +29,9 @@ import {
 
 type OrganizationMembership = ClerkOrganizationMembership;
 
-export const LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS = 5000;
-
 const L = logger("CreditLowBalanceAlert");
 function billingCreditsUrl(): string {
   return `${env("APP_URL")}/?settings=billing&billingView=credits`;
-}
-
-export interface CreditLowBalanceAlertArgs {
-  readonly orgId: string;
-  readonly remainingCredits: number;
-  readonly thresholdCredits: number;
 }
 
 interface Recipient {

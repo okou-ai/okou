@@ -8,7 +8,7 @@ import {
   type LogsFilters,
   type TriggerSource,
 } from "@okouai/api-contracts/contracts/logs";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {

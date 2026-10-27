@@ -1,4 +1,4 @@
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { SQL } from "drizzle-orm";
 

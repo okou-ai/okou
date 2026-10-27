@@ -13,6 +13,7 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { generateOkouToken, generateSandboxToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { paidToolsRoutes } from "../paid-tools";
@@ -212,7 +213,12 @@ test("requires a workspace session and rejects run credentials", async () => {
   await accept(client().get({ headers }), [401]);
   mocks.clerk.session(identity.userId, identity.orgId, "org:member");
   for (const token of [
-    generateOkouToken(identity.userId, randomUUID(), identity.orgId),
+    generateOkouToken(identity.userId, randomUUID(), identity.orgId, (key) => {
+      return isFeatureEnabled(key, {
+        userId: identity.userId,
+        orgId: identity.orgId,
+      });
+    }),
     generateSandboxToken(identity.userId, randomUUID(), identity.orgId),
   ]) {
     const runHeaders = { authorization: `Bearer ${token}` };

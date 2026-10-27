@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
@@ -14,6 +15,25 @@ import {
 } from "../tokens";
 import { now } from "../../../lib/time";
 import { safeJsonParse } from "../../utils";
+
+/** Issue a run token with switches evaluated the way run preparation does. */
+function issueOkouToken(
+  userId: string,
+  runId: string,
+  orgId: string,
+  overrides?: Partial<Record<FeatureSwitchKey, boolean>>,
+  options?: Parameters<typeof generateOkouToken>[4],
+): string {
+  return generateOkouToken(
+    userId,
+    runId,
+    orgId,
+    (key) => {
+      return isFeatureEnabled(key, { userId, orgId, overrides });
+    },
+    options,
+  );
+}
 
 function currentSecond(): number {
   return Math.floor(now() / 1000);
@@ -88,7 +108,7 @@ describe("auth tokens", () => {
   });
 
   it("generates a run token with the okou scope behind the sandbox prefix", () => {
-    const okouToken = generateOkouToken("user_okou", "run_okou", "org_okou");
+    const okouToken = issueOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(okouToken).toMatch(/^vm0_sandbox_/u);
     expect(decodeOkouTokenPayloadForTest(okouToken)).toMatchObject({
@@ -109,7 +129,7 @@ describe("auth tokens", () => {
     const computerUseHostId = "00000000-0000-4000-8000-000000000001";
     const customConnectorId = "00000000-0000-4000-8000-000000000002";
     const customConnectorSourceId = "00000000-0000-4000-8000-000000000003";
-    const okouToken = generateOkouToken(
+    const okouToken = issueOkouToken(
       "user_shared",
       "run_shared",
       "org_shared",
@@ -204,14 +224,14 @@ describe("auth tokens", () => {
   });
 
   it("includes chat thread read and write capabilities in okou-scoped tokens", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+    const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(verifyOkouToken(token)?.capabilities).toContain("chat-thread:read");
     expect(verifyOkouToken(token)?.capabilities).toContain("chat-thread:write");
   });
 
   it("includes chat event read and write capabilities in okou-scoped tokens", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+    const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(decodeOkouTokenPayloadForTest(token)).toMatchObject({
       capabilities: expect.arrayContaining([
@@ -232,18 +252,17 @@ describe("auth tokens", () => {
   ] as const)(
     "gates %s capability behind its feature switch",
     (feature, capability) => {
-      const disabledToken = generateOkouToken(
+      const disabledToken = issueOkouToken(
         "user_okou",
         "run_okou",
         "org_okou",
-        { [feature]: false },
+        {
+          [feature]: false,
+        },
       );
-      const enabledToken = generateOkouToken(
-        "user_okou",
-        "run_okou",
-        "org_okou",
-        { [feature]: true },
-      );
+      const enabledToken = issueOkouToken("user_okou", "run_okou", "org_okou", {
+        [feature]: true,
+      });
 
       expect(verifyOkouToken(disabledToken)?.capabilities).not.toContain(
         capability,
@@ -260,7 +279,7 @@ describe("auth tokens", () => {
     "vnc:read",
     "vnc:write",
   ] as const)("grants %s by default", (capability) => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+    const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(verifyOkouToken(token)?.capabilities).toContain(capability);
   });
@@ -268,34 +287,34 @@ describe("auth tokens", () => {
   it.each(["subscription:read", "subscription:switch"] as const)(
     "grants %s by default",
     (capability) => {
-      const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+      const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
       expect(verifyOkouToken(token)?.capabilities).toContain(capability);
     },
   );
 
   it("grants current-run usage by default", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+    const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(verifyOkouToken(token)?.capabilities).toContain("run-usage:read");
   });
 
   it("includes Slack read and write capabilities in okou-scoped tokens", () => {
-    const token = generateOkouToken("user_slack", "run_slack", "org_slack");
+    const token = issueOkouToken("user_slack", "run_slack", "org_slack");
 
     expect(verifyOkouToken(token)?.capabilities).toContain("slack:read");
     expect(verifyOkouToken(token)?.capabilities).toContain("slack:write");
   });
 
   it("grants custom connector writes by default", () => {
-    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+    const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(verifyOkouToken(token)?.capabilities).toContain("connector:write");
   });
 
   it("gates browser capabilities on thread access", () => {
-    const defaultToken = generateOkouToken("user_okou", "run_okou", "org_okou");
-    const enabledToken = generateOkouToken(
+    const defaultToken = issueOkouToken("user_okou", "run_okou", "org_okou");
+    const enabledToken = issueOkouToken(
       "user_okou",
       "run_okou",
       "org_okou",
@@ -316,8 +335,8 @@ describe("auth tokens", () => {
   });
 
   it("gates computer-use capability on an explicit host grant", () => {
-    const defaultToken = generateOkouToken("user_okou", "run_okou", "org_okou");
-    const scopedToken = generateOkouToken(
+    const defaultToken = issueOkouToken("user_okou", "run_okou", "org_okou");
+    const scopedToken = issueOkouToken(
       "user_okou",
       "run_okou",
       "org_okou",

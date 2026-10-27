@@ -5,7 +5,6 @@ import {
   Capability,
 } from "@okouai/api-contracts/contracts/capabilities";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import-session";
 import {
   workflowImportSourceSchema,
@@ -172,11 +171,15 @@ function featureSwitchForCapability(
   })?.[1];
 }
 
+/**
+ * Answers whether a feature switch is enabled for the token's user. The
+ * caller evaluates switches; this module only maps capabilities to keys.
+ */
+type FeatureEnabled = (key: FeatureSwitchKey) => boolean;
+
 function isAgentCapabilityEnabled(
   capability: Capability,
-  userId: string,
-  orgId: string,
-  overrides: Partial<Record<FeatureSwitchKey, boolean>> | undefined,
+  featureEnabled: FeatureEnabled,
 ): boolean {
   const featureSwitch = featureSwitchForCapability(
     CONDITIONAL_CAPABILITIES,
@@ -186,7 +189,7 @@ function isAgentCapabilityEnabled(
     return true;
   }
 
-  return isFeatureEnabled(featureSwitch, { userId, orgId, overrides });
+  return featureEnabled(featureSwitch);
 }
 
 function isCapabilityAvailableToAgent(
@@ -383,11 +386,11 @@ export function generateOkouToken(
   userId: string,
   runId: string,
   orgId: string,
-  overrides?: Partial<Record<FeatureSwitchKey, boolean>>,
+  featureEnabled: FeatureEnabled,
   options?: OkouTokenOptions,
 ): string {
   return signOkouToken(
-    buildOkouTokenClaims(userId, runId, orgId, overrides, options),
+    buildOkouTokenClaims(userId, runId, orgId, featureEnabled, options),
   );
 }
 
@@ -395,7 +398,7 @@ function buildOkouTokenClaims(
   userId: string,
   runId: string,
   orgId: string,
-  overrides: Partial<Record<FeatureSwitchKey, boolean>> | undefined,
+  featureEnabled: FeatureEnabled,
   options: OkouTokenOptions | undefined,
 ): OkouTokenClaims {
   const nowSeconds = Math.floor(now() / 1000);
@@ -404,7 +407,7 @@ function buildOkouTokenClaims(
     if (!isCapabilityAvailableToAgent(capability, options)) {
       continue;
     }
-    if (isAgentCapabilityEnabled(capability, userId, orgId, overrides)) {
+    if (isAgentCapabilityEnabled(capability, featureEnabled)) {
       capabilities.push(capability);
     }
   }

@@ -1,4 +1,4 @@
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,

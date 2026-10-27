@@ -1,5 +1,5 @@
 import type { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { xResourceReads } from "@okouai/db/schema/x-resource-usage";

@@ -1,3 +1,7 @@
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { command, computed, type Computed } from "ccstate";
 import { generateOkouToken } from "../auth/tokens";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
@@ -9,7 +13,7 @@ interface OkouTokenInput {
   readonly userId: string;
   readonly runId: string;
   readonly orgId: string;
-  readonly featureOverrides: Parameters<typeof generateOkouToken>[3];
+  readonly featureOverrides: FeatureSwitchContext["overrides"];
   readonly options: Parameters<typeof generateOkouToken>[4];
 }
 
@@ -72,11 +76,18 @@ export function createOkouTokenInputSignals(
 export const prepareOkouTokenEnvironment$ = command(
   (_store, input: OkouTokenInput, signal: AbortSignal): Environment => {
     signal.throwIfAborted();
+    const features = {
+      userId: input.userId,
+      orgId: input.orgId,
+      overrides: input.featureOverrides,
+    };
     const okouToken = generateOkouToken(
       input.userId,
       input.runId,
       input.orgId,
-      input.featureOverrides,
+      (key) => {
+        return isFeatureEnabled(key, features);
+      },
       input.options,
     );
     return {

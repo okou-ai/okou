@@ -1,10 +1,12 @@
 import { isMemberRunModelAvailable } from "@okouai/api-contracts/contracts/member-run-model";
+import type {
+  AvailableRunModelsResponse,
+  ModelProviderResponse,
+} from "@okouai/api-contracts/contracts/model-providers";
 import {
   isPersonalSubscriptionProviderType,
-  type AvailableRunModelsResponse,
-  type ModelProviderResponse,
   type PersonalSubscriptionProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+} from "@okouai/api-contracts/contracts/model-provider-types";
 import { command, computed, state } from "ccstate";
 import {
   thirdPartySubscriptions$,

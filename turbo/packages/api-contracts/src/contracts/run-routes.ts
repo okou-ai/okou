@@ -28,7 +28,7 @@ import {
   networkLogsResponseSchema,
   createLogPaginationQuerySchema,
 } from "./runs";
-import { modelProviderTypeSchema } from "./model-providers";
+import { modelProviderTypeSchema } from "./model-provider-types";
 import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,

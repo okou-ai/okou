@@ -10,7 +10,7 @@ import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant
 import { and, eq, sql } from "drizzle-orm";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
-import { LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS } from "./credit-low-balance-alert.service";
+import { LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS } from "./credit-low-balance-threshold";
 import type {
   PricedUsageEvent,
   ProcessOrgUsageEventsResult,

@@ -3,7 +3,7 @@ import {
   AUTO_SELECTED_MODEL,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";

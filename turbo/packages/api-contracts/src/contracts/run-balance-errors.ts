@@ -1,4 +1,4 @@
-import { modelProviderTypeSchema } from "./model-providers";
+import { modelProviderTypeSchema } from "./model-provider-types";
 import type { RunFailureReasonToken } from "./run-failure-reasons";
 import {
   literal,
