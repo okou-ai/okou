@@ -14,16 +14,17 @@ public struct ChatFeedbackSelection: Equatable, Sendable {
       + "\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}"
       + "\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
 
-  public init?(message: ChatMessage, range: NSRange) {
+  public init?(message: ChatMessage, range: NSRange, visibleText: String? = nil) {
+    let visibleText = visibleText ?? message.text
     guard message.role == .assistant, !message.isError, !message.isQueued,
       !message.id.isEmpty, range.location != NSNotFound, range.length > 0,
-      range.location >= 0, range.location <= message.text.utf16.count,
-      range.length <= message.text.utf16.count - range.location,
-      let selected = Range(range, in: message.text)
+      range.location >= 0, range.location <= visibleText.utf16.count,
+      range.length <= visibleText.utf16.count - range.location,
+      let selected = Range(range, in: visibleText)
     else { return nil }
-    let passage = String(message.text[selected])
+    let passage = String(visibleText[selected])
     guard passage.utf16.count == range.length,
-      String(message.text[..<selected.lowerBound]).utf16.count == range.location
+      String(visibleText[..<selected.lowerBound]).utf16.count == range.location
     else { return nil }
     let quote = passage.trimmingCharacters(in: Self.whitespace)
     guard !quote.isEmpty else { return nil }
@@ -35,6 +36,7 @@ public struct ChatFeedbackSelection: Equatable, Sendable {
       range.location + passage.utf16.count
       - String(String.UnicodeScalarView(trimmedStart)).utf16.count
     self.eventID = message.id
+    // Retain the source snapshot for stale-event validation; offsets describe rendered text.
     self.text = message.text
     self.quote = quote
     self.range = NSRange(location: start, length: quote.utf16.count)

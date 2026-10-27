@@ -15,9 +15,7 @@ struct ChatDetailView: View {
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
-  @State private var messageToSelect: ChatMessage?
   @State private var usageDetails: UsageDetails?
-  @State private var selectionToQuote: ChatFeedbackSelection?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -89,6 +87,7 @@ struct ChatDetailView: View {
       isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       rowsPresented: scrolling.rowsPresented,
+      quote: conversation.quote,
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()
@@ -138,8 +137,6 @@ struct ChatDetailView: View {
       if let request { scrolling.reveal(request.position) }
     }
     .onDisappear {
-      selectionToQuote = nil
-      messageToSelect = nil
       scrolling.deactivate()
       conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
@@ -159,21 +156,6 @@ struct ChatDetailView: View {
       )
     ) {
       MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
-    }
-    .sheet(
-      item: $messageToSelect,
-      onDismiss: {
-        if let selection = selectionToQuote { conversation.quote(selection) }
-        selectionToQuote = nil
-      }
-    ) { message in
-      MessageTextSelectionSheet(
-        text: message.copyText, message: message,
-        quote: message.role == .assistant
-          ? { selection in
-            selectionToQuote = selection
-            messageToSelect = nil
-          } : nil)
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(item: $usageDetails) { selection in
@@ -330,12 +312,6 @@ struct ChatDetailView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-    .contextMenu {
-      if !message.copyText.isEmpty {
-        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
-        Button("Select Text", systemImage: "text.cursor") { messageToSelect = message }
-      }
-    }
   }
 
   private var assistantAvatar: some View {
