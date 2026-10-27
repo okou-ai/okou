@@ -9,6 +9,46 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.17.0](https://github.com/okou-ai/okou/compare/api-v2.16.0...api-v2.17.0) (2026-10-27)
+
+
+### Features
+
+* **browser:** bind cli tools to chat windows ([#43449](https://github.com/okou-ai/okou/issues/43449)) ([a591c65](https://github.com/okou-ai/okou/commit/a591c65fb21156ab71f7d3f20584a1632f247f89))
+* **cli:** add connector account disconnect command ([#43475](https://github.com/okou-ai/okou/issues/43475)) ([f1ebfa9](https://github.com/okou-ai/okou/commit/f1ebfa965b91f329ab91398bc311531b51a09e3a))
+* release website controls and thread email manager ([#43476](https://github.com/okou-ai/okou/issues/43476)) ([e9989fb](https://github.com/okou-ai/okou/commit/e9989fbe0eceec17fe7d0ede926236d729b299cd))
+* remove the x share quest from get started ([#43455](https://github.com/okou-ai/okou/issues/43455)) ([3059ea2](https://github.com/okou-ai/okou/commit/3059ea2c584b81e069c750e0e9f2f2e531f03e83))
+
+
+### Bug Fixes
+
+* **api:** include failure reasons in chat-run-finished automations ([#43448](https://github.com/okou-ai/okou/issues/43448)) ([0f0b749](https://github.com/okou-ai/okou/commit/0f0b7499a85823450ea7e949ee20136007099636))
+* **app:** restrict agent self-management to custom agents ([#43481](https://github.com/okou-ai/okou/issues/43481)) ([c9c00ca](https://github.com/okou-ai/okou/commit/c9c00ca806f8fbfcd2cc451ffac6c8aa1a61d908))
+
+
+### Refactoring
+
+* **api:** handle feishu disconnect commands atomically ([#43424](https://github.com/okou-ai/okou/issues/43424)) ([8f01de7](https://github.com/okou-ai/okou/commit/8f01de7254470f7fabedd76b2b646b405e6a28b2))
+* **api:** localize completed-run follow-up publication ([#43498](https://github.com/okou-ai/okou/issues/43498)) ([7b25d5c](https://github.com/okou-ai/okou/commit/7b25d5cd3fe3f75326f48051a05372332f752884))
+* **api:** localize completed-run output reads ([#43471](https://github.com/okou-ai/okou/issues/43471)) ([effed9b](https://github.com/okou-ai/okou/commit/effed9bf6420a93054005cf4111efb6a2934f1da))
+* **data:** speak only stateless mcp 2026-07-28 to data router ([#43447](https://github.com/okou-ai/okou/issues/43447)) ([bb57027](https://github.com/okou-ai/okou/commit/bb57027eaa3a6a1856cfa35c5f6b87cf0a2a6549))
+* let data router own its tool catalog ([#43457](https://github.com/okou-ai/okou/issues/43457)) ([5152b2d](https://github.com/okou-ai/okou/commit/5152b2d43e1cdefe15cf338cd43abdaf19f84504))
+
+
+### Performance Improvements
+
+* **api:** checkpoint isolated database baselines before publishing ([#43443](https://github.com/okou-ai/okou/issues/43443)) ([c7b41d5](https://github.com/okou-ai/okou/commit/c7b41d5b61d1af847aeecc1512482a3100fe3882))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.13.0
+    * @okouai/core bumped to 8.794.0
+    * @okouai/db bumped to 2.8.0
+    * @okouai/pi-agent-runtime bumped to 1.51.6
+
 ## [2.16.0](https://github.com/okou-ai/okou/compare/api-v2.15.0...api-v2.16.0) (2026-10-27)
 
 

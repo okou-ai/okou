@@ -1,5 +1,30 @@
 # Changelog
 
+## [10.5.0](https://github.com/okou-ai/okou/compare/cli-v10.4.1...cli-v10.5.0) (2026-10-27)
+
+
+### Features
+
+* **browser:** bind cli tools to chat windows ([#43449](https://github.com/okou-ai/okou/issues/43449)) ([a591c65](https://github.com/okou-ai/okou/commit/a591c65fb21156ab71f7d3f20584a1632f247f89))
+* **cli:** add connector account disconnect command ([#43475](https://github.com/okou-ai/okou/issues/43475)) ([f1ebfa9](https://github.com/okou-ai/okou/commit/f1ebfa965b91f329ab91398bc311531b51a09e3a))
+* **cli:** add connector unauthorize command ([#43456](https://github.com/okou-ai/okou/issues/43456)) ([3b6d5f0](https://github.com/okou-ai/okou/commit/3b6d5f03d0e8d1fa9b9e1446353104c21e1962c3))
+* **cli:** write large data call bodies to a temp file ([#43451](https://github.com/okou-ai/okou/issues/43451)) ([ccc4701](https://github.com/okou-ai/okou/commit/ccc4701e208e6e56716b2fb212f48a741c4205f1))
+
+
+### Refactoring
+
+* **data:** speak only stateless mcp 2026-07-28 to data router ([#43447](https://github.com/okou-ai/okou/issues/43447)) ([bb57027](https://github.com/okou-ai/okou/commit/bb57027eaa3a6a1856cfa35c5f6b87cf0a2a6549))
+* let data router own its tool catalog ([#43457](https://github.com/okou-ai/okou/issues/43457)) ([5152b2d](https://github.com/okou-ai/okou/commit/5152b2d43e1cdefe15cf338cd43abdaf19f84504))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.13.0
+    * @okouai/core bumped to 8.794.0
+    * @okouai/pi-agent-runtime bumped to 1.51.6
+
 ## [10.4.1](https://github.com/okou-ai/okou/compare/cli-v10.4.0...cli-v10.4.1) (2026-10-27)
 
 

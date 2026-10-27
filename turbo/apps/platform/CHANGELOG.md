@@ -12,6 +12,37 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1070.0](https://github.com/okou-ai/okou/compare/app-v0.1069.1...app-v0.1070.0) (2026-10-27)
+
+
+### Features
+
+* enable remote control guided setup for everyone ([#43445](https://github.com/okou-ai/okou/issues/43445)) ([4e5e2c3](https://github.com/okou-ai/okou/commit/4e5e2c3143150de64b99336151672e866b62c845))
+* release website controls and thread email manager ([#43476](https://github.com/okou-ai/okou/issues/43476)) ([e9989fb](https://github.com/okou-ai/okou/commit/e9989fbe0eceec17fe7d0ede926236d729b299cd))
+* remove the x share quest from get started ([#43455](https://github.com/okou-ai/okou/issues/43455)) ([3059ea2](https://github.com/okou-ai/okou/commit/3059ea2c584b81e069c750e0e9f2f2e531f03e83))
+
+
+### Bug Fixes
+
+* **app:** restrict agent self-management to custom agents ([#43481](https://github.com/okou-ai/okou/issues/43481)) ([c9c00ca](https://github.com/okou-ai/okou/commit/c9c00ca806f8fbfcd2cc451ffac6c8aa1a61d908))
+* **app:** simplify suggestion follow-up copy ([#43474](https://github.com/okou-ai/okou/issues/43474)) ([7548997](https://github.com/okou-ai/okou/commit/754899704fa3bb26f4f318c9a4cb45059ab94796))
+* **app:** use official google workspace logos in artifact menus ([#43426](https://github.com/okou-ai/okou/issues/43426)) ([2d3527f](https://github.com/okou-ai/okou/commit/2d3527fc775941f081c0aa133bbc9f52dcd77e16))
+* **chat:** exclude queue waiting from work duration ([#43444](https://github.com/okou-ai/okou/issues/43444)) ([c32b48e](https://github.com/okou-ai/okou/commit/c32b48efe24ccca368cafff6b67f1ba52537f3d4))
+
+
+### Refactoring
+
+* let data router own its tool catalog ([#43457](https://github.com/okou-ai/okou/issues/43457)) ([5152b2d](https://github.com/okou-ai/okou/commit/5152b2d43e1cdefe15cf338cd43abdaf19f84504))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.13.0
+    * @okouai/core bumped to 8.794.0
+    * @okouai/ui bumped to 1.18.5
+
 ## [0.1069.1](https://github.com/okou-ai/okou/compare/app-v0.1069.0...app-v0.1069.1) (2026-10-27)
 
 
