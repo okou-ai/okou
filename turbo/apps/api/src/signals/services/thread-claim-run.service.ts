@@ -79,7 +79,7 @@ import { safeSqlStateCode } from "../../lib/pg-errors";
 
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
@@ -1016,9 +1016,8 @@ type ClaimRejectionContext =
   | { readonly kind: "prompt"; readonly runInput: CreateQueuedChatRunInput }
   | { readonly kind: "automation"; readonly userId: string };
 
-/** Queued prompt data with this preparation's read handle and timing. */
+/** Queued prompt data with this preparation's timing. */
 interface CreateQueuedChatRunInputArgs extends QueuedChatPromptData {
-  readonly db: ReadonlyDb;
   readonly timing?: ChatCallbackPreCreateTimingCollector;
 }
 
@@ -1473,13 +1472,13 @@ export function createThreadClaimRunObjects(
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
       const { head, timing } = await get(promptInputInput$);
-      const db = get(db$);
+      // Preserve runtime DB acquisition without carrying its handle onward.
+      get(db$);
       const queuedMessage = await get(promptQueuedMessageQueuedMessage$);
       if (!queuedMessage || queuedMessage.id !== head.id) {
         throw new Error("Prompt preparation lost its selected head");
       }
       return {
-        db,
         threadId: head.chatThreadId,
         userId: bootstrap.userId,
         agent: { id: bootstrap.agentId, orgId: bootstrap.orgId },
@@ -1790,10 +1789,10 @@ export function createThreadClaimRunObjects(
       return null;
     }
     const { head, runTiming: timing } = await get(promptInputInput$);
-    const db = get(db$);
+    // Preserve this node's existing DB dependency and initialization boundary.
+    get(db$);
     const args = await get(promptArgsArgs$);
     return {
-      db,
       timing,
       owner: { userId: args.userId, orgId: args.agent.orgId },
       apiStartTime: head.apiStartTime,
@@ -1818,7 +1817,6 @@ export function createThreadClaimRunObjects(
       return null;
     }
     return {
-      db: identity.db,
       timing: identity.timing,
       command: {
         owner: identity.owner,
@@ -3431,8 +3429,9 @@ export function createThreadClaimRunObjects(
       const tokenInput = await get(okouTokenInput$);
       signal.throwIfAborted();
       const okouToken = set(prepareOkouTokenEnvironment$, tokenInput, signal);
+      // Keep acquisition before storage preparation without retaining the DB.
+      set(writeDb$);
       return prepareRunnerStorageInput({
-        db: set(writeDb$),
         args,
         okouToken,
         storageManifestStats: new StorageManifestBuildStats(),
@@ -5399,7 +5398,6 @@ function assembleRunnerLaunch(args: {
 }
 
 interface StorageMaterializationInput {
-  readonly db: Db;
   readonly args: BuildRunnerJobPayloadInput;
   /** The Okou token source, merged last into body secrets and platform env. */
   readonly okouToken: Environment;
@@ -5407,9 +5405,8 @@ interface StorageMaterializationInput {
 }
 
 function prepareRunnerStorageInput(input: StorageMaterializationInput) {
-  const { db, args, storageManifestStats, okouToken } = input;
+  const { args, storageManifestStats, okouToken } = input;
   return {
-    db,
     args,
     storageManifestStats,
     body: {

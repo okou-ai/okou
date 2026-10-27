@@ -2249,9 +2249,9 @@ const sendQueuedAdmissionFailure$ = command(
     chatEventId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
+    // Preserve acquisition before channel dispatch, without forwarding the DB.
+    set(writeDb$);
     const base = {
-      db,
       chatThreadId: channel.chatThreadId,
       orgId: channel.orgId,
       userId: channel.userId,
