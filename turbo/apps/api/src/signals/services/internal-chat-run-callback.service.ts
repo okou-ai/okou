@@ -27,7 +27,7 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
-import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { object, string, type infer as zInfer } from "zod";
 
 import type { Tx } from "../../lib/db-types";
@@ -87,6 +87,9 @@ import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
 import {
   loadTerminalChatCallback$,
+  loadTerminalChatCallbackLocator$,
+  requireSourceChatCallback$,
+  sourceChatCallbackReadPlan,
   type ChatRunInfo,
   type ChatThreadForRunRow,
 } from "./chat-run-state-read.service";
@@ -715,23 +718,16 @@ async function requireSourceChatCallback(args: {
   readonly runId: string;
   readonly sourceCallbackId?: string;
 }) {
+  const plan = sourceChatCallbackReadPlan({
+    runId: args.runId,
+    sourceCallbackId: args.sourceCallbackId,
+  });
   const [source] = await args.db
-    .select({
-      id: agentRunCallbacks.id,
-      encryptedSecret: agentRunCallbacks.encryptedSecret,
-    })
+    .select(plan.columns)
     .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-        args.sourceCallbackId
-          ? eq(agentRunCallbacks.id, args.sourceCallbackId)
-          : undefined,
-      ),
-    )
-    .orderBy(asc(agentRunCallbacks.id))
-    .limit(1);
+    .where(plan.condition)
+    .orderBy(plan.order)
+    .limit(plan.limit);
   if (!source) {
     throw new Error("Canonical delivery run is missing its chat callback");
   }
@@ -2473,17 +2469,6 @@ export const recordQueuedPromptRunLaunch$ = command(
   },
 );
 
-function terminalChatCallbackRunReadPlan(runId: string) {
-  return {
-    columns: {
-      threadId: agentRuns.chatThreadId,
-      triggerSource: agentRuns.triggerSource,
-    },
-    condition: eq(agentRuns.id, runId),
-    limit: 1,
-  };
-}
-
 const prepareCompletedTerminalChatCallbackWork$ = command(
   async (
     { set },
@@ -2752,7 +2737,6 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly status: "completed" | "failed";
       readonly slackDeliveryCallbackId: string | undefined;
@@ -2869,7 +2853,6 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
 );
 
 interface TerminalChatCallbackArgs {
-  readonly db: Db;
   readonly callback: InternalRunCallbackEnvelope;
   readonly payload: ChatCallbackPayload;
 }
@@ -2971,7 +2954,6 @@ const finishTerminalChatCallbackAfterProjection$ = command(
     await set(
       dispatchCanonicalDeliveryCallbacks$,
       {
-        db: args.callback.db,
         runId: args.runId,
         status: args.callbackStatus,
         slackDeliveryCallbackId: args.work.slackDeliveryCallbackId,
@@ -3061,21 +3043,6 @@ const finishTerminalChatCallbackAfterProjection$ = command(
   },
 );
 
-async function terminalChatCallbackSourceId(
-  args: TerminalChatCallbackArgs,
-): Promise<string> {
-  // Queue launch failure callbacks carry the run identity before they have
-  // an envelope callback ID. Resolve their existing persisted owner exactly
-  // as delivery registration does; terminal work must never lose its receipt.
-  return (
-    await requireSourceChatCallback({
-      db: args.db,
-      runId: args.callback.runId,
-      sourceCallbackId: args.callback.callbackId,
-    })
-  ).id;
-}
-
 const processTerminalChatCallback$ = command(
   async (
     { set },
@@ -3098,16 +3065,7 @@ const processTerminalChatCallback$ = command(
           "api_dispatch_pre_create_agent_chat_callback_load_terminal",
           "top_level",
           async () => {
-            const db = args.db;
-            const existing = await (async () => {
-              const plan = terminalChatCallbackRunReadPlan(runId);
-              const [run] = await db
-                .select(plan.columns)
-                .from(agentRuns)
-                .where(plan.condition)
-                .limit(plan.limit);
-              return run;
-            })();
+            const existing = await set(loadTerminalChatCallbackLocator$, runId);
             signal.throwIfAborted();
             if (!existing?.threadId || existing.triggerSource === null) {
               return null;
@@ -3129,7 +3087,17 @@ const processTerminalChatCallback$ = command(
           return null;
         }
         const { run, chatThread } = loaded;
-        const sourceCallbackId = await terminalChatCallbackSourceId(args);
+        // Queue launch failure callbacks carry the run identity before they have
+        // an envelope callback ID. Resolve their existing persisted owner exactly
+        // as delivery registration does; terminal work must never lose its receipt.
+        const sourceCallbackId = await (async () => {
+          return (
+            await set(requireSourceChatCallback$, {
+              runId: args.callback.runId,
+              sourceCallbackId: args.callback.callbackId,
+            })
+          ).id;
+        })();
         signal.throwIfAborted();
         const preparation = {
           runId,
@@ -3200,7 +3168,6 @@ const processChatInternalCallback$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly callback: InternalRunCallbackEnvelope;
     },
     signal: AbortSignal,
@@ -3269,7 +3236,6 @@ const processChatInternalCallback$ = command(
 
     signal.throwIfAborted();
     const processingInput = {
-      db: args.db,
       callback: args.callback,
       payload: payload.data,
     };
@@ -3517,11 +3483,10 @@ export const handleChatInternalCallback$ = command(
     | { readonly success: true }
     | { readonly success: false; readonly error: string }
   > => {
-    const db = set(writeDb$);
+    set(writeDb$);
     return await set(
       processChatInternalCallback$,
       {
-        db,
         callback: input.callback,
       },
       signal,
