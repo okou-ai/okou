@@ -23,7 +23,11 @@ use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 static INVALID_API_START_TIME_WARNED: AtomicBool = AtomicBool::new(false);
 
-/// Tracks only post-claim jobs that have not yet spawned a guest process.
+/// Tracks post-claim Runner startup work through Agent readiness.
+///
+/// Membership ends when startup timing is consumed after readiness or dropped
+/// on early exit. Each admission captures a fixed concurrency cohort including
+/// the new job, rather than a continuously updated gauge.
 #[derive(Clone, Default)]
 pub struct RunnerPreSpawnConcurrency {
     active: Arc<AtomicUsize>,
@@ -59,8 +63,9 @@ impl RunnerPreSpawnConcurrencyGuard {
     }
 
     fn preserve_attribution_after_spawn(&mut self) {
-        // Live membership ends when this guard drops at spawn. The immutable
-        // cohort remains valid for the immediately following api_to_spawn row.
+        // Live membership ends when startup timing is consumed after Agent readiness.
+        // Keep the admission-time cohort for the following api_to_spawn and
+        // api_to_agent_ready rows after this guard drops.
         self.preserve_attribution_on_drop = true;
     }
 
