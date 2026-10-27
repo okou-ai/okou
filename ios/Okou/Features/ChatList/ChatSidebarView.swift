@@ -87,7 +87,8 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    .scrollEdgeEffectStyle(.soft, for: .vertical)
+    .scrollEdgeEffectStyle(.soft, for: .top)
+    .scrollEdgeEffectHidden(true, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
       header
         .padding(.horizontal, 16)
