@@ -185,17 +185,24 @@ jobs:
         COMPILATION_PATH: ${{ steps.cache.outputs.compilation-path }}
         DEPENDENCIES_KEY: ${{ steps.cache.outputs.dependencies-key }}
         COMPILATION_KEY: ${{ steps.cache.outputs.compilation-key }}
+        MISSING: compilation
       run: |
         set -euo pipefail
         case "$SCENARIO" in
           cold) [[ "$DEPENDENCIES_HIT" != true && "$COMPILATION_HIT" != true ]] ;;
-          partial) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" != true && -d "$DEPENDENCIES_PATH" ]] ;;
+          partial)
+            if [[ "$MISSING" == compilation ]]; then
+              [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" != true && -d "$DEPENDENCIES_PATH" ]]
+            else
+              [[ "$DEPENDENCIES_HIT" != true && "$COMPILATION_HIT" == true && -d "$COMPILATION_PATH" ]]
+            fi
+            ;;
           healed) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" == true && ! -e "$DEPENDENCIES_PATH" && ! -e "$COMPILATION_PATH" ]] ;;
           *) exit 1 ;;
         esac
         python3 - <<'PROOF'
         import json,os,pathlib
-        fields=['SCENARIO','DEPENDENCIES_HIT','COMPILATION_HIT','DEPENDENCIES_KEY','COMPILATION_KEY','GITHUB_REF','GITHUB_SHA']
+        fields=['MISSING','SCENARIO','DEPENDENCIES_HIT','COMPILATION_HIT','DEPENDENCIES_KEY','COMPILATION_KEY','GITHUB_REF','GITHUB_SHA']
         pathlib.Path(os.environ['RUNNER_TEMP'],'cache-proof.json').write_text(json.dumps({x:os.environ.get(x,'') for x in fields},indent=2)+'\n')
         PROOF
     - name: Prepare locked dependencies
@@ -294,17 +301,24 @@ jobs:
         COMPILATION_PATH: ${{ steps.cache.outputs.compilation-path }}
         DEPENDENCIES_KEY: ${{ steps.cache.outputs.dependencies-key }}
         COMPILATION_KEY: ${{ steps.cache.outputs.compilation-key }}
+        MISSING: dependencies
       run: |
         set -euo pipefail
         case "$SCENARIO" in
           cold) [[ "$DEPENDENCIES_HIT" != true && "$COMPILATION_HIT" != true ]] ;;
-          partial) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" != true && -d "$DEPENDENCIES_PATH" ]] ;;
+          partial)
+            if [[ "$MISSING" == compilation ]]; then
+              [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" != true && -d "$DEPENDENCIES_PATH" ]]
+            else
+              [[ "$DEPENDENCIES_HIT" != true && "$COMPILATION_HIT" == true && -d "$COMPILATION_PATH" ]]
+            fi
+            ;;
           healed) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" == true && ! -e "$DEPENDENCIES_PATH" && ! -e "$COMPILATION_PATH" ]] ;;
           *) exit 1 ;;
         esac
         python3 - <<'PROOF'
         import json,os,pathlib
-        fields=['SCENARIO','DEPENDENCIES_HIT','COMPILATION_HIT','DEPENDENCIES_KEY','COMPILATION_KEY','GITHUB_REF','GITHUB_SHA']
+        fields=['MISSING','SCENARIO','DEPENDENCIES_HIT','COMPILATION_HIT','DEPENDENCIES_KEY','COMPILATION_KEY','GITHUB_REF','GITHUB_SHA']
         pathlib.Path(os.environ['RUNNER_TEMP'],'cache-proof.json').write_text(json.dumps({x:os.environ.get(x,'') for x in fields},indent=2)+'\n')
         PROOF
     - name: Build and validate main Release archive caches
