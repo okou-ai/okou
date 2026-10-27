@@ -4,6 +4,9 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BLANK_SANDBOX_STATUS_READER_COMMIT=febec8a3399be74b0f14a89cb9f42e39dd5ce69f
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
+# #43433 publishes each default Agent with its reference and never adopts an
+# existing custom Agent. Atomic configuration updates rely on that identity.
+readonly IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT=01d21f7c5857795104c27cd54e724f2ced2d683e
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
@@ -172,6 +175,10 @@ fi
 release_tags=$(git tag --points-at "$TARGET_COMMIT" | grep -E -- '-v[0-9]' || true)
 if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
+fi
+
+if ! git merge-base --is-ancestor "$IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates immutable default Agent identity: ${IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then

@@ -2,11 +2,6 @@
   "version": 1,
   "sites": [
     {
-      "id": "TX-0011",
-      "file": "turbo/apps/api/src/signals/routes/agents.ts",
-      "owner": "updateAgentInner$"
-    },
-    {
       "id": "TX-0012",
       "file": "turbo/apps/api/src/signals/routes/agents.ts",
       "owner": "updateAgentMetadataInner$"

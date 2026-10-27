@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, count, eq, lt, sql } from "drizzle-orm";
+import { and, count, eq, lt, or, sql } from "drizzle-orm";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
@@ -19,9 +19,10 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$, type Db } from "../external/db";
-import { nowDate } from "../../lib/time";
+import { nowDate, nowDateSql } from "../../lib/time";
 import {
   nullableDriverValueDecoder,
+  pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
@@ -113,6 +114,32 @@ function buildAgentUpsertConflictSet(body: AgentUpdateBody, updatedAt: Date) {
   };
 }
 
+function deferredAgentUpdateText(value: string | null) {
+  // Admit text only for an eligible UPDATE, after its business checks.
+  return value === null
+    ? null
+    : sql`convert_from(${sql.param(Buffer.from(value, "utf8"))}, 'UTF8')`;
+}
+
+function agentConfigurationUpdateValues(body: AgentUpdateBody) {
+  return {
+    updatedAt: nowDateSql(),
+    ...(body.displayName !== undefined && {
+      displayName: deferredAgentUpdateText(body.displayName),
+    }),
+    ...(body.description !== undefined && {
+      description: deferredAgentUpdateText(body.description),
+    }),
+    ...(body.sound !== undefined && {
+      sound: deferredAgentUpdateText(body.sound),
+    }),
+    ...(body.avatarUrl !== undefined && {
+      avatarUrl: deferredAgentUpdateText(body.avatarUrl),
+    }),
+    ...(body.visibility !== undefined && { visibility: body.visibility }),
+  };
+}
+
 function requireAgentConfigurationPermission(
   existing: ExistingAgentForUpdate,
   member: AgentMember,
@@ -190,6 +217,39 @@ function validateAgentVisibilityUpdate(
     },
     signal,
   );
+}
+
+function agentConfigurationUpdateRejection(
+  existing: ExistingAgentForUpdate & { readonly publicAgentCount: number },
+  member: AgentMember,
+  updateBody: AgentUpdateBody,
+) {
+  const permissionError = requireAgentConfigurationPermission(existing, member);
+  if (permissionError) {
+    return permissionError;
+  }
+  const identityError = agentConfigurationUpdateError(
+    existing.id === existing.defaultAgentId,
+  );
+  if (identityError) {
+    return { status: 400 as const, body: { error: identityError } };
+  }
+  const ownerError = visibilityOwnerError(
+    existing,
+    member,
+    updateBody.visibility,
+  );
+  if (ownerError) {
+    return ownerError;
+  }
+  if (
+    updateBody.visibility === "public" &&
+    existing.visibility !== "public" &&
+    existing.publicAgentCount >= PUBLIC_AGENT_LIMIT
+  ) {
+    return publicAgentLimitError();
+  }
+  return null;
 }
 
 function agentUpdateResponseSelection() {
@@ -496,100 +556,102 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const writeDb = set(writeDb$);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0011; new non-billing transactions are prohibited.
-  const result = await writeDb.transaction(async (tx) => {
-    await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-      .for("update");
-
-    const [existing] = await tx
+  const updateBody = body.data;
+  const publicAgentCount = writeDb
+    .select({ value: count() })
+    .from(agents)
+    .where(and(eq(agents.orgId, auth.orgId), eq(agents.visibility, "public")));
+  // Retain the existing Agent row lock. Immutable default identity and the
+  // documented soft public limit use this statement's snapshot.
+  const locked = writeDb.$with("configuration_agent").as(
+    writeDb
       .select({
         id: agents.id,
         owner: agents.owner,
         visibility: agents.visibility,
         defaultAgentId: orgMetadata.defaultAgentId,
+        publicAgentCount: (updateBody.visibility === "public"
+          ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId), nonDefaultAgentCondition(auth.orgId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
+          : sql`0::bigint`
+        )
+          .mapWith(pgInt8ToSafeIntegerDecoder)
+          .as("public_agent_count"),
       })
       .from(agents)
       .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-      .limit(1);
-    if (!existing) {
-      return { response: agentNotFound(params.id) };
-    }
-    const updateBody = body.data;
-
-    const permissionError = requireAgentConfigurationPermission(
-      existing,
-      member,
-    );
-    if (permissionError) {
-      return { response: permissionError };
-    }
-
-    const identityError = agentConfigurationUpdateError(
-      existing.id === existing.defaultAgentId,
-    );
-    if (identityError) {
-      return {
-        response: { status: 400 as const, body: { error: identityError } },
-      };
-    }
-
-    const nextVisibility = updateBody.visibility ?? existing.visibility;
-    const visibilityError = await validateAgentVisibilityUpdate(
-      {
-        writeDb: tx,
-        orgId: auth.orgId,
-        member,
-        existing,
-        requestedVisibility: updateBody.visibility,
-        nextVisibility,
-      },
-      signal,
-    );
-    if (visibilityError) {
-      return { response: visibilityError };
-    }
-
-    const [updated] = await tx
+      .for("update", { of: agents }),
+  );
+  const updated = writeDb.$with("updated_configuration_agent").as(
+    writeDb
       .update(agents)
-      .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
+      // The dependent locking CTE completes before this SQL clock is read.
+      .set(agentConfigurationUpdateValues(updateBody))
+      .from(locked)
       .where(
         and(
           eq(agents.orgId, auth.orgId),
-          eq(agents.id, params.id),
+          eq(agents.id, locked.id),
           nonDefaultAgentCondition(auth.orgId),
+          or(
+            eq(locked.owner, member.userId),
+            member.role === "admin"
+              ? eq(locked.visibility, "public")
+              : undefined,
+          ),
+          updateBody.visibility === undefined
+            ? undefined
+            : eq(locked.owner, member.userId),
+          updateBody.visibility === "public"
+            ? or(
+                eq(locked.visibility, "public"),
+                lt(locked.publicAgentCount, PUBLIC_AGENT_LIMIT),
+              )
+            : undefined,
         ),
       )
-      .returning({ id: agents.id });
-    if (!updated) {
-      throw new Error("Agent became read-only during configuration update");
-    }
-    const responseDb = tx;
-    const responseOrgId = auth.orgId;
-    const responseAgentId = params.id;
-    const agent = await (async () => {
-      const rows = await responseDb
-        .select(agentUpdateResponseSelection())
-        .from(agents)
-        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-        .where(
-          and(eq(agents.orgId, responseOrgId), eq(agents.id, responseAgentId)),
-        )
-        .limit(1);
-      return rows[0] ?? null;
-    })();
-    if (!agent) {
-      throw new Error(`Canonical Agent missing after update: ${params.id}`);
-    }
-    return { agent };
-  });
+      .returning({
+        ...agentUpdateResponseSelection(),
+        defaultAgentId: locked.defaultAgentId,
+      }),
+  );
+  const [row] = await writeDb
+    .with(locked, updated)
+    .select({
+      existing: {
+        id: locked.id,
+        owner: locked.owner,
+        visibility: locked.visibility,
+        defaultAgentId: locked.defaultAgentId,
+        publicAgentCount: locked.publicAgentCount,
+      },
+      agent: {
+        agentId: updated.agentId,
+        defaultAgentId: updated.defaultAgentId,
+        owner: updated.owner,
+        displayName: updated.displayName,
+        description: updated.description,
+        sound: updated.sound,
+        avatarUrl: updated.avatarUrl,
+        visibility: updated.visibility,
+      },
+    })
+    .from(locked)
+    .leftJoin(updated, eq(updated.agentId, locked.id));
   signal.throwIfAborted();
-
-  if ("response" in result) {
-    return result.response;
+  if (!row) {
+    return agentNotFound(params.id);
+  }
+  const updateError = agentConfigurationUpdateRejection(
+    row.existing,
+    member,
+    updateBody,
+  );
+  if (updateError) {
+    return updateError;
+  }
+  if (!row.agent) {
+    throw new Error(`Canonical Agent missing after update: ${params.id}`);
   }
 
   if (body.data.visibility === "private") {
@@ -599,7 +661,7 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         kind: "agent",
         orgId: auth.orgId,
         agentId: params.id,
-        ownerId: result.agent.owner,
+        ownerId: row.agent.owner,
       },
       signal,
     );
@@ -607,7 +669,7 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   return {
     status: 200 as const,
-    body: agentResponse(result.agent),
+    body: agentResponse(row.agent),
   };
 });
 
