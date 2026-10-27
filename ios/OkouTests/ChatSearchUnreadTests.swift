@@ -36,9 +36,10 @@ final class ChatSearchUnreadTests: XCTestCase {
     let opened = await store.openSearchResult(id)
     XCTAssertTrue(opened)
     XCTAssertEqual(store.selectedAgentID, SearchUnreadFixture.otherAgent)
-    XCTAssertTrue(store.selectedConversation === conversation)
-    XCTAssertEqual(conversation.readingPosition, position)
-    XCTAssertTrue(conversation.visibleMessages.contains { $0.id == position.messageID })
+    let selected = try XCTUnwrap(store.selectedConversation)
+    XCTAssertEqual(selected.thread.id, id)
+    XCTAssertEqual(selected.readingPosition, position)
+    XCTAssertTrue(selected.visibleMessages.contains { $0.id == position.messageID })
     XCTAssertFalse(store.search.isPresented)
     XCTAssertNil(store.error)
   }
@@ -73,10 +74,19 @@ final class ChatSearchUnreadTests: XCTestCase {
     let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
     defer { store.close() }
     let startup = Task { await store.list.refresh() }
+    addTeardownBlock {
+      startup.cancel()
+      gate.open()
+      await startup.value
+    }
     await fulfillment(of: [started], timeout: 2)
     store.search.present()
-    let opening = Task { await store.openSearchResult(SearchUnreadFixture.id(2)) }
-    await Task.yield()
+    let opening = Task.immediate { await store.openSearchResult(SearchUnreadFixture.id(2)) }
+    addTeardownBlock {
+      opening.cancel()
+      gate.open()
+      _ = await opening.value
+    }
     XCTAssertNil(store.selectedThreadID)
     gate.open()
     let opened = await opening.value
