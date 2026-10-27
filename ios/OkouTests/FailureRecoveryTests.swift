@@ -156,6 +156,11 @@ final class FailureRecoveryTests: XCTestCase {
     defer { gate.open() }
     fixture.state.value.withLock { $0.resetGate = gate }
     let recovering = Task { await conversation.recoverFailure(failure.id, resetUsage: true) }
+    addTeardownBlock {
+      recovering.cancel()
+      gate.open()
+      await recovering.value
+    }
     try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
     fixture.state.value.withLock {
       $0.rows.append(
@@ -313,6 +318,11 @@ final class FailureRecoveryTests: XCTestCase {
     fixture.state.value.withLock { $0.resetGate = gate }
     let first = Task {
       await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
+    }
+    addTeardownBlock {
+      first.cancel()
+      gate.open()
+      await first.value
     }
     try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
     await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
