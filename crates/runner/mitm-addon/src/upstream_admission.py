@@ -24,7 +24,7 @@ _TEST_ENDPOINT_PATH_PREFIX: Final = "/api/test/"
 _PLATFORM_CONNECTOR_AUTH_PATH_ALLOWLIST: Final = frozenset(("/mcp",))
 _PLATFORM_CONNECTOR_AUTH_PATH_DENYLIST: Final = frozenset(("/api",))
 _PLATFORM_CONNECTOR_AUTH_PATH_DENY_PREFIXES: Final = ("/api/", "/mcp/")
-_TEST_ENDPOINT_BYPASS_HEADER: Final = "x-okou-test-endpoint-bypass"
+_TEST_ENDPOINT_BYPASS_HEADER: Final = b"x-okou-test-endpoint-bypass"
 _UPSTREAM_BINDING_DIAGNOSTICS = "_upstream_binding_diagnostics"
 
 TlsAdmissionKind = Literal[
@@ -136,6 +136,22 @@ def _request_has_platform_test_endpoint_bypass(flow: http.HTTPFlow) -> bool:
     expected_bypass = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET", "")
     if not expected_bypass:
         return False
+    # Bound the complete folded value before Headers.get decodes any field.
+    max_value_bytes = len(expected_bypass.encode("utf-8", "surrogateescape"))
+    value_bytes = 0
+    has_value = False
+    for name, value in flow.request.headers.fields:
+        if (
+            len(name) != len(_TEST_ENDPOINT_BYPASS_HEADER)
+            or name.lower() != _TEST_ENDPOINT_BYPASS_HEADER
+        ):
+            continue
+        value_bytes += len(value)
+        if has_value:
+            value_bytes += len(", ")
+        if value_bytes > max_value_bytes:
+            return False
+        has_value = True
     return flow.request.headers.get(_TEST_ENDPOINT_BYPASS_HEADER) == expected_bypass
 
 
