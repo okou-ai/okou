@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.27.0...guest-storage-apply-v0.27.1) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** batch workflow document publication and application ([#43510](https://github.com/okou-ai/okou/issues/43510)) ([74cce31](https://github.com/okou-ai/okou/commit/74cce31a39c11dbfd04c263d7386216e99485011))
+
 ## [0.27.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.11...guest-storage-apply-v0.27.0) (2026-10-27)
 
 

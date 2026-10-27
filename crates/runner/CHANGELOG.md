@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.20...runner-rs-v0.237.21) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-host:** retain gc lock custody through physical removal ([#43541](https://github.com/okou-ai/okou/issues/43541)) ([1a38580](https://github.com/okou-ai/okou/commit/1a3858059ececb7582b6231763a386a85d9922a9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.19...runner-rs-v0.237.20) (2026-10-27)
 
 

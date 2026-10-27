@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.45](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.44...runner-executor-v0.15.45) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** batch workflow document publication and application ([#43510](https://github.com/okou-ai/okou/issues/43510)) ([74cce31](https://github.com/okou-ai/okou/commit/74cce31a39c11dbfd04c263d7386216e99485011))
+
 ## [0.15.44](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.43...runner-executor-v0.15.44) (2026-10-27)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.1...runner-storage-v0.7.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-host:** retain gc lock custody through physical removal ([#43541](https://github.com/okou-ai/okou/issues/43541)) ([1a38580](https://github.com/okou-ai/okou/commit/1a3858059ececb7582b6231763a386a85d9922a9))
+
 ## [0.7.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.0...runner-storage-v0.7.1) (2026-10-27)
 
 

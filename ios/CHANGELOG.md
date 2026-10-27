@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.2](https://github.com/okou-ai/okou/compare/ios-v0.21.1...ios-v0.21.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** align chat card layouts with web ([#43503](https://github.com/okou-ai/okou/issues/43503)) ([df2ac12](https://github.com/okou-ai/okou/commit/df2ac120e2fd0b8d75f90dce76f0d8944ad2904d))
+* **ios:** select and quote message text in place ([#43514](https://github.com/okou-ai/okou/issues/43514)) ([94575e1](https://github.com/okou-ai/okou/commit/94575e138a0380f15e4c2613e178ae6d1ba4fc69))
+
+
+### CI
+
+* **ios:** reset oversized compiler history before warming ([#43523](https://github.com/okou-ai/okou/issues/43523)) ([4983c38](https://github.com/okou-ai/okou/commit/4983c38f6d805d0020ce87c07d7f067773bb5d30))
+
 ## [0.21.1](https://github.com/okou-ai/okou/compare/ios-v0.21.0...ios-v0.21.1) (2026-10-27)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.91](https://github.com/okou-ai/okou/compare/runner-network-v0.2.90...runner-network-v0.2.91) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-network:** retain registry lock through physical publication ([#43518](https://github.com/okou-ai/okou/issues/43518)) ([60ecd58](https://github.com/okou-ai/okou/commit/60ecd5843fad27fe33dd984a981d510d3f9c03ce))
+
 ## [0.2.90](https://github.com/okou-ai/okou/compare/runner-network-v0.2.89...runner-network-v0.2.90) (2026-10-27)
 
 
