@@ -91,23 +91,6 @@ export type ConnectorConnectionWriteOutcome =
   | { readonly kind: "missing" }
   | { readonly kind: "sibling-disabled" };
 
-/**
- * Thrown by {@link connectorConnectionWrittenRow} when a concurrent writer
- * changed the resolved account set. Callers using the `*Outcome` variants
- * receive the deterministic outcome instead.
- */
-export class ConnectorConnectionWriteLostError extends Error {
-  constructor(
-    readonly outcome: Exclude<
-      ConnectorConnectionWriteOutcome,
-      { readonly kind: "written" }
-    >["kind"],
-  ) {
-    super(`Connector connection write lost a concurrent change: ${outcome}`);
-    this.name = "ConnectorConnectionWriteLostError";
-  }
-}
-
 export type ConnectorConnectionMutationResolution =
   | {
       readonly kind: "ready";
@@ -587,19 +570,4 @@ export function connectorConnectionMetadataWriteResult(
     kind: "write",
     write: connectorConnectionMetadataInsert(context, insert, false),
   };
-}
-
-export function connectorConnectionWrittenRow(
-  outcome: ConnectorConnectionWriteOutcome,
-): StoredConnectorConnectionRow {
-  if (outcome.kind !== "written") {
-    throw new ConnectorConnectionWriteLostError(outcome.kind);
-  }
-  return outcome.row;
-}
-
-export async function awaitConnectorConnectionRow(
-  outcome: Promise<ConnectorConnectionWriteOutcome>,
-): Promise<StoredConnectorConnectionRow> {
-  return connectorConnectionWrittenRow(await outcome);
 }

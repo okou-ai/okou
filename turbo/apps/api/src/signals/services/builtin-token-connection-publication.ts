@@ -1,5 +1,4 @@
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
@@ -20,7 +19,6 @@ import {
 } from "./connector-account-state.service";
 import { builtinTokenCredentialWrites } from "./connector-credential-storage-write.service";
 import { completedGetStartedQuestPublication } from "./get-started-member-reward";
-import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 import {
   tokenConnectionMetadataClauses,
   tokenPublicationFields,
@@ -44,37 +42,6 @@ interface TokenConnectionPublication extends TokenConnectionMetadataPublication 
 
 const admitted = exists(sql`(SELECT 1 FROM token_connection)`);
 const accountId = sql`(SELECT id FROM token_connection)`;
-
-/** The original missing/denied outcome still publishes initial wallet metadata. */
-export function tokenConnectionWalletClauses(orgId: string): SQL[] {
-  const wallet = new PgDialect().buildInsertQuery({
-    table: orgMetadataCanonicalWrites,
-    values: [{ orgId: sql.param(orgId, orgMetadataCanonicalWrites.orgId) }],
-    onConflict: sql`do nothing`,
-    returning: [{ path: ["orgId"], field: orgMetadataCanonicalWrites.orgId }],
-  });
-  const entitlement = slackRewardWalletEntitlement(orgId);
-  const fields = tokenPublicationFields(
-    getTableColumns(orgPlanEntitlements),
-    entitlement,
-  );
-  return [
-    sql`token_wallet AS (${wallet})`,
-    sql`token_wallet_entitlement AS (INSERT INTO ${orgPlanEntitlements} (${sql.join(
-      fields.map(({ column }) => {
-        return sql.identifier(column.name);
-      }),
-      sql`, `,
-    )})
-      SELECT ${sql.join(
-        fields.map(({ value }) => {
-          return value;
-        }),
-        sql`, `,
-      )} FROM token_wallet
-      ON CONFLICT (org_id) DO NOTHING RETURNING org_id)`,
-  ];
-}
 
 function tokenReconciliationClauses(args: TokenConnectionPublication): SQL[] {
   if (args.reconciliation === null) {

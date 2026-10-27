@@ -102,6 +102,7 @@ function tokenMetadataInsert(
 /** Finite default/identity/sibling arbitration, with no executor or retry. */
 export function tokenConnectionMetadataClauses(
   args: TokenConnectionMetadataPublication,
+  prerequisite?: SQL,
 ): SQL[] {
   const dialect = new PgDialect();
   const clauses: SQL[] = [];
@@ -128,7 +129,9 @@ export function tokenConnectionMetadataClauses(
       original.kind === "update" && write.phase !== "existing"
         ? notExists(sql`(SELECT 1 FROM ${connectors} WHERE ${original.where})`)
         : sql`true`;
-    const eligible = sql`${earlier} AND ${fallback}`;
+    const eligible = prerequisite
+      ? sql`${earlier} AND ${fallback} AND ${prerequisite}`
+      : sql`${earlier} AND ${fallback}`;
     const statement =
       write.kind === "insert"
         ? tokenMetadataInsert(write, eligible)
