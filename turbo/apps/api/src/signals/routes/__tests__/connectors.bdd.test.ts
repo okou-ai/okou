@@ -8096,8 +8096,8 @@ describe("CONN-02: test-oauth auth-code journey", () => {
         "api-token",
         {
           apiToken: "bdd-failed-replacement-token",
-          // PostgreSQL text rejects NUL after the transaction has replaced the
-          // connection metadata, deleted OAuth credentials, and written the secret.
+          // PostgreSQL text rejects NUL in the replacement variable. The
+          // previous account metadata and usable OAuth grant must survive.
           inputVariable: "bdd-failed-replacement-input\u0000",
           tenantId: "bdd-failed-replacement-tenant",
         },

@@ -62,11 +62,6 @@
       "owner": "deleteBuiltinConnectorLocalState$"
     },
     {
-      "id": "TX-0117",
-      "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
-      "owner": "connectManualGrantBuiltinConnector$"
-    },
-    {
       "id": "TX-0118",
       "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
       "owner": "connectNoAuthBuiltinConnector$"
