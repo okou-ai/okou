@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.109.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.13...guest-agent-v0.109.14) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner:** update agent-browser and enable system ca trust ([#43487](https://github.com/okou-ai/okou/issues/43487)) ([8de4e51](https://github.com/okou-ai/okou/commit/8de4e51f45a5b6cda2d3fd6428ad20ecccc22520))
+
+
+### Documentation
+
+* **guest-agent:** clarify codex oauth refresh ownership ([#43485](https://github.com/okou-ai/okou/issues/43485)) ([430013c](https://github.com/okou-ai/okou/commit/430013c10ec6b5adc6ccea82f94539b7c9c1bd30))
+
 ## [0.109.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.12...guest-agent-v0.109.13) (2026-10-27)
 
 ## [0.109.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.11...guest-agent-v0.109.12) (2026-10-27)

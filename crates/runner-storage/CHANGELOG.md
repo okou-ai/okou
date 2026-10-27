@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.0...runner-storage-v0.7.1) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner-storage:** retry stalled first archive headers sooner ([#43499](https://github.com/okou-ai/okou/issues/43499)) ([aeb7be6](https://github.com/okou-ai/okou/commit/aeb7be68c01a0277e70108ab87b11dc066ed7647))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.17...runner-storage-v0.7.0) (2026-10-27)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.52](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.51...guest-control-server-v0.24.52) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner:** update agent-browser and enable system ca trust ([#43487](https://github.com/okou-ai/okou/issues/43487)) ([8de4e51](https://github.com/okou-ai/okou/commit/8de4e51f45a5b6cda2d3fd6428ad20ecccc22520))
+
 ## [0.24.51](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.50...guest-control-server-v0.24.51) (2026-10-27)
 
 ## [0.24.50](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.49...guest-control-server-v0.24.50) (2026-10-27)

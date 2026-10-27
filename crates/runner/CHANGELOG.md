@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.237.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.19...runner-rs-v0.237.20) (2026-10-27)
+
+
+### Bug Fixes
+
+* **python:** track aliases across comprehension iterations ([#43488](https://github.com/okou-ai/okou/issues/43488)) ([e38206d](https://github.com/okou-ai/okou/commit/e38206dcc8e9b207ccbb69167e406a382b44b7c8))
+* **runner:** update agent-browser and enable system ca trust ([#43487](https://github.com/okou-ai/okou/issues/43487)) ([8de4e51](https://github.com/okou-ai/okou/commit/8de4e51f45a5b6cda2d3fd6428ad20ecccc22520))
+
+
+### Performance Improvements
+
+* **mitm-addon:** bound auth.base connection nomination selection ([#43490](https://github.com/okou-ai/okou/issues/43490)) ([d6bd670](https://github.com/okou-ai/okou/commit/d6bd6704b32c0e922c3e544edf01ea1d71f6d589))
+* **runner:** bound authorization probing before sigv4 prebinding ([#43436](https://github.com/okou-ai/okou/issues/43436)) ([e56b9a4](https://github.com/okou-ai/okou/commit/e56b9a4d5bfa61b1ed1e6c4c52211a324c077aa5))
+* **runner:** retain up to 4096 home caches ([#43450](https://github.com/okou-ai/okou/issues/43450)) ([a8acf68](https://github.com/okou-ai/okou/commit/a8acf680771ab83fdb7882311ccee1d497dc9493))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.18...runner-rs-v0.237.19) (2026-10-27)
 
 

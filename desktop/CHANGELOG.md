@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.9](https://github.com/okou-ai/okou/compare/desktop-v0.54.8...desktop-v0.54.9) (2026-10-27)
+
+
+### Bug Fixes
+
+* **desktop:** remove glass background from toolbar wordmark ([#43497](https://github.com/okou-ai/okou/issues/43497)) ([3d5f0a2](https://github.com/okou-ai/okou/commit/3d5f0a292b722575e8fda7776e870905b517ca5e))
+
 ## [0.54.8](https://github.com/okou-ai/okou/compare/desktop-v0.54.7...desktop-v0.54.8) (2026-10-27)
 
 
