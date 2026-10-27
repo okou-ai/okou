@@ -4299,47 +4299,36 @@
         "expandLabel": "看看连接后能获得什么",
         "industries": {
           "coaching": {
-            "description": "明确目标、议程和下一步行动，为下一次课程做好准备。",
             "title": "课程准备计划"
           },
           "consulting": {
-            "description": "整理客户沟通，准备好会议所需的背景和下一步安排。",
             "title": "客户会前简报"
           },
           "design": {
-            "description": "把客户 brief 和品牌素材整理成清晰的创作计划。",
             "title": "创意简报"
           },
           "finance": {
-            "description": "汇总收入、支出和待对账项目，快速掌握月结情况。",
             "title": "月结概览"
           },
           "investing": {
-            "description": "汇总公司指标和研究笔记，形成清晰的对比。",
             "title": "公司研究对比"
           },
           "marketing": {
-            "description": "对比广告表现，找到下一步值得优化的方向。",
             "title": "广告表现简报"
           },
           "operations": {
-            "description": "从邮件和请求中整理出本周需要关注的重点。",
             "title": "本周工作计划"
           },
           "other": {
-            "description": "连接常用工具，从近期消息中找到一个有用的下一步。",
             "title": "下一步行动"
           },
           "research": {
-            "description": "从零散笔记中提炼关键发现、依据和下一步问题。",
             "title": "研究要点摘要"
           },
           "sales": {
-            "description": "找到需要关注的商机，结合已有沟通准备下一次跟进。",
             "title": "客户跟进摘要"
           },
           "software": {
-            "description": "汇总近期变更和未解决问题，形成可分享的团队进展。",
             "title": "版本进展摘要"
           }
         },

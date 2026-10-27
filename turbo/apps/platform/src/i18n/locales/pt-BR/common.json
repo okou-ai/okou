@@ -4368,47 +4368,36 @@
         "expandLabel": "Veja um exemplo do que você pode obter",
         "industries": {
           "coaching": {
-            "description": "Prepare sua próxima sessão com objetivos, pauta e próximos passos práticos.",
             "title": "Plano de sessão"
           },
           "consulting": {
-            "description": "Prepare reuniões com o contexto e os próximos passos das conversas com clientes.",
             "title": "Briefing de reunião"
           },
           "design": {
-            "description": "Transforme briefings de clientes e materiais de marca em um plano de criação claro.",
             "title": "Briefing criativo"
           },
           "finance": {
-            "description": "Reúna receitas, despesas e itens a conciliar em um resumo mensal claro.",
             "title": "Resumo de fechamento mensal"
           },
           "investing": {
-            "description": "Reúna indicadores e notas de pesquisa em uma comparação clara.",
             "title": "Comparação de empresas"
           },
           "marketing": {
-            "description": "Compare as métricas das campanhas e encontre oportunidades de melhoria.",
             "title": "Resumo de campanhas"
           },
           "operations": {
-            "description": "Transforme e-mails e solicitações em um plano focado no que precisa de atenção.",
             "title": "Esta semana"
           },
           "other": {
-            "description": "Conecte suas ferramentas do dia a dia e encontre uma próxima ação nas mensagens recentes.",
             "title": "Próximos passos"
           },
           "research": {
-            "description": "Extraia descobertas, evidências e novas perguntas de anotações dispersas.",
             "title": "Síntese de pesquisa"
           },
           "sales": {
-            "description": "Veja quais negócios precisam de atenção e prepare o próximo contato com contexto.",
             "title": "Acompanhamento de negócios"
           },
           "software": {
-            "description": "Reúna mudanças recentes e problemas em aberto em uma atualização para a equipe.",
             "title": "Resumo da versão"
           }
         },

@@ -4314,47 +4314,36 @@
         "expandLabel": "Ein Beispiel für Ihr Ergebnis ansehen",
         "industries": {
           "coaching": {
-            "description": "Bereiten Sie die nächste Sitzung mit klaren Zielen, einer Agenda und nächsten Schritten vor.",
             "title": "Sitzungsplan"
           },
           "consulting": {
-            "description": "Bereiten Sie aus Kundengesprächen ein Briefing mit Kontext und nächsten Schritten vor.",
             "title": "Kundentermin-Briefing"
           },
           "design": {
-            "description": "Fassen Sie Kundenbriefings und Markenmaterial zu einem klaren Produktionsplan zusammen.",
             "title": "Kreativbriefing"
           },
           "finance": {
-            "description": "Fassen Sie Einnahmen, Ausgaben und offene Abstimmungen übersichtlich zusammen.",
             "title": "Monatsabschluss"
           },
           "investing": {
-            "description": "Stellen Sie Unternehmenskennzahlen und Recherchen übersichtlich gegenüber.",
             "title": "Unternehmensvergleich"
           },
           "marketing": {
-            "description": "Vergleichen Sie Kampagnenkennzahlen und finden Sie Ansatzpunkte für Verbesserungen.",
             "title": "Kampagnenübersicht"
           },
           "operations": {
-            "description": "Ordnen Sie E-Mails und Anfragen zu einem klaren Plan für die Woche.",
             "title": "Diese Woche"
           },
           "other": {
-            "description": "Verbinden Sie Ihre Alltagstools und finden Sie in aktuellen Nachrichten den nächsten sinnvollen Schritt.",
             "title": "Nächste Schritte"
           },
           "research": {
-            "description": "Gewinnen Sie aus verstreuten Notizen Erkenntnisse, Belege und weiterführende Fragen.",
             "title": "Forschungsüberblick"
           },
           "sales": {
-            "description": "Erkennen Sie, welche Abschlüsse Aufmerksamkeit brauchen, und bereiten Sie die nächste Kontaktaufnahme vor.",
             "title": "Vertriebsnachfassplan"
           },
           "software": {
-            "description": "Fassen Sie Änderungen und offene Probleme zu einem Update für Ihr Team zusammen.",
             "title": "Release-Übersicht"
           }
         },

@@ -4368,47 +4368,36 @@
         "expandLabel": "Guarda un esempio di ciò che puoi ottenere",
         "industries": {
           "coaching": {
-            "description": "Prepara la prossima sessione con obiettivi, un programma e passi concreti.",
             "title": "Piano della sessione"
           },
           "consulting": {
-            "description": "Prepara le riunioni con il contesto e i prossimi passi emersi dalle conversazioni con i clienti.",
             "title": "Brief per la riunione"
           },
           "design": {
-            "description": "Trasforma brief dei clienti e materiali del brand in un piano di creazione chiaro.",
             "title": "Brief creativo"
           },
           "finance": {
-            "description": "Raccogli entrate, uscite e voci da riconciliare in un riepilogo mensile chiaro.",
             "title": "Riepilogo di fine mese"
           },
           "investing": {
-            "description": "Raccogli metriche e note di ricerca in un confronto chiaro.",
             "title": "Confronto tra aziende"
           },
           "marketing": {
-            "description": "Confronta le metriche delle campagne e individua le prossime opportunità di miglioramento.",
             "title": "Riepilogo campagne"
           },
           "operations": {
-            "description": "Trasforma e-mail e richieste in un piano mirato per la settimana.",
             "title": "Questa settimana"
           },
           "other": {
-            "description": "Collega i tuoi strumenti quotidiani e trova un’azione utile nei messaggi recenti.",
             "title": "Prossimi passi"
           },
           "research": {
-            "description": "Estrai risultati, prove e nuove domande dagli appunti sparsi.",
             "title": "Sintesi della ricerca"
           },
           "sales": {
-            "description": "Individua le trattative che richiedono attenzione e prepara il prossimo contatto con il giusto contesto.",
             "title": "Follow-up commerciali"
           },
           "software": {
-            "description": "Raccogli modifiche recenti e problemi aperti in un aggiornamento per il team.",
             "title": "Riepilogo della versione"
           }
         },

@@ -105,7 +105,7 @@ function OnboardingStepExplanation({
   return (
     <>
       <h1
-        className={`${illustration ? "mt-10" : "mt-12"} text-[30px] max-sm:mt-2 max-sm:text-2xl font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]`}
+        className={`${illustration ? "mt-8" : "mt-12"} text-[30px] max-sm:mt-2 max-sm:text-2xl font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]`}
       >
         {mobile ? (mobileTitle ?? title) : title}
       </h1>
@@ -117,7 +117,9 @@ function OnboardingStepExplanation({
       {illustration}
       {mobile ? null : <OnboardingTrustPoints points={trustPoints} />}
       {!mobile && footnote ? (
-        <p className="mt-4 text-base leading-[1.7] text-muted-foreground">
+        <p
+          className={`${illustration ? "mt-2" : "mt-4"} text-base leading-[1.7] text-muted-foreground`}
+        >
           {footnote}
         </p>
       ) : null}

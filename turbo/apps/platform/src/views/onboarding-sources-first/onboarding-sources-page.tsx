@@ -63,10 +63,6 @@ function useSourceExplanation(
   const showOutcome =
     features[FeatureSwitchKey.OnboardingSourceOutcomes] &&
     outcomeConnector !== undefined;
-  const outcomeDescription = t(($) => {
-    return $.onboarding.sourcesFirst.outcomes.industries[outcomeIndustry]
-      .description;
-  });
   return {
     title: t(($) => {
       return showOutcome
@@ -74,12 +70,12 @@ function useSourceExplanation(
         : $.onboarding.sourcesFirst.sources.title;
     }),
     description: showOutcome
-      ? outcomeDescription
+      ? ""
       : t(($) => {
           return $.onboarding.sourcesFirst.sources.copy;
         }),
     mobileDescription: showOutcome
-      ? outcomeDescription
+      ? ""
       : t(($) => {
           return $.onboarding.sourcesFirst.mobile.sourcesCopy;
         }),

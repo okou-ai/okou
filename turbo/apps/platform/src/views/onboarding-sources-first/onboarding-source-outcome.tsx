@@ -187,7 +187,7 @@ export function OnboardingSourceOutcome({
   const mobile = useMobileOnboarding();
   const figure = <OutcomeFigure industry={industry} connector={connector} />;
   return mobile ? (
-    <details className="mt-4 rounded-xl border border-border px-4 py-3">
+    <details className="mt-5 rounded-xl border border-border px-4 py-3">
       <summary className="cursor-pointer text-sm hover:text-muted-foreground">
         {t(($) => {
           return $.onboarding.sourcesFirst.outcomes.expandLabel;
@@ -196,6 +196,6 @@ export function OnboardingSourceOutcome({
       <div className="mt-3">{figure}</div>
     </details>
   ) : (
-    <div className="mt-6">{figure}</div>
+    <div className="mt-8">{figure}</div>
   );
 }

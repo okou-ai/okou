@@ -4299,47 +4299,36 @@
         "expandLabel": "看看連接後能獲得什麼",
         "industries": {
           "coaching": {
-            "description": "明確目標、議程和下一步行動，為下次課程做好準備。",
             "title": "課程準備計畫"
           },
           "consulting": {
-            "description": "整理客戶溝通，準備好會議所需的背景和下一步安排。",
             "title": "客戶會前簡報"
           },
           "design": {
-            "description": "把客戶 brief 和品牌素材整理成清晰的創作計畫。",
             "title": "創意簡報"
           },
           "finance": {
-            "description": "彙整收入、支出和待對帳項目，快速掌握月結情況。",
             "title": "月結概覽"
           },
           "investing": {
-            "description": "彙整公司指標和研究筆記，形成清晰的比較。",
             "title": "公司研究比較"
           },
           "marketing": {
-            "description": "對比廣告成效，找到下一步值得最佳化的方向。",
             "title": "廣告成效簡報"
           },
           "operations": {
-            "description": "從郵件和請求中整理出本週需要關注的重點。",
             "title": "本週工作計畫"
           },
           "other": {
-            "description": "連接常用工具，從近期訊息中找到一個有用的下一步。",
             "title": "下一步行動"
           },
           "research": {
-            "description": "從零散筆記中提煉關鍵發現、依據和下一步問題。",
             "title": "研究重點摘要"
           },
           "sales": {
-            "description": "找出需要關注的商機，結合既有溝通準備下次跟進。",
             "title": "客戶跟進摘要"
           },
           "software": {
-            "description": "彙整近期變更和未解決問題，形成可分享的團隊進展。",
             "title": "版本進展摘要"
           }
         },

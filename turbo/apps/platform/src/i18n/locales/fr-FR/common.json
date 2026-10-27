@@ -4368,47 +4368,36 @@
         "expandLabel": "Voir un exemple de résultat",
         "industries": {
           "coaching": {
-            "description": "Préparez votre prochaine séance avec des objectifs, un programme et des étapes concrètes.",
             "title": "Plan de séance"
           },
           "consulting": {
-            "description": "Préparez vos rendez-vous avec le contexte et les prochaines étapes issus des échanges clients.",
             "title": "Brief de rendez-vous"
           },
           "design": {
-            "description": "Transformez les briefs clients et les ressources de marque en un plan de création clair.",
             "title": "Brief créatif"
           },
           "finance": {
-            "description": "Rassemblez recettes, dépenses et éléments à rapprocher dans un bilan mensuel clair.",
             "title": "Bilan mensuel"
           },
           "investing": {
-            "description": "Rassemblez les indicateurs et notes de recherche dans une comparaison claire.",
             "title": "Comparaison d’entreprises"
           },
           "marketing": {
-            "description": "Comparez les performances des campagnes et repérez les prochaines améliorations possibles.",
             "title": "Bilan des campagnes"
           },
           "operations": {
-            "description": "Transformez les e-mails et demandes en un plan ciblé pour votre semaine.",
             "title": "Cette semaine"
           },
           "other": {
-            "description": "Connectez vos outils du quotidien pour dégager une action utile de vos messages récents.",
             "title": "Prochaines étapes"
           },
           "research": {
-            "description": "Tirez de vos notes dispersées les conclusions, les preuves et les prochaines questions.",
             "title": "Synthèse de recherche"
           },
           "sales": {
-            "description": "Repérez les opportunités à suivre et préparez la prochaine relance avec le bon contexte.",
             "title": "Suivi commercial"
           },
           "software": {
-            "description": "Résumez les changements récents et les problèmes ouverts pour informer votre équipe.",
             "title": "Bilan de version"
           }
         },

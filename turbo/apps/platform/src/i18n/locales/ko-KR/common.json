@@ -4299,47 +4299,36 @@
         "expandLabel": "연결 후 얻을 수 있는 결과 보기",
         "industries": {
           "coaching": {
-            "description": "목표, 진행 순서, 다음 단계를 정리해 다음 세션을 준비하세요.",
             "title": "세션 계획"
           },
           "consulting": {
-            "description": "고객과의 대화에서 배경과 다음 단계를 정리해 미팅을 준비하세요.",
             "title": "고객 미팅 브리프"
           },
           "design": {
-            "description": "고객 브리프와 브랜드 자료를 명확한 제작 계획으로 정리하세요.",
             "title": "크리에이티브 브리프"
           },
           "finance": {
-            "description": "수입, 지출, 대사가 필요한 항목을 월말 요약으로 정리하세요.",
             "title": "월말 결산 요약"
           },
           "investing": {
-            "description": "기업 지표와 조사 메모를 검토하기 쉬운 비교표로 정리하세요.",
             "title": "기업 비교"
           },
           "marketing": {
-            "description": "캠페인 지표를 비교하고 다음으로 개선할 부분을 찾아보세요.",
             "title": "광고 성과 요약"
           },
           "operations": {
-            "description": "이메일과 요청에서 이번 주에 집중할 일을 정리하세요.",
             "title": "이번 주 할 일"
           },
           "other": {
-            "description": "자주 쓰는 도구를 연결하고 최근 메시지에서 다음 행동을 찾아보세요.",
             "title": "다음 단계"
           },
           "research": {
-            "description": "흩어진 메모에서 핵심 발견, 근거, 다음 질문을 정리하세요.",
             "title": "리서치 요약"
           },
           "sales": {
-            "description": "관리가 필요한 거래를 확인하고 맥락에 맞는 후속 조치를 준비하세요.",
             "title": "영업 후속 조치"
           },
           "software": {
-            "description": "최근 변경 사항과 미해결 문제를 팀에 공유할 요약으로 정리하세요.",
             "title": "릴리스 요약"
           }
         },

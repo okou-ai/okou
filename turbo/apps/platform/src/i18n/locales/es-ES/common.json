@@ -4368,47 +4368,36 @@
         "expandLabel": "Ver un ejemplo de lo que puedes obtener",
         "industries": {
           "coaching": {
-            "description": "Prepara tu próxima sesión con objetivos, una agenda y pasos prácticos.",
             "title": "Plan de sesión"
           },
           "consulting": {
-            "description": "Prepara reuniones con el contexto y los próximos pasos de las conversaciones con clientes.",
             "title": "Brief de reunión"
           },
           "design": {
-            "description": "Convierte los briefs de clientes y los recursos de marca en un plan de creación claro.",
             "title": "Brief creativo"
           },
           "finance": {
-            "description": "Reúne ingresos, gastos y partidas pendientes de conciliación en un resumen claro.",
             "title": "Resumen de cierre mensual"
           },
           "investing": {
-            "description": "Reúne métricas y notas de investigación en una comparación clara.",
             "title": "Comparación de empresas"
           },
           "marketing": {
-            "description": "Compara las métricas de tus campañas y encuentra dónde mejorar.",
             "title": "Resumen de campañas"
           },
           "operations": {
-            "description": "Convierte correos y solicitudes en un plan centrado en lo que requiere tu atención.",
             "title": "Esta semana"
           },
           "other": {
-            "description": "Conecta tus herramientas habituales y encuentra el siguiente paso en tus mensajes recientes.",
             "title": "Tus próximos pasos"
           },
           "research": {
-            "description": "Extrae hallazgos, pruebas y nuevas preguntas de tus notas dispersas.",
             "title": "Síntesis de investigación"
           },
           "sales": {
-            "description": "Detecta qué oportunidades necesitan atención y prepara el próximo seguimiento con contexto.",
             "title": "Seguimiento comercial"
           },
           "software": {
-            "description": "Resume los cambios recientes y los problemas abiertos para compartirlos con tu equipo.",
             "title": "Resumen de versión"
           }
         },

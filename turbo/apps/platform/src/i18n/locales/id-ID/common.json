@@ -4299,47 +4299,36 @@
         "expandLabel": "Lihat contoh hasil yang bisa Anda dapatkan",
         "industries": {
           "coaching": {
-            "description": "Siapkan sesi berikutnya dengan tujuan, agenda, dan langkah praktis yang jelas.",
             "title": "Rencana sesi"
           },
           "consulting": {
-            "description": "Susun percakapan klien menjadi brief rapat berisi konteks dan langkah berikutnya.",
             "title": "Brief rapat klien"
           },
           "design": {
-            "description": "Ubah brief klien dan aset merek menjadi rencana produksi yang jelas.",
             "title": "Brief kreatif"
           },
           "finance": {
-            "description": "Rangkum pendapatan, pengeluaran, dan transaksi yang perlu direkonsiliasi.",
             "title": "Ringkasan akhir bulan"
           },
           "investing": {
-            "description": "Rangkum metrik perusahaan dan catatan riset menjadi perbandingan yang jelas.",
             "title": "Perbandingan perusahaan"
           },
           "marketing": {
-            "description": "Bandingkan metrik kampanye dan temukan peluang perbaikan berikutnya.",
             "title": "Ringkasan kampanye"
           },
           "operations": {
-            "description": "Ubah email dan permintaan menjadi rencana kerja yang terarah untuk minggu ini.",
             "title": "Minggu ini"
           },
           "other": {
-            "description": "Hubungkan alat sehari-hari dan temukan langkah berguna dari pesan terbaru.",
             "title": "Langkah berikutnya"
           },
           "research": {
-            "description": "Temukan hasil utama, bukti pendukung, dan pertanyaan berikutnya dari catatan yang tersebar.",
             "title": "Ringkasan riset"
           },
           "sales": {
-            "description": "Lihat peluang yang perlu diperhatikan dan siapkan tindak lanjut dengan konteks yang relevan.",
             "title": "Tindak lanjut penjualan"
           },
           "software": {
-            "description": "Rangkum perubahan terbaru dan masalah terbuka untuk dibagikan kepada tim.",
             "title": "Ringkasan rilis"
           }
         },
