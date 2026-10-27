@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1070.1](https://github.com/okou-ai/okou/compare/app-v0.1070.0...app-v0.1070.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **app:** align desktop shell authorization card with chat actions ([#43524](https://github.com/okou-ai/okou/issues/43524)) ([c15e621](https://github.com/okou-ai/okou/commit/c15e621ffa1520b3a519105b5027a309c9e495c4))
+
+
+### Performance Improvements
+
+* preserve headroom in browser and credit tests ([#43501](https://github.com/okou-ai/okou/issues/43501)) ([366046d](https://github.com/okou-ai/okou/commit/366046dea52dc5c6f0f546df313df654a8545400))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.0
+    * @okouai/core bumped to 8.794.1
+
 ## [0.1070.0](https://github.com/okou-ai/okou/compare/app-v0.1069.1...app-v0.1070.0) (2026-10-27)
 
 

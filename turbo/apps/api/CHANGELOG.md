@@ -9,6 +9,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.18.0](https://github.com/okou-ai/okou/compare/api-v2.17.0...api-v2.18.0) (2026-10-27)
+
+
+### Features
+
+* **browser:** admit native chat windows through owner control ([#43515](https://github.com/okou-ai/okou/issues/43515)) ([14a00b2](https://github.com/okou-ai/okou/commit/14a00b26dfa03f5b7dd79b8f8c5b4d61a684aa27))
+
+
+### Refactoring
+
+* **api:** localize terminal chat callback identity reads ([#43527](https://github.com/okou-ai/okou/issues/43527)) ([c53b8be](https://github.com/okou-ai/okou/commit/c53b8be3b0be116424fb6eaa532af19d896ef06d))
+* **api:** publish feishu oauth connection in one statement ([#43522](https://github.com/okou-ai/okou/issues/43522)) ([acf40ec](https://github.com/okou-ai/okou/commit/acf40ec7a4b9884ee95f139468a030532e9bc44f))
+* **api:** publish workspace bootstrap in one statement ([#43540](https://github.com/okou-ai/okou/issues/43540)) ([58b59ce](https://github.com/okou-ai/okou/commit/58b59ce4337ba0acc78aa021b660edc5b2b90bdb))
+* **api:** retire the agent configuration transaction ([#42953](https://github.com/okou-ai/okou/issues/42953)) ([35cf0db](https://github.com/okou-ai/okou/commit/35cf0db6b6559ef5d3fde51569019a0d9fdaf8f7))
+
+
+### Performance Improvements
+
+* preserve headroom in browser and credit tests ([#43501](https://github.com/okou-ai/okou/issues/43501)) ([366046d](https://github.com/okou-ai/okou/commit/366046dea52dc5c6f0f546df313df654a8545400))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.0
+    * @okouai/core bumped to 8.794.1
+    * @okouai/db bumped to 2.8.1
+    * @okouai/pi-agent-runtime bumped to 1.51.7
+
 ## [2.17.0](https://github.com/okou-ai/okou/compare/api-v2.16.0...api-v2.17.0) (2026-10-27)
 
 
