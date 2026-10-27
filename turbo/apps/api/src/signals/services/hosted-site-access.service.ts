@@ -254,6 +254,13 @@ export const prepareHostedSiteVisibility$ = command(
       },
       signal,
     );
+    if (updated.status === "conflict" && args.visibility === undefined) {
+      // An implicit default preserves the policy another preparation established.
+      const initialized = await set(getHostedSiteVisibility$, owner, signal);
+      if (initialized && initialized.revision !== null) {
+        return { status: "ok" as const, visibility: initialized.visibility };
+      }
+    }
     if (updated.status !== "ok") {
       return {
         status: "conflict" as const,

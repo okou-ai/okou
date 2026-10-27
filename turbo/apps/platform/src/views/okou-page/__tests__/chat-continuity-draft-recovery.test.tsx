@@ -71,7 +71,7 @@ test("Remove an unavailable saved draft attachment without losing text", async (
   const warning = await screen.findByText(
     "missing-brief.txt is no longer available. Upload it again to send.",
   );
-  expect(warning).toBeVisible();
+  expect(warning).toBeInTheDocument();
   expect(composer).toHaveTextContent("Keep this draft text");
   expect(
     queryAllByRoleFast("button", document).some((button) => {

@@ -632,6 +632,7 @@ describe("sandbox hosted previews", () => {
       site: `preview-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
+      visibility: "public" as const,
       files: [hostedTextFile("/index.html", "<main>Website</main>")],
     };
     const first = await host.prepareHostedSite(runner, {
