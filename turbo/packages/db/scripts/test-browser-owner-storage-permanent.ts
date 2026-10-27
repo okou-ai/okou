@@ -69,6 +69,18 @@ export async function validatePermanentBrowserOwnerStorage(
       ),
       { code: "23514", constraint: "browser_owner_profiles_provider_check" },
     );
+    for (const assignment of [
+      "creation_expires_at = created_at",
+      "timeout_at = creation_expires_at - interval '1 second'",
+    ]) {
+      await assert.rejects(
+        client.query(
+          `UPDATE browser_owner_profiles SET ${assignment} WHERE id = $1`,
+          [profileId],
+        ),
+        { code: "23514", constraint: "browser_owner_profiles_deadline_check" },
+      );
+    }
 
     await assert.rejects(
       client.query(
@@ -82,6 +94,17 @@ export async function validatePermanentBrowserOwnerStorage(
       .update(browserOwnerProfiles)
       .set({ status: "active", providerSessionId: randomUUID() })
       .where(eq(browserOwnerProfiles.id, profileId));
+    await assert.rejects(
+      client.query(
+        `INSERT INTO browser_owner_profiles
+          (org_id, user_id, provider_profile_id, instance_id, provider_session_id,
+           status, creation_expires_at, timeout_at)
+         SELECT $2, $2, $3, $4, provider_session_id, 'active', creation_expires_at, timeout_at
+         FROM browser_owner_profiles WHERE id = $1`,
+        [profileId, orgId + "-session", randomUUID(), randomUUID()],
+      ),
+      { code: "23505", constraint: "uq_browser_owner_profiles_session" },
+    );
     await db.insert(browserOwnerWindows).values({
       instanceId,
       chatThreadId,
@@ -109,6 +132,13 @@ export async function validatePermanentBrowserOwnerStorage(
         [chatThreadId],
       ),
       { code: "23514", constraint: "browser_owner_windows_primary_check" },
+    );
+    await assert.rejects(
+      client.query(
+        "UPDATE browser_owner_windows SET expires_at = created_at WHERE chat_thread_id = $1",
+        [chatThreadId],
+      ),
+      { code: "23514", constraint: "browser_owner_windows_deadline_check" },
     );
     await assert.rejects(
       client.query(

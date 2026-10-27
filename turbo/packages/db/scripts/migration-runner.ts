@@ -138,8 +138,20 @@ export async function applyPendingMigrations(
     }
 
     const file = requiredMigrationFile(migrationFiles, migration.folderMillis);
+    // Keep shipped 1462 bytes/journal identity, but execute its canonical,
+    // replayable DDL outside TX-0357. Retire with 1462 in a future history squash.
+    const statements =
+      file === "1462_browser_owner_windows.sql"
+        ? readFileSync(
+            new URL(
+              "./migration-replays/1462_browser_owner_windows.sql",
+              import.meta.url,
+            ),
+            "utf8",
+          ).split("--> statement-breakpoint")
+        : migration.sql;
     const startedAt = performance.now();
-    const nonTransactional = migration.sql.some((statement) => {
+    const nonTransactional = statements.some((statement) => {
       return statement.includes(NON_TRANSACTIONAL_MIGRATION_MARKER);
     });
     let diagnosticBatch: { statement: string; cursor: string | null } | null =
@@ -152,9 +164,9 @@ export async function applyPendingMigrations(
     } = { phase: "transaction_start", statement: null, batch: null, startedAt };
     console.error(JSON.stringify({ event: "migration_started", file }));
     try {
-      validateDiagnosticMarkers(migration.sql, nonTransactional);
+      validateDiagnosticMarkers(statements, nonTransactional);
       if (nonTransactional) {
-        for (const [index, statement] of migration.sql.entries()) {
+        for (const [index, statement] of statements.entries()) {
           if (statement.trim().length === 0) {
             continue;
           }
@@ -228,7 +240,7 @@ export async function applyPendingMigrations(
           await transaction`SET LOCAL lock_timeout = '1s'`;
           await transaction`SET LOCAL statement_timeout = '10s'`;
 
-          for (const [index, statement] of migration.sql.entries()) {
+          for (const [index, statement] of statements.entries()) {
             if (statement.trim().length === 0) {
               continue;
             }
@@ -288,7 +300,7 @@ export async function applyPendingMigrations(
           file,
           phase: progress.phase,
           statement: progress.statement,
-          statementCount: migration.sql.length,
+          statementCount: statements.length,
           batch: progress.batch,
           elapsedMs: Math.round(performance.now() - progress.startedAt),
           sqlstate: migrationSqlstate(error),
