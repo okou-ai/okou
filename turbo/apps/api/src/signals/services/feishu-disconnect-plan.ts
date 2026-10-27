@@ -1,4 +1,3 @@
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { connectors } from "@okouai/db/schema/connector";
@@ -49,21 +48,4 @@ export function feishuDisconnectInstallationFilter(args: FeishuDisconnectArgs) {
     eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
     eq(feishuOrgInstallations.id, args.installationId),
   );
-}
-export function feishuDisconnectMemberPlan(
-  args: FeishuDisconnectArgs,
-  installations: readonly { readonly id: string }[],
-) {
-  return {
-    columns: { id: feishuOrgConnections.id },
-    condition: and(
-      inArray(
-        feishuOrgConnections.installationId,
-        installations.map((installation) => {
-          return installation.id;
-        }),
-      ),
-      eq(feishuOrgConnections.userId, args.userId),
-    ),
-  };
 }

@@ -1,13 +1,7 @@
-import {
-  feishuDisconnectCleanupPlan,
-  feishuDisconnectInstallationFilter,
-  feishuDisconnectMemberPlan,
-  type FeishuDisconnectArgs,
-} from "./feishu-disconnect-plan";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { variables } from "@okouai/db/schema/variable";
+import type { FeishuDisconnectArgs } from "./feishu-disconnect-plan";
+import { feishuDisconnectPublicationSql } from "./feishu-disconnect-publication";
+import { object, uuid } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -376,125 +370,16 @@ export const removeFeishuInstallation$ = command(
   },
 );
 
+const disconnectedFeishuMemberSchema = object({ id: uuid() });
+
 export const disconnectFeishuConnection$ = command(
   async ({ set }, args: FeishuDisconnectArgs, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const installations = await db
-      .select({ id: feishuOrgInstallations.id })
-      .from(feishuOrgInstallations)
-      .where(feishuDisconnectInstallationFilter(args));
     signal.throwIfAborted();
-    if (installations.length === 0) {
-      return false;
-    }
-    // Post-lock reads must see newly committed member credentials; cleanup
-    // and member unlinking also need one deferred-constraint rollback boundary.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0161; new non-billing transactions are prohibited.
-    const rows = await db.transaction(async (tx) => {
-      const scope = args;
-      await (async () => {
-        const p = feishuOAuthInstallationReadPlan(scope);
-        const q = tx.select(p.columns).from(p.from).where(p.condition);
-        const [installation] = await q.for("update", { of: p.from }).limit(1);
-        signal.throwIfAborted();
-        if (!installation?.customConnectorId) {
-          return;
-        }
-        const memberConnectorId = await (async () => {
-          const m = feishuOAuthMemberReadPlan(scope);
-          const mq = tx.select(m.columns).from(m.from).where(m.condition);
-          const members = m.needsRead ? await mq.limit(2) : [];
-          const member = feishuOAuthMemberFromRows(scope, members);
-          if (!member) {
-            return null;
-          }
-          const iq = tx.select(p.columns).from(p.from).where(p.condition);
-          const [installed] = await iq.limit(1);
-          if (!installed?.customConnectorId) {
-            return null;
-          }
-          const accountScope = {
-            ...scope,
-            ...member,
-            customConnectorId: installed.customConnectorId,
-          };
-          const a = feishuOAuthAccountReadPlan(accountScope);
-          const [exactRows, defaultRows] = await Promise.all([
-            a.exactWhere
-              ? tx.select(a.columns).from(connectors).where(a.exactWhere)
-              : [],
-            a.defaultWhere
-              ? tx.select(a.columns).from(connectors).where(a.defaultWhere)
-              : [],
-          ]);
-          const accountId = feishuOAuthAccountFromRows(a, {
-            exactRows,
-            defaultRows,
-          });
-          if (accountId === null) {
-            return null;
-          }
-          const c = feishuOAuthCredentialReadPlan({
-            ...accountScope,
-            memberConnectorId: accountId,
-          });
-          const query = tx.select(c.columns).from(connectors);
-          const [matched] = await query
-            .innerJoin(orgCustomConnectors, c.connectorJoin)
-            .innerJoin(secrets, c.secretJoin)
-            .where(c.condition)
-            .limit(1);
-          return matched?.id ?? null;
-        })();
-        signal.throwIfAborted();
-        if (!memberConnectorId) {
-          return;
-        }
-        const d = feishuDisconnectCleanupPlan({
-          ...scope,
-          customConnectorId: installation.customConnectorId,
-          memberConnectorId,
-        });
-        const account = tx.select(d.columns).from(connectors).where(d.account);
-        const [connection] = await account.for("update").limit(1);
-        signal.throwIfAborted();
-        if (!connection) {
-          return;
-        }
-        await tx.delete(secrets).where(d.secret);
-        signal.throwIfAborted();
-        await tx.delete(variables).where(d.variable);
-        signal.throwIfAborted();
-        await tx.execute(d.defer);
-        const deleted = await tx
-          .delete(connectors)
-          .where(d.connector)
-          .returning(d.columns);
-        if (deleted.length > 0) {
-          await tx.delete(chatThreadConnectorSelections).where(d.selection);
-        }
-        await tx.execute(d.immediate);
-        if (deleted.length > 0) {
-          const affected = tx
-            .select(d.cursorColumns)
-            .from(workflowAutomations)
-            .where(d.cursor);
-          await tx
-            .delete(googleFormsAutomationCursors)
-            .where(
-              inArray(googleFormsAutomationCursors.automationId, affected),
-            );
-        }
-        signal.throwIfAborted();
-      })();
-      const removal = feishuDisconnectMemberPlan(args, installations);
-      const deleted = await tx
-        .delete(feishuOrgConnections)
-        .where(removal.condition)
-        .returning(removal.columns);
-      signal.throwIfAborted();
-      return deleted;
-    });
+    const rows = parseRawRows(
+      disconnectedFeishuMemberSchema,
+      await db.execute(feishuDisconnectPublicationSql(args)),
+    );
     signal.throwIfAborted();
     return rows.length > 0;
   },
