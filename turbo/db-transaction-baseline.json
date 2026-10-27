@@ -82,11 +82,6 @@
       "owner": "deleteCustomConnectorAccount$"
     },
     {
-      "id": "TX-0164",
-      "file": "turbo/apps/api/src/signals/services/feishu-dispatch.service.ts",
-      "owner": "handleDisconnectCommand"
-    },
-    {
       "id": "TX-0169",
       "file": "turbo/apps/api/src/signals/services/host.service.ts",
       "owner": "createHostedSiteDeployment$"

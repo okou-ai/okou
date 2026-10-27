@@ -13,9 +13,9 @@ use crate::storage_manifest::StorageManifest;
 
 pub const MAX_HELD_SANDBOX_STATES: usize = 1024;
 pub const MAX_ACTIVE_REUSE_PRODUCERS: usize = 1024;
-pub const MAX_HELD_HOME_STATES: usize = 1024;
+pub const MAX_HELD_HOME_STATES: usize = 4096;
 pub const MAX_HOME_CACHES_PER_REUSE_KEY: usize = 8;
-pub const MAX_HOME_CACHES_PER_HEARTBEAT: usize = 1024;
+pub const MAX_HOME_CACHES_PER_HEARTBEAT: usize = 4096;
 pub const HOME_AFFINITY_VERSION: u8 = 1;
 
 fn is_false(value: &bool) -> bool {

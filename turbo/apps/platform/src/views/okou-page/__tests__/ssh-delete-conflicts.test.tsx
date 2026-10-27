@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -50,6 +51,7 @@ function mockSettings() {
 async function openDeletion() {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=ssh",
     auth: {
       user: owner,

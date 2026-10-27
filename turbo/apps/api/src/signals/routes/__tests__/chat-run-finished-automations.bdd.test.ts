@@ -89,6 +89,28 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   };
 }
 
+function ownAutomationRuns(
+  fixture: ChatAutomationFixture,
+  automationIds: readonly string[],
+) {
+  return publicRunOwner(context, fixture.actor, {
+    beforeRuns: async () => {
+      for (const id of automationIds) {
+        await accept(
+          automationsClient().delete({
+            headers: authHeaders(),
+            params: { id },
+          }),
+          [204],
+        );
+      }
+    },
+    afterRuns: async () => {
+      await bdd.deleteAgent(fixture.actor, fixture.agentId);
+    },
+  });
+}
+
 /**
  * Each automation gets its own workflow so it also gets its own automation
  * chat thread; automations sharing a workflow queue behind each other and
@@ -154,6 +176,7 @@ async function automationLastRunAt(automationId: string): Promise<unknown> {
 async function startWatchedChatRun(
   fixture: ChatAutomationFixture,
   prompt: string,
+  model: string | null = "claude-fable-5-1",
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
   const sent = await chat.requestSendEvent(
     fixture.actor,
@@ -161,7 +184,7 @@ async function startWatchedChatRun(
       agentId: fixture.agentId,
       prompt,
       clientEventId: randomUUID(),
-      model: "claude-fable-5-1",
+      model,
     },
     [201],
   );
@@ -260,7 +283,7 @@ async function expectAutomationSourceAnnotation(
   fixture: ChatAutomationFixture,
   automationId: string,
   sourceRun: { readonly runId: string; readonly threadId: string },
-): Promise<string | null> {
+): Promise<{ readonly runId: string; readonly displayMessage: string | null }> {
   const automation = await accept(
     automationsClient().get({
       headers: authHeaders(),
@@ -291,7 +314,11 @@ async function expectAutomationSourceAnnotation(
   });
   expect(automationInputs).toHaveLength(1);
   const [automationInput] = automationInputs;
-  if (!automationInput || automationInput.eventType !== "input.prompt") {
+  if (
+    !automationInput ||
+    automationInput.eventType !== "input.prompt" ||
+    !automationInput.runId
+  ) {
     throw new Error("Expected the triggered automation input");
   }
   expect(
@@ -309,7 +336,10 @@ async function expectAutomationSourceAnnotation(
       href: `/chats/${sourceRun.threadId}#run-${sourceRun.runId}`,
     },
   ]);
-  return chatEventDisplayText(automationInput);
+  return {
+    runId: automationInput.runId,
+    displayMessage: chatEventDisplayText(automationInput),
+  };
 }
 
 describe("chat-run-finished workflow automations", () => {
@@ -491,22 +521,7 @@ describe("chat-run-finished workflow automations", () => {
     async () => {
       const fixture = await setupChatAutomationFixture();
       const automationIds: string[] = [];
-      const ownedRuns = publicRunOwner(context, fixture.actor, {
-        beforeRuns: async () => {
-          for (const id of automationIds) {
-            await accept(
-              automationsClient().delete({
-                headers: authHeaders(),
-                params: { id },
-              }),
-              [204],
-            );
-          }
-        },
-        afterRuns: async () => {
-          await bdd.deleteAgent(fixture.actor, fixture.agentId);
-        },
-      });
+      const ownedRuns = ownAutomationRuns(fixture, automationIds);
       const run = await startWatchedChatRun(fixture, "watched completed run");
 
       const fireAlways = await createChatRunFinishedAutomation(fixture, {
@@ -554,7 +569,7 @@ describe("chat-run-finished workflow automations", () => {
       await expectAutomationFired(patternMatch);
       await expect(automationLastRunAt(failedOnly)).resolves.toBeNull();
       await expect(automationLastRunAt(patternMiss)).resolves.toBeNull();
-      const displayMessage = await expectAutomationSourceAnnotation(
+      const { displayMessage } = await expectAutomationSourceAnnotation(
         fixture,
         fireAlways,
         run,
@@ -576,11 +591,8 @@ describe("chat-run-finished workflow automations", () => {
       if (!automationRunId) {
         throw new Error("Expected a triggered automation run");
       }
-      const claimed = await claimChatRun(fixture.runnerGroup, automationRunId);
-      ownedRuns.rememberClaim(
-        automationRunId,
-        claimed.authorization.slice("Bearer ".length),
-      );
+      const claimed = await ownedRuns.claim(automationRunId);
+      expect(claimed.prompt).toContain('"failureReason": null');
     },
   );
 
@@ -589,6 +601,8 @@ describe("chat-run-finished workflow automations", () => {
     { timeout: 30_000 },
     async () => {
       const fixture = await setupChatAutomationFixture();
+      const automationIds: string[] = [];
+      const ownedRuns = ownAutomationRuns(fixture, automationIds);
       const run = await startWatchedChatRun(fixture, "watched failed run");
 
       const failedOnly = await createChatRunFinishedAutomation(fixture, {
@@ -604,10 +618,30 @@ describe("chat-run-finished workflow automations", () => {
         runStatuses: ["failed"],
         outputPattern: "*boom*",
       });
+      const reasonWithPattern = await createChatRunFinishedAutomation(fixture, {
+        chatThreadId: run.threadId,
+        runStatuses: ["failed"],
+        outputPattern: "*provider_rate_limited*",
+      });
+      automationIds.push(
+        failedOnly,
+        completedOnly,
+        failedWithPattern,
+        reasonWithPattern,
+      );
 
       const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
+      ownedRuns.rememberClaim(
+        run.runId,
+        sandboxHeaders.authorization.slice("Bearer ".length),
+      );
       await webhooks.requestAgentComplete(
-        { runId: run.runId, exitCode: 1, error: "boom: sandbox exploded" },
+        {
+          runId: run.runId,
+          exitCode: 1,
+          error: "boom: sandbox exploded",
+          failureReason: "provider_rate_limited",
+        },
         sandboxHeaders,
         [200],
       );
@@ -618,6 +652,157 @@ describe("chat-run-finished workflow automations", () => {
       // Error messages are not matchable output, so pattern automations stay
       // silent even when the error text would match.
       await expect(automationLastRunAt(failedWithPattern)).resolves.toBeNull();
+      await expect(automationLastRunAt(reasonWithPattern)).resolves.toBeNull();
+    },
+  );
+
+  it.each([
+    {
+      name: "provider rate limit",
+      builtIn: false,
+      failureReason: "provider_rate_limited",
+      expectedReason: "provider_rate_limited",
+    },
+    {
+      name: "personal provider balance",
+      builtIn: false,
+      failureReason: "provider_insufficient_credits",
+      expectedReason: "provider_insufficient_credits",
+    },
+    {
+      name: "redacted platform provider balance",
+      builtIn: true,
+      failureReason: "provider_insufficient_credits",
+      expectedReason: null,
+    },
+    {
+      name: "future failure reason",
+      builtIn: false,
+      failureReason: "future_reason",
+      expectedReason: "future_reason",
+    },
+    {
+      name: "unclassified failure",
+      builtIn: false,
+      failureReason: undefined,
+      expectedReason: null,
+    },
+  ])(
+    "passes the recorded $name to the recovery Agent",
+    { timeout: 30_000 },
+    async ({ builtIn, failureReason, expectedReason }) => {
+      const fixture = await setupChatAutomationFixture();
+      const automationIds: string[] = [];
+      const ownedRuns = ownAutomationRuns(fixture, automationIds);
+      if (builtIn) {
+        mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+        await api.updateUserModelPreference(fixture.actor, null);
+      }
+      const sourceRun = await startWatchedChatRun(
+        fixture,
+        "Recover a failure",
+        builtIn ? null : "claude-fable-5-1",
+      );
+      const automationId = await createChatRunFinishedAutomation(fixture, {
+        chatThreadId: sourceRun.threadId,
+        runStatuses: ["failed"],
+      });
+      automationIds.push(automationId);
+      const sandboxHeaders = await claimChatRun(
+        fixture.runnerGroup,
+        sourceRun.runId,
+      );
+      ownedRuns.rememberClaim(
+        sourceRun.runId,
+        sandboxHeaders.authorization.slice("Bearer ".length),
+      );
+      await webhooks.requestAgentComplete(
+        {
+          runId: sourceRun.runId,
+          exitCode: 1,
+          error: "The provider could not finish the request",
+          ...(failureReason === undefined ? {} : { failureReason }),
+        },
+        sandboxHeaders,
+        [200],
+      );
+      await expectAutomationFired(automationId);
+
+      // A repeated completion cannot replace the recorded cause or dispatch twice.
+      await webhooks.requestAgentComplete(
+        {
+          runId: sourceRun.runId,
+          exitCode: 1,
+          error: "A later completion reported a different error",
+          failureReason: "provider_overloaded",
+        },
+        sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const history = await chat.listThreadEvents(
+        fixture.actor,
+        sourceRun.threadId,
+      );
+      const failedEvent = history.events.find((event) => {
+        return (
+          event.eventType === "run.failed" && event.runId === sourceRun.runId
+        );
+      });
+      if (!failedEvent || failedEvent.eventType !== "run.failed") {
+        throw new Error("Expected the original run failure");
+      }
+      expect(failedEvent.failureReason ?? null).toBe(expectedReason);
+
+      const recovery = await expectAutomationSourceAnnotation(
+        fixture,
+        automationId,
+        sourceRun,
+      );
+      const claimed = await ownedRuns.claim(recovery.runId);
+      expect(claimed.prompt).toContain('"runStatus": "failed"');
+      expect(claimed.prompt).toContain(
+        `"failureReason": ${JSON.stringify(expectedReason)}`,
+      );
+    },
+  );
+
+  it(
+    "reports no failure reason when a cancelled run triggers recovery",
+    { timeout: 30_000 },
+    async () => {
+      const fixture = await setupChatAutomationFixture();
+      const automationIds: string[] = [];
+      const ownedRuns = ownAutomationRuns(fixture, automationIds);
+      const sourceRun = await startWatchedChatRun(fixture, "Cancel this work");
+      const automationId = await createChatRunFinishedAutomation(fixture, {
+        chatThreadId: sourceRun.threadId,
+        runStatuses: ["cancelled"],
+      });
+      automationIds.push(automationId);
+      const sandboxHeaders = await claimChatRun(
+        fixture.runnerGroup,
+        sourceRun.runId,
+      );
+      ownedRuns.rememberClaim(
+        sourceRun.runId,
+        sandboxHeaders.authorization.slice("Bearer ".length),
+      );
+      await api.requestCancelRun(fixture.actor, sourceRun.runId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: sourceRun.runId, exitCode: 1, error: "Run cancelled" },
+        sandboxHeaders,
+        [200],
+      );
+      await expectAutomationFired(automationId);
+      const recovery = await expectAutomationSourceAnnotation(
+        fixture,
+        automationId,
+        sourceRun,
+      );
+      const claimed = await ownedRuns.claim(recovery.runId);
+      expect(claimed.prompt).toContain('"runStatus": "cancelled"');
+      expect(claimed.prompt).toContain('"failureReason": null');
     },
   );
 });

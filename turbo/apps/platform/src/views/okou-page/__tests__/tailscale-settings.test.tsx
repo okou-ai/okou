@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   tailscaleContract,
   type TailscaleConfig,
@@ -69,6 +70,7 @@ async function page(role: "admin" | "member" = "member") {
   context.mocks.data.org({ id: orgId, name: "Engineering", role });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     auth,
     path: "/connectors?scope=private-network",
   });

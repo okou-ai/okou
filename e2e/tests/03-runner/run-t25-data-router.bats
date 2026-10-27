@@ -32,11 +32,14 @@ result=$(mktemp)
 catalog=$(mktemp)
 trap 'rm -f "$result" "$catalog"' EXIT
 # The sandbox supplies no Authorization header. The privileged MITM injects it
-# on the direct Router request.
+# on the direct Router request. Router serves only stateless 2026-07-28 MCP
+# requests with JSON responses.
 curl --fail --silent --show-error --max-time 45 \
     --header 'Content-Type: application/json' \
-    --header 'Accept: application/json, text/event-stream' \
-    --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+    --header 'Accept: application/json' \
+    --header 'MCP-Protocol-Version: 2026-07-28' \
+    --header 'Mcp-Method: tools/list' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
     --output "$catalog" \
     "$OKOU_DATA_ROUTER_URL"
 jq -e '[.result.tools[] | select(._meta["ai.okou/data"])] | length > 0' "$catalog" >/dev/null

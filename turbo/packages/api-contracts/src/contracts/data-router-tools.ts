@@ -9,6 +9,9 @@ import {
   type infer as zInfer,
 } from "zod";
 
+/** Router serves only this stateless MCP revision: JSON responses, no sessions or SSE. */
+export const DATA_ROUTER_PROTOCOL_VERSION = "2026-07-28";
+
 /**
  * Shared control metadata only. Router owns tool names, schemas, family IDs
  * and their display text; Okou treats every family as an opaque string.

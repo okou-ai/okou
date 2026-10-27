@@ -8,6 +8,7 @@ import { customConnectorCommand } from "./custom";
 import { permissionRequestCommand } from "./permission-request";
 import { connectorAccountCommand } from "./account";
 import { connectorOAuthCommand } from "./oauth";
+import { unauthorizeCommand } from "./unauthorize";
 
 export const connectorCommand = new Command()
   .name("connector")
@@ -21,6 +22,7 @@ export const connectorCommand = new Command()
   .addCommand(searchCommand)
   .addCommand(statusCommand)
   .addCommand(permissionRequestCommand)
+  .addCommand(unauthorizeCommand)
   .addHelpText(
     "after",
     `
@@ -34,6 +36,7 @@ Choose a command:
   check         Diagnose a failed URL or a builtin environment name.
   permission-request
                 Request a diagnosed builtin permission; custom permissions use settings.
+  unauthorize   Remove one connector from an Agent's access; narrowing needs no approval.
 
 Connection and access:
   A definition describes the service and its authentication setup. Members then
@@ -41,6 +44,7 @@ Connection and access:
   permissions. Creating a custom definition alone does not complete these steps.
   Use connect for member credentials and oauth start for existing authorization
   flows. Neither command changes Agent grants or fine-grained permissions.
+  Use unauthorize to remove an Agent's connector grant directly.
 
 Run context:
   Inside a run, omit --agent to use the current Agent (OKOU_AGENT_ID).

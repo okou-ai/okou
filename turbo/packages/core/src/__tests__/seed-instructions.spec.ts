@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { SEED_INSTRUCTIONS } from "../seed-instructions";
 
 describe("SEED_INSTRUCTIONS", () => {
-  it("uses Okou for self-management", () => {
+  it("limits configuration self-management to custom agents", () => {
     expect(SEED_INSTRUCTIONS).toContain(
-      "- **Okou**: Inspect and update your own skills, instructions, and environment via the Okou platform",
+      "The workspace default Okou agent is read-only",
+    );
+    expect(SEED_INSTRUCTIONS).toContain(
+      "only custom agents can edit their instructions and profile",
     );
   });
 });

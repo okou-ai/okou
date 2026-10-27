@@ -160,7 +160,9 @@ test("Scope navigation returns directly to Remote control", async () => {
   installCustomDirectory();
   await setupPage({ context, path: "/connectors" });
   click(await screen.findByTestId("connectors-scope-remote-control"));
-  await screen.findByRole("heading", { name: "SSH" });
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Add connection")).toBeInTheDocument();
+  });
   click(screen.getByTestId("connectors-scope-custom"));
   await screen.findByText("Acme Reports");
   expect(locationSearch()).toBe("?scope=custom");
@@ -169,7 +171,9 @@ test("Scope navigation returns directly to Remote control", async () => {
   await waitFor(() => {
     expect(locationSearch()).toBe("?scope=remote-control");
   });
-  await screen.findByRole("heading", { name: "SSH" });
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Add connection")).toBeInTheDocument();
+  });
   expect(screen.queryByText("Acme Reports")).toBeNull();
 });
 
@@ -209,7 +213,7 @@ test("Keep Remote control and Custom in separate scopes", async () => {
     expect(locationSearch()).toContain("scope=remote-control");
   });
   await waitFor(() => {
-    return getConnectorAction("button", "Add host");
+    return getConnectorAction("button", "Add connection");
   });
   expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
   expect(queryConnectorAction("button", "New custom connector")).toBeNull();

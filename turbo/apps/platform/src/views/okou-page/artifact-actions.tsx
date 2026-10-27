@@ -35,7 +35,10 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  BrandGoogleDocs,
   BrandGoogleDrive,
+  BrandGoogleSheets,
+  BrandGoogleSlides,
 } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type {
@@ -333,6 +336,21 @@ function useGoogleDriveMenuLabels(target?: GoogleWorkspaceTarget) {
   };
 }
 
+const GOOGLE_WORKSPACE_ICONS = {
+  document: BrandGoogleDocs,
+  spreadsheet: BrandGoogleSheets,
+  presentation: BrandGoogleSlides,
+} satisfies Record<GoogleWorkspaceTarget, typeof BrandGoogleSlides>;
+
+function GoogleDriveMenuIcon({
+  target,
+}: {
+  target?: GoogleWorkspaceTarget | undefined;
+}) {
+  const Icon = target ? GOOGLE_WORKSPACE_ICONS[target] : BrandGoogleDrive;
+  return <Icon size={14} />;
+}
+
 function GoogleDriveDisabledMenuItem({
   kind,
   muted = false,
@@ -356,7 +374,7 @@ function GoogleDriveDisabledMenuItem({
         : labels.upload;
   return (
     <DropdownMenuItem className={muted ? "text-muted-foreground" : ""} disabled>
-      <BrandGoogleDrive size={14} />
+      <GoogleDriveMenuIcon target={target} />
       {text}
     </DropdownMenuItem>
   );
@@ -542,7 +560,7 @@ function GoogleDriveCompletedMenuItem({
     <DropdownMenuItem
       render={<a href={action.url} target="_blank" rel="noopener noreferrer" />}
     >
-      <BrandGoogleDrive size={14} />
+      <GoogleDriveMenuIcon target={action.target} />
       {action.target === "document"
         ? t(($) => {
             return $.artifacts.googleDrive.openDocs;
@@ -561,10 +579,12 @@ function GoogleDriveCompletedMenuItem({
 function GoogleDriveConnectMenuItem({
   availability,
   onClick,
+  target,
   uploadLabel,
 }: {
   availability: ReturnType<typeof useGoogleDriveAvailability>;
   onClick: () => void;
+  target?: GoogleWorkspaceTarget | undefined;
   uploadLabel: string | undefined;
 }) {
   const { t } = useTranslation();
@@ -583,7 +603,7 @@ function GoogleDriveConnectMenuItem({
               }
               onClick={onClick}
             >
-              <BrandGoogleDrive size={14} />
+              <GoogleDriveMenuIcon target={target} />
               {uploadLabel ??
                 t(($) => {
                   return $.artifacts.googleDrive.connect;
@@ -679,7 +699,7 @@ function GoogleDriveMenuItem({
           <TooltipTrigger
             render={
               <DropdownMenuItem onClick={syncOrConnect}>
-                <BrandGoogleDrive size={14} />
+                <GoogleDriveMenuIcon target={target} />
                 {labels.upload}
               </DropdownMenuItem>
             }
@@ -700,6 +720,7 @@ function GoogleDriveMenuItem({
     <GoogleDriveConnectMenuItem
       availability={availability}
       onClick={syncOrConnect}
+      target={target}
       uploadLabel={target || original ? labels.upload : undefined}
     />
   );

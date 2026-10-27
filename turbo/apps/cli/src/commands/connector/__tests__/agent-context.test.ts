@@ -8,6 +8,7 @@ import { listCommand } from "../list";
 import { permissionRequestCommand } from "../permission-request";
 import { searchCommand } from "../search";
 import { statusCommand } from "../status";
+import { unauthorizeCommand } from "../unauthorize";
 
 const RUN_AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const OTHER_AGENT_ID = "550e8400-e29b-41d4-a716-446655440099";
@@ -75,6 +76,7 @@ const commandCases = [
     command: permissionRequestCommand,
     args: ["computer-use", "--permission", "computer-use:write"],
   },
+  { name: "unauthorize", command: unauthorizeCommand, args: ["github"] },
 ];
 
 describe("run-bound connector Agent selectors", () => {

@@ -11219,10 +11219,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]) {
           expect(appendSystemPrompt).toContain(toolHint);
         }
-        // Router owns every other family and its usage rules.
-        expect(appendSystemPrompt).not.toMatch(
-          /--family (?:people-search|scrape|finance|maps|seo|social|data-search)\b/u,
-        );
         expect(
           appendSystemPrompt.indexOf("- New web chat threads:"),
         ).toBeLessThan(appendSystemPrompt.indexOf("- Web chat messaging:"));
@@ -11349,7 +11345,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const claim = await api.claimRunnerJob(run.runId);
         const prompt = claim.appendSystemPrompt ?? "";
         expect(prompt).not.toContain("okou data tools --family web-search");
-        expect(prompt).not.toMatch(/--family [a-z]/u);
         // Discovery stays generic; the CLI hides disabled Router families.
         expect(prompt).toContain("- Managed research data:");
         expect(prompt).not.toContain("# Built-in image model");

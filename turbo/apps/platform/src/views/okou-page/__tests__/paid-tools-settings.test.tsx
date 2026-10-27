@@ -1,4 +1,10 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  screen,
+  waitFor,
+  waitForElementToBeRemoved,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -14,6 +20,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   click,
+  holdElementAnimations,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -21,6 +28,10 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+const DATA_ROUTER_URLS = Object.freeze([
+  "https://data.okou.ai/mcp",
+  "https://okou-data-router-staging.vm0.workers.dev/mcp",
+]);
 
 function mockPaidTools(initialDisabledTools: PaidToolId[] = []) {
   const disabledTools$ = state(initialDisabledTools);
@@ -171,10 +182,7 @@ test("Advanced data research saves independently and retains preferences across 
 });
 
 function mockDataRouter(result: unknown, status = 200) {
-  for (const url of [
-    "https://data.okou.ai/mcp",
-    "https://okou-data-router-staging.vm0.workers.dev/mcp",
-  ]) {
+  for (const url of DATA_ROUTER_URLS) {
     context.mocks.http.post(url, async ({ request }) => {
       expect(request.headers.get("authorization")).toBeNull();
       const message = (await request.json()) as { id: unknown };
@@ -224,7 +232,9 @@ test("Router families appear with Router text and toggle by their own IDs", asyn
   });
   const dialog = await openPaidTools("/?settings=tools", "zh-Hans");
   const future = await readySwitch("未来研究");
-  expect(within(dialog).getByText("Researches new sources.")).toBeVisible();
+  expect(
+    within(dialog).getByText("Researches new sources."),
+  ).toBeInTheDocument();
   expect(
     within(dialog).getAllByRole("switch", { name: "Web search" }),
   ).toHaveLength(1);
@@ -241,6 +251,129 @@ test("Router families appear with Router text and toggle by their own IDs", asyn
   });
   expect(updates).toStrictEqual([{ toolId: "future-family", disabled: true }]);
 });
+
+test.each([
+  ["close Settings", "first page"],
+  ["close Settings", "next page"],
+  ["navigate back", "first page"],
+  ["navigate back", "next page"],
+] as const)(
+  "Router discovery is cancelled when you %s during its delayed %s and loads on a new visit",
+  async (action, delayedPage) => {
+    mockPaidTools(["future-family"]);
+    const requested = context.mocks.deferred<void>();
+    const releaseResponse = context.mocks.deferred<void>();
+    const cancelled = context.mocks.deferred<void>();
+    let catalog = "Abandoned research";
+    let holdNextResponse = true;
+    for (const url of DATA_ROUTER_URLS) {
+      context.mocks.http.post(url, async ({ request }) => {
+        const message = (await request.json()) as {
+          id: unknown;
+          params?: { cursor?: string };
+        };
+        const cursor = message.params?.cursor;
+        const title = cursor ?? catalog;
+        const result = cursor
+          ? {
+              tools: [
+                {
+                  name: "future_tool",
+                  inputSchema: { type: "object" },
+                  _meta: { "ai.okou/data": { family: "future-family" } },
+                },
+              ],
+            }
+          : {
+              tools: [],
+              nextCursor: title,
+              _meta: {
+                "ai.okou/data": {
+                  families: [
+                    {
+                      id: "future-family",
+                      title: { "en-US": title },
+                      description: { "en-US": "Researches new sources." },
+                    },
+                  ],
+                },
+              },
+            };
+        if (
+          holdNextResponse &&
+          (delayedPage === "first page" ? !cursor : Boolean(cursor))
+        ) {
+          holdNextResponse = false;
+          // The external HTTP peer releases its delayed response only when
+          // the caller cancels it. No application signal or store is inspected.
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              releaseResponse.resolve();
+            },
+            { once: true },
+          );
+          requested.resolve();
+          await releaseResponse.promise;
+          cancelled.resolve();
+        }
+        return HttpResponse.json({ jsonrpc: "2.0", id: message.id, result });
+      });
+    }
+
+    const dialog = await openPaidTools("/?settings=preference");
+    await within(dialog).findByRole("heading", { name: "Preference" });
+    click(button("Tools", dialog));
+    await readySwitch("Web search");
+    await within(dialog).findByText("Loading your tool settings…");
+    await requested.promise;
+    catalog = "Reopened research";
+
+    let reopened: HTMLElement;
+    let settingsAfterInterruption: string | null;
+    if (action === "close Settings") {
+      const finishClose = holdElementAnimations(dialog);
+      click(within(dialog).getByLabelText("Close"));
+      // Dismissal must cancel discovery before the exit animation completes.
+      await cancelled.promise;
+      settingsAfterInterruption = new URLSearchParams(
+        window.location.search,
+      ).get("settings");
+      const closed = waitForElementToBeRemoved(dialog);
+      finishClose();
+      await closed;
+      const rail = await screen.findByTestId("labeled-nav-rail");
+      click(within(rail).getByLabelText("Test User"));
+      const menu = await screen.findByRole("menu");
+      click(within(menu).getByText("Settings", { exact: true }));
+      reopened = await screen.findByRole("dialog", { name: "Settings" });
+    } else {
+      act(() => {
+        window.history.back();
+      });
+      await cancelled.promise;
+      reopened = await screen.findByRole("dialog", { name: "Settings" });
+      settingsAfterInterruption = new URLSearchParams(
+        window.location.search,
+      ).get("settings");
+    }
+    expect(settingsAfterInterruption).toBe(
+      action === "close Settings" ? null : "preference",
+    );
+    await within(reopened).findByRole("heading", { name: "Preference" });
+    click(button("Tools", reopened));
+    const future = await readySwitch("Reopened research");
+    expect(future).not.toBeChecked();
+    expect(
+      within(reopened).queryByRole("switch", { name: "Abandoned research" }),
+    ).not.toBeInTheDocument();
+    click(future);
+    await waitFor(() => {
+      expect(future).toBeChecked();
+    });
+    await expect(readySwitch("Web search")).resolves.toBeChecked();
+  },
+);
 
 test("A failed Router catalog is reported while Okou tools stay manageable", async () => {
   const updates = mockPaidTools();

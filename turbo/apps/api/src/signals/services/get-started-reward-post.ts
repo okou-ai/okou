@@ -1,8 +1,8 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { randomUUID } from "node:crypto";
 import { literal, object, string, unknown as zUnknown } from "zod";
 import { env } from "../../lib/env";
 import { safeUrlParse, settle } from "../utils";
+import { fetchDataRouter } from "./data-router-request";
 
 function parseXProfileHandle(profileUrl: string): string | null {
   const url = safeUrlParse(profileUrl);
@@ -45,19 +45,9 @@ export async function readGetStartedRewardPost(
     (async () => {
       const acceptedResponse = await settle(
         accept(
-          fetch(endpoint, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-              Accept: "application/json, text/event-stream",
-            },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: randomUUID(),
-              method: "tools/call",
-              params: { name: "twitter_tweet", arguments: { url } },
-            }),
+          fetchDataRouter(endpoint, token, {
+            method: "tools/call",
+            params: { name: "twitter_tweet", arguments: { url } },
           }),
           [200],
         ),

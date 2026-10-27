@@ -1009,9 +1009,7 @@ async function setupConnectedTeamsBotActor(
   const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Teams default agent",
   });
-  await authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
-    visibility: "public",
-  });
+  await authOrgApi.readAgent(actor, defaultAgent.body.agentId);
   await runsApi.grantProEntitlement(actor);
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -1334,9 +1332,7 @@ async function claimHistoricalTeamsDownload(
     throw new Error("Expected the normal onboarding Agent");
   }
   await owned.run(() => {
-    return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-      visibility: "public",
-    });
+    return authOrgApi.readAgent(actor, defaultAgentId);
   });
   await owned.run(() => {
     return runsApi.grantProEntitlement(actor, {
@@ -2202,9 +2198,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         displayName: "Teams file agent",
       },
     );
-    await authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
-      visibility: "public",
-    });
+    await authOrgApi.readAgent(actor, defaultAgent.body.agentId);
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -2898,9 +2892,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         },
       );
       owned.defaultAgentId = defaultAgent.body.agentId;
-      await authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
-        visibility: "public",
-      });
+      await authOrgApi.readAgent(actor, defaultAgent.body.agentId);
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [
@@ -3116,9 +3108,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         return runsApi.grantProEntitlement(actor);
       });
       await ownedRuns.run(() => {
-        return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-          visibility: "public",
-        });
+        return authOrgApi.readAgent(actor, defaultAgentId);
       });
       await ownedRuns.run(() => {
         return runsApi.ensurePersonalSubscriptionModel(actor, {
@@ -3632,9 +3622,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       }
       const defaultAgentId = onboarding.defaultAgentId;
       await scenario.run(() => {
-        return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-          visibility: "public",
-        });
+        return authOrgApi.readAgent(actor, defaultAgentId);
       });
       botFrameworkHandlers();
       teamsOutboundHandlers(fixture.serviceUrl);

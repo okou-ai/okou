@@ -67,7 +67,6 @@ export interface ApiTestUserOptions {
 
 export interface OnboardingBootstrapOptions {
   readonly displayName: string;
-  readonly sound?: string;
   readonly avatarUrl?: string;
   readonly timezone?: string;
 }
@@ -302,15 +301,6 @@ export function createBddApi(context: TestContext) {
       if (!status.defaultAgentId) {
         throw new Error("Expected onboarding bootstrap to create an agent");
       }
-
-      await accept(
-        agentsByIdClient().updateMetadata({
-          params: { id: status.defaultAgentId },
-          headers,
-          body: options.sound === undefined ? {} : { sound: options.sound },
-        }),
-        [200],
-      );
 
       if (options.timezone !== undefined) {
         await accept(

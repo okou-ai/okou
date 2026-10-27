@@ -19,6 +19,7 @@ decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-st
 data_router_response_id_floor=$(<"${repo_root}/.github/rollback-floors/data-router-response-id")
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
+home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -38,6 +39,12 @@ case "${1:-}" in
         [ "${MOCK_DATA_ROUTER_RESPONSE_ID_ON_MAIN:-1}" = "1" ]
       elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_DATA_ROUTER_RESPONSE_ID_RUNNER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_HOME_CACHE_CAPACITY_READER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_HOME_CACHE_CAPACITY_READER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_HOME_CACHE_CAPACITY_READER_TARGET_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -294,6 +301,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/home-cache-capacity-reader" ]; then
+      [ "${MOCK_HOME_CACHE_CAPACITY_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_HOME_CACHE_CAPACITY_READER_COMMIT-$MOCK_HOME_CACHE_CAPACITY_READER_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/data-router-response-id" ]; then
       [ "${MOCK_DATA_ROUTER_RESPONSE_ID_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_DATA_ROUTER_RESPONSE_ID_COMMIT-$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR}"
@@ -401,6 +413,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR="$data_router_response_id_floor" \
     MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR="$connector_diagnostic_targets_floor" \
     MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
+    MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -417,6 +430,23 @@ assert_failure() {
   fi
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
+
+# The prepared API reader is required even when the rollback selects an older
+# Runner, because a larger current Runner may still own claimed/finalizing work.
+for home_cache_case in \
+  "MOCK_HOME_CACHE_CAPACITY_READER_AVAILABLE=0|Cannot read the home cache capacity reader rollback floor from main" \
+  "MOCK_HOME_CACHE_CAPACITY_READER_COMMIT=|Missing or invalid home cache capacity reader rollback floor" \
+  "MOCK_HOME_CACHE_CAPACITY_READER_COMMIT=not-a-commit|Missing or invalid home cache capacity reader rollback floor" \
+  "MOCK_HOME_CACHE_CAPACITY_READER_ON_MAIN=0|Home cache capacity reader rollback floor is not on main" \
+  "MOCK_HOME_CACHE_CAPACITY_READER_TARGET_VALID=0|Rollback target predates the home cache capacity reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${home_cache_case#*|}" \
+    run_resolver "${tmp_dir}/home-cache-capacity.output" "${home_cache_case%%|*}"
+  [ ! -s "${tmp_dir}/home-cache-capacity.output" ] || fail "incompatible home cache API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "incompatible home cache API must fail before provider or host access"
+  fi
+done
 
 # Missing or unmerged current-main policy must fail before provider or host access.
 for data_router_case in \
@@ -530,6 +560,9 @@ done
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git show origin/main:.github/rollback-floors/home-cache-capacity-reader" "${tmp_dir}/boundaries.log" || fail "home cache floor must come from current main"
+grep -Fxq "git merge-base --is-ancestor ${home_cache_capacity_reader_floor} origin/main" "${tmp_dir}/boundaries.log" || fail "home cache floor must name a merged main commit"
+grep -Fxq "git merge-base --is-ancestor ${home_cache_capacity_reader_floor} ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API must accept larger home cache inventories"
 grep -Fxq "git show origin/main:.github/rollback-floors/connector-diagnostic-targets" "${tmp_dir}/boundaries.log" || fail "diagnostic floor must come from current main"
 grep -Fxq "git merge-base --is-ancestor ${connector_diagnostic_targets_floor} origin/main" "${tmp_dir}/boundaries.log" || fail "diagnostic floor must name a merged main commit"
 grep -Fxq "git merge-base --is-ancestor ${connector_diagnostic_targets_floor} ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API must return canonical diagnostic targets"

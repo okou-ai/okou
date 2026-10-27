@@ -12,12 +12,6 @@ const brandGithub: IconNode = [
   ],
 ];
 
-const brandGoogleDrive: IconNode = [
-  ["path", { d: "M12 10l-6 10l-3 -5l6 -10l3 5", key: "drive-left" }],
-  ["path", { d: "M9 15h12l-3 5h-12", key: "drive-bottom" }],
-  ["path", { d: "M15 15l-6 -10h6l6 10l-6 0", key: "drive-right" }],
-];
-
 const brandNotion: IconNode = [
   ["path", { d: "M11 17.5v-6.5h.5l4 6h.5v-6.5", key: "notion-letter" }],
   [
@@ -83,10 +77,6 @@ const brandTelegram: IconNode = [
 ];
 
 export const BrandGithub = createLucideIcon("BrandGithub", brandGithub);
-export const BrandGoogleDrive = createLucideIcon(
-  "BrandGoogleDrive",
-  brandGoogleDrive,
-);
 export const BrandNotion = createLucideIcon("BrandNotion", brandNotion);
 export const BrandSlack = createLucideIcon("BrandSlack", brandSlack);
 export const BrandStripe = createLucideIcon("BrandStripe", brandStripe);

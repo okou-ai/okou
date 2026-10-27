@@ -429,9 +429,7 @@ async function setupConnectedTeamsActor(
   }
   await Promise.all([
     runsApi.ensurePersonalSubscriptionModel(actor),
-    authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-      visibility: "public",
-    }),
+    authOrgApi.readAgent(actor, defaultAgentId),
   ]);
   // Queued Teams callbacks inspect and complete the Runner claim. Fable keeps
   // this native fixture claimable while eligible Pi routes remain enabled.

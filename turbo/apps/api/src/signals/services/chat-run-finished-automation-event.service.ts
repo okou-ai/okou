@@ -170,6 +170,7 @@ function chatRunFinishedTriggerContext(args: {
       watchedChatThreadId: args.event.chatThreadId,
       runId: args.event.runId,
       runStatus: args.event.runStatus,
+      failureReason: args.event.failureReason,
       lastResultText: excerpt ?? null,
       lastResultTextTruncated:
         (args.event.lastResultText?.length ?? 0) > OUTPUT_EXCERPT_CHAR_CAP,

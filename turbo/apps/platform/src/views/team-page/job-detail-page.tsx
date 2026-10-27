@@ -1185,7 +1185,11 @@ function useAgentFields() {
   };
 }
 
-function useTabVisibility(ownerId: string, visibility: "public" | "private") {
+function useTabVisibility(
+  ownerId: string,
+  visibility: "public" | "private",
+  isDefaultAgent: boolean | undefined,
+) {
   const adminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin = adminLoadable.state === "hasData" && adminLoadable.data;
 
@@ -1193,7 +1197,9 @@ function useTabVisibility(ownerId: string, visibility: "public" | "private") {
   const currentUserId =
     userLoadable.state === "hasData" ? userLoadable.data?.id : undefined;
   const isOwner = currentUserId === ownerId;
-  const canEditProfile = isOwner || (isAdmin && visibility === "public");
+  const canEditProfile =
+    isDefaultAgent === false &&
+    (isOwner || (isAdmin && visibility === "public"));
 
   const rawTab = useGet(agentActiveTab$);
   const setActiveTab = useSet(setAgentActiveTab$);
@@ -1221,7 +1227,7 @@ export function JobDetailPage() {
   const fields = useAgentFields();
   const errorAgentId = fields.agentId || currentAgentId || "";
   const { hideProfileAndInstructions, isOwner, activeTab, setActiveTab } =
-    useTabVisibility(fields.ownerId, fields.visibility);
+    useTabVisibility(fields.ownerId, fields.visibility, fields.isDefaultAgent);
   const isDefaultAgent = fields.isDefaultAgent;
 
   if (!fields.detail && !error) {

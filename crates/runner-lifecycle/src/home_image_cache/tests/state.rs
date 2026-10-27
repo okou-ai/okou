@@ -2,9 +2,7 @@ use super::super::snapshot::HomeCacheStateSnapshot;
 use super::super::*;
 use super::support::*;
 use crate::active_runs::ActiveRuns;
-use runner_types::types::{
-    HOME_AFFINITY_VERSION, HeldHomeState, HomeCacheCapability, MAX_HELD_HOME_STATES,
-};
+use runner_types::types::{HOME_AFFINITY_VERSION, HeldHomeState, HomeCacheCapability};
 use std::collections::BTreeMap;
 
 #[tokio::test]
@@ -43,21 +41,40 @@ async fn inventory_requires_profile_and_exact_home_shape() {
 
 #[test]
 fn bounded_home_inventory_preserves_newest_reuse_keys_and_profile_partitions() {
-    let states = (0..=MAX_HELD_HOME_STATES)
-        .map(|i| HeldHomeState {
-            reuse_key: format!("thread-{i:04}"),
-            last_completed_at: format!("2026-10-09T09:{i:04}:00Z"),
-            home_caches: vec![HomeCacheCapability {
-                source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
-                profile: PROFILE.into(),
-                home_affinity_version: HOME_AFFINITY_VERSION,
-            }],
-        })
-        .collect();
-    let capped = cap_held_home_states(states);
-    assert_eq!(capped.len(), MAX_HELD_HOME_STATES);
-    assert!(!capped.iter().any(|s| s.reuse_key == "thread-0000"));
-    assert!(capped.iter().all(|s| s.home_caches.len() == 1));
+    for profiles_per_key in [1, 8] {
+        let completed_at = "2026-10-09T09:00:00Z"
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .unwrap();
+        let states = (0..=4096)
+            .map(|i| HeldHomeState {
+                reuse_key: format!("thread-{i:04}"),
+                last_completed_at: (completed_at + chrono::Duration::seconds(i)).to_rfc3339(),
+                home_caches: (0..profiles_per_key)
+                    .map(|profile| HomeCacheCapability {
+                        source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
+                        profile: format!("{PROFILE}-{profile}"),
+                        home_affinity_version: HOME_AFFINITY_VERSION,
+                    })
+                    .collect(),
+            })
+            .collect();
+        let capped = cap_held_home_states(states);
+        assert_eq!(capped.len(), 4096 / profiles_per_key);
+        assert_eq!(
+            capped
+                .iter()
+                .map(|state| state.home_caches.len())
+                .sum::<usize>(),
+            4096
+        );
+        assert!(!capped.iter().any(|state| state.reuse_key == "thread-0000"));
+        assert!(capped.iter().any(|state| state.reuse_key == "thread-4096"));
+        assert!(
+            capped
+                .iter()
+                .all(|state| state.home_caches.len() == profiles_per_key)
+        );
+    }
 }
 
 #[tokio::test]

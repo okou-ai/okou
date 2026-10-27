@@ -2745,6 +2745,13 @@
       "when": 1793086455388,
       "tag": "1470_require_suggestion_custom_context",
       "breakpoints": true
+    },
+    {
+      "idx": 1471,
+      "version": "7",
+      "when": 1793089085215,
+      "tag": "1471_protect_default_agent_reference",
+      "breakpoints": true
     }
   ]
 }

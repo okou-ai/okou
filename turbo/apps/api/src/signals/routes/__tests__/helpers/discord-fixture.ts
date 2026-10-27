@@ -99,9 +99,7 @@ export async function setupConnectedDiscordActor(
     await authOrgApi.completeOnboarding(actor);
   }
   if (!options.reuseOrganization) {
-    await authOrgApi.updateAgentMetadata(actor, onboarding.defaultAgentId, {
-      visibility: "public",
-    });
+    await authOrgApi.readAgent(actor, onboarding.defaultAgentId);
     // These lifecycle fixtures exercise the native Runner claim protocol.
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",

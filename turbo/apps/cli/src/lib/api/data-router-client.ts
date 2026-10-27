@@ -6,6 +6,7 @@ import { json, number, object, record, string, unknown as zUnknown } from "zod";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { dataRouterHistoryContract } from "@okouai/api-contracts/contracts/data-router";
 import {
+  DATA_ROUTER_PROTOCOL_VERSION,
   dataRouterToolsPageSchema,
   type DataRouterFamily,
   type DataRouterTool,
@@ -59,7 +60,11 @@ async function withDataRouter<T>(
   const client = new Client(
     { name: "okou-data-cli", version: "1.0.0" },
     {
-      versionNegotiation: { mode: "auto", probe: { maxRetries: 0 } },
+      // Pinned: no fallback to the 2025 initialize handshake.
+      versionNegotiation: {
+        mode: { pin: DATA_ROUTER_PROTOCOL_VERSION },
+        probe: { maxRetries: 0 },
+      },
       inputRequired: { autoFulfill: false },
     },
   );

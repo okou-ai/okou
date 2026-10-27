@@ -62,11 +62,18 @@ The token remains required for local authentication and for the main API's
 user-owned Data request history, which supplies owned request IDs to tools that
 declare that context.
 
+Router serves only the stateless `2026-07-28` MCP revision with JSON
+responses: no `initialize` handshake, sessions or SSE. The CLI pins that
+revision and never falls back to the 2025 handshake, so a mock must answer
+`server/discover` and return the result fields that revision requires.
+
 Mock the external MCP endpoint with MSW and inspect the actual tool name and
 arguments, as in `src/commands/data/__tests__/router.test.ts`. Keep command
 registration, argument validation and MCP transport real. Data commands print
 the complete Router JSON body without validating, projecting, or formatting
-provider result fields. Each call returns the Router response; billing totals
+provider result fields. A body over 32 KB is written unchanged to an
+owner-only temporary file, and the call prints its path, size and top-level
+shape instead. Each call returns the Router response; billing totals
 the reported request costs when the Run ends. Test arbitrary JSON results and
 transport failures without automatically resubmitting a potentially paid tool
 call.
