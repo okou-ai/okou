@@ -227,27 +227,31 @@ function liveBrowserSidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Live browser" });
 }
 
-async function openViewerSizingMenu(viewer: HTMLElement): Promise<HTMLElement> {
-  const viewerQueries = within(viewer);
-  click(buttonByName("Browser menu", viewer));
-  const menu = await viewerQueries.findByLabelText("Browser menu", {
-    selector: '[role="menu"]',
-  });
-  await waitFor(() => {
+function visibleViewerMenu(
+  viewer: HTMLElement,
+  name: string,
+): Promise<HTMLElement> {
+  return waitFor(() => {
+    const menus = Array.from(
+      viewer.querySelectorAll<HTMLElement>('[role="menu"]'),
+    ).filter((menu) => {
+      return menu.getAttribute("aria-label") === name;
+    });
+    const [menu] = menus;
+    if (!menu || menus.length !== 1) {
+      throw new Error(`Expected one viewer menu named "${name}"`);
+    }
     expect(menu).toBeVisible();
     expect(menu.closest('[aria-hidden="true"], [hidden], [inert]')).toBeNull();
+    return menu;
   });
+}
+
+async function openViewerSizingMenu(viewer: HTMLElement): Promise<HTMLElement> {
+  click(buttonByName("Browser menu", viewer));
+  const menu = await visibleViewerMenu(viewer, "Browser menu");
   click(within(menu).getByText("Fit to this viewer"));
-  const sizingMenu = await viewerQueries.findByLabelText("Fit to this viewer", {
-    selector: '[role="menu"]',
-  });
-  await waitFor(() => {
-    expect(sizingMenu).toBeVisible();
-    expect(
-      sizingMenu.closest('[aria-hidden="true"], [hidden], [inert]'),
-    ).toBeNull();
-  });
-  return sizingMenu;
+  return visibleViewerMenu(viewer, "Fit to this viewer");
 }
 
 interface ViewportGeometry {
