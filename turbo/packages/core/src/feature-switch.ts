@@ -274,6 +274,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Garmin Connect wellness connector",
     enabled: false,
   },
+  [FeatureSwitchKey.ICloudConnector]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iCloud Calendar and Contacts",
+    description:
+      "Connect iCloud calendars and contacts with an app-specific password.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Reddit connector integration",

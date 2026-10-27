@@ -27,6 +27,20 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("enables iCloud for staff and honors explicit rollout overrides", () => {
+    const key = FeatureSwitchKey.ICloudConnector;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    const external = { orgId: "org_nonexistent" };
+    expect(isFeatureEnabled(key, external)).toBe(false);
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(
+      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(key, { ...external, overrides: { [key]: true } }),
+    ).toBe(true);
+  });
+
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
