@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.40](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.39...runner-supervisor-v0.20.40) (2026-10-27)
+
+
+### Bug Fixes
+
+* classify all-endpoint model guardrail refusals ([#43337](https://github.com/okou-ai/okou/issues/43337)) ([c2a90f0](https://github.com/okou-ai/okou/commit/c2a90f0c2bf594775579b7b00c27e3cad6d87a19))
+
 ## [0.20.39](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.38...runner-supervisor-v0.20.39) (2026-10-27)
 
 

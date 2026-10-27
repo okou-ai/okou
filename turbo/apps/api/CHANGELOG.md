@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.14.1](https://github.com/okou-ai/okou/compare/api-v2.14.0...api-v2.14.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **api:** unwrap settlement callback result types ([#43335](https://github.com/okou-ai/okou/issues/43335)) ([5813e04](https://github.com/okou-ai/okou/commit/5813e04980ba84191177732eb8a13eaf571f3d34))
+* classify all-endpoint model guardrail refusals ([#43337](https://github.com/okou-ai/okou/issues/43337)) ([c2a90f0](https://github.com/okou-ai/okou/commit/c2a90f0c2bf594775579b7b00c27e3cad6d87a19))
+
+
+### Refactoring
+
+* **api:** localize thread storage snapshot database ownership ([#43340](https://github.com/okou-ai/okou/issues/43340)) ([c424a1a](https://github.com/okou-ai/okou/commit/c424a1a8d4ea1046c4b9fa5fb5b886a4ff0c155a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.1
+    * @okouai/core bumped to 8.793.1
+    * @okouai/db bumped to 2.6.9
+    * @okouai/pi-agent-runtime bumped to 1.51.2
+
 ## [2.14.0](https://github.com/okou-ai/okou/compare/api-v2.13.5...api-v2.14.0) (2026-10-27)
 
 

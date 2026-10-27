@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1068.1](https://github.com/okou-ai/okou/compare/app-v0.1068.0...app-v0.1068.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* classify all-endpoint model guardrail refusals ([#43337](https://github.com/okou-ai/okou/issues/43337)) ([c2a90f0](https://github.com/okou-ai/okou/commit/c2a90f0c2bf594775579b7b00c27e3cad6d87a19))
+
+
+### Performance Improvements
+
+* **app:** scope browser sizing test queries to the viewer ([#43328](https://github.com/okou-ai/okou/issues/43328)) ([27ddeb6](https://github.com/okou-ai/okou/commit/27ddeb6916d00e56c4a5afca010e98113c842f83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.1
+    * @okouai/core bumped to 8.793.1
+
 ## [0.1068.0](https://github.com/okou-ai/okou/compare/app-v0.1067.1...app-v0.1068.0) (2026-10-27)
 
 

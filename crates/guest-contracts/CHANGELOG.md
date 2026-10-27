@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.7...guest-contracts-v0.27.8) (2026-10-27)
+
+
+### Bug Fixes
+
+* classify all-endpoint model guardrail refusals ([#43337](https://github.com/okou-ai/okou/issues/43337)) ([c2a90f0](https://github.com/okou-ai/okou/commit/c2a90f0c2bf594775579b7b00c27e3cad6d87a19))
+
 ## [0.27.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.6...guest-contracts-v0.27.7) (2026-10-26)
 
 
