@@ -8,6 +8,7 @@ import {
   getTableColumns,
   gt,
   inArray,
+  isNotNull,
   or,
   sql,
 } from "drizzle-orm";
@@ -796,7 +797,7 @@ function sharedBrowserContext(mode$: ReturnType<typeof sharedBrowserMode>) {
           eq(agentRuns.agentId, chatThreads.agentId),
           eq(agentRuns.orgId, input.orgId),
           eq(agentRuns.userId, input.userId),
-          inArray(agentRuns.triggerSource, ["web", "agent"]),
+          isNotNull(agentRuns.triggerSource),
         ),
       )
       .where(

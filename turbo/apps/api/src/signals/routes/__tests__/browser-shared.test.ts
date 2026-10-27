@@ -5,9 +5,16 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { browserRoutes } from "../browser";
+import { createBddApi } from "./helpers/api-bdd";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { uniqueSlackUserId } from "./helpers/slack-public-install";
 import {
   createRunnerBrowserFixtures,
   MINUTE,
@@ -93,6 +100,72 @@ function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("shared Browser public consumers", () => {
+  it("shares the owner Browser with a Slack chat and preserves its window after the Run ends", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      nativeCommands(f);
+      const web = await use(await f.start());
+      const actor = f.owned.actor;
+      const integrations = createBddIntegrationApi(context);
+      const runs = createRunsApi(context);
+      integrations.configureSlackAppMocks();
+      await createBddApi(context).readOnboardingStatus(actor);
+      const slackUserId = uniqueSlackUserId();
+      const { teamId } = await integrations.installSlackWorkspace(actor, {
+        installerSlackUserId: slackUserId,
+      });
+      await integrations.postSlackEvent(teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: "Use my Browser in this Slack chat",
+        ts: "3000.000100",
+        channel: "C_SHARED_BROWSER",
+        channel_type: "channel",
+      });
+      await runs.heartbeatRunner(f.owned.runnerGroup);
+      await flushWaitUntilForTest();
+      const runId = (await runs.pollRunner(f.owned.runnerGroup)).body.job
+        ?.runId;
+      if (!runId) {
+        throw new Error("Expected the Slack chat Run");
+      }
+      expect(
+        (
+          await createRunReadsApi(context).requestReadLogById(
+            actor,
+            runId,
+            [200],
+          )
+        ).body.triggerSource,
+      ).toBe("slack");
+      const claim = await f.owned.claimRunnerRun(runId);
+      const used = await accept(
+        client().use({
+          headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+          body: {},
+        }),
+        [200],
+      );
+      const slack = used.body.browser;
+      expect(slack.window?.instanceId).toBe(web.browser.window?.instanceId);
+      expect(slack.window?.primaryWindowId).not.toBe(
+        web.browser.window?.primaryWindowId,
+      );
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId, exitCode: 1, error: "The fixture Run finished" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const viewed = await accept(
+        client().get({ headers, params: { threadId: slack.threadId } }),
+        [200],
+      );
+      expect(viewed.body.browser.window).toStrictEqual(slack.window);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  });
+
   it("provisions one profile and instance for two chats, reads and resizes only each owned window", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
