@@ -92,6 +92,28 @@ pub enum RunnerPreSpawnPhase {
     SpawnJobSetup,
 }
 
+/// Terminal reason for a resource-backed peer Home readiness wait.
+#[derive(Clone, Copy, Debug)]
+pub enum PeerHomeWaitOutcome {
+    SnapshotReady,
+    RevalidatedReady,
+    PreferenceExpired,
+    Cancelled,
+    Unavailable,
+}
+
+impl PeerHomeWaitOutcome {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SnapshotReady => "snapshot_ready",
+            Self::RevalidatedReady => "revalidated_ready",
+            Self::PreferenceExpired => "preference_expired",
+            Self::Cancelled => "cancelled",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum FinalizingHandoffOutcome {
     Accepted,
@@ -345,6 +367,7 @@ pub struct RunnerPreSpawnTiming {
     finalizing_handoff: Option<FinalizingHandoffTelemetry>,
     finalizing_exact_idle_lookup: Option<FinalizingExactIdleLookup>,
     blank_pool_selection: Option<BlankPoolSelection>,
+    peer_home_wait: Option<(Duration, PeerHomeWaitOutcome)>,
 }
 
 #[derive(Clone, Copy)]
@@ -389,6 +412,7 @@ impl RunnerPreSpawnTiming {
             finalizing_handoff: None,
             finalizing_exact_idle_lookup: None,
             blank_pool_selection: None,
+            peer_home_wait: None,
         }
     }
 
@@ -427,6 +451,12 @@ impl RunnerPreSpawnTiming {
         // claim metadata is available. Retain only the latest decision so one
         // run emits one terminal blank-selection operation.
         self.blank_pool_selection = Some(selection);
+    }
+
+    /// Retain the aggregate series and identify its peer Home subset separately.
+    pub fn record_peer_home_wait(&mut self, duration: Duration, outcome: PeerHomeWaitOutcome) {
+        self.record_phase(RunnerPreSpawnPhase::FinalizingWait, duration);
+        self.peer_home_wait = Some((duration, outcome));
     }
 
     pub fn blank_pool_selection(&self) -> Option<BlankPoolSelection> {
@@ -511,6 +541,15 @@ impl RunnerPreSpawnTiming {
             if let Some(duration) = self.phase_durations.get(phase) {
                 telemetry.record(phase.action_type(), duration, true, None);
             }
+        }
+        if let Some((duration, outcome)) = self.peer_home_wait {
+            telemetry.record_with_outcome(
+                "runner_claim_peer_home_wait",
+                duration,
+                true,
+                None,
+                Some(outcome.as_str()),
+            );
         }
         if let Some(task_enqueued_at) = self.task_enqueued_at {
             telemetry.record(

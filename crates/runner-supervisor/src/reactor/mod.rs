@@ -395,6 +395,7 @@ enum StartLoopEvent {
     DestroyTasksDrainEntered,
     DestroyTasksDrainCompleted,
     FinalizingCapacityWaitEntered { run_id: RunId },
+    PeerHomeRecheckCompleted { run_id: RunId, ready: bool },
     ReservedPreparingCommitted { run_id: RunId },
     ActiveRunStatusPublished { run_id: RunId },
     BeforeIdlePoolOwnershipTransfer { run_id: RunId },

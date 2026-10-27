@@ -6,6 +6,79 @@ use runner_types::types::{HOME_AFFINITY_VERSION, HeldHomeState, HomeCacheCapabil
 use std::collections::BTreeMap;
 
 #[tokio::test]
+async fn source_home_probe_requires_unlocked_matching_generation_and_profile() {
+    let f = Fixture::new().await;
+    let key = "thread:claimed-peer-probe";
+    let context = f
+        .context(
+            key,
+            b"peer bytes",
+            "2026-10-27T10:00:00Z",
+            HomeCacheTerminalStatus::Success,
+            crate::storage_fingerprints::StorageFingerprints::default(),
+        )
+        .await;
+    assert_eq!(
+        context.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    let metadata = f
+        .cache
+        .read_metadata_file(&f.cache.entry_paths(&f.key(key)).metadata())
+        .await
+        .unwrap();
+    let source = metadata.image_generation.parse().unwrap();
+    assert!(
+        !f.cache
+            .probe_source_home(key, PROFILE, SIZE, source)
+            .await
+            .unwrap()
+    );
+    drop(context);
+    f.cache.reset_held_state_root_scan_count();
+    for (profile, size, generation, expected) in [
+        (PROFILE, SIZE, source, true),
+        (PROFILE, SIZE, runner_types::ids::RunId::new_v4(), false),
+        ("vm0/other", SIZE, source, false),
+        (PROFILE, SIZE * 2, source, false),
+    ] {
+        assert_eq!(
+            f.cache
+                .probe_source_home(key, profile, size, generation)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    assert_eq!(f.cache.held_state_root_scan_count(), 0);
+    // A positive observation did not consume or reserve the published image.
+    let lease = f.lease(key).await;
+    assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
+}
+
+#[tokio::test]
+async fn source_home_probe_keeps_missing_state_and_lock_errors_distinct() {
+    let f = Fixture::new().await;
+    let key = "thread:peer-lock-error";
+    assert!(
+        !f.cache
+            .probe_source_home(key, PROFILE, SIZE, runner_types::ids::RunId::new_v4())
+            .await
+            .unwrap()
+    );
+    assert!(!f.cache.entry_lock_path(&f.key(key)).exists());
+    tokio::fs::create_dir_all(f.cache.entry_lock_path(&f.key(key)))
+        .await
+        .unwrap();
+    assert!(
+        f.cache
+            .probe_source_home(key, PROFILE, SIZE, runner_types::ids::RunId::new_v4())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn inventory_requires_profile_and_exact_home_shape() {
     let f = Fixture::new().await;
     let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;

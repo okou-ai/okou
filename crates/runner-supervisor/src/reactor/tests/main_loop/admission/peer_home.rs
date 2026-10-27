@@ -74,15 +74,138 @@ fn enable_cache(config: &mut RunConfig) -> (HomeImageCache, RunnerPaths) {
 
 #[tokio::test]
 async fn peer_claims_before_draining_producer_publication_and_consumes_seed_bytes() {
-    assert_late_draining_publication(false).await;
+    assert_late_draining_publication(false, false).await;
 }
 
 #[tokio::test]
 async fn soft_draining_receiver_keeps_claimed_wait_and_consumes_peer_publication() {
-    assert_late_draining_publication(true).await;
+    assert_late_draining_publication(true, false).await;
 }
 
-async fn assert_late_draining_publication(drain_receiver: bool) {
+#[tokio::test]
+async fn peer_claim_revalidates_source_home_when_watcher_is_lost() {
+    assert_late_draining_publication(false, true).await;
+}
+
+#[tokio::test]
+async fn soft_draining_receiver_revalidates_peer_home_when_watcher_is_lost() {
+    assert_late_draining_publication(true, true).await;
+}
+
+#[tokio::test]
+async fn peer_rechecks_a_busy_publication_after_unlock_without_another_watch_event() {
+    use crate::home_image_cache::{
+        HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImageLeaseRequest,
+        HomeImagePromotionOutcome, HomeImagePromotionRequest,
+    };
+    use crate::storage_fingerprints::StorageFingerprints;
+
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let execution = MockLifecycleGate::new();
+    overrides.set_wait_process_lifecycle_gate(execution.clone());
+    let (mut config, env) = mock_run_config_with_overrides(profiles, 2, 8192, 1, overrides.clone());
+    let (cache, paths) = enable_cache(&mut config);
+    let budget = config.capacity.budget.clone();
+    let cache_dir = config.paths.home.home_image_cache_dir();
+    let rootfs_hash = config.runner.profiles["vm0/default"].rootfs_hash.clone();
+    // Independent cache ownership matches the other process's local wakeups.
+    let publisher = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    let source = RunId::new_v4();
+    let sandbox_id = sandbox::SandboxId::new_v4();
+    let key = "thread:peer-unlocked-without-event";
+    let lease = publisher
+        .lease_active(HomeImageLeaseRequest {
+            identity: HomeImageLeaseIdentity {
+                run_id: source,
+                sandbox_id,
+                profile_name: "vm0/default",
+                rootfs_hash: &rootfs_hash,
+                reuse_key: Some(key),
+                working_dir: "/home/user/workspace",
+                image_size_bytes: 1024 * 1024,
+            },
+            home_drive_available: true,
+        })
+        .await;
+    let image = vec![0x5a; 1024 * 1024];
+    let active_image = paths.active_home_image(&sandbox_id);
+    tokio::fs::create_dir_all(active_image.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&active_image, &image).await.unwrap();
+    let publication = lease
+        .into_promotion_context(HomeImagePromotionRequest {
+            run_id: source,
+            sandbox_id,
+            restored_session_identity: None,
+            terminal_status: HomeCacheTerminalStatus::Success,
+            completed_at: "2026-10-27T10:00:00Z".into(),
+            storage_fingerprints: StorageFingerprints::default(),
+        })
+        .unwrap();
+
+    let runner = tokio::spawn(run(config));
+    wait_discover_entered(&env, WAIT).await;
+    let moved = cache_dir.with_extension("moved");
+    tokio::fs::rename(&cache_dir, &moved).await.unwrap();
+    tokio::fs::rename(&moved, &cache_dir).await.unwrap();
+    let successor = RunId::new_v4();
+    env.provider
+        .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
+    env.handle
+        .discover_tx
+        .send(peer_candidate(successor, key, source))
+        .unwrap();
+    wait_owned_peer(&env, successor).await;
+    let scans = cache.held_state_root_scan_count();
+    assert_eq!(
+        publication.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    let cursor = env.start_observer.cursor();
+    env.start_observer.wait_after(cursor, WAIT, "busy peer source validation", &mut |event| {
+        matches!(event, crate::reactor::StartLoopEvent::PeerHomeRecheckCompleted { run_id, ready: false } if *run_id == successor).then_some(())
+    }).await;
+    assert!(
+        overrides.create_configs().is_empty(),
+        "published bytes remain exclusively owned until unlock"
+    );
+    drop(publication);
+    execution.wait_entered(1, WAIT).await.unwrap();
+    assert_eq!(
+        cache.held_state_root_scan_count(),
+        scans,
+        "the claimed recheck must not require another full inventory scan"
+    );
+    let created = overrides.create_configs();
+    let seed = created[0]
+        .home_drive
+        .as_ref()
+        .unwrap()
+        .seed_image
+        .as_ref()
+        .unwrap();
+    let seed_path = match seed {
+        sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => path,
+    };
+    assert_eq!(tokio::fs::read(seed_path).await.unwrap(), image);
+    assert_eq!(env.handle.claim_candidates().len(), 1);
+    execution.release_one();
+    assert_eq!(
+        env.handle
+            .wait_completion(successor, WAIT)
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    shutdown(&env, runner).await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
+
+async fn assert_late_draining_publication(drain_receiver: bool, lose_watcher: bool) {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let source_overrides = Arc::new(MockSandboxOverrides::new());
@@ -92,6 +215,7 @@ async fn assert_late_draining_publication(drain_receiver: bool) {
         mock_run_config_with_overrides(profiles.clone(), 4, 16384, 2, source_overrides.clone());
     source.runner.identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 19).unwrap();
     let shared_home = source.paths.home.clone();
+    let shared_cache_dir = shared_home.home_image_cache_dir();
     let (source_cache, source_paths) = enable_cache(&mut source);
     let source_task = tokio::spawn(run(source));
     wait_discover_entered(&source_env, WAIT).await;
@@ -163,6 +287,18 @@ async fn assert_late_draining_publication(drain_receiver: bool) {
     if drain_receiver {
         receiver_env.drain();
         wait_status_mode(&receiver_status, "draining", WAIT).await;
+    }
+    if lose_watcher {
+        // Moving the real watched directory invalidates inotify's root watch.
+        // Restore the same inode before publishing: authoritative cache bytes
+        // stay available, but the receiver cannot rely on a later watch event.
+        let moved_cache_dir = shared_cache_dir.with_extension("moved");
+        tokio::fs::rename(&shared_cache_dir, &moved_cache_dir)
+            .await
+            .unwrap();
+        tokio::fs::rename(&moved_cache_dir, &shared_cache_dir)
+            .await
+            .unwrap();
     }
     publication.release_many(usize::MAX);
     receiver_execution

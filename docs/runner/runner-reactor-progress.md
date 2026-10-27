@@ -389,6 +389,11 @@ after a later recovery. No pressure-state lock survives IO or provider work.
   It releases the claim-RPC slot while retaining capacity through bounded wait
   and ordinary startup. Soft drain joins this already owned work; result loss
   schedules tracked recovery before releasing resources.
+  Missing peer readiness also receives a bounded, nonblocking observation of
+  its one demanded physical key, owned by that claimed job under the original
+  deadline and cancellation. Snapshot notifications remain the fast path;
+  ordinary admission does not probe disk. Readiness grants no checkout custody:
+  source-bound metadata and image identity are revalidated under the entry lock.
   Watcher classification does not own an idle-pool or
   status waiter needed by an inline reactor branch. The observation owner admits
   one independent inventory refresh with bounded coalesced dirty keys. Ordinary
