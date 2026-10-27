@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+import urllib.error
 import uuid
 from collections.abc import Awaitable
 from pathlib import Path
@@ -22,7 +23,9 @@ import firewall_auth_cache
 import firewall_auth_client
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import platform_api
 import public_destination_body_admission
+from tests.auth_endpoint_helpers import FakeAuthEndpoint
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http2_request, start_http_layer
@@ -198,6 +201,73 @@ async def test_failed_terminal_registration_is_reported_without_retrying(
         assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
     registration.assert_awaited_once()
     assert flow.response.content == b"already executed"
+
+
+@pytest.mark.parametrize("registration_status", [401, 500])
+@pytest.mark.parametrize("terminal", ["response", "error"])
+async def test_rejected_terminal_registration_releases_tracking_without_retrying(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, registration_status, terminal
+):
+    path = router_registry(tmp_path)
+    sandbox = json.loads(path.read_text())["sandboxes"]["10.200.0.5"]
+    flow = router_flow(real_flow)
+    request_id = str(uuid.uuid4())
+    upstream_body = b"already executed provider response"
+    error_body = b"registration rejected"
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_response(registration_status, body=error_body)
+
+    with (
+        endpoint.run(),
+        mitm_ctx(registry_path=str(path), api_url=endpoint.api_url),
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
+        patch.dict("os.environ", {"no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}),
+        patch.object(platform_api, "VERCEL_BYPASS", ""),
+    ):
+        await mitm_addon.request(flow)
+        assert flow.response is None
+        assert endpoint.request_count == 0
+        original_request = (
+            flow.request.method,
+            flow.request.url,
+            flow.request.raw_content,
+            flow.request.headers.copy(),
+        )
+        upstream_response = http.Response.make(
+            502, upstream_body, {"X-Okou-Data-Request-Id": request_id}
+        )
+        flow.response = upstream_response
+        mitm_addon.responseheaders(flow)
+        assert_pending(tmp_path / "delivery-control", flows=1, buffered=0, reports=0)
+
+        pending = finish_router_flow(flow, terminal)
+        assert pending is not None
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            await pending
+        assert exc_info.value.code == registration_status
+        assert exc_info.value.read() == error_body
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+
+        later_error = finish_router_flow(flow, "error")
+        assert later_error is not None
+        await later_error
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+        assert flow.response is upstream_response
+        assert flow.response.status_code == 502
+        assert flow.response.raw_content == upstream_body
+        assert (
+            flow.request.method,
+            flow.request.url,
+            flow.request.raw_content,
+            flow.request.headers,
+        ) == original_request
+
+    assert endpoint.request_count == 1
+    [registration] = endpoint.requests
+    assert registration.method == "POST"
+    assert registration.path == "/api/webhooks/agent/data-request"
+    assert registration.json_body() == {"runId": sandbox["runId"], "requestId": request_id}
+    assert registration.headers["authorization"] == f"Bearer {sandbox['sandboxToken']}"
 
 
 @pytest.mark.parametrize("terminal", ["response", "error"])
