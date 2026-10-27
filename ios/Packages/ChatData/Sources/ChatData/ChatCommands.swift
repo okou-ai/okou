@@ -263,7 +263,7 @@ public actor ChatCommands {
 
     enum CodingKeys: String, CodingKey {
       case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort
-      case connectorSelections, initialRemoteAccessOverrides
+      case connectorSelections, connectorSelectionPolicy, initialRemoteAccessOverrides
     }
 
     func encode(to encoder: Encoder) throws {
@@ -276,6 +276,9 @@ public actor ChatCommands {
       try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
       try container.encodeIfPresent(
         composerOptions?.connectorSelections, forKey: .connectorSelections)
+      if composerOptions?.connectorSelections.isEmpty == false {
+        try container.encode("required", forKey: .connectorSelectionPolicy)
+      }
       try container.encodeIfPresent(
         composerOptions?.initialRemoteAccessOverrides, forKey: .initialRemoteAccessOverrides)
     }

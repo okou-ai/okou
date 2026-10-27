@@ -162,10 +162,12 @@ final class ChatComposerAccessTests: XCTestCase {
       if request.url!.path == "/api/chat-threads" {
         struct Body: Decodable {
           let connectorSelections: [ChatConnectorSelection]
+          let connectorSelectionPolicy: String
           let initialRemoteAccessOverrides: [ChatRemoteOverride]
         }
         let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
         XCTAssertEqual(body.connectorSelections.first?.connectionId, F.accountID)
+        XCTAssertEqual(body.connectorSelectionPolicy, "required")
         XCTAssertEqual(body.initialRemoteAccessOverrides.first?.protocol, .vnc)
         XCTAssertEqual(body.initialRemoteAccessOverrides.first?.enabled, true)
         return ChatHTTPResponse(

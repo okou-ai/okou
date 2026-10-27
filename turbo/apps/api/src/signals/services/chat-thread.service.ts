@@ -800,6 +800,7 @@ function existingClientThreadCondition(args: {
   readonly clientThreadId: string | undefined;
   readonly userId: string;
   readonly agentId: string;
+  readonly orgId: string;
 }) {
   if (args.clientThreadId === undefined) {
     return sql`false`;
@@ -808,6 +809,7 @@ function existingClientThreadCondition(args: {
     eq(chatThreads.id, args.clientThreadId),
     eq(chatThreads.userId, args.userId),
     eq(chatThreads.agentId, args.agentId),
+    chatThreadOrganizationPredicate(args.orgId),
   );
 }
 
@@ -825,6 +827,8 @@ interface CreateChatThreadArgs {
   readonly cloudBrowserEnabled?: boolean;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
+  readonly connectorSelectionPolicy?: "required";
+  readonly committedThread?: ExistingChatThread;
   readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   /** Welcome delivery seeds one immutable message only for the winning INSERT. */
   readonly initialAssistantMessage?: string;
@@ -862,6 +866,7 @@ function initialThreadWritePlan(
     connectors: initialChatThreadConnectorSelectionStatements({
       chatThreadId: thread.id,
       selections,
+      required: args.connectorSelectionPolicy === "required",
     }),
     remote: initialRemoteAccessValues(
       thread.id,
@@ -903,7 +908,19 @@ function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
     userId: args.userId,
     agentId: args.agentId,
     selections: args.connectorSelections ?? [],
-    missingAccountPolicy: "omit" as const,
+    missingAccountPolicy:
+      args.connectorSelectionPolicy === "required"
+        ? ("reject" as const)
+        : ("omit" as const),
+  };
+}
+
+function initialRemoteOwnershipSelection(args: CreateChatThreadArgs) {
+  return {
+    owned: initialRemoteAccessOwnershipPredicate(
+      args,
+      args.initialRemoteAccessOverrides ?? [],
+    ).mapWith(pgBooleanDecoder),
   };
 }
 
@@ -942,136 +959,160 @@ function createdChatRelationCtes(args: CreateChatThreadArgs) {
   ];
 }
 
+function failedChatThreadInitialization(error: unknown) {
+  // Classify only after the complete initialization has rolled back. Other
+  // constraints and database failures remain errors.
+  if (selectionParentMissing(error) === "account") {
+    return { kind: "connector_account_unavailable" as const };
+  }
+  throw error;
+}
+
+function invalidInitialConnectorSelection(
+  prepared: { readonly message: string; readonly accountUnavailable?: true },
+  policy: CreateChatThreadArgs["connectorSelectionPolicy"],
+) {
+  if (prepared.accountUnavailable && policy === "required") {
+    return { kind: "connector_account_unavailable" as const };
+  }
+  return {
+    kind: "invalid_connector_selection" as const,
+    message: prepared.message,
+  };
+}
+
 /** Initialization and the ordered created event commit together. */
 export const createChatThread$ = command(
   async ({ set }, args: CreateChatThreadArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
+    if (args.committedThread) {
+      return args.committedThread;
+    }
     const preparedConnectorSelections = await set(
       prepareChatThreadConnectorSelections$,
       initialConnectorSelectionInput(args),
       signal,
     );
     if (preparedConnectorSelections.kind === "invalid") {
-      return {
-        kind: "invalid_connector_selection" as const,
-        message: preparedConnectorSelections.message,
-      };
+      return invalidInitialConnectorSelection(
+        preparedConnectorSelections,
+        args.connectorSelectionPolicy,
+      );
     }
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0095; new non-billing transactions are prohibited.
-    const thread = await set(writeDb$).transaction(async (tx) => {
-      const initialRemoteAccessOverrides =
-        args.initialRemoteAccessOverrides ?? [];
-      const [remoteOwnership] =
-        initialRemoteAccessOverrides.length > 0
-          ? await tx
-              .select({
-                owned: initialRemoteAccessOwnershipPredicate(
-                  args,
-                  initialRemoteAccessOverrides,
-                ).mapWith(pgBooleanDecoder),
-              })
-              .from(sql`(SELECT 1) AS initial_remote_ownership`)
-          : [{ owned: true }];
-      signal.throwIfAborted();
-      if (!remoteOwnership) {
-        throw new Error("Initial remote access ownership result is missing");
-      }
-      if (!remoteOwnership.owned) {
-        // A retry may arrive after a host was deleted. Preserve the already-created
-        // chat without accepting that stale host for a new chat.
-        if (canReplayClientThread(args)) {
-          const [replay] = await tx
-            .select(existingClientThreadSelection)
-            .from(chatThreads)
-            .where(existingClientThreadCondition(args))
-            .limit(1);
-          signal.throwIfAborted();
-          if (replay) {
-            return { kind: "existing" as const, ...replay };
-          }
+    const thread = await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0095; new non-billing transactions are prohibited.
+      set(writeDb$).transaction(async (tx) => {
+        const initialRemoteAccessOverrides =
+          args.initialRemoteAccessOverrides ?? [];
+        const [remoteOwnership] =
+          initialRemoteAccessOverrides.length > 0
+            ? await tx
+                .select(initialRemoteOwnershipSelection(args))
+                .from(sql`(SELECT 1) AS initial_remote_ownership`)
+            : [{ owned: true }];
+        signal.throwIfAborted();
+        if (!remoteOwnership) {
+          throw new Error("Initial remote access ownership result is missing");
         }
-        return {
-          kind: "invalid_remote_access_selection" as const,
-          message: "Remote access host not found",
-        };
-      }
-      const createdThreadPlan = ordinaryChatThreadInsertPlan(args);
-      const createdThreadWrite = tx.$with("created_chat_thread").as(
-        tx
-          .insert(chatThreads)
-          .values(createdThreadPlan.values)
-          .onConflictDoNothing()
-          .returning({ ...createdChatThreadSelection }),
-      );
-      const [createdThreadRow] = await tx
-        .with(
-          ...createdThreadPlan.defaults,
-          createdThreadWrite,
-          ...createdChatRelationCtes(args),
-        )
-        .select()
-        .from(createdThreadWrite);
-      signal.throwIfAborted();
-      const createdThread = createdThreadRow
-        ? createdChatThreadFromRow(
-            createdThreadRow,
-            createdThreadPlan.values.agentId,
-          )
-        : undefined;
-      if (!createdThread) {
-        if (canReplayClientThread(args)) {
-          const [existing] = await tx
-            .select(existingClientThreadSelection)
-            .from(chatThreads)
-            .where(existingClientThreadCondition(args))
-            .limit(1);
-          signal.throwIfAborted();
-          if (existing) {
-            return { kind: "existing" as const, ...existing };
-          }
-        }
-        return { kind: "client_thread_conflict" as const };
-      }
-      const initialWrites = initialThreadWritePlan(
-        args,
-        createdThread,
-        preparedConnectorSelections.selections,
-      );
-      for (const statement of initialWrites.connectors) {
-        const inserted = await settle(
-          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0096; new non-billing transactions are prohibited.
-          tx.transaction(async (sp) => {
-            await sp.execute(statement);
-            signal.throwIfAborted();
-          }),
+        const createdThreadPlan = ordinaryChatThreadInsertPlan(args);
+        const createdThreadWrite = tx.$with("created_chat_thread").as(
+          tx
+            .insert(chatThreads)
+            .values(createdThreadPlan.values)
+            .onConflictDoNothing()
+            .returning({ ...createdChatThreadSelection }),
         );
+        const [createdThreadRow] = remoteOwnership.owned
+          ? await tx
+              .with(
+                ...createdThreadPlan.defaults,
+                createdThreadWrite,
+                ...createdChatRelationCtes(args),
+              )
+              .select()
+              .from(createdThreadWrite)
+          : [];
         signal.throwIfAborted();
-        if (
-          !inserted.ok &&
-          selectionParentMissing(inserted.error) !== "account"
-        ) {
-          throw inserted.error;
+        const createdThread = createdThreadRow
+          ? createdChatThreadFromRow(
+              createdThreadRow,
+              createdThreadPlan.values.agentId,
+            )
+          : undefined;
+        if (!createdThread) {
+          if (canReplayClientThread(args)) {
+            const [existing] = await tx
+              .select(existingClientThreadSelection)
+              .from(chatThreads)
+              .where(existingClientThreadCondition(args))
+              .limit(1);
+            signal.throwIfAborted();
+            if (existing) {
+              return { kind: "existing" as const, ...existing };
+            }
+          }
+          if (!remoteOwnership.owned) {
+            return {
+              kind: "invalid_remote_access_selection" as const,
+              message: "Remote access host not found",
+            };
+          }
+          return { kind: "client_thread_conflict" as const };
         }
-      }
-      const remoteValues = initialWrites.remote;
-      if (remoteValues.ssh.length) {
-        await tx.insert(chatThreadSshAccessOverrides).values(remoteValues.ssh);
-        signal.throwIfAborted();
-      }
-      if (remoteValues.vnc.length) {
-        await tx.insert(chatThreadVncAccessOverrides).values(remoteValues.vnc);
-        signal.throwIfAborted();
-      }
-      for (const statement of initialWrites.events) {
-        if (statement !== null) {
-          await tx.execute(statement);
+        const initialWrites = initialThreadWritePlan(
+          args,
+          createdThread,
+          preparedConnectorSelections.selections,
+        );
+        for (const statement of initialWrites.connectors) {
+          if (args.connectorSelectionPolicy === "required") {
+            await tx.execute(statement);
+          } else {
+            // #42681: retain legacy isolation until supported Web/iOS clients
+            // preserve the draft on a rejected creation.
+            const inserted = await settle(
+              // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0096; new non-billing transactions are prohibited.
+              tx.transaction(async (sp) => {
+                await sp.execute(statement);
+                signal.throwIfAborted();
+              }),
+            );
+            if (
+              !inserted.ok &&
+              selectionParentMissing(inserted.error) !== "account"
+            ) {
+              throw inserted.error;
+            }
+          }
           signal.throwIfAborted();
         }
-      }
-      return createdThreadResult(createdThread);
-    });
+        const remoteValues = initialWrites.remote;
+        if (remoteValues.ssh.length) {
+          await tx
+            .insert(chatThreadSshAccessOverrides)
+            .values(remoteValues.ssh);
+          signal.throwIfAborted();
+        }
+        if (remoteValues.vnc.length) {
+          await tx
+            .insert(chatThreadVncAccessOverrides)
+            .values(remoteValues.vnc);
+          signal.throwIfAborted();
+        }
+        for (const statement of initialWrites.events) {
+          if (statement !== null) {
+            await tx.execute(statement);
+            signal.throwIfAborted();
+          }
+        }
+        return createdThreadResult(createdThread);
+      }),
+      signal,
+    );
     signal.throwIfAborted();
-    return thread;
+    return thread.ok
+      ? thread.value
+      : failedChatThreadInitialization(thread.error);
   },
 );
 

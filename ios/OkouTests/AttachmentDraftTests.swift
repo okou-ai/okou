@@ -315,6 +315,73 @@ final class AttachmentDraftTests: XCTestCase {
     reopened.newComposer.clear()
   }
 
+  func testUnavailableNewChatAccountKeepsDraftAndAttachmentUntilDefaultIsChosen() async throws {
+    let requests = Mutex<[Data]>([])
+    let message =
+      "The account selected for this chat is unavailable. Choose another account or use default."
+    let fixture = AttachmentFlowFixture(creationResponse: { request in
+      let count = requests.withLock {
+        $0.append(chatRequestBody(request))
+        return $0.count
+      }
+      if count == 1 {
+        return ChatHTTPResponse(
+          status: 400,
+          body: """
+            {"error":{"code":"CONNECTOR_ACCOUNT_UNAVAILABLE","message":"\(message)"}}
+            """)
+      }
+      return ChatHTTPResponse(
+        status: 201,
+        body: """
+          {"id":"\(AttachmentFlowFixture.threadID)","createdAt":"2026-10-27T00:00:00Z"}
+          """)
+    })
+    let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { store.close() }
+    store.selectedAgentID = AttachmentFlowFixture.agentID
+    store.newChatDraft = "Use my selected GitHub account"
+    let source = try makeFile()
+    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+    store.newAttachmentDraft.importFiles([source])
+    try await eventually {
+      store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
+    }
+    let connectors = store.newModelSelection.connectors
+    connectors.configure(agentID: AttachmentFlowFixture.agentID)
+    await connectors.selectAccount(
+      target: .builtin("github"), connectionID: AttachmentFlowFixture.fileID)
+
+    await store.sendNewChat()
+
+    XCTAssertEqual(store.error, message)
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.newChatDraft, "Use my selected GitHub account")
+    XCTAssertEqual(store.newAttachmentDraft.items.first?.file.filename, "notes.txt")
+    XCTAssertTrue(store.newAttachmentDraft.isReady)
+    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
+    let firstRequest = try XCTUnwrap(requests.withLock { $0.first })
+    let firstBody = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: firstRequest) as? [String: Any])
+    let selections = try XCTUnwrap(firstBody["connectorSelections"] as? [[String: Any]])
+    XCTAssertEqual(selections.first?["connectionId"] as? String, AttachmentFlowFixture.fileID)
+    XCTAssertEqual(firstBody["connectorSelectionPolicy"] as? String, "required")
+
+    await connectors.selectAccount(target: .builtin("github"), connectionID: nil)
+    await store.sendNewChat()
+
+    XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
+    let sent = try fixture.state.value.withLock {
+      try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
+    }
+    XCTAssertEqual(sent.count, 1)
+    XCTAssertEqual(sent.first?.userMessage.parts.last?.filenameSnapshot, "notes.txt")
+    let correctedRequest = try XCTUnwrap(requests.withLock { $0.last })
+    let correctedBody = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: correctedRequest) as? [String: Any])
+    XCTAssertEqual((correctedBody["connectorSelections"] as? [[String: Any]])?.count, 0)
+  }
+
   private func makeFile(filename: String = "notes.txt", content: Data = Data("notes".utf8)) throws
     -> URL
   {
@@ -381,6 +448,7 @@ final class AttachmentFlowFixture: Sendable {
     failUpload: Bool = false, failSend: Bool = false, acceptBeforeFailure: Bool = false,
     storage: @escaping @Sendable () async -> Void = {},
     creation: @escaping @Sendable () async -> Bool = { true },
+    creationResponse: ChatHTTPFixture.Handler? = nil,
     draftRead: @escaping @Sendable () async -> Void = {},
     workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil,
     attachment: ChatAttachment? = nil,
@@ -449,6 +517,7 @@ final class AttachmentFlowFixture: Sendable {
       case "/api/run-models", "/api/model-catalog":
         return ChatHTTPResponse(body: "{\"models\":[],\"routes\":[]}")
       case "/api/chat-threads":
+        if let creationResponse { return try await creationResponse(request) }
         guard await creation() else {
           return ChatHTTPResponse(
             status: 503, body: "{\"error\":{\"message\":\"Creation failed\"}}")
