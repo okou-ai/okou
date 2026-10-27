@@ -96,9 +96,6 @@ export function HalloweenHeader({
             ? `${copy.question} ${round?.questionNumber ?? 1} ${copy.of} 5`
             : copy.campaign}
         </span>
-        {!playing && (
-          <span className="hidden text-[#7f90a8] lg:inline">{copy.dates}</span>
-        )}
         {playing ? (
           <Button
             variant="quiet"

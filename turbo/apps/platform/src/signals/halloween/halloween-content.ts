@@ -2,7 +2,6 @@
 export const HALLOWEEN_COPY = {
   brand: "Okou",
   campaign: "Spooky Halloween",
-  dates: "Oct 29 – Nov 4",
   tagline: "Spooky Halloween · A little mischief. A lot of possibility.",
   language: "English",
   climb: "The climb",
@@ -47,7 +46,7 @@ export const HALLOWEEN_COPY = {
   endedSub:
     "Thanks for playing. You can still sign in to link a previous game result.",
   upcoming: "A little magic is on its way.",
-  upcomingSub: "Join us October 29–November 4, 2026 (Los Angeles time).",
+  upcomingSub: "The Halloween quiz isn’t available yet. Come back soon.",
   unavailable: "A little magic is on its way.",
   unavailableSub: "The Halloween quiz isn’t available yet. Come back soon.",
   saved: "Game result saved.",
@@ -101,8 +100,8 @@ export const HALLOWEEN_COPY = {
   ],
   ruleSections: [
     {
-      title: "Event period",
-      text: "October 29–November 4, 2026, Los Angeles local time. The event begins at 12:00 AM on October 29 and ends at 11:59:59 PM on November 4. A round started before the event ends can still be completed afterward.",
+      title: "Activity availability",
+      text: "The Halloween quiz is available whenever it appears in Okou. A round started while it is available can still be completed if the activity later becomes unavailable.",
     },
     {
       title: "How to play",
