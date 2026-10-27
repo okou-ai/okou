@@ -1550,7 +1550,8 @@
         "whatsCooking": "Ada apa, {{userName}}?",
         "whatsOnYourMind": "Apa yang ada di pikiranmu, {{userName}}?",
         "whatsTheMove": "Mau ngapain, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
       "dismiss": "Abaikan",

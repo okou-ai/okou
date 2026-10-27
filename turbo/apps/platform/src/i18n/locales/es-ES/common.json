@@ -1575,7 +1575,8 @@
         "whatsCooking": "¿Qué se está cocinando, {{userName}}?",
         "whatsOnYourMind": "¿Qué tienes en mente, {{userName}}?",
         "whatsTheMove": "¿Cuál es el plan, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "Ver perfil del agente"
     },
     "agentSuggestions": {
       "dismiss": "Descartar",

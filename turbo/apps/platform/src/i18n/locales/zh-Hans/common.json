@@ -1550,7 +1550,8 @@
         "whatsCooking": "在忙什么呢，{{userName}}？",
         "whatsOnYourMind": "在想些什么，{{userName}}？",
         "whatsTheMove": "下一步怎么走，{{userName}}？"
-      }
+      },
+      "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
       "dismiss": "忽略",
