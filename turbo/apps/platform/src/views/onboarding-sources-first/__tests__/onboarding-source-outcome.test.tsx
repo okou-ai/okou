@@ -33,7 +33,11 @@ async function chooseIndustry(name: string): Promise<void> {
   if (!label) {
     throw new Error(`Expected industry choice "${name}"`);
   }
-  click(within(label).getByRole("radio"));
+  const [radio] = queryAllByRoleFast("radio", label);
+  if (!radio) {
+    throw new Error(`Expected industry radio "${name}"`);
+  }
+  click(radio);
   await waitFor(() => {
     return expect(action("Continue")).toBeEnabled();
   });
