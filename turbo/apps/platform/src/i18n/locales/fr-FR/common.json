@@ -426,6 +426,7 @@
         "workflows": "Workflows",
         "works": "Travail"
       },
+      "resizeChatList": "Redimensionner la liste des chats",
       "searchWorkspace": "Rechercher dans l’espace de travail",
       "showChatList": "Afficher la liste des chats",
       "workspaceSwitcher": {

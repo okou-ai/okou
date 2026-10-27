@@ -131,6 +131,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
   },
+  [FeatureSwitchKey.UnifiedChatWorkspace]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Unified chat workspace",
+    description:
+      "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:

@@ -17,6 +17,11 @@ import {
   toggleChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
 import { pwaNavigationEnabled$ } from "./pwa-navigation.ts";
+import {
+  setStoredChatListHidden$,
+  storedChatListHidden$,
+  unifiedChatWorkspace$,
+} from "./unified-chat-workspace.ts";
 
 type PinnedAgentShortcutDirection = "prev" | "next";
 
@@ -119,12 +124,20 @@ export const selectPinnedAgent$ = command(
 
 const internalSidebarOff$ = state(false);
 
+// The unified workspace remembers a folded chat list across reloads.
 export const sidebarOff$ = computed((get) => {
-  return get(internalSidebarOff$);
+  return get(unifiedChatWorkspace$)
+    ? get(storedChatListHidden$)
+    : get(internalSidebarOff$);
 });
 
 export const toggleSidebarOff$ = command(({ get, set }) => {
-  set(internalSidebarOff$, !get(internalSidebarOff$));
+  const off = !get(sidebarOff$);
+  if (get(unifiedChatWorkspace$)) {
+    set(setStoredChatListHidden$, off);
+    return;
+  }
+  set(internalSidebarOff$, off);
 });
 
 export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {

@@ -412,6 +412,7 @@
         "workflows": "ワークフロー",
         "works": "連携先"
       },
+      "resizeChatList": "チャットリストのサイズを変更する",
       "searchWorkspace": "ワークスペースを検索",
       "showChatList": "チャットリストを表示",
       "workspaceSwitcher": {

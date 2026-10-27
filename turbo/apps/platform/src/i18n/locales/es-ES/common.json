@@ -426,6 +426,7 @@
         "workflows": "Flujos de trabajo",
         "works": "Integraciones"
       },
+      "resizeChatList": "Cambiar el tamaño de la lista de chats",
       "searchWorkspace": "Buscar en el espacio de trabajo",
       "showChatList": "Mostrar lista de chats",
       "workspaceSwitcher": {
