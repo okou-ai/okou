@@ -140,7 +140,21 @@ async fn serve_connection(
             })
             .await
             .unwrap();
-        let (bytes, close) = response.await.unwrap();
+        let mut eof = [0; 1];
+        let (bytes, close) = tokio::select! {
+            response = response => response.unwrap(),
+            read = socket.read(&mut eof) => {
+                match read {
+                    Ok(0) => {},
+                    Err(error) if matches!(
+                        error.kind(),
+                        io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                    ) => {},
+                    other => panic!("expected peer closure while response is held: {other:?}"),
+                }
+                return;
+            }
+        };
         socket.write_all(&bytes).await.unwrap();
         if close {
             return;
@@ -190,7 +204,13 @@ impl PendingArchive {
         let _ = self.complete_observed(home).await;
     }
 
-    async fn complete_observed(mut self, home: &HomePaths) -> serde_json::Value {
+    async fn complete_observed(self, home: &HomePaths) -> serde_json::Value {
+        let mut observations = self.complete_with_observations(home).await;
+        assert_eq!(observations.len(), 1, "one observed header operation");
+        observations.pop().unwrap()
+    }
+
+    async fn complete_with_observations(mut self, home: &HomePaths) -> Vec<serde_json::Value> {
         let sandbox = MockSandbox::new("pooled-archive");
         assert!(
             populate_cache_with_fresh_delivery(
@@ -218,9 +238,7 @@ impl PendingArchive {
                     && file.content == self.body)
         );
         self.delivery.cancel_and_drain(&mut self.telemetry).await;
-        let mut observations = self.telemetry.pending_archive_connection_attempt_payloads();
-        assert_eq!(observations.len(), 1, "one observed header operation");
-        observations.pop().unwrap()
+        self.telemetry.pending_archive_connection_attempt_payloads()
     }
 }
 
@@ -304,6 +322,58 @@ async fn fresh_delivery_reuses_connections_across_runs_and_reconnects_after_serv
     );
     drop(admission);
     assert_eq!(server.closed_connection().await, third);
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn fresh_delivery_first_headers_timeout_retires_a_stalled_pooled_connection() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut server = ArchiveServer::start().await;
+    let warm = download(&mut server, &home, &admission, "warm-connection", false).await;
+    let pending = PendingArchive::start(
+        server.url("/after-timeout"),
+        &home,
+        &admission,
+        "after-timeout",
+        &CancellationToken::new(),
+    )
+    .await;
+    let stalled = server.request().await;
+    assert_eq!(
+        stalled.connection, warm,
+        "first GET reuses the proven socket"
+    );
+    raw_http_test_support::clock::advance_timer_phase(FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT).await;
+    assert_eq!(server.closed_connection().await, warm);
+    drop(stalled);
+
+    let retry = server.request().await;
+    assert_ne!(
+        retry.connection, warm,
+        "recovery establishes a new connection"
+    );
+    assert!(retry.headers.starts_with("GET /after-timeout HTTP/1.1\r\n"));
+    retry.respond("200 OK", &pending.body, true);
+    let observations = pending.complete_with_observations(&home).await;
+    assert_eq!(
+        observations.len(),
+        2,
+        "one failed GET followed by one recovery GET"
+    );
+    assert_eq!(observations[0]["error"], "headers-timeout");
+    assert_eq!(observations[0]["archive_connection_attempt"]["started"], 0);
+    assert_eq!(observations[1]["archive_connection_attempt"]["started"], 1);
+    assert_eq!(
+        observations[1]["archive_connection_attempt"]["succeeded"],
+        1
+    );
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+    drop(admission);
     server.stop().await;
 }
 

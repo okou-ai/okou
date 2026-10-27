@@ -62,6 +62,10 @@ impl Drop for ResponseTask {
 
 impl GatedResponse {
     async fn start(bytes: Vec<u8>) -> Self {
+        Self::start_with_header_recovery(bytes, false).await
+    }
+
+    async fn start_with_header_recovery(bytes: Vec<u8>, recover: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!(
             "http://{}/archive?secret=synthetic",
@@ -72,13 +76,19 @@ impl GatedResponse {
         let (body, body_rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
-            read_http_request(&mut socket).await.unwrap();
+            let first_request = read_http_request(&mut socket).await.unwrap();
             requested_tx.send(()).unwrap();
             let mut eof = [0; 1];
             tokio::select! {
                 released = headers_rx => released.unwrap(),
                 read = socket.read(&mut eof) => {
                     assert_eq!(read.unwrap(), 0);
+                    if recover {
+                        let (mut retry, _) = listener.accept().await.unwrap();
+                        let retry_request = read_http_request(&mut retry).await.unwrap();
+                        assert_eq!(retry_request.lines().next(), first_request.lines().next());
+                        retry.write_all(&http_response("200 OK", &bytes)).await.unwrap();
+                    }
                     return;
                 }
             }
@@ -112,6 +122,76 @@ impl GatedResponse {
 }
 
 #[tokio::test]
+async fn a_valid_first_response_held_past_the_header_deadline_costs_one_extra_get() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let server = GatedResponse::start_with_header_recovery(body.clone(), true).await;
+    let mut plan = fresh_storage_plan_with_archive_size(
+        server.url,
+        "slow-valid-headers",
+        "v1",
+        body.len() as u64,
+    );
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), server.requested)
+        .await
+        .unwrap()
+        .unwrap();
+    // The peer owns a valid response, but withholds its headers past the first
+    // deadline. Recovery must use the identical source and exactly one more GET.
+    raw_http_test_support::clock::advance_timer_phase(FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT).await;
+    let sandbox = MockSandbox::new("slow-valid-headers");
+    populate_cache_with_fresh_delivery(
+        &mut plan,
+        &sandbox,
+        &home,
+        &mut telemetry,
+        Some(&mut delivery),
+        None,
+    )
+    .await
+    .unwrap();
+    server.task.finish().await;
+    let headers: Vec<_> = phase_ops(&telemetry)
+        .into_iter()
+        .filter(|(name, _, _)| name == PHASES[0])
+        .collect();
+    assert_eq!(
+        headers,
+        vec![
+            (PHASES[0].into(), false, Some("headers-timeout".into())),
+            (PHASES[0].into(), true, None),
+        ]
+    );
+    assert_eq!(
+        fs::read(
+            home.storage_cache_dir("slow-valid-headers", "v1")
+                .join("archive.tar.gz")
+        )
+        .await
+        .unwrap(),
+        body
+    );
+    assert_eq!(sandbox.write_files_calls()[0].files[0].content, body);
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+}
+
+#[tokio::test]
 async fn phase_records_follow_http_and_apply_boundaries_once() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
@@ -141,6 +221,12 @@ async fn phase_records_follow_http_and_apply_boundaries_once() {
     server.headers.send(()).unwrap();
     observe_phase(&delivery, &mut telemetry, PHASES[0]).await;
     assert_eq!(phase_ops(&telemetry), vec![(PHASES[0].into(), true, None)]);
+    // Headers disarm the short first-attempt deadline. A body that still fits
+    // the original request allowance must not be retried after five seconds.
+    raw_http_test_support::clock::advance_timer_phase(
+        FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT + Duration::from_secs(1),
+    )
+    .await;
     server.body.send(()).unwrap();
     observe_phase(&delivery, &mut telemetry, PHASES[1]).await;
     assert_eq!(phase_ops(&telemetry).len(), 2);
