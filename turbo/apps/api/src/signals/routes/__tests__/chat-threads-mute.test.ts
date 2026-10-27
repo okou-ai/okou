@@ -21,6 +21,7 @@ async function fixture() {
   const thread = await chat.createThread(actor, {
     agentId: agent.agentId,
     title: "Keep this title",
+    model: null,
   });
   if (!actor.orgId) {
     throw new Error("Expected organization");
