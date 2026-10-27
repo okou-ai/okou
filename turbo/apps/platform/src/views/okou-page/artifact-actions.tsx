@@ -35,7 +35,9 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  BrandGoogleDocs,
   BrandGoogleDrive,
+  BrandGoogleSheets,
   BrandGoogleSlides,
 } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -334,12 +336,18 @@ function useGoogleDriveMenuLabels(target?: GoogleWorkspaceTarget) {
   };
 }
 
+const GOOGLE_WORKSPACE_ICONS = {
+  document: BrandGoogleDocs,
+  spreadsheet: BrandGoogleSheets,
+  presentation: BrandGoogleSlides,
+} satisfies Record<GoogleWorkspaceTarget, typeof BrandGoogleSlides>;
+
 function GoogleDriveMenuIcon({
   target,
 }: {
   target?: GoogleWorkspaceTarget | undefined;
 }) {
-  const Icon = target === "presentation" ? BrandGoogleSlides : BrandGoogleDrive;
+  const Icon = target ? GOOGLE_WORKSPACE_ICONS[target] : BrandGoogleDrive;
   return <Icon size={14} />;
 }
 

@@ -152,12 +152,14 @@ export {
 export { cn } from "./lib/utils";
 export {
   BrandGithub,
-  BrandGoogleDrive,
   BrandNotion,
   BrandSlack,
   BrandStripe,
   BrandTelegram,
 } from "./components/icons/brand-icons";
+export { BrandGoogleDocs } from "./components/icons/google-docs-icon";
+export { BrandGoogleDrive } from "./components/icons/google-drive-icon";
+export { BrandGoogleSheets } from "./components/icons/google-sheets-icon";
 export { BrandGoogleSlides } from "./components/icons/google-slides-icon";
 export {
   createCompositionGate,
