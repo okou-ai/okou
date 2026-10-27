@@ -93,7 +93,9 @@ final class AuthenticationService {
       errorMessage = AuthenticationError.notConfigured.localizedDescription
       return
     }
-    clerk = Clerk.configure(publishableKey: key, options: .init(telemetryEnabled: false))
+    clerk = Clerk.configure(
+      publishableKey: key,
+      options: .init(telemetryEnabled: false, keychainConfig: PushConfiguration.keychain()))
   }
 
   var isAuthenticated: Bool {

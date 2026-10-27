@@ -27,6 +27,7 @@ export const iosNotificationsContract = c.router({
       durationMs: number().int().min(0).max(60000),
       lastSeqId: number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
       containsRun: boolean(),
+      observedAt: string().datetime().optional(),
     }),
     responses: {
       200: object({ success: literal(true) }),

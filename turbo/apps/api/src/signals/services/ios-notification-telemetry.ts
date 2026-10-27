@@ -16,6 +16,7 @@ export function recordIosNotificationFact(
     durationMs: number;
     lastSeqId?: number;
     containsRun?: boolean;
+    observedAt?: string;
   }>,
 ): void {
   waitUntil(

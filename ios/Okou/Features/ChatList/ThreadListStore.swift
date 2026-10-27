@@ -35,6 +35,7 @@ final class ThreadListStore {
   private var refreshAgain = false
   private var indicatorsAgain = false
   private var refreshGeneration = UUID()
+  private var appliedThreadSequence = 0
   private var creationRevision = 0
   private var refreshTask: Task<Void, Never>?
   private var navigationTask: Task<Void, Never>?
@@ -73,7 +74,7 @@ final class ThreadListStore {
     self.readRetrySleep = readRetrySleep
   }
 
-  func restoreCached(threadID: String? = nil) async {
+  func restoreCached() async {
     guard !closed, !Task.isCancelled else { return }
     if !restoredNavigation, navigationRevision == 0 {
       let revision = navigationRevision
@@ -86,25 +87,22 @@ final class ThreadListStore {
       }
       restoredNavigation = true
     }
-    if hasLoadedThreads {
-      // A notification can cache a newly created chat after this list was mounted.
-      if let threadID, !threads.contains(where: { $0.id == threadID }),
-        let cached = await sync.cachedThreads(),
-        let thread = cached.first(where: { $0.id == threadID }),
-        !closed, !Task.isCancelled, !threads.contains(where: { $0.id == threadID })
-      {
-        projectThreads(threads + [thread])
-      }
-      return
-    }
-    guard !closed, !Task.isCancelled else { return }
     let revision = creationRevision
-    if let cached = await sync.cachedThreads() {
-      guard !closed, !hasLoadedThreads, !Task.isCancelled, revision == creationRevision else {
-        return
-      }
-      projectThreads(cached)
+    guard let cached = await sync.cachedThreadList(), !closed, !Task.isCancelled,
+      revision == creationRevision,
+      !hasLoadedThreads || cached.cursor.seqID > appliedThreadSequence
+    else { return }
+    let previous = Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) })
+    let restored = cached.threads.map { thread in
+      var updated = thread
+      // Read state has its own server/read-cursor owner and is not part of the
+      // persisted list projection. Keep current indicators until its refresh completes.
+      updated.indicator = previous[thread.id]?.indicator
+      updated.unreadAt = previous[thread.id]?.unreadAt
+      return updated
     }
+    appliedThreadSequence = cached.cursor.seqID
+    projectThreads(restored)
   }
 
   func refreshNavigation() async {
@@ -230,6 +228,8 @@ final class ThreadListStore {
             unreadAgentIDs = Set(
               response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
           }
+          guard response.cursor.seqID >= appliedThreadSequence else { continue }
+          appliedThreadSequence = response.cursor.seqID
           projectThreads(result)
           refreshError = nil
           indicatorsError = nil

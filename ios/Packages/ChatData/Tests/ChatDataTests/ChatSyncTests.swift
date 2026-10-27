@@ -8,6 +8,46 @@ import XCTest
 
 @MainActor
 final class ChatSyncTests: XCTestCase {
+  func testExtensionTailBecomesVisibleToAResidentReaderBeforeAnyForegroundRequest() async throws {
+    let directory = try syncDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let later = Mutex(false)
+    let offline = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+      switch request.url?.path {
+      case syncPath + "/event-snapshot": return syncMissingSnapshot()
+      case syncPath + "/event-rows":
+        switch syncSequence(request) {
+        case 0: return syncPage([syncRow(1, text: "First answer"), syncRow(2)], cursor: 2)
+        case 2:
+          return later.withLock { $0 }
+            ? syncPage(
+              [
+                syncRow(3, text: "New answer", runID: syncSecondRunID),
+                syncRow(4, runID: syncSecondRunID),
+              ], cursor: 4)
+            : syncPage([], cursor: 2)
+        case 4: return syncPage([], cursor: 4)
+        default: throw URLError(.unsupportedURL)
+        }
+      case syncPath: return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = syncScope(fixture)
+    let app = ChatSync(client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    _ = try await app.history(threadID: syncThreadID)
+    later.withLock { $0 = true }
+    let nse = ChatSync(client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let receipt = try await nse.prefetchHistoryTail(threadID: syncThreadID, runID: syncSecondRunID)
+    XCTAssertTrue(receipt.containsRun)
+    XCTAssertEqual(receipt.lastSeqID, 4)
+    offline.withLock { $0 = true }
+    let cached = await app.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(cached?.messages.map(\.text), ["First answer", "New answer"])
+  }
+
   func testNotificationPrefetchReportsThePersistedTargetRunAndReopensOffline() async throws {
     let directory = try syncDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

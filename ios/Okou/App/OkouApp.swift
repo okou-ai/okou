@@ -96,6 +96,7 @@ struct AppRootView: View {
       if !authentication.isLoading {
         await notifications.refreshNotificationState(userID: authentication.userID)
       }
+      if scenePhase == .active { await notifications.flushPrefetchReports() }
     }
     .task(
       id: NotificationNavigationIdentity(
@@ -118,6 +119,7 @@ struct AppRootView: View {
           if !authentication.isLoading {
             await notifications.refreshNotificationState(userID: authentication.userID)
           }
+          await notifications.flushPrefetchReports()
         } : nil
     }
     .onDisappear { foregroundRefresh?.cancel() }

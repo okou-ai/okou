@@ -14,6 +14,8 @@ from zipfile import ZipFile
 
 APP_ID = "ai.okou.ios"
 APP_PATH = Path("Products/Applications/Okou.app")
+EXTENSION_PATH = Path("PlugIns/OkouNotificationService.appex")
+EXTENSION_ID = APP_ID + ".notifications"
 
 
 def read_plist(path):
@@ -41,10 +43,9 @@ def validate_archive(archive, version):
     applications = archive / "Products/Applications"
     if sorted(path.name for path in applications.iterdir()) != ["Okou.app"]:
         raise ValueError("Expected one Okou application")
-    if list(app.rglob("*.appex")) or list(app.rglob("*.app")):
-        raise ValueError(
-            "Nested application targets need an explicit version/signing policy"
-        )
+    extension = app / EXTENSION_PATH
+    if sorted(app.rglob("*.appex")) != [extension] or list(app.rglob("*.app")):
+        raise ValueError("Unexpected application extension inventory")
     info = read_plist(app / "Info.plist")
     if info["CFBundleIdentifier"] != APP_ID:
         raise ValueError("Unexpected application identifier")
@@ -56,6 +57,36 @@ def validate_archive(archive, version):
         raise ValueError("Expected the Okou executable")
     if (app / "_CodeSignature").exists() or (app / "embedded.mobileprovision").exists():
         raise ValueError("Expected an unsigned, unprovisioned archive")
+    extension_info = read_plist(extension / "Info.plist")
+    if (
+        extension_info["CFBundleIdentifier"] != EXTENSION_ID
+        or extension_info["CFBundleShortVersionString"] != version
+        or extension_info["CFBundleVersion"] != info["CFBundleVersion"]
+        or extension_info["CFBundleSupportedPlatforms"] != ["iPhoneOS"]
+        or extension_info["CFBundleExecutable"] != "OkouNotificationService"
+        or not (extension / "OkouNotificationService").is_file()
+    ):
+        raise ValueError("Extension and application release identity disagree")
+    expected_extension = {
+        "NSExtensionPointIdentifier": "com.apple.usernotifications.service",
+        "NSExtensionPrincipalClass": "OkouNotificationService.NotificationServiceExtension",
+    }
+    if extension_info.get("NSExtension") != expected_extension:
+        raise ValueError("Expected a notification service extension")
+    for bundle_info in (info, extension_info):
+        if (
+            bundle_info.get("ClerkKeychainAccessGroup") != "C5UWSXYB67.ai.okou.ios"
+            or bundle_info.get("NotificationAppGroup") != "group.ai.okou.ios"
+        ):
+            raise ValueError(
+                "Unsigned runtime must declare the signed shared storage identities"
+            )
+    if (extension / "_CodeSignature").exists() or (
+        extension / "embedded.mobileprovision"
+    ).exists():
+        raise ValueError("Expected an unsigned, unprovisioned extension")
+    if not (archive / "dSYMs/OkouNotificationService.appex.dSYM").is_dir():
+        raise ValueError("Release archive is missing extension symbols")
     archive_info = read_plist(archive / "Info.plist")
     properties = archive_info["ApplicationProperties"]
     if properties["ApplicationPath"] != "Applications/Okou.app":
@@ -87,10 +118,17 @@ def prepare(source, destination, version, build_number):
     info["CFBundleVersion"] = build_number
     archive_info["ApplicationProperties"]["CFBundleVersion"] = build_number
     write_plist(destination / APP_PATH / "Info.plist", info)
+    extension_info = read_plist(destination / APP_PATH / EXTENSION_PATH / "Info.plist")
+    extension_info["CFBundleVersion"] = build_number
+    write_plist(destination / APP_PATH / EXTENSION_PATH / "Info.plist", extension_info)
     write_plist(destination / "Info.plist", archive_info)
     validate_archive(destination, version)
     after = file_digests(destination)
-    allowed = {"Info.plist", str(APP_PATH / "Info.plist")}
+    allowed = {
+        "Info.plist",
+        str(APP_PATH / "Info.plist"),
+        str(APP_PATH / EXTENSION_PATH / "Info.plist"),
+    }
     changed = {
         name
         for name in before.keys() | after.keys()
@@ -174,6 +212,32 @@ def verify_export(source, ipa, version, build_number):
             raise ValueError("Exported IPA has no provisioning profile")
         if "Payload/Okou.app/_CodeSignature/CodeResources" not in names:
             raise ValueError("Exported IPA is not signed")
+        extension_prefix = "Payload/Okou.app/" + str(EXTENSION_PATH)
+        extension_plist = extension_prefix + "/Info.plist"
+        if sorted(name for name in names if name.endswith(".appex/Info.plist")) != [
+            extension_plist
+        ]:
+            raise ValueError("Exported IPA has the wrong extension inventory")
+        extension_info = plistlib.loads(package.read(extension_plist))
+        if (
+            extension_info["CFBundleIdentifier"] != EXTENSION_ID
+            or extension_info["CFBundleShortVersionString"] != version
+            or extension_info["CFBundleVersion"] != build_number
+        ):
+            raise ValueError("Exported extension has the wrong release identity")
+        for required in ("embedded.mobileprovision", "_CodeSignature/CodeResources"):
+            if extension_prefix + "/" + required not in names:
+                raise ValueError(
+                    "Exported extension has no provisioning profile or signature"
+                )
+        for bundle_info in (info, extension_info):
+            if (
+                bundle_info.get("ClerkKeychainAccessGroup") != "C5UWSXYB67.ai.okou.ios"
+                or bundle_info.get("NotificationAppGroup") != "group.ai.okou.ios"
+            ):
+                raise ValueError(
+                    "Exported runtime has the wrong shared storage identities"
+                )
         count = 0
         for path in app.rglob("*"):
             if not path.is_file():

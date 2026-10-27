@@ -60,6 +60,7 @@ function nativeRunNotification(
         sound: "default",
         ...(unreadCount === undefined ? {} : { badge: unreadCount }),
         "content-available": 1,
+        "mutable-content": 1,
       },
       okou: {
         version: 1,

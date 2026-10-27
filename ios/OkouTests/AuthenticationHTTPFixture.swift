@@ -68,7 +68,9 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   @MainActor
-  func authentication(resetPersistedIdentity: Bool = false) async throws -> AuthenticationService {
+  func authentication(resetPersistedIdentity: Bool = false, restoredAccessGroup: String? = nil)
+    async throws -> AuthenticationService
+  {
     let url = try await withCheckedThrowingContinuation { continuation in
       startup.withLock { $0 = continuation }
       listener.stateUpdateHandler = { [weak self] state in
@@ -109,8 +111,17 @@ final class AuthenticationHTTPFixture: Sendable {
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
     // Recreate the SDK with its real persisted session, as on a cold launch.
-    return AuthenticationService(
-      clerk: Clerk.configure(publishableKey: publishableKey, options: options))
+    let restoredOptions = Clerk.Options(
+      telemetryEnabled: false,
+      keychainConfig: .init(service: "ai.okou.tests." + host, accessGroup: restoredAccessGroup),
+      proxyUrl: url.absoluteString)
+    let restored = Clerk.configure(publishableKey: publishableKey, options: restoredOptions)
+    if restoredAccessGroup != nil {
+      XCTAssertEqual(
+        restored.session?.id, snapshot.sessionID,
+        "The explicit shared group must restore the session written to the app's implicit group")
+    }
+    return AuthenticationService(clerk: restored)
   }
 
   private func finish(_ result: Result<URL, Error>) {
@@ -247,8 +258,14 @@ final class AuthenticationHTTPFixture: Sendable {
       state.withLock { $0.signedOut = true }
       return try json(ClientEnvelope(response: client()))
     case let path where path.hasSuffix("/tokens"):
-      let payload = Data("{\"exp\":4102444800,\"iat\":1792540800,\"sid\":\"sess_startup\"}".utf8)
-        .base64EncodedString().replacingOccurrences(of: "=", with: "")
+      let identity = state.withLock { $0 }
+      var claims: [String: Any] = [
+        "exp": 4_102_444_800, "iat": 1_792_540_800,
+        "sid": identity.sessionID, "sub": identity.userID,
+      ]
+      if let workspace = identity.activeWorkspaceID { claims["o"] = ["id": workspace] }
+      let payload = try JSONSerialization.data(withJSONObject: claims).base64EncodedString()
+        .replacingOccurrences(of: "=", with: "")
       return ChatHTTPResponse(body: "{\"jwt\":\"eyJhbGciOiJub25lIn0.\(payload).signature\"}")
     default:
       let message = "Unhandled Clerk HTTP request: \(request.httpMethod ?? "GET") \(request.url!)"
