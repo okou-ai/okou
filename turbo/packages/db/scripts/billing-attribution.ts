@@ -176,7 +176,7 @@ async function timeout() {
     performance.now() - startedAt < maxMs,
     "billing attribution time budget exhausted; resume the same checkpoint",
   );
-  await client.query("SELECT set_config('statement_timeout', $1, true)", [
+  await client.query("SELECT set_config('statement_timeout', $1, false)", [
     `${remainingMs()}ms`,
   ]);
 }
@@ -254,150 +254,156 @@ try {
       scannedThisInvocation < maxRows &&
       performance.now() - startedAt < maxMs
     ) {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0356; new non-billing transactions are prohibited.
-      await client.query("BEGIN");
-      try {
-        await timeout();
-        // Mutation already requires --ack-writer-drain. Compatible compaction
-        // captures parents before consuming sources and records observations
-        // itself; conditional source writes below need no global barrier.
-        await client.query(
-          `INSERT INTO billing_attribution_backfill (id, org_id, user_id, run_from, run_through)
+      await timeout();
+      // An initial failure may leave this job's empty checkpoint reserved.
+      // Source writes and progress still commit or fail together per batch.
+      // Mutation already requires --ack-writer-drain. Compatible compaction
+      // captures parents before consuming sources and records observations
+      // itself; conditional source writes below need no global barrier.
+      await client.query(
+        `INSERT INTO billing_attribution_backfill (id, org_id, user_id, run_from, run_through)
           VALUES ($5, $1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
-          [...scope, jobId],
-        );
-        const checkpointResult = await client.query(
-          "SELECT *, xmin::text AS snapshot_version FROM billing_attribution_backfill WHERE id = $1",
-          [jobId],
-        );
-        const checkpoint = record(checkpointResult.rows[0]);
-        assert.deepEqual(
-          [
-            checkpoint.org_id,
-            checkpoint.user_id,
-            checkpoint.run_from,
-            checkpoint.run_through,
-          ],
-          scope,
-          "checkpoint scope cannot change",
-        );
-        const current = phase(checkpoint.phase);
-        if (current === "done") {
-          await client.query("COMMIT");
-          lastCheckpoint = checkpoint;
-          break;
-        }
-        const limit = Math.min(batchSize, maxRows - scannedThisInvocation);
-        await timeout();
-        // Read a bounded source page. The writes use existing identities and
-        // exact ownership predicates; a concurrent deletion can reject the
-        // ordinary FK insert and roll back this batch, never skip ahead.
-        const idsResult = await client.query(
-          `SELECT t.id FROM ${tables[current]} t WHERE ${predicate(current)}
+        [...scope, jobId],
+      );
+      const checkpointResult = await client.query(
+        "SELECT *, xmin::text AS snapshot_version FROM billing_attribution_backfill WHERE id = $1",
+        [jobId],
+      );
+      const checkpoint = record(checkpointResult.rows[0]);
+      assert.deepEqual(
+        [
+          checkpoint.org_id,
+          checkpoint.user_id,
+          checkpoint.run_from,
+          checkpoint.run_through,
+        ],
+        scope,
+        "checkpoint scope cannot change",
+      );
+      const current = phase(checkpoint.phase);
+      if (current === "done") {
+        lastCheckpoint = checkpoint;
+        break;
+      }
+      const limit = Math.min(batchSize, maxRows - scannedThisInvocation);
+      await timeout();
+      // Read a bounded source page. The writes use existing identities and
+      // exact ownership predicates; a concurrent deletion can reject the
+      // ordinary FK insert and roll back this batch, never skip ahead.
+      const idsResult = await client.query(
+        `SELECT t.id FROM ${tables[current]} t WHERE ${predicate(current)}
           AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6`,
-          [...scope, nullableText(checkpoint.cursor), limit],
-        );
-        const ids = idsResult.rows.map((value: unknown) => {
-          const id = record(value).id;
-          assert.equal(typeof id, "string");
-          assert.ok(typeof id === "string");
-          return id;
-        });
-        let populated = 0;
-        if (ids.length > 0) {
-          await timeout();
-          const result =
-            current === "runs"
-              ? await client.query(
-                  // Captured identity is never overwritten; the conflict branch
-                  // only fills a grouping identity this pass has not seen yet,
-                  // so repeating the phase converges instead of rewriting. A row
-                  // whose identity disagrees with its run stays reported and
-                  // unmodified, exactly as the source phases below require.
-                  `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context,
+        [...scope, nullableText(checkpoint.cursor), limit],
+      );
+      const ids = idsResult.rows.map((value: unknown) => {
+        const id = record(value).id;
+        assert.equal(typeof id, "string");
+        assert.ok(typeof id === "string");
+        return id;
+      });
+      const populate =
+        current === "runs"
+          ? // Captured identity is never overwritten; the conflict branch
+            // only fills a grouping identity this pass has not seen yet,
+            // so repeating the phase converges instead of rewriting. A row
+            // whose identity disagrees with its run stays reported and
+            // unmodified, exactly as the source phases below require.
+            `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context,
                     run_terminal_status, run_completed_at, run_lifecycle_context)
                 SELECT id, org_id, user_id, created_at, ${billingUsageSource("trigger_source")}, chat_thread_id,
                   CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END,
                   CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN status END,
                   CASE WHEN status IN ('completed', 'failed', 'cancelled', 'timeout') THEN completed_at END,
                   'captured'
-                FROM agent_runs WHERE id = ANY($1::uuid[])
+                FROM agent_runs WHERE id = ANY($5::uuid[])
                 ON CONFLICT (run_id) DO UPDATE SET thread_id = EXCLUDED.thread_id, thread_context = EXCLUDED.thread_context
                   WHERE billing_run_attribution.thread_context = 'unknown'
                     AND billing_run_attribution.org_id = EXCLUDED.org_id
                     AND billing_run_attribution.user_id = EXCLUDED.user_id
                     AND billing_run_attribution.run_started_at = EXCLUDED.run_started_at
-                    AND billing_run_attribution.source = EXCLUDED.source`,
-                  [ids],
-                )
-              : await client.query(
-                  `UPDATE ${tables[current]} t SET billing_run_id = a.run_id, billing_context = 'run'
+                    AND billing_run_attribution.source = EXCLUDED.source
+                RETURNING run_id`
+          : `UPDATE ${tables[current]} t SET billing_run_id = a.run_id, billing_context = 'run'
                   ${current === "jobs" ? "" : ", billing_anchor_at = a.run_started_at"}
                 FROM billing_run_attribution a
-                WHERE t.id = ANY($1::uuid[]) AND t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')
+                WHERE t.id = ANY($5::uuid[]) AND t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')
                   AND a.run_id = COALESCE(t.billing_run_id, t.run_id)
                   AND a.org_id = t.org_id AND a.user_id = t.user_id
                   ${current === "jobs" ? "" : "AND (t.billing_anchor_at IS NULL OR t.billing_anchor_at = a.run_started_at)"}
                   AND NOT EXISTS (SELECT 1 FROM agent_runs r
                     WHERE r.id = a.run_id
-                      AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR ${billingUsageSource("r.trigger_source")} <> a.source))`,
-                  [ids],
-                );
-          populated = integer(result.rowCount);
-          if (current === "raw" || current === "hourly") {
-            // A repeated batch also repairs a missing monotone observation.
+                      AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR ${billingUsageSource("r.trigger_source")} <> a.source))
+                RETURNING ${current === "jobs" ? "t.id" : "t.billing_run_id, t.org_id, t.user_id, t.billing_anchor_at"}`;
+      const observe =
+        current === "raw" || current === "hourly"
+          ? // A repeated batch also repairs a missing monotone observation.
             // Never manufacture an observation from a conflicting identity.
-            await client.query(
-              `UPDATE billing_run_attribution a SET usage_observed = true
+            `observed_rows AS (UPDATE billing_run_attribution a SET usage_observed = true
                 WHERE NOT a.usage_observed AND EXISTS (
-                  SELECT 1 FROM ${tables[current]} t
-                  WHERE t.id = ANY($1::uuid[]) AND t.billing_context = 'run'
-                    AND t.billing_run_id = a.run_id
+                  SELECT 1 FROM (
+                    SELECT billing_run_id, org_id, user_id, billing_anchor_at FROM populated_rows
+                    UNION ALL
+                    SELECT billing_run_id, org_id, user_id, billing_anchor_at FROM ${tables[current]}
+                    WHERE id = ANY($5::uuid[]) AND billing_context = 'run'
+                  ) t
+                  WHERE t.billing_run_id = a.run_id
                     AND t.org_id = a.org_id AND t.user_id = a.user_id
                     AND t.billing_anchor_at = a.run_started_at
-                )`,
-              [ids],
-            );
-          }
-        }
-        await timeout();
-        const countResult = await client.query(
-          `WITH parameters AS (SELECT $1::text, $2::text, $3::uuid, $4::uuid, $5::uuid[], $6::integer, $7::timestamp), facts AS (${facts(current, "t.id = ANY($5::uuid[])")})
-          SELECT count(*) FILTER (WHERE missing_source)::int AS missing_source, count(*) FILTER (WHERE conflict)::int AS conflicts FROM facts`,
-          [...scope, ids, null, writerSince],
-        );
-        const counts = record(countResult.rows[0]);
-        const nextPhase =
-          ids.length < limit ? phases[phases.indexOf(current) + 1] : current;
-        await timeout();
-        const update = await client.query(
-          `UPDATE billing_attribution_backfill SET phase=$2, cursor=$3,
-          scanned=scanned+$4, populated=populated+$5, missing_source=missing_source+$6, conflicts=conflicts+$7,
+                ) RETURNING a.run_id),`
+          : "";
+      const nextPhase =
+        ids.length < limit ? phases[phases.indexOf(current) + 1] : current;
+      await timeout();
+      // Populating compatible identities cannot change missing/conflict facts.
+      // RETURNING supplies newly populated usage to the observation write:
+      // sibling CTEs otherwise share the pre-write statement snapshot.
+      // If xmin loses, the aggregate's zero divisor rejects the WHOLE statement,
+      // including all source writes. No extra row lock or coordination state.
+      const update = await client
+        .query(
+          `WITH parameters AS (SELECT $1::text, $2::text, $3::uuid, $4::uuid, $5::uuid[], $6::integer, $7::timestamp),
+          populated_rows AS (${populate}),
+          ${observe}
+          batch_facts AS (${facts(current, "t.id = ANY($5::uuid[])")}),
+          advanced AS (UPDATE billing_attribution_backfill SET phase=$9, cursor=$10,
+          scanned=scanned+$11, populated=populated+(SELECT count(*) FROM populated_rows),
+          missing_source=missing_source+(SELECT count(*) FROM batch_facts WHERE missing_source),
+          conflicts=conflicts+(SELECT count(*) FROM batch_facts WHERE conflict),
           updated_at=timezone('UTC', clock_timestamp())
-          WHERE id=$1 AND xmin::text=$8 RETURNING *`,
+          WHERE id=$8 AND xmin::text=$12 RETURNING *)
+          SELECT advanced.* FROM (SELECT 1 / count(*)::int AS accepted FROM advanced) guard
+          LEFT JOIN advanced ON true WHERE guard.accepted = 1`,
           [
+            ...scope,
+            ids,
+            null,
+            writerSince,
             jobId,
             nextPhase,
             nextPhase === current ? ids.at(-1) : null,
             ids.length,
-            populated,
-            integer(counts.missing_source),
-            integer(counts.conflicts),
             nullableText(checkpoint.snapshot_version),
           ],
-        );
-        assert.equal(
-          update.rowCount,
-          1,
-          "checkpoint was advanced by another invocation; this batch is rejected",
-        );
-        lastCheckpoint = record(update.rows[0]);
-        await client.query("COMMIT");
-        scannedThisInvocation += ids.length;
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      }
+        )
+        .catch((error: unknown) => {
+          // This statement's only division is the stale-checkpoint assertion.
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "22012"
+          )
+            assert.fail(
+              "checkpoint was advanced by another invocation; this batch is rejected",
+            );
+          throw error;
+        });
+      assert.equal(
+        update.rowCount,
+        1,
+        "checkpoint was advanced by another invocation; this batch is rejected",
+      );
+      lastCheckpoint = record(update.rows[0]);
+      scannedThisInvocation += ids.length;
     }
     console.log(
       JSON.stringify({
