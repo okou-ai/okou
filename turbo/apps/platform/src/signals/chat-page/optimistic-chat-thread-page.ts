@@ -666,26 +666,26 @@ const sendNewThreadMessage$ = command(
     );
     const createClient = get(apiClient$);
     L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
-    const createResult = createNewThreadRecord(
-      {
-        createClient,
-        agentId,
-        title: undefined,
-        clientThreadId: threadId,
-        eventId: chatThreadEventId,
-        modelSelection: resolvedModelSelection,
-        models: resolved.models,
-        catalog: resolved.catalog,
-        codexExecution: features[FeatureSwitchKey.CodexExecution],
-        connectorSelections: request.connectorSelections,
-        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
-      },
-      signal,
-    );
+    const creation = {
+      createClient,
+      agentId,
+      title: undefined,
+      clientThreadId: threadId,
+      eventId: chatThreadEventId,
+      modelSelection: resolvedModelSelection,
+      models: resolved.models,
+      catalog: resolved.catalog,
+      codexExecution: features[FeatureSwitchKey.CodexExecution],
+      connectorSelections: request.connectorSelections,
+      initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+    };
+    const createResult = request.connectorSelections?.length
+      ? createNewThreadRecord(creation, signal)
+      : null;
     // An explicit account choice must be accepted before publishing an
     // optimistic chat or clearing its composer. A rejected creation leaves the
     // entire draft and its pending connector/remote preferences in place.
-    if (request.connectorSelections?.length) {
+    if (createResult) {
       await createResult;
       signal.throwIfAborted();
     }
@@ -729,7 +729,10 @@ const sendNewThreadMessage$ = command(
       sourceRunId: request.forward?.runId,
     });
     const sendResult = (async (): Promise<void> => {
-      await Promise.all([clearDraftResult, createResult]);
+      await Promise.all([
+        clearDraftResult,
+        createResult ?? createNewThreadRecord(creation, signal),
+      ]);
       signal.throwIfAborted();
       set(confirmThreadIdentity$, draft, threadId);
       await sendChatEvent(createClient, sendBody, signal);
