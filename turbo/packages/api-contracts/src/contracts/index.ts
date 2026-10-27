@@ -1466,3 +1466,4 @@ export {
 } from "./desktop-shell-authorization";
 
 export { iosPushRegistrationsContract } from "./ios-push-registrations";
+export { iosNotificationsContract } from "./ios-notifications";

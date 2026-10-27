@@ -1,3 +1,5 @@
+import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
+import { waitUntil } from "../context/wait-until";
 import { command } from "ccstate";
 import { chatThreadMuteContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -45,6 +47,9 @@ function muteHandler(muted: boolean) {
     if (!written) {
       return notFound("Chat thread not found");
     }
+    waitUntil(
+      set(synchronizeUserPushBadge$, auth.userId, new AbortController().signal),
+    );
     await publishThreadListChanged({ userId: auth.userId, orgId: auth.orgId });
     signal.throwIfAborted();
     return { status: 204 as const, body: undefined };
