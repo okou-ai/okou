@@ -3611,11 +3611,43 @@ describe("okou workflow automations", () => {
     expect(stop.calls).toBe(0);
   });
 
-  it("creates and updates Gmail label applied automations by label name", async () => {
+  it("recovers from missing Gmail labels when creating and updating automations", async () => {
     const scenario = await setupFixture();
     await connectGmail(scenario);
     configureGmailLabelsMock([{ id: "Label_support", name: "Support" }]);
     configureGmailWatchMock();
+
+    const missing = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-label-applied",
+          eventConfig: {
+            provider: "gmail",
+            event: "label_applied",
+            labelName: "support",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(missing.body).toStrictEqual({
+      error: {
+        code: "GMAIL_LABEL_NOT_FOUND",
+        message:
+          "Label not found in the connected Gmail account. Check the label name and connected account.",
+      },
+    });
+    const afterMissing = await accept(
+      automationsClient().list({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+      }),
+      [200],
+    );
+    expect(afterMissing.body).toHaveLength(0);
 
     const created = await accept(
       automationsClient().create({
@@ -3649,6 +3681,36 @@ describe("okou workflow automations", () => {
       nextRunAt: null,
     });
 
+    const rejectedUpdate = await accept(
+      automationsClient().update({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+        body: {
+          eventConfig: {
+            provider: "gmail",
+            event: "label_applied",
+            labelName: "Escalated",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejectedUpdate.body.error.code).toBe("GMAIL_LABEL_NOT_FOUND");
+    const unchanged = await accept(
+      automationsClient().get({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(unchanged.body).toMatchObject({
+      enabled: true,
+      eventConfig: {
+        labelName: "Support",
+        resolvedLabelId: "Label_support",
+      },
+    });
+
     configureGmailLabelsMock([{ id: "Label_escalated", name: "Escalated" }]);
     const updated = await accept(
       automationsClient().update({
@@ -3678,6 +3740,47 @@ describe("okou workflow automations", () => {
       labelName: "Escalated",
       resolvedLabelId: "Label_escalated",
     });
+  });
+
+  it("keeps Gmail provider failures distinct from missing labels", async () => {
+    const scenario = await setupFixture();
+    await connectGmail(scenario);
+    server.use(
+      http.get("https://gmail.googleapis.com/gmail/v1/users/me/labels", () => {
+        return HttpResponse.json(
+          { error: { message: "Service unavailable" } },
+          { status: 503 },
+        );
+      }),
+    );
+
+    const rejected = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-label-applied",
+          eventConfig: {
+            provider: "gmail",
+            event: "label_applied",
+            labelName: "Support",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body).toStrictEqual({
+      error: { code: "BAD_REQUEST", message: "Failed to read Gmail labels" },
+    });
+    const listed = await accept(
+      automationsClient().list({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+      }),
+      [200],
+    );
+    expect(listed.body).toHaveLength(0);
   });
 
   it("creates and updates GitHub pull request automations", async () => {

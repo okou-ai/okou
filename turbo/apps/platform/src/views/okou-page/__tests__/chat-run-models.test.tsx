@@ -9,7 +9,7 @@ import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contr
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -670,6 +670,14 @@ test("Mark model and speed transitions between runs", async () => {
   });
 
   await readyChat();
+  const viewport = screen
+    .getByText("Answer D")
+    .closest("[data-scroll-container]");
+  if (!(viewport instanceof HTMLElement)) {
+    throw new Error("Chat scroll viewport not found");
+  }
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+  await screen.findByText("Run A");
   expect(screen.getByText("Model changed to GPT 5.6 Luna")).toBeVisible();
   expect(screen.getByText("Fast mode on")).toBeVisible();
   expect(screen.getByText("Fast mode off")).toBeVisible();

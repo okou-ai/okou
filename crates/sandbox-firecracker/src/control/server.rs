@@ -156,14 +156,15 @@ impl ControlServerHandle {
         self.shutdown.cancel();
         self.unlink_socket();
 
-        let Some(mut task) = self.task.take() else {
+        // Keep the join owned across cancellation, for a later wait or Drop.
+        let Some(task) = self.task.as_mut() else {
             return;
         };
 
         let timeout = tokio::time::sleep(CONTROL_SERVER_SHUTDOWN_TIMEOUT);
         tokio::pin!(timeout);
         tokio::select! {
-            result = &mut task => {
+            result = &mut *task => {
                 log_server_join(result);
             }
             () = &mut timeout => {
@@ -171,6 +172,7 @@ impl ControlServerHandle {
                 log_server_join(task.await);
             }
         }
+        self.task = None;
     }
 
     fn unlink_socket(&mut self) {

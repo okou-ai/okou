@@ -40,15 +40,8 @@ import {
   MIN_VERSION_PREFIX_LENGTH,
   VERSION_ID_LENGTH,
 } from "@okouai/core/version-id";
-import { storageVersions } from "@okouai/db/schema/storage";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { and, desc, eq, like, or, sql } from "drizzle-orm";
-import { unionAll } from "drizzle-orm/pg-core";
-import {
-  cacheRowsFromProjection,
-  storageVersionCacheKeySql,
-} from "./execution-storage-cache-read.service";
+import { cacheRowsFromProjection } from "./execution-storage-cache-read.service";
 import type {
   StorageIndex,
   StorageIndexEntry,
@@ -315,7 +308,7 @@ interface StoragePrefixVersionRow extends StorageVersionIndexEntry {
   readonly expiresAt: Date | null;
 }
 
-function storagePrefixVersionRequests(
+export function storagePrefixVersionRequests(
   requests: readonly StorageRequest[],
   index: StorageIndex,
 ): readonly StoragePrefixVersionRequest[] {
@@ -347,7 +340,7 @@ function storagePrefixVersionRequests(
   return [...unique.values()];
 }
 
-function storageIndexWithPrefixVersions(
+export function storageIndexWithPrefixVersions(
   index: StorageIndex,
   versions: readonly StoragePrefixVersionRow[],
 ): StorageIndex {
@@ -1352,62 +1345,6 @@ type RunStorageExecution = Pick<
   ResolvedRunExecution,
   "orgId" | "additionalVolumes"
 >;
-
-/** Resolve requested version prefixes against an already loaded index. */
-export async function withStoragePrefixVersions(
-  db: ReadonlyDb,
-  requests: readonly StorageRequest[],
-  index: StorageIndex,
-): Promise<StorageIndex> {
-  const queries = storagePrefixVersionRequests(requests, index).map(
-    (request) => {
-      return db
-        .select({
-          storageId: storageVersions.storageId,
-          id: storageVersions.id,
-          s3Key: storageVersions.s3Key,
-          archiveSize: storageVersions.archiveSize,
-          fileCount: storageVersions.fileCount,
-          cacheKey: systemStoragePresignedUrlCache.cacheKey,
-          cacheScope: systemStoragePresignedUrlCache.scope,
-          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-          expiresAt: systemStoragePresignedUrlCache.expiresAt,
-        })
-        .from(storageVersions)
-        .leftJoin(
-          systemStoragePresignedUrlCache,
-          eq(
-            systemStoragePresignedUrlCache.cacheKey,
-            storageVersionCacheKeySql({
-              orgId: sql`${request.lookup.orgId}`,
-              userId: sql`${request.lookup.userId}`,
-              name: sql`${request.lookup.name}`,
-              versionId: sql`${storageVersions.id}`,
-              s3Key: sql`${storageVersions.s3Key}`,
-            }),
-          ),
-        )
-        .where(
-          and(
-            eq(storageVersions.storageId, request.storageId),
-            or(
-              eq(storageVersions.id, request.version),
-              isValidVersionPrefix(request.version)
-                ? like(storageVersions.id, `${request.version}%`)
-                : undefined,
-            ),
-          ),
-        )
-        .orderBy(desc(eq(storageVersions.id, request.version)))
-        .limit(2);
-    },
-  );
-  const [first, second, ...remaining] = queries;
-  const versions = first
-    ? await (second ? unionAll(first, second, ...remaining) : first)
-    : [];
-  return storageIndexWithPrefixVersions(index, versions);
-}
 
 export interface AgentRunCreateAdditionalVolume {
   readonly name: string;

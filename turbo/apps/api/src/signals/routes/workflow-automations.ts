@@ -1,5 +1,8 @@
 import { command } from "ccstate";
-import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import {
+  GMAIL_LABEL_NOT_FOUND_ERROR_CODE,
+  workflowAutomationsContract,
+} from "@okouai/api-contracts/contracts/workflows";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -83,6 +86,18 @@ function automationErrorResponse(
     }
     case "bad-request": {
       return badRequestMessage(result.message);
+    }
+    case "gmail-label-not-found": {
+      return {
+        status: 400 as const,
+        body: {
+          error: {
+            code: GMAIL_LABEL_NOT_FOUND_ERROR_CODE,
+            message:
+              "Label not found in the connected Gmail account. Check the label name and connected account.",
+          },
+        },
+      };
     }
     default: {
       throw new Error(`Unexpected automation result: ${result.kind}`);

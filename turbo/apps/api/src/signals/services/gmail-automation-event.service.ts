@@ -1081,6 +1081,9 @@ const matchGmailLabelAutomation$ = command(
     if (!cached) {
       args.labelCache.set(labelName, label);
     }
+    if (label.kind === "not_found") {
+      return null;
+    }
     if (label.kind !== "ok") {
       log.warn("Gmail label event skipped because label lookup failed", {
         automationId: args.automation.automation.id,

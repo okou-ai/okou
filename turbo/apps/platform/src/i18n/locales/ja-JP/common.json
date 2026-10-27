@@ -1551,7 +1551,8 @@
         "whatsCooking": "{{userName}}、料理は何ですか?",
         "whatsOnYourMind": "{{userName}} さん、何を考えていますか?",
         "whatsTheMove": "{{userName}} さん、どうしますか?"
-      }
+      },
+      "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
       "dismiss": "非表示にする",
@@ -2193,7 +2194,8 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "empty": "このチャットの成果物と関連チャットがここに表示されます。",
+      "emptyDescription": "このチャットのファイルと関連チャットがここに表示されます。",
+      "emptyTitle": "まだリソースはありません",
       "loadFailed": "リソースを読み込めませんでした",
       "loading": "リソースを読み込み中",
       "showMore": "もっと見る",
@@ -2916,9 +2918,6 @@
       "empty": "メッセージを送信して会話を始めましょう",
       "frequentlyUsed": "頻繁に使用される",
       "icon": "チャットスレッドアイコン",
-      "locator": {
-        "you": "あなた"
-      },
       "noEmojiFound": "絵文字が見つかりませんでした",
       "notFound": "チャットスレッドが見つかりません",
       "openBrowser": "ブラウザを開く",
@@ -6554,6 +6553,7 @@
         "labelAppliedRule": "Gmail ラベル {{label}} が適用される場合",
         "labelAppliedTitle": "Gmail ラベルが適用されました",
         "labelName": "レーベル名",
+        "labelNotFound": "接続中の Gmail アカウントにラベルが見つかりません。ラベル名と接続中のアカウントを確認してください。",
         "labelPlaceholder": "サポート",
         "labelSummary": "ラベル {{label}}",
         "messageMatchesRule": "Gmail メッセージが {{summary}} と一致する場合",

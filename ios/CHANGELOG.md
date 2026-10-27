@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.20.4](https://github.com/okou-ai/okou/compare/ios-v0.20.3...ios-v0.20.4) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** synchronize notification read state and icon badges ([#43254](https://github.com/okou-ai/okou/issues/43254)) ([3f5d6fc](https://github.com/okou-ai/okou/commit/3f5d6fcaf6de5148ea3266d0e0eec538f136df94))
+
+## [0.20.3](https://github.com/okou-ai/okou/compare/ios-v0.20.2...ios-v0.20.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ios:** close the sidebar after notification navigation ([#43241](https://github.com/okou-ai/okou/issues/43241)) ([ced229a](https://github.com/okou-ai/okou/commit/ced229a9a614b7f90531f433576f6ee10d03c9da))
+
+
+### Refactoring
+
+* **chat:** remove citation processing and reduce history rendering ([#43148](https://github.com/okou-ai/okou/issues/43148)) ([26bacab](https://github.com/okou-ai/okou/commit/26bacab4693d32e4a4453dce5c84e565d7129b9c))
+
 ## [0.20.2](https://github.com/okou-ai/okou/compare/ios-v0.20.1...ios-v0.20.2) (2026-10-26)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.7](https://github.com/okou-ai/okou/compare/desktop-v0.54.6...desktop-v0.54.7) (2026-10-27)
+
+
+### Bug Fixes
+
+* **desktop:** enforce helper deadlines when processing responses ([#43242](https://github.com/okou-ai/okou/issues/43242)) ([fc5905a](https://github.com/okou-ai/okou/commit/fc5905a2e18082b15b5b55ba49b810259fde8002))
+
 ## [0.54.6](https://github.com/okou-ai/okou/compare/desktop-v0.54.5...desktop-v0.54.6) (2026-10-26)
 
 

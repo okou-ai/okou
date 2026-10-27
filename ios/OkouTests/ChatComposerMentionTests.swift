@@ -302,38 +302,38 @@ final class ChatComposerMentionTests: XCTestCase {
     defer { workspace.close() }
     let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
     let window = try await mountMentionHost(host)
-    defer { unmount(window) }
+    addTeardownBlock { @MainActor in unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    let pasteDelegate = try XCTUnwrap(input.pasteDelegate)
+    let consumed = expectation(description: "UIKit consumed the production paste result")
+    let observer = PasteResultObserver(delegate: pasteDelegate, completed: consumed)
+    input.pasteDelegate = observer
+    addTeardownBlock { @MainActor in
+      withExtendedLifetime(observer) { input.pasteDelegate = nil }
+    }
     try await focusMentionInput(input)
     input.insertText("@pl")
     try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
     let retiredRow = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     let started = expectation(description: "Structured clipboard provider started")
-    let delivered = expectation(description: "Structured clipboard provider delivered")
-    let (stream, continuation) = AsyncStream<Void>.makeStream()
-    defer { continuation.finish() }
+    let delivery = DelayedProviderTasks(owner: self)
+    let data = Data(
+      #"{"version":1,"parts":[{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"}]}"#
+        .utf8)
     let provider = NSItemProvider()
     provider.registerDataRepresentation(
       forTypeIdentifier: ComposerAttributedDocument.pasteboardType, visibility: .all
     ) { callback in
       started.fulfill()
-      Task {
-        for await _ in stream { break }
-        callback(
-          Data(
-            #"{"version":1,"parts":[{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"}]}"#
-              .utf8), nil)
-        delivered.fulfill()
-      }
-      return Progress(totalUnitCount: 1)
+      return delivery.hold { callback(data, nil) }
     }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
     workspace.startNewChat(agentID: MentionNavigationFixture.agent(2))
     try await eventually { mentionInputs(in: host.view).first !== input && input.delegate == nil }
     XCTAssertTrue(retiredRow.accessibilityActivate())
-    continuation.yield()
-    await fulfillment(of: [delivered], timeout: 3)
+    delivery.release()
+    await fulfillment(of: [consumed], timeout: 3)
     await hostingPresentationFrame()
     XCTAssertFalse(workspace.newComposer.hasContent)
     XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(2))

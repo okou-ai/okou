@@ -1576,7 +1576,8 @@
         "whatsCooking": "¿Qué se está cocinando, {{userName}}?",
         "whatsOnYourMind": "¿Qué tienes en mente, {{userName}}?",
         "whatsTheMove": "¿Cuál es el plan, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "Ver perfil del agente"
     },
     "agentSuggestions": {
       "dismiss": "Descartar",
@@ -2240,7 +2241,8 @@
     "resources": {
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
-      "empty": "Los artefactos y chats relacionados de este chat aparecen aquí.",
+      "emptyDescription": "Los archivos y chats de este chat aparecerán aquí.",
+      "emptyTitle": "Aún no hay recursos",
       "loadFailed": "No se pudieron cargar los recursos",
       "loading": "Cargando recursos",
       "showMore": "Mostrar más",
@@ -2973,9 +2975,6 @@
       "empty": "Envía un mensaje para iniciar la conversación",
       "frequentlyUsed": "Usados con frecuencia",
       "icon": "Icono del hilo de chat",
-      "locator": {
-        "you": "Tú"
-      },
       "noEmojiFound": "No se ha encontrado ningún emoji",
       "notFound": "Hilo de chat no encontrado",
       "openBrowser": "Abrir navegador",
@@ -6656,6 +6655,7 @@
         "labelAppliedRule": "Cuando se aplica la etiqueta de Gmail {{label}}",
         "labelAppliedTitle": "Etiqueta de Gmail aplicada",
         "labelName": "Nombre de la etiqueta",
+        "labelNotFound": "No se encontró la etiqueta en la cuenta de Gmail conectada. Revisa el nombre de la etiqueta y la cuenta conectada.",
         "labelPlaceholder": "Soporte",
         "labelSummary": "Etiqueta {{label}}",
         "messageMatchesRule": "Cuando un mensaje de Gmail coincide con {{summary}}",

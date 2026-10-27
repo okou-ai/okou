@@ -1,5 +1,36 @@
 # Changelog
 
+## [8.792.0](https://github.com/okou-ai/okou/compare/core-v8.791.4...core-v8.792.0) (2026-10-27)
+
+
+### Features
+
+* support gpt-6.1-terra fast mode and pi execution ([#43281](https://github.com/okou-ai/okou/issues/43281)) ([6a9b857](https://github.com/okou-ai/okou/commit/6a9b85755a3856bd81ba2dc9d3ce386f73dedc14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.9.0
+
+## [8.791.4](https://github.com/okou-ai/okou/compare/core-v8.791.3...core-v8.791.4) (2026-10-27)
+
+
+### Refactoring
+
+* remove discord integration switch ([#43183](https://github.com/okou-ai/okou/issues/43183)) ([721475a](https://github.com/okou-ai/okou/commit/721475a60a8ee46afd39e4bb112e1ffd08880eb6))
+* remove hosted site title editing switch ([#43172](https://github.com/okou-ai/okou/issues/43172)) ([6ccbf0c](https://github.com/okou-ai/okou/commit/6ccbf0c46160029d7cf45d4f76d40b382f90f774))
+* remove remote connection diagnostics feature switch ([#43208](https://github.com/okou-ai/okou/issues/43208)) ([e2abf5a](https://github.com/okou-ai/okou/commit/e2abf5ade9bb1322e519d839b47c66d2ec58a16c))
+* remove vnc access feature switch ([#43184](https://github.com/okou-ai/okou/issues/43184)) ([7caac90](https://github.com/okou-ai/okou/commit/7caac9058cd8740c5288ef0c560e723d562120a8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.3
+
 ## [8.791.3](https://github.com/okou-ai/okou/compare/core-v8.791.2...core-v8.791.3) (2026-10-26)
 
 

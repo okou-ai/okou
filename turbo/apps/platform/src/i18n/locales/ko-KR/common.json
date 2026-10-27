@@ -1551,7 +1551,8 @@
         "whatsCooking": "무슨 일이 있나요, {{userName}}?",
         "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
         "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
       "dismiss": "무시",
@@ -2193,7 +2194,8 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "empty": "이 채팅의 결과물과 관련 채팅이 여기에 표시됩니다.",
+      "emptyDescription": "이 채팅의 파일과 관련 채팅이 여기에 표시됩니다.",
+      "emptyTitle": "아직 리소스가 없습니다",
       "loadFailed": "리소스를 불러오지 못했습니다",
       "loading": "리소스 불러오는 중",
       "showMore": "더 보기",
@@ -2916,9 +2918,6 @@
       "empty": "대화를 시작하려면 메시지를 보내세요",
       "frequentlyUsed": "자주 사용하는 항목",
       "icon": "채팅 스레드 아이콘",
-      "locator": {
-        "you": "나"
-      },
       "noEmojiFound": "이모지가 없습니다",
       "notFound": "채팅 스레드를 찾을 수 없습니다",
       "openBrowser": "브라우저 열기",
@@ -6554,6 +6553,7 @@
         "labelAppliedRule": "Gmail 라벨 {{label}}이(가) 적용될 때",
         "labelAppliedTitle": "Gmail 라벨 적용됨",
         "labelName": "라벨 이름",
+        "labelNotFound": "연결된 Gmail 계정에서 라벨을 찾을 수 없습니다. 라벨 이름과 연결된 계정을 확인하세요.",
         "labelPlaceholder": "지원",
         "labelSummary": "라벨 {{label}}",
         "messageMatchesRule": "Gmail 메시지가 {{summary}}와(과) 일치할 때",

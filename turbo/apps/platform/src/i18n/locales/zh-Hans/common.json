@@ -1551,7 +1551,8 @@
         "whatsCooking": "在忙什么呢，{{userName}}？",
         "whatsOnYourMind": "在想些什么，{{userName}}？",
         "whatsTheMove": "下一步怎么走，{{userName}}？"
-      }
+      },
+      "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
       "dismiss": "忽略",
@@ -2193,7 +2194,8 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
-      "empty": "这个对话的成果和关联对话会显示在这里。",
+      "emptyDescription": "这个对话的文件和关联对话会显示在这里。",
+      "emptyTitle": "还没有资源",
       "loadFailed": "无法加载聊天资源",
       "loading": "正在加载资源",
       "showMore": "查看更多",
@@ -2916,9 +2918,6 @@
       "empty": "发条消息开始对话",
       "frequentlyUsed": "常用",
       "icon": "聊天会话图标",
-      "locator": {
-        "you": "你"
-      },
       "noEmojiFound": "没有找到表情",
       "notFound": "找不到该聊天会话",
       "openBrowser": "打开浏览器",
@@ -6554,6 +6553,7 @@
         "labelAppliedRule": "当添加 Gmail 标签{{label}}时",
         "labelAppliedTitle": "Gmail 标签已添加",
         "labelName": "标签名称",
+        "labelNotFound": "当前绑定的 Gmail 账户中找不到该标签，请检查标签名称和账户。",
         "labelPlaceholder": "客服",
         "labelSummary": "标签{{label}}",
         "messageMatchesRule": "当 Gmail 邮件匹配{{summary}}时",

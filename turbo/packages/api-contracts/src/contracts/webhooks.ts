@@ -16,7 +16,6 @@ import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
 import { oomEvidenceSchema } from "./oom-evidence";
-import { piMemoryCitationSchema } from "./pi-memory-citations";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import {
   homeReuseResultSchema,
@@ -355,29 +354,6 @@ const agentEventSchema = object({
   sequenceNumber: eventSequenceNumberSchema,
 }).passthrough();
 
-const piMemoryCitationTransportSchema = object({
-  schemaVersion: literal(1),
-  citations: array(
-    object({
-      sequenceNumber: eventSequenceNumberSchema,
-      citation: piMemoryCitationSchema,
-    }).strict(),
-  ).max(32),
-})
-  .strict()
-  .superRefine((transport, context) => {
-    const sequences = transport.citations.map((citation) => {
-      return citation.sequenceNumber;
-    });
-    if (new Set(sequences).size !== sequences.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["citations"],
-        message: "memory citation sequences must be unique",
-      });
-    }
-  });
-
 const webhookSessionOutputBodySchema = object({
   runId: uuid(),
   threadId: uuid(),
@@ -389,33 +365,6 @@ const webhookSessionOutputBodySchema = object({
 const webhookEventsBodySchema = object({
   runId: string().min(1, "runId is required"),
   events: array(agentEventSchema).min(1, "events array cannot be empty"),
-  piMemoryCitationTransport: piMemoryCitationTransportSchema.optional(),
-}).superRefine((body, context) => {
-  if (!body.piMemoryCitationTransport) {
-    return;
-  }
-  const eventSequences = new Set(
-    body.events.map((event) => {
-      return event.sequenceNumber;
-    }),
-  );
-  for (const [
-    index,
-    citation,
-  ] of body.piMemoryCitationTransport.citations.entries()) {
-    if (!eventSequences.has(citation.sequenceNumber)) {
-      context.addIssue({
-        code: "custom",
-        path: [
-          "piMemoryCitationTransport",
-          "citations",
-          index,
-          "sequenceNumber",
-        ],
-        message: "memory citation sequence must belong to this event batch",
-      });
-    }
-  }
 });
 
 const firewallAuthErrorSchema = object({

@@ -14,6 +14,7 @@ const LIMITS_BY_PROVIDER: Readonly<
   "openai-codex": {
     // Subscription runtime defaults are not the public API's total context.
     "gpt-6.1-sol": { contextWindow: 272_000, maxTokens: 128_000 },
+    "gpt-6.1-terra": { contextWindow: 500_000, maxTokens: 128_000 },
   },
 };
 

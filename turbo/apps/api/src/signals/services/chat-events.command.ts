@@ -2,11 +2,12 @@ import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import {
-  chatEventCommandResultSchema,
-  type ChatEventRelationSource,
-} from "./chat-event-append.service";
+  pgInt8ToSafeIntegerSchema,
+  pgTimestampWithoutTimezoneToDateSchema,
+  parseRawRows,
+} from "../../lib/db-raw-rows";
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import {
   chatThreadRequestSelection,
   type ChatThreadRequestFacts,
@@ -38,9 +39,31 @@ import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-cap
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  DrizzleQueryError,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  SQL,
+  sql,
+} from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import type { infer as zInfer } from "zod";
+import { literal, object, string, type infer as zInfer } from "zod";
+import { PgDialect } from "drizzle-orm/pg-core";
+import {
+  normalChatInputConditionalValues,
+  normalChatInputUpdateSet,
+  normalChatInputConflictSql,
+  normalChatInputInsertSql,
+  normalChatInputPublicationSql,
+  normalChatInputWriteGate,
+  normalChatInputWritten,
+  type NormalChatInputGuard,
+  type NormalChatInputWrite,
+} from "./normal-chat-input-publication-sql";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { now, nowDate } from "../../lib/time";
@@ -54,7 +77,7 @@ import {
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { bestEffort, settle, settleIncludingAbort } from "../utils";
+import { bestEffort, safeSync, settle, settleIncludingAbort } from "../utils";
 import {
   createAgentRunContextSignals,
   preloadAgentRunContext$,
@@ -95,7 +118,9 @@ import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
-  chatEventContextInsertSql,
+  normalChatInputContextSql,
+  prepareChatEvent,
+  prepareChatEventReplacement,
   chatEventInsertSql,
   chatEventReplacementInsertSql,
   chatEventReplacementTargetSchema,
@@ -109,13 +134,10 @@ import {
   resolveChatInputModelSelection$,
 } from "./chat-input-model.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import {
-  chatThreadCreatedEventSql,
-  createdChatThreadFromRow,
-  prepareChatThreadInsert,
-} from "./chat-thread-create.service";
+import { prepareChatThreadInsert } from "./chat-thread-create.service";
 import {
   chatThreadEventInsertSql,
+  chatThreadEventInsertPlan,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import {
@@ -1397,14 +1419,471 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
   };
 }
 
-function normalSendInputInsertSql(
+const normalSendPublicationRowSchema = object({
+  id: string().uuid().nullable(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
+  seqId: pgInt8ToSafeIntegerSchema.nullable(),
+  atomicGuard: literal(0),
+});
+interface NormalSendPublicationFailure {
+  readonly token: string;
+  readonly error: unknown;
+}
+function normalSendFailureToken(suffix: string) {
+  return "__TX0091_V1_" + suffix + "__";
+}
+function normalSendPublicationFailure(
+  error: unknown,
+  failures: readonly NormalSendPublicationFailure[],
+): unknown {
+  if (
+    !(error instanceof DrizzleQueryError) ||
+    !(error.cause instanceof Error) ||
+    !("code" in error.cause) ||
+    error.cause.code !== "22P02"
+  ) {
+    return error;
+  }
+  const match =
+    /invalid input syntax for type integer: "(__TX0091_V1_[A-Z0-9_]+__)"$/.exec(
+      error.cause.message,
+    );
+  if (!match) {
+    return error;
+  }
+  if (match[1] === normalSendFailureToken("THREAD")) {
+    return new NewThreadSendCollision("thread");
+  }
+  if (match[1] === normalSendFailureToken("INPUT")) {
+    return new NewThreadSendCollision("input");
+  }
+  const failure = failures.find((entry) => {
+    return entry.token === match[1];
+  });
+  return failure ? failure.error : error;
+}
+
+function normalSendThreadPublication(
+  input: ReturnType<typeof normalSendInputPlan>,
+  after?: string,
+) {
+  const existing = input.existingPlan;
+  if (!existing) {
+    return null;
+  }
+  const { replacement } = existing;
+  const lockCondition = existing.values ? existing.where : replacement?.where;
+  if (!lockCondition) {
+    throw new Error("Normal chat input has no thread update predicate");
+  }
+  const dialect = new PgDialect();
+  const ordinary = existing.values ?? {};
+  const conditional = replacement
+    ? normalChatInputConditionalValues(
+        chatThreads,
+        replacement.values,
+        sql`(SELECT can_replace FROM normal_send_thread_lock)`,
+      )
+    : {};
+  const values = { ...conditional, ...ordinary };
+  const lock = sql`SELECT ${chatThreads.id} AS id,
+    ${replacement ? replacement.where : sql`false`} AS can_replace
+    FROM ${chatThreads} WHERE ${lockCondition} AND ${normalChatInputWriteGate(after)} FOR UPDATE`;
+  const set = normalChatInputUpdateSet(chatThreads, values);
+  const write = dialect.buildUpdateQuery({
+    table: chatThreads,
+    set,
+    joins: [],
+    where: sql`${chatThreads.id} IN (SELECT id FROM normal_send_thread_lock)`,
+    returning: [{ path: ["id"], field: chatThreads.id }],
+  });
+  return {
+    lock,
+    write,
+    listEvents: [
+      ...(replacement?.events ?? []).map((event) => {
+        return {
+          insertion: chatThreadEventInsertPlan(event).insertion,
+          gate: sql`${normalChatInputWriteGate("normal_send_thread_write")} AND EXISTS (SELECT 1 FROM normal_send_thread_lock WHERE can_replace)`,
+        };
+      }),
+      ...existing.events.map((event) => {
+        return {
+          insertion: chatThreadEventInsertPlan(event).insertion,
+          gate: normalChatInputWriteGate("normal_send_thread_write"),
+        };
+      }),
+    ],
+  };
+}
+
+function normalSendCreatedListEvent(
   args: NormalSendArgs,
   input: ReturnType<typeof normalSendInputPlan>,
-  replacementRows:
-    Parameters<typeof requireChatEventReplacementTarget>[0] | null,
 ) {
-  const { event, thread, relationSource: source } = input;
-  const relationSource: ChatEventRelationSource | undefined =
+  const thread = input.thread;
+  if (thread.kind !== "new") {
+    return null;
+  }
+  const plan = newSendThreadInsertPlan(args, thread);
+  const values = plan.values;
+  if (
+    values.modelSettings instanceof SQL ||
+    values.cloudBrowserEnabled instanceof SQL
+  ) {
+    throw new Error(
+      "Normal chat input requires explicit prepared thread settings",
+    );
+  }
+  return chatThreadEventInsertPlan({
+    kind: "created",
+    userId: args.userId,
+    orgId: args.orgId,
+    chatThreadId: thread.threadId,
+    agentId: args.body.agentId,
+    eventId: args.body.chatThreadEventId,
+    title: null,
+    hidden: values.hidden,
+    selectedModel: values.selectedModel,
+    modelSettings: modelSettingsSchema.parse(values.modelSettings),
+    serviceTier: chatThreadServiceTierFromCodex(values.codexServiceTier),
+    computerUseHostId: values.computerUseHostId,
+    cloudBrowserEnabled: values.cloudBrowserEnabled,
+  });
+}
+
+function normalSendPublicAssetWrite(
+  asset: NonNullable<ReturnType<typeof canonicalWebInputPlan>>,
+  gate: SQL,
+) {
+  return normalChatInputInsertSql(
+    runUploadedFiles,
+    asset.values,
+    gate,
+    sql`(user_id, idempotency_scope, idempotency_key) WHERE asset_version = 1
+      DO UPDATE SET id = ${runUploadedFiles.id} WHERE ${asset.identity}`,
+    sql`${runUploadedFiles.id}`,
+  );
+}
+
+type NormalInputPlan = ReturnType<typeof normalSendInputPlan>;
+type NormalInputAsset = NormalInputPlan["attachments"][number];
+interface NormalInputAssetSnapshot {
+  readonly index: number;
+  readonly asset: NormalInputAsset;
+  readonly loaded:
+    | {
+        readonly ok: true;
+        readonly value: {
+          readonly owned: typeof runUploadedFiles.$inferSelect | undefined;
+          readonly plan: ReturnType<typeof canonicalPrivateWebInputPlan>;
+        };
+      }
+    | { readonly ok: false; readonly error: unknown }
+    | null;
+}
+type NormalPreparedEvent =
+  | { readonly ok: true; readonly value: ReturnType<typeof prepareChatEvent> }
+  | { readonly ok: false; readonly error: unknown };
+function prepareNormalPublicationEvent(
+  event: NormalInputPlan["event"],
+  target: readonly zInfer<typeof chatEventReplacementTargetSchema>[] | null,
+): NormalPreparedEvent {
+  const result = safeSync(() => {
+    return target === null
+      ? prepareChatEvent(event)
+      : prepareChatEventReplacement(
+          requireChatEventReplacementTarget(target),
+          event,
+        );
+  });
+  return "ok" in result
+    ? { ok: true, value: result.ok }
+    : { ok: false, error: result.error };
+}
+function normalSendBasePublication(
+  args: NormalSendArgs,
+  input: NormalInputPlan,
+  target: readonly zInfer<typeof chatEventReplacementTargetSchema>[] | null,
+) {
+  const { thread, event } = input;
+  const prepared = prepareNormalPublicationEvent(event, target);
+  const guards: NormalChatInputGuard[] = [];
+  const failures: NormalSendPublicationFailure[] = [];
+  if (thread.kind === "new") {
+    guards.push({
+      condition: sql`NOT EXISTS (SELECT 1 FROM normal_send_thread)`,
+      token: normalSendFailureToken("THREAD"),
+    });
+  }
+  if (!prepared.ok) {
+    const token = normalSendFailureToken("EVENT");
+    failures.push({ token, error: prepared.error });
+    guards.push({ condition: sql`true`, token });
+  }
+  if (thread.kind === "new") {
+    guards.push({
+      condition: sql`NOT (${normalChatInputWritten})`,
+      token: normalSendFailureToken("INPUT"),
+    });
+  }
+  const resultToken = normalSendFailureToken("RESULT");
+  guards.push({
+    condition: sql`EXISTS (SELECT 1 FROM inserted WHERE seq_id > 9007199254740991 OR seq_id < -9007199254740991)`,
+    token: resultToken,
+  });
+  failures.push({
+    token: resultToken,
+    error: new Error(
+      "Normal chat input sequence exceeds the safe integer boundary",
+    ),
+  });
+  const context = normalChatInputContextSql(event, normalChatInputWritten);
+  const threadPublication = normalSendThreadPublication(
+    input,
+    context ? "normal_send_context" : undefined,
+  );
+  const createdPlan =
+    thread.kind === "new" ? newSendThreadInsertPlan(args, thread) : null;
+  const createdList = normalSendCreatedListEvent(args, input);
+  const listEvents = createdList
+    ? [
+        {
+          insertion: createdList.insertion,
+          gate: sql`EXISTS (SELECT 1 FROM normal_send_thread)`,
+        },
+      ]
+    : (threadPublication?.listEvents ?? []);
+  let after = context ? "normal_send_context" : undefined;
+  if (threadPublication) {
+    after = listEvents.length
+      ? "normal_send_list_event_" + (listEvents.length - 1)
+      : "normal_send_thread_write";
+  }
+  return {
+    prepared,
+    guards,
+    failures,
+    context,
+    threadPublication,
+    createdPlan,
+    listEvents,
+    after,
+  };
+}
+function normalSendSelectionWrites(
+  args: NormalSendArgs,
+  input: NormalInputPlan,
+  previous?: string,
+) {
+  const { thread, event, preferencePlan } = input;
+  const writes: NormalChatInputWrite[] = [];
+  let after = previous;
+  if (args.body.captureNetworkBodies) {
+    writes.push({
+      name: "normal_send_capture",
+      statement: normalChatInputInsertSql(
+        chatNetworkBodyCaptures,
+        { chatEventId: event.id, chatThreadId: thread.threadId },
+        normalChatInputWriteGate(after),
+        sql`(chat_event_id) DO NOTHING`,
+      ),
+    });
+    after = "normal_send_capture";
+  }
+  if (preferencePlan) {
+    writes.push({
+      name: "normal_send_preference",
+      statement: normalChatInputInsertSql(
+        orgMembersMetadata,
+        preferencePlan.values,
+        normalChatInputWriteGate(after),
+        normalChatInputConflictSql(
+          orgMembersMetadata,
+          preferencePlan.conflict.target,
+          preferencePlan.conflict.set,
+        ),
+      ),
+    });
+    after = "normal_send_preference";
+  }
+  return { writes, after };
+}
+/** Register one physical identity once while retaining every private validation. */
+function normalSendAssetRepetitions(
+  snapshots: readonly NormalInputAssetSnapshot[],
+) {
+  const seen = new Map<string, NormalInputAssetSnapshot>();
+  return snapshots.map((snapshot) => {
+    const previous = seen.get(snapshot.asset.owner.file.id);
+    if (!previous) {
+      seen.set(snapshot.asset.owner.file.id, snapshot);
+      return { snapshot, repeated: false, failure: null };
+    }
+    const loaded = snapshot.loaded;
+    const prior = previous.loaded;
+    let failure: { readonly error: unknown } | null = null;
+    if (loaded && !loaded.ok) {
+      failure = { error: loaded.error };
+    } else if (
+      (snapshot.asset.plan === null) !== (previous.asset.plan === null) ||
+      (loaded?.ok &&
+        prior?.ok &&
+        (snapshot.asset.owner.file.objectKey !==
+          previous.asset.owner.file.objectKey ||
+          JSON.stringify(loaded.value.owned?.metadata) !==
+            JSON.stringify(prior.value.owned?.metadata)))
+    ) {
+      failure = {
+        error: new Error(
+          "Chat input attachment storage changed during preparation",
+        ),
+      };
+    }
+    return { snapshot, repeated: true, failure };
+  });
+}
+function normalSendAssetWrites(
+  snapshots: readonly NormalInputAssetSnapshot[],
+  previous?: string,
+) {
+  const writes: NormalChatInputWrite[] = [];
+  const guards: NormalChatInputGuard[] = [];
+  const failures: NormalSendPublicationFailure[] = [];
+  let after = previous;
+  for (const repetition of normalSendAssetRepetitions(snapshots)) {
+    const { snapshot, repeated, failure } = repetition;
+    const { index, asset } = snapshot;
+    const name = "normal_send_asset_" + index;
+    const token = normalSendFailureToken("ASSET_" + index);
+    if (failure) {
+      failures.push({ token, error: failure.error });
+      guards.push({ condition: normalChatInputWritten, token });
+      continue;
+    }
+    if (repeated) {
+      continue;
+    }
+    const gate = normalChatInputWriteGate(after);
+    if (asset.plan) {
+      writes.push({
+        name,
+        statement: normalSendPublicAssetWrite(asset.plan, gate),
+      });
+      failures.push({
+        token,
+        error: new Error("Canonical web input asset conflict is missing"),
+      });
+    } else {
+      const owner = asset.owner;
+      const loaded = snapshot.loaded;
+      if (!loaded) {
+        throw new Error("Private chat input attachment preparation is missing");
+      }
+      if (!loaded.ok) {
+        failures.push({ token, error: loaded.error });
+        guards.push({ condition: normalChatInputWritten, token });
+        continue;
+      }
+      const { owned, plan } = loaded.value;
+      if (!owned) {
+        throw new Error(
+          "Private attachment validation did not retain its record",
+        );
+      }
+      if (!plan.where) {
+        throw new Error("Private input attachment write predicate is missing");
+      }
+      const values = normalChatInputConditionalValues(
+        runUploadedFiles,
+        plan.values,
+        plan.where,
+      );
+      const condition = and(
+        eq(runUploadedFiles.id, owner.file.id),
+        eq(runUploadedFiles.userId, owner.userId),
+        eq(runUploadedFiles.orgId, owner.orgId),
+        eq(runUploadedFiles.storageKey, owner.file.objectKey),
+        eq(runUploadedFiles.metadata, owned.metadata),
+        gate,
+      );
+      writes.push({
+        name,
+        statement: new PgDialect().buildUpdateQuery({
+          table: runUploadedFiles,
+          set: { ...values },
+          joins: [],
+          where: condition,
+          returning: [{ path: ["id"], field: runUploadedFiles.id }],
+        }),
+      });
+      failures.push({
+        token,
+        error: new Error(
+          "Private attachment changed while input was being committed",
+        ),
+      });
+    }
+    guards.push({
+      condition: sql`${normalChatInputWritten} AND NOT EXISTS (SELECT 1 FROM ${sql.identifier(name)})`,
+      token,
+    });
+    after = name;
+  }
+  return { writes, guards, failures, after };
+}
+function normalSendFinalWrites(
+  args: NormalSendArgs,
+  input: NormalInputPlan,
+  previous?: string,
+) {
+  const event = input.event;
+  const writes: NormalChatInputWrite[] = [];
+  let after = previous;
+  if (args.getStartedWorkflowId) {
+    writes.push({
+      name: "normal_send_get_started",
+      statement: recordGetStartedWorkflowSql(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.getStartedWorkflowId,
+          sourceEventId: event.id,
+        },
+        nowDate(),
+        normalChatInputWriteGate(after),
+      ),
+    });
+    after = "normal_send_get_started";
+  }
+  const queue = queuedChatThreadEnqueuePlan(input.queueInput);
+  writes.push({
+    name: "normal_send_queue",
+    statement: normalChatInputInsertSql(
+      queuedChatThreads,
+      queue.values,
+      normalChatInputWriteGate(after),
+      normalChatInputConflictSql(
+        queuedChatThreads,
+        [queue.conflict.target],
+        queue.conflict.set,
+      ),
+    ),
+  });
+  return writes;
+}
+function normalSendPreparedPublication(
+  args: NormalSendArgs,
+  input: NormalInputPlan,
+  target: readonly zInfer<typeof chatEventReplacementTargetSchema>[] | null,
+  snapshots: readonly NormalInputAssetSnapshot[],
+) {
+  const thread = input.thread;
+  const base = normalSendBasePublication(args, input, target);
+  const selection = normalSendSelectionWrites(args, input, base.after);
+  const assets = normalSendAssetWrites(snapshots, selection.after);
+  const source = input.relationSource;
+  const relation =
     source && source.threadId !== thread.threadId
       ? {
           orgId: args.orgId,
@@ -1414,177 +1893,118 @@ function normalSendInputInsertSql(
           createsThread: thread.kind === "new",
         }
       : undefined;
-  return replacementRows === null
-    ? chatEventInsertSql(event, "id", relationSource)
-    : chatEventReplacementInsertSql(
-        requireChatEventReplacementTarget(replacementRows),
-        event,
-        relationSource,
-      );
+  return {
+    createdPlan: base.createdPlan,
+    failures: [...base.failures, ...assets.failures],
+    plan: {
+      orgId: args.orgId,
+      userId: args.userId,
+      row: base.prepared.ok ? base.prepared.value.row : undefined,
+      conflict: target === null ? ("id" as const) : ("any" as const),
+      relation,
+      context: base.context ?? undefined,
+      threadLock: base.threadPublication?.lock,
+      threadWrite: base.threadPublication?.write,
+      listEvents: base.listEvents,
+      writes: [
+        ...selection.writes,
+        ...assets.writes,
+        ...normalSendFinalWrites(args, input, assets.after),
+      ],
+      guards: [...base.guards, ...assets.guards],
+    },
+  };
 }
-
-function newSendThreadCreatedEventSql(
-  args: NormalSendArgs,
-  row: Parameters<typeof createdChatThreadFromRow>[0],
-) {
-  return chatThreadCreatedEventSql({
-    orgId: args.orgId,
-    eventId: args.body.chatThreadEventId,
-    thread: createdChatThreadFromRow(row, args.body.agentId),
-  });
-}
-
-function normalSendGetStartedSql(args: NormalSendArgs, sourceEventId: string) {
-  return args.getStartedWorkflowId
-    ? recordGetStartedWorkflowSql(
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.getStartedWorkflowId,
-          sourceEventId,
-        },
-        nowDate(),
-      )
-    : undefined;
-}
-
-function missingNormalSendInput(thread: SendThread): null {
-  if (thread.kind === "new") {
-    throw new NewThreadSendCollision("input");
-  }
-  return null;
-}
-
 const appendNormalSendInput$ = command(
   async (
     { set },
     args: NormalSendArgs,
-    input: ReturnType<typeof normalSendInputPlan>,
+    input: NormalInputPlan,
     signal: AbortSignal,
   ) => {
-    const { thread, event, existingPlan, preferencePlan } = input;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0091; new non-billing transactions are prohibited.
-    const inserted = await set(writeDb$).transaction(async (tx) => {
-      if (thread.kind === "new") {
-        const createdPlan = newSendThreadInsertPlan(args, thread);
-        const [createdRow] = await tx
-          .with(...createdPlan.defaults)
-          .insert(chatThreads)
-          .values(createdPlan.values)
-          .onConflictDoNothing()
-          .returning(createdSendThreadSelection);
-        if (!createdRow) {
-          throw new NewThreadSendCollision("thread");
-        }
-        await tx.execute(newSendThreadCreatedEventSql(args, createdRow));
+    const db = set(writeDb$);
+    const target = args.body.revokesEventId
+      ? parseRawRows(
+          chatEventReplacementTargetSchema,
+          await db.execute(
+            chatEventReplacementTargetSql(args.body.revokesEventId),
+          ),
+        )
+      : null;
+    signal.throwIfAborted();
+    const snapshots: NormalInputAssetSnapshot[] = [];
+    for (const [index, asset] of input.attachments.entries()) {
+      if (asset.plan) {
+        snapshots.push({ index, asset, loaded: null });
+        continue;
       }
-      const replacementRows = args.body.revokesEventId
-        ? parseRawRows(
-            chatEventReplacementTargetSchema,
-            await tx.execute(
-              chatEventReplacementTargetSql(args.body.revokesEventId),
-            ),
-          )
-        : null;
-      const insert = normalSendInputInsertSql(args, input, replacementRows);
-      const [inserted] = parseRawRows(
-        chatEventCommandResultSchema,
-        await tx.execute(insert),
-      );
-      if (!inserted) {
-        return missingNormalSendInput(thread);
-      }
-      const contextInsert = chatEventContextInsertSql(event);
-      if (contextInsert) {
-        await tx.execute(contextInsert);
-      }
-      if (existingPlan) {
-        const { replacement } = existingPlan;
-        if (replacement) {
-          // A concurrent model change wins; a lost CAS writes no events.
-          const [replaced] = await tx
-            .update(chatThreads)
-            .set(replacement.values)
-            .where(replacement.where)
-            .returning({ id: chatThreads.id });
-          if (replaced) {
-            for (const event of replacement.events) {
-              await tx.execute(chatThreadEventInsertSql(event));
-            }
-          }
-        }
-        if (existingPlan.values) {
-          await tx
-            .update(chatThreads)
-            .set(existingPlan.values)
-            .where(existingPlan.where);
-        }
-        for (const event of existingPlan.events) {
-          await tx.execute(chatThreadEventInsertSql(event));
-        }
-      }
-      if (args.body.captureNetworkBodies) {
-        await tx
-          .insert(chatNetworkBodyCaptures)
-          .values({ chatEventId: inserted.id, chatThreadId: thread.threadId })
-          .onConflictDoNothing({ target: chatNetworkBodyCaptures.chatEventId });
-      }
-      if (preferencePlan) {
-        await tx
-          .insert(orgMembersMetadata)
-          .values(preferencePlan.values)
-          .onConflictDoUpdate(preferencePlan.conflict);
-      }
-      // Canonical attachments and their input event commit as one unit.
-      for (const { owner, plan } of input.attachments) {
-        if (plan === null) {
-          const [owned] = await tx
+      const loaded = await settle(
+        (async () => {
+          const [owned] = await db
             .select()
             .from(runUploadedFiles)
-            .where(eq(runUploadedFiles.id, owner.file.id))
+            .where(eq(runUploadedFiles.id, asset.owner.file.id))
             .limit(1);
-          const plan = canonicalPrivateWebInputPlan({ ...owner, owned });
-          // Existing generated/integration identity is retained by the update predicate.
-          await tx.update(runUploadedFiles).set(plan.values).where(plan.where);
-          continue;
-        }
-        const [registered] = await tx
-          .insert(runUploadedFiles)
-          .values(plan.values)
-          .onConflictDoNothing()
-          .returning({ id: runUploadedFiles.id });
-        if (registered) {
-          continue;
-        }
-        const [existing] = await tx
-          .select({ id: runUploadedFiles.id })
-          .from(runUploadedFiles)
-          .where(plan.identity)
-          .limit(1);
-        if (!existing) {
-          throw new Error("Canonical web input asset conflict is missing");
-        }
-      }
-      const getStartedInsert = normalSendGetStartedSql(args, inserted.id);
-      if (getStartedInsert) {
-        await tx.execute(getStartedInsert);
-      }
-      const plan = queuedChatThreadEnqueuePlan(input.queueInput);
-      await tx
-        .insert(queuedChatThreads)
-        .values(plan.values)
-        .onConflictDoUpdate(plan.conflict);
-      return inserted;
+          return {
+            owned,
+            plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
+          };
+        })(),
+      );
+      signal.throwIfAborted();
+      snapshots.push({ index, asset, loaded });
+    }
+    const prepared = normalSendPreparedPublication(
+      args,
+      input,
+      target,
+      snapshots,
+    );
+    const created = prepared.createdPlan;
+    const query = normalChatInputPublicationSql({
+      ...prepared.plan,
+      newThread: created
+        ? db
+            .with(...created.defaults)
+            .insert(chatThreads)
+            .values(created.values)
+            .onConflictDoNothing()
+            .returning(createdSendThreadSelection)
+            .getSQL()
+        : undefined,
     });
+    const rows = await (async () => {
+      const result = await settle(
+        (async () => {
+          return parseRawRows(
+            normalSendPublicationRowSchema,
+            await db.execute(query),
+          );
+        })(),
+      );
+      if (!result.ok) {
+        throw normalSendPublicationFailure(result.error, prepared.failures);
+      }
+      return result.value;
+    })();
     signal.throwIfAborted();
-    return inserted === null
-      ? null
-      : {
-          inserted,
-          enqueueCommit: { eventId: inserted.id, committedAt: now() },
-        };
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Normal chat input publication result is missing");
+    }
+    if (row.id === null) {
+      return null;
+    }
+    if (row.createdAt === null || row.seqId === null) {
+      throw new Error("Normal chat input publication is incomplete");
+    }
+    return {
+      inserted: { id: row.id, createdAt: row.createdAt, seqId: row.seqId },
+      enqueueCommit: { eventId: row.id, committedAt: now() },
+    };
   },
 );
+
 const prepareNormalSend$ = command(
   async (
     { get, set },

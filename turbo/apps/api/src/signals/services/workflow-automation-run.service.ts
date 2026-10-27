@@ -1,7 +1,8 @@
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
-  applyThreadModelReplacement,
+  threadModelReplacementEventStatements,
+  threadModelReplacementWritePlan,
   resolveEnqueuedChatInputModel$,
   type EnqueuedChatInputModel,
 } from "./chat-input-model.service";
@@ -582,22 +583,47 @@ function requireWorkflowInputInserted(
   return inserted !== 0;
 }
 
+function usesProactiveWorkflowInput(input: PreparedWorkflowInputCommit) {
+  const proactiveKind =
+    input.args.due.automation.officialBlueprintKey === null
+      ? null
+      : proactiveWorkflowKind(input.args.automationContext.workflowName);
+  return (
+    input.args.due.automation.officialBlueprintKey ===
+      PROACTIVE_JOBS_BLUEPRINT_KEY ||
+    (input.args.automationContext.eventType === "schedule" &&
+      (proactiveKind === "learning" || proactiveKind === "planning"))
+  );
+}
+
+function pendingTickLookup(
+  chatThreadId: string,
+  automationId: string,
+  eventId: string,
+) {
+  return {
+    fields: {
+      id: chatEvents.id,
+      createdAt: chatEvents.createdAt,
+      contextType: chatEvents.contextType,
+      contextId: chatEvents.contextId,
+    },
+    join: eq(chatAutomationContext.id, chatEvents.contextId),
+    condition: pendingWorkflowScheduleTickCondition({
+      chatThreadId,
+      automationId,
+      eventId,
+    }),
+  };
+}
+
 const commitWorkflowInput$ = command(
   async (
     { set },
     input: PreparedWorkflowInputCommit,
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
-    const proactiveKind =
-      input.args.due.automation.officialBlueprintKey === null
-        ? null
-        : proactiveWorkflowKind(input.args.automationContext.workflowName);
-    if (
-      input.args.due.automation.officialBlueprintKey ===
-        PROACTIVE_JOBS_BLUEPRINT_KEY ||
-      (input.args.automationContext.eventType === "schedule" &&
-        (proactiveKind === "learning" || proactiveKind === "planning"))
-    ) {
+    if (usesProactiveWorkflowInput(input)) {
       return await set(commitProactiveWorkflowInput$, input, signal);
     }
     const { args, plan, source, replacePendingTicks, model, timing } = input;
@@ -659,25 +685,12 @@ const commitWorkflowInput$ = command(
         if (replacePendingTicks) {
           tickTiming.lookupStartedAt = now();
           marks.push({ step: "ticks", startedAt: tickTiming.lookupStartedAt });
+          const tick = pendingTickLookup(chatThreadId, automation.id, eventId);
           const targets = await tx
-            .select({
-              id: chatEvents.id,
-              createdAt: chatEvents.createdAt,
-              contextType: chatEvents.contextType,
-              contextId: chatEvents.contextId,
-            })
+            .select(tick.fields)
             .from(chatEvents)
-            .innerJoin(
-              chatAutomationContext,
-              eq(chatAutomationContext.id, chatEvents.contextId),
-            )
-            .where(
-              pendingWorkflowScheduleTickCondition({
-                chatThreadId,
-                automationId: automation.id,
-                eventId,
-              }),
-            )
+            .innerJoin(chatAutomationContext, tick.join)
+            .where(tick.condition)
             .orderBy(asc(chatEvents.seqId))
             .finally(tickTiming.finishLookup);
           tickTiming.targetCount = targets.length;
@@ -704,7 +717,27 @@ const commitWorkflowInput$ = command(
             throw workflowSourceAdmissionError(step.failure);
           }
         }
-        await applyThreadModelReplacement(tx, model.threadModelReplacement);
+        const replacement = model.threadModelReplacement;
+        await (async () => {
+          if (!replacement) {
+            return;
+          }
+          const updatedAt = nowDate();
+          const write = threadModelReplacementWritePlan(replacement, updatedAt);
+          const [updated] = await tx
+            .update(write.table)
+            .set(write.values)
+            .where(write.where)
+            .returning(write.returning);
+          if (!updated) {
+            return;
+          }
+          for (const statement of threadModelReplacementEventStatements(
+            write.eventScope,
+          )) {
+            await tx.execute(statement);
+          }
+        })();
         marks.push({ step: "queue", startedAt: now() });
         const queuePlan = queuedChatThreadEnqueuePlan(queueTarget);
         await tx

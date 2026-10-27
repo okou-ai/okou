@@ -1553,7 +1553,8 @@
         "whatsCooking": "Was steht an, {{userName}}?",
         "whatsOnYourMind": "Was beschäftigt Sie, {{userName}}?",
         "whatsTheMove": "Was ist der nächste Schritt, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "Agentenprofil anzeigen"
     },
     "agentSuggestions": {
       "dismiss": "Verwerfen",
@@ -2201,7 +2202,8 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "empty": "Artefakte und verwandte Chats aus diesem Chat erscheinen hier.",
+      "emptyDescription": "Dateien und Chats aus diesem Chat werden hier angezeigt.",
+      "emptyTitle": "Noch keine Ressourcen",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "loading": "Ressourcen werden geladen",
       "showMore": "Mehr anzeigen",
@@ -2927,9 +2929,6 @@
       "empty": "Senden Sie eine Nachricht, um das Gespräch zu beginnen",
       "frequentlyUsed": "Häufig verwendet",
       "icon": "Chat-Thread-Symbol",
-      "locator": {
-        "you": "Du"
-      },
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
       "openBrowser": "Browser öffnen",
@@ -6578,6 +6577,7 @@
         "labelAppliedRule": "Wenn das Gmail-Label {{label}} angewendet wird",
         "labelAppliedTitle": "Gmail-Label angewendet",
         "labelName": "Label-Name",
+        "labelNotFound": "Im verbundenen Gmail-Konto wurde kein Label gefunden. Prüfe den Labelnamen und das verbundene Konto.",
         "labelPlaceholder": "Unterstützung",
         "labelSummary": "Label {{label}}",
         "messageMatchesRule": "Wenn die Gmail-Nachricht mit {{summary}} übereinstimmt",

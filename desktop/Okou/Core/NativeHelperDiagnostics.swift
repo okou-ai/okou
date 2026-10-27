@@ -38,11 +38,14 @@ struct NativeHelperRequestDiagnostics: Sendable {
   let operation: NativeHelperOperation
   let timeout: TimeInterval
   let started: ContinuousClock.Instant
+  var writtenAt: ContinuousClock.Instant?
 
-  init(_ request: JSONValue, timeout: TimeInterval) {
+  var deadline: ContinuousClock.Instant { started.advanced(by: .seconds(timeout)) }
+
+  init(_ request: JSONValue, timeout: TimeInterval, started: ContinuousClock.Instant) {
     operation = NativeHelperOperation(rawValue: request["kind"].string ?? "") ?? .unknown
     self.timeout = timeout
-    started = .now
+    self.started = started
   }
 }
 
@@ -55,16 +58,42 @@ struct NativeHelperReadFragment: Sendable {
 }
 
 final class NativeHelperOutputReader: @unchecked Sendable {
-  private let lock = NSLock()
-  private var sequence = 0
+  private let readLock = NSLock()
+  private let stateLock = NSLock()
+  private let now: @Sendable () -> ContinuousClock.Instant
+  private var state = NativeHelperOutputState()
+
+  init(now: @escaping @Sendable () -> ContinuousClock.Instant) { self.now = now }
+
+  var snapshot: NativeHelperOutputState { stateLock.withLock { state } }
 
   func read(_ handle: FileHandle) -> (data: Data, sequence: Int) {
-    lock.withLock {
+    readLock.withLock {
       let data = handle.availableData
-      sequence += 1
-      return (data, sequence)
+      return stateLock.withLock {
+        state.sequence += 1
+        state.bytes += data.count
+        if !data.isEmpty { state.readAt = now() }
+        return (data, state.sequence)
+      }
     }
   }
+}
+
+struct NativeHelperOutputState: Sendable {
+  var sequence = 0
+  var bytes = 0
+  var readAt: ContinuousClock.Instant?
+}
+
+struct NativeHelperTimeoutDiagnostics: Sendable {
+  enum Trigger: String, Sendable { case timer, response }
+
+  let trigger: Trigger
+  let output: NativeHelperOutputState
+  let processedBytes: Int
+  let processedAt: ContinuousClock.Instant?
+  let observedAt: ContinuousClock.Instant
 }
 
 struct NativeHelperDiagnostics: Sendable {

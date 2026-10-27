@@ -1553,7 +1553,8 @@
         "whatsCooking": "What's cooking, {{userName}}?",
         "whatsOnYourMind": "What's on your mind, {{userName}}?",
         "whatsTheMove": "What's the move, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
       "dismiss": "Dismiss",
@@ -2201,7 +2202,8 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "empty": "Artifacts and related chats from this chat appear here.",
+      "emptyDescription": "Files and chats from this chat will show up here.",
+      "emptyTitle": "No resources yet",
       "loadFailed": "Could not load resources",
       "loading": "Loading resources",
       "showMore": "Show more",
@@ -2927,9 +2929,6 @@
       "empty": "Send a message to start the conversation",
       "frequentlyUsed": "Frequently used",
       "icon": "Chat thread icon",
-      "locator": {
-        "you": "You"
-      },
       "noEmojiFound": "No emoji found",
       "notFound": "Chat thread not found",
       "openBrowser": "Open browser",
@@ -6576,6 +6575,7 @@
         "labelAppliedRule": "When Gmail label {{label}} is applied",
         "labelAppliedTitle": "Gmail label applied",
         "labelName": "Label name",
+        "labelNotFound": "Label not found in the connected Gmail account. Check the label name and connected account.",
         "labelPlaceholder": "Support",
         "labelSummary": "Label {{label}}",
         "messageMatchesRule": "When Gmail message matches {{summary}}",

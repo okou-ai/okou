@@ -48,7 +48,7 @@ test("Loading older messages restores agent references and attachment navigation
         id: `history-resource-user-${turn.toString()}`,
         role: "user",
         content: `History question ${turn.toString()}`,
-        ...(turn === 3 ? { userMessage: historicalDocument } : {}),
+        ...(turn === 6 ? { userMessage: historicalDocument } : {}),
         runId,
         createdAt: `2026-08-20T12:${minute}:00.000Z`,
       },

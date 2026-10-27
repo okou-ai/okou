@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.53.40](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.39...sandbox-firecracker-v0.53.40) (2026-10-27)
+
+
+### Bug Fixes
+
+* **sandbox-firecracker:** retain control server shutdown custody ([#43283](https://github.com/okou-ai/okou/issues/43283)) ([4fbf213](https://github.com/okou-ai/okou/commit/4fbf21320b5370b11950b531cf2ffea65ebaa22a))
+
+## [0.53.39](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.38...sandbox-firecracker-v0.53.39) (2026-10-27)
+
 ## [0.53.38](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.37...sandbox-firecracker-v0.53.38) (2026-10-26)
 
 

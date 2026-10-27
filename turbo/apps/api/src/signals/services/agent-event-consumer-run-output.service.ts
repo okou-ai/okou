@@ -5,14 +5,12 @@ import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
-import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { publicAssistantBalanceError } from "./run-balance-presentation";
 
 import type {
   AgentEvent,
   EventConsumerPayload,
 } from "../../lib/event-consumer/verify";
-import type { Tx } from "../../lib/db-types";
 import { settleIncludingAbort } from "../utils";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -31,10 +29,6 @@ import {
   type RunOutputDiagnostics,
   type RunContentOwnership,
 } from "./run-content-ownership.service";
-import {
-  normalizeRunOutputEvents,
-  type EventCitation,
-} from "./pi-memory-citation-events";
 
 const log = logger("api:run-output-projection");
 
@@ -65,7 +59,6 @@ type RunOutputMaterializationResult =
 interface RunOutputEventAdmission {
   readonly diagnostics: RunOutputDiagnostics;
   readonly payload: EventConsumerPayload;
-  readonly suppliedCitations: readonly EventCitation[];
 }
 
 function recordOf(value: unknown): Record<string, unknown> | null {
@@ -208,45 +201,15 @@ interface AssistantEventInsertion {
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
 }
 
-async function insertMemoryCitations(
-  tx: Db | Tx,
-  runId: string,
-  citations: readonly EventCitation[],
-): Promise<void> {
-  if (citations.length === 0) {
-    return;
-  }
-  await tx
-    .insert(runOutputMemoryCitations)
-    .values(
-      citations.map((item) => {
-        return {
-          runId,
-          sequenceNumber: item.sequenceNumber,
-          citation: item.citation,
-        };
-      }),
-    )
-    .onConflictDoNothing();
-}
-
-function preparedRunOutputProjection(
-  payload: EventConsumerPayload,
-  suppliedCitations: readonly EventCitation[],
-): {
+function preparedRunOutputProjection(payload: EventConsumerPayload): {
   readonly payload: EventConsumerPayload;
-  readonly citations: readonly EventCitation[];
   readonly latestResult: OutputCandidate | null;
   readonly latestOutput: OutputCandidate | null;
 } {
-  const normalized = normalizeRunOutputEvents(payload, suppliedCitations);
   return {
-    ...normalized,
-    latestResult: latestCandidate(normalized.payload.events, resultText),
-    latestOutput: latestCandidate(
-      normalized.payload.events,
-      callbackOutputText,
-    ),
+    payload,
+    latestResult: latestCandidate(payload.events, resultText),
+    latestOutput: latestCandidate(payload.events, callbackOutputText),
   };
 }
 
@@ -257,7 +220,6 @@ interface AdmittedRunOutputArgs {
   readonly thread: MaterializedChatProjection["thread"] | null;
   readonly latestResult: OutputCandidate | null;
   readonly latestOutput: OutputCandidate | null;
-  readonly citations: readonly EventCitation[];
   readonly diagnostics: RunOutputDiagnostics;
   readonly insertion: AssistantEventInsertion | undefined;
   readonly eventPublished: boolean;
@@ -269,8 +231,7 @@ function createRunOutputAuxiliaryWriter(
   signal: AbortSignal,
 ) {
   return async <T>(
-    phase:
-      "run_materialization" | "memory_citations" | "first_assistant_metric",
+    phase: "run_materialization" | "first_assistant_metric",
     write: () => Promise<T>,
   ): Promise<T | undefined> => {
     args.diagnostics.enter(phase);
@@ -390,16 +351,13 @@ async function materializeAdmittedRunOutputEvents(
   args: AdmittedRunOutputArgs,
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
-  const { db, payload, thread, citations } = args;
+  const { payload, thread } = args;
   const failures: unknown[] = [];
   const auxiliary = createRunOutputAuxiliaryWriter(args, failures, signal);
   const insertedRowCount = args.insertion?.insertedRowCount ?? 0;
 
   await auxiliary("run_materialization", () => {
     return upsertRunOutputMaterialization(args);
-  });
-  await auxiliary("memory_citations", () => {
-    return insertMemoryCitations(db, payload.runId, citations);
   });
   signal.throwIfAborted();
 
@@ -504,7 +462,6 @@ const materializePreparedRunOutputEvents$ = command(
         thread,
         latestResult: prepared.latestResult,
         latestOutput: prepared.latestOutput,
-        citations: prepared.citations,
         insertion,
         eventPublished,
         diagnostics,
@@ -520,9 +477,9 @@ const prepareAndMaterializeRunOutputEvents$ = command(
     admission: RunOutputEventAdmission,
     signal: AbortSignal,
   ): Promise<RunOutputMaterializationResult> => {
-    const { payload, suppliedCitations, diagnostics } = admission;
+    const { payload, diagnostics } = admission;
     diagnostics.startAttempt("preparation");
-    const prepared = preparedRunOutputProjection(payload, suppliedCitations);
+    const prepared = preparedRunOutputProjection(payload);
 
     const preparedOwnership = await set(
       prepareRunOutputOwnership$,

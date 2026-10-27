@@ -13,7 +13,6 @@ import {
 } from "../services/browser-owner.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { createRunnerBrowserAllocation } from "../services/browser-owner-profile.service";
-import { createRunnerBrowserConnection } from "../services/browser-owner-connection.service";
 import { BrowserUseProviderError } from "../services/browser-use.service";
 import { settle } from "../utils";
 
@@ -34,35 +33,10 @@ const controlInput$ = computed(async (get) => {
 const owner$ = createRunnerBrowserAuthority(controlInput$);
 const readAction$ = computed(async (get) => {
   const input = await get(controlInput$);
-  return input?.action.kind === "inspect" || input?.action.kind === "authorize"
-    ? input.action
-    : null;
+  return input?.action.kind === "inspect" ? input.action : null;
 });
 const browserRead$ = createRunnerBrowserRead(owner$, readAction$);
 const allocation$ = createRunnerBrowserAllocation(owner$);
-
-const connectionInput$ = computed(async (get) => {
-  const body = await get(bodyResultOf(runnerBrowserContract.connection));
-  return body.ok
-    ? { ...get(pathParamsOf(runnerBrowserContract.connection)), ...body.data }
-    : null;
-});
-const connectionOwner$ = createRunnerBrowserAuthority(connectionInput$);
-const connectionAction$ = computed(async (get) => {
-  const input = await get(connectionInput$);
-  return input
-    ? {
-        kind: "authorize" as const,
-        instanceId: input.instanceId,
-        providerSessionId: input.providerSessionId,
-        primaryWindowId: input.primaryWindowId,
-      }
-    : null;
-});
-const connection$ = createRunnerBrowserConnection(
-  connectionOwner$,
-  connectionAction$,
-);
 
 const officialRunnerError$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -126,10 +100,7 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   ) {
     return { status: 200 as const, body: { outcome: "unavailable" as const } };
   }
-  if (
-    body.data.action.kind === "inspect" ||
-    body.data.action.kind === "authorize"
-  ) {
+  if (body.data.action.kind === "inspect") {
     const result = await get(browserRead$);
     signal.throwIfAborted();
     return { status: 200 as const, body: result };
@@ -162,38 +133,6 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result };
 });
 
-const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const authError = await set(officialRunnerError$, signal);
-  signal.throwIfAborted();
-  if (authError) {
-    return authError;
-  }
-  const body = await get(bodyResultOf(runnerBrowserContract.connection));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const result = await settle(set(connection$, signal));
-  signal.throwIfAborted();
-  if (!result.ok) {
-    if (result.error instanceof BrowserUseProviderError) {
-      return {
-        status: result.error.status,
-        body: {
-          error: {
-            code: result.error.code,
-            message: "Managed browser provider connection is unavailable",
-          },
-        },
-      };
-    }
-    throw result.error;
-  }
-  return { status: 200 as const, body: result.value };
-});
-
 export const runnerBrowserRoutes: readonly RouteEntry[] = [
   { route: runnerBrowserContract.control, handler: control$ },
-  { route: runnerBrowserContract.connection, handler: connect$ },
 ];

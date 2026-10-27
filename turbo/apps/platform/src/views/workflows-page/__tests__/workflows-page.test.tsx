@@ -2369,46 +2369,119 @@ test("Create a Gmail new-message automation with match rules", async () => {
   });
 });
 
-test("Create a Gmail label-applied automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
+test("Correct an unavailable Gmail label and create the automation", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const workflows: WorkflowDetailResponse[] = [
+    { ...salesResearch(), automations: [] },
+  ];
+  mockWorkflowApis(workflows);
+  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
+    if (body.kind !== "event" || body.eventType !== "gmail-label-applied") {
+      throw new Error("Expected a Gmail label automation");
+    }
+    if (body.eventConfig.labelName === "Missing") {
+      return respond(400, {
+        error: {
+          code: "GMAIL_LABEL_NOT_FOUND",
+          message: "Label is unavailable",
+        },
+      });
+    }
+    const automation = {
+      ...gmailLabelWorkflowAutomation(),
+      eventConfig: { ...body.eventConfig, resolvedLabelId: "Label_support" },
+    };
+    workflows[0].automations.push(automation);
+    return respond(201, automation);
   });
 
   await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
   await waitFor(() => {
     expect(buttonByText("Add automation")).toBeInTheDocument();
   });
   click(buttonByText("Add automation"));
-
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
+  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
   pickAutomation("Email", /^Gmail label applied/);
 
-  const createAutomationForm = await screen.findByRole("form", {
+  const form = await screen.findByRole("form", {
     name: "Add Gmail label automation",
   });
-  await fill(
-    within(createAutomationForm).getByLabelText("Label name"),
-    "Support",
-  );
-  fireEvent.submit(createAutomationForm);
+  const input = within(form).getByLabelText("Label name");
+  await fill(input, "Missing");
+  click(buttonByText("Add label automation", form));
 
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "gmail-label-applied",
-      eventConfig: {
-        provider: "gmail",
-        event: "label_applied",
-        labelName: "Support",
-      },
-    });
-  });
+  await expect(within(form).findByRole("alert")).resolves.toHaveTextContent(
+    "Label not found in the connected Gmail account. Check the label name and connected account.",
+  );
+  expect(screen.queryByText("Label is unavailable")).not.toBeInTheDocument();
+  expect(input).toHaveValue("Missing");
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(buttonByText("Add label automation", form)).toBeEnabled();
+
+  await fill(input, "Support");
+  click(buttonByText("Add label automation", form));
+  await expect(
+    screen.findByText('Label "Support"'),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("form", { name: "Add Gmail label automation" }),
+  ).not.toBeInTheDocument();
+  expect(consoleError.mock.calls.flat()).not.toContainEqual(
+    expect.objectContaining({
+      name: "ApiError",
+      code: "GMAIL_LABEL_NOT_FOUND",
+    }),
+  );
 });
+
+test.each([
+  { status: 400 as const, code: "BAD_REQUEST" },
+  { status: 403 as const, code: "GMAIL_LABEL_NOT_FOUND" },
+])(
+  "Keep Gmail creation errors observable for $status/$code",
+  async ({ status, code }) => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mockWorkflowApis([salesResearch()]);
+    context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
+      return respond(status, {
+        error: { code, message: "Failed to read Gmail labels" },
+      });
+    });
+
+    await setupWorkflowDetailPage(workflowDetailPath("automations"));
+    await waitFor(() => {
+      expect(buttonByText("Add automation")).toBeInTheDocument();
+    });
+    click(buttonByText("Add automation"));
+    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    pickAutomation("Email", /^Gmail label applied/);
+    const form = await screen.findByRole("form", {
+      name: "Add Gmail label automation",
+    });
+    const input = within(form).getByLabelText("Label name");
+    await fill(input, "Support");
+    fireEvent.submit(form);
+
+    await expect(
+      screen.findByText("Failed to read Gmail labels"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(consoleError.mock.calls.flat()).toContainEqual(
+        expect.objectContaining({
+          name: "ApiError",
+          code,
+          status,
+          expected: false,
+        }),
+      );
+    });
+    expect(input).toHaveValue("Support");
+    expect(within(form).queryByRole("alert")).not.toBeInTheDocument();
+    expect(buttonByText("Add label automation", form)).toBeEnabled();
+  },
+);
 
 test("Create a filtered GitHub workflow-run automation", async () => {
   const createBodies: WorkflowAutomationCreateRequest[] = [];
@@ -3747,49 +3820,71 @@ test("Edit Gmail new-message match rules", async () => {
   });
 });
 
-test("Edit a Gmail label-applied automation", async () => {
-  const updateBodies: {
-    readonly automationId: string;
-    readonly body: WorkflowAutomationUpdateRequest;
-  }[] = [];
-  const workflow = {
-    ...salesResearch(),
-    automations: [gmailLabelWorkflowAutomation()],
-  };
-  mockWorkflowApis([workflow]);
-  mockUpdateWorkflowAutomation((automationId, body) => {
-    updateBodies.push({ automationId, body });
+test("Correct an unavailable Gmail label while preserving the saved automation", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const workflows = [
+    { ...salesResearch(), automations: [gmailLabelWorkflowAutomation()] },
+  ];
+  mockWorkflowApis(workflows);
+  context.mocks.api(workflowAutomationsContract.update, ({ body, respond }) => {
+    if (
+      !("eventConfig" in body) ||
+      body.eventConfig.provider !== "gmail" ||
+      body.eventConfig.event !== "label_applied"
+    ) {
+      throw new Error("Expected a Gmail label update");
+    }
+    if (body.eventConfig.labelName === "Missing") {
+      return respond(400, {
+        error: {
+          code: "GMAIL_LABEL_NOT_FOUND",
+          message: "Label is unavailable",
+        },
+      });
+    }
+    const automation = {
+      ...gmailLabelWorkflowAutomation(),
+      eventConfig: { ...body.eventConfig, resolvedLabelId: "Label_escalated" },
+    };
+    workflows[0].automations = [automation];
+    return respond(200, automation);
   });
 
   await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Gmail label applied")).toBeInTheDocument();
-  });
-
+  await expect(
+    screen.findByText('Label "Support"'),
+  ).resolves.toBeInTheDocument();
   click(buttonByText("Edit automation"));
-
-  const updateAutomationForm = screen.getByRole("form", {
+  const form = await screen.findByRole("form", {
     name: "Update Gmail label automation",
   });
-  await fill(
-    within(updateAutomationForm).getByLabelText("Label name"),
-    "Escalated",
-  );
-  fireEvent.submit(updateAutomationForm);
+  const input = within(form).getByLabelText("Label name");
+  await fill(input, "Missing");
+  click(buttonByText("Save label", form));
 
-  await waitFor(() => {
-    expect(updateBodies.at(-1)).toStrictEqual({
-      automationId: GMAIL_LABEL_AUTOMATION_ID,
-      body: {
-        eventConfig: {
-          provider: "gmail",
-          event: "label_applied",
-          labelName: "Escalated",
-        },
-      },
-    });
-  });
+  await expect(within(form).findByRole("alert")).resolves.toHaveTextContent(
+    "Label not found in the connected Gmail account. Check the label name and connected account.",
+  );
+  expect(screen.queryByText("Label is unavailable")).not.toBeInTheDocument();
+  expect(input).toHaveValue("Missing");
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByText('Label "Support"')).toBeInTheDocument();
+  expect(buttonByText("Save label", form)).toBeEnabled();
+
+  await fill(input, "Escalated");
+  click(buttonByText("Save label", form));
+  await expect(
+    screen.findByText('Label "Escalated"'),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("form", { name: "Update Gmail label automation" }),
+  ).not.toBeInTheDocument();
+  expect(consoleError.mock.calls.flat()).not.toContainEqual(
+    expect.objectContaining({
+      name: "ApiError",
+      code: "GMAIL_LABEL_NOT_FOUND",
+    }),
+  );
 });
 
 test("Warn when a workflow slash command resolves to another workflow", async () => {

@@ -4,7 +4,6 @@ import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-ro
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
 import { array, string } from "zod";
-import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import {
   nullableDriverValueDecoder,
@@ -22,16 +21,13 @@ const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
       return new Set(workflowIds).size === workflowIds.length;
     }, "Official Workflow source IDs must be unique"),
 );
-const visibleChatEventTextDecoder = zodDriverValueDecoder(
-  string().transform(visiblePiMemoryCitationText),
-);
 
 /** Canonical payload leaves projected from chat_events.payload. */
 export function canonicalChatEventContent(
   payload: SQLWrapper = chatEvents.payload,
 ) {
   return sql`${payload}->>'content'`.mapWith(
-    nullableDriverValueDecoder(visibleChatEventTextDecoder),
+    nullableDriverValueDecoder(pgTextDecoder),
   );
 }
 
@@ -64,8 +60,7 @@ export function canonicalChatEventError(
 export function canonicalArchivedChatEventContent(
   row: ChatEventRow,
 ): string | null {
-  const content = row.payload?.content;
-  return content === undefined ? null : visiblePiMemoryCitationText(content);
+  return row.payload?.content ?? null;
 }
 
 export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {

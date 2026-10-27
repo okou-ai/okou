@@ -27,8 +27,6 @@ mod claude;
 pub mod codex_app_server;
 mod codex_app_server_backend;
 mod codex_app_server_events;
-mod codex_citation_repair;
-mod codex_citation_source;
 mod codex_event_delivery;
 mod codex_runtime_config;
 mod codex_setup;
@@ -42,7 +40,6 @@ mod exec_boundary;
 mod jsonl_result;
 mod line_reader;
 mod message_event_delivery;
-mod pi_memory_citation;
 mod pi_preparation_timing;
 mod pi_rpc;
 mod pi_session_output;
@@ -891,11 +888,7 @@ impl<'a> CliEventPipeline<'a> {
         initial_sequence: u32,
         pi_startup: Option<&'a PiStartupTiming>,
     ) -> Result<Self, AgentError> {
-        let delivery = EventDeliveryRuntime::start(
-            http.clone(),
-            &runtime.run_id,
-            runtime.framework == env::Framework::Pi,
-        )?;
+        let delivery = EventDeliveryRuntime::start(http.clone(), &runtime.run_id)?;
         let ingestor = CliEventIngestor::new_with_session_metadata(
             runtime,
             CliStartupTiming {

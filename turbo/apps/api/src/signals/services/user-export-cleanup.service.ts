@@ -11,6 +11,8 @@ import {
   eq,
   inArray,
   isNull,
+  isNotNull,
+  lt,
   lte,
   or,
   sql,
@@ -19,7 +21,8 @@ import {
 
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
-import { nowDate } from "../../lib/time";
+import { logger } from "../../lib/log";
+import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
   abortMultipartS3Upload,
@@ -278,5 +281,99 @@ export const cleanupDurableUserExports$ = command(
       processed += 1;
     }
     return { processed };
+  },
+);
+
+const L = logger("CronCleanupSandboxes");
+const EXPORT_JOB_TIMEOUT_MS = 10 * 60 * 1000;
+
+export const cleanupExpiredExportJobs$ = command(
+  async (
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly exportJobsCleaned: number;
+    readonly exportJobsStuck: number;
+  }> => {
+    const db = set(writeDb$);
+    let exportJobsCleaned = 0;
+    let exportJobsStuck = 0;
+    const currentTime = nowDate();
+
+    const expiredExports = await db
+      .select({ id: exportJobs.id, s3Key: exportJobs.s3Key })
+      .from(exportJobs)
+      .where(
+        and(
+          eq(exportJobs.status, "completed"),
+          isNotNull(exportJobs.expiresAt),
+          lt(exportJobs.expiresAt, currentTime),
+        ),
+      );
+    signal.throwIfAborted();
+
+    if (expiredExports.length > 0) {
+      const s3Keys = expiredExports
+        .map((entry) => {
+          return entry.s3Key;
+        })
+        .filter((key): key is string => {
+          return key !== null;
+        });
+      if (s3Keys.length > 0) {
+        await get(deleteS3Objects(env("R2_USER_STORAGES_BUCKET_NAME"), s3Keys));
+        signal.throwIfAborted();
+      }
+
+      await db.delete(exportJobs).where(
+        inArray(
+          exportJobs.id,
+          expiredExports.map((entry) => {
+            return entry.id;
+          }),
+        ),
+      );
+      signal.throwIfAborted();
+
+      exportJobsCleaned = expiredExports.length;
+      L.debug("Cleaned up expired export jobs", { count: exportJobsCleaned });
+    }
+
+    const stuckCutoffTime = new Date(now() - EXPORT_JOB_TIMEOUT_MS);
+    const stuckExportJobs = await db
+      .select({ id: exportJobs.id })
+      .from(exportJobs)
+      .where(
+        and(
+          inArray(exportJobs.status, ["pending", "running"]),
+          lt(exportJobs.createdAt, stuckCutoffTime),
+          isNull(exportJobs.executionMode),
+        ),
+      );
+    signal.throwIfAborted();
+
+    for (const job of stuckExportJobs) {
+      await db
+        .update(exportJobs)
+        .set({
+          status: "failed",
+          completedAt: currentTime,
+          error: "Export job timed out",
+        })
+        .where(
+          and(
+            eq(exportJobs.id, job.id),
+            inArray(exportJobs.status, ["pending", "running"]),
+          ),
+        );
+      signal.throwIfAborted();
+      exportJobsStuck++;
+    }
+
+    if (exportJobsStuck > 0) {
+      L.debug("Failed stuck export jobs", { count: exportJobsStuck });
+    }
+
+    return { exportJobsCleaned, exportJobsStuck };
   },
 );

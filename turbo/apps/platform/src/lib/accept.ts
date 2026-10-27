@@ -22,8 +22,7 @@ function presentAcceptError(detail: AcceptErrorEventDetail): void {
 function extractError(
   body: unknown,
   status: number,
-  show: boolean,
-): { message: string; code: string } {
+): Omit<AcceptErrorEventDetail, "show"> {
   if (
     body !== null &&
     typeof body === "object" &&
@@ -38,24 +37,15 @@ function extractError(
       "code" in body.error && typeof body.error.code === "string"
         ? body.error.code
         : "UNKNOWN";
-    const detail: AcceptErrorEventDetail = {
+    return {
       kind: "message",
       code,
       message: body.error.message,
-      show,
     };
-    presentAcceptError(detail);
-    return { message: detail.message ?? body.error.message, code };
   }
-  const detail: AcceptErrorEventDetail = {
-    kind: "http-status",
-    show,
-    status,
-  };
-  presentAcceptError(detail);
   return {
-    message: detail.message ?? `${Error.name}: ${status}`,
-    code: "UNKNOWN",
+    kind: "http-status",
+    status,
   };
 }
 
@@ -69,6 +59,7 @@ function presentRequestError(error: unknown): void {
 
 interface AcceptOptions {
   readonly showErrorToast?: boolean;
+  readonly showExpectedErrorToast?: boolean;
   readonly expectedErrors?: Readonly<
     Partial<Record<number, readonly string[]>>
   >;
@@ -88,8 +79,9 @@ interface AcceptOptions {
  * Best-effort background work may disable the error toast while preserving the
  * same typed response handling and thrown error.
  *
- * Callers may declare expected status/code pairs. They still show the same
- * toast and throw an ApiError, but detached work does not log them as errors.
+ * Callers may declare expected status/code pairs. They throw an ApiError,
+ * but detached work does not log them as errors. Forms that render these
+ * errors inline may disable their toast without hiding unrelated failures.
  */
 async function accept<
   T extends { status: number; body: unknown },
@@ -113,14 +105,25 @@ async function accept<
   if ((codes as number[]).includes(result.status)) {
     return result as Extract<T, { status: S }>;
   }
-  const show =
-    showErrorToast &&
-    result.status !== 401 &&
-    result.status !== CLIENT_FORCE_UPGRADE_STATUS;
-  const { message, code } = extractError(result.body, result.status, show);
+  const extracted = extractError(result.body, result.status);
+  const code = extracted.code ?? "UNKNOWN";
   const expected =
     options.expectedErrors?.[result.status]?.includes(code) ?? false;
-  throw new ApiError(message, code, result.status, expected);
+  const detail: AcceptErrorEventDetail = {
+    ...extracted,
+    show:
+      showErrorToast &&
+      result.status !== 401 &&
+      result.status !== CLIENT_FORCE_UPGRADE_STATUS &&
+      (!expected || options.showExpectedErrorToast !== false),
+  };
+  presentAcceptError(detail);
+  throw new ApiError(
+    detail.message ?? `${Error.name}: ${result.status}`,
+    code,
+    result.status,
+    expected,
+  );
 }
 
 export { accept };

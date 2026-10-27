@@ -40,6 +40,9 @@ protocol NotificationSystem {
   func requestAuthorization() async throws -> Bool
   func register()
   func openSettings() async
+  func deliveredNotifications() async -> [DeliveredChatNotification]
+  func removeDeliveredNotifications(identifiers: [String])
+  func setBadgeCount(_ count: Int) async throws
   var environment: String? { get }
 }
 
@@ -54,6 +57,23 @@ struct AppleNotificationSystem: NotificationSystem {
     ])
   }
   func register() { UIApplication.shared.registerForRemoteNotifications() }
+  func deliveredNotifications() async -> [DeliveredChatNotification] {
+    let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+    return delivered.compactMap { notification in
+      guard
+        let destination = NotificationDestination(
+          userInfo: notification.request.content.userInfo)
+      else { return nil }
+      return DeliveredChatNotification(
+        identifier: notification.request.identifier, destination: destination)
+    }
+  }
+  func removeDeliveredNotifications(identifiers: [String]) {
+    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+  }
+  func setBadgeCount(_ count: Int) async throws {
+    try await UNUserNotificationCenter.current().setBadgeCount(count)
+  }
   func openSettings() async {
     if let url = URL(string: UIApplication.openSettingsURLString) {
       await UIApplication.shared.open(url)
@@ -88,6 +108,15 @@ final class NotificationService {
   private var navigationRequest = UUID()
   private var openingRequest: UUID?
   private var workspaceNavigation: Task<Void, Never>?
+  private enum NotificationAccount: Equatable {
+    case unresolved
+    case signedOut
+    case user(String)
+  }
+  private var notificationAccount = NotificationAccount.unresolved
+  private var notificationStateRevision = UUID()
+  private var notificationStateTask: Task<Void, Never>?
+  private var notificationStateRequest: Task<NotificationStateResponse, Error>?
   private let log = Logger(subsystem: "ai.okou.ios", category: "Notifications")
 
   private struct Binding: Encodable {
@@ -130,10 +159,14 @@ final class NotificationService {
   func update(workspace: NotificationWorkspace?) async {
     if self.workspace?.scopeID != workspace?.scopeID {
       generation = UUID()
+      notificationStateRequest?.cancel()
       registrationTask?.cancel()
       if self.workspace != nil { for task in backgroundTasks.values { task.cancel() } }
       didSynchronize = nil
       self.workspace = workspace
+      if notificationAccount != .unresolved, let workspace {
+        notificationAccount = .user(workspace.userID)
+      }
       binding = nil
       if let pendingDestination, let workspace, pendingDestination.userId != workspace.userID {
         self.pendingDestination = nil
@@ -143,6 +176,7 @@ final class NotificationService {
       }
     }
     await refreshRegistration()
+    requestNotificationStateRefresh()
   }
 
   func enable() async {
@@ -200,6 +234,7 @@ final class NotificationService {
       try Task.checkCancellation()
       guard self.generation == generation else { return }
       error = nil
+      requestNotificationStateRefresh()
     } catch {
       guard self.generation == generation, !Task.isCancelled else { return }
       binding = nil
@@ -222,6 +257,7 @@ final class NotificationService {
     }
     try await authentication.signOut()
     await update(workspace: nil)
+    await refreshNotificationState(userID: nil)
   }
 
   func unregister() async throws {
@@ -256,6 +292,87 @@ final class NotificationService {
       environment: environment)
   }
 
+  func refreshNotificationState(userID: String?) async {
+    let account = userID.map(NotificationAccount.user) ?? .signedOut
+    if notificationAccount != account { notificationStateRequest?.cancel() }
+    notificationAccount = account
+    requestNotificationStateRefresh()
+    await notificationStateTask?.value
+  }
+
+  /// One service-owned worker serializes OS updates and coalesces read/realtime invalidations.
+  func requestNotificationStateRefresh() {
+    guard notificationAccount != .unresolved else { return }
+    notificationStateRevision = UUID()
+    guard notificationStateTask == nil else { return }
+    notificationStateTask = Task { [weak self] in
+      guard let self else { return }
+      defer { notificationStateTask = nil }
+      while !Task.isCancelled {
+        let revision = notificationStateRevision
+        await reconcileNotificationState(revision: revision)
+        if notificationStateRevision == revision { return }
+      }
+    }
+  }
+
+  private func reconcileNotificationState(revision: UUID) async {
+    let account = notificationAccount
+    let generation = generation
+    let workspace = workspace
+    func ownsRequest() -> Bool {
+      !Task.isCancelled && notificationStateRevision == revision
+        && notificationAccount == account && self.generation == generation
+    }
+    let delivered = await system.deliveredNotifications()
+    guard ownsRequest() else { return }
+    do {
+      switch account {
+      case .unresolved:
+        return
+      case .signedOut:
+        system.removeDeliveredNotifications(identifiers: delivered.map(\.identifier))
+        try await system.setBadgeCount(0)
+      case .user(let userID):
+        guard let workspace, workspace.userID == userID else { return }
+        system.removeDeliveredNotifications(
+          identifiers: delivered.filter { $0.destination.userId != userID }.map(\.identifier))
+        let current = delivered.filter { $0.destination.userId == userID }
+        for offset in stride(from: 0, to: max(1, current.count), by: 500) {
+          let batch = Array(current.dropFirst(offset).prefix(500))
+          let request = NotificationStateRequest(
+            installationId: installationID, registrationRevision: binding?.revision,
+            notifications: batch.map {
+              NotificationStateRequest.Receipt(
+                identifier: $0.identifier, threadId: $0.destination.threadId,
+                runId: $0.destination.runId)
+            })
+          let body = try JSONEncoder().encode(request)
+          let work = Task<NotificationStateResponse, Error> {
+            try await workspace.client.request(
+              "/api/ios-notifications/reconcile", method: "POST", body: body)
+          }
+          notificationStateRequest = work
+          let result = await work.result
+          notificationStateRequest = nil
+          let response = try result.get()
+          guard ownsRequest() else { return }
+          let submitted = Set(batch.map(\.identifier))
+          guard response.unreadCount >= 0,
+            Set(response.removeIdentifiers).isSubset(of: submitted)
+          else { throw APIClientError.incompatibleData }
+          system.removeDeliveredNotifications(identifiers: response.removeIdentifiers)
+          try await system.setBadgeCount(response.unreadCount)
+          guard ownsRequest() else { return }
+        }
+      }
+    } catch {
+      guard ownsRequest() else { return }
+      log.error(
+        "Cannot reconcile notification read state: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
   func receiveTap(_ destination: NotificationDestination) {
     workspaceNavigation?.cancel()
     workspaceNavigation = nil
@@ -286,33 +403,37 @@ final class NotificationService {
   }
 
   /// Invoked after identity/membership startup, never by background prefetch.
-  func openPending(authentication: AuthenticationService, store: WorkspaceStore) async {
+  /// Returns whether the current notification opened in this workspace.
+  func openPending(authentication: AuthenticationService, store: WorkspaceStore) async -> Bool {
     guard let destination = pendingDestination, !authentication.isLoading,
       let userID = authentication.userID
-    else { return }
+    else { return false }
     if let workspaceNavigation { await workspaceNavigation.value }
-    guard pendingDestination == destination, !Task.isCancelled else { return }
+    guard pendingDestination == destination, !Task.isCancelled else { return false }
     let request = navigationRequest
-    guard openingRequest != request else { return }
+    guard openingRequest != request else { return false }
     openingRequest = request
     defer { if openingRequest == request { openingRequest = nil } }
     guard destination.userId == userID else {
       pendingDestination = nil
-      return
+      return false
     }
     do {
       try await authentication.switchWorkspace(destination.workspaceId)
       try Task.checkCancellation()
-      guard navigationRequest == request, authentication.userID == userID else { return }
+      guard navigationRequest == request, authentication.userID == userID else { return false }
       // The new workspace's root will consume the pending destination after startup.
-      guard workspace?.workspaceID == destination.workspaceId else { return }
-      _ = await store.openChatLink(.thread(id: destination.threadId, runID: destination.runId))
-      guard navigationRequest == request, !Task.isCancelled else { return }
+      guard workspace?.workspaceID == destination.workspaceId else { return false }
+      let opened = await store.openChatLink(
+        .thread(id: destination.threadId, runID: destination.runId))
+      guard navigationRequest == request, !Task.isCancelled else { return false }
       pendingDestination = nil
+      return opened
     } catch {
-      guard navigationRequest == request, !Task.isCancelled else { return }
+      guard navigationRequest == request, !Task.isCancelled else { return false }
       pendingDestination = nil
       self.error = error.localizedDescription
+      return false
     }
   }
 

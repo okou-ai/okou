@@ -19,24 +19,11 @@ import type {
 import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
-import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
-import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
-import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
-import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  and,
-  eq,
-  getTableColumns,
-  sql,
-  type InferInsertModel,
-  type SQL,
-} from "drizzle-orm";
-import { PgDialect, QueryBuilder, type PgTable } from "drizzle-orm/pg-core";
+import { and, eq, sql, type SQL } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { object, string } from "zod";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import { agents } from "@okouai/db/schema/agent";
@@ -671,78 +658,10 @@ function displayContextPointer(
   };
 }
 
-/** Construct a schema-encoded INSERT without a session or database capability. */
-function contextInsertSql<T extends PgTable>(
-  table: T,
-  values: InferInsertModel<T>,
-  onConflict: SQL = sql`do nothing`,
-): SQL {
-  const columns = getTableColumns(table);
-  return new PgDialect().buildInsertQuery({
-    table,
-    values: [
-      Object.fromEntries(
-        Object.entries(values).map(([key, value]) => {
-          return [key, sql.param(value, columns[key])];
-        }),
-      ),
-    ],
-    onConflict,
-  });
-}
-
-function insertAgentphoneDisplayContext(
-  context: Extract<NewDisplayContext, { readonly type: "agentphone" }>,
-  createdAt: Date,
-): SQL {
-  return contextInsertSql(chatAgentphoneContext, {
-    id: context.id,
-    chatThreadId: context.chatThreadId,
-    messageText: context.messageText,
-    threadContext: context.threadContext,
-    messageId: context.messageId,
-    rootMessageId: context.rootMessageId,
-    conversationId: context.conversationId,
-    groupId: context.groupId,
-    channel: context.channel,
-    isGroup: context.isGroup,
-    phoneHandle: context.phoneHandle,
-    fromNumber: context.fromNumber,
-    toNumber: context.toNumber,
-    userLinkId: context.userLinkId,
-    agentphoneAgentId: context.agentphoneAgentId,
-    createdAt,
-  });
-}
-
-function insertTelegramDisplayContext(
-  context: Extract<NewDisplayContext, { readonly type: "telegram" }>,
-  createdAt: Date,
-): SQL {
-  return contextInsertSql(chatTelegramContext, {
-    id: context.id,
-    chatThreadId: context.chatThreadId,
-    chatId: context.chatId,
-    messageId: context.messageId,
-    messageThreadId: context.messageThreadId,
-    messageText: context.messageText,
-    threadContext: context.threadContext,
-    rootMessageId: context.rootMessageId,
-    thinkingMessageId: context.thinkingMessageId,
-    userLinkId: context.userLinkId,
-    userLinkKind: context.userLinkKind,
-    chatType: context.chatType,
-    senderUserId: context.senderUserId,
-    senderDisplayName: context.senderDisplayName,
-    senderUsername: context.senderUsername,
-    senderLanguage: context.senderLanguage,
-    createdAt,
-  });
-}
-
 function insertAgentRunDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "agent_run" }>,
   createdAt: Date,
+  eligibility?: SQL,
 ): SQL {
   const source = new QueryBuilder()
     .select({
@@ -763,131 +682,28 @@ function insertAgentRunDisplayContext(
     ${context.sourceAgentId}::uuid, source.user_id, source.org_id,
     ${createdAt.toISOString()}::timestamp
     FROM (${source.getSQL()}) AS source
-    ON CONFLICT (id) DO NOTHING`;
+    ${eligibility ? sql`WHERE ${eligibility}` : sql.empty()}
+    ON CONFLICT (id) DO NOTHING
+    ${eligibility ? sql`RETURNING id` : sql.empty()}`;
 }
 
-function insertAutomationDisplayContext(
-  context: Extract<NewDisplayContext, { readonly type: "automation" }>,
-  createdAt: Date,
-): SQL {
-  return contextInsertSql(chatAutomationContext, {
-    id: context.id,
-    chatThreadId: context.chatThreadId,
-    automationId: context.automationId,
-    workflowName: context.workflowName,
-    eventType: context.workflowAutomationEventType,
-    eventPayload: context.workflowAutomationEventPayload,
-    connectorSourceId: context.connectorSourceId,
-    triggerBrief: context.triggerBrief,
-    createdAt,
-  });
-}
-
-function insertDiscordDisplayContext(
-  context: Extract<NewDisplayContext, { readonly type: "discord" }>,
-  createdAt: Date,
-): SQL {
-  return contextInsertSql(
-    chatDiscordContext,
-    {
-      ...context.snapshot,
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      createdAt,
-    },
-    sql`(${sql.identifier("id")}) do nothing`,
+/** Ordinary sends can publish their run provenance with their winning input. */
+export function normalChatInputContextSql(
+  values: AppendChatEvent & { readonly id: string },
+  eligibility: SQL,
+): SQL | null {
+  const context = newDisplayContext(values.id, values);
+  if (!context) {
+    return null;
+  }
+  if (context.type !== "agent_run") {
+    throw new Error("Ordinary chat input has an unexpected display context");
+  }
+  return insertAgentRunDisplayContext(
+    context,
+    values.createdAt ?? nowDate(),
+    eligibility,
   );
-}
-
-function insertDisplayContext(
-  context: NewDisplayContext,
-  createdAt: Date,
-): SQL {
-  if (context.type === "agent_run") {
-    return insertAgentRunDisplayContext(context, createdAt);
-  }
-  if (context.type === "wechat") {
-    return contextInsertSql(chatWechatContext, {
-      ...context.snapshot,
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      createdAt,
-    });
-  }
-  if (context.type === "discord") {
-    return insertDiscordDisplayContext(context, createdAt);
-  }
-  if (context.type === "slack") {
-    return contextInsertSql(chatSlackContext, {
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      channelId: context.channelId,
-      messageTs: context.messageTs,
-      botUserId: context.botUserId,
-      conversationContext: context.conversationContext,
-      messageText: context.messageText,
-      messageFiles: context.messageFiles,
-      messageAssets: context.messageAssets,
-      mentionDisplayNames: context.mentionDisplayNames,
-      senderDisplayName: context.senderDisplayName,
-      senderUserId: context.senderUserId,
-      channelType: context.channelType,
-      threadTs: context.threadTs,
-      routeThreadTs: context.routeThreadTs,
-      createdAt,
-    });
-  }
-  if (context.type === "feishu") {
-    return contextInsertSql(chatFeishuContext, {
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      conversationHistory: context.conversationHistory,
-      messageText: context.messageText,
-      messageFiles: context.messageFiles,
-      chatType: context.chatType,
-      chatId: context.chatId,
-      messageId: context.messageId,
-      threadId: context.threadId,
-      replyInThread: context.replyInThread,
-      reactionId: context.reactionId,
-      senderOpenId: context.senderOpenId,
-      connectionId: context.connectionId,
-      installationId: context.installationId,
-      createdAt,
-    });
-  }
-  if (context.type === "teams") {
-    return contextInsertSql(chatTeamsContext, {
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      tenantId: context.tenantId,
-      teamId: context.teamId,
-      channelId: context.channelId,
-      conversationId: context.conversationId,
-      conversationType: context.conversationType,
-      activityId: context.activityId,
-      threadContext: context.threadContext,
-      messageText: context.messageText,
-      messageFiles: context.messageFiles,
-      tenantName: context.tenantName,
-      teamName: context.teamName,
-      threadId: context.threadId,
-      serviceUrl: context.serviceUrl,
-      teamsAppId: context.teamsAppId,
-      senderUserId: context.senderUserId,
-      senderDisplayName: context.senderDisplayName,
-      senderPrincipalName: context.senderPrincipalName,
-      connectionId: context.connectionId,
-      createdAt,
-    });
-  }
-  if (context.type === "telegram") {
-    return insertTelegramDisplayContext(context, createdAt);
-  }
-  if (context.type === "agentphone") {
-    return insertAgentphoneDisplayContext(context, createdAt);
-  }
-  return insertAutomationDisplayContext(context, createdAt);
 }
 
 function canonicalChatEventPayload(
@@ -984,17 +800,6 @@ export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
     },
     displayContext,
   };
-}
-
-/** Pure context plan. The enqueue owner executes it after reserving the event
- * sequence, in the same transaction, to preserve thread lock ordering. */
-export function chatEventContextInsertSql(
-  values: AppendChatEvent & { readonly id: string },
-): SQL | null {
-  const context = newDisplayContext(values.id, values);
-  return context
-    ? insertDisplayContext(context, values.createdAt ?? nowDate())
-    : null;
 }
 
 /** The caller independently persists context before this atomic append. */

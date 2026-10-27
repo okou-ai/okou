@@ -803,6 +803,54 @@ async fn control_server_shutdown_removes_socket() {
 }
 
 #[tokio::test]
+async fn cancelled_shutdown_keeps_accepted_termination_joinable() {
+    let fixture = ControlServerFixture::new();
+    let (kill_tx, mut kill_rx) = mpsc::channel(1);
+    let mut handle = fixture
+        .bind_with_termination(ProcessTerminationHandle::new(kill_tx))
+        .unwrap()
+        .spawn(CancellationToken::new());
+    let request = TerminateRequest {
+        action: TerminateAction::Terminate,
+        expected_run_id: None,
+    };
+    let client = send_terminate(&fixture.sock_path, &request, Duration::from_secs(5));
+    tokio::pin!(client);
+    let termination = recv_termination_request(&mut kill_rx, client.as_mut()).await;
+
+    {
+        let shutdown = handle.shutdown();
+        tokio::pin!(shutdown);
+        assert!(futures_util::poll!(&mut shutdown).is_pending());
+    }
+    {
+        let shutdown = handle.shutdown();
+        tokio::pin!(shutdown);
+        assert!(
+            futures_util::poll!(&mut shutdown).is_pending(),
+            "replacement shutdown must wait for accepted termination to retire"
+        );
+        termination.acknowledge();
+        let response = complete_termination_operation(
+            client.as_mut(),
+            "accepted termination should finish after process acknowledgement",
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            response,
+            TerminateResponse::Status {
+                status: TerminateStatus::Accepted
+            }
+        );
+        tokio::time::timeout(TERMINATION_RENDEZVOUS_TIMEOUT, shutdown)
+            .await
+            .expect("replacement shutdown should join the completed server");
+    }
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn control_server_cancel_removes_socket() {
     let fixture = ControlServerFixture::new();
     let shutdown = CancellationToken::new();

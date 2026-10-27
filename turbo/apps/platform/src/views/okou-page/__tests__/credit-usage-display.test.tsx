@@ -132,7 +132,7 @@ test("Historical run usage appears when scrolling reveals its answer", async () 
   const historicalRunId = "a0000000-0000-4000-a000-000000000815";
   const latestRunId = "a0000000-0000-4000-a000-000000000821";
   const events: MockChatEventInput[] = [];
-  // Seven completed turns exceed the initial ten user/assistant groups, while
+  // Seven completed turns exceed the initial render window, while
   // fitting within one additional page when the reader scrolls to the top.
   for (let turn = 0; turn < 7; turn++) {
     const runId =

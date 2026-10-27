@@ -122,13 +122,9 @@ test.each(["run.failed"] as const)(
     expect(error.closest("[data-chat-selection-source]")).toBeNull();
     expect(error.closest('[role="status"]')).toBeVisible();
     expect(screen.getByText("This run couldn't finish")).toBeVisible();
-    await waitFor(() => {
-      expect(
-        error
-          .closest('[data-role="assistant"]')
-          ?.querySelector("[data-chat-assistant-name-line]"),
-      ).toHaveTextContent("Run Agent");
-    });
+    expect(error.closest('[data-role="assistant"]')).toContainElement(
+      screen.getByLabelText("View agent profile"),
+    );
     expect(screen.queryByTestId("chat-event-actions")).toBeNull();
     expect(
       screen.getByText("This workflow started on schedule."),

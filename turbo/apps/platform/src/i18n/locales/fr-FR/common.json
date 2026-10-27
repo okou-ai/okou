@@ -1576,7 +1576,8 @@
         "whatsCooking": "Qu'est-ce qui se prépare, {{userName}} ?",
         "whatsOnYourMind": "À quoi penses-tu, {{userName}} ?",
         "whatsTheMove": "Quel est le plan, {{userName}} ?"
-      }
+      },
+      "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
       "dismiss": "Ignorer",
@@ -2240,7 +2241,8 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "empty": "Les artefacts et chats associés de ce chat apparaissent ici.",
+      "emptyDescription": "Les fichiers et discussions de ce chat apparaîtront ici.",
+      "emptyTitle": "Aucune ressource pour l’instant",
       "loadFailed": "Impossible de charger les ressources",
       "loading": "Chargement des ressources",
       "showMore": "Afficher plus",
@@ -2973,9 +2975,6 @@
       "empty": "Envoyer un message pour commencer la conversation",
       "frequentlyUsed": "Fréquemment utilisé",
       "icon": "Icône de fil de discussion",
-      "locator": {
-        "you": "Vous"
-      },
       "noEmojiFound": "Aucun emoji trouvé",
       "notFound": "Fil de discussion introuvable",
       "openBrowser": "Ouvrir le navigateur",
@@ -6656,6 +6655,7 @@
         "labelAppliedRule": "Lorsque l'étiquette Gmail {{label}} est appliquée",
         "labelAppliedTitle": "Étiquette Gmail appliquée",
         "labelName": "Nom de l'étiquette",
+        "labelNotFound": "Libellé introuvable dans le compte Gmail connecté. Vérifiez le nom du libellé et le compte connecté.",
         "labelPlaceholder": "Support",
         "labelSummary": "Étiquette {{label}}",
         "messageMatchesRule": "Lorsque le message Gmail correspond à {{summary}}",

@@ -11,8 +11,8 @@ import {
 import { agentRuns } from "./agent-run";
 
 /**
- * Private server-owned provenance for one accepted output event. Keeping this
- * outside strict chat event payloads makes the schema additive for old APIs.
+ * Retired runtime storage retained for older API instances and rollback targets.
+ * Remove physically only after those writers are excluded from deployment.
  */
 export const runOutputMemoryCitations = pgTable(
   "run_output_memory_citations",

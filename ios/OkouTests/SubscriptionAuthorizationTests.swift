@@ -262,12 +262,28 @@ final class SubscriptionAuthorizationTests: XCTestCase {
 
   func testExpiredSessionCancelsAndRetainsReconnectTargetForRetry() async throws {
     let scheduled = expectation(description: "Reconnect expiry scheduled")
-    let clock = SubscriptionAuthorizationClock(didSchedule: { scheduled.fulfill() })
+    let retried = expectation(description: "The reconnect retry has a new pending session")
+    let sessions = Mutex<[[String: String]]>([])
+    let clock = SubscriptionAuthorizationClock(didSchedule: {
+      if sessions.withLock({ $0.count }) == 1 { scheduled.fulfill() } else { retried.fulfill() }
+    })
     let expired = expectation(description: "Expired session cancelled")
+    let closed = expectation(description: "The retried session is cancelled during cleanup")
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/sessions") { return authSession(code: false, expires: 1) }
+      if request.url!.path.hasSuffix("/sessions") {
+        let body = try authBody(request)
+        let count = sessions.withLock {
+          $0.append(body)
+          return $0.count
+        }
+        return authSession(code: false, expires: 1, token: "reconnect-session-\(count)")
+      }
       if request.url!.path.hasSuffix("/cancel") {
-        expired.fulfill()
+        switch try authBody(request)["sessionToken"] {
+        case "reconnect-session-1": expired.fulfill()
+        case "reconnect-session-2": closed.fulfill()
+        default: XCTFail("Only the two owned reconnect sessions can be cancelled")
+        }
         return ChatHTTPResponse(body: "{\"status\":\"cancelled\"}")
       }
       throw URLError(.unsupportedURL)
@@ -282,6 +298,15 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     XCTAssertEqual(store.phase, .expired)
     XCTAssertNil(store.expiresAt)
     XCTAssertNil(store.browserURL)
+    store.retryAuth()
+    await fulfillment(of: [retried], timeout: 3)
+    XCTAssertEqual(store.phase, .pending)
+    let requests = sessions.withLock { $0 }
+    XCTAssertEqual(requests.count, 2)
+    XCTAssertTrue(requests.allSatisfy { $0["mode"] == "reconnect" })
+    XCTAssertTrue(requests.allSatisfy { $0["modelProviderId"] == ModelHTTPFixtures.accountID })
+    store.close()
+    await fulfillment(of: [closed], timeout: 3)
   }
 }
 
@@ -339,9 +364,11 @@ private final class SubscriptionAuthorizationClock: Sendable {
 private func authBody(_ request: URLRequest) throws -> [String: String] {
   try XCTUnwrap(JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: String])
 }
-private func authSession(code: Bool, expires: Int = 300) -> ChatHTTPResponse {
+private func authSession(
+  code: Bool, expires: Int = 300, token: String = "synthetic-session-token"
+) -> ChatHTTPResponse {
   ChatHTTPResponse(
     body:
-      "{\"sessionToken\":\"synthetic-session-token\",\"browserUrl\":\"https://auth.example.invalid/authorize\",\"expiresIn\":\(expires),\"interval\":1\(code ? ",\"verificationCode\":\"EXAMPLE-CODE\"" : "")}"
+      "{\"sessionToken\":\"\(token)\",\"browserUrl\":\"https://auth.example.invalid/authorize\",\"expiresIn\":\(expires),\"interval\":1\(code ? ",\"verificationCode\":\"EXAMPLE-CODE\"" : "")}"
   )
 }

@@ -30,6 +30,59 @@ const AUTO_PI_DISPLAY_ESTIMATE = {
   },
 } as const satisfies { readonly cost: Model<Api>["cost"] };
 
+/**
+ * ChatGPT subscription identities whose metadata Okou owns. Each borrows the
+ * Codex protocol shape of a pinned catalog model and overrides only the
+ * identity and OpenAI's published API prices; subscription context limits stay
+ * in `model-limits.ts`.
+ */
+const CODEX_PINNED_MODELS: Readonly<
+  Record<
+    string,
+    Readonly<{ base: string; name: string; cost: Model<Api>["cost"] }>
+  >
+> = {
+  "gpt-6.1-sol": {
+    base: "gpt-6-sol",
+    name: "GPT 6.1 Sol",
+    cost: {
+      input: 2,
+      output: 10,
+      cacheRead: 0.1,
+      cacheWrite: 2.5,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 4,
+          output: 15,
+          cacheRead: 0.2,
+          cacheWrite: 5,
+        },
+      ],
+    },
+  },
+  // https://developers.openai.com/api/docs/models/gpt-6.1-terra
+  "gpt-6.1-terra": {
+    base: "gpt-6.1-sol",
+    name: "GPT 6.1 Terra",
+    cost: {
+      input: 1,
+      output: 5,
+      cacheRead: 0.05,
+      cacheWrite: 1.25,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 2,
+          output: 7.5,
+          cacheRead: 0.1,
+          cacheWrite: 2.5,
+        },
+      ],
+    },
+  },
+};
+
 /** Product-owned Pi catalog entries for the independently named Okou models. */
 function okouSourceModel(
   provider: string,
@@ -127,34 +180,24 @@ function catalogSourceModel(
   if (okouModel) {
     return okouModel;
   }
-  // Keep product-owned 6.1 Sol metadata for ChatGPT subscriptions independent
-  // of upstream catalog updates; do not infer OpenRouter admission.
-  if (provider === "openai-codex" && model === "gpt-6.1-sol") {
-    const predecessor = providerModels(provider).find((entry) => {
-      return entry.id === "gpt-6-sol";
+  // Keep product-owned subscription metadata independent of upstream catalog
+  // updates; do not infer OpenRouter admission.
+  const pinned =
+    provider === "openai-codex" && Object.hasOwn(CODEX_PINNED_MODELS, model)
+      ? CODEX_PINNED_MODELS[model]
+      : undefined;
+  if (pinned) {
+    const base = providerModels(provider).find((entry) => {
+      return entry.id === pinned.base;
     });
-    if (!predecessor) return undefined;
+    if (!base) return undefined;
     return {
-      ...predecessor,
+      ...base,
       id: model,
-      name: "GPT 6.1 Sol",
+      name: pinned.name,
       contextWindow: 1_050_000,
       maxTokens: 128_000,
-      cost: {
-        input: 2,
-        output: 10,
-        cacheRead: 0.1,
-        cacheWrite: 2.5,
-        tiers: [
-          {
-            inputTokensAbove: 272_000,
-            input: 4,
-            output: 15,
-            cacheRead: 0.2,
-            cacheWrite: 5,
-          },
-        ],
-      },
+      cost: pinned.cost,
     };
   }
   return providerModels(provider).find((candidate) => {

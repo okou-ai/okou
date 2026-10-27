@@ -27,19 +27,9 @@
       "owner": "commitWorkflowCopy$"
     },
     {
-      "id": "TX-0046",
-      "file": "turbo/apps/api/src/signals/routes/workflows.ts",
-      "owner": "applyWorkflowVisibility$"
-    },
-    {
       "id": "TX-0047",
       "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
       "owner": "deleteAgentRows$"
-    },
-    {
-      "id": "TX-0050",
-      "file": "turbo/apps/api/src/signals/services/agent-webhook-complete.service.ts",
-      "owner": "createAgentRunCompletion/complete$"
     },
     {
       "id": "TX-0073",
@@ -50,11 +40,6 @@
       "id": "TX-0084",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
       "owner": "completeClaimedSession$"
-    },
-    {
-      "id": "TX-0091",
-      "file": "turbo/apps/api/src/signals/services/chat-events.command.ts",
-      "owner": "appendNormalSendInput$"
     },
     {
       "id": "TX-0095",
@@ -97,19 +82,9 @@
       "owner": "projectThread"
     },
     {
-      "id": "TX-0139",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "persistAutomaticNoAuthConnection"
-    },
-    {
       "id": "TX-0141",
       "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
       "owner": "storeCustomConnectorOAuth2Connection"
-    },
-    {
-      "id": "TX-0147",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "setCustomConnectorValues$"
     },
     {
       "id": "TX-0148",
@@ -152,11 +127,6 @@
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
     },
     {
-      "id": "TX-0220",
-      "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
-      "owner": "revokeOrgMemberRunAuthority"
-    },
-    {
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
@@ -182,29 +152,14 @@
       "owner": "deleteIfStillEligible"
     },
     {
-      "id": "TX-0267",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "reserveUsagePackMemberRemoval"
-    },
-    {
       "id": "TX-0268",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "prepareUsagePackMemberRemoval"
     },
     {
-      "id": "TX-0272",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "fulfillUsagePackSubscriptionChangeInvoice"
-    },
-    {
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
-    },
-    {
-      "id": "TX-0304",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-subscription.service.ts",
-      "owner": "commitUsagePackPlanActivation$"
     },
     {
       "id": "TX-0308",

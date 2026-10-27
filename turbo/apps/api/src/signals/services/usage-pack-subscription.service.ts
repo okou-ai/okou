@@ -1,6 +1,7 @@
 import {
   activationAllocationWhere,
   activationEntitlementValues,
+  activationEntitlementInsertValues,
   activationPendingCounts,
   activationUnchangedAllocationsWhere,
   activationOrgValues,
@@ -3117,64 +3118,82 @@ function subscriptionOrgWhere(
   );
 }
 
+const activationPublicationFailureSchema = object({
+  code: literal("22P02"),
+  message: zEnum([
+    'invalid input syntax for type integer: "usage_pack_activation_root"',
+    'invalid input syntax for type integer: "usage_pack_activation_org"',
+    'invalid input syntax for type integer: "usage_pack_activation_count"',
+  ]),
+});
+
+const prepareUsagePackPlanActivation$ = command(
+  async ({ get }, args: UsagePackPlanActivation, signal: AbortSignal) => {
+    const readDb = get(db$);
+    const orgId = args.context.subscription.orgId;
+    const roots = await readDb
+      .select()
+      .from(usagePackSubscriptions)
+      .where(activationRootsWhere(args))
+      .orderBy(asc(usagePackSubscriptions.id));
+    signal.throwIfAborted();
+    const subscription = activationRoot(args, roots);
+    const [guard] = await readDb
+      .select()
+      .from(usagePackPendingSnapshotGuards)
+      .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
+    signal.throwIfAborted();
+    const counts = activationPendingCounts(args, roots);
+    assertUsagePackCheckoutPendingCount(guard, counts.before);
+    const allocations = await readDb
+      .select()
+      .from(usagePackAllocations)
+      .where(activationAllocationWhere(args))
+      .orderBy(asc(usagePackAllocations.id));
+    signal.throwIfAborted();
+    const context = { subscription, allocations };
+    validateUsagePackSubscriptionCorrelation(
+      context,
+      args.subscription,
+      subscription.id,
+    );
+    const shape = requireUsagePackSubscriptionShape(context, args.subscription);
+    if (!shape.periodStart) {
+      throw new Error(
+        `Usage pack subscription ${args.subscription.id} has no current period start`,
+      );
+    }
+    const values = activationSubscriptionValues(
+      args.subscription,
+      shape,
+      nowDate(),
+    );
+    const [owner] = shape.projectsOrgPlan
+      ? await readDb
+          .select({ orgId: orgPlanEntitlements.orgId })
+          .from(orgPlanEntitlements)
+          .where(
+            eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id),
+          )
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    const entitlement = activationEntitlementValues(args, shape, owner?.orgId);
+    return { orgId, subscription, guard, counts, shape, values, entitlement };
+  },
+);
+
 const commitUsagePackPlanActivation$ = command(
   async (
-    { set },
+    { get, set },
     args: UsagePackPlanActivation,
     signal: AbortSignal,
   ): Promise<void> => {
+    const { orgId, subscription, guard, counts, shape, values, entitlement } =
+      await set(prepareUsagePackPlanActivation$, args, signal);
     const db = set(writeDb$);
-    const orgId = args.context.subscription.orgId;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0304; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // The subscription write below is conditional on the root status and
-      // prepared allocation set it was decided from, and the pending count is
-      // published conditionally on the count read here. Allocation writers only
-      // admit active roots, so none races this pending root.
-      const roots = await tx
-        .select()
-        .from(usagePackSubscriptions)
-        .where(activationRootsWhere(args))
-        .orderBy(asc(usagePackSubscriptions.id));
-      const subscription = activationRoot(args, roots);
-      await tx
-        .insert(usagePackPendingSnapshotGuards)
-        .values({ orgId, pendingSnapshotCount: 0 })
-        .onConflictDoNothing();
-      const [guard] = await tx
-        .select()
-        .from(usagePackPendingSnapshotGuards)
-        .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
-      const counts = activationPendingCounts(args, roots);
-      if (!guard || guard.pendingSnapshotCount !== counts.before) {
-        throw new Error("Usage pack pending snapshot guard requires repair");
-      }
-      const allocations = await tx
-        .select()
-        .from(usagePackAllocations)
-        .where(activationAllocationWhere(args))
-        .orderBy(asc(usagePackAllocations.id));
-      const context = { subscription, allocations };
-      validateUsagePackSubscriptionCorrelation(
-        context,
-        args.subscription,
-        subscription.id,
-      );
-      const shape = requireUsagePackSubscriptionShape(
-        context,
-        args.subscription,
-      );
-      if (!shape.periodStart) {
-        throw new Error(
-          `Usage pack subscription ${args.subscription.id} has no current period start`,
-        );
-      }
-      const values = activationSubscriptionValues(
-        args.subscription,
-        shape,
-        nowDate(),
-      );
-      const updated = await tx
+    const activated = db.$with("activated_usage_pack_plan").as(
+      db
         .update(usagePackSubscriptions)
         .set(values)
         .where(
@@ -3183,72 +3202,117 @@ const commitUsagePackPlanActivation$ = command(
             unchangedSubscriptionRootWhere(subscription),
           ),
         )
-        .returning({ id: usagePackSubscriptions.id });
-      if (updated.length !== 1) {
-        throw new Error(
-          "Usage pack subscription or allocations changed during plan activation",
-        );
-      }
-      if (shape.projectsOrgPlan) {
-        const orgRows = await tx
-          .update(orgMetadata)
-          .set(activationOrgValues(args.subscription, shape, values.updatedAt))
-          .where(
-            and(
-              eq(orgMetadata.orgId, orgId),
-              eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
-              orgAcceptsSubscriptionWhere(
-                args.subscription.id,
-                values.updatedAt,
-              ),
+        .returning({ id: usagePackSubscriptions.id }),
+    );
+    const projected = db.$with("projected_usage_pack_plan").as(
+      db
+        .update(orgMetadata)
+        .set(activationOrgValues(args.subscription, shape, values.updatedAt))
+        .where(
+          and(
+            eq(orgMetadata.orgId, orgId),
+            eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
+            orgAcceptsSubscriptionWhere(args.subscription.id, values.updatedAt),
+            shape.projectsOrgPlan ? undefined : sql`false`,
+            exists(db.select({ id: activated.id }).from(activated)),
+          ),
+        )
+        .returning({ orgId: orgMetadata.orgId }),
+    );
+    const installed = db.$with("activated_usage_pack_entitlement").as(
+      db
+        .insert(orgPlanEntitlements)
+        .select(
+          sql`SELECT ${activationEntitlementInsertValues(entitlement)} FROM ${projected}`,
+        )
+        .onConflictDoUpdate({
+          target: orgPlanEntitlements.orgId,
+          set: entitlement,
+        })
+        .returning({ orgId: orgPlanEntitlements.orgId }),
+    );
+    const countInsert = db.insert(usagePackPendingSnapshotGuards).select(
+      db
+        .select({
+          orgId: sql`${orgId}`
+            .mapWith(usagePackPendingSnapshotGuards.orgId)
+            .as("org_id"),
+          pendingSnapshotCount: sql`${counts.after}::int`
+            .mapWith(usagePackPendingSnapshotGuards.pendingSnapshotCount)
+            .as("pending_snapshot_count"),
+        })
+        .from(activated)
+        .where(
+          shape.projectsOrgPlan
+            ? exists(db.select({ orgId: installed.orgId }).from(installed))
+            : undefined,
+        ),
+    );
+    const publishedCount = db.$with("activated_usage_pack_pending_count").as(
+      (counts.before === counts.after
+        ? countInsert.onConflictDoNothing()
+        : countInsert.onConflictDoUpdate({
+            target: usagePackPendingSnapshotGuards.orgId,
+            set: { pendingSnapshotCount: counts.after },
+            setWhere: eq(
+              usagePackPendingSnapshotGuards.pendingSnapshotCount,
+              counts.before,
             ),
-          )
-          .returning({ orgId: orgMetadata.orgId });
-        if (orgRows.length !== 1) {
-          await (async (): Promise<never> => {
-            const [org] = await tx
-              .select({ orgId: orgMetadata.orgId })
-              .from(orgMetadata)
-              .where(subscriptionOrgWhere(orgId, subscription));
-            return throwUsagePackOrgBillingMismatch(org, orgId, subscription);
-          })();
-        }
-        const [owner] = await tx
-          .select({ orgId: orgPlanEntitlements.orgId })
-          .from(orgPlanEntitlements)
-          .where(
-            eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id),
-          )
-          .limit(1);
-        const entitlement = activationEntitlementValues(
-          args,
-          shape,
-          owner?.orgId,
-        );
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(entitlement)
-          .onConflictDoUpdate({
-            target: orgPlanEntitlements.orgId,
-            set: entitlement,
-          });
-      }
-      const countWrite = usagePackPendingSnapshotCountWrite(
-        orgId,
-        counts.before,
-        counts.after,
-      );
-      if (countWrite) {
-        const [publishedCount] = await tx
-          .update(usagePackPendingSnapshotGuards)
-          .set(countWrite.values)
-          .where(countWrite.condition)
-          .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
-        assertPendingSnapshotPublished(publishedCount);
-      }
-      signal.throwIfAborted();
-    });
+          })
+      ).returning({ orgId: usagePackPendingSnapshotGuards.orgId }),
+    );
+    const rootCount = sql`(${db.select({ value: count() }).from(activated)})`;
+    const orgCount = sql`(${db.select({ value: count() }).from(projected)})`;
+    const countPublished = or(
+      exists(db.select({ orgId: publishedCount.orgId }).from(publishedCount)),
+      counts.before === counts.after && guard !== undefined
+        ? sql`true`
+        : undefined,
+    );
+    // Every failed publication aborts the statement, including earlier CTE writes.
+    // Distinct internal sentinels preserve the root, duplicate-plan and count errors.
+    const publication = await settleIncludingAbort(
+      (async () => {
+        return await db
+          .with(activated, projected, installed, publishedCount)
+          .select({
+            committed: sql`(CASE
+              WHEN ${rootCount} <> 1 THEN 'usage_pack_activation_root'
+              WHEN ${shape.projectsOrgPlan} AND ${orgCount} <> 1 THEN 'usage_pack_activation_org'
+              WHEN NOT (${countPublished}) THEN 'usage_pack_activation_count'
+              ELSE '1' END)::int`.mapWith(pgIntegerDecoder),
+          })
+          .from(sql`(SELECT 1) AS usage_pack_activation_result`);
+      })(),
+    );
     signal.throwIfAborted();
+    if (publication.ok) {
+      return;
+    }
+    const failure = activationPublicationFailureSchema.safeParse(
+      publication.error instanceof Error ? publication.error.cause : undefined,
+    );
+    if (!failure.success) {
+      throw publication.error;
+    }
+    if (failure.data.message.endsWith('"usage_pack_activation_root"')) {
+      throw new Error(
+        "Usage pack subscription or allocations changed during plan activation",
+        { cause: publication.error },
+      );
+    }
+    if (failure.data.message.endsWith('"usage_pack_activation_count"')) {
+      throw new UsagePackPendingSnapshotConflict(
+        "Usage pack pending snapshot count changed during publication",
+        { cause: publication.error },
+      );
+    }
+    const [org] = await get(db$)
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(subscriptionOrgWhere(orgId, subscription));
+    signal.throwIfAborted();
+    throwUsagePackOrgBillingMismatch(org, orgId, subscription);
   },
 );
 

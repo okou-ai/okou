@@ -1551,7 +1551,8 @@
         "whatsCooking": "Ada apa, {{userName}}?",
         "whatsOnYourMind": "Apa yang ada di pikiranmu, {{userName}}?",
         "whatsTheMove": "Mau ngapain, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
       "dismiss": "Abaikan",
@@ -2193,7 +2194,8 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "empty": "Artefak dan chat terkait dari chat ini muncul di sini.",
+      "emptyDescription": "File dan obrolan dari chat ini akan muncul di sini.",
+      "emptyTitle": "Belum ada sumber daya",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loading": "Memuat sumber daya",
       "showMore": "Tampilkan lebih banyak",
@@ -2916,9 +2918,6 @@
       "empty": "Kirim pesan untuk memulai percakapan",
       "frequentlyUsed": "Sering digunakan",
       "icon": "Ikon thread chat",
-      "locator": {
-        "you": "Anda"
-      },
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
       "openBrowser": "Buka browser",
@@ -6554,6 +6553,7 @@
         "labelAppliedRule": "Saat label Gmail {{label}} diterapkan",
         "labelAppliedTitle": "Label Gmail diterapkan",
         "labelName": "Nama label",
+        "labelNotFound": "Label tidak ditemukan di akun Gmail yang terhubung. Periksa nama label dan akun yang terhubung.",
         "labelPlaceholder": "Dukungan",
         "labelSummary": "Label {{label}}",
         "messageMatchesRule": "Saat pesan Gmail cocok dengan {{summary}}",

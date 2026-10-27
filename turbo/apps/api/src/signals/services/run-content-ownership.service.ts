@@ -10,7 +10,6 @@ type RunOutputPhase =
   | "preparation"
   | "chat_event_append"
   | "run_materialization"
-  | "memory_citations"
   | "first_assistant_metric";
 
 interface RunOutputFailureFields {

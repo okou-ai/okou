@@ -55,7 +55,6 @@ pub(super) fn content_policy(
                 | "error_code"
                 | "codex_error_info"
                 | "http_status_code"
-                | "memoryCitation"
         )
     {
         return ContentPolicy::Preserve;

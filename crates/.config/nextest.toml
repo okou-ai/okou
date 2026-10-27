@@ -10,7 +10,7 @@ filter = '''
     test(=codex_app_server_delivers_buffered_notifications_before_turn_start_response) |
     test(=codex_app_server_delivers_notification_above_former_stdout_limit) |
     test(=codex_app_server_reduces_oversized_events_before_delivery) |
-    test(=pi_rpc_skips_irreducible_events_and_delivers_later_output_without_private_citations)
+    test(=pi_rpc_skips_irreducible_events_and_delivers_later_output)
 )) |
 (package(=guest-agent) & test(=delivery_cases::event_delivery_oversized::oversized_claude_events_are_reduced_or_skipped_while_run_completes))
 '''

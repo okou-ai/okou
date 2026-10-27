@@ -1553,7 +1553,8 @@
         "whatsCooking": "क्या पक रहा है, {{userName}}?",
         "whatsOnYourMind": "आपके मन में क्या है, {{userName}}?",
         "whatsTheMove": "क्या चाल है, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
     "agentSuggestions": {
       "dismiss": "खारिज करें",
@@ -2201,7 +2202,8 @@
     "resources": {
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
-      "empty": "इस चैट के आर्टिफ़ैक्ट्स और संबंधित चैट यहाँ दिखाई देते हैं।",
+      "emptyDescription": "इस चैट की फ़ाइलें और चैट यहाँ दिखाई देंगी।",
+      "emptyTitle": "अभी कोई संसाधन नहीं",
       "loadFailed": "संसाधन लोड नहीं हो सके",
       "loading": "संसाधन लोड हो रहे हैं",
       "showMore": "और दिखाएँ",
@@ -2927,9 +2929,6 @@
       "empty": "बातचीत शुरू करने के लिए एक संदेश भेजें",
       "frequentlyUsed": "बहुधा प्रयुक्त",
       "icon": "चैट थ्रेड आइकन",
-      "locator": {
-        "you": "आप"
-      },
       "noEmojiFound": "कोई इमोजी नहीं मिला",
       "notFound": "चैट थ्रेड नहीं मिला",
       "openBrowser": "खुला ब्राउज़र",
@@ -6578,6 +6577,7 @@
         "labelAppliedRule": "जब Gmail लेबल {{label}} लगाया जाता है",
         "labelAppliedTitle": "Gmail लेबल लागू किया गया",
         "labelName": "लेबल का नाम",
+        "labelNotFound": "कनेक्ट किए गए Gmail खाते में यह लेबल नहीं मिला। लेबल का नाम और कनेक्ट किया गया खाता जाँचें।",
         "labelPlaceholder": "सहायता",
         "labelSummary": "लेबल {{label}}",
         "messageMatchesRule": "जब Gmail संदेश {{summary}} से मेल खाता है",

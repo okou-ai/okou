@@ -75,12 +75,10 @@ final class ChatThreadPinTests: XCTestCase {
   func testFailedPinKeepsOptimisticDisplayAndNextSaveStillRuns() async throws {
     let fixture = PinFixture(statuses: [503, 204, 204])
     defer { fixture.releaseAll() }
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let cache = ChatCache(
+    let cacheDirectory = CacheTestDirectory(owner: self)
+    let cache = cacheDirectory.cache(
       scope: ChatCacheScope(
-        apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"),
-      directory: directory)
+        apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"))
     let store = fixture.workspace(cache: cache)
     defer { store.close() }
     await store.refresh()
@@ -145,10 +143,23 @@ final class ChatThreadPinTests: XCTestCase {
     let fixture = PinFixture()
     defer { fixture.releaseAll() }
     let store = fixture.workspace()
+    defer { store.close() }
     await store.refresh()
     let pin = Task { await store.list.togglePinned(PinFixture.target) }
+    addTeardownBlock { @MainActor in
+      store.close()
+      pin.cancel()
+      fixture.releaseAll()
+      await pin.value
+    }
     try await eventually { fixture.writes.count == 1 }
     let unpin = Task { await store.list.togglePinned(PinFixture.target) }
+    addTeardownBlock { @MainActor in
+      store.close()
+      unpin.cancel()
+      fixture.releaseAll()
+      await unpin.value
+    }
     try await eventually {
       store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt == nil
     }

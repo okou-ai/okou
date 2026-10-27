@@ -12,6 +12,54 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1067.1](https://github.com/okou-ai/okou/compare/app-v0.1067.0...app-v0.1067.1) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.9.0
+    * @okouai/core bumped to 8.792.0
+
+## [0.1067.0](https://github.com/okou-ai/okou/compare/app-v0.1066.4...app-v0.1067.0) (2026-10-27)
+
+
+### Features
+
+* **app:** add discord connection to onboarding ([#43202](https://github.com/okou-ai/okou/issues/43202)) ([cf593e2](https://github.com/okou-ai/okou/commit/cf593e2c33bb0885272f8ba20092f59b1476617b))
+* recommend oauth connections during prompt onboarding ([#43231](https://github.com/okou-ai/okou/issues/43231)) ([dcf9c4e](https://github.com/okou-ai/okou/commit/dcf9c4ed629e1e57e8d993d03003f86533777486))
+
+
+### Bug Fixes
+
+* **app:** focus mobile onboarding on the next task ([#43138](https://github.com/okou-ai/okou/issues/43138)) ([7d32ff1](https://github.com/okou-ai/okou/commit/7d32ff16af9db62b9123e83e9c925fc1ae64491e))
+* **app:** restore single-level tool settings ([#43189](https://github.com/okou-ai/okou/issues/43189)) ([0e1d340](https://github.com/okou-ai/okou/commit/0e1d340c9eaa73aca1cd496f48ed49bd449997d9))
+* **workflows:** handle unavailable gmail labels in forms ([#43245](https://github.com/okou-ai/okou/issues/43245)) ([a2a522b](https://github.com/okou-ai/okou/commit/a2a522b7a13dee40a5f86af51bf9490db4c77496))
+
+
+### Refactoring
+
+* **app:** own check-in reward completion ([#43088](https://github.com/okou-ai/okou/issues/43088)) ([1bc32f7](https://github.com/okou-ai/okou/commit/1bc32f7a66dcc4946e5846efe1b65baa4a3f7c39))
+* **app:** own custom connector access updates ([#43082](https://github.com/okou-ai/okou/issues/43082)) ([467ba03](https://github.com/okou-ai/okou/commit/467ba0310309861d021c122ad22b104c8faa736a))
+* **app:** own custom permission save completion ([#43079](https://github.com/okou-ai/okou/issues/43079)) ([7f57067](https://github.com/okou-ai/okou/commit/7f57067fadaf8cf518094f30798dcfc048fe813e))
+* **app:** own feishu uninstall completion ([#43083](https://github.com/okou-ai/okou/issues/43083)) ([ccf9d44](https://github.com/okou-ai/okou/commit/ccf9d44adae5991cf5f09bc0a33d8dab1eac1f4f))
+* **app:** own onboarding catalog continuation ([#43092](https://github.com/okou-ai/okou/issues/43092)) ([e34fd35](https://github.com/okou-ai/okou/commit/e34fd351c9f0ed39bd321099cb36999e8c5f89a2))
+* **app:** own slack and teams uninstall completion ([#43086](https://github.com/okou-ai/okou/issues/43086)) ([3039c93](https://github.com/okou-ai/okou/commit/3039c93152693e92e083e6fcfc85ab2073ddf504))
+* **app:** remove retry and manual refresh paths ([#43134](https://github.com/okou-ai/okou/issues/43134)) ([6332129](https://github.com/okou-ai/okou/commit/63321296c59e981b70b8431211dd0d64ece04303))
+* **chat:** remove citation processing and reduce history rendering ([#43148](https://github.com/okou-ai/okou/issues/43148)) ([26bacab](https://github.com/okou-ai/okou/commit/26bacab4693d32e4a4453dce5c84e565d7129b9c))
+* remove discord integration switch ([#43183](https://github.com/okou-ai/okou/issues/43183)) ([721475a](https://github.com/okou-ai/okou/commit/721475a60a8ee46afd39e4bb112e1ffd08880eb6))
+* remove vnc access feature switch ([#43184](https://github.com/okou-ai/okou/issues/43184)) ([7caac90](https://github.com/okou-ai/okou/commit/7caac9058cd8740c5288ef0c560e723d562120a8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.3
+    * @okouai/core bumped to 8.791.4
+    * @okouai/ui bumped to 1.18.4
+
 ## [0.1066.4](https://github.com/okou-ai/okou/compare/app-v0.1066.3...app-v0.1066.4) (2026-10-26)
 
 

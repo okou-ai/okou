@@ -1,0 +1,1 @@
+ALTER TABLE "ios_push_registrations" ADD COLUMN "notification_state_revision" bigint;

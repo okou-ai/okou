@@ -94,6 +94,9 @@ struct AppRootView: View {
       workspaceData = data
       if scenePhase == .active { presentedScopeID = data?.scopeID }
       await notifications.update(workspace: data)
+      if !authentication.isLoading {
+        await notifications.refreshNotificationState(userID: authentication.userID)
+      }
     }
     .task(
       id: NotificationNavigationIdentity(
@@ -101,6 +104,9 @@ struct AppRootView: View {
         destination: notifications.pendingDestination)
     ) {
       notifications.preparePending(authentication: authentication)
+      if !authentication.isLoading {
+        await notifications.refreshNotificationState(userID: authentication.userID)
+      }
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { presentedScopeID = authentication.scopeID }
@@ -110,6 +116,9 @@ struct AppRootView: View {
         ? Task {
           await authentication.refresh()
           await notifications.refreshRegistration()
+          if !authentication.isLoading {
+            await notifications.refreshNotificationState(userID: authentication.userID)
+          }
         } : nil
     }
     .onDisappear { foregroundRefresh?.cancel() }
@@ -155,7 +164,8 @@ private struct WorkspaceRootView: View {
         client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
         draftStorage: ChatDraftStorage(
           scope: ChatCacheScope(
-            apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID))))
+            apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)),
+        didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
   }
 
   var body: some View {
@@ -298,10 +308,10 @@ private struct WorkspaceRootView: View {
       }
       store.setForeground(scenePhase == .active)
       await store.start(userID: userID, workspaceID: workspaceID)
-      await notifications.openPending(authentication: authentication, store: store)
+      await openPendingNotification()
     }
     .task(id: notifications.pendingDestination) {
-      await notifications.openPending(authentication: authentication, store: store)
+      await openPendingNotification()
     }
     .onDisappear {
       sidebar.cancelDrag()
@@ -381,6 +391,12 @@ private struct WorkspaceRootView: View {
       return "What are we working on, \(name)?"
     }
     return "What are we working on?"
+  }
+
+  private func openPendingNotification() async {
+    if await notifications.openPending(authentication: authentication, store: store) {
+      closeSidebar()
+    }
   }
 
   private func openSidebar() {
