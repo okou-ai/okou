@@ -108,7 +108,8 @@ struct AppRootView: View {
         await notifications.refreshNotificationState(userID: authentication.userID)
       }
     }
-    .onChange(of: scenePhase) { _, phase in
+    .onChange(of: scenePhase, initial: true) { _, phase in
+      notifications.setForeground(phase == .active)
       if phase == .active { presentedScopeID = authentication.scopeID }
       foregroundRefresh?.cancel()
       foregroundRefresh =

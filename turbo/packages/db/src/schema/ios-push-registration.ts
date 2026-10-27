@@ -18,6 +18,10 @@ export const iosPushRegistrations = pgTable(
     notificationStateRevision: bigint("notification_state_revision", {
       mode: "number",
     }),
+    // Opening this installation acknowledges badges without reading its chats.
+    badgeClearedAt: timestamp("badge_cleared_at"),
+    badgeClearedRevision: bigint("badge_cleared_revision", { mode: "number" }),
+    badgeClearSequence: bigint("badge_clear_sequence", { mode: "number" }),
     userId: text("user_id").notNull(),
     sessionId: text("session_id").notNull(),
     deviceToken: text("device_token").notNull(),

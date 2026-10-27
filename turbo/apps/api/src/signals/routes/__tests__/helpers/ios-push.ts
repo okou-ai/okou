@@ -74,6 +74,7 @@ export async function reconcileIosNotifications(
   context: TestContext,
   actor: { userId: string; orgId: string },
   binding: { installationId: string; revision: number },
+  options: { badgeClearSequence?: number } = {},
 ) {
   authenticateIosSession(context, actor.userId, actor.orgId);
   return await accept(
@@ -84,6 +85,7 @@ export async function reconcileIosNotifications(
       body: {
         installationId: binding.installationId,
         registrationRevision: binding.revision,
+        ...options,
         notifications: [],
       },
     }),

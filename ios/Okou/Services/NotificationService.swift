@@ -97,6 +97,10 @@ final class NotificationService {
   private var notificationStateRevision = UUID()
   private var notificationStateTask: Task<Void, Never>?
   private var notificationStateRequest: Task<NotificationStateResponse, Error>?
+  private var isForeground = false
+  private var badgeNeedsClear = false
+  private var badgeClearSequence: Int?
+  private var pendingBadgeClearSequence: Int?
   private let log = Logger(subsystem: "ai.okou.ios", category: "Notifications")
 
   private struct Binding: Encodable {
@@ -114,6 +118,7 @@ final class NotificationService {
     let key = "ios-push-installation-id"
     installationID = defaults.string(forKey: key) ?? UUID().uuidString.lowercased()
     defaults.set(installationID, forKey: key)
+    pendingBadgeClearSequence = defaults.object(forKey: "ios-pending-badge-clear-sequence") as? Int
   }
 
   /// Installed by the application initializer, before any background delegate callback.
@@ -164,7 +169,7 @@ final class NotificationService {
       didSynchronize = nil
       self.workspace = workspace
       if notificationAccount != .unresolved, let workspace {
-        notificationAccount = .user(workspace.userID)
+        updateNotificationAccount(.user(workspace.userID))
       }
       binding = nil
       if let pendingDestination, let workspace, pendingDestination.userId != workspace.userID {
@@ -307,17 +312,62 @@ final class NotificationService {
       environment: environment)
   }
 
-  func refreshNotificationState(userID: String?) async {
-    let account = userID.map(NotificationAccount.user) ?? .signedOut
-    if notificationAccount != account { notificationStateRequest?.cancel() }
+  /// A foreground visit acknowledges this device's badge before chat reads or network I/O.
+  func setForeground(_ active: Bool) {
+    guard isForeground != active else { return }
+    isForeground = active
+    guard active else { return }
+    let sequence = nextBadgeClearSequence()
+    if case .user(let userID) = notificationAccount {
+      rememberBadgeClear(sequence, userID: userID)
+    } else {
+      pendingBadgeClearSequence = sequence
+      defaults.set(sequence, forKey: "ios-pending-badge-clear-sequence")
+    }
+    badgeNeedsClear = true
+    notificationStateRequest?.cancel()
+    requestNotificationStateRefresh()
+  }
+
+  private func nextBadgeClearSequence() -> Int {
+    let key = "ios-badge-clear-sequence"
+    let sequence = defaults.integer(forKey: key) + 1
+    defaults.set(sequence, forKey: key)
+    return sequence
+  }
+
+  private func rememberBadgeClear(_ sequence: Int, userID: String) {
+    badgeClearSequence = sequence
+    defaults.set(sequence, forKey: "ios-badge-clear-sequence-\(userID)")
+  }
+
+  private func updateNotificationAccount(_ account: NotificationAccount) {
+    guard notificationAccount != account else { return }
+    notificationStateRequest?.cancel()
     notificationAccount = account
+    badgeClearSequence = nil
+    if case .user(let userID) = account {
+      badgeClearSequence = defaults.object(forKey: "ios-badge-clear-sequence-\(userID)") as? Int
+      if let sequence = pendingBadgeClearSequence {
+        rememberBadgeClear(sequence, userID: userID)
+        pendingBadgeClearSequence = nil
+        defaults.removeObject(forKey: "ios-pending-badge-clear-sequence")
+      } else if isForeground {
+        rememberBadgeClear(nextBadgeClearSequence(), userID: userID)
+        badgeNeedsClear = true
+      }
+    }
+  }
+
+  func refreshNotificationState(userID: String?) async {
+    updateNotificationAccount(userID.map(NotificationAccount.user) ?? .signedOut)
     requestNotificationStateRefresh()
     await notificationStateTask?.value
   }
 
   /// One service-owned worker serializes OS updates and coalesces read/realtime invalidations.
   func requestNotificationStateRefresh() {
-    guard notificationAccount != .unresolved else { return }
+    guard notificationAccount != .unresolved || badgeNeedsClear else { return }
     notificationStateRevision = UUID()
     guard notificationStateTask == nil else { return }
     notificationStateTask = Task { [weak self] in
@@ -339,9 +389,14 @@ final class NotificationService {
       !Task.isCancelled && notificationStateRevision == revision
         && notificationAccount == account && self.generation == generation
     }
-    let delivered = await system.deliveredNotifications()
-    guard ownsRequest() else { return }
     do {
+      if badgeNeedsClear {
+        try await system.setBadgeCount(0)
+        guard ownsRequest() else { return }
+        badgeNeedsClear = false
+      }
+      let delivered = await system.deliveredNotifications()
+      guard ownsRequest() else { return }
       switch account {
       case .unresolved:
         return
@@ -357,6 +412,7 @@ final class NotificationService {
           let batch = Array(current.dropFirst(offset).prefix(500))
           let request = NotificationStateRequest(
             installationId: installationID, registrationRevision: binding?.revision,
+            badgeClearSequence: binding == nil ? nil : badgeClearSequence,
             notifications: batch.map {
               NotificationStateRequest.Receipt(
                 identifier: $0.identifier, threadId: $0.destination.threadId,
@@ -374,10 +430,12 @@ final class NotificationService {
           guard ownsRequest() else { return }
           let submitted = Set(batch.map(\.identifier))
           guard response.unreadCount >= 0,
+            response.badgeCount.map({ $0 >= 0 }) ?? true,
             Set(response.removeIdentifiers).isSubset(of: submitted)
           else { throw APIClientError.incompatibleData }
           system.removeDeliveredNotifications(identifiers: response.removeIdentifiers)
-          try await system.setBadgeCount(response.unreadCount)
+          // Older APIs expose chat unread counts, which must not restore an acknowledged badge.
+          try await system.setBadgeCount(response.badgeCount ?? 0)
           guard ownsRequest() else { return }
         }
       }

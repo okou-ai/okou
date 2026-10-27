@@ -149,38 +149,42 @@ export const sendUserPushNotifications$ = command(
       signal,
     );
 
-    const unreadCount = !nativeSubscriptions.some((subscription) => {
-      return subscription.notificationStateRevision === subscription.revision;
-    })
-      ? 0
-      : await get(db$).$count(
-          chatThreads,
-          unreadIosNotificationThreadCondition(args.userId),
-        );
+    const unreadCounts = await Promise.all(
+      nativeSubscriptions.map((subscription) => {
+        return subscription.notificationStateRevision !== subscription.revision
+          ? Promise.resolve(undefined)
+          : get(db$).$count(
+              chatThreads,
+              unreadIosNotificationThreadCondition(
+                args.userId,
+                subscription.badgeClearedRevision === subscription.revision
+                  ? subscription.badgeClearedAt
+                  : null,
+              ),
+            );
+      }),
+    );
     signal.throwIfAborted();
     await Promise.all([
-      ...nativeSubscriptions
-        .filter((subscription) => {
-          return (
-            !foreground ||
-            subscription.notificationStateRevision === subscription.revision
-          );
-        })
-        .map((subscription) => {
-          const supportsState =
-            subscription.notificationStateRevision === subscription.revision;
-          const native: NativePushDelivery = foreground
-            ? {
-                orgId: args.orgId,
-                notificationId: `badge:${args.userId}`,
-                payload: JSON.stringify({ aps: { badge: unreadCount } }),
-              }
-            : nativeRunNotification(
-                args,
-                supportsState ? unreadCount : undefined,
-              );
-          return set(sendNativeRegistration$, native, subscription, signal);
-        }),
+      ...nativeSubscriptions.flatMap((subscription, index) => {
+        const supportsState =
+          subscription.notificationStateRevision === subscription.revision;
+        if (foreground && !supportsState) {
+          return [];
+        }
+        const unreadCount = unreadCounts[index];
+        const native: NativePushDelivery = foreground
+          ? {
+              orgId: args.orgId,
+              notificationId: `badge:${args.userId}`,
+              payload: JSON.stringify({ aps: { badge: unreadCount } }),
+            }
+          : nativeRunNotification(
+              args,
+              supportsState ? unreadCount : undefined,
+            );
+        return [set(sendNativeRegistration$, native, subscription, signal)];
+      }),
       ...(!foreground && publicKey && privateKey
         ? subscriptions.map((subscription) => {
             return set(
@@ -225,17 +229,22 @@ export const synchronizeUserPushBadge$ = command(
     if (subscriptions.length === 0) {
       return;
     }
-    const unreadCount = await get(db$).$count(
-      chatThreads,
-      unreadIosNotificationThreadCondition(userId),
-    );
-    signal.throwIfAborted();
-    const badge: NativePushDelivery = {
-      notificationId: `badge:${userId}`,
-      payload: JSON.stringify({ aps: { badge: unreadCount } }),
-    };
     await Promise.all(
-      subscriptions.map((subscription) => {
+      subscriptions.map(async (subscription) => {
+        const unreadCount = await get(db$).$count(
+          chatThreads,
+          unreadIosNotificationThreadCondition(
+            userId,
+            subscription.badgeClearedRevision === subscription.revision
+              ? subscription.badgeClearedAt
+              : null,
+          ),
+        );
+        signal.throwIfAborted();
+        const badge: NativePushDelivery = {
+          notificationId: `badge:${userId}`,
+          payload: JSON.stringify({ aps: { badge: unreadCount } }),
+        };
         return set(sendNativeRegistration$, badge, subscription, signal);
       }),
     );
@@ -263,7 +272,11 @@ const sendNativeRegistration$ = command(
     }
     // Re-read the generation after the external session check. Never send a replaced binding.
     const [current] = await get(db$)
-      .select({ revision: iosPushRegistrations.revision })
+      .select({
+        revision: iosPushRegistrations.revision,
+        badgeClearedAt: iosPushRegistrations.badgeClearedAt,
+        badgeClearedRevision: iosPushRegistrations.badgeClearedRevision,
+      })
       .from(iosPushRegistrations)
       .where(
         and(
@@ -273,7 +286,12 @@ const sendNativeRegistration$ = command(
         ),
       );
     signal.throwIfAborted();
-    if (!current) {
+    if (
+      !current ||
+      current.badgeClearedRevision !== subscription.badgeClearedRevision ||
+      current.badgeClearedAt?.getTime() !==
+        subscription.badgeClearedAt?.getTime()
+    ) {
       return;
     }
     const started = performance.now();

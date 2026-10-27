@@ -1,16 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { iosNotificationsContract } from "@okouai/api-contracts/contracts/ios-notifications";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { iosNotificationsRoutes } from "../ios-notifications";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { authenticateIosSession } from "./helpers/ios-push";
+import {
+  authenticateIosSession,
+  reconcileIosNotifications,
+  registerIosPush,
+} from "./helpers/ios-push";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
@@ -70,6 +75,123 @@ function reconcile(
 }
 
 describe("iOS notification read-state reconciliation", () => {
+  it("acknowledges only this installation's badge while preserving unread chats across workspaces", async () => {
+    prepareRuntime();
+    const actor = bdd.user();
+    const identity = { ...actor, orgId: actor.orgId! };
+    const startedAt = now();
+    mockNow(startedAt);
+    onTestFinished(clearMockNow);
+    const old = await unreadConversation(actor);
+    const otherWorkspace = bdd.user({ userId: actor.userId });
+    await unreadConversation(otherWorkspace);
+    let phone = await registerIosPush(context, identity);
+    const tablet = await registerIosPush(context, identity);
+
+    mockNow(startedAt + 1000);
+    const opened = { badgeClearSequence: 1 };
+    expect(
+      (await reconcileIosNotifications(context, identity, phone, opened)).body,
+    ).toMatchObject({ unreadCount: 2, badgeCount: 0 });
+    await expect(chat.listUnreadChatThreadIds(actor)).resolves.toContain(
+      old.threadId,
+    );
+
+    mockNow(startedAt + 2000);
+    const fresh = await unreadConversation(actor);
+    expect(
+      (await reconcileIosNotifications(context, identity, phone, opened)).body,
+    ).toMatchObject({ unreadCount: 3, badgeCount: 1 });
+    expect(
+      (await reconcileIosNotifications(context, identity, tablet)).body,
+    ).toStrictEqual({ unreadCount: 3, removeIdentifiers: [] });
+
+    // A background process can re-register without another foreground visit.
+    mockNow(startedAt + 3000);
+    phone = await registerIosPush(context, identity, {
+      ...phone,
+      revision: phone.revision + 1,
+    });
+    expect(
+      (await reconcileIosNotifications(context, identity, phone, opened)).body,
+    ).toMatchObject({ unreadCount: 3, badgeCount: 1 });
+
+    await chat.markThreadRead(actor, fresh.threadId);
+    await chat.markThreadUnread(actor, old.threadId);
+    expect(
+      (await reconcileIosNotifications(context, identity, phone, opened)).body,
+    ).toMatchObject({ unreadCount: 2, badgeCount: 0 });
+  });
+
+  it("never lets a delayed foreground acknowledgement move the badge cursor backwards", async () => {
+    prepareRuntime();
+    const actor = bdd.user();
+    const identity = { ...actor, orgId: actor.orgId! };
+    const startedAt = now();
+    mockNow(startedAt);
+    onTestFinished(clearMockNow);
+    await unreadConversation(actor);
+    const phone = await registerIosPush(context, identity);
+    mockNow(startedAt + 1000);
+    const earlier = { badgeClearSequence: 1 };
+    await reconcileIosNotifications(context, identity, phone, earlier);
+    mockNow(startedAt + 2000);
+    await unreadConversation(actor);
+    mockNow(startedAt + 3000);
+    await reconcileIosNotifications(context, identity, phone, {
+      badgeClearSequence: 2,
+    });
+    expect(
+      (await reconcileIosNotifications(context, identity, phone, earlier)).body,
+    ).toMatchObject({ unreadCount: 2, badgeCount: 0 });
+  });
+
+  it("binds badge acknowledgement to the exact installation revision and signed-in account", async () => {
+    prepareRuntime();
+    const previous = bdd.user();
+    const current = bdd.user();
+    const previousIdentity = { ...previous, orgId: previous.orgId! };
+    const currentIdentity = { ...current, orgId: current.orgId! };
+    const startedAt = now();
+    mockNow(startedAt);
+    onTestFinished(clearMockNow);
+    const oldBinding = await registerIosPush(context, previousIdentity);
+    mockNow(startedAt + 1000);
+    const cursor = { badgeClearSequence: 1 };
+    await reconcileIosNotifications(
+      context,
+      previousIdentity,
+      oldBinding,
+      cursor,
+    );
+    const currentBinding = await registerIosPush(context, currentIdentity, {
+      ...oldBinding,
+      revision: oldBinding.revision + 1,
+    });
+    await reconcileIosNotifications(
+      context,
+      currentIdentity,
+      currentBinding,
+      cursor,
+    );
+    mockNow(startedAt + 2000);
+    await unreadConversation(current);
+    mockNow(startedAt + 3000);
+    await reconcileIosNotifications(context, previousIdentity, oldBinding, {
+      badgeClearSequence: 2,
+    });
+    expect(
+      (
+        await reconcileIosNotifications(
+          context,
+          currentIdentity,
+          currentBinding,
+          cursor,
+        )
+      ).body,
+    ).toMatchObject({ unreadCount: 1, badgeCount: 1 });
+  });
+
   it("counts owned unread conversations across workspaces and clears only read or unavailable receipts", async () => {
     prepareRuntime();
     const actor = bdd.user();
