@@ -56,6 +56,7 @@ declare -A EXPECTED_ENV=(
   [LANG]="C.UTF-8"
   [NPM_CONFIG_UPDATE_NOTIFIER]="false"
   [NODE_EXTRA_CA_CERTS]="/usr/local/share/ca-certificates/vm0-proxy-ca.crt"
+  [AGENT_BROWSER_USE_SYSTEM_CA]="1"
   [SSL_CERT_FILE]="/etc/ssl/certs/ca-certificates.crt"
   [REQUESTS_CA_BUNDLE]="/etc/ssl/certs/ca-certificates.crt"
   [CARGO_HTTP_CAINFO]="/etc/ssl/certs/ca-certificates.crt"

@@ -40,6 +40,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         );
         std::env::set_var("OKOU_TEST_ALLOW_UNMANAGED_PROCESS_CONTROL", "true");
         std::env::set_var("NODE_EXTRA_CA_CERTS", "/rootfs/vm0-proxy-ca.crt");
+        std::env::set_var("AGENT_BROWSER_USE_SYSTEM_CA", "1");
         std::env::set_var("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt");
         std::env::set_var("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt");
         std::env::set_var("CARGO_HTTP_CAINFO", "/etc/ssl/certs/ca-certificates.crt");
@@ -200,6 +201,12 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
     assert_eq!(
         cli_env.get("NODE_EXTRA_CA_CERTS").map(String::as_str),
         Some("/tmp/user-ca.pem")
+    );
+    assert_eq!(
+        cli_env
+            .get("AGENT_BROWSER_USE_SYSTEM_CA")
+            .map(String::as_str),
+        Some("1")
     );
     assert_eq!(
         cli_env.get("SSL_CERT_FILE").map(String::as_str),
