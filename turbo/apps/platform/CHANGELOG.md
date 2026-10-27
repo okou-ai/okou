@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1068.2](https://github.com/okou-ai/okou/compare/app-v0.1068.1...app-v0.1068.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* emphasize onboarding subscription connection buttons ([#43304](https://github.com/okou-ai/okou/issues/43304)) ([e704cbc](https://github.com/okou-ai/okou/commit/e704cbc218b9d2b9924f35a2300b1305a22af0a2))
+
 ## [0.1068.1](https://github.com/okou-ai/okou/compare/app-v0.1068.0...app-v0.1068.1) (2026-10-27)
 
 

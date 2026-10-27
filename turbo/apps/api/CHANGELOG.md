@@ -9,6 +9,18 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.14.2](https://github.com/okou-ai/okou/compare/api-v2.14.1...api-v2.14.2) (2026-10-27)
+
+
+### Refactoring
+
+* **api:** publish manual connector grants atomically ([#43348](https://github.com/okou-ai/okou/issues/43348)) ([8ca4477](https://github.com/okou-ai/okou/commit/8ca447774340526a7ed93fc7b6c5946a979cfa30))
+
+
+### Performance Improvements
+
+* **api:** split WeChat owner file delivery from native history ([#43354](https://github.com/okou-ai/okou/issues/43354)) ([ae2d02b](https://github.com/okou-ai/okou/commit/ae2d02bdbfd472e4ab3b9060b687d304be3107a1))
+
 ## [2.14.1](https://github.com/okou-ai/okou/compare/api-v2.14.0...api-v2.14.1) (2026-10-27)
 
 
