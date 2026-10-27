@@ -613,7 +613,6 @@ final class ConversationStore {
     guard !closed, !needsUpgrade, !Task.isCancelled, hasEarlierMessages, expansionTask == nil else {
       return
     }
-    print("A02_PROBE_ENTRY:\(webURL.absoluteString)")
     isLoadingEarlier = true
     let task = Task { [weak self] in
       guard let self else { return }
@@ -625,10 +624,8 @@ final class ConversationStore {
       // Warm only the landing rows immediately above the current boundary, not the entire page.
       await messageMarkdown.prepareLatest(
         Array(items.prefix(renderWindow.range.lowerBound).compactMap(\.message).suffix(4)))
-      print("A02_PROBE_PREPARE_RETURN:\(webURL.absoluteString)")
-      guard !needsUpgrade else { return }
+      guard !closed, !needsUpgrade, !Task.isCancelled else { return }
       // Refresh/send may have changed the projection while preparation was suspended.
-      print("A02_PROBE_PUBLISH:\(webURL.absoluteString)")
       renderWindow.expand()
       publishWindow()
     }
