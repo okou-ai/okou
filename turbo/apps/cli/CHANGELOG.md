@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.4.0](https://github.com/okou-ai/okou/compare/cli-v10.3.9...cli-v10.4.0) (2026-10-27)
+
+
+### Features
+
+* add custom directions to homepage suggestions ([#43407](https://github.com/okou-ai/okou/issues/43407)) ([062b543](https://github.com/okou-ai/okou/commit/062b54351f76fc65f05a02b7ff74d102e3874a6f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.11.0
+    * @okouai/core bumped to 8.793.3
+    * @okouai/pi-agent-runtime bumped to 1.51.4
+
 ## [10.3.9](https://github.com/okou-ai/okou/compare/cli-v10.3.8...cli-v10.3.9) (2026-10-27)
 
 

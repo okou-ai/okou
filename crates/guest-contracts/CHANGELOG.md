@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.8...guest-contracts-v0.28.0) (2026-10-27)
+
+
+### Features
+
+* distribute custom workflows at claim time ([#43216](https://github.com/okou-ai/okou/issues/43216)) ([99d4e93](https://github.com/okou-ai/okou/commit/99d4e9344183b0268dae810d555c39f8573eccb1))
+
 ## [0.27.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.27.7...guest-contracts-v0.27.8) (2026-10-27)
 
 

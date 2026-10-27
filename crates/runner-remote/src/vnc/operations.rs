@@ -179,14 +179,19 @@ impl Run {
                         let operation = session_scope(&scope, &session);
                         let mut operation_report = None;
                         let result = async {
-                            let _engine = lock(
+                            let engine = lock(
                                 &session,
                                 &operation,
                                 crate::diagnostics::Operation::Session,
                                 started,
                                 &mut operation_report,
-                            )
-                            .await?;
+                            );
+                            #[cfg(test)]
+                            let engine = self
+                                .runtime
+                                .list_observer
+                                .locking(session.info.session_id, engine);
+                            let _engine = engine.await?;
                             self.authorize(&session, &operation)
                         }
                         .await;
@@ -203,7 +208,11 @@ impl Run {
                             return Err(error);
                         }
                         match result {
-                            Ok(()) => admitted.push(Arc::clone(&session)),
+                            Ok(()) => {
+                                admitted.push(Arc::clone(&session));
+                                #[cfg(test)]
+                                self.runtime.list_observer.admitted(session.info.session_id);
+                            }
                             // A revoked or expired member cannot hide siblings.
                             Err(Failure::Cancelled | Failure::Disconnected | Failure::TimedOut)
                                 if session.cancel.is_cancelled() => {}

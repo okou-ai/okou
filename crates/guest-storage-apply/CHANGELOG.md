@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.11...guest-storage-apply-v0.27.0) (2026-10-27)
+
+
+### Features
+
+* distribute custom workflows at claim time ([#43216](https://github.com/okou-ai/okou/issues/43216)) ([99d4e93](https://github.com/okou-ai/okou/commit/99d4e9344183b0268dae810d555c39f8573eccb1))
+
 ## [0.26.11](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.10...guest-storage-apply-v0.26.11) (2026-10-27)
 
 ## [0.26.10](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.26.9...guest-storage-apply-v0.26.10) (2026-10-26)

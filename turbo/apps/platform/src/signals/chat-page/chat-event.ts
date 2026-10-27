@@ -1,3 +1,4 @@
+import type { SuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { Root } from "hast";
 import { command } from "ccstate";
 import { detachedNavigateTo$ } from "../route.ts";
@@ -112,6 +113,7 @@ export type UserMessageRenderPart =
     }
   | {
       readonly type: "feedback";
+      readonly suggestionContext?: SuggestionContext;
       readonly part: UserMessagePartOfType<"feedback">;
       readonly note: readonly UserMessageFeedbackNoteRenderPart[];
     }

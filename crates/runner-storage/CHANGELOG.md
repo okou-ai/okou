@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.17...runner-storage-v0.7.0) (2026-10-27)
+
+
+### Features
+
+* distribute custom workflows at claim time ([#43216](https://github.com/okou-ai/okou/issues/43216)) ([99d4e93](https://github.com/okou-ai/okou/commit/99d4e9344183b0268dae810d555c39f8573eccb1))
+
 ## [0.6.17](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.16...runner-storage-v0.6.17) (2026-10-27)
 
 ## [0.6.16](https://github.com/okou-ai/okou/compare/runner-storage-v0.6.15...runner-storage-v0.6.16) (2026-10-26)

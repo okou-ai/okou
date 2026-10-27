@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1069.0](https://github.com/okou-ai/okou/compare/app-v0.1068.3...app-v0.1069.0) (2026-10-27)
+
+
+### Features
+
+* add custom directions to homepage suggestions ([#43407](https://github.com/okou-ai/okou/issues/43407)) ([062b543](https://github.com/okou-ai/okou/commit/062b54351f76fc65f05a02b7ff74d102e3874a6f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.11.0
+    * @okouai/core bumped to 8.793.3
+
 ## [0.1068.3](https://github.com/okou-ai/okou/compare/app-v0.1068.2...app-v0.1068.3) (2026-10-27)
 
 

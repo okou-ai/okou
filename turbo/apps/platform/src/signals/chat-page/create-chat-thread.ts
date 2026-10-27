@@ -1,3 +1,4 @@
+import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   isAutoSelectedModel,
   sameSelectedModel,
@@ -1138,10 +1139,17 @@ const registerUserMessageRenderDocument$ = command(
   ): UserMessageRenderDocument => {
     return {
       document,
-      parts: document.parts.flatMap((part) => {
-        return part.type === "additional_info"
-          ? []
-          : [set(registerUserMessageRenderPart$, part, registries)];
+      parts: document.parts.flatMap((part, index) => {
+        if (part.type === "additional_info") {
+          return [];
+        }
+        const rendered = set(registerUserMessageRenderPart$, part, registries);
+        const context = readSuggestionContext(document.parts[index - 1]);
+        return [
+          rendered.type === "feedback" && context
+            ? { ...rendered, suggestionContext: context }
+            : rendered,
+        ];
       }),
     };
   },

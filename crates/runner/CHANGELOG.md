@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.17...runner-rs-v0.237.18) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** bound platform test-endpoint bypass header acquisition ([#43403](https://github.com/okou-ai/okou/issues/43403)) ([569a66c](https://github.com/okou-ai/okou/commit/569a66cc817b842e1a68b933ee20879c7d2193eb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.16...runner-rs-v0.237.17) (2026-10-27)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/okou-ai/okou/compare/ios-v0.20.6...ios-v0.21.0) (2026-10-27)
+
+
+### Features
+
+* **ios:** prefetch notification content through a service extension ([#43364](https://github.com/okou-ai/okou/issues/43364)) ([28aeca6](https://github.com/okou-ai/okou/commit/28aeca6140c499cc17746d4d15c29eb69c478382))
+
 ## [0.20.6](https://github.com/okou-ai/okou/compare/ios-v0.20.5...ios-v0.20.6) (2026-10-27)
 
 

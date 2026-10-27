@@ -50,6 +50,7 @@ function jsonError(
 interface CreateOptions {
   readonly file?: string;
   readonly text?: string;
+  readonly background?: string;
   readonly id?: string;
   readonly title?: string;
   readonly rationale?: string;
@@ -125,9 +126,13 @@ export function createSuggestionCommand() {
     )
     .option(
       "--file <path>",
-      "JSON containing id, title, rationale, priority and one to three action options with composer drafts",
+      "JSON containing id, title, rationale, priority, action options and a complete neutral customOption draft",
     )
     .option("--text <text>", "Text converted to the normal composer document")
+    .option(
+      "--background <text>",
+      "Complete neutral background for custom follow-up; required with --text",
+    )
     .option(
       "--id <uuid>",
       "Stable creation identity for text input and retries",
@@ -146,6 +151,7 @@ export function createSuggestionCommand() {
           options.file &&
           [
             options.text,
+            options.background,
             options.id,
             options.title,
             options.rationale,
@@ -158,7 +164,11 @@ export function createSuggestionCommand() {
           throw new Error("Use --file or text input fields, not both.");
         if (!options.file && options.text === undefined)
           throw new Error(
-            "Provide --file suggestion.json or --text with --id and --title.",
+            "Provide --file suggestion.json or --text with --id, --title and --background.",
+          );
+        if (!options.file && !options.background?.trim())
+          throw new Error(
+            "Provide --background with the complete neutral context, or use --file suggestion.json.",
           );
         const body = suggestionCreateSchema.parse(
           options.file
@@ -168,6 +178,23 @@ export function createSuggestionCommand() {
                 title: options.title,
                 rationale: options.rationale ?? "",
                 priority: Number(options.priority ?? "0"),
+                customOption: {
+                  id: "custom",
+                  threadId: null,
+                  draft: {
+                    draftUserMessage: {
+                      version: 1,
+                      parts: [
+                        {
+                          type: "feedback",
+                          quote: options.background,
+                          note: [],
+                        },
+                      ],
+                    },
+                    draftAttachments: null,
+                  },
+                },
                 options: [
                   {
                     id: "default",

@@ -1555,6 +1555,10 @@
       "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
+      "customDirection": "직접 방향 정하기",
+      "customDirectionDescription": "전체 배경을 바탕으로 추가 질문이나 요청 입력",
+      "customPrepared": "입력창에 추가됨",
+      "customPreparedDescription": "위에 요청을 입력하고 보내면 새 채팅이 시작됩니다",
       "dismiss": "무시",
       "label": "제안",
       "next": "다음 제안",
