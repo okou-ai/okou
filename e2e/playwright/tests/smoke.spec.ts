@@ -9,7 +9,7 @@ import {
 import { completePromptOnboarding } from "../lib/onboarding";
 import { deriveAppUrl } from "../playwright.config";
 
-test("send a message and receive the assistant reply", async ({ page }) => {
+test("receive a reply and compose with an IME", async ({ page }) => {
   test.setTimeout(240_000);
 
   const email = generateTestEmail("playwright");
@@ -33,4 +33,37 @@ test("send a message and receive the assistant reply", async ({ page }) => {
   await expect(
     page.locator('[data-role="assistant"] [data-chat-selection-source]').last(),
   ).toHaveText(/^\s*3\s*$/, { timeout: 90_000 });
+
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  await composer.click();
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    // Use Chromium's native composition range: synthetic composition events
+    // cannot detect an editor update that cancels an in-progress IME session.
+    for (const text of ["s", "sh", "sha", "shai", "sha", "sh"]) {
+      await cdp.send("Input.imeSetComposition", {
+        text,
+        selectionStart: text.length,
+        selectionEnd: text.length,
+      });
+      // Let the editor's DOM observer and rendering settle between IME edits.
+      await page.evaluate(() => {
+        return new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              resolve();
+            });
+          });
+        });
+      });
+      await expect(composer).toHaveText(text);
+    }
+    await cdp.send("Input.insertText", { text: "啥" });
+    await expect(composer).toHaveText("啥");
+    await expect(composer).toBeFocused();
+    await page.keyboard.press("Backspace");
+    await expect(composer).toHaveText("");
+  } finally {
+    await cdp.detach();
+  }
 });
