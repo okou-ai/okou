@@ -924,18 +924,25 @@ async fn wait_process_lifecycle_gate_clear_only_affects_future_waits() {
         .await
         .unwrap();
 
-    let first_wait = tokio::spawn(async move {
-        first_sandbox
-            .wait_process(first_handle, Duration::from_secs(5))
-            .await
-    });
+    let first_wait = first_sandbox.wait_process(first_handle, Duration::from_secs(5));
+    tokio::pin!(first_wait);
+    std::future::poll_fn(|cx| {
+        assert!(std::future::Future::poll(first_wait.as_mut(), cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
     assert_eq!(gate.wait_entered(1, test_timeout()).await.unwrap(), 1);
 
     overrides.clear_wait_process_lifecycle_gate();
-    assert!(
-        !first_wait.is_finished(),
-        "clearing the gate must not release an already-entered wait_process",
-    );
+    // Poll the wait itself: a spawned task can be runnable but not yet finished.
+    std::future::poll_fn(|cx| {
+        assert!(
+            std::future::Future::poll(first_wait.as_mut(), cx).is_pending(),
+            "clearing the gate must not release an already-entered wait_process",
+        );
+        std::task::Poll::Ready(())
+    })
+    .await;
 
     let second_sandbox = MockSandbox::with_overrides("second", overrides);
     let second_handle = second_sandbox
@@ -963,7 +970,7 @@ async fn wait_process_lifecycle_gate_clear_only_affects_future_waits() {
     );
 
     gate.release_one();
-    let first_result = first_wait.await.unwrap().unwrap();
+    let first_result = first_wait.await.unwrap();
     assert_eq!(
         first_result.termination,
         ExecTermination::Exited { exit_code: 0 }
