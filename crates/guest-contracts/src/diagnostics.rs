@@ -771,6 +771,8 @@ pub enum FailureReason {
     CodexAccessProgramUnavailable,
     /// The selected model is unsupported for the authenticated provider account.
     UnsupportedModel,
+    /// The provider's model policy excluded every candidate endpoint.
+    ProviderModelRestricted,
     /// The provider reported a usage limit.
     UsageLimit,
 }
@@ -801,6 +803,7 @@ impl FailureReason {
             Self::ReconnectRequired => "reconnect_required",
             Self::CodexAccessProgramUnavailable => "codex_access_program_unavailable",
             Self::UnsupportedModel => "unsupported_model",
+            Self::ProviderModelRestricted => "provider_model_restricted",
             Self::UsageLimit => "usage_limit",
         }
     }
@@ -832,6 +835,7 @@ impl From<FailureReason>
             FailureReason::ReconnectRequired => Self::ReconnectRequired,
             FailureReason::CodexAccessProgramUnavailable => Self::CodexAccessProgramUnavailable,
             FailureReason::UnsupportedModel => Self::UnsupportedModel,
+            FailureReason::ProviderModelRestricted => Self::ProviderModelRestricted,
             FailureReason::UsageLimit => Self::UsageLimit,
         }
     }
@@ -1583,6 +1587,10 @@ mod tests {
                 "codex_access_program_unavailable",
             ),
             (FailureReason::UnsupportedModel, "unsupported_model"),
+            (
+                FailureReason::ProviderModelRestricted,
+                "provider_model_restricted",
+            ),
             (FailureReason::UsageLimit, "usage_limit"),
         ] {
             let public_reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =

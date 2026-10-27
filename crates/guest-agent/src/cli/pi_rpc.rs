@@ -1283,20 +1283,33 @@ mod tests {
 
     #[test]
     fn model_request_diagnostic_projects_chat_completions_messages() {
-        let message = json!({
-            "role": "assistant", "api": "openai-completions", "stopReason": "error",
-            "errorMessage": "private provider detail",
-            "diagnostics": [{"type": "okou_model_request", "details": {
-                "httpStatus": 503, "transportAttempts": 2, "failureReason": "provider_server_error"
-            }}]
-        });
-        let request = model_request_diagnostic(&message).expect("Chat Completions diagnostic");
-        assert_eq!(request.http_status, Some(503));
-        assert_eq!(request.transport_attempts, 2);
-        assert_eq!(
-            PiAssistantTerminal::from_message(&message).failure_reason,
-            Some(guest_contracts::diagnostics::FailureReason::ProviderServerError)
-        );
+        for (status, attempts, reason) in [
+            (
+                503,
+                2,
+                guest_contracts::diagnostics::FailureReason::ProviderServerError,
+            ),
+            (
+                404,
+                1,
+                guest_contracts::diagnostics::FailureReason::ProviderModelRestricted,
+            ),
+        ] {
+            let message = json!({
+                "role": "assistant", "api": "openai-completions", "stopReason": "error",
+                "errorMessage": "private provider detail",
+                "diagnostics": [{"type": "okou_model_request", "details": {
+                    "httpStatus": status, "transportAttempts": attempts, "failureReason": reason.as_str()
+                }}]
+            });
+            let request = model_request_diagnostic(&message).expect("Chat Completions diagnostic");
+            assert_eq!(request.http_status, Some(status));
+            assert_eq!(request.transport_attempts, attempts);
+            assert_eq!(
+                PiAssistantTerminal::from_message(&message).failure_reason,
+                Some(reason)
+            );
+        }
     }
 
     #[test]

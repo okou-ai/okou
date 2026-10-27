@@ -422,7 +422,10 @@ fn classify_cli_failure_reason(
     };
     // A diagnosed refusal outranks native credential keywords in its opaque link.
     // The provider classifier still gives structured credential codes priority.
-    if provider_reason == Some(FailureReason::SafetyPolicyRefusal) {
+    if matches!(
+        provider_reason,
+        Some(FailureReason::SafetyPolicyRefusal | FailureReason::ProviderModelRestricted)
+    ) {
         return provider_reason;
     }
     if matches!(framework, AgentFramework::Codex)

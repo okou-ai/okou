@@ -265,6 +265,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   safety_policy_refusal: "safety-policy-refusal",
   reconnect_required: "provider-settings",
   unsupported_model: "model-unavailable",
+  provider_model_restricted: "model-unavailable",
   usage_limit: "usage-limit",
 } satisfies Record<KnownRunFailureReason, AssistantErrorRecoveryKind | null>);
 

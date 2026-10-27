@@ -52,6 +52,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
             "This content was flagged for possible biological risk. If this seems wrong, try rephrasing your request. We are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: https://example.invalid/policy",
             "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
             r#"{"error":{"code":"rate_limit_exceeded"}}"#,
+            r#"404: {"code":404,"metadata":{"input_endpoint_count":5,"ineligibility_reasons":[{"reason":"model-ignored-by-guardrail","endpoint_count":5}]}}"#,
             "API Error: 503 Service unavailable",
             cyber_refusal["errorMessage"].as_str().unwrap(),
         ] {

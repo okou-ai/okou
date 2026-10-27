@@ -197,6 +197,7 @@ function failedRunEvents(
 
 interface StructuredFailureExpectation {
   readonly title: string;
+  readonly description?: string;
   readonly action?: string;
 }
 
@@ -272,6 +273,10 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
   unsupported_model: {
     title: "Selected model isn't available",
   },
+  provider_model_restricted: {
+    title: "Selected model isn't available",
+    description: "The current model is unavailable.",
+  },
   usage_limit: {
     title: "Codex limit reached",
   },
@@ -297,11 +302,13 @@ test.each(STRUCTURED_FAILURE_CASES)(
       });
     }
     const providerMessage = `Raw provider diagnostic for ${failureReason}`;
+    const selectedModel =
+      failureReason === "provider_model_restricted" ? "auto" : "gpt-5.6-sol";
     installRunChat({
-      selectedModel: "gpt-5.6-sol",
+      selectedModel,
       chatEvents: failedRunEvents(
         providerMessage,
-        "gpt-5.6-sol",
+        selectedModel,
         failureReason,
       ),
     });
@@ -313,7 +320,7 @@ test.each(STRUCTURED_FAILURE_CASES)(
     });
     const card = screen.getByTestId("assistant-error-card-shell");
 
-    expect(card).toHaveTextContent(expected.title);
+    expect(card).toHaveTextContent(expected.description ?? expected.title);
     expect(card).not.toHaveTextContent(providerMessage);
     const actionLabels = [
       ...queryAllByRoleFast("button", card).filter((control) => {

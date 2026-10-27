@@ -1,0 +1,15 @@
+{
+  "error": {
+    "message": "0 endpoints out of 5 requested are available matching your guardrail restrictions and data policy. Model blocked by guardrail: 5 endpoints excluded; https://example.invalid/private-configuration",
+    "code": 404,
+    "metadata": {
+      "input_endpoint_count": 5,
+      "ineligibility_reasons": [
+        {
+          "reason": "model-ignored-by-guardrail",
+          "endpoint_count": 5
+        }
+      ]
+    }
+  }
+}

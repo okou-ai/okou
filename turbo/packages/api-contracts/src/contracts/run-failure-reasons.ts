@@ -31,6 +31,7 @@ export const knownRunFailureReasonSchema = zEnum([
   "reconnect_required",
   "codex_access_program_unavailable",
   "unsupported_model",
+  "provider_model_restricted",
   "usage_limit",
 ]);
 

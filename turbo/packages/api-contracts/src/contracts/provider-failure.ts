@@ -256,6 +256,7 @@ function providerErrorReason(
   const code = typeof error.code === "string" ? error.code : error.type;
   const reason = classifyProviderFailureCode(code);
   if (reason) return reason;
+  if (isProviderModelRestriction(error)) return "provider_model_restricted";
   if (
     code === "invalid_request_error" &&
     typeof error.message === "string" &&
@@ -271,4 +272,24 @@ function providerErrorReason(
     return "safety_policy_refusal";
   }
   return undefined;
+}
+
+function isProviderModelRestriction(error: Record<string, unknown>): boolean {
+  const metadata = object(error.metadata);
+  const inputCount = metadata?.input_endpoint_count;
+  const reasons = metadata?.ineligibility_reasons;
+  return (
+    error.code === 404 &&
+    typeof inputCount === "number" &&
+    Number.isInteger(inputCount) &&
+    inputCount > 0 &&
+    Array.isArray(reasons) &&
+    reasons.some((item: unknown) => {
+      const reason = object(item);
+      return (
+        reason?.reason === "model-ignored-by-guardrail" &&
+        reason.endpoint_count === inputCount
+      );
+    })
+  );
 }

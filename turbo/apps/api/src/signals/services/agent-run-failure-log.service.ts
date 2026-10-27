@@ -61,6 +61,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   guest_root_filesystem_full: "retain",
   guest_home_filesystem_full: "retain",
   unsupported_model: "retain",
+  provider_model_restricted: "retain",
 } satisfies Record<
   KnownRunFailureReason,
   "suppress" | "suppress-caller-owned" | "retain"
@@ -170,8 +171,9 @@ export function logAgentRunFailure(input: LogAgentRunFailureInput): void {
     return;
   }
   if (
-    input.failureReason === "provider_overloaded" &&
-    evidence.modelCredentialOwner === "platform"
+    input.failureReason === "provider_model_restricted" ||
+    (input.failureReason === "provider_overloaded" &&
+      evidence.modelCredentialOwner === "platform")
   ) {
     L.error("Run failed", fields);
     return;
