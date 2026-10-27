@@ -58,6 +58,7 @@ struct ChatActionCard<Information: View, Actions: View>: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @ScaledMetric(relativeTo: .body) private var minimumContentHeight: CGFloat = 120
   @ScaledMetric(relativeTo: .body) private var minimumActionHeight: CGFloat = 44
+  @ScaledMetric(relativeTo: .body) private var horizontalActionWidth: CGFloat = 208
 
   var body: some View {
     Group {
@@ -67,9 +68,10 @@ struct ChatActionCard<Information: View, Actions: View>: View {
         ViewThatFits(in: .horizontal) {
           HStack(spacing: 12) {
             information().frame(maxWidth: .infinity, alignment: .leading)
-            actions()
+            actions().frame(width: horizontalActionWidth)
           }
-          .frame(minWidth: 608, minHeight: 64)
+          // Async labels must not choose a different responsive layout or text-column width.
+          .frame(minWidth: 608, idealWidth: 608, maxWidth: .infinity, minHeight: 64)
           verticalContent
         }
       }
