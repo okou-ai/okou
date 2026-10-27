@@ -59,6 +59,51 @@ function connectedOnboardingSlugs(
   });
 }
 
+function SourcesSkipDialogContent({ onSkip }: { readonly onSkip: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <DialogContent
+      maxWidth="md"
+      closeLabel={t(($) => {
+        return $.connectors.actions.close;
+      })}
+    >
+      <img
+        src={noConnectorImg}
+        alt=""
+        className="mx-auto size-40 object-contain"
+      />
+      <DialogHeader className="space-y-3 sm:text-center">
+        <DialogTitle className="leading-6">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.sources.skipDialog.title;
+          })}
+        </DialogTitle>
+        <DialogDescription className="leading-6">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.sources.skipDialog.description;
+          })}
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter className="flex-col sm:flex-col">
+        <DialogClose render={<Button type="button" />}>
+          {t(($) => {
+            return $.onboarding.sourcesFirst.sources.skipDialog.connect;
+          })}
+        </DialogClose>
+        <DialogClose
+          render={<Button type="button" variant="quiet" />}
+          onClick={onSkip}
+        >
+          {t(($) => {
+            return $.onboarding.sourcesFirst.sources.skipDialog.skip;
+          })}
+        </DialogClose>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
 export function OnboardingSourcesPage() {
   const { t, i18n } = useTranslation();
   const captureConnectStarted = useSet(captureSourceOnboardingConnectStarted$);
@@ -175,45 +220,7 @@ export function OnboardingSourcesPage() {
           onConnected={captureConnected}
         />
       </OnboardingStepLayout>
-      <DialogContent
-        maxWidth="md"
-        closeLabel={t(($) => {
-          return $.connectors.actions.close;
-        })}
-      >
-        <img
-          src={noConnectorImg}
-          alt=""
-          className="mx-auto size-40 object-contain"
-        />
-        <DialogHeader className="space-y-3 sm:text-center">
-          <DialogTitle className="leading-6">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.sources.skipDialog.title;
-            })}
-          </DialogTitle>
-          <DialogDescription className="leading-6">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.sources.skipDialog.description;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="flex-col sm:flex-col">
-          <DialogClose render={<Button type="button" />}>
-            {t(($) => {
-              return $.onboarding.sourcesFirst.sources.skipDialog.connect;
-            })}
-          </DialogClose>
-          <DialogClose
-            render={<Button type="button" variant="quiet" />}
-            onClick={flow.goSkip}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.sources.skipDialog.skip;
-            })}
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
+      <SourcesSkipDialogContent onSkip={flow.goSkip} />
     </Dialog>
   );
 }
