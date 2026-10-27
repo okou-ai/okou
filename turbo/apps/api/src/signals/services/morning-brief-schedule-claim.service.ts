@@ -13,7 +13,10 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { boolean, literal, object } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -23,10 +26,9 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 
 import {
-  inFlightScheduleAdvanceCondition,
-  inFlightScheduleAdvanceSelection,
-  inFlightScheduleAdvanceValues,
-  inFlightScheduleCorrection,
+  MORNING_BRIEF_SETTLEMENT_CLAIM_LOST,
+  morningBriefScheduleSettlementClaimCondition,
+  morningBriefScheduleSettlementPublicationSql,
   type InFlightScheduleAdvance,
 } from "./workflow-schedule-settlement";
 
@@ -278,104 +280,184 @@ type MorningBriefScheduleSettlementOutcome = {
 /** Another settler already settled this occurrence; roll back this transaction. */
 class MorningBriefClaimAlreadySettled extends Error {}
 
-/** Settle the Official occurrence and its successor in one commit. */
+interface PreparedMorningBriefScheduleSettlement {
+  readonly automationRevision: string;
+  readonly claim: typeof morningBriefScheduleClaims.$inferSelect;
+  readonly settledAt: Date;
+  readonly plan: ReturnType<typeof officialMorningBriefSettlementPlan>;
+}
+
+const morningBriefSettlementPublicationRow = object({
+  candidate_present: boolean(),
+  automation_current: boolean(),
+  advanced: boolean(),
+  settled: boolean(),
+  assertion: literal(0),
+}).strict();
+
+function isMorningBriefSettlementClaimLost(error: unknown): boolean {
+  const cause = error instanceof Error ? error.cause : undefined;
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    cause.code === "22P02" &&
+    "message" in cause &&
+    cause.message ===
+      `invalid input syntax for type integer: "${MORNING_BRIEF_SETTLEMENT_CLAIM_LOST}"`
+  );
+}
+
+const prepareMorningBriefSchedulePublication$ = command(
+  async (
+    { set },
+    args: SettleMorningBriefScheduleArgs,
+  ): Promise<PreparedMorningBriefScheduleSettlement | null> => {
+    const db = set(writeDb$);
+    const [observed] = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        revision: sql`${workflowAutomations}.xmin::text`.mapWith(pgTextDecoder),
+      })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, args.automationId))
+      .limit(1);
+    if (!observed) {
+      return null;
+    }
+    const [claim] = await db
+      .select()
+      .from(morningBriefScheduleClaims)
+      .where(settlementClaimCondition(args))
+      .limit(1);
+    if (!claim || claim.settlement !== "unsettled") {
+      return null;
+    }
+    const [current] = await db
+      .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
+      .from(morningBriefScheduleClaims)
+      .where(eq(morningBriefScheduleClaims.automationId, args.automationId))
+      .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+      .limit(1);
+    if (current?.claimSequence !== claim.claimSequence) {
+      return null;
+    }
+    const settledAt = nowDate();
+    return {
+      automationRevision: observed.revision,
+      claim,
+      settledAt,
+      plan: officialMorningBriefSettlementPlan(
+        observed.automation,
+        args,
+        settledAt,
+      ),
+    };
+  },
+);
+
+const publishMorningBriefScheduleSettlement$ = command(
+  async (
+    { set },
+    args: SettleMorningBriefScheduleArgs,
+    prepared: PreparedMorningBriefScheduleSettlement,
+  ): Promise<MorningBriefScheduleSettlementOutcome> => {
+    const db = set(writeDb$);
+    const identity = {
+      automationId: args.automationId,
+      claimId: prepared.claim.id,
+      claimSequence: prepared.claim.claimSequence,
+    };
+    const statement = morningBriefScheduleSettlementPublicationSql({
+      ...identity,
+      automationRevision: prepared.automationRevision,
+      settlement: args.settlement,
+      settledAt: prepared.settledAt,
+      advance: prepared.plan?.advance ?? null,
+    });
+    const executed = await settle(
+      (async () => {
+        return parseRawRows(
+          morningBriefSettlementPublicationRow,
+          await db.execute(statement),
+        );
+      })(),
+    );
+    if (!executed.ok) {
+      if (isMorningBriefSettlementClaimLost(executed.error)) {
+        throw new MorningBriefClaimAlreadySettled();
+      }
+      throw executed.error;
+    }
+    const [receipt] = executed.value;
+    if (
+      executed.value.length !== 1 ||
+      !receipt ||
+      (receipt.advanced && !receipt.settled)
+    ) {
+      throw new Error("Invalid Morning Brief settlement publication receipt");
+    }
+    if (!receipt.candidate_present) {
+      return null;
+    }
+    if (
+      !receipt.automation_current ||
+      (prepared.plan !== null && !receipt.advanced)
+    ) {
+      const [current] = await db
+        .select({ id: morningBriefScheduleClaims.id })
+        .from(morningBriefScheduleClaims)
+        .where(morningBriefScheduleSettlementClaimCondition(identity))
+        .limit(1);
+      if (!current) {
+        return null;
+      }
+      throw new Error("Morning Brief schedule changed while settling; retry");
+    }
+    const outcome =
+      prepared.plan?.shouldDisable && receipt.advanced && receipt.settled
+        ? {
+            orgId: prepared.claim.orgId,
+            userId: prepared.claim.ownerUserId,
+            consecutiveFailures: prepared.plan.consecutiveFailures,
+          }
+        : null;
+    if (outcome) {
+      // Publication already committed; report an actual pause before the caller observes cancellation.
+      log.warn(
+        "Morning Brief paused after consecutive failures; recovery is scheduled",
+        { automationId: args.automationId, ...outcome },
+      );
+    }
+    return outcome;
+  },
+);
+
+/** Settle the Official occurrence and its successor in one atomic publication. */
 const commitMorningBriefScheduleSettlement$ = command(
   async (
     { set },
     args: SettleMorningBriefScheduleArgs,
     signal?: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0189; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const attempted =
-          await (async (): Promise<MorningBriefScheduleSettlementOutcome> => {
-            const [automation] = await tx
-              .select(workflowAutomationColumns())
-              .from(workflowAutomations)
-              .where(eq(workflowAutomations.id, args.automationId))
-              .limit(1);
-            if (!automation) {
-              return null;
-            }
-            const [claim] = await tx
-              .select()
-              .from(morningBriefScheduleClaims)
-              .where(settlementClaimCondition(args))
-              .limit(1);
-            if (!claim || claim.settlement !== "unsettled") {
-              return null;
-            }
-            const [current] = await tx
-              .select({
-                claimSequence: morningBriefScheduleClaims.claimSequence,
-              })
-              .from(morningBriefScheduleClaims)
-              .where(
-                eq(morningBriefScheduleClaims.automationId, args.automationId),
-              )
-              .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-              .limit(1);
-            if (current?.claimSequence !== claim.claimSequence) {
-              return null;
-            }
-            const settledAt = nowDate();
-            const plan = officialMorningBriefSettlementPlan(
-              automation,
-              args,
-              settledAt,
-            );
-            let advanced = false;
-            if (plan) {
-              const [committed] = await tx
-                .update(workflowAutomations)
-                .set(inFlightScheduleAdvanceValues(plan.advance))
-                .where(inFlightScheduleAdvanceCondition(plan.advance))
-                .returning(inFlightScheduleAdvanceSelection());
-              if (committed !== undefined) {
-                const correction = inFlightScheduleCorrection(
-                  committed,
-                  plan.advance,
-                );
-                if (correction) {
-                  await tx
-                    .update(workflowAutomations)
-                    .set(correction)
-                    .where(eq(workflowAutomations.id, args.automationId));
-                }
-                advanced = true;
-              }
-            }
-            const [settled] = await tx
-              .update(morningBriefScheduleClaims)
-              .set({
-                settlement: args.settlement,
-                settledAt,
-                updatedAt: settledAt,
-              })
-              .where(
-                and(
-                  eq(morningBriefScheduleClaims.id, claim.id),
-                  eq(morningBriefScheduleClaims.settlement, "unsettled"),
-                ),
-              )
-              .returning({ id: morningBriefScheduleClaims.id });
-            if (!settled) {
-              // Another settler won this occurrence; discard everything written here.
-              throw new MorningBriefClaimAlreadySettled();
-            }
-            return plan?.shouldDisable && advanced
-              ? {
-                  orgId: claim.orgId,
-                  userId: claim.ownerUserId,
-                  consecutiveFailures: plan.consecutiveFailures,
-                }
-              : null;
-          })();
+      (async () => {
+        const prepared = await set(
+          prepareMorningBriefSchedulePublication$,
+          args,
+        );
         signal?.throwIfAborted();
-        return attempted;
-      }),
+        if (!prepared) {
+          return null;
+        }
+        const outcome = await set(
+          publishMorningBriefScheduleSettlement$,
+          args,
+          prepared,
+        );
+        signal?.throwIfAborted();
+        return outcome;
+      })(),
       signal,
     );
     signal?.throwIfAborted();
@@ -384,12 +466,6 @@ const commitMorningBriefScheduleSettlement$ = command(
         return;
       }
       throw result.error;
-    }
-    if (result.value) {
-      log.warn(
-        "Morning Brief paused after consecutive failures; recovery is scheduled",
-        { automationId: args.automationId, ...result.value },
-      );
     }
   },
 );
