@@ -114,7 +114,7 @@ async function openAddHostPage() {
   );
 }
 async function choose(dialog: HTMLElement, label: string, name: string) {
-  click(await within(dialog).findByLabelText(label));
+  click(within(dialog).getByLabelText(label));
   const option = await waitFor(() => {
     const matches = queryAllByRoleFast("option").filter((candidate) => {
       return candidate.textContent?.replace(/\s+/gu, " ").trim() === name;
@@ -339,6 +339,7 @@ test("Mac Cloudflare setup requires independently named origin TLS and keeps the
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await choose(dialog, "Connection route", "Cloudflare Access");
   await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
+  await within(dialog).findByLabelText("Network configuration");
   await choose(dialog, "Network configuration", selected.name);
   await fill(
     within(dialog).getByLabelText("Origin TLS server name"),
@@ -420,6 +421,7 @@ test.each(["cloudflare_access", "tailscale"] as const)(
       type === "cloudflare_access" ? "Cloudflare Access" : "Tailscale",
     );
     expect(getAction("button", "Save", dialog)).toBeDisabled();
+    await within(dialog).findByLabelText("Network configuration");
     await choose(dialog, "Network configuration", network.name);
     await fill(
       within(dialog).getByLabelText("RFB destination host"),
