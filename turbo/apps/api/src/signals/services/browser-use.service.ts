@@ -248,17 +248,23 @@ function browserUseCdpVersionUrl(cdpUrl: string): URL {
 
 async function browserUseCdpWebSocketUrl(
   cdpUrl: string,
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<string> {
+  signal.throwIfAborted();
   const endpoint = browserUseCdpUrlSchema.parse(cdpUrl);
   if (new URL(endpoint).protocol === "wss:") {
     return endpoint;
   }
-  const response = await accept(fetch(browserUseCdpVersionUrl(cdpUrl)), [200]);
+  const response = await accept(
+    fetch(browserUseCdpVersionUrl(cdpUrl), { signal }),
+    [200],
+  );
+  signal.throwIfAborted();
   const text = await readBoundedResponseText(
     response,
     MAX_BROWSER_USE_CDP_RESPONSE_BYTES,
   );
+  signal.throwIfAborted();
   if (text.kind === "too_large") {
     throw new Error("Browser Use CDP discovery failed");
   }
@@ -3561,24 +3567,27 @@ export async function findBrowserUseSession(
   providerSessionId: string,
   signal: AbortSignal,
 ): Promise<BrowserUseSession | null> {
-  const result = await browserUseResponse(
-    `/browsers/${encodeURIComponent(providerSessionId)}`,
-    { method: "GET" },
-    signal,
-    [404],
-  );
-  if (result.response.status === 404) {
-    return null;
-  }
-  const session = parseBrowserUseSession(result.body);
-  if (session.id !== providerSessionId) {
-    throw new BrowserUseProviderError(
-      502,
-      "BROWSER_USE_INVALID_RESPONSE",
-      "Managed browser provider returned a different session",
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    const result = await browserUseResponse(
+      `/browsers/${encodeURIComponent(providerSessionId)}`,
+      { method: "GET", signal: deadline },
+      deadline,
+      [404],
     );
-  }
-  return session;
+    deadline.throwIfAborted();
+    if (result.response.status === 404) {
+      return null;
+    }
+    const session = parseBrowserUseSession(result.body);
+    if (session.id !== providerSessionId) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_INVALID_RESPONSE",
+        "Managed browser provider returned a different session",
+      );
+    }
+    return session;
+  });
 }
 
 export async function getBrowserUseSession(

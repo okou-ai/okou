@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -18,6 +19,68 @@ const context = testContext();
 const { fixture, allocate, accepted } = createRunnerBrowserFixtures(context);
 
 describe("native owner Browser window admission", () => {
+  it.each(["session", "discovery"] as const)(
+    "cancels a pending provider %s read at the owned deadline",
+    async (phase) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        const chat = await f.start();
+        const instance = await allocate(chat);
+        const discoveryUrl = `https://cdp.browser-use.com/${randomUUID()}`;
+        const reached = createDeferredPromise<void>(context.signal);
+        const deadline = new AbortController();
+        async function withhold(request: Request) {
+          reached.resolve();
+          await once(request.signal, "abort", { signal: context.signal });
+        }
+        server.use(
+          http.get(
+            `${PROVIDER_URL}/browsers/${instance.providerSessionId}`,
+            async ({ request }) => {
+              if (phase === "session") {
+                await withhold(request);
+              }
+              return HttpResponse.json({
+                id: instance.providerSessionId,
+                status: "active",
+                startedAt: new Date(START).toISOString(),
+                timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+                finishedAt: null,
+                liveUrl: "https://live.browser-use.com/owned-fixture",
+                cdpUrl: discoveryUrl,
+              });
+            },
+          ),
+          http.get(`${discoveryUrl}/json/version`, async ({ request }) => {
+            await withhold(request);
+            return HttpResponse.json({
+              webSocketDebuggerUrl: f.provider.native.url,
+            });
+          }),
+        );
+        context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+          return milliseconds === 15_000 ? deadline.signal : undefined;
+        });
+        const admission = chat.control({
+          kind: "admit",
+          instanceId: instance.id,
+        });
+        await reached.promise;
+        deadline.abort(
+          new DOMException("Owned provider deadline", "TimeoutError"),
+        );
+        await expect(admission).resolves.toMatchObject({
+          status: 503,
+          body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+        });
+        expect(
+          accepted(await chat.request({ kind: "inspect" })).window,
+        ).toBeNull();
+        expect(f.provider.native.created).toHaveLength(0);
+      });
+    },
+  );
+
   it.each([
     [false, "missing"],
     [true, "missing"],
@@ -353,8 +416,10 @@ describe("native owner Browser window admission", () => {
           f.provider.native.createReply = "disconnect";
         } else {
           const deadline = new AbortController();
-          context.mocks.abortSignal.timeout.mockReturnValueOnce(
-            deadline.signal,
+          context.mocks.abortSignal.timeout.mockImplementation(
+            (milliseconds) => {
+              return milliseconds === 15_000 ? deadline.signal : undefined;
+            },
           );
           f.provider.native.createReply = "withhold";
           f.provider.native.beforeCreateReply = () => {
