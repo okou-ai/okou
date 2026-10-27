@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Command, InvalidArgumentError } from "commander";
 import { json, record, string } from "zod";
 import {
@@ -6,6 +9,74 @@ import {
 } from "../../lib/api/data-router-client";
 import { isDataRouterToolEnabled } from "../../lib/command/paid-tools";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+
+/** Larger bodies go to a file so agent shells do not truncate them. */
+const INLINE_BODY_MAX_BYTES = 32 * 1024;
+const SHAPE_MAX_KEYS = 50;
+
+function valueKind(value: unknown): string {
+  if (value === null) return "null";
+  return Array.isArray(value) ? "array" : typeof value;
+}
+
+function describeValue(value: unknown): string {
+  if (Array.isArray(value)) return `array(${value.length} items)`;
+  if (typeof value === "string") return `string(${value.length} chars)`;
+  if (typeof value === "object" && value !== null)
+    return `object(${Object.keys(value).length} keys)`;
+  return valueKind(value);
+}
+
+function topLevelShape(body: unknown) {
+  if (Array.isArray(body))
+    return {
+      type: describeValue(body),
+      items: [...new Set(body.map(valueKind))],
+    };
+  if (typeof body !== "object" || body === null)
+    return { type: describeValue(body) };
+  const entries = Object.entries(body);
+  return {
+    type: describeValue(body),
+    keys: Object.fromEntries(
+      entries.slice(0, SHAPE_MAX_KEYS).map(([key, value]) => {
+        return [key, describeValue(value)];
+      }),
+    ),
+    ...(entries.length > SHAPE_MAX_KEYS && {
+      omittedKeys: entries.length - SHAPE_MAX_KEYS,
+    }),
+  };
+}
+
+async function printBody(status: number, body: unknown, compact?: boolean) {
+  const indent = compact ? undefined : 2;
+  const text = JSON.stringify(body, null, indent);
+  // The file holds exactly what console.log would print, including its newline.
+  const content = `${text}\n`;
+  const bytes = Buffer.byteLength(content);
+  if (bytes <= INLINE_BODY_MAX_BYTES) {
+    console.log(text);
+    return;
+  }
+  // The body can contain sensitive results, so only the owner can read it.
+  const directory = await mkdtemp(join(tmpdir(), "okou-data-"));
+  const bodyFile = join(directory, "body.json");
+  await writeFile(bodyFile, content, { mode: 0o600, flag: "wx" });
+  console.log(
+    JSON.stringify(
+      {
+        status,
+        bodyFile,
+        bytes,
+        shape: topLevelShape(body),
+        hint: "The response exceeds 32 KB and was written to bodyFile. Read the fields you need from it, for example with jq, instead of printing the whole file.",
+      },
+      null,
+      indent,
+    ),
+  );
+}
 
 function inputObject(value: string): Record<string, unknown> {
   let parsed: unknown;
@@ -86,16 +157,14 @@ export function createDataCommand(): Command {
           options: { input: Record<string, unknown>; json?: boolean },
         ) => {
           const result = await callDataRouterTool(name, options.input);
-          console.log(
-            JSON.stringify(result.body, null, options.json ? undefined : 2),
-          );
+          await printBody(result.status, result.body, options.json);
           if (result.status >= 400) process.exitCode = 1;
         },
       ),
     );
   command.addHelpText(
     "after",
-    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Responses are printed as JSON.\nCalls can consume credits, which are totaled when the Run ends. Do not automatically repeat a paid request whose outcome is uncertain.',
+    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Responses are printed as JSON; a response over 32 KB is written to a private temporary file, and its path and top-level shape are printed instead.\nCalls can consume credits, which are totaled when the Run ends. Do not automatically repeat a paid request whose outcome is uncertain.',
   );
   return command;
 }

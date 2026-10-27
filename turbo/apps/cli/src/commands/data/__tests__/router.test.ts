@@ -1,6 +1,16 @@
+import { readFile, rm, stat } from "node:fs/promises";
+import { dirname } from "node:path";
 import { Command } from "commander";
 import { http, HttpResponse } from "msw";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 import {
   number,
   object,
@@ -38,12 +48,21 @@ let calls: unknown[];
 let returnedBody: unknown;
 let returnedStatus: number;
 let output: string;
+const summarySchema = object({ bodyFile: string() });
 
 async function run(args: string[]) {
   const argv = ["node", "okou", "data", ...args];
   const cli = new Command("okou");
   await registerRequestedCommand(cli, argv);
   await cli.parseAsync(argv);
+}
+
+function writtenBodyFile(): string {
+  const { bodyFile } = summarySchema.parse(JSON.parse(output));
+  onTestFinished(async () => {
+    await rm(dirname(bodyFile), { recursive: true, force: true });
+  });
+  return bodyFile;
 }
 
 describe("Data Router discovery and JSON calls", () => {
@@ -206,6 +225,62 @@ describe("Data Router discovery and JSON calls", () => {
     };
     await run(["call", "future_research", "--input", "{}", "--json"]);
     expect(JSON.parse(output)).toEqual(returnedBody);
+    expect(process.exitCode).toBe(1);
+    expect(calls).toEqual([{ name: "future_research", arguments: {} }]);
+  });
+
+  it("prints a response of exactly 32 KB inline", async () => {
+    const overhead = `${JSON.stringify({ text: "" }, null, 2)}\n`.length;
+    returnedBody = { text: "x".repeat(32 * 1024 - overhead) };
+    await run(["call", "future_research", "--input", "{}"]);
+    expect(Buffer.byteLength(`${output}\n`)).toBe(32 * 1024);
+    expect(JSON.parse(output)).toEqual(returnedBody);
+  });
+
+  it("writes a larger response to a private temporary file and prints its shape", async () => {
+    returnedBody = {
+      items: Array.from({ length: 2000 }, (_, id) => {
+        return { id, title: "result" };
+      }),
+      next: null,
+    };
+    const content = `${JSON.stringify(returnedBody, null, 2)}\n`;
+    await run(["call", "future_research", "--input", "{}"]);
+    const bodyFile = writtenBodyFile();
+    expect(JSON.parse(output)).toEqual({
+      status: 200,
+      bodyFile,
+      bytes: Buffer.byteLength(content),
+      shape: {
+        type: "object(2 keys)",
+        keys: { items: "array(2000 items)", next: "null" },
+      },
+      hint: expect.stringContaining("jq"),
+    });
+    expect(await readFile(bodyFile, "utf8")).toBe(content);
+    expect((await stat(bodyFile)).mode & 0o777).toBe(0o600);
+    expect((await stat(dirname(bodyFile))).mode & 0o777).toBe(0o700);
+  });
+
+  it("keeps the failure exit status when a large failed response is written to a file", async () => {
+    returnedStatus = 502;
+    returnedBody = [
+      ...Array.from({ length: 3000 }, (_, index) => {
+        return { index };
+      }),
+      "partial",
+    ];
+    const content = `${JSON.stringify(returnedBody)}\n`;
+    await run(["call", "future_research", "--input", "{}", "--json"]);
+    const bodyFile = writtenBodyFile();
+    expect(JSON.parse(output)).toEqual({
+      status: 502,
+      bodyFile,
+      bytes: Buffer.byteLength(content),
+      shape: { type: "array(3001 items)", items: ["object", "string"] },
+      hint: expect.stringContaining("jq"),
+    });
+    expect(await readFile(bodyFile, "utf8")).toBe(content);
     expect(process.exitCode).toBe(1);
     expect(calls).toEqual([{ name: "future_research", arguments: {} }]);
   });
