@@ -108,6 +108,15 @@ struct ConnectorRuntimeSyncStateStore {
     active_runs: Mutex<HashMap<RunId, ActiveRunConnectorRuntimeState>>,
     cancel: CancellationToken,
     publications: TaskTracker,
+    #[cfg(test)]
+    scheduled_enqueue_gate: Mutex<Option<Arc<ScheduledSyncEnqueueGate>>>,
+}
+
+#[cfg(test)]
+struct ScheduledSyncEnqueueGate {
+    taken: tokio::sync::Barrier,
+    release: tokio::sync::Barrier,
+    enqueued: tokio::sync::Barrier,
 }
 
 struct ActiveRunConnectorRuntimeState {
@@ -419,6 +428,8 @@ impl ConnectorRuntimeSyncHandle {
                 active_runs: Mutex::new(HashMap::new()),
                 cancel: CancellationToken::new(),
                 publications: TaskTracker::new(),
+                #[cfg(test)]
+                scheduled_enqueue_gate: Mutex::new(None),
             }),
             request_tx,
         };
@@ -1729,6 +1740,13 @@ impl ConnectorRuntimeSyncCore {
                         )
                         .await
                     {
+                        #[cfg(test)]
+                        let enqueue_gate = handle.inner.scheduled_enqueue_gate.lock().await.take();
+                        #[cfg(test)]
+                        if let Some(gate) = &enqueue_gate {
+                            gate.taken.wait().await;
+                            gate.release.wait().await;
+                        }
                         handle
                             .enqueue_scheduled_sync(
                                 SyncRequest {
@@ -1739,6 +1757,10 @@ impl ConnectorRuntimeSyncCore {
                                 &enqueue_cancel,
                             )
                             .await;
+                        #[cfg(test)]
+                        if let Some(gate) = enqueue_gate {
+                            gate.enqueued.wait().await;
+                        }
                     }
                 }
             }
@@ -1904,7 +1926,12 @@ fn merge_sync_requests(pending: &mut SyncRequest, request: SyncRequest) {
         .map(|target| (target.target.clone(), target))
         .collect::<HashMap<_, _>>();
     for target in request.targets {
-        targets.insert(target.target.clone(), target);
+        targets
+            .entry(target.target.clone())
+            .and_modify(|existing| {
+                existing.generation = existing.generation.max(target.generation);
+            })
+            .or_insert(target);
     }
     pending.targets = targets.into_values().collect();
     pending
@@ -2314,6 +2341,7 @@ mod tests {
                     active_runs: Mutex::new(HashMap::new()),
                     cancel: CancellationToken::new(),
                     publications: TaskTracker::new(),
+                    scheduled_enqueue_gate: Mutex::new(None),
                 }),
                 request_tx,
             },
@@ -2740,6 +2768,78 @@ mod tests {
             }],
             cancel: CancellationToken::new(),
         }
+    }
+
+    #[test]
+    fn pending_sync_requests_keep_highest_generation_for_each_target() {
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let custom = custom_target("550e8400-e29b-41d4-a716-446655440000");
+        for generations in [[2, 1], [1, 2], [2, 2]] {
+            let cancel = CancellationToken::new();
+            let mut dispatcher = SyncDispatcher::new();
+            for (generation, distinct_slug) in generations.into_iter().zip(["github", "linear"]) {
+                dispatcher.enqueue(SyncRequest {
+                    run_id,
+                    targets: vec![
+                        ConnectorSyncTarget {
+                            target: builtin_target("slack"),
+                            generation,
+                        },
+                        ConnectorSyncTarget {
+                            target: custom.clone(),
+                            generation,
+                        },
+                        ConnectorSyncTarget {
+                            target: builtin_target(distinct_slug),
+                            generation: 0,
+                        },
+                    ],
+                    cancel: cancel.clone(),
+                });
+            }
+            assert_eq!(
+                dispatcher.pending[&run_id].targets,
+                vec![
+                    ConnectorSyncTarget {
+                        target: builtin_target("github"),
+                        generation: 0,
+                    },
+                    ConnectorSyncTarget {
+                        target: builtin_target("linear"),
+                        generation: 0,
+                    },
+                    ConnectorSyncTarget {
+                        target: builtin_target("slack"),
+                        generation: 2,
+                    },
+                    ConnectorSyncTarget {
+                        target: custom.clone(),
+                        generation: 2,
+                    },
+                ],
+                "pending generations must not depend on arrival order {generations:?}"
+            );
+        }
+    }
+
+    async fn gate_next_scheduled_enqueue(
+        core: &ConnectorRuntimeSyncCore,
+    ) -> Arc<ScheduledSyncEnqueueGate> {
+        let gate = Arc::new(ScheduledSyncEnqueueGate {
+            taken: tokio::sync::Barrier::new(2),
+            release: tokio::sync::Barrier::new(2),
+            enqueued: tokio::sync::Barrier::new(2),
+        });
+        assert!(
+            core.inner
+                .scheduled_enqueue_gate
+                .lock()
+                .await
+                .replace(gate.clone())
+                .is_none(),
+            "the previous producer must have consumed its gate"
+        );
+        gate
     }
 
     async fn replace_schedule(
@@ -6226,6 +6326,162 @@ mod tests {
             );
             harness.shutdown().await;
         }
+    }
+
+    #[tokio::test]
+    async fn delayed_scheduled_producer_preserves_newest_pending_generation() {
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
+        let custom = custom_target(custom_connector_id);
+        let firewall = custom_runtime_firewall(custom_connector_id);
+        let registrations = [
+            builtin_runtime_target_registration("slack"),
+            custom_runtime_target_registration(custom_connector_id, HashMap::new()),
+        ];
+        let policy = |permission| {
+            json!({
+                "allow": [permission],
+                "deny": [],
+                "ask": [],
+                "unknownPolicy": "deny",
+            })
+        };
+        let first_body = json!({
+            "results": [{
+                "target": custom,
+                "state": "available",
+                "firewall": firewall,
+                "networkPolicy": policy("stale:read"),
+                "baseUrlVars": {},
+            }],
+        });
+        let next_body = json!({
+            "results": [
+                {
+                    "target": builtin_target("slack"),
+                    "state": "available",
+                    "networkPolicy": policy("new:read"),
+                },
+                {
+                    "target": custom,
+                    "state": "available",
+                    "firewall": firewall,
+                    "networkPolicy": policy("new:read"),
+                    "baseUrlVars": {},
+                },
+            ],
+        });
+        let (release_first_tx, release_first_rx) = tokio::sync::oneshot::channel();
+        let mut server = RawHttpTestServer::spawn(vec![
+            RawHttpAction::WaitThenRespond {
+                release: release_first_rx,
+                response: json_response("200 OK", &first_body.to_string()),
+            },
+            RawHttpAction::Respond(json_response("200 OK", &next_body.to_string())),
+        ])
+        .await;
+        let handle = ConnectorRuntimeSyncHandle::new(api_client_for_url(server.url()));
+        let initial_policy = NetworkPolicy {
+            allow: vec!["old:read".to_string()],
+            deny: vec![],
+            ask: vec![],
+            unknown_policy: "deny".to_string(),
+        };
+        let (_dir, registry, registry_path) = registered_runtime_registry_with_targets(
+            run_id,
+            &[FirewallEntry::Builtin {
+                name: "slack".to_string(),
+                base_url_vars: None,
+                source_id: None,
+            }],
+            &HashMap::from([("slack".to_string(), initial_policy)]),
+            &registrations,
+        )
+        .await;
+        handle
+            .register_run(ConnectorRuntimeSyncRegistration {
+                run_id,
+                source_ip: "10.200.0.2",
+                registry,
+                targets: &registrations,
+                refreshes: None,
+            })
+            .await;
+        // Custom registration schedules generation 0 through the real timer.
+        let first_request = server.next_request("generation-0 sync").await;
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                first_request.split_once("\r\n\r\n").unwrap().1
+            )
+            .unwrap(),
+            json!({ "targets": [registrations[1]] })
+        );
+
+        tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, async {
+            let old_gate = gate_next_scheduled_enqueue(&handle.core).await;
+            for registration in &registrations {
+                handle
+                    .notify_connector_runtime_sync(run_id, registration.target())
+                    .await;
+            }
+            old_gate.taken.wait().await;
+
+            let new_gate = gate_next_scheduled_enqueue(&handle.core).await;
+            for registration in &registrations {
+                handle
+                    .notify_connector_runtime_sync(run_id, registration.target())
+                    .await;
+            }
+            new_gate.taken.wait().await;
+            new_gate.release.wait().await;
+            new_gate.enqueued.wait().await;
+            old_gate.release.wait().await;
+            old_gate.enqueued.wait().await;
+
+            // Both producers have sent. Reserving every channel slot waits for
+            // both receives; enqueue itself is synchronous in the dispatcher.
+            drop(
+                handle
+                    .core
+                    .request_tx
+                    .reserve_many(SYNC_REQUEST_QUEUE_CAPACITY)
+                    .await
+                    .expect("the dispatcher should keep receiving pending work"),
+            );
+        })
+        .await
+        .expect("generation 2 then generation 1 must enqueue behind the stalled sync");
+
+        let builtin_sync =
+            observe_current_successful_sync(&handle, run_id, builtin_target("slack")).await;
+        let custom_sync = observe_current_successful_sync(&handle, run_id, custom).await;
+        release_first_tx
+            .send(())
+            .expect("the generation-0 request should remain in flight");
+        let next_request = server.next_request("newest pending generation sync").await;
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                next_request.split_once("\r\n\r\n").unwrap().1
+            )
+            .unwrap(),
+            json!({ "targets": registrations })
+        );
+        builtin_sync.wait().await;
+        custom_sync.wait().await;
+        let registry_json: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(registry_path).await.unwrap()).unwrap();
+        let sandbox = &registry_json["sandboxes"]["10.200.0.2"];
+        for name in ["slack", "custom_connector_550e8400e29b41d4a716446655440000"] {
+            assert_eq!(sandbox["networkPolicies"][name], policy("new:read"));
+        }
+        assert!(
+            sandbox["firewalls"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(firewall))
+        );
+        server.assert_finished().await;
+        handle.shutdown().await;
     }
 
     #[tokio::test]
