@@ -13,6 +13,7 @@ mod api_direct_candidates;
 mod builtin_firewall_catalog;
 mod connector_runtime_sync;
 mod local;
+mod worker_join;
 
 pub use api::ApiClient;
 pub use api::{ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths};

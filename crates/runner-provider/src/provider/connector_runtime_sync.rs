@@ -61,6 +61,7 @@ use tracing::instrument::WithSubscriber;
 use tracing::{info, warn};
 
 use super::api::{ApiClient, ConnectorRuntimeSyncOutcome};
+use super::worker_join::join_retained_worker;
 use crate::connector_registry::{
     ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistryHandle,
     ConnectorRuntimeRegistryUpdate, CustomConnectorRuntimeRegistryState,
@@ -433,17 +434,8 @@ impl ConnectorRuntimeSyncHandle {
 
     pub async fn shutdown(&self) {
         self.core.shutdown_active_runs().await;
-        {
-            let mut worker_task = self.worker.task.lock().await;
-            if let Some(task) = worker_task.as_mut() {
-                // Cancelling a shutdown waiter must retain the dispatcher join
-                // for the next caller and last-handle Drop.
-                let result = task.await;
-                *worker_task = None;
-                if let Err(error) = result {
-                    warn!(error = %error, "connector runtime sync worker failed during shutdown");
-                }
-            }
+        if let Err(error) = join_retained_worker(&self.worker.task).await {
+            warn!(error = %error, "connector runtime sync worker failed during shutdown");
         }
         // Joining the dispatcher stops publication admission. Its cancelled
         // waiters do not own the local writes, which must settle before shutdown

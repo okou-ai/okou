@@ -30,6 +30,7 @@ use super::api_direct_candidates::{
     DirectJobCandidate,
 };
 use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
+use super::worker_join::join_retained_worker;
 use super::{RunnerPreferenceContext, parse_runner_preference};
 use crate::active_input::ActiveInputNotifications;
 use crate::duration::duration_ms;
@@ -593,15 +594,7 @@ impl AblySupervisor {
 
     pub(super) async fn shutdown(&self) {
         self.shutdown.cancel();
-        let mut slot = self.task.lock().await;
-        let Some(task) = slot.as_mut() else {
-            return;
-        };
-        // Keep the join capability if this shutdown waiter is cancelled.
-        let result = task.await;
-        *slot = None;
-        drop(slot);
-        if let Err(e) = result {
+        if let Err(e) = join_retained_worker(&self.task).await {
             warn!(error = %e, "ably supervisor task failed during shutdown");
         }
     }
@@ -1224,6 +1217,7 @@ mod tests {
     use super::*;
     use crate::provider::{RunnerPreference, RunnerPreferenceTier};
     use tracing::Level;
+    use tracing::instrument::WithSubscriber;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::CapturedEvents;
 
@@ -2528,6 +2522,41 @@ mod tests {
             .await
             .expect("supervisor shutdown should await task termination")
             .unwrap();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn supervisor_shutdown_reports_panicked_task_once_after_cancelled_waiter() {
+        let captured = CapturedEvents::default();
+        async {
+            let supervisor = AblySupervisor::spawn_test_task(|shutdown| async move {
+                shutdown.cancelled().await;
+                panic!("expected supervisor panic");
+            });
+
+            // Neither poll yields to the signalled worker on this runtime.
+            let mut first = Box::pin(supervisor.shutdown());
+            assert!(futures_util::poll!(first.as_mut()).is_pending());
+            let mut concurrent = Box::pin(supervisor.shutdown());
+            assert!(futures_util::poll!(concurrent.as_mut()).is_pending());
+            drop(first);
+            assert!(futures_util::poll!(concurrent.as_mut()).is_pending());
+
+            tokio::time::timeout(Duration::from_secs(1), concurrent)
+                .await
+                .expect("remaining shutdown should join the panicked worker");
+            supervisor.shutdown().await;
+        }
+        .with_subscriber(tracing_subscriber::registry().with(captured.clone()))
+        .await;
+
+        let events = captured.entries();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].level, Level::WARN);
+        assert_eq!(
+            events[0].fields.get("message").map(String::as_str),
+            Some("ably supervisor task failed during shutdown")
+        );
+        assert!(events[0].fields["error"].contains("expected supervisor panic"));
     }
 
     #[tokio::test]

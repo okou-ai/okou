@@ -68,6 +68,7 @@ use api_contracts::generated::constants::runners::{
 };
 
 use super::api::{ApiClient, DegradationEpisodeTracker};
+use super::worker_join::join_retained_worker;
 use crate::duration::duration_ms;
 use crate::error::{
     ApiBodyReadError, ApiTransportCause, ApiTransportError, ProviderError, ProviderResult,
@@ -243,14 +244,7 @@ impl BuiltinFirewallCatalogRefreshHandle {
 
     pub(super) async fn shutdown(&self) {
         self.inner.cancel.cancel();
-        let mut slot = self.inner.task.lock().await;
-        let Some(task) = slot.as_mut() else {
-            return;
-        };
-        let result = task.await;
-        *slot = None;
-        drop(slot);
-        if let Err(error) = result {
+        if let Err(error) = join_retained_worker(&self.inner.task).await {
             warn!(error = %error, "builtin firewall catalog refresh task failed during shutdown");
         }
     }
