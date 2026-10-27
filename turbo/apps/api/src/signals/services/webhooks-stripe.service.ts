@@ -1543,7 +1543,7 @@ const publishAtomPlanInvoice$ = command(
   ) => {
     const db = set(writeDb$);
     const { invoice, details } = input;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0325; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: Atom invoice receipts, shared/member credit grants and plan publication must commit or roll back together; single-statement alternative: wallet arbitration precedes a fresh expiration check, and a later rejected member grant must roll back earlier financial writes.
     return await db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(orgMetadataCanonicalWrites)

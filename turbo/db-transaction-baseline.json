@@ -132,11 +132,6 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0325",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishAtomPlanInvoice$"
-    },
-    {
       "id": "TX-0329",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishLegacyPlanSubscription$"
