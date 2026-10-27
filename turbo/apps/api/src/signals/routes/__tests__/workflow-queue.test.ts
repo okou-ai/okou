@@ -355,6 +355,14 @@ async function requestRunCompletionThroughSandbox(
 ) {
   await runsApi.heartbeatRunner(scenario.runnerGroup);
   const claim = await runsApi.claimRunnerJob(runId);
+  await requestClaimedRunCompletionThroughSandbox(runId, claim);
+  return claim;
+}
+
+async function requestClaimedRunCompletionThroughSandbox(
+  runId: string,
+  claim: Awaited<ReturnType<typeof runsApi.claimRunnerJob>>,
+) {
   const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
   const stagedOutputEvents = chatCallbacks.consumeMockChatOutputEvents();
   if (stagedOutputEvents.length > 0) {
@@ -386,7 +394,6 @@ async function requestRunCompletionThroughSandbox(
     sandboxHeaders,
     [200],
   );
-  return claim;
 }
 
 async function completeRunThroughSandbox(scenario: Scenario, runId: string) {
@@ -823,6 +830,8 @@ describe("workflow queue", () => {
       runId,
       { eventType: "webhook-received", automationId: automation.automationId },
     );
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(runId);
 
     await accept(
       automationsClient().delete({
@@ -837,8 +846,6 @@ describe("workflow queue", () => {
     await expect(
       wf.readThreadEvents(automation.threadId),
     ).resolves.toContainEqual(claimedEvent);
-    await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
     expect(claim.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: webhook-received\n`,
     );
@@ -858,6 +865,8 @@ describe("workflow queue", () => {
       await postWorkflowWebhook(webhookAutomation, "running before deletion"),
       webhookAutomation.threadId,
     );
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    const runningClaim = await runsApi.claimRunnerJob(runningRunId);
     expectAccepted(
       await postWorkflowWebhook(webhookAutomation, "orphaned after deletion"),
     );
@@ -925,7 +934,8 @@ describe("workflow queue", () => {
       pendingAutomationEvents(webhookAutomation.threadId),
     ).resolves.toStrictEqual([scheduleEvent]);
 
-    await completeRunThroughSandbox(scenario, runningRunId);
+    await requestClaimedRunCompletionThroughSandbox(runningRunId, runningClaim);
+    await flushWaitUntilForTest();
 
     const events = await readProjectedChatEvents(context, {
       threadId: webhookAutomation.threadId,
@@ -1030,6 +1040,8 @@ describe("workflow queue", () => {
 
   it("revokes an orphaned queued input after its workflow is deleted", async () => {
     const { scenario, automation, runningRunId } = await busyQueueFixture(1);
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    const runningClaim = await runsApi.claimRunnerJob(runningRunId);
     const [queuedEvent] = await pendingAutomationEvents(automation.threadId);
     if (!queuedEvent) {
       throw new Error("Expected the workflow's queued input");
@@ -1045,7 +1057,8 @@ describe("workflow queue", () => {
     );
     // Workflow deletion cascades the automation row without deleting its
     // historical chat context. The next pick must retire that queued input.
-    await completeRunThroughSandbox(scenario, runningRunId);
+    await requestClaimedRunCompletionThroughSandbox(runningRunId, runningClaim);
+    await flushWaitUntilForTest();
     expect(
       (await readInputStatus(automation.threadId, queuedEvent.id)).body,
     ).toMatchObject({ status: "revoked", runId: null, terminal: null });
