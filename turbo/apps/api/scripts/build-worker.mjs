@@ -57,9 +57,15 @@ try {
           const unsupportedPackages = new Map([
             ["pg-native", "pg-native"],
             ["@react-email/render", "react-email"],
+            // Vercel-only fallbacks; Workers use their RequestRuntime instead.
+            ["@vercel/functions", "vercel-functions"],
+            ["@vercel/oidc", "vercel-oidc"],
           ]);
           builder.onResolve(
-            { filter: /^(pg-native|@react-email\/render)$/ },
+            {
+              filter:
+                /^(pg-native|@react-email\/render|@vercel\/functions|@vercel\/oidc)$/,
+            },
             ({ path }) => {
               return {
                 path: resolve(
