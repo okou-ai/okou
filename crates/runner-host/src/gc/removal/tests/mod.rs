@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::task::{Context, Waker};
 use std::time::Duration;
 
-use runner_host::gc::{ExistingLockProbe, LockProbe, probe_existing_lock, probe_lock};
+use crate::gc::{ExistingLockProbe, LockProbe, probe_existing_lock, probe_lock};
 use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinHandle;
 
@@ -71,7 +71,7 @@ fn cancelled_removal_retains_authority(failing: bool) {
 
     assert!(
         matches!(probe_existing_lock(&lock_path), ExistingLockProbe::Held),
-        "cancelled Storage GC released version authority before physical removal retired"
+        "cancelled GC released version authority before physical removal retired"
     );
 
     drop(gate);
@@ -97,7 +97,7 @@ fn cancelled_removal_retains_authority(failing: bool) {
     });
 
     let successor = acquire(&lock_path);
-    assert!(runner_host::lock::lock_matches_path(&successor, &lock_path).unwrap());
+    assert!(crate::lock::lock_matches_path(&successor, &lock_path).unwrap());
     if failing {
         assert_eq!(std::fs::read(&path).unwrap(), b"retained file");
     } else {
@@ -125,7 +125,7 @@ async fn observed_io_error_returns_the_acquired_version_guard() {
     let (lock, result) = remove_dir_all_with_lock(&path, lock).await;
 
     assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotADirectory);
-    assert!(runner_host::lock::lock_matches_path(&lock, &lock_path).unwrap());
+    assert!(crate::lock::lock_matches_path(&lock, &lock_path).unwrap());
     assert!(matches!(
         probe_existing_lock(&lock_path),
         ExistingLockProbe::Held
