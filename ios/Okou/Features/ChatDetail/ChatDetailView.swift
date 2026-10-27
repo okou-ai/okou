@@ -107,19 +107,30 @@ struct ChatDetailView: View {
     }
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
     .overlay(alignment: .bottom) {
-      if scrolling.showsBottomButton {
-        Button {
-          scrolling.jumpToLatest()
-        } label: {
-          Image(systemName: "arrow.down").font(.system(size: 18, weight: .medium))
+      ZStack {
+        if scrolling.showsBottomButton {
+          Button {
+            scrolling.jumpToLatest()
+          } label: {
+            Image(systemName: "arrow.down")
+              .font(.system(size: 16, weight: .semibold))
+              .frame(width: 22, height: 22)
+          }
+          .buttonStyle(.glass)
+          .buttonBorderShape(.circle)
+          .controlSize(.small)
+          .accessibilityLabel("Scroll to bottom")
+          .accessibilityIdentifier("scroll-to-bottom")
+          .frame(width: 44, height: 44)
+          .contentShape(Circle())
+          .transition(
+            reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        .accessibilityLabel("Scroll to bottom")
-        .accessibilityIdentifier("scroll-to-bottom")
-        .padding(.bottom, 16)
       }
+      .frame(width: 44, height: 44)
+      .animation(.easeOut(duration: 0.14), value: scrolling.showsBottomButton)
+      .allowsHitTesting(scrolling.showsBottomButton)
+      .padding(.bottom, 16)
     }
     .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
     .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
