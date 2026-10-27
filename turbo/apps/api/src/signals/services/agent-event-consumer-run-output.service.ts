@@ -2,9 +2,8 @@ import { command } from "ccstate";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
-import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { publicAssistantBalanceError } from "./run-balance-presentation";
 
 import type {
@@ -13,7 +12,7 @@ import type {
 } from "../../lib/event-consumer/verify";
 import { settleIncludingAbort } from "../utils";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import {
   appendAssistantEventRows$,
@@ -23,6 +22,10 @@ import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-ass
 import { runMetadataWritePlan } from "./agent-run-metadata-write.service";
 import { captureRunNativeSession$ } from "./run-native-session.service";
 import {
+  upsertRunOutputMaterialization$,
+  type RunOutputCandidate as OutputCandidate,
+} from "./run-output.service";
+import {
   assertRunOutputOwner,
   prepareRunOutputOwnership$,
   type PreparedRunOutputOwnership,
@@ -31,11 +34,6 @@ import {
 } from "./run-content-ownership.service";
 
 const log = logger("api:run-output-projection");
-
-interface OutputCandidate {
-  readonly sequenceNumber: number;
-  readonly content: string;
-}
 
 export interface MaterializedChatProjection {
   readonly thread: {
@@ -214,7 +212,6 @@ function preparedRunOutputProjection(payload: EventConsumerPayload): {
 }
 
 interface AdmittedRunOutputArgs {
-  readonly db: Db;
   readonly ownership: RunContentOwnership;
   readonly payload: EventConsumerPayload;
   readonly thread: MaterializedChatProjection["thread"] | null;
@@ -225,182 +222,149 @@ interface AdmittedRunOutputArgs {
   readonly eventPublished: boolean;
 }
 
-function createRunOutputAuxiliaryWriter(
+async function observeRunOutputAuxiliaryWrite<T>(
   args: AdmittedRunOutputArgs,
   failures: unknown[],
+  observation: {
+    readonly phase: "run_materialization" | "first_assistant_metric";
+    readonly startedAt: number;
+  },
+  write: Promise<T>,
   signal: AbortSignal,
-) {
-  return async <T>(
-    phase: "run_materialization" | "first_assistant_metric",
-    write: () => Promise<T>,
-  ): Promise<T | undefined> => {
-    args.diagnostics.enter(phase);
-    const startedAt = performance.now();
-    const result = await settleIncludingAbort(write());
-    recordSandboxOperation({
-      sandboxType: "runner",
-      actionType: `run_output_${phase}`,
-      durationMs: performance.now() - startedAt,
-      success: result.ok,
+): Promise<T | undefined> {
+  const { phase, startedAt } = observation;
+  const result = await settleIncludingAbort(write);
+  recordSandboxOperation({
+    sandboxType: "runner",
+    actionType: `run_output_${phase}`,
+    durationMs: performance.now() - startedAt,
+    success: result.ok,
+    runId: args.payload.runId,
+  });
+  if (result.ok) {
+    return result.value;
+  }
+  if (phase === "first_assistant_metric") {
+    log.warn("First assistant metric write failed after event commit", {
       runId: args.payload.runId,
+      errorCode: safeSqlStateCode(result.error),
     });
-    if (result.ok) {
-      return result.value;
-    }
-    if (phase === "first_assistant_metric") {
-      log.warn("First assistant metric write failed after event commit", {
-        runId: args.payload.runId,
-        errorCode: safeSqlStateCode(result.error),
-      });
-      signal.throwIfAborted();
-      return undefined;
-    }
-    // Each projection gets its own attempt after the event commit. Required
-    // materializations retry with the existing input receipt; event IDs dedupe.
-    if (failures.length === 0) {
-      args.diagnostics.recordFailure(result.error);
-    }
-    failures.push(result.error);
     signal.throwIfAborted();
     return undefined;
-  };
+  }
+  // Each projection gets its own attempt after the event commit. Required
+  // materializations retry with the existing input receipt; event IDs dedupe.
+  if (failures.length === 0) {
+    args.diagnostics.recordFailure(result.error);
+  }
+  failures.push(result.error);
+  signal.throwIfAborted();
+  return undefined;
 }
 
-async function upsertRunOutputMaterialization(
-  args: AdmittedRunOutputArgs,
-): Promise<void> {
-  const { db, payload, latestResult, latestOutput } = args;
-  if (latestResult !== null || latestOutput !== null) {
-    const updatedAt = nowDate();
-    await db
-      .insert(runOutputMaterializations)
-      .values({
+const materializeAdmittedRunOutputEvents$ = command(
+  async (
+    { set },
+    args: AdmittedRunOutputArgs,
+    signal: AbortSignal,
+  ): Promise<RunOutputMaterializationResult> => {
+    const db = set(writeDb$);
+    const { payload, thread } = args;
+    const failures: unknown[] = [];
+    const insertedRowCount = args.insertion?.insertedRowCount ?? 0;
+
+    args.diagnostics.enter("run_materialization");
+    const materializationStartedAt = performance.now();
+    await observeRunOutputAuxiliaryWrite(
+      args,
+      failures,
+      { phase: "run_materialization", startedAt: materializationStartedAt },
+      set(upsertRunOutputMaterialization$, {
         runId: payload.runId,
-        latestResultSequence: latestResult?.sequenceNumber,
-        latestResultText: latestResult?.content,
-        latestOutputSequence: latestOutput?.sequenceNumber,
-        latestOutputText: latestOutput?.content,
-        updatedAt,
-      })
-      .onConflictDoUpdate({
-        target: runOutputMaterializations.runId,
-        set: {
-          latestResultSequence:
-            latestResult === null
-              ? runOutputMaterializations.latestResultSequence
-              : sql`case when ${lte(sql`coalesce(${runOutputMaterializations.latestResultSequence}, -1)`, latestResult.sequenceNumber)} then ${latestResult.sequenceNumber} else ${runOutputMaterializations.latestResultSequence} end`,
-          latestResultText:
-            latestResult === null
-              ? runOutputMaterializations.latestResultText
-              : sql`case when ${lte(sql`coalesce(${runOutputMaterializations.latestResultSequence}, -1)`, latestResult.sequenceNumber)} then ${latestResult.content} else ${runOutputMaterializations.latestResultText} end`,
-          latestOutputSequence:
-            latestOutput === null
-              ? runOutputMaterializations.latestOutputSequence
-              : sql`case when ${lte(sql`coalesce(${runOutputMaterializations.latestOutputSequence}, -1)`, latestOutput.sequenceNumber)} then ${latestOutput.sequenceNumber} else ${runOutputMaterializations.latestOutputSequence} end`,
-          latestOutputText:
-            latestOutput === null
-              ? runOutputMaterializations.latestOutputText
-              : sql`case when ${lte(sql`coalesce(${runOutputMaterializations.latestOutputSequence}, -1)`, latestOutput.sequenceNumber)} then ${latestOutput.content} else ${runOutputMaterializations.latestOutputText} end`,
-          updatedAt,
-        },
-      });
-  }
-}
+        latestResult: args.latestResult,
+        latestOutput: args.latestOutput,
+      }),
+      signal,
+    );
+    signal.throwIfAborted();
 
-async function claimFirstAssistantAcknowledgement(
-  args: AdmittedRunOutputArgs,
-  shouldClaim: boolean,
-  auxiliary: ReturnType<typeof createRunOutputAuxiliaryWriter>,
-) {
-  if (!shouldClaim) {
-    return null;
-  }
-  const acknowledgedAt = nowDate();
-  const firstAssistantClaimWhere = and(
-    eq(agentRuns.id, args.payload.runId),
-    isNotNull(agentRuns.apiStartedAt),
-    isNull(agentRuns.firstAssistantEventAcknowledgedAt),
-  );
-  if (!firstAssistantClaimWhere) {
-    throw new Error("First assistant acknowledgement predicate is empty");
-  }
-  const [firstAssistantClaim] =
-    (await auxiliary("first_assistant_metric", () => {
+    if (!thread) {
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      return {
+        outcome: "accepted",
+        chatProjection: null,
+        payload,
+        ownership: args.ownership,
+      };
+    }
+
+    let firstAssistantAcknowledgement = null;
+    if (args.insertion?.shouldAttemptFirstAssistantEventClaim ?? false) {
+      const acknowledgedAt = nowDate();
+      const firstAssistantClaimWhere = and(
+        eq(agentRuns.id, payload.runId),
+        isNotNull(agentRuns.apiStartedAt),
+        isNull(agentRuns.firstAssistantEventAcknowledgedAt),
+      );
+      if (!firstAssistantClaimWhere) {
+        throw new Error("First assistant acknowledgement predicate is empty");
+      }
+      args.diagnostics.enter("first_assistant_metric");
+      const acknowledgementStartedAt = performance.now();
       const plan = runMetadataWritePlan({
         patch: { firstAssistantEventAcknowledgedAt: acknowledgedAt },
         where: firstAssistantClaimWhere,
       });
-      return args.db
-        .update(agentRuns)
-        .set({
-          firstAssistantEventAcknowledgedAt:
-            plan.patch.firstAssistantEventAcknowledgedAt,
-        })
-        .where(plan.where)
-        .returning(plan.returning);
-    })) ?? [];
-  return firstAssistantClaim?.apiStartedAt
-    ? {
-        apiStartedAt: firstAssistantClaim.apiStartedAt.getTime(),
-        acknowledgedAt: acknowledgedAt.getTime(),
-      }
-    : null;
-}
-
-async function materializeAdmittedRunOutputEvents(
-  args: AdmittedRunOutputArgs,
-  signal: AbortSignal,
-): Promise<RunOutputMaterializationResult> {
-  const { payload, thread } = args;
-  const failures: unknown[] = [];
-  const auxiliary = createRunOutputAuxiliaryWriter(args, failures, signal);
-  const insertedRowCount = args.insertion?.insertedRowCount ?? 0;
-
-  await auxiliary("run_materialization", () => {
-    return upsertRunOutputMaterialization(args);
-  });
-  signal.throwIfAborted();
-
-  if (!thread) {
+      const [firstAssistantClaim] =
+        (await observeRunOutputAuxiliaryWrite(
+          args,
+          failures,
+          {
+            phase: "first_assistant_metric",
+            startedAt: acknowledgementStartedAt,
+          },
+          db
+            .update(agentRuns)
+            .set({
+              firstAssistantEventAcknowledgedAt:
+                plan.patch.firstAssistantEventAcknowledgedAt,
+            })
+            .where(plan.where)
+            .returning(plan.returning),
+          signal,
+        )) ?? [];
+      firstAssistantAcknowledgement = firstAssistantClaim?.apiStartedAt
+        ? {
+            apiStartedAt: firstAssistantClaim.apiStartedAt.getTime(),
+            acknowledgedAt: acknowledgedAt.getTime(),
+          }
+        : null;
+    }
+    if (firstAssistantAcknowledgement) {
+      recordFirstAssistantEventAcknowledgementMetric({
+        runId: payload.runId,
+        ...firstAssistantAcknowledgement,
+      });
+    }
     if (failures.length > 0) {
       throw failures[0];
     }
+    signal.throwIfAborted();
+
     return {
       outcome: "accepted",
-      chatProjection: null,
       payload,
       ownership: args.ownership,
+      chatProjection: {
+        thread,
+        insertedRowCount,
+        eventPublished: args.eventPublished,
+      },
     };
-  }
-
-  const firstAssistantAcknowledgement =
-    await claimFirstAssistantAcknowledgement(
-      args,
-      args.insertion?.shouldAttemptFirstAssistantEventClaim ?? false,
-      auxiliary,
-    );
-  if (firstAssistantAcknowledgement) {
-    recordFirstAssistantEventAcknowledgementMetric({
-      runId: payload.runId,
-      ...firstAssistantAcknowledgement,
-    });
-  }
-  if (failures.length > 0) {
-    throw failures[0];
-  }
-  signal.throwIfAborted();
-
-  return {
-    outcome: "accepted",
-    payload,
-    ownership: args.ownership,
-    chatProjection: {
-      thread,
-      insertedRowCount,
-      eventPublished: args.eventPublished,
-    },
-  };
-}
+  },
+);
 
 const materializePreparedRunOutputEvents$ = command(
   async (
@@ -412,7 +376,8 @@ const materializePreparedRunOutputEvents$ = command(
     },
     signal: AbortSignal,
   ): Promise<RunOutputMaterializationResult> => {
-    const database = set(writeDb$);
+    // Initialize the database before ownership, session and event side effects.
+    set(writeDb$);
     const { prepared, preparedOwnership, diagnostics } = args;
     const { ownership } = preparedOwnership;
     const { payload } = prepared;
@@ -454,9 +419,9 @@ const materializePreparedRunOutputEvents$ = command(
         threadId: thread.chatThreadId,
       });
     }
-    return await materializeAdmittedRunOutputEvents(
+    return await set(
+      materializeAdmittedRunOutputEvents$,
       {
-        db: database,
         ownership,
         payload: prepared.payload,
         thread,
