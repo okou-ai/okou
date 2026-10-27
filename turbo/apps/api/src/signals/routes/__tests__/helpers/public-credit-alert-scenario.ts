@@ -772,20 +772,16 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     expect(recharge.amount_paid).toBe(600);
     await postStripeEvent("invoice.paid", { object: "invoice", ...recharge });
     await accept(
-      config.update({ headers: billingHeaders, body: { enabled: false } }),
+      config.update({ headers: adminHeaders, body: { enabled: false } }),
       [200],
     );
-    // Prime and observe both CLI roles before the debit changes membership.
-    // The idempotent admin update and independent observations retain disabled
-    // recharge while proving both callers' original write authority.
+    // The real admin CLI disables recharge above, proving its write authority.
+    // Read back that state independently and observe the member's original
+    // authority before the debit changes membership.
     const [disabled, startingBalance, memberCredits, memberUpdate] =
       await Promise.all([
-        owner.run(async () => {
-          await accept(
-            config.update({ headers: adminHeaders, body: { enabled: false } }),
-            [200],
-          );
-          return await accept(config.get({ headers: adminHeaders }), [200]);
+        owner.run(() => {
+          return accept(config.get({ headers: adminHeaders }), [200]);
         }),
         owner.run(() => {
           return accept(status.get({ headers: billingHeaders }), [200]);
