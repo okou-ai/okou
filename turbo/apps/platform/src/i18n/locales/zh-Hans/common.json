@@ -2192,7 +2192,8 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
-      "empty": "这个对话的成果和关联对话会显示在这里。",
+      "emptyDescription": "这个对话的文件和关联对话会显示在这里。",
+      "emptyTitle": "还没有资源",
       "loadFailed": "无法加载聊天资源",
       "loading": "正在加载资源",
       "showMore": "查看更多",

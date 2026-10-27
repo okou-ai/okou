@@ -2192,7 +2192,8 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "empty": "이 채팅의 결과물과 관련 채팅이 여기에 표시됩니다.",
+      "emptyDescription": "이 채팅의 파일과 관련 채팅이 여기에 표시됩니다.",
+      "emptyTitle": "아직 리소스가 없습니다",
       "loadFailed": "리소스를 불러오지 못했습니다",
       "loading": "리소스 불러오는 중",
       "showMore": "더 보기",

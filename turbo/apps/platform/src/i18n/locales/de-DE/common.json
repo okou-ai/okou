@@ -2200,7 +2200,8 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "empty": "Artefakte und verwandte Chats aus diesem Chat erscheinen hier.",
+      "emptyDescription": "Dateien und Chats aus diesem Chat werden hier angezeigt.",
+      "emptyTitle": "Noch keine Ressourcen",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "loading": "Ressourcen werden geladen",
       "showMore": "Mehr anzeigen",

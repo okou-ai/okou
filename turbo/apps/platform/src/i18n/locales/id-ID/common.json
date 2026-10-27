@@ -2192,7 +2192,8 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "empty": "Artefak dan chat terkait dari chat ini muncul di sini.",
+      "emptyDescription": "File dan obrolan dari chat ini akan muncul di sini.",
+      "emptyTitle": "Belum ada sumber daya",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "loading": "Memuat sumber daya",
       "showMore": "Tampilkan lebih banyak",

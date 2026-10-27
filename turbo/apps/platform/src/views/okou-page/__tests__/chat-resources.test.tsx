@@ -77,10 +77,13 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
   await expect(
-    within(panel).findByText(
-      "Artifacts and related chats from this chat appear here.",
-    ),
+    within(panel).findByText("No resources yet"),
   ).resolves.toBeInTheDocument();
+  expect(
+    within(panel).getByText(
+      "Files and chats from this chat will show up here.",
+    ),
+  ).toBeInTheDocument();
 });
 
 test("Draw a pressed panel only once its artifacts and related chats have answered", async () => {
@@ -338,9 +341,7 @@ test.each([0, 20])(
     expect(resourcePanel()).not.toBeInTheDocument();
     click(resourceButton());
     const panel = await screen.findByRole("region", { name: "Resources" });
-    await within(panel).findByText(
-      "Artifacts and related chats from this chat appear here.",
-    );
+    await within(panel).findByText("No resources yet");
     expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   },
 );
