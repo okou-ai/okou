@@ -190,6 +190,12 @@ final class ComposerConnectorStore {
     currentComputerAccess ?? pendingOptions.computerAccess
       ?? ChatComputerAccess(cloudBrowserEnabled: remotes?.cloudBrowserEnabledByDefault ?? false)
   }
+  var visibleComputerUseHosts: [ChatComputerHost] {
+    let selectedID = computerAccess.computerUseHostId
+    return (remotes?.computerUseHosts ?? []).filter {
+      $0.status == "online" || $0.id == selectedID
+    }
+  }
   func setComputerAccess(_ value: ChatComputerAccess) async {
     guard !isSaving, !closed else { return }
     if let threadID {

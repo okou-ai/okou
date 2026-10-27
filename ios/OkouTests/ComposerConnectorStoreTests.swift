@@ -11,6 +11,81 @@ import XCTest
 final class ComposerConnectorStoreTests: XCTestCase {
   private typealias F = ConnectorHTTPFixtures
 
+  func testNewChatOffersOnlineComputersAndRetainsItsSelectionWhenItGoesOffline() async throws {
+    let status = Mutex("online")
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path == "/api/remotes/overview" {
+        return ChatHTTPResponse(
+          body: """
+            {"computerUseHosts":[{"id":"\(F.accountID)","displayName":"Studio Mac","status":"\(status.withLock { $0 })"},{"id":"\(F.siblingID)","displayName":"Travel Mac","status":"offline"},{"id":"\(F.customID)","displayName":"Travel Mac","status":"offline"}],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}
+            """)
+      }
+      return try composerResponse(request)
+    }
+    let store = makeStore(fixture)
+    defer { store.close() }
+    store.configure(agentID: F.agentID)
+    await store.refresh()
+    XCTAssertNil(store.remoteError)
+    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
+
+    await store.setComputerAccess(ChatComputerAccess(computerUseHostId: F.accountID))
+    status.withLock { $0 = "offline" }
+    await store.refresh()
+    XCTAssertNil(store.remoteError)
+    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
+    XCTAssertEqual(store.pendingOptions.computerAccess?.computerUseHostId, F.accountID)
+
+    await store.setComputerAccess(ChatComputerAccess())
+    XCTAssertTrue(store.visibleComputerUseHosts.isEmpty)
+    XCTAssertNil(store.pendingOptions.computerAccess?.computerUseHostId)
+  }
+
+  func testConversationKeepsItsSelectedOfflineComputerAvailableToDisable() async throws {
+    let selection = Mutex<String?>(F.accountID)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path == "/api/remotes/overview" {
+        return ChatHTTPResponse(
+          body: """
+            {"computerUseHosts":[{"id":"\(F.accountID)","displayName":"Studio Mac","status":"offline"},{"id":"\(F.siblingID)","displayName":"Travel Mac","status":"offline"}],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}
+            """)
+      }
+      if request.url!.path == "/api/chat-threads/\(F.threadID)/computer-use-host",
+        request.httpMethod == "POST"
+      {
+        let access = try JSONDecoder().decode(
+          ChatComputerAccess.self, from: chatRequestBody(request))
+        selection.withLock { $0 = access.computerUseHostId }
+        return ChatHTTPResponse(body: "{}")
+      }
+      if request.url!.path == "/api/chat-threads/\(F.threadID)/metadata" {
+        let hostID = selection.withLock { $0.map { "\"\($0)\"" } ?? "null" }
+        return ChatHTTPResponse(
+          body: """
+            {"id":"\(F.threadID)","agentId":"\(F.agentID)","cloudBrowserEnabled":false,"computerUseHostId":\(hostID)}
+            """)
+      }
+      return try composerResponse(request)
+    }
+    let thread = ChatThread(
+      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+      pinnedAt: nil, pinOrder: nil, indicator: nil)
+    let store = makeStore(fixture, thread: thread)
+    defer { store.close() }
+    await store.refresh()
+    XCTAssertNil(store.remoteError)
+    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
+    XCTAssertEqual(store.computerAccess.computerUseHostId, F.accountID)
+
+    await store.setComputerAccess(ChatComputerAccess())
+    XCTAssertTrue(store.canSend)
+    XCTAssertNil(store.computerAccess.computerUseHostId)
+    XCTAssertTrue(store.visibleComputerUseHosts.isEmpty)
+    let access = try await store.service.computerAccess(threadID: F.threadID)
+    XCTAssertNil(access.computerUseHostId)
+  }
+
   func testPendingChoicesBelongToTheirAgentWithoutCreatingAConversation() async throws {
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/agents/\(F.siblingID)" {
