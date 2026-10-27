@@ -675,8 +675,9 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   const adminHeaders = { authorization: `Bearer ${adminToken.token}` };
   const memberHeaders = { authorization: `Bearer ${memberToken.token}` };
   // Preserve the independently verified, pre-existing Clerk session as a
-  // billing reader. That auth path does not write the membership cache.
+  // billing caller. That auth path does not write the membership cache.
   createRouteMocks(context).clerk.session(admin.userId, orgId, "org:admin");
+  const billingHeaders = { authorization: "Bearer clerk-session" };
   mockClerkUsers(
     context,
     [admin, member].map((actor) => {
@@ -725,7 +726,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   await owner.run(async () => {
     const purchase = await accept(
       checkout.create({
-        headers: adminHeaders,
+        headers: billingHeaders,
         body: {
           tier: "pro",
           memberUsagePacks: [
@@ -744,11 +745,11 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     }
     await completeCheckout(purchase.body.url);
     expect(
-      (await accept(status.get({ headers: adminHeaders }), [200])).body,
+      (await accept(status.get({ headers: billingHeaders }), [200])).body,
     ).toMatchObject({ tier: "pro", status: "active", credits: 0 });
     const enabled = await accept(
       config.update({
-        headers: adminHeaders,
+        headers: billingHeaders,
         body: { enabled: true, threshold: 1000, amount: 5005 },
       }),
       [200],
@@ -771,26 +772,37 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     expect(recharge.amount_paid).toBe(600);
     await postStripeEvent("invoice.paid", { object: "invoice", ...recharge });
     await accept(
-      config.update({ headers: adminHeaders, body: { enabled: false } }),
+      config.update({ headers: billingHeaders, body: { enabled: false } }),
       [200],
     );
-    expect(
-      (await accept(config.get({ headers: adminHeaders }), [200])).body,
-    ).toMatchObject({ enabled: false });
-    expect(
-      (await accept(status.get({ headers: adminHeaders }), [200])).body.credits,
-    ).toBe(5005);
-    expect(
-      (await accept(credits.get({ headers: memberHeaders }), [200])).body,
-    ).toMatchObject({ totalCredits: 0, purchasedCredits: 0, bonusCredits: 0 });
-    expect(
-      (
-        await accept(
-          config.update({ headers: memberHeaders, body: { enabled: false } }),
-          [403],
-        )
-      ).status,
-    ).toBe(403);
+    // Prime and observe both CLI roles before the debit changes membership.
+    // These independent reads and the forbidden update cannot change billing.
+    const [disabled, startingBalance, memberCredits, memberUpdate] =
+      await Promise.all([
+        owner.run(() => {
+          return accept(config.get({ headers: adminHeaders }), [200]);
+        }),
+        owner.run(() => {
+          return accept(status.get({ headers: billingHeaders }), [200]);
+        }),
+        owner.run(() => {
+          return accept(credits.get({ headers: memberHeaders }), [200]);
+        }),
+        owner.run(() => {
+          return accept(
+            config.update({ headers: memberHeaders, body: { enabled: false } }),
+            [403],
+          );
+        }),
+      ]);
+    expect(disabled.body).toMatchObject({ enabled: false });
+    expect(startingBalance.body.credits).toBe(5005);
+    expect(memberCredits.body).toMatchObject({
+      totalCredits: 0,
+      purchasedCredits: 0,
+      bonusCredits: 0,
+    });
+    expect(memberUpdate.status).toBe(403);
     await flushWaitUntilForTest();
   });
   return {
@@ -836,7 +848,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
           (
             await accept(
               status.get({
-                headers: { authorization: "Bearer clerk-session" },
+                headers: billingHeaders,
               }),
               [200],
             )
