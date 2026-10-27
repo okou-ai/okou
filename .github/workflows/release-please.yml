@@ -1208,6 +1208,14 @@ jobs:
           REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
           DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler-oauth.outputs) }}
 
+      # Validate before migrations or either API deployment. Its decoded record
+      # lets the Vercel and Worker runtimes skip schema validation.
+      - name: Validate API production environment
+        shell: bash
+        env:
+          API_ENV_FILE: ${{ steps.api-production-env.outputs.file }}
+        run: pnpm --dir turbo/apps/api env:validate "$API_ENV_FILE"
+
       - name: Notify Slack - Migration Starting
         id: migration-slack-start
         if: ${{ needs.release-please.outputs.api_release_created == 'true' && vars.SLACK_RELEASE_CHANNEL_ID != '' }}

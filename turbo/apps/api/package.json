@@ -9,6 +9,7 @@
     "test:worker-build": "node --test scripts/build-worker.node-test.mjs",
     "check-types:worker": "bash scripts/check-types.sh worker",
     "dev": "bash scripts/dev.sh",
+    "env:validate": "tsx src/scripts/validate-env.ts",
     "start": "tsx src/server.ts",
     "db:dev-seed": "dotenv -e .env.local -- tsx src/scripts/dev-seed.ts",
     "db:dev-bench-seed": "dotenv -e .env.local -- tsx src/scripts/dev-bench-seed.ts",

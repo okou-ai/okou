@@ -46,6 +46,7 @@
     "src/production-bootstrap.ts",
     "src/server.ts",
     "src/signals/route.ts",
+    "src/lib/env-schema.ts",
     "src/lib/env.ts",
     "src/lib/log.ts",
     "src/lib/secret-kms-client.ts",

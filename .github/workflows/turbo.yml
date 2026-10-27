@@ -1360,6 +1360,13 @@ jobs:
           API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
 
+      # Validate the final rendered environment before deploying either API
+      # target. Its decoded record lets their runtimes skip schema validation.
+      - name: Validate API runtime environment
+        env:
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+        run: pnpm --dir turbo/apps/api env:validate "$API_ENV_FILE"
+
       - name: Deploy API to Vercel
         id: api-deploy
         uses: ./.github/actions/vercel-deploy
