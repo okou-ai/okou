@@ -1,0 +1,117 @@
+def list_body(flow):
+    meta = {}
+    return [(meta.get("sandbox_run_id"), (meta := flow.metadata))[0] for _ in [0, 1]]
+
+
+def set_body(flow):
+    meta = {}
+    return {(meta.get("sandbox_run_id"), (meta := flow.metadata))[0] for _ in [0, 1]}
+
+
+def dict_value(flow):
+    meta = {}
+    return {_: (meta.get("sandbox_run_id"), (meta := flow.metadata))[0] for _ in [0, 1]}
+
+
+def dict_key(flow):
+    meta = {}
+    return {meta.get("sandbox_run_id"): (meta := flow.metadata) for _ in [0, 1]}
+
+
+def consumed_generator(flow):
+    meta = {}
+    return list((meta.get("sandbox_run_id"), (meta := flow.metadata))[0] for _ in [0, 1])
+
+
+def rejected_filter(flow):
+    meta = {}
+    return [None for _ in [0, 1] if (meta.get("sandbox_run_id"), (meta := flow.metadata))[0]]
+
+
+def filter_alias_chain(flow):
+    first = meta = {}
+    return [first.get("sandbox_run_id") for _ in [0, 1]
+            if (first := meta) is not None if (meta := flow.metadata) is not None]
+
+
+def nested_inner(flow):
+    meta = {}
+    return [(meta.get("sandbox_run_id"), (meta := flow.metadata))[0]
+            for _ in [0] for inner in [0, 1]]
+
+
+def nested_outer(flow):
+    meta = {}
+    return [(meta.get("sandbox_run_id"), (meta := flow.metadata))[0]
+            for _ in [0, 1] for inner in [0]]
+
+
+def outer_filter(flow):
+    meta = {}
+    return [(meta := flow.metadata) for _ in [0, 1]
+            if (meta.get("sandbox_run_id"), True)[1] for inner in [0]]
+
+
+def later_iterable(flow):
+    meta = {}
+    return [(meta := flow.metadata) for _ in [0, 1]
+            for inner in (meta.get("sandbox_run_id"), [0])[1]]
+
+
+def empty_inner(flow):
+    meta = {}
+    return [None for _ in [0, 1]
+            if (meta.get("sandbox_run_id"), (meta := flow.metadata))[1] is not None
+            for inner in []]
+
+
+def nested_comprehension(flow):
+    meta = {}
+    return [[(meta.get("sandbox_run_id"), (meta := flow.metadata))[0] for inner in [0]]
+            for _ in [0, 1]]
+
+
+def walrus_stays_enclosing(flow):
+    meta = {}
+    [(meta := flow.metadata) for _ in [0, 1]]
+    return meta.get("sandbox_run_id")
+
+
+def deferred_creation_retains_alias(flow):
+    meta = flow.metadata
+    values = ((meta := {}) for _ in [0, 1])
+    meta.get("sandbox_run_id")
+    return values
+
+
+async def async_rows():
+    for row in [0, 1]:
+        yield row
+
+
+async def async_body(flow):
+    meta = {}
+    return [(meta.get("sandbox_run_id"), (meta := flow.metadata))[0] async for _ in async_rows()]
+
+
+def false_filter(flow):
+    meta = {}
+    return [flow.metadata.get("sandbox_run_id") for _ in [0, 1]
+            if (meta.get("sandbox_run_id"), (meta := flow.metadata))[1] is not None if False]
+
+
+def target_access(flow):
+    meta = {}
+    return [(meta := flow.metadata) for meta["sandbox_run_id"] in [0, 1]]
+
+
+def nested_chain(flow):
+    first = second = {}
+    return [(first.get("sandbox_run_id"), (first := second), (second := flow.metadata))[0]
+            for _ in [0, 1] for inner in [0, 1]]
+
+
+def nested_first_iterable(flow):
+    meta = {}
+    return [[(meta := flow.metadata) for inner in (meta.get("sandbox_run_id"), [0])[1]]
+            for _ in [0, 1]]
