@@ -59,6 +59,7 @@ import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-externa
 import { builtinConnectorsOauthDeviceAuthRoutes } from "./routes/connectors-oauth-device-auth";
 import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
 import { cronBrowserReconcileRoutes } from "./routes/cron-browser-reconcile";
+import { cronAuditRunSettlementRoutes } from "./routes/cron-audit-run-settlement";
 import { cronCleanupSandboxesRoutes } from "./routes/cron-cleanup-sandboxes";
 import { cronCleanupXResourceReadsRoutes } from "./routes/cron-cleanup-x-resource-reads";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
@@ -284,6 +285,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronSnapshotChatEventsRoutes,
   ...cronRetainChatEventsRoutes,
   ...cronCompactUsageEventsRoutes,
+  ...cronAuditRunSettlementRoutes,
   ...cronCleanupSandboxesRoutes,
   ...cronCleanupXResourceReadsRoutes,
   ...cronConnectorCatalogRoutes,
