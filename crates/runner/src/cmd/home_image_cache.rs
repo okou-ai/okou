@@ -35,7 +35,7 @@ enum HomeImageCacheCommand {
     ///
     /// The first phase removes stale, unusable, and temporary cache contents before evaluating
     /// capacity. It may evict valid entries, oldest-first, below the filesystem low-water mark
-    /// toward its high-water mark, or to restore the independent 1,024-entry cap. Count-only
+    /// toward its high-water mark, or to restore the independent 4,096-entry cap. Count-only
     /// cleanup does not activate a free-byte target. Actual free space controls recovery;
     /// deleting an open image does not imply its blocks were released. Locked entries are skipped
     /// during reusable-entry eviction, and candidates are revalidated before deletion. Use

@@ -93,7 +93,7 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
     let f = Fixture::new().await;
     // Physical GC deliberately accepts independently produced current commits;
     // construct its real persisted input without consumer-specific eligibility.
-    for i in 0..=1024 {
+    for i in 0..=4096 {
         let key = format!("{i:064x}");
         f.cache.ensure_home_cache_entry_dir(&key).await.unwrap();
         let paths = f.cache.entry_paths(&key);
@@ -126,7 +126,7 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
         std::fs::read_dir(f.cache.home_image_cache_dir())
             .unwrap()
             .count(),
-        1024
+        4096
     );
     assert!(
         !f.cache
@@ -136,7 +136,7 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
     );
     assert!(
         f.cache
-            .entry_paths(&format!("{:064x}", 1024))
+            .entry_paths(&format!("{:064x}", 4096))
             .entry_dir()
             .exists()
     );

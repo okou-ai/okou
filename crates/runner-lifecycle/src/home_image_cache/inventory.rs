@@ -88,7 +88,7 @@ pub(super) fn project_inventory_entries(
     )
 }
 
-/// Keep up to 1,024 groups and eight profiles per group, before applying the
+/// Keep up to 4,096 groups and eight profiles per group, before applying the
 /// wire's total capability cap. Retaining the boundary group's other profiles
 /// preserves ordering if a later entry moves that group ahead of the boundary.
 pub(super) fn cap_inventory_entries(
