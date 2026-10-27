@@ -3,6 +3,8 @@ import { publishRunnerJobNotification } from "../external/realtime";
 import { now } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { command } from "ccstate";
+import { normalizeBuildCommitSha } from "../../lib/build-info";
+import { env } from "../../lib/env";
 import {
   runnerPreferenceTelemetryDimensions,
   runnerReuseKeyTelemetryKind,
@@ -10,6 +12,7 @@ import {
   resolveRunnerReusePreference$,
 } from "./runner-reuse-preference";
 import { tapError } from "../utils";
+import { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
 
 const L = logger("RunnerDispatch");
 
@@ -130,16 +133,21 @@ export const notifyRunnerJob$ = command(
     args: RunnerJobNotification,
     timing: RunnerJobNotificationTiming,
   ): Promise<boolean> => {
+    const reuseTiming = new RunnerReusePreferenceTiming();
     const notificationEnteredAt = now();
     let preferenceLookupSucceeded = true;
     const resolution = await tapError(
-      set(resolveRunnerReusePreference$, {
-        runId: args.runId,
-        runnerGroup: args.runnerGroup,
-        profile: args.profile,
-        reuseKey: args.reuseKey,
-        discoveryStartedAt: null,
-      }),
+      set(
+        resolveRunnerReusePreference$,
+        {
+          runId: args.runId,
+          runnerGroup: args.runnerGroup,
+          profile: args.profile,
+          reuseKey: args.reuseKey,
+          discoveryStartedAt: null,
+        },
+        reuseTiming,
+      ),
       (error) => {
         preferenceLookupSucceeded = false;
         L.warn(
@@ -170,17 +178,21 @@ export const notifyRunnerJob$ = command(
     });
     const publishFinishedAt = now();
 
+    const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
     const attributionDimensions: Record<string, string> = {
       runner_group: args.runnerGroup,
       profile: args.profile,
       notification_target: "broadcast",
       activation_origin: timing.preActivation.activationOrigin,
+      ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
     };
+    const preferenceDimensions =
+      runnerPreferenceTelemetryDimensions(runnerPreference);
     const dimensions: Record<string, string> = {
       ...attributionDimensions,
       reuse_key_kind: runnerReuseKeyTelemetryKind(args.reuseKey),
       ...(args.reuseKey === null ? {} : { reuse_key: args.reuseKey }),
-      ...runnerPreferenceTelemetryDimensions(runnerPreference),
+      ...preferenceDimensions,
       ...(finalizingPreferenceSource
         ? { runner_preference_finalizing_source: finalizingPreferenceSource }
         : {}),
@@ -188,6 +200,14 @@ export const notifyRunnerJob$ = command(
     // Queue-relative actions are cumulative boundaries. Preference lookup and
     // publish durations are nested children and must not be added to them.
     recordSandboxOperations([
+      ...reuseTiming.operations({
+        runId: args.runId,
+        dimensions: {
+          ...attributionDimensions,
+          runner_preference_resolution:
+            preferenceDimensions.runner_preference_resolution,
+        },
+      }),
       ...runnerNotificationAttributionEvents(
         args,
         timing,
