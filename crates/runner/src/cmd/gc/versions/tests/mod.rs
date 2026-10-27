@@ -1,3 +1,5 @@
+mod custody;
+
 use std::os::unix::fs::PermissionsExt;
 
 use nix::fcntl::{Flock, FlockArg};

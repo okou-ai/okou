@@ -1,7 +1,5 @@
 //! Best-effort collection of the host storage archive and decoded-cache entries.
 
-mod removal;
-
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -12,11 +10,10 @@ use crate::StorageResult;
 use runner_host::byte_size::human_bytes;
 use runner_host::gc::{
     GcDirStatus, LockProbe, collect_dir_stats, dir_stats, gc_entry_is_real_dir, gc_path_dir_status,
-    next_entry_warn_or_stop, probe_lock, read_dir_or_missing, remove_unused_lock_after_probe,
+    next_entry_warn_or_stop, probe_lock, read_dir_or_missing, remove_dir_all_with_lock,
+    remove_unused_lock_after_probe,
 };
 use runner_host::paths::HomePaths;
-
-use removal::remove_dir_all_with_lock;
 
 /// Caller-owned best-effort targets, not unconditional post-collection caps.
 #[derive(Clone, Copy, Debug)]
