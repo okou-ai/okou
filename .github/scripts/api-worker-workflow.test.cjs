@@ -258,6 +258,56 @@ esac
   }
 });
 
+test("API deployments validate their final environment before migrating or deploying", () => {
+  const command = 'pnpm --dir turbo/apps/api env:validate "$API_ENV_FILE"';
+  const assertOrdered = (list, names) => {
+    const indices = names.map((name) => {
+      const matches = list.filter((step) =>
+        step.startsWith(`        name: ${name}\n`),
+      );
+      assert.equal(matches.length, 1, name);
+      return list.indexOf(matches[0]);
+    });
+    assert.deepEqual(
+      indices,
+      [...indices].sort((a, b) => a - b),
+    );
+  };
+
+  const preview = stepNamed("Validate API runtime environment");
+  assert.equal(field(preview, "run", 8), command);
+  assert.equal(
+    field(preview, "API_ENV_FILE", 10),
+    "${{ steps.api-deploy-env.outputs.file }}",
+  );
+  // The Stripe step is the last writer of the rendered preview file.
+  assertOrdered(deploySteps, [
+    "Use Stripe CLI webhook secret for PR API preview",
+    "Validate API runtime environment",
+    "Deploy API to Vercel",
+    workerName,
+  ]);
+
+  const productionSteps = steps(
+    jobs(read("release-please.yml"))["promote-api-production"],
+  );
+  const production = productionSteps.find((step) =>
+    step.startsWith("        name: Validate API production environment\n"),
+  );
+  assert.equal(field(production, "run", 8), command);
+  assert.equal(
+    field(production, "API_ENV_FILE", 10),
+    "${{ steps.api-production-env.outputs.file }}",
+  );
+  assertOrdered(productionSteps, [
+    "Resolve API production environment",
+    "Validate API production environment",
+    "Run Production Migrations",
+    "Deploy API Production",
+    "Build and deploy API Worker production",
+  ]);
+});
+
 test("both Worker steps run only for same-repository PRs and main pushes", () => {
   for (const name of [contractName, workerName]) {
     const step = stepNamed(name);

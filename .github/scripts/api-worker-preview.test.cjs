@@ -204,7 +204,7 @@ function deploymentFixture(t, environment = {}, production = false) {
   const envFile = path.join(directory, "runtime.env");
   fs.writeFileSync(
     envFile,
-    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=dev\nAXIOM_TOKEN_TELEMETRY=\nPRIVATE_KEY=private-runtime-credential\n`,
+    `ENV=preview\nGIT_COMMIT_SHA=${"3".repeat(40)}\nAXIOM_DATASET_SUFFIX=dev\nAXIOM_TOKEN_TELEMETRY=\nPRIVATE_KEY=private-runtime-credential\nAPI_VALIDATED_ENV={"DATABASE_URL":"postgresql://pooled.example.neon.tech/neondb"}\n`,
     { mode: 0o600 },
   );
   const outputFile = path.join(directory, "outputs");
@@ -311,13 +311,30 @@ function deploymentFixture(t, environment = {}, production = false) {
   return { hyperdrive, outputFile, envFile, mutations };
 }
 
+// Stand in for the API's env:validate, which owns the schema: it receives the
+// final Worker runtime in a private file and appends the decoded record.
+function validateEnvironment(args) {
+  const file = args.at(-1);
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  const runtime = parseEnvironment(fs.readFileSync(file, "utf8"));
+  fs.appendFileSync(
+    file,
+    `API_VALIDATED_ENV=${JSON.stringify({ DATABASE_URL: runtime.DATABASE_URL })}\n`,
+  );
+  return { file, runtime };
+}
+
 test("native deployment binds preconfigured exports without requiring an Axiom destination credential", async (t) => {
   const { hyperdrive, outputFile } = deploymentFixture(t);
   const commands = [];
   let generatedPath;
   let secretsPath;
+  let validatedFile;
   t.mock.method(childProcess, "spawnSync", (_command, args) => {
-    if (args.includes("build:worker")) commands.push("build");
+    if (args.includes("env:validate")) {
+      validatedFile = validateEnvironment(args).file;
+      commands.push("validate");
+    } else if (args.includes("build:worker")) commands.push("build");
     else {
       assert.ok(args.includes("deploy"));
       generatedPath = args[args.indexOf("--config") + 1];
@@ -352,18 +369,23 @@ test("native deployment binds preconfigured exports without requiring an Axiom d
         new URL(runtime.DATABASE_URL).hostname,
         "ep-shared.example.neon.tech",
       );
+      // The workflow's record predates the Worker's database override.
+      assert.deepEqual(JSON.parse(runtime.API_VALIDATED_ENV), {
+        DATABASE_URL: runtime.DATABASE_URL,
+      });
       commands.push("upload");
     }
     return { status: 0 };
   });
   await main("deploy");
-  assert.deepEqual(commands, ["build", "upload"]);
+  assert.deepEqual(commands, ["validate", "build", "upload"]);
   assert.equal(
     fs.readFileSync(outputFile, "utf8"),
     `worker-url=https://okou-api-preview-pr-123.test-account.workers.dev\nsource-sha=${"3".repeat(40)}\n`,
   );
   assert.equal(fs.existsSync(generatedPath), false);
   assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
+  assert.equal(fs.existsSync(path.dirname(validatedFile)), false);
 });
 
 test("Worker deployment binds certificate federation while preserving the shared Vercel environment", async (t) => {
@@ -383,8 +405,11 @@ test("Worker deployment binds certificate federation while preserving the shared
   );
   const sharedEnvironment = fs.readFileSync(envFile, "utf8");
   let deployedRuntime;
+  let validatedRuntime;
   t.mock.method(childProcess, "spawnSync", (_command, args) => {
-    if (args.includes("deploy")) {
+    if (args.includes("env:validate")) {
+      validatedRuntime = validateEnvironment(args).runtime;
+    } else if (args.includes("deploy")) {
       const config = JSON.parse(
         fs.readFileSync(args[args.indexOf("--config") + 1], "utf8"),
       );
@@ -404,6 +429,8 @@ test("Worker deployment binds certificate federation while preserving the shared
     return { status: 0 };
   });
   await main("deploy");
+  assert.equal(validatedRuntime.GCP_LLM_WORKLOAD_IDENTITY_PROVIDER, provider);
+  assert.equal(validatedRuntime.GCP_MTLS_CERTIFICATE_CHAIN, certificateChain);
   assert.equal(deployedRuntime.GCP_LLM_WORKLOAD_IDENTITY_PROVIDER, provider);
   assert.equal(deployedRuntime.GCP_MTLS_CERTIFICATE_CHAIN, certificateChain);
   assert.equal(deployedRuntime.GCP_LLM_PROJECT_ID, "test-project");
@@ -451,15 +478,27 @@ test("production deployment publishes the released API with its own database bin
     GCP_LLM_WORKLOAD_IDENTITY_PROVIDER:
       "projects/123456789/locations/global/workloadIdentityPools/vercel-production/providers/oidc",
   };
-  const sharedEnvironment = Object.entries(releaseRuntime)
+  const sharedEnvironment = `${Object.entries(releaseRuntime)
     .map(([key, value]) => `${key}=${value}\n`)
-    .join("");
+    .join(
+      "",
+    )}API_VALIDATED_ENV={"DATABASE_URL":"${releaseRuntime.DATABASE_URL}"}\n`;
   fs.writeFileSync(envFile, sharedEnvironment);
+  const workerRuntime = {
+    ...releaseRuntime,
+    DATABASE_URL:
+      "postgresql://production:password@ep-production.example.neon.tech/neondb?sslmode=verify-full",
+    GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: provider,
+    GCP_MTLS_CERTIFICATE_CHAIN: certificateChain,
+  };
   const commands = [];
   let generatedPath;
   let secretsPath;
   t.mock.method(childProcess, "spawnSync", (_command, args) => {
-    if (args.includes("build:worker")) commands.push("build");
+    if (args.includes("env:validate")) {
+      assert.deepEqual(validateEnvironment(args).runtime, workerRuntime);
+      commands.push("validate");
+    } else if (args.includes("build:worker")) commands.push("build");
     else {
       assert.ok(args.includes("deploy"));
       generatedPath = args[args.indexOf("--config") + 1];
@@ -484,18 +523,17 @@ test("production deployment publishes the released API with its own database bin
         ).join(""),
       );
       assert.deepEqual(runtime, {
-        ...releaseRuntime,
-        DATABASE_URL:
-          "postgresql://production:password@ep-production.example.neon.tech/neondb?sslmode=verify-full",
-        GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: provider,
-        GCP_MTLS_CERTIFICATE_CHAIN: certificateChain,
+        ...workerRuntime,
+        API_VALIDATED_ENV: JSON.stringify({
+          DATABASE_URL: workerRuntime.DATABASE_URL,
+        }),
       });
       commands.push("upload");
     }
     return { status: 0 };
   });
   await main("deploy-production");
-  assert.deepEqual(commands, ["build", "upload"]);
+  assert.deepEqual(commands, ["validate", "build", "upload"]);
   assert.deepEqual(mutations, [
     ["POST", `/client/v4/accounts/${"a".repeat(32)}/hyperdrive/configs`],
   ]);
@@ -558,7 +596,8 @@ test("SDK telemetry deployment retains optional export destinations and runtime 
   );
   const commands = [];
   t.mock.method(childProcess, "spawnSync", (_command, args) => {
-    if (args.includes("build:worker")) commands.push("build");
+    if (args.includes("env:validate")) validateEnvironment(args);
+    else if (args.includes("build:worker")) commands.push("build");
     else {
       const config = JSON.parse(
         fs.readFileSync(args[args.indexOf("--config") + 1], "utf8"),

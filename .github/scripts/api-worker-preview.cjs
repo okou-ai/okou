@@ -15,6 +15,8 @@
 // deploy-production uses the existing production branch and requires ENV=production,
 // live Clerk keys and production Google certificate federation inputs. It publishes
 // only a workers.dev endpoint; canonical routes and scheduled jobs stay unchanged.
+// Deploys validate their final runtime with the API's env:validate before
+// building, uploading its decoded record with the raw values.
 // cleanup needs only JOB_REF, Cloudflare and GitHub credentials; PR refs only.
 // Credentials stay in memory/environment or private temporary files, never argv.
 // Only control-plane APIs are called: never the deployed Worker.
@@ -228,6 +230,34 @@ function command(label, args, env, cwd) {
   }
 }
 
+// The workflow validated the shared file, but Workers override some of its
+// values. Validate the exact runtime uploaded here so the API's published
+// decoded record matches it; the API owns that schema and record.
+function validateRuntime(runtime, root) {
+  const values = { ...runtime };
+  delete values.API_VALIDATED_ENV;
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "api-worker-env-"));
+  try {
+    const file = path.join(temporary, "runtime.env");
+    fs.writeFileSync(
+      file,
+      Object.entries(values)
+        .map(([key, value]) => `${key}=${value}\n`)
+        .join(""),
+      { mode: 0o600 },
+    );
+    command(
+      "Validate API Worker environment",
+      ["--dir", "turbo/apps/api", "env:validate", file],
+      {},
+      root,
+    );
+    return parseEnvironment(fs.readFileSync(file, "utf8"));
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 // The existing API release/preview lane owns branch creation and migrations.
 // Workers uses a direct connection to that exact existing branch, never a second
 // compute/branch or a hostname derived by rewriting Vercel's pooled URL.
@@ -405,6 +435,7 @@ async function main(mode) {
   if (!/^[a-f0-9]{40}$/.test(runtime.GIT_COMMIT_SHA))
     throw new Error("Invalid Worker source revision");
   const root = process.cwd();
+  const validated = validateRuntime(runtime, root);
   command(
     "Build API Worker",
     ["--dir", "turbo/apps/api", "build:worker"],
@@ -486,7 +517,7 @@ async function main(mode) {
       flag: "wx",
     });
     const secretPath = path.join(temporary, "secrets.json");
-    fs.writeFileSync(secretPath, JSON.stringify(packSecrets(runtime)), {
+    fs.writeFileSync(secretPath, JSON.stringify(packSecrets(validated)), {
       mode: 0o600,
     });
     command(
