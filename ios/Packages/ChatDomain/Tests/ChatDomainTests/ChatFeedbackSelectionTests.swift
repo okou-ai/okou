@@ -4,6 +4,23 @@ import XCTest
 @testable import ChatDomain
 
 final class ChatFeedbackSelectionTests: XCTestCase {
+  func testRenderedSelectionKeepsTheSelectedOccurrenceAndOriginalSourceSnapshot() throws {
+    let source = message("**Selected 🌷 é passage** and [Selected 🌷 é passage](https://example.com)")
+    let visible = "Selected 🌷 é passage and Selected 🌷 é passage"
+    let range = (visible as NSString).range(of: "Selected 🌷 é passage", options: .backwards)
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(message: source, range: range, visibleText: visible))
+    XCTAssertEqual(selection.quote, "Selected 🌷 é passage")
+    XCTAssertEqual(selection.range, range)
+    XCTAssertEqual(selection.text, source.text)
+    let read = try JSONDecoder().decode(
+      ChatUserMessage.self, from: JSONEncoder().encode(ChatDraftDocument(parts: [selection.part])))
+    try read.validate()
+    XCTAssertEqual(read.parts.first?.eventId, source.id)
+    XCTAssertEqual(read.parts.first?.range?.start, range.location)
+    XCTAssertEqual(read.parts.first?.quote, "Selected 🌷 é passage")
+  }
+
   func testTrimmedNativeSelectionKeepsTheRealEventAndUTF16Range() throws {
     let text = "👋 Prefix **literal**\n\n  第二段 🌷 é  \nLast"
     let selected = (text as NSString).range(of: "  第二段 🌷 é  ")
