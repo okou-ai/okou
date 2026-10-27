@@ -1,5 +1,4 @@
 import { accept } from "@okouai/connectors/accept";
-import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { object } from "zod";
 import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
@@ -9,6 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/data-router-tools";
 import { env } from "../../lib/env";
 import { authRoute } from "../auth/auth-route";
+import { fetchDataRouter } from "../services/data-router-request";
 import type { RouteEntry } from "../route-entry";
 import { settleIncludingAbort } from "../utils";
 
@@ -33,19 +33,9 @@ const list$ = command(async (_, signal: AbortSignal) => {
       let cursor: string | undefined;
       do {
         const response = await accept(
-          fetch(endpoint, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-              Accept: "application/json, text/event-stream",
-            },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: randomUUID(),
-              method: "tools/list",
-              params: cursor ? { cursor } : {},
-            }),
+          fetchDataRouter(endpoint, token, {
+            method: "tools/list",
+            params: cursor ? { cursor } : {},
           }),
           [200],
         );

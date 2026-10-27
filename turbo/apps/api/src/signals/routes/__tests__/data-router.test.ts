@@ -4,6 +4,7 @@ import {
   dataRouterHistoryContract,
   dataRouterRequestContract,
 } from "@okouai/api-contracts/contracts/data-router";
+import { DATA_ROUTER_PROTOCOL_VERSION } from "@okouai/api-contracts/contracts/data-router-tools";
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -113,10 +114,23 @@ describe("Data Router accounting when a run ends", () => {
         expect(request.headers.get("Authorization")).toBe(
           "Bearer router-test-service-token",
         );
+        // A stateless 2026-07-28 request that accepts only a JSON response.
+        expect(request.headers.get("Accept")).toBe("application/json");
+        expect(request.headers.get("MCP-Protocol-Version")).toBe(
+          DATA_ROUTER_PROTOCOL_VERSION,
+        );
+        expect(request.headers.get("Mcp-Method")).toBe("tools/call");
+        expect(request.headers.get("Mcp-Name")).toBe("billing_get");
         const body = await request.json();
         expect(body).toMatchObject({
           method: "tools/call",
-          params: { name: "billing_get" },
+          params: {
+            name: "billing_get",
+            _meta: {
+              "io.modelcontextprotocol/protocolVersion":
+                DATA_ROUTER_PROTOCOL_VERSION,
+            },
+          },
         });
         return HttpResponse.json({
           jsonrpc: "2.0",

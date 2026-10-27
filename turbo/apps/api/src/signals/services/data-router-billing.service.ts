@@ -1,5 +1,4 @@
 import { accept } from "@okouai/connectors/accept";
-import { randomUUID } from "node:crypto";
 import { dataRouterRequests } from "@okouai/db/schema/data-router-request";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
@@ -7,6 +6,7 @@ import { array, literal, number, object, uuid } from "zod";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
+import { fetchDataRouter } from "./data-router-request";
 import { recordDataRouterUsage$ } from "./data-router-usage.service";
 import { managedAttributionQuery } from "./managed-usage-attribution";
 
@@ -56,22 +56,12 @@ export const settleDataRouterRun$ = command(
     const lookup = await settleIncludingAbort(
       (async () => {
         const response = await accept(
-          fetch(url, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-              Accept: "application/json, text/event-stream",
+          fetchDataRouter(url, token, {
+            method: "tools/call",
+            params: {
+              name: "billing_get",
+              arguments: { requestIds: [...requestIds] },
             },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: randomUUID(),
-              method: "tools/call",
-              params: {
-                name: "billing_get",
-                arguments: { requestIds: [...requestIds] },
-              },
-            }),
           }),
           [200],
         );
