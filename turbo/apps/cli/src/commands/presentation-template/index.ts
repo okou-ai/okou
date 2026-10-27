@@ -41,10 +41,13 @@ The published deck appears under Custom in the template picker, private to you u
         pagesDir: options.pages,
         packageDir: options.package,
       });
+      if (template.pageCount === null) {
+        throw new Error(
+          "Published presentation template is missing its page count",
+        );
+      }
       console.log(
-        template.pageCount === null
-          ? `Published ${template.title} (${template.id})`
-          : `Published ${template.title} (${template.id}) with ${template.pageCount.toString()} pages`,
+        `Published ${template.title} (${template.id}) with ${template.pageCount.toString()} pages`,
       );
     }),
   );
