@@ -506,9 +506,8 @@ def decode_response_body_for_network_log_capture(
     encoding returns decoded bytes on success, including ``b""`` for a
     successful empty result. ``None`` means that the encoding is unsupported or
     that decoding failed. For supported encodings, decoded output is bounded by
-    ``max_output``; reaching that bound returns the successful decoded prefix,
-    even when the compressed input has not reached a complete frame where the
-    codec policy permits that result.
+    ``max_output``. Whether a bounded prefix can be returned without validating
+    the remaining compressed input depends on the codec-specific policy below.
 
     The supported codec compatibility is intentionally aligned with mitmproxy:
 
@@ -516,8 +515,11 @@ def decode_response_body_for_network_log_capture(
       incomplete stream.
     - ``deflate`` tries the zlib wrapper and then the raw-deflate wrapper, and
       requires a complete stream unless the decoded-output bound is reached.
-    - ``br`` rejects invalid or incomplete input, except that reaching the
-      decoded-output bound returns the bounded prefix.
+    - ``br`` validates complete input when decoded output is at or below a
+      positive ``max_output``, rejecting incomplete frames or invalid trailing
+      data even at the exact limit. Only proven decoded-output overflow permits
+      returning the bounded prefix without validating the remaining compressed
+      input.
     - ``zstd`` reads concatenated frames up to ``max_output`` bytes and rejects
       malformed, incomplete, or strict-frame-budget-exceeding input unless the
       decoded-output bound is reached.
