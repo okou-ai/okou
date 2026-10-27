@@ -1,3 +1,5 @@
+import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
+import { waitUntil } from "../context/wait-until";
 import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadMarkUnreadContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -48,6 +50,9 @@ const markUnreadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Chat thread not found");
   }
 
+  waitUntil(
+    set(synchronizeUserPushBadge$, auth.userId, new AbortController().signal),
+  );
   await publishChatThreadReadCursorUpdatedSafely(
     { userId: auth.userId, orgId: agent.orgId },
     {

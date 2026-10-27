@@ -308,9 +308,11 @@ final class NotificationTests: XCTestCase {
 }
 
 @MainActor
-private final class NotificationSystemFixture: NotificationSystem {
+final class NotificationSystemFixture: NotificationSystem {
   var status = UNAuthorizationStatus.notDetermined
   var prompts = 0
+  var delivered: [DeliveredChatNotification] = []
+  var badgeCount = 0
   let environment: String? = "production"
   func authorizationStatus() async -> UNAuthorizationStatus { status }
   func requestAuthorization() async throws -> Bool {
@@ -320,4 +322,10 @@ private final class NotificationSystemFixture: NotificationSystem {
   }
   func register() {}
   func openSettings() async {}
+  func deliveredNotifications() async -> [DeliveredChatNotification] { delivered }
+  func removeDeliveredNotifications(identifiers: [String]) {
+    let removed = Set(identifiers)
+    delivered.removeAll { removed.contains($0.identifier) }
+  }
+  func setBadgeCount(_ count: Int) async throws { badgeCount = count }
 }

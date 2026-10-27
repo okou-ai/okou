@@ -1,3 +1,5 @@
+import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
+import { waitUntil } from "../context/wait-until";
 import { command, computed } from "ccstate";
 import { chatThreadMarkReadContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -47,6 +49,9 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (advanced) {
     // Read-state invalidation only. Thread-list shape is unchanged, and the
     // SharedWorker fans the user-org signal out to every matching tab.
+    waitUntil(
+      set(synchronizeUserPushBadge$, userId, new AbortController().signal),
+    );
     await publishChatThreadReadCursorUpdatedSafely(
       { userId, orgId },
       { threadId, agentId, lastReadAt },

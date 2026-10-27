@@ -13,6 +13,7 @@ final class WorkspaceStore {
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
+  private let didRefreshReadState: @MainActor () -> Void
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   private(set) var needsUpgrade = false
@@ -90,11 +91,13 @@ final class WorkspaceStore {
     },
     historyWarmingSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
-    }
+    },
+    didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     self.client = client
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
+    self.didRefreshReadState = didRefreshReadState
     self.draftStorage = draftStorage
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
@@ -668,6 +671,7 @@ final class WorkspaceStore {
 
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
+    didRefreshReadState()
     if selectedAgentID == nil { selectedAgentID = threads.first?.agentID }
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {

@@ -13,6 +13,7 @@ import { logger } from "../../lib/log";
 import { db$, writeDb$ } from "../external/db";
 import { isUserInForeground } from "../external/realtime";
 import { settle } from "../utils";
+import { unreadIosNotificationThreadCondition } from "./ios-notification-query";
 
 const log = logger("api:push");
 
@@ -29,6 +30,46 @@ interface PushDelivery {
   readonly runId: string;
   readonly status: "completed" | "failed";
   readonly notification: PushNotification;
+}
+
+interface NativePushDelivery {
+  readonly orgId?: string;
+  readonly runId?: string;
+  readonly notificationId: string;
+  readonly payload: string;
+}
+
+function nativeRunNotification(
+  args: PushDelivery,
+  unreadCount?: number,
+): NativePushDelivery {
+  const notificationId = `${args.runId}:${args.status}`;
+  return {
+    orgId: args.orgId,
+    runId: args.runId,
+    notificationId,
+    payload: JSON.stringify({
+      aps: {
+        alert: {
+          title: (
+            args.notification.title ?? BRAND_PRESENTATION.assistantName
+          ).slice(0, 120),
+          body: args.notification.body.slice(0, 512),
+        },
+        sound: "default",
+        ...(unreadCount === undefined ? {} : { badge: unreadCount }),
+        "content-available": 1,
+      },
+      okou: {
+        version: 1,
+        userId: args.userId,
+        workspaceId: args.orgId,
+        threadId: args.threadId,
+        runId: args.runId,
+        notificationId,
+      },
+    }),
+  };
 }
 
 function notificationUrl(pathOrUrl: string) {
@@ -100,15 +141,45 @@ export const sendUserPushNotifications$ = command(
     }
 
     // Presence is scoped to the notification's org, not the device's active org.
-    if (await isUserInForeground(args.userId, args.orgId, signal)) {
-      return;
-    }
+    const foreground = await isUserInForeground(
+      args.userId,
+      args.orgId,
+      signal,
+    );
 
+    const unreadCount = !nativeSubscriptions.some((subscription) => {
+      return subscription.notificationStateRevision === subscription.revision;
+    })
+      ? 0
+      : await get(db$).$count(
+          chatThreads,
+          unreadIosNotificationThreadCondition(args.userId),
+        );
+    signal.throwIfAborted();
     await Promise.all([
-      ...nativeSubscriptions.map((subscription) => {
-        return set(sendNativeRegistration$, args, subscription, signal);
-      }),
-      ...(publicKey && privateKey
+      ...nativeSubscriptions
+        .filter((subscription) => {
+          return (
+            !foreground ||
+            subscription.notificationStateRevision === subscription.revision
+          );
+        })
+        .map((subscription) => {
+          const supportsState =
+            subscription.notificationStateRevision === subscription.revision;
+          const native: NativePushDelivery = foreground
+            ? {
+                orgId: args.orgId,
+                notificationId: `badge:${args.userId}`,
+                payload: JSON.stringify({ aps: { badge: unreadCount } }),
+              }
+            : nativeRunNotification(
+                args,
+                supportsState ? unreadCount : undefined,
+              );
+          return set(sendNativeRegistration$, native, subscription, signal);
+        }),
+      ...(!foreground && publicKey && privateKey
         ? subscriptions.map((subscription) => {
             return set(
               sendWebSubscription$,
@@ -126,10 +197,53 @@ export const sendUserPushNotifications$ = command(
   },
 );
 
+/** Badge-only pushes keep installed clients current after reads on any device. */
+export const synchronizeUserPushBadge$ = command(
+  async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
+    if (
+      !hasApnsConfiguration("production") &&
+      !hasApnsConfiguration("sandbox")
+    ) {
+      return;
+    }
+    const subscriptions = await get(db$)
+      .select()
+      .from(iosPushRegistrations)
+      .where(
+        and(
+          eq(iosPushRegistrations.userId, userId),
+          eq(iosPushRegistrations.enabled, true),
+          eq(
+            iosPushRegistrations.notificationStateRevision,
+            iosPushRegistrations.revision,
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    if (subscriptions.length === 0) {
+      return;
+    }
+    const unreadCount = await get(db$).$count(
+      chatThreads,
+      unreadIosNotificationThreadCondition(userId),
+    );
+    signal.throwIfAborted();
+    const badge: NativePushDelivery = {
+      notificationId: `badge:${userId}`,
+      payload: JSON.stringify({ aps: { badge: unreadCount } }),
+    };
+    await Promise.all(
+      subscriptions.map((subscription) => {
+        return set(sendNativeRegistration$, badge, subscription, signal);
+      }),
+    );
+  },
+);
+
 const sendNativeRegistration$ = command(
   async (
     { get, set },
-    args: PushDelivery,
+    args: NativePushDelivery,
     subscription: typeof iosPushRegistrations.$inferSelect,
     signal: AbortSignal,
   ): Promise<void> => {
@@ -161,33 +275,13 @@ const sendNativeRegistration$ = command(
       return;
     }
     const started = performance.now();
-    const notificationId = `${args.runId}:${args.status}`;
     const result = await settle(
       sendApnsNotification(
         {
           environment: subscription.environment,
           deviceToken: subscription.deviceToken,
-          notificationId,
-          payload: JSON.stringify({
-            aps: {
-              alert: {
-                title: (
-                  args.notification.title ?? BRAND_PRESENTATION.assistantName
-                ).slice(0, 120),
-                body: args.notification.body.slice(0, 512),
-              },
-              sound: "default",
-              "content-available": 1,
-            },
-            okou: {
-              version: 1,
-              userId: args.userId,
-              workspaceId: args.orgId,
-              threadId: args.threadId,
-              runId: args.runId,
-              notificationId,
-            },
-          }),
+          notificationId: args.notificationId,
+          payload: args.payload,
         },
         signal,
       ),
