@@ -1,4 +1,5 @@
 use super::*;
+use raw_http_test_support::clock::advance_timer_phase;
 
 #[derive(Clone)]
 struct Reply {
@@ -47,6 +48,13 @@ impl Reply {
         Self {
             stall: true,
             ..Self::declared(b"", length)
+        }
+    }
+
+    fn stalled_headers() -> Self {
+        Self {
+            bytes: Vec::new(),
+            stall: true,
         }
     }
 }
@@ -197,6 +205,189 @@ fn header_count(telemetry: &JobTelemetry) -> usize {
         .iter()
         .filter(|(action, _, _)| action == STORAGE_CACHE_FRESH_DELIVERY_HEADERS)
         .count()
+}
+
+#[tokio::test]
+async fn archive_retry_recovers_after_first_headers_deadline_for_storage_and_artifact() {
+    for artifact in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let body = tarball_bytes();
+        let server = RetryServer::start(vec![
+            Reply::stalled_headers(),
+            Reply::response("200 OK", &body),
+        ])
+        .await;
+        let mut plan = if artifact {
+            let mut entry =
+                artifact_entry("/mnt/artifact".into(), server.url.clone(), "retry", "v1");
+            entry.archive_size = Some(body.len() as u64);
+            plan_from_entries(Vec::new(), vec![entry], None)
+        } else {
+            fresh_storage_plan_with_archive_size(
+                server.url.clone(),
+                "retry",
+                "v1",
+                body.len() as u64,
+            )
+        };
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let mut telemetry = new_telemetry();
+        let mut delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &CancellationToken::new(),
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
+        // This reply writes no bytes: observing its request proves the first
+        // send and both production deadlines are armed before clock advance.
+        server.wait_for_response(1).await;
+        advance_timer_phase(FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT).await;
+        server.wait_for_response(2).await;
+        let sandbox = MockSandbox::new("archive-first-headers-deadline");
+        populate_cache_with_fresh_delivery(
+            &mut plan,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            Some(&mut delivery),
+            None,
+        )
+        .await
+        .unwrap();
+        delivery.cancel_and_drain(&mut telemetry).await;
+        server.finish(2).await;
+        assert_staged_archive(&home, &sandbox, &plan, &body).await;
+        assert_eq!(header_count(&telemetry), 2);
+        assert_op_error(
+            &telemetry.pending_ops_snapshot(),
+            STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+            "headers-timeout",
+        );
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+    }
+}
+
+#[tokio::test]
+async fn archive_retry_keeps_the_later_attempts_header_allowance() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let (release, released) = oneshot::channel();
+    let mut server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::Respond(http_response("503 Service Unavailable", b"retry")),
+        RawHttpAction::WaitThenRespond {
+            release: released,
+            response: http_response("200 OK", &body),
+        },
+    ])
+    .await;
+    let mut plan = fresh_storage_plan_with_archive_size(
+        format!("{}/archive", server.url()),
+        "retry",
+        "v1",
+        body.len() as u64,
+    );
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    for attempt in ["first archive GET", "second archive GET"] {
+        assert!(
+            server
+                .next_request(attempt)
+                .await
+                .starts_with("GET /archive HTTP/1.1\r\n")
+        );
+    }
+    // The later request has reached the peer, but has received no headers.
+    // It must remain usable after the first-attempt deadline would expire.
+    advance_timer_phase(FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT + Duration::from_secs(1)).await;
+    release.send(()).unwrap();
+    let sandbox = MockSandbox::new("archive-later-headers");
+    populate_cache_with_fresh_delivery(
+        &mut plan,
+        &sandbox,
+        &home,
+        &mut telemetry,
+        Some(&mut delivery),
+        None,
+    )
+    .await
+    .unwrap();
+    delivery.cancel_and_drain(&mut telemetry).await;
+    assert!(server.assert_finished_with_requests().await.is_empty());
+    assert_staged_archive(&home, &sandbox, &plan, &body).await;
+    assert_eq!(header_count(&telemetry), 2);
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+}
+
+#[tokio::test]
+async fn archive_retry_cancellation_during_first_headers_releases_the_owner() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let server = RetryServer::start(vec![Reply::stalled_headers()]).await;
+    let url = server.url.clone();
+    let mut plan =
+        fresh_storage_plan_with_archive_size(url.clone(), "retry", "v1", body.len() as u64);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let cancel = CancellationToken::new();
+    let mut telemetry = new_telemetry();
+    let mut delivery =
+        prepare_fresh_archive_delivery(&mut plan, &home, &admission, &cancel, &mut telemetry, None)
+            .await
+            .unwrap();
+    server.wait_for_response(1).await;
+    cancel.cancel();
+    let sandbox = MockSandbox::new("archive-cancel-first-headers");
+    assert!(matches!(
+        populate_cache_with_fresh_delivery(
+            &mut plan,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            Some(&mut delivery),
+            None,
+        )
+        .await,
+        Err(RunnerError::Cancelled)
+    ));
+    delivery.cancel_and_drain(&mut telemetry).await;
+    server.finish(1).await;
+    admission.shutdown().await;
+    assert_eq!(header_count(&telemetry), 1);
+    assert!(!home.storage_cache_dir("retry", "v1").exists());
+    assert_eq!(storage_archive_url(&plan, 0), Some(url.as_str()));
+    assert!(sandbox.write_files_calls().is_empty());
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+    assert!(matches!(
+        lock::try_acquire_or_busy(home.storage_lock("retry", "v1"))
+            .await
+            .unwrap(),
+        lock::TryLock::Acquired(_)
+    ));
 }
 
 #[tokio::test]

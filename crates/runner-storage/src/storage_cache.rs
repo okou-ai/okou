@@ -74,7 +74,7 @@ use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::object_download_policy::{OBJECT_DOWNLOAD_BUDGET, OBJECT_DOWNLOAD_RETRY_DELAY};
 use crate::object_download_policy::{
     OBJECT_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_TIMEOUT, ObjectDownloadRetryBudget,
-    object_download_http_retry_after, object_download_transient_transport_kind,
+    before_deadline, object_download_http_retry_after, object_download_transient_transport_kind,
 };
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
 #[cfg(test)]
@@ -95,6 +95,8 @@ const CONCURRENCY: usize = 4;
 const BACKGROUND_FILL_ACTIVE_LIMIT: usize = CONCURRENCY;
 /// Idle transport retention, independent of the per-object request deadline.
 const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound a stalled first response without shortening body or later-attempt allowance.
+const FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum number of unique cache-fill groups waiting for a worker across the runner.
 const BACKGROUND_FILL_QUEUE_CAPACITY: usize = 32;
 /// Bound the number of missing archives dispatched while maintenance is waiting.
@@ -3112,6 +3114,7 @@ async fn fetch_fresh_archive(
     phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
     let mut budget = ObjectDownloadRetryBudget::default();
+    let mut first_attempt = true;
     loop {
         let result = budget
             .run_attempt(fetch_fresh_archive_once(
@@ -3120,6 +3123,7 @@ async fn fetch_fresh_archive(
                 expected_size,
                 representative,
                 phase_records,
+                first_attempt,
             ))
             .await
             .map_err(|_| FreshArchiveFetchError::permanent("timeout"))?;
@@ -3145,6 +3149,7 @@ async fn fetch_fresh_archive(
                     .wait()
                     .await
                     .map_err(|_| FreshArchiveFetchError::permanent("timeout"))?;
+                first_attempt = false;
             }
         }
     }
@@ -3156,17 +3161,34 @@ async fn fetch_fresh_archive_once(
     expected_size: Option<u64>,
     representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
+    first_attempt: bool,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
     let (phase, connection_attempt_observer) = FreshArchivePhaseGuard::new_headers(phase_records);
     let mut mismatch = None;
     let headers = connection_attempt_observer
         .scope(async {
-            let response = http
+            let request = http
                 .get(archive_url)
                 .timeout(OBJECT_DOWNLOAD_TIMEOUT)
-                .send()
+                .send();
+            // Keep reqwest's whole-request timer through body consumption. Only
+            // the first send gets a shorter absolute header deadline; retries
+            // retain room for a valid slow response under the original budget.
+            let response = if first_attempt {
+                before_deadline(
+                    tokio::time::Instant::now() + FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT,
+                    request,
+                )
                 .await
-                .map_err(|error| FreshArchiveFetchError::from_reqwest("http", error))?;
+                .map_err(|_| FreshArchiveFetchError {
+                    reason: "headers-timeout",
+                    http_status: None,
+                    retry_after: Some(Duration::ZERO),
+                })?
+            } else {
+                request.await
+            }
+            .map_err(|error| FreshArchiveFetchError::from_reqwest("http", error))?;
             if response.status() != reqwest::StatusCode::OK {
                 return Err(FreshArchiveFetchError::http_status(&response));
             }

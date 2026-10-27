@@ -103,7 +103,7 @@ impl ObjectDownloadRetry {
 #[error("object download retry budget expired")]
 pub struct ObjectDownloadBudgetExpired;
 
-async fn before_deadline<T>(
+pub(crate) async fn before_deadline<T>(
     deadline: tokio::time::Instant,
     future: impl Future<Output = T>,
 ) -> Result<T, ObjectDownloadBudgetExpired> {
