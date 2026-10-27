@@ -52,6 +52,9 @@ _ZSTD_REQUEST_CAPTURE_MAX_INPUT_BYTES = 128 * 1024
 # Empty gzip/deflate members consume no decoded-output allowance. Preserve
 # ordinary request concatenation without unbounded capture-only transitions.
 _ZLIB_REQUEST_CAPTURE_MAX_MEMBERS = 64
+# A single member's metadata or empty blocks can consume input without output.
+# Admit optional capture before decoding, with headroom for 64 KiB content.
+_ZLIB_REQUEST_CAPTURE_MAX_INPUT_BYTES = 128 * 1024
 INVALID_COMPRESSED_BODY = "invalid compressed body"
 INCOMPLETE_COMPRESSED_BODY = "incomplete compressed body"
 DECODED_BODY_LIMIT_EXCEEDED = "decoded body limit exceeded"
@@ -866,9 +869,9 @@ def decode_request_body_for_network_log_capture(
     """Decode a request body for persistent network-log capture.
 
     Request capture hides unsupported encodings and supported-codec decode
-    failures instead of keeping best-effort fallback bytes. Gzip/deflate member
-    traversal and Brotli/zstd compressed input have capture-only budgets independent
-    of decoded output; exhausted input validation hides the body without
+    failures instead of keeping best-effort fallback bytes. All supported codecs
+    have capture-only compressed-input budgets independent of decoded output;
+    gzip/deflate also limit member traversal. Exhausted input validation hides the body without
     affecting forwarded wire bytes.
     This helper is separate from billing inspection and its fail-closed policy.
     """
@@ -885,6 +888,8 @@ def decode_request_body_for_network_log_capture(
         return None
 
     if encoding in ("gzip", "deflate"):
+        if len(data) > _ZLIB_REQUEST_CAPTURE_MAX_INPUT_BYTES:
+            return None
         body, error = _decompress_zlib_json_usage_body(
             data, encoding, max_output, max_members=_ZLIB_REQUEST_CAPTURE_MAX_MEMBERS
         )
