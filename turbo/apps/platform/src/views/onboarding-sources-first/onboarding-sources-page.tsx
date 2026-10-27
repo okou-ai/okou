@@ -34,9 +34,9 @@ import {
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 import { OnboardingSecurityLink } from "./onboarding-industry-parts.tsx";
 
-// Brand assets / Playground, Figma group 461:1724 beside the Connector label.
+// Brand assets / Playground, Figma group 461:1724, with brand lime clothing.
 const connectToolsIllustrationImg = platformStaticAssetUrl(
-  "views/onboarding/assets/connectors-brand-b34bbcee04f0.png",
+  "views/onboarding/assets/connectors-brand-57f647bc2ddb.png",
 );
 
 /** The field answered on the step before decides which sources appear. */
