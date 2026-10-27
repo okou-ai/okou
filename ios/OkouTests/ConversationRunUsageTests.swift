@@ -59,7 +59,9 @@ final class ConversationRunUsageTests: XCTestCase {
     XCTAssertEqual(reads.withLock { $0 }, 0)
     selected = true
     conversation.reconcileVisibility()
-    try await eventually { conversation.runUsage.states[Self.runID] == .available(Self.usage(5)) }
+    try await waitForBusinessResult {
+      conversation.runUsage.states[Self.runID] == .available(Self.usage(5))
+    }
     selected = false
     conversation.reconcileVisibility()
     fixture.append(try row(5, type: "usage.recorded"))
@@ -68,7 +70,9 @@ final class ConversationRunUsageTests: XCTestCase {
     XCTAssertEqual(reads.withLock { $0 }, 1)
     selected = true
     conversation.reconcileVisibility()
-    try await eventually { conversation.runUsage.states[Self.runID] == .available(Self.usage(9)) }
+    try await waitForBusinessResult {
+      conversation.runUsage.states[Self.runID] == .available(Self.usage(9))
+    }
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
 
@@ -90,7 +94,7 @@ final class ConversationRunUsageTests: XCTestCase {
     await gate.started()
     store.update(runIDs: [], events: [Self.runID: "event"])
     store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
-    try await eventually { store.states[Self.runID] == .available(Self.usage(3)) }
+    try await waitForBusinessResult { store.states[Self.runID] == .available(Self.usage(3)) }
     await gate.release()
     XCTAssertEqual(store.states[Self.runID], .available(Self.usage(3)))
     XCTAssertEqual(reads.withLock { $0 }, 2)
@@ -109,7 +113,9 @@ final class ConversationRunUsageTests: XCTestCase {
     defer { conversation.close() }
     conversation.draft = "Keep this draft"
     await conversation.refresh()
-    try await eventually { conversation.runUsage.states[Self.runID] == .available(Self.usage(8)) }
+    try await waitForBusinessResult {
+      conversation.runUsage.states[Self.runID] == .available(Self.usage(8))
+    }
     XCTAssertEqual(usageRuns(conversation), [Self.runID])
     let ids = conversation.visibleItems.map(\.id)
     XCTAssertEqual(ids.suffix(2), [ConversationHistoryFixture.id(7), "usage:\(Self.runID)"])
@@ -146,13 +152,16 @@ final class ConversationRunUsageTests: XCTestCase {
     await conversation.refresh()
     let visible = Set(usageRuns(conversation))
     XCTAssertLessThan(visible.count, 16)
-    try await eventually { visible.allSatisfy { conversation.runUsage.states[$0] != .loading } }
+    try await waitForBusinessResult {
+      visible.allSatisfy { conversation.runUsage.states[$0] == .available(Self.usage(5)) }
+    }
     XCTAssertEqual(Set(reads.withLock { $0 }), visible)
     while conversation.hasEarlierMessages { await conversation.loadEarlierMessages() }
-    try await eventually {
-      reads.withLock { $0.count } == 16
+    try await waitForBusinessResult {
+      conversation.runUsage.states.count == 16
         && conversation.runUsage.states.values.allSatisfy { $0 == .available(Self.usage(5)) }
     }
+    XCTAssertEqual(reads.withLock { $0.count }, 16)
     conversation.resetRenderWindowToLatest()
     while conversation.hasEarlierMessages { await conversation.loadEarlierMessages() }
     await conversation.refresh()
@@ -176,23 +185,27 @@ final class ConversationRunUsageTests: XCTestCase {
     fixture.append(try row(3, type: "run.failed"))
     fixture.append(try row(4, type: "usage.recorded"))
     await conversation.refresh()
-    try await eventually { conversation.runUsage.states[Self.runID] == .unavailable }
+    try await waitForBusinessResult { conversation.runUsage.states[Self.runID] == .unavailable }
     response.withLock { $0 = Self.response(0) }
     fixture.append(try row(5, type: "usage.recorded"))
     await conversation.refresh()
-    try await eventually { conversation.runUsage.states[Self.runID] == .available(Self.usage(0)) }
+    try await waitForBusinessResult {
+      conversation.runUsage.states[Self.runID] == .available(Self.usage(0))
+    }
     response.withLock {
       $0 = ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Offline\"}}")
     }
     fixture.append(try row(6, type: "usage.recorded"))
     await conversation.refresh()
-    try await eventually {
+    try await waitForBusinessResult {
       if case .failed = conversation.runUsage.states[Self.runID] { return true }
       return false
     }
     response.withLock { $0 = Self.response(9) }
     conversation.runUsage.retry(Self.runID)
-    try await eventually { conversation.runUsage.states[Self.runID] == .available(Self.usage(9)) }
+    try await waitForBusinessResult {
+      conversation.runUsage.states[Self.runID] == .available(Self.usage(9))
+    }
     XCTAssertEqual(reads.withLock { $0 }, 4)
     XCTAssertEqual(usageRuns(conversation).count, 1)
   }
@@ -214,7 +227,7 @@ final class ConversationRunUsageTests: XCTestCase {
     defer { next.close() }
     next.update(runIDs: [Self.runID], events: [Self.runID: "event"])
     await gate.release()
-    try await eventually { next.states[Self.runID] == .available(Self.usage(3)) }
+    try await waitForBusinessResult { next.states[Self.runID] == .available(Self.usage(3)) }
     XCTAssertTrue(store.states.isEmpty)
   }
 
@@ -241,7 +254,7 @@ final class ConversationRunUsageTests: XCTestCase {
     await second.started()
     XCTAssertEqual(store.states[Self.runID], .loading)
     await second.release()
-    try await eventually { store.states[Self.runID] == .available(Self.usage(12)) }
+    try await waitForBusinessResult { store.states[Self.runID] == .available(Self.usage(12)) }
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
 
@@ -258,7 +271,7 @@ final class ConversationRunUsageTests: XCTestCase {
     let ids = (0..<205).map { "run-\($0)" }
     store.update(
       runIDs: ids + ids, events: Dictionary(uniqueKeysWithValues: ids.map { ($0, "event") }))
-    try await eventually {
+    try await waitForBusinessResult {
       store.states.count == 205
         && store.states.values.allSatisfy { $0 == .available(Self.usage(5)) }
     }
