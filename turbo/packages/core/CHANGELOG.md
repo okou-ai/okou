@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.793.0](https://github.com/okou-ai/okou/compare/core-v8.792.0...core-v8.793.0) (2026-10-27)
+
+
+### Features
+
+* **app:** add a unified chat workspace lab switch ([#43239](https://github.com/okou-ai/okou/issues/43239)) ([d384b85](https://github.com/okou-ai/okou/commit/d384b85c1b96fa440a5d1e92f76e6706eeba0c7b))
+* **app:** put the chat reply name line behind a lab switch ([#43217](https://github.com/okou-ai/okou/issues/43217)) ([4d4edd1](https://github.com/okou-ai/okou/commit/4d4edd10d927b67cccdf9473cdde466a45f3b7c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.0
+
 ## [8.792.0](https://github.com/okou-ai/okou/compare/core-v8.791.4...core-v8.792.0) (2026-10-27)
 
 
