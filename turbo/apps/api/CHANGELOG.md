@@ -9,6 +9,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.15.0](https://github.com/okou-ai/okou/compare/api-v2.14.3...api-v2.15.0) (2026-10-27)
+
+
+### Features
+
+* add custom directions to homepage suggestions ([#43407](https://github.com/okou-ai/okou/issues/43407)) ([062b543](https://github.com/okou-ai/okou/commit/062b54351f76fc65f05a02b7ff74d102e3874a6f))
+* **browser:** configure browser use extension ids ([#43400](https://github.com/okou-ai/okou/issues/43400)) ([646c39a](https://github.com/okou-ai/okou/commit/646c39a755d440a2a2179fd554eb18425616a595))
+* **ios:** prefetch notification content through a service extension ([#43364](https://github.com/okou-ai/okou/issues/43364)) ([28aeca6](https://github.com/okou-ai/okou/commit/28aeca6140c499cc17746d4d15c29eb69c478382))
+* prepare 4096-entry home cache readers ([#43397](https://github.com/okou-ai/okou/issues/43397)) ([edb4852](https://github.com/okou-ai/okou/commit/edb4852fb0217f4e8a2bf0bdf481fc4037a1d5a1))
+
+
+### Refactoring
+
+* **api:** disconnect feishu members atomically ([#43399](https://github.com/okou-ai/okou/issues/43399)) ([6730b2c](https://github.com/okou-ai/okou/commit/6730b2ce2206f8593fd460a096a6e676dfa649d1))
+
+
+### Performance Improvements
+
+* **api:** exclude vercel packages from the worker bundle ([#43405](https://github.com/okou-ai/okou/issues/43405)) ([87bc4be](https://github.com/okou-ai/okou/commit/87bc4be34f36c762165219b3dd4029de28f89bfc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.11.0
+    * @okouai/core bumped to 8.793.3
+    * @okouai/db bumped to 2.7.0
+    * @okouai/pi-agent-runtime bumped to 1.51.4
+
 ## [2.14.3](https://github.com/okou-ai/okou/compare/api-v2.14.2...api-v2.14.3) (2026-10-27)
 
 
