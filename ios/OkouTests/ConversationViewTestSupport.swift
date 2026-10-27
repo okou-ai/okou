@@ -13,13 +13,7 @@ func enclosingCell(_ view: UIView) -> UICollectionViewCell? {
 
 @MainActor
 func hostingPresentationFrame() async {
-  // Display-link callbacks prepare upcoming frames. Span a complete presented frame
-  // before interacting with native controls on CI.
-  await withCheckedContinuation { continuation in
-    let target = HostingDisplayFrame(continuation)
-    let link = CADisplayLink(target: target, selector: #selector(HostingDisplayFrame.display(_:)))
-    link.add(to: .main, forMode: .common)
-  }
+  XCTFail("Business-wait experiment reached a display-frame dependency")
 }
 
 @MainActor
