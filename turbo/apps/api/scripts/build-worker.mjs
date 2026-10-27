@@ -36,7 +36,10 @@ try {
     write: false,
     // Keep Cloudflare's native modules intact; Wrangler must not rebundle this.
     external: ["cloudflare:*"],
-    conditions: ["workerd", "worker"],
+    // Custom conditions drop esbuild's default `module` condition. Keep it so
+    // packages' ESM builds (for example OpenTelemetry's) are tree-shaken
+    // instead of CommonJS aggregates that initialize every export at startup.
+    conditions: ["workerd", "worker", "module"],
     // Shared code imports @sentry/node, which cannot run on Workers. The Worker
     // never initializes Sentry, so these Workers SDK calls remain no-ops.
     alias: { "@sentry/node": "@sentry/cloudflare" },
