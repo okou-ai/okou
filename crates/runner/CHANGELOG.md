@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.237.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.18...runner-rs-v0.237.19) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner:** preserve local submit results on output failure ([#43425](https://github.com/okou-ai/okou/issues/43425)) ([5d19411](https://github.com/okou-ai/okou/commit/5d1941195088c1f5808efda3d2feb1e346eaea35))
+
+
+### Documentation
+
+* **python:** clarify brotli capture overflow semantics ([#43427](https://github.com/okou-ai/okou/issues/43427)) ([8372bb1](https://github.com/okou-ai/okou/commit/8372bb12c59c4652f852bedeabef1eb2e1634e98))
+
+
+### Performance Improvements
+
+* **python:** bound single-member request capture input ([#43432](https://github.com/okou-ai/okou/issues/43432)) ([9341989](https://github.com/okou-ai/okou/commit/93419891c59b65d6cbf6ff09e70c788d499e4d55))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.17...runner-rs-v0.237.18) (2026-10-27)
 
 

@@ -9,6 +9,40 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.16.0](https://github.com/okou-ai/okou/compare/api-v2.15.0...api-v2.16.0) (2026-10-27)
+
+
+### Features
+
+* **api:** add read-only run settlement audit ([#43437](https://github.com/okou-ai/okou/issues/43437)) ([4f0a695](https://github.com/okou-ai/okou/commit/4f0a695df855b52176fcc85506b456d10fad95ae))
+
+
+### Bug Fixes
+
+* expire stale suggestions without blocking cached choices ([#43401](https://github.com/okou-ai/okou/issues/43401)) ([683f3b7](https://github.com/okou-ai/okou/commit/683f3b71885993682d583b32c51f1cd998a1860b))
+
+
+### Refactoring
+
+* **api:** localize completed-run output timing ownership ([#43410](https://github.com/okou-ai/okou/issues/43410)) ([decd8c1](https://github.com/okou-ai/okou/commit/decd8c19e644ffb356165d116ce7e4eb437e5dd9))
+* keep shared error and token modules off heavy dependencies ([#43439](https://github.com/okou-ai/okou/issues/43439)) ([ca70c33](https://github.com/okou-ai/okou/commit/ca70c33b2ce91a0065a3d2f76e409724d7bd50e9))
+
+
+### Performance Improvements
+
+* **api:** remove sentry from the worker and keep esm package builds ([#43402](https://github.com/okou-ai/okou/issues/43402)) ([e72c853](https://github.com/okou-ai/okou/commit/e72c853c55d352bd342ba087e9bef33879704005))
+* **api:** validate environment before deployment instead of at startup ([#43411](https://github.com/okou-ai/okou/issues/43411)) ([c372473](https://github.com/okou-ai/okou/commit/c372473f8ce7b9e6dfc6934ad3f90e79b843811a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.12.0
+    * @okouai/core bumped to 8.793.4
+    * @okouai/db bumped to 2.7.1
+    * @okouai/pi-agent-runtime bumped to 1.51.5
+
 ## [2.15.0](https://github.com/okou-ai/okou/compare/api-v2.14.3...api-v2.15.0) (2026-10-27)
 
 
