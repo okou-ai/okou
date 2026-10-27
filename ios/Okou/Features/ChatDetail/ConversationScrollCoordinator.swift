@@ -93,7 +93,8 @@ final class ConversationScrollCoordinator {
     anchor.cancel()
     conversation.rememberReadingPosition(nil)
     let composer = conversation.composer
-    let canAnimateText = conversation.attachmentDraft.items.isEmpty
+    let canAnimateText =
+      conversation.attachmentDraft.items.isEmpty
       && composer.value.draftUserMessage.parts.allSatisfy { $0.type == "text" }
       && composer.editor.view?.markedTextRange == nil
     sendTransition.begin(

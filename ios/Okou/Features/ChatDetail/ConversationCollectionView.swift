@@ -208,9 +208,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       collection.stopScrollingAndZooming()
       animatesScroll = false
       if let footer = dataSource.indexPath(for: "conversation-bottom"),
-        let frame = collection.layoutAttributesForItem(at: footer)?.frame {
+        let frame = collection.layoutAttributesForItem(at: footer)?.frame
+      {
         let lastContent = source.rows.last(where: { $0.isMessageContent })
-        let spacing: CGFloat = lastContent == nil ? 20 : (lastContent?.message?.role == .user ? 8 : 24)
+        let spacing: CGFloat =
+          lastContent == nil ? 20 : (lastContent?.message?.role == .user ? 8 : 24)
         source.sendTransition?.projectFlight(insertionY: frame.minY, topSpacing: spacing)
       }
       source.phaseChanged(.animating)
@@ -432,18 +434,19 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     observedHeights = observedHeights.filter { validIDs.contains($0.key) }
     // Measure the outgoing literal text without mounting temporary SwiftUI trees
     // on the send's first animation frames. Other rows keep their hosted measurement.
-    let measuresImmediately = source.sendTransition?.hidesBubbleID != nil
+    let measuresImmediately =
+      source.sendTransition?.hidesBubbleID != nil
       && missing.allSatisfy { row in
-      switch row {
-      case .message(let message, _, _, _, _, _):
-        message.id == source.sendTransition?.messageID
-          && message.role == .user && message.attachments.isEmpty && message.modelChange == nil
-          && message.inputError == nil
-          && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
-      case .footer(_, let showsAvatar): !showsAvatar
-      default: false
+        switch row {
+        case .message(let message, _, _, _, _, _):
+          message.id == source.sendTransition?.messageID
+            && message.role == .user && message.attachments.isEmpty && message.modelChange == nil
+            && message.inputError == nil
+            && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
+        case .footer(_, let showsAvatar): !showsAvatar
+        default: false
+        }
       }
-    }
     if measuresImmediately {
       for (row, height) in zip(missing, measureImmediately(missing, width: width)) {
         preparedMeasurements[row.id] = Measurement(
@@ -547,7 +550,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     return previous
   }
 
-  private func measureImmediately(_ rows: [ConversationCollectionRow], width: CGFloat) -> [CGFloat] {
+  private func measureImmediately(_ rows: [ConversationCollectionRow], width: CGFloat) -> [CGFloat]
+  {
     rows.map { row in
       switch row {
       case .message(let message, _, let topSpacing, let pendingRetry, _, _):
@@ -556,8 +560,13 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         let size = text.boundingRect(
           with: CGSize(width: (width - 40) * 0.85 - 28, height: .greatestFiniteMagnitude),
           options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
-        let status = pendingRetry == nil ? 0 : 8 + UIFont.preferredFont(
-          forTextStyle: .caption1, compatibleWith: traitCollection).lineHeight
+        let status =
+          pendingRetry == nil
+          ? 0
+          : 8
+            + UIFont.preferredFont(
+              forTextStyle: .caption1, compatibleWith: traitCollection
+            ).lineHeight
         return pixelHeight(size.height + 28 + topSpacing + status)
       case .footer(let state, _):
         return pixelHeight(45 + (state.isActive ? 48 : 0))
@@ -636,7 +645,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
           messageFrame?.origin.y += spacing
           messageFrame?.size.height -= spacing
         }
-        source.sendTransition?.presentIfReady(in: ids, arrivingView: cell, messageFrame: messageFrame)
+        source.sendTransition?.presentIfReady(
+          in: ids, arrivingView: cell, messageFrame: messageFrame)
       } else if let pendingScroll {
         self.pendingScroll = nil
         scrollTo(pendingScroll.0, anchor: pendingScroll.1, animated: pendingScroll.2)

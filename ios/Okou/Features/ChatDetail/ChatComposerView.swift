@@ -237,7 +237,8 @@ struct ChatComposerView: View {
       }
       .animation(
         reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
-        value: isFocused)
+        value: isFocused
+      )
       .animation(
         !reduceMotion && sendTransition?.hidesBubbleID != nil
           ? sendTransition?.composerAnimation : nil,

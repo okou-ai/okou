@@ -26,8 +26,10 @@ import UIKit
     let maxWidth = source.bounds.width - insets.left - insets.right
     let measured = source.attributedText.boundingRect(
       with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
-      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).integral
-    let glyphs = CGRect(x: insets.left, y: insets.top - source.contentOffset.y,
+      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
+    ).integral
+    let glyphs = CGRect(
+      x: insets.left, y: insets.top - source.contentOffset.y,
       width: min(maxWidth, measured.width), height: min(source.bounds.height, measured.height))
     origin = source.convert(glyphs, to: window).insetBy(dx: -14, dy: -14)
     bubble.frame = origin
@@ -50,8 +52,10 @@ import UIKit
   func measuredBubbleSize(width: CGFloat) -> CGSize {
     let maxWidth = (width - 40) * 0.85
     let measured = NSAttributedString(string: originalText.string, attributes: [.font: targetFont])
-      .boundingRect(with: CGSize(width: maxWidth - 28, height: .greatestFiniteMagnitude),
-        options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).integral
+      .boundingRect(
+        with: CGSize(width: maxWidth - 28, height: .greatestFiniteMagnitude),
+        options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
+      ).integral
     return CGSize(width: min(maxWidth, measured.width + 28), height: measured.height + 28)
   }
 
@@ -59,11 +63,13 @@ import UIKit
     guard let window else { return }
     var target: CGRect
     if let destination, destination.window === window,
-      destination.bounds.width > 0, destination.bounds.height > 0 {
+      destination.bounds.width > 0, destination.bounds.height > 0
+    {
       target = destination.convert(destination.bounds, to: window)
     } else if let collection, let messageFrame {
       let size = measuredBubbleSize(width: collection.bounds.width)
-      let rect = CGRect(x: collection.bounds.width - 20 - size.width,
+      let rect = CGRect(
+        x: collection.bounds.width - 20 - size.width,
         y: messageFrame.minY, width: size.width, height: size.height)
       target = collection.convert(rect, to: window)
     } else {
@@ -74,7 +80,8 @@ import UIKit
     if source?.text.isEmpty == true { source?.alpha = 1 }
     let drawn = NSMutableAttributedString(attributedString: originalText)
     let size = originFont.pointSize + (targetFont.pointSize - originFont.pointSize) * p
-    drawn.addAttribute(.font, value: originFont.withSize(size),
+    drawn.addAttribute(
+      .font, value: originFont.withSize(size),
       range: NSRange(location: 0, length: drawn.length))
     text.attributedText = drawn
     bubble.frame = CGRect(
@@ -112,8 +119,14 @@ struct SendMotionBubbleAnchor: UIViewRepresentable {
 final class SendMotionAnchorView: UIView {
   var messageID = ""
   weak var transition: ConversationSendTransition?
-  override func didMoveToWindow() { super.didMoveToWindow(); register() }
-  override func layoutSubviews() { super.layoutSubviews(); register() }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    register()
+  }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    register()
+  }
   func register() {
     transition?.registerBubble(messageID: messageID, view: self)
   }

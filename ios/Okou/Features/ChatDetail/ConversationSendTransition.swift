@@ -49,7 +49,8 @@ final class ConversationSendTransition {
     self.messageID = messageID
     self.reduceMotion = reduceMotion
     if !reduceMotion,
-      let sourceView, !sourceView.text.isEmpty {
+      let sourceView, !sourceView.text.isEmpty
+    {
       flight = SendMotionFlight(source: sourceView)
       if flight != nil {
         hidesBubbleID = messageID
@@ -57,7 +58,8 @@ final class ConversationSendTransition {
     }
     offset = collection.contentOffset
     curve = 0
-    composerAnimation = flight != nil
+    composerAnimation =
+      flight != nil
       ? .timingCurve(0.2, 0.4, 0.4, 1, duration: Self.flightDuration)
       : .easeInOut(duration: 0.22)
     didBegin?()
@@ -89,7 +91,8 @@ final class ConversationSendTransition {
     guard let flight, let collection else { return }
     let height = flight.measuredBubbleSize(width: collection.bounds.width).height
     flight.collection = collection
-    flight.messageFrame = CGRect(x: 0, y: insertionY + topSpacing,
+    flight.messageFrame = CGRect(
+      x: 0, y: insertionY + topSpacing,
       width: collection.bounds.width, height: height)
     projectedContentHeight = insertionY + topSpacing + height + 93
   }
@@ -189,7 +192,8 @@ final class ConversationSendTransition {
     guard let collection, isActive, isAnimating else { return }
     let insets = collection.adjustedContentInset
     let y = max(
-      -insets.top, (projectedContentHeight ?? collection.contentSize.height)
+      -insets.top,
+      (projectedContentHeight ?? collection.contentSize.height)
         - collection.bounds.height + insets.bottom)
     if let target, abs(target - y) <= 0.5 { return }
     target = y
@@ -229,9 +233,16 @@ final class ConversationSendTransition {
       }
       let progress = min(1, max(0, (link.timestamp - flightStartedAt) / Self.flightDuration))
       flightFraction = CGFloat(Self.flightCurve.value(at: progress))
-      let viewportFraction: CGFloat = progress >= 1 ? 1 : min(1, max(0,
-        (flightFraction - viewportFractionOrigin) / max(0.0001, 1 - viewportFractionOrigin)))
-      presentFrame(fraction: viewportFraction, in: collection, target: target,
+      let viewportFraction: CGFloat =
+        progress >= 1
+        ? 1
+        : min(
+          1,
+          max(
+            0,
+            (flightFraction - viewportFractionOrigin) / max(0.0001, 1 - viewportFractionOrigin)))
+      presentFrame(
+        fraction: viewportFraction, in: collection, target: target,
         flightFraction: flightFraction)
       guard displayLink === link, self.target == target else { return }
       if progress >= 1, flightHasMeasuredRow, CACurrentMediaTime() >= deadline { finish() }
@@ -262,13 +273,16 @@ final class ConversationSendTransition {
     if progress >= 1, CACurrentMediaTime() >= deadline { finish() }
   }
 
-  private func presentFrame(fraction: CGFloat, in collection: UICollectionView, target: CGFloat,
-    flightFraction: CGFloat? = nil) {
+  private func presentFrame(
+    fraction: CGFloat, in collection: UICollectionView, target: CGFloat,
+    flightFraction: CGFloat? = nil
+  ) {
     if let flight, !flightHasMeasuredRow {
       // The pending row is not in the collection yet. Only the overlay may move;
       // scrolling to its projected height would scroll past the existing cells.
       UIView.performWithoutAnimation {
-        flight.present(fraction: flightFraction ?? fraction,
+        flight.present(
+          fraction: flightFraction ?? fraction,
           remainingScroll: target - collection.contentOffset.y)
       }
       return
