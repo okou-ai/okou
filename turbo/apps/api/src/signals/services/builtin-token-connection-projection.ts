@@ -1,7 +1,7 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
-import { and, count, eq, sql, type SQL } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import {
@@ -153,7 +153,7 @@ function tokenProjectionCohortChecks(args: TokenProjectionPublication): SQL[] {
       AND NOT EXISTS (SELECT 1 FROM token_projection_input WHERE ${eq(workflowAutomations.id, sql`token_projection_input.id`)}))`,
     sql`NOT EXISTS (SELECT 1 FROM token_projection_input AS expected
       LEFT JOIN ${workflowAutomations} ON ${eq(workflowAutomations.id, sql`expected.id`)}
-      WHERE ${workflowAutomations.id} IS NULL OR ${workflowAutomations}.xmin::text IS DISTINCT FROM expected.revision)`,
+      WHERE ${isNull(workflowAutomations.id)} OR ${workflowAutomations}.xmin::text IS DISTINCT FROM expected.revision)`,
   ];
 }
 
@@ -222,12 +222,20 @@ export function tokenConnectionProjectionClauses(
   clauses.push(...principalGmailCleanup(args));
   clauses.push(tokenNotionCleanup(args));
   if (args.connectorSlug === "google-forms") {
+    const discarded = new PgDialect().buildDeleteQuery({
+      table: googleFormsAutomationCursors,
+      where: inArray(
+        googleFormsAutomationCursors.automationId,
+        sql`(SELECT id FROM token_forms_projection)`,
+      ),
+      returning: [
+        { path: ["id"], field: googleFormsAutomationCursors.automationId },
+      ],
+    });
     clauses.push(
       sql`token_forms_projection AS (${googleFormsAccountProjectionUpdate({ ...args, defaultConnectorId: tokenDefaultAccount(args), publicationCondition: accepted })})`,
     );
-    clauses.push(
-      sql`token_forms_cursors AS (DELETE FROM ${googleFormsAutomationCursors} WHERE ${googleFormsAutomationCursors.automationId} IN (SELECT id FROM token_forms_projection) RETURNING automation_id)`,
-    );
+    clauses.push(sql`token_forms_cursors AS (${discarded})`);
   }
   return { clauses, checks };
 }

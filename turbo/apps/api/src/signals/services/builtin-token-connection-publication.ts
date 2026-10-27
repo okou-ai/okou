@@ -39,13 +39,19 @@ const accountId = sql`(SELECT id FROM token_connection)`;
 
 /** The original missing/denied outcome still publishes initial wallet metadata. */
 export function tokenConnectionWalletClauses(orgId: string): SQL[] {
+  const wallet = new PgDialect().buildInsertQuery({
+    table: orgMetadataCanonicalWrites,
+    values: [{ orgId: sql.param(orgId, orgMetadataCanonicalWrites.orgId) }],
+    onConflict: sql`do nothing`,
+    returning: [{ path: ["orgId"], field: orgMetadataCanonicalWrites.orgId }],
+  });
   const entitlement = slackRewardWalletEntitlement(orgId);
   const fields = tokenPublicationFields(
     getTableColumns(orgPlanEntitlements),
     entitlement,
   );
   return [
-    sql`token_wallet AS (INSERT INTO ${orgMetadataCanonicalWrites} (org_id) VALUES (${orgId}) ON CONFLICT DO NOTHING RETURNING org_id)`,
+    sql`token_wallet AS (${wallet})`,
     sql`token_wallet_entitlement AS (INSERT INTO ${orgPlanEntitlements} (${sql.join(
       fields.map(({ column }) => {
         return sql.identifier(column.name);
@@ -103,13 +109,37 @@ function tokenReconciliationClauses(args: TokenConnectionPublication): SQL[] {
 }
 
 function tokenCredentialRemovalClauses(): SQL[] {
+  const dialect = new PgDialect();
+  const secretRemoval = dialect.buildDeleteQuery({
+    table: secrets,
+    where: eq(secrets.connectorId, accountId),
+    returning: [{ path: ["id"], field: secrets.id }],
+  });
+  const variableRemoval = dialect.buildDeleteQuery({
+    table: variables,
+    where: and(
+      eq(variables.connectorId, accountId),
+      sql`(SELECT ${count()} FROM token_removed_secrets) >= 0`,
+    ),
+    returning: [{ path: ["id"], field: variables.id }],
+  });
+  const bindingRemoval = dialect.buildDeleteQuery({
+    table: builtinConnectorAccountOauthBindings,
+    where: and(
+      eq(builtinConnectorAccountOauthBindings.connectorAccountId, accountId),
+      sql`(SELECT ${count()} FROM token_removed_variables) >= 0`,
+    ),
+    returning: [
+      {
+        path: ["id"],
+        field: builtinConnectorAccountOauthBindings.connectorAccountId,
+      },
+    ],
+  });
   return [
-    sql`token_removed_secrets AS (DELETE FROM ${secrets} WHERE ${eq(secrets.connectorId, accountId)} RETURNING id)`,
-    sql`token_removed_variables AS (DELETE FROM ${variables} WHERE ${eq(variables.connectorId, accountId)}
-      AND (SELECT ${count()} FROM token_removed_secrets) >= 0 RETURNING id)`,
-    sql`token_removed_binding AS (DELETE FROM ${builtinConnectorAccountOauthBindings}
-      WHERE ${eq(builtinConnectorAccountOauthBindings.connectorAccountId, accountId)}
-        AND (SELECT ${count()} FROM token_removed_variables) >= 0 RETURNING connector_account_id)`,
+    sql`token_removed_secrets AS (${secretRemoval})`,
+    sql`token_removed_variables AS (${variableRemoval})`,
+    sql`token_removed_binding AS (${bindingRemoval})`,
   ];
 }
 
