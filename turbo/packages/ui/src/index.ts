@@ -158,6 +158,7 @@ export {
   BrandStripe,
   BrandTelegram,
 } from "./components/icons/brand-icons";
+export { BrandGoogleSlides } from "./components/icons/google-slides-icon";
 export {
   createCompositionGate,
   type CompositionGate,

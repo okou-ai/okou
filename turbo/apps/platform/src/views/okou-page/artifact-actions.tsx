@@ -21,7 +21,6 @@ import {
   ChevronRight,
   Download,
   Loader2,
-  Presentation,
   RotateCcw,
   Share2,
 } from "lucide-react";
@@ -37,6 +36,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
   BrandGoogleDrive,
+  BrandGoogleSlides,
 } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type {
@@ -339,7 +339,7 @@ function GoogleDriveMenuIcon({
 }: {
   target?: GoogleWorkspaceTarget | undefined;
 }) {
-  const Icon = target === "presentation" ? Presentation : BrandGoogleDrive;
+  const Icon = target === "presentation" ? BrandGoogleSlides : BrandGoogleDrive;
   return <Icon size={14} />;
 }
 
