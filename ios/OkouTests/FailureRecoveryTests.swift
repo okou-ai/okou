@@ -155,8 +155,25 @@ final class FailureRecoveryTests: XCTestCase {
     let gate = ModelResponseGate()
     defer { gate.open() }
     fixture.state.value.withLock { $0.resetGate = gate }
-    let recovering = Task { await conversation.recoverFailure(failure.id, resetUsage: true) }
+    let probe = TaskCleanupProbe(id: "A01-1")
+    let recovering = Task {
+      await conversation.recoverFailure(failure.id, resetUsage: true)
+      await probe.waitForCancellation()
+    }
+    addTeardownBlock {
+      let joined = probe.hasFinished
+      recovering.cancel()
+      gate.open()
+      await recovering.value
+      probe.reportJoin(joined)
+    }
+    addTeardownBlock {
+      recovering.cancel()
+      gate.open()
+      await recovering.value
+    }
     try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
+    try probe.exit()
     fixture.state.value.withLock {
       $0.rows.append(
         FailureRecoveryFixture.row(
@@ -311,10 +328,25 @@ final class FailureRecoveryTests: XCTestCase {
     let gate = ModelResponseGate()
     defer { gate.open() }
     fixture.state.value.withLock { $0.resetGate = gate }
+    let probe = TaskCleanupProbe(id: "A01-2")
     let first = Task {
       await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
+      await probe.waitForCancellation()
+    }
+    addTeardownBlock {
+      let joined = probe.hasFinished
+      first.cancel()
+      gate.open()
+      await first.value
+      probe.reportJoin(joined)
+    }
+    addTeardownBlock {
+      first.cancel()
+      gate.open()
+      await first.value
     }
     try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
+    try probe.exit()
     await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
     XCTAssertEqual(fixture.state.value.withLock { $0.resetKeys.count }, 1)
     conversation.setDetailVisible(false, owner: owner)
