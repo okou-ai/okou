@@ -8,6 +8,7 @@ run-name: Compiler cache ${{ inputs.phase }} ${{ inputs.variant }} ${{ inputs.la
         options:
           - seed
           - measure
+          - inspect
         required: true
         default: seed
         description: Seed isolated cache snapshots or run a frozen full native comparison
@@ -45,12 +46,14 @@ jobs:
         variant:
           - baseline
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - &id001
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
           fetch-depth: 32
           persist-credentials: false
-      - name: Restore locked sources and identify frozen cache
+      - &id002
+        name: Restore locked sources and identify frozen cache
         id: cache
         uses: ./.github/actions/setup-ios-build-cache
         with:
@@ -336,3 +339,38 @@ jobs:
           ARCHIVE_RESULT: skipped
           PUBLISH_RESULT: skipped
         run: bash ios/scripts/ci-gate.sh
+  inspect:
+    if: inputs.phase == 'inspect'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - *id001
+      - *id002
+      - name: Restore isolated baseline for native prune inspection
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ steps.cache.outputs.compilation-path }}
+          key: experiment-ios-slim-20261027-baseline-${{ steps.cache.outputs.compilation-key }}
+          fail-on-cache-miss: true
+      - name: Inspect Xcode cache controls and prune isolated local cache
+        env:
+          CACHE_PATH: ${{ steps.cache.outputs.compilation-path }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PROOF'
+          import os,pathlib,re
+          root=pathlib.Path(os.environ['DEVELOPER_DIR']).parent
+          for directory in ['SharedFrameworks','Developer/Platforms']:
+              for p in (root/directory).rglob('*.xcspec'):
+                  for line in p.read_text(errors='replace').splitlines():
+                      if re.search(r'COMPILATION_CACHE|CAS.*SIZE|CACHE.*SIZE',line):
+                          print(str(p.relative_to(root))+': '+line.strip())
+          cache=pathlib.Path(os.environ['CACHE_PATH'])
+          print('Native prune before bytes:',sum(p.stat().st_size for p in cache.rglob('*') if p.is_file()))
+          PROOF
+          xcrun llvm-cas --cas "$CACHE_PATH/builtin" --prune
+          python3 - <<'PROOF'
+          import os,pathlib
+          cache=pathlib.Path(os.environ['CACHE_PATH'])
+          print('Native prune after bytes:',sum(p.stat().st_size for p in cache.rglob('*') if p.is_file()))
+          PROOF
