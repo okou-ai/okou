@@ -9,11 +9,12 @@ use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
 const MANIFEST_STDIN_ARG: &str = "--manifest-stdin";
-const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin | --instructions <framework> <private-source> | --skill <mount-path> <private-source>";
+const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin | --instructions <framework> <private-source> | --skill <mount-path> <private-source> | --skills-stdin";
 
 enum ManifestInput {
     Instructions { framework: String, source: String },
     WorkflowSkill { mount: String, source: String },
+    WorkflowSkillsStdin,
     Path(String),
     Stdin,
     FilesStdin,
@@ -88,7 +89,9 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
     if args.next().is_some() {
         return None;
     }
-    if arg == "--storage-files-stdin" {
+    if arg == "--skills-stdin" {
+        Some(ManifestInput::WorkflowSkillsStdin)
+    } else if arg == "--storage-files-stdin" {
         Some(ManifestInput::FilesStdin)
     } else if arg == MANIFEST_STDIN_ARG {
         Some(ManifestInput::Stdin)
@@ -99,6 +102,29 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
 
 fn run(input: ManifestInput) -> bool {
     match input {
+        ManifestInput::WorkflowSkillsStdin => {
+            let mut input = Vec::new();
+            let limit = guest_contracts::workflow_documents::MAX_METADATA_BYTES as u64;
+            let Ok(run_id) = std::env::var(env::RUN_ID_ENV) else {
+                return false;
+            };
+            let Ok(runtime_dir) = runtime_paths::run_dir_from_env(&run_id) else {
+                return false;
+            };
+            if std::io::stdin()
+                .take(limit + 1)
+                .read_to_end(&mut input)
+                .is_err()
+                || input.len() as u64 > limit
+            {
+                return false;
+            }
+            guest_storage_apply::apply_workflow_skill_documents(
+                std::path::Path::new("/home/user"),
+                &runtime_dir,
+                &input,
+            )
+        }
         ManifestInput::WorkflowSkill { mount, source } => {
             let applied = guest_storage_apply::apply_workflow_skill(
                 std::path::Path::new("/home/user"),
