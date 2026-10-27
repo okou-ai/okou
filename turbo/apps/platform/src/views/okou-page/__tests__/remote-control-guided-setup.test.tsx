@@ -3463,12 +3463,12 @@ test("SSH login reuse is optional, shows the selected account, and can return to
   const reopened = await screen.findByRole("dialog", {
     name: "Choose saved login details",
   });
-  click(within(reopened).getByText("Office computer, Backup computer"));
+  click(within(reopened).getByText("Backup computer, Office computer"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(
-    screen.getByText("Office computer, Backup computer"),
+    screen.getByText("Backup computer, Office computer"),
   ).toBeInTheDocument();
   expect(screen.getByText("operator · Password")).toBeInTheDocument();
   expect(screen.queryByLabelText("Password")).toBeNull();
@@ -3502,11 +3502,11 @@ test("VNC can reuse a saved password and switch back to manual entry", async () 
   const picker = await screen.findByRole("dialog", {
     name: "Choose saved login details",
   });
-  click(within(picker).getByText("Office screen, Backup screen"));
+  click(within(picker).getByText("Backup screen, Office screen"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  expect(screen.getByText("Office screen, Backup screen")).toBeInTheDocument();
+  expect(screen.getByText("Backup screen, Office screen")).toBeInTheDocument();
   expect(screen.queryByLabelText("VNC password")).toBeNull();
   click(getAction("button", "Enter details manually"));
   await expect(screen.findByLabelText("VNC password")).resolves.toHaveValue("");

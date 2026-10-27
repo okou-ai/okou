@@ -3,6 +3,8 @@ import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/con
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 
 import { accept } from "../../lib/accept.ts";
+import { sortRemoteHosts } from "../../lib/remote-resource-order.ts";
+import { locale$ } from "../locale.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { resetSignal } from "../utils.ts";
@@ -67,8 +69,12 @@ export function createConnectorResourceSignals() {
     set(resetRequests$);
   });
   const remoteHostDefaults$ = computed(async (get) => {
+    const locale = get(locale$);
     const remotes = await get(remotes$);
-    return { ssh: remotes.sshHosts, vnc: remotes.vncHosts };
+    return {
+      ssh: sortRemoteHosts(remotes.sshHosts, locale),
+      vnc: sortRemoteHosts(remotes.vncHosts, locale),
+    };
   });
   const reloadConnected$ = command(({ set }) => {
     set(connectedVersion$, (version) => {

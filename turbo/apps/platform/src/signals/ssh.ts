@@ -42,6 +42,8 @@ import {
 } from "./cloudflare-access.ts";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
+import { sortByName, sortRemoteHosts } from "../lib/remote-resource-order.ts";
+import { locale$ } from "./locale.ts";
 import {
   createDeferredPromise,
   detach,
@@ -361,7 +363,7 @@ export const replaceSshAuthentication$ = command(
     });
   },
 );
-export const sshCredentials$ = computed(async (get) => {
+const sshCredentialsData$ = computed(async (get) => {
   get(reload$);
   if (!(await get(sshIdentity$))) {
     return null;
@@ -374,6 +376,24 @@ export const sshCredentials$ = computed(async (get) => {
   );
   return result.status === 200 ? result.body.credentials : null;
 });
+export const sshCredentials$ = computed(async (get) => {
+  const locale = get(locale$);
+  const credentials = await get(sshCredentialsData$);
+  return credentials
+    ? sortByName(
+        credentials.map((credential) => {
+          return {
+            ...credential,
+            hosts: sortRemoteHosts(credential.hosts, locale),
+          };
+        }),
+        locale,
+        (credential) => {
+          return { name: credential.name, id: credential.id };
+        },
+      )
+    : null;
+});
 const conflict$ = state<string | null>(null);
 export const sshConflict$ = computed((get) => {
   return get(conflict$);
@@ -385,7 +405,7 @@ export const sshDialog$ = computed(async (get) => {
   }
   return dialog?.identity === (await get(sshIdentity$)) ? dialog : null;
 });
-export const sshConnections$ = computed(async (get) => {
+const sshConnectionsData$ = computed(async (get) => {
   get(reload$);
   get(remoteHostDefaultsReload$);
   if (!(await get(sshIdentity$))) {
@@ -398,6 +418,11 @@ export const sshConnections$ = computed(async (get) => {
     { showErrorToast: false },
   );
   return result.status === 200 ? result.body.connections : null;
+});
+export const sshConnections$ = computed(async (get) => {
+  const locale = get(locale$);
+  const connections = await get(sshConnectionsData$);
+  return connections ? sortRemoteHosts(connections, locale) : null;
 });
 export const sshSummary$ = computed(async (get) => {
   get(reload$);

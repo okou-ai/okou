@@ -191,7 +191,11 @@ export function ComputerUseAuthorizationPage() {
     applyLoadable.state === "hasData"
       ? applyLoadable.data.computerUseHostId
       : (request?.computerUseHostId ?? null);
-  const visibleHosts = visibleComputerUseHosts(hosts ?? [], selectedHostId);
+  const visibleHosts = visibleComputerUseHosts(
+    hosts ?? [],
+    selectedHostId,
+    locale,
+  );
 
   if (requestLoadable.state === "loading") {
     return (

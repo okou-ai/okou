@@ -43,6 +43,8 @@ import {
   setRemoteNetworkPicker$,
 } from "../../signals/remote-control-setup.ts";
 import { sshConnections$, sshIdentity$ } from "../../signals/ssh.ts";
+import { locale$ } from "../../signals/locale.ts";
+import { sortByName } from "../../lib/remote-resource-order.ts";
 import { vncConnections$ } from "../../signals/vnc.ts";
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
@@ -478,6 +480,7 @@ function PrivateNetworkGroupRows({
   readonly cf: readonly ScopedCloudflareAccessConfig[] | null;
 }) {
   const { t } = useTranslation();
+  const locale = useGet(locale$);
   const admin = useLoadable(isOrgAdmin$);
   const params = useGet(searchParams$);
   const updateParams = useSet(updateSearchParams$);
@@ -503,7 +506,9 @@ function PrivateNetworkGroupRows({
   ];
   return (
     <ul className="divide-y divide-divider">
-      {rows.map(({ config, kind, label }) => {
+      {sortByName(rows, locale, ({ config, kind }) => {
+        return { name: config.name, id: `${kind}:${config.id}` };
+      }).map(({ config, kind, label }) => {
         const detailParams = remoteResourceSearchParams(
           params,
           kind,

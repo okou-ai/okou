@@ -17,6 +17,8 @@ import { command, computed, state } from "ccstate";
 import { object, string } from "zod";
 
 import { accept } from "../lib/accept.ts";
+import { sortByName, sortRemoteHosts } from "../lib/remote-resource-order.ts";
+import { locale$ } from "./locale.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import {
@@ -85,7 +87,7 @@ export const invalidateCloudflareAccess$ = command(({ set }) => {
   set(invalidateRemoteAccess$);
 });
 
-export const cloudflareAccessConfigs$ = computed(async (get) => {
+const cloudflareAccessConfigsData$ = computed(async (get) => {
   get(reload$);
   if (!(await get(cloudflareAccessIdentity$))) {
     return null;
@@ -102,6 +104,25 @@ export const cloudflareAccessConfigs$ = computed(async (get) => {
     ? result.body.configs.map((config) => {
         return scopedCloudflareAccessConfigSchema.parse(config);
       })
+    : null;
+});
+export const cloudflareAccessConfigs$ = computed(async (get) => {
+  const locale = get(locale$);
+  const configs = await get(cloudflareAccessConfigsData$);
+  return configs
+    ? sortByName(
+        configs.map((config) => {
+          return {
+            ...config,
+            sshHosts: sortRemoteHosts(config.sshHosts, locale),
+            vncHosts: sortRemoteHosts(config.vncHosts, locale),
+          };
+        }),
+        locale,
+        (config) => {
+          return { name: config.name, id: config.id };
+        },
+      )
     : null;
 });
 
