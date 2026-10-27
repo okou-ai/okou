@@ -11691,8 +11691,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(prompt).toContain("okou ssh download");
         expect(prompt).toContain("okou ssh --help");
         expect(prompt).toContain("relevant subcommand's `--help` before use");
-        expect(prompt).not.toContain("okou ssh diagnose");
-        expect(prompt).not.toContain("okou vnc diagnose");
+        expect(prompt).toContain(
+          "okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json",
+        );
+        expect(prompt).toContain(
+          "okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json",
+        );
         const sshGuidance = prompt.split("\n").filter((line) => {
           return line.startsWith("- SSH");
         });
@@ -11712,13 +11716,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("advertises VNC instructions and Run capabilities", async () => {
         const api = createRunsApi(context);
-        const connectors = createConnectorBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.RemoteConnectionDiagnostics]: true,
-        });
         const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "inspect my remote VNC desktop",

@@ -84,19 +84,8 @@ function SkillImportPromptPending({
   );
 }
 
-/**
- * The session could not be opened. The import offers it again and stays out
- * of the way otherwise: nothing around it waited on it.
- */
-function SkillImportPromptFailed({
-  retry$,
-  embedded,
-}: {
-  readonly retry$: Command<void, []>;
-  readonly embedded: boolean;
-}) {
+function SkillImportPromptFailed({ embedded }: { readonly embedded: boolean }) {
   const { t } = useTranslation();
-  const retry = useSet(retry$);
 
   return (
     <div
@@ -110,18 +99,6 @@ function SkillImportPromptFailed({
           return $.onboarding.sourcesFirst.skills.startError;
         })}
       </p>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          retry();
-        }}
-      >
-        {t(($) => {
-          return $.onboarding.sourcesFirst.skills.tryAgain;
-        })}
-      </Button>
     </div>
   );
 }
@@ -288,7 +265,6 @@ function SkillImportResultsContent({
   readonly compact?: boolean;
 }) {
   const result = useLoadable(signals.imported$);
-  const retry = useSet(signals.reloadImported$);
   const { t } = useTranslation();
   if (result.state === "hasError") {
     return (
@@ -299,18 +275,6 @@ function SkillImportResultsContent({
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.resultsError;
         })}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            return retry();
-          }}
-        >
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.tryAgain;
-          })}
-        </Button>
       </div>
     );
   }
@@ -520,7 +484,7 @@ export function SkillImportPanel({
   const { t } = useTranslation();
   const pending =
     preparation.state === "hasError" ? (
-      <SkillImportPromptFailed retry$={signals.retry$} embedded={compact} />
+      <SkillImportPromptFailed embedded={compact} />
     ) : (
       <SkillImportPromptPending embedded={compact} />
     );

@@ -1,6 +1,9 @@
 //! Exact assigned-address routes and TCP tuples under one owned SDK data plane.
 //! All changes and packet admission are serialized by the native runtime owner.
 
+mod clock;
+pub(super) use clock::Clock;
+
 #[cfg(test)]
 use std::io;
 use std::{
@@ -47,6 +50,7 @@ struct Generation {
 }
 
 pub(super) struct FrameStamp {
+    clock: Clock,
     diagnostics: bool,
     generation: Weak<Generation>,
     epoch: u64,
@@ -85,7 +89,7 @@ impl FrameStamp {
                     .all(|binding| binding.upgrade().is_some_and(|binding| binding.live()))
                 && self
                     .expires
-                    .is_none_or(|expires| expires > chrono::Utc::now())
+                    .is_none_or(|expires| expires > self.clock.now())
         })
     }
 }
@@ -205,9 +209,8 @@ impl Identity {
         })
     }
 
-    fn expired(&self) -> bool {
-        self.expires
-            .is_some_and(|expires| expires <= chrono::Utc::now())
+    fn expired(&self, clock: &Clock) -> bool {
+        self.expires.is_some_and(|expires| expires <= clock.now())
     }
 }
 
@@ -247,6 +250,7 @@ struct HeldBinding {
 }
 
 pub(super) struct Binding {
+    clock: Clock,
     owner: Arc<()>,
     identity: Identity,
     handle: PeerId,
@@ -277,7 +281,7 @@ impl Binding {
         #[cfg(test)]
         super::tests::relay_projection::record_liveness();
 
-        !self.cancelled.is_cancelled() && !self.identity.expired()
+        !self.cancelled.is_cancelled() && !self.identity.expired(&self.clock)
     }
 }
 impl Drop for Binding {
@@ -287,6 +291,7 @@ impl Drop for Binding {
 }
 
 pub(super) struct Peers {
+    clock: Clock,
     diagnostics: bool,
     owner: Arc<()>,
     local: Identity,
@@ -321,14 +326,22 @@ impl Peers {
 
     pub(super) fn maintain(&mut self) -> Result<(), Failure> {
         self.reap_bindings();
-        if self.failed || self.local.expired() {
+        if self.failed || self.local.expired(&self.clock) {
             return self.fail();
         }
         Ok(())
     }
     pub(super) fn new(keys: NodeKeyPair, local: Node) -> Result<Self, Failure> {
+        Self::with_clock(keys, local, Clock::default())
+    }
+
+    pub(super) fn with_clock(
+        keys: NodeKeyPair,
+        local: Node,
+        clock: Clock,
+    ) -> Result<Self, Failure> {
         let local = Identity::from_node(&local)?;
-        if local.key != keys.public || local.expired() {
+        if local.key != keys.public || local.expired(&clock) {
             return Err(Failure::DomainFailed);
         }
         let mut plane = DataPlane::new(keys);
@@ -344,6 +357,7 @@ impl Peers {
         }
         plane.or_in.swap(incoming);
         Ok(Self {
+            clock,
             owner: Arc::new(()),
             diagnostics: super::evidence::Trace::current().enabled(),
             local,
@@ -565,7 +579,7 @@ impl Peers {
                     self.next_handle += 1;
                     PeerId(self.next_handle)
                 };
-            if identity.tailnet == self.local.tailnet && !identity.expired() {
+            if identity.tailnet == self.local.tailnet && !identity.expired(&self.clock) {
                 self.plane.wireguard.upsert_peer(ts_tunnel::PeerConfig::new(
                     ts_tunnel::PeerId(handle.0),
                     identity.key,
@@ -585,11 +599,9 @@ impl Peers {
         self.peers = next;
         let mut routes = Table::default();
         let mut sources = Table::default();
-        for peer in self
-            .peers
-            .values()
-            .filter(|peer| peer.identity.tailnet == self.local.tailnet && !peer.identity.expired())
-        {
+        for peer in self.peers.values().filter(|peer| {
+            peer.identity.tailnet == self.local.tailnet && !peer.identity.expired(&self.clock)
+        }) {
             for ip in [
                 IpAddr::V4(peer.identity.addresses.ipv4.addr()),
                 IpAddr::V6(peer.identity.addresses.ipv6.addr()),
@@ -627,7 +639,7 @@ impl Peers {
     ) -> Result<Arc<Binding>, Failure> {
         self.reap_bindings();
         if self.failed
-            || self.local.expired()
+            || self.local.expired(&self.clock)
             || port == 0
             || local.port() == 0
             || !self.local.addresses.contains(local.ip())
@@ -644,7 +656,7 @@ impl Peers {
         let mut matches = self.peers.values().filter(|peer| {
             let id = &peer.identity;
             id.tailnet == self.local.tailnet
-                && !id.expired()
+                && !id.expired(&self.clock)
                 && if let Some(ip) = literal {
                     id.addresses.contains(ip)
                 } else {
@@ -681,6 +693,7 @@ impl Peers {
             return Err(Failure::ResourceExhausted);
         }
         let binding = Arc::new(Binding {
+            clock: self.clock.clone(),
             owner: Arc::clone(&self.owner),
             identity: peer.identity.clone(),
             handle: peer.handle,
@@ -724,7 +737,7 @@ impl Peers {
         if self.failed
             || !Arc::ptr_eq(&self.owner, &binding.owner)
             || !binding.live()
-            || self.local.expired()
+            || self.local.expired(&self.clock)
             || self.peers.get(&binding.identity.id).is_none_or(|peer| {
                 peer.identity != binding.identity || peer.handle != binding.handle
             })
@@ -767,7 +780,7 @@ impl Peers {
     pub(super) fn incoming(&mut self, packets: Vec<PacketMut>) -> Result<Incoming, Failure> {
         self.reap_bindings();
         if self.failed
-            || self.local.expired()
+            || self.local.expired(&self.clock)
             || packets.len() > MAX_PACKETS
             || packets.iter().any(|packet| packet.len() > 2048)
         {
@@ -844,7 +857,7 @@ impl Peers {
     #[expect(clippy::mutable_key_type)]
     pub(super) fn events(&mut self) -> Result<Frames, Failure> {
         self.reap_bindings();
-        if self.failed || self.local.expired() {
+        if self.failed || self.local.expired(&self.clock) {
             return self.fail();
         }
         let result = self.plane.process_events();
@@ -903,7 +916,7 @@ impl Peers {
     pub(super) fn relay_peers(&self) -> Vec<(NodePublicKey, Option<ts_derp::RegionId>)> {
         self.peers
             .values()
-            .filter(|peer| !peer.identity.expired())
+            .filter(|peer| !peer.identity.expired(&self.clock))
             .map(|peer| (peer.identity.key, peer.node.derp_region))
             .collect()
     }
@@ -941,7 +954,7 @@ impl Peers {
         let expiry = std::iter::once(self.local.expires)
             .chain(self.peers.values().map(|peer| peer.identity.expires))
             .flatten()
-            .filter_map(|at| (at - chrono::Utc::now()).to_std().ok())
+            .filter_map(|at| (at - self.clock.now()).to_std().ok())
             .min();
         event.into_iter().chain(expiry).min()
     }
@@ -1045,7 +1058,7 @@ impl Peers {
     ) -> Result<Option<Outbound>, Failure> {
         self.reap_bindings();
         if self.failed
-            || self.local.expired()
+            || self.local.expired(&self.clock)
             || !Arc::ptr_eq(&self.owner, &output.owner)
             || output.epoch != self.frame_epoch
         {
@@ -1065,7 +1078,7 @@ impl Peers {
                 .find(|peer| {
                     peer.identity.key == destination
                         && peer.identity.tailnet == self.local.tailnet
-                        && !peer.identity.expired()
+                        && !peer.identity.expired(&self.clock)
                 })
                 .ok_or(Failure::Cancelled)?;
             let expires = [self.local.expires, peer.identity.expires]
@@ -1096,6 +1109,7 @@ impl Peers {
                 bytes,
                 permit,
                 stamp: FrameStamp {
+                    clock: self.clock.clone(),
                     diagnostics: self.diagnostics,
                     generation: Arc::downgrade(&self.generation),
                     epoch: self.frame_epoch,
@@ -1104,8 +1118,18 @@ impl Peers {
                     peer: destination,
                     bindings,
                     readers: [
-                        frame_watcher(self.frame_cancelled.clone(), expires, cancelled.clone()),
-                        frame_watcher(self.frame_cancelled.clone(), expires, cancelled),
+                        frame_watcher(
+                            self.clock.clone(),
+                            self.frame_cancelled.clone(),
+                            expires,
+                            cancelled.clone(),
+                        ),
+                        frame_watcher(
+                            self.clock.clone(),
+                            self.frame_cancelled.clone(),
+                            expires,
+                            cancelled,
+                        ),
                     ],
                 },
             }));
@@ -1124,7 +1148,7 @@ impl Peers {
     ) -> Result<bool, Failure> {
         self.reap_bindings();
         if self.failed
-            || self.local.expired()
+            || self.local.expired(&self.clock)
             || !Arc::ptr_eq(&self.owner, &output.owner)
             || output.epoch != self.frame_epoch
         {
@@ -1133,7 +1157,7 @@ impl Peers {
         }
         while !output.packets.is_empty() {
             self.reap_bindings();
-            if self.failed || self.local.expired() || output.epoch != self.frame_epoch {
+            if self.failed || self.local.expired(&self.clock) || output.epoch != self.frame_epoch {
                 output.clear();
                 return Err(Failure::Cancelled);
             }
@@ -1215,7 +1239,7 @@ impl Peers {
             self.plane
                 .wireguard
                 .remove_peer(ts_tunnel::PeerId(peer.handle.0));
-            if peer.identity.tailnet == self.local.tailnet && !peer.identity.expired() {
+            if peer.identity.tailnet == self.local.tailnet && !peer.identity.expired(&self.clock) {
                 self.plane.wireguard.upsert_peer(ts_tunnel::PeerConfig::new(
                     ts_tunnel::PeerId(peer.handle.0),
                     peer.identity.key,
@@ -1243,7 +1267,11 @@ impl Peers {
         }
         // Expired peers with no active binding must not retain crypto timers or
         // transport routes. There is no control-ready substitute for key validity.
-        for peer in self.peers.values().filter(|peer| peer.identity.expired()) {
+        for peer in self
+            .peers
+            .values()
+            .filter(|peer| peer.identity.expired(&self.clock))
+        {
             self.plane
                 .wireguard
                 .remove_peer(ts_tunnel::PeerId(peer.handle.0));
@@ -1276,7 +1304,7 @@ impl Peers {
             if let Some(peer) = self.peers.values().find(|peer| {
                 peer.handle == handle
                     && peer.identity.tailnet == self.local.tailnet
-                    && !peer.identity.expired()
+                    && !peer.identity.expired(&self.clock)
             }) {
                 self.plane.wireguard.upsert_peer(ts_tunnel::PeerConfig::new(
                     ts_tunnel::PeerId(handle.0),
@@ -1312,6 +1340,7 @@ impl Drop for Peers {
 }
 
 fn frame_watcher(
+    clock: Clock,
     cancelled: CancellationToken,
     expires: Option<chrono::DateTime<chrono::Utc>>,
     bindings: Vec<CancellationToken>,
@@ -1324,8 +1353,7 @@ fn frame_watcher(
                 .collect::<Vec<_>>(),
         );
         if let Some(expires) = expires {
-            let remaining = (expires - chrono::Utc::now()).to_std().unwrap_or_default();
-            tokio::select! { _ = cancellation => {}, _ = tokio::time::sleep(remaining) => {} }
+            tokio::select! { _ = cancellation => {}, _ = clock.wait_until(expires) => {} }
         } else {
             cancellation.await;
         }

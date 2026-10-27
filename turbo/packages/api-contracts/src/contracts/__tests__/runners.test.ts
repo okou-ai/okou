@@ -7,6 +7,7 @@ import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
+  claimCompatibleStoredExecutionContextSchema,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
   executionContextSchema,
@@ -198,6 +199,47 @@ describe("runner claim response contract", () => {
       platformEnvironment: {},
     });
     expect(emptyTrustedContext.platformEnvironment).toStrictEqual({});
+  });
+});
+
+describe("stored Workflow selection contract", () => {
+  it("preserves legacy selection and current claim-time invocation intent", () => {
+    const context = {
+      storageMounts: [],
+      connectorRuntimeTargets: [],
+      environment: null,
+      platformEnvironment: {},
+      secretValueEnvironmentKeys: null,
+      nativeContinuation: {
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      },
+      encryptedSecrets: null,
+      cliAgentType: "claude-code",
+    };
+    const agentId = "11111111-1111-4111-8111-111111111111";
+    const invocationId = "22222222-2222-4222-8222-222222222222";
+    const automationId = "33333333-3333-4333-8333-333333333333";
+    for (const selection of [
+      { agentId },
+      { agentId, invokedWorkflowId: null, protectedMountPaths: [] },
+      {
+        agentId,
+        invokedWorkflowId: invocationId,
+        automationId,
+        protectedMountPaths: ["/home/user/.codex/skills/official-workflow"],
+      },
+    ]) {
+      const queued = { ...context, customWorkflowSelection: selection };
+      expect(
+        storedExecutionContextSchema.parse(queued).customWorkflowSelection,
+      ).toStrictEqual(selection);
+      expect(
+        claimCompatibleStoredExecutionContextSchema.parse(queued)
+          .customWorkflowSelection,
+      ).toStrictEqual(selection);
+    }
   });
 });
 

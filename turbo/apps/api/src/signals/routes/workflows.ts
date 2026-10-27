@@ -1,3 +1,9 @@
+import {
+  workflowVisibilityPublicationSql,
+  workflowVisibilityGenerationChanged,
+} from "../services/workflow-visibility-publication-sql";
+import { boolean, literal, object } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   readWorkflowCopySnapshot$,
@@ -27,13 +33,13 @@ import {
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
-import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
 import {
   and,
+  DrizzleQueryError,
   eq,
   isNull,
   isNotNull,
@@ -930,6 +936,7 @@ const updateWorkflowInner$ = command(
         updateWorkflow$,
         {
           workflow: visible.workflow,
+          observedXmin: visible.observedXmin,
           body: bodyResult.data,
           updatedByUserId: auth.userId,
           member,
@@ -1593,6 +1600,22 @@ interface VisibilityTransition {
   readonly member: WorkflowMember;
 }
 
+const workflowVisibilityPublicationRow = object({
+  changed: boolean(),
+  guard: literal(0),
+});
+
+function isWorkflowVisibilityGenerationChange(error: unknown): boolean {
+  return (
+    error instanceof DrizzleQueryError &&
+    error.cause instanceof Error &&
+    "code" in error.cause &&
+    error.cause.code === "22P02" &&
+    error.cause.message ===
+      `invalid input syntax for type integer: "${workflowVisibilityGenerationChanged}"`
+  );
+}
+
 const applyWorkflowVisibility$ = command(
   async (
     { set },
@@ -1613,74 +1636,29 @@ const applyWorkflowVisibility$ = command(
     signal: AbortSignal,
   ): Promise<boolean | ReturnType<typeof conflict>> => {
     const db = set(writeDb$);
+    const query = workflowVisibilityPublicationSql(args, nowDate());
     const visibilityChanged = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0046; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const [agent] = await tx
-          .select({ id: agents.id })
-          .from(agents)
-          .where(
-            and(
-              eq(agents.id, args.workflow.agentId),
-              eq(agents.orgId, args.workflow.orgId),
-            ),
-          )
-          .for("key share")
-          .limit(1);
-        if (!agent) {
-          return false;
-        }
-        const workflowCondition = and(
-          eq(workflows.id, args.workflow.id),
-          eq(workflows.orgId, args.workflow.orgId),
-          eq(workflows.agentId, args.workflow.agentId),
-          eq(workflows.ownerUserId, args.workflow.ownerUserId),
-          eq(workflows.visibility, args.workflow.visibility),
-          isNull(workflows.officialDefinitionName),
+      (async () => {
+        const result = await settle(
+          (async () => {
+            return parseRawRows(
+              workflowVisibilityPublicationRow,
+              await db.execute(query),
+            );
+          })(),
         );
-        const [locked] = await tx
-          .select({ id: workflows.id })
-          .from(workflows)
-          .where(workflowCondition)
-          .for("update")
-          .limit(1);
-        if (!locked) {
-          return false;
+        if (!result.ok) {
+          if (isWorkflowVisibilityGenerationChange(result.error)) {
+            return false;
+          }
+          throw result.error;
         }
-
-        // Reject an outgoing Stage 1 writer until its exact package is ready.
-        const [publication] = await tx
-          .select({ token: storagePublicationTokens.token })
-          .from(storagePublicationTokens)
-          .where(
-            and(
-              eq(storagePublicationTokens.orgId, args.workflow.orgId),
-              eq(storagePublicationTokens.agentId, args.workflow.agentId),
-              eq(
-                storagePublicationTokens.publicationKey,
-                `workflow:${args.workflow.id}`,
-              ),
-            ),
-          )
-          .limit(1);
-        if (publication) {
-          return false;
+        const row = result.value[0];
+        if (!row) {
+          throw new Error("Workflow visibility publication returned no row");
         }
-
-        const [updated] = await tx
-          .update(workflows)
-          .set({
-            visibility: args.visibility,
-            updatedBy: args.updatedByUserId,
-            updatedAt: nowDate(),
-          })
-          .where(workflowCondition)
-          .returning({ id: workflows.id });
-        if (!updated) {
-          return false;
-        }
-        return true;
-      }),
+        return row.changed;
+      })(),
       signal,
     );
     if (!visibilityChanged.ok) {

@@ -142,79 +142,40 @@ function ActionState({
 }
 
 function TerminalActionState({
-  signals,
   callbackDelivered,
   cancelled,
   variant,
 }: {
-  readonly signals: BrowserUserActionSignals;
   readonly callbackDelivered: boolean;
   readonly cancelled: boolean;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
-  const continuing = continueLoadable.state === "loading";
-  const callbackFailed = mutationFailed(continueLoadable);
-  const callbackFailureDescription = t(($) => {
-    return $.chat.browserInput.callbackFailed;
-  });
-  if (callbackDelivered) {
-    return (
-      <ActionState
-        icon={<CheckCircle2 size={20} className="text-emerald-600" />}
-        title={t(($) => {
-          return $.chat.browserInput.delivered;
-        })}
-        variant={variant}
-      />
-    );
-  }
   return (
     <ActionState
-      icon={cancelled ? <XCircle size={20} /> : <CheckCircle2 size={20} />}
-      title={t(($) => {
-        return cancelled
-          ? $.chat.browserInput.cancelled
-          : $.chat.browserInput.completed;
-      })}
-      description={callbackFailed ? callbackFailureDescription : undefined}
-      variant={variant}
-      action={
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={continuing}
-          onClick={() => {
-            detach(continueAction(pageSignal), Reason.DomCallback);
-          }}
-        >
-          {continuing && <Loader2 size={15} className="animate-spin" />}
-          {continuing
-            ? t(($) => {
-                return $.chat.browserInput.continuing;
-              })
-            : callbackFailed
-              ? t(($) => {
-                  return $.chat.browserInput.retry;
-                })
-              : t(($) => {
-                  return $.chat.browserInput.continue;
-                })}
-        </Button>
+      icon={
+        cancelled ? (
+          <XCircle size={20} />
+        ) : (
+          <CheckCircle2 size={20} className="text-emerald-600" />
+        )
       }
+      title={t(($) => {
+        return callbackDelivered
+          ? $.chat.browserInput.delivered
+          : cancelled
+            ? $.chat.browserInput.cancelled
+            : $.chat.browserInput.completed;
+      })}
+      variant={variant}
     />
   );
 }
 
 function StateFromRequest({
-  signals,
   request,
   variant,
 }: {
-  readonly signals: BrowserUserActionSignals;
   readonly request: BrowserUserActionRequestState;
   readonly variant: BrowserUserActionCardVariant;
 }) {
@@ -294,7 +255,6 @@ function StateFromRequest({
   if (action.state === "succeeded" || action.state === "cancelled") {
     return (
       <TerminalActionState
-        signals={signals}
         callbackDelivered={action.callbackDelivered === true}
         cancelled={action.state === "cancelled"}
         variant={variant}
@@ -1578,14 +1538,11 @@ function PendingFormActions({
 type BrowserInputEntryLoadable = Loadable<BrowserInputEntry>;
 
 function PendingFormPreflight({
-  signals,
   entry,
 }: {
-  readonly signals: BrowserUserActionSignals;
   readonly entry: BrowserInputEntryLoadable;
 }) {
   const { t } = useTranslation();
-  const refreshEntry = useSet(signals.refreshEntry$);
   if (entry.state === "loading") {
     return (
       <p
@@ -1609,18 +1566,6 @@ function PendingFormPreflight({
               : $.chat.browserInput.checkFailed;
           })}
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            refreshEntry();
-          }}
-        >
-          {t(($) => {
-            return $.chat.browserInput.retry;
-          })}
-        </Button>
       </div>
     );
   }
@@ -1762,7 +1707,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
         onRemoveColor={removeColorDraft}
       />
 
-      <PendingFormPreflight signals={signals} entry={entry} />
+      <PendingFormPreflight entry={entry} />
 
       {failed && (
         <p role="alert" className="text-sm text-destructive">
@@ -1816,8 +1761,8 @@ function PendingInlineAction({
   readonly signals: BrowserUserActionSignals;
   readonly request: PendingBrowserInputRequest;
 }) {
-  const { t } = useTranslation();
   const refreshEntry = useSet(signals.refreshEntry$);
+  const { t } = useTranslation();
   const title =
     request.action.title ??
     t(($) => {
@@ -1943,11 +1888,7 @@ function BrowserUserActionCardContent({
   } else {
     content = (
       <DraftClearingState signals={signals}>
-        <StateFromRequest
-          signals={signals}
-          request={requestLoadable.data}
-          variant={variant}
-        />
+        <StateFromRequest request={requestLoadable.data} variant={variant} />
       </DraftClearingState>
     );
   }

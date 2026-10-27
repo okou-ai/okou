@@ -1,6 +1,5 @@
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -31,6 +30,7 @@ function mockDisconnectedDiscord(): void {
 test.each(["pending", "error", "connected"])(
   "A legacy Discord %s callback is exempt before onboarding can resolve",
   async (marker) => {
+    mockDisconnectedDiscord();
     context.mocks.data.onboardingStatus({
       needsOnboarding: true,
       onboardingComplete: false,
@@ -38,61 +38,18 @@ test.each(["pending", "error", "connected"])(
     await setupPage({
       context,
       path: `/works?discord=${marker}#discord_oauth=approve&state=attempt-fixture&approval_proof=private-fixture`,
-      // The public callback remains exempt even before the provider is enabled.
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: false },
     });
 
     await expect(
-      screen.findByRole("heading", { name: /Where .+ works/u }),
+      screen.findByText("Back to settings"),
     ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/works");
+    expect(window.location.pathname).toBe("/settings/discord");
     expect(window.location.hash).toBe("");
     expect(
       screen.queryByLabelText("Onboarding prompt"),
     ).not.toBeInTheDocument();
   },
 );
-
-test("A callback arriving while the onboarding read is pending keeps its public route", async () => {
-  const requested = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(onboardingStatusContract.getStatus, async ({ respond }) => {
-    requested.resolve();
-    await response.promise;
-    return respond(200, {
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
-      hasDefaultAgent: true,
-      hasOrg: true,
-      isAdmin: true,
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
-  });
-  const page = await startPage({
-    context,
-    path: "/works?context=original",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: false },
-  });
-  await requested.promise;
-  await page.content;
-  await screen.findByRole("heading", { name: /Where .+ works/u });
-
-  // Browser navigation races the startup guard's already in-flight read.
-  window.history.pushState(null, "", "/works?discord=pending&context=callback");
-  window.dispatchEvent(new PopStateEvent("popstate"));
-  response.resolve();
-  await page.ready;
-
-  expect(window.location.pathname).toBe("/works");
-  expect(new URLSearchParams(window.location.search).get("context")).toBe(
-    "callback",
-  );
-  expect(
-    screen.getByRole("heading", { name: /Where .+ works/u }),
-  ).toBeInTheDocument();
-  expect(screen.queryByLabelText("Onboarding prompt")).not.toBeInTheDocument();
-});
 
 test("The legacy callback bridge can finish before a pending onboarding response", async () => {
   mockDisconnectedDiscord();
@@ -114,7 +71,6 @@ test("The legacy callback bridge can finish before a pending onboarding response
   const page = await startPage({
     context,
     path: "/works",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   await requested.promise;
   await page.content;
@@ -159,7 +115,6 @@ test.each(["/settings/discord", "/settings/discord/install"])(
     await setupPage({
       context,
       path: `${path}?status=pending`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(window.location.pathname).toBe(path);
     expect(
@@ -169,7 +124,7 @@ test.each(["/settings/discord", "/settings/discord/install"])(
       screen.findByRole("heading", { name: "Connection failed" }),
     ).resolves.toBeInTheDocument();
     expect(
-      screen.getByText(/restart the connection|Start again/u),
+      screen.getByText("This authorization was interrupted or refreshed."),
     ).toBeInTheDocument();
     expect(screen.getByText("Back to settings").closest("a")).toHaveAttribute(
       "href",

@@ -87,7 +87,7 @@
           "title": "크레딧 소진"
         },
         "noModelProvider": {
-          "guidance": "잠시 후 다시 시도하거나 설정에서 개인 Claude Code 또는 Codex 구독을 연결하세요.",
+          "guidance": "설정에서 개인 Claude Code 또는 Codex 구독을 연결하세요.",
           "title": "이 실행에 사용할 수 있는 모델 제공업체가 없습니다"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "제공자 호환 불가"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "모델 제공자가 일시적으로 사용 불가합니다. 나중에 다시 시도하세요.",
+          "guidance": "모델 제공자가 일시적으로 사용 불가합니다.",
           "title": "제공자 일시적 사용 불가"
         }
       },
@@ -112,7 +112,6 @@
         "time": "시간"
       },
       "log": "로그",
-      "manualReloadNotice": "로그는 자동으로 업데이트되지 않습니다.",
       "modelProvidedBy": "{{provider}}에서 제공하는 {{model}}",
       "networkEmpty": {
         "description": "이 실행에 대한 네트워크 트래픽이 기록되지 않았습니다.",
@@ -123,7 +122,6 @@
         "description": "이 로그가 존재하지 않거나 현재 워크스페이스에서 볼 권한이 없습니다.",
         "title": "로그를 찾을 수 없음"
       },
-      "refresh": "새로고침",
       "runner": {
         "environment": "환경",
         "framework": "프레임워크",
@@ -414,6 +412,7 @@
         "workflows": "워크플로",
         "works": "작업"
       },
+      "resizeChatList": "채팅 목록 크기 조절",
       "searchWorkspace": "워크스페이스 검색",
       "showChatList": "채팅 목록 표시",
       "workspaceSwitcher": {
@@ -437,16 +436,15 @@
       "signedInAs": "{{email}} 계정으로 로그인됨",
       "signedInDescription": "존재하지 않거나 다른 계정 또는 조직에 공유되었을 수 있습니다.",
       "signIn": "로그인",
-      "signInFailed": "로그인 화면을 열 수 없습니다. 다시 시도해 주세요.",
+      "signInFailed": "로그인 화면을 열 수 없습니다.",
       "switchAccount": "계정 전환",
-      "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
+      "switchAccountFailed": "계정 전환 화면을 열 수 없습니다.",
       "title": "이 아티팩트를 볼 수 없습니다",
-      "tryAgain": "다시 시도",
       "websiteAuthenticationDescription": "이 웹사이트에 접근할 수 있는 계정으로 로그인하세요.",
       "websiteAuthenticationSignedInDescription": "계속하여 현재 계정의 접근 권한을 확인하세요.",
       "websiteAuthenticationTitle": "이 웹사이트 접근 권한 확인",
       "websiteTitle": "이 웹사이트를 볼 수 없습니다",
-      "websiteUnavailableDescription": "잠시 후 다시 시도하세요.",
+      "websiteUnavailableDescription": "이 웹사이트는 일시적으로 사용할 수 없습니다.",
       "websiteUnavailableTitle": "이 웹사이트를 일시적으로 사용할 수 없습니다"
     },
     "actions": {
@@ -621,8 +619,7 @@
       "organizationOptionUnnamed": "조직 내 모든 사용자",
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
-      "publicOption": "링크가 있는 모든 사람",
-      "retry": "다시 시도"
+      "publicOption": "링크가 있는 모든 사람"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -638,7 +635,7 @@
     "siteUrl": {
       "available": "사용 가능",
       "cancel": "취소",
-      "checkFailed": "주소를 확인할 수 없습니다. 수정 후 다시 시도하세요.",
+      "checkFailed": "이 주소를 확인할 수 없습니다.",
       "checking": "확인 중…",
       "customize": "URL 맞춤 설정",
       "hint": "짧고 기억하기 쉬운 이름을 선택하세요",
@@ -648,7 +645,7 @@
       "oldUrlWarning": "기존 URL은 작동하지 않습니다. 공유한 링크를 업데이트하세요.",
       "published": "게시됨",
       "save": "저장",
-      "saveFailed": "저장하지 못했습니다. 주소가 사용 중이거나 변경되었을 수 있습니다. 새로고침 후 다시 시도하세요.",
+      "saveFailed": "저장할 수 없습니다. 주소가 사용 중이거나 변경되었을 수 있습니다.",
       "taken": "이미 사용 중인 주소입니다",
       "updated": "웹사이트 URL이 업데이트되었습니다"
     },
@@ -950,7 +947,7 @@
   },
   "authorization": {
     "browser": {
-      "actionFailed": "계속할 수 없습니다. 다시 시도해 주세요.",
+      "actionFailed": "계속할 수 없습니다.",
       "allow": "허용",
       "allowed": "허용됨",
       "callbackPrompt": "클라우드 브라우저가 활성화되었습니다. 이전 작업을 계속해 주세요.",
@@ -959,7 +956,6 @@
       "enable": "이 스레드에 대해 활성화",
       "enabled": "클라우드 브라우저 활성화됨",
       "linkExpires": "링크는 {{date}}에 만료됩니다.",
-      "retry": "다시 시도",
       "title": "클라우드 브라우저 활성화",
       "unavailableDescription": "이 클라우드 브라우저 인증 링크는 유효하지 않거나 만료되었거나 이 워크스페이스에서 사용할 수 없습니다.",
       "unavailableTitle": "인증 링크를 사용할 수 없음"
@@ -973,7 +969,7 @@
       "lastSeen": "마지막 접속 {{date}}",
       "linkExpires": "링크는 {{date}}에 만료됩니다.",
       "macRequirement": "Apple 실리콘 Mac과 macOS 14 이상 필요합니다. Intel Mac은 지원되지 않습니다.",
-      "noHostsDescription": "Mac에서 {{desktopApplicationName}}을 열고 온라인 상태가 되면 이 페이지를 새로고침하세요.",
+      "noHostsDescription": "Mac에서 {{desktopApplicationName}}을 열어 온라인으로 연결하세요.",
       "noHostsTitle": "온라인 컴퓨터 없음",
       "sources": {
         "chat": "이 채팅 스레드",
@@ -1037,10 +1033,8 @@
       "allowed": "권한이 허용되었습니다",
       "allowedCount": "권한 {{total}}개 중 {{allowed}}개 허용됨",
       "alwaysNote": "이 권한은 변경하거나 철회할 때까지 허용된 상태로 유지됩니다.",
-      "continue": "계속",
       "continued": "대화가 재개되었습니다.",
-      "continueFailed": "권한은 허용되었지만 대화를 재개하지 못했습니다. 다시 계속해 주세요.",
-      "continuing": "계속하는 중…",
+      "continueFailed": "권한은 허용되었지만 대화를 재개하지 못했습니다.",
       "details": "권한 세부 정보 보기",
       "dismissed": "변경된 권한이 없습니다.",
       "invalid": "이 권한 링크는 유효하지 않거나 사용할 수 없습니다.",
@@ -1074,7 +1068,6 @@
       "preparing": "준비 중...",
       "redirecting": "리디렉션 중...",
       "restore": "복원",
-      "retry": "재시도",
       "unavailable": "사용 불가",
       "updating": "업데이트 중..."
     },
@@ -1255,7 +1248,7 @@
           "confirmDescription": "현재 플랜과 권한은 이번 결제 기간이 끝날 때까지 유지됩니다. 새 플랜이 시작되면 Stripe가 새로운 정기 결제 합계를 청구합니다.",
           "convertPlan": "플랜 전환",
           "description": "기존 {{plan}} 워크스페이스를 각 구성원의 개별 월간 사용량 패키지가 포함된 새 플랜으로 전환합니다.",
-          "error": "이 구독을 마이그레이션하지 못했습니다. 페이지를 새로고침한 후 다시 시도하세요.",
+          "error": "이 구독을 이전할 수 없습니다.",
           "invoice": "청구서 보기",
           "processing": "Stripe에서 전환을 예약하고 있습니다.",
           "ready": "각 멤버와 초대 대기 사용자에게 월간 패키지를 선택하거나 '패키지 없음'을 선택하세요.",
@@ -1274,7 +1267,7 @@
         "packCreditsDiscount": "{{credits}} 크레딧 · {{discount}}% 할인",
         "packOption": "{{price}} · {{credits}} 크레딧 · {{discount}}% 할인",
         "paidPackageRequired": "계속하려면 멤버 한 명 이상에게 유료 패키지를 선택하세요.",
-        "planChangeError": "구독 변경을 준비하지 못했습니다. 다시 시도하세요.",
+        "planChangeError": "구독 변경을 준비하지 못했습니다.",
         "planPlusPackages": "플랜 {{plan}} · 멤버 패키지 각 {{lowest}}~{{highest}}",
         "planStep": "플랜",
         "priceFrom": "최소",
@@ -1400,7 +1393,7 @@
       "generatePdf": "PDF 생성",
       "generatingPdf": "PDF 생성 중…",
       "more": "추가 작업",
-      "pdfGenerationFailed": "PDF를 생성하지 못했습니다. 다시 시도해 주세요.",
+      "pdfGenerationFailed": "PDF를 생성하지 못했습니다.",
       "remove": "제거",
       "rename": "이름 변경",
       "saving": "저장 중...",
@@ -1447,7 +1440,7 @@
             "connected": "연결됨",
             "description": "하나를 선택하면 {{assistantName}}이(가) 그 안에서 작업을 시작합니다.",
             "notConnected": "연결 안 됨",
-            "pickerFailed": "커넥터를 불러오지 못했습니다. 커넥터 페이지에서 다시 시도하세요.",
+            "pickerFailed": "커넥터를 불러오지 못했습니다.",
             "pickerLoading": "커넥터 불러오는 중…",
             "title": "{{assistantName}}는 이미 쓰고 있는 도구 안에서 일합니다"
           },
@@ -1558,7 +1551,8 @@
         "whatsCooking": "무슨 일이 있나요, {{userName}}?",
         "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
         "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
-      }
+      },
+      "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
       "dismiss": "무시",
@@ -1566,8 +1560,7 @@
       "next": "다음 제안",
       "position": "{{current}} / {{total}}",
       "previous": "이전 제안",
-      "recoveryHint": "다시 보내기 전에 채팅을 확인하세요. 제안을 초안으로 복원할 수 있습니다.",
-      "restoreDraft": "초안 복원"
+      "useSuggestion": "제안 사용"
     },
     "attachments": {
       "attach": "첨부",
@@ -1578,7 +1571,7 @@
       "title": "첨부파일",
       "unavailable": "{{filename}}을(를) 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
       "unavailableCount_other": "첨부파일 {{count}}개를 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
-      "uploadFailedRetry": "{{filename}} 업로드 실패. 다시 시도하세요."
+      "uploadFailed": "{{filename}} 업로드 실패."
     },
     "automations": {
       "active": "활성",
@@ -1698,7 +1691,6 @@
       "readOnly": "계좌, 잔액 및 거래 · 읽기 전용",
       "repair": "복구",
       "repairRequired": "{{institution}}에 복구가 필요합니다",
-      "retry": "다시 시도",
       "revoke": "철회",
       "revokeConfirm": "이 에이전트의 뱅킹 접근을 철회하시겠습니까?",
       "selectAccounts": "계좌 선택",
@@ -1733,21 +1725,18 @@
       "unavailableDescription": "이 브라우저 요청은 유효하지 않거나 더 이상 사용할 수 없습니다."
     },
     "browserInput": {
-      "applyFailed": "정보를 추가하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도하세요.",
+      "applyFailed": "정보를 추가하지 못했습니다. 입력한 내용은 유지됩니다.",
       "applying": "정보 추가 중",
       "applyingDescription": "브라우저에서 이 요청을 완료하고 있습니다.",
-      "callbackFailed": "에이전트에게 알리지 못했습니다.",
       "cancel": "취소",
-      "cancelFailed": "요청을 취소하지 못했습니다. 다시 시도하세요.",
+      "cancelFailed": "요청을 취소하지 못했습니다.",
       "cancelled": "요청이 취소됨",
       "cancelling": "취소 중…",
-      "checkFailed": "브라우저를 확인할 수 없습니다. 입력한 내용은 유지됩니다. 제출하기 전에 다시 시도하세요.",
+      "checkFailed": "브라우저를 확인할 수 없습니다. 입력한 내용은 유지됩니다.",
       "checkingOutcome": "브라우저 상태 확인 중",
       "checkingOutcomeDescription": "브라우저가 이 요청을 확인하기를 기다리고 있습니다.",
       "completed": "정보가 추가됨",
       "confirmRangeValue": "현재 값 사용",
-      "continue": "에이전트에게 알리기",
-      "continuing": "에이전트에게 알리는 중…",
       "delivered": "에이전트에게 알림",
       "expired": "요청이 만료됨",
       "expiredDescription": "브라우저가 닫혔거나 이 요청이 더 이상 활성 상태가 아닙니다.",
@@ -1755,12 +1744,11 @@
       "fileLimit": "최대 3개 파일(단일 파일 사이트는 1개), 총 10 MiB까지 선택할 수 있습니다.",
       "fileNotice": "브라우저에 추가하면 선택한 파일이 이 웹사이트로 전송됩니다. 파일 선택 변경 시 사이트에서 자동으로 업로드하거나 양식을 제출할 수 있습니다:",
       "loadFailed": "이 요청을 불러오지 못했습니다",
-      "loadFailedDescription": "잠시 후 다시 시도하세요.",
+      "loadFailedDescription": "이 요청은 현재 사용할 수 없습니다.",
       "loadingDescription": "요청을 확인하고 있습니다…",
       "open": "정보 입력",
       "optional": "(선택)",
       "required": "(필수)",
-      "retry": "다시 시도",
       "site": "사이트",
       "stale": "필드가 변경됨",
       "staleDescription": "에이전트에게 새 요청을 만들도록 요청하세요.",
@@ -1770,7 +1758,7 @@
       "title": "브라우저에 정보 입력",
       "unavailable": "요청을 사용할 수 없음",
       "uncertain": "브라우저를 확인하세요",
-      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
+      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 에이전트에게 결과를 확인해 달라고 요청하세요."
     },
     "cards": {
       "viewDetails": "세부 정보 보기"
@@ -1866,11 +1854,10 @@
     },
     "connectorAccountSwitch": {
       "accountFallback": "커넥터 계정",
-      "actionFailed": "계정을 전환할 수 없습니다. 다시 시도하세요.",
+      "actionFailed": "계정을 전환할 수 없습니다.",
       "customConnector": "사용자 지정 커넥터",
       "loadFailed": "이 커넥터 계정을 불러올 수 없습니다.",
       "reconnectRequired": "다시 연결해야 합니다. 이후 실행에서는 기존 대체 계정을 사용할 수 있습니다.",
-      "retry": "다시 시도",
       "selected": "{{account}}(으)로 전환됨",
       "switch": "전환",
       "switching": "전환 중...",
@@ -1952,7 +1939,6 @@
       "replies": "Your replies",
       "reply": "Reply",
       "result": "Result",
-      "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
       "sourceUpdate": "출처 업데이트",
@@ -1968,22 +1954,21 @@
       "genericTitle": "이 실행을 완료하지 못했습니다",
       "loadMessages": "메시지 로드 실패",
       "noModelProviderAction": "구독 관리",
-      "noModelProviderPrefix": "이 실행에 사용할 수 있는 모델 제공업체가 없습니다. 다시 시도하거나 개인 구독을 연결하세요.",
+      "noModelProviderPrefix": "이 실행에 사용할 수 있는 모델 제공업체가 없습니다. 개인 구독을 연결하세요.",
       "providerIncompatibleAction": "새 세션 시작",
       "providerIncompatiblePrefix": "이 세션은 다른 모델 공급자로 시작되어 현재 공급자로 계속할 수 없습니다.",
       "recovery": {
-        "accessProgramDescription": "잠시 후 다시 시도하세요. 이 채팅은 그대로 열어 둘 수 있습니다.",
+        "accessProgramDescription": "이 채팅은 그대로 열어 둘 수 있습니다.",
         "accessProgramTitle": "Codex 액세스를 일시적으로 사용할 수 없습니다",
-        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
+        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다.",
         "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
-        "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 작업을 계속하세요.",
+        "capacityDescription": "다른 모델로 작업을 계속하세요.",
         "capacityTitle": "이 모델은 지금 혼잡합니다",
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "connectionLostTitle": "응답이 중간에 끊겼습니다",
         "contextWindowTitle": "이 채팅이 너무 깁니다",
-        "continue": "계속",
-        "filesystemFullDescription": "이 실행에서 더 이상 파일을 저장할 수 없습니다. 다시 시도해 계속하세요.",
+        "filesystemFullDescription": "이 실행에서 더 이상 파일을 저장할 수 없습니다.",
         "filesystemFullTitle": "이 실행의 저장 공간이 부족합니다",
         "fiveHourReset": "5시간 한도는 {{time}}에 재설정",
         "inputTooLargeDescription": "메시지를 줄인 다음 다시 보내세요.",
@@ -1993,7 +1978,7 @@
         "newChat": "새 채팅",
         "newChatDescription": "새 채팅을 시작하고 이어서 필요한 중요한 정보를 포함하세요.",
         "openClaude": "Claude 열기",
-        "outputLimitDescription": "응답이 완료되기 전에 멈췄습니다. '계속'을 눌러 이어서 생성하세요.",
+        "outputLimitDescription": "응답이 완료되기 전에 멈췄습니다.",
         "outputLimitTitle": "응답이 길이 제한에 도달했습니다",
         "personalAccount": "개인 구독 {{account}}",
         "personalAccountDisconnected": "개인 구독 연결이 끊어졌습니다",
@@ -2006,16 +1991,13 @@
         "providerStreamTimeoutTitle": "모델 응답 시간이 초과되었습니다",
         "reconnectTitle": "모델 계정을 다시 연결하세요",
         "resetsAt": "{{time}}에 재설정",
-        "resetUsageRemaining": "재설정 · {{value}}회 남음",
         "safetyDescription": "이 요청은 모델의 안전 기준을 통과하지 못했습니다. 표현을 바꾸거나 다른 모델을 선택해 보세요.",
         "safetyTitle": "모델이 이 요청을 처리할 수 없습니다",
-        "selectModel": "모델 전환",
         "sessionHistoryTitle": "이 채팅이 한도에 도달했습니다",
         "termsDescription": "Claude에서 최신 약관에 동의한 다음 돌아와 다시 시도하세요.",
         "termsTitle": "Claude 약관에 동의해야 합니다",
-        "timeoutDescription": "중단된 지점부터 계속할 수 있습니다.",
+        "timeoutDescription": "계속하려면 새 메시지를 보내세요.",
         "timeoutTitle": "시간 제한에 도달했습니다",
-        "tryAgain": "다시 시도",
         "unavailableDescription": "현재 제공자 계정에서 사용할 수 있는 다른 모델을 선택하세요.",
         "unavailableTitle": "선택한 모델을 사용할 수 없습니다",
         "usageDescription": "사용량 한도가 재설정되면 계속하거나 지금 다른 모델로 전환할 수 있습니다.",
@@ -2081,7 +2063,6 @@
         "open": "이메일 관리",
         "openEmail": "이메일 열기: {{subject}}",
         "result": "{{succeeded}}개 완료 · {{failed}}개 실패",
-        "retry": "다시 시도",
         "search": "제목 또는 보낸 사람 검색",
         "selectAll": "모두 선택",
         "selected": "{{quantity}}개 선택됨",
@@ -2205,7 +2186,6 @@
       "off": "끄기",
       "on": "켜기",
       "requiresSsh": "SSH 필요: {{name}}",
-      "retry": "다시 시도",
       "sshDisabled": "SSH 켜기: {{name}}",
       "sshEnabled": "SSH 켜짐: {{name}}",
       "title": "원격 액세스",
@@ -2214,10 +2194,10 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "empty": "이 채팅의 결과물과 관련 채팅이 여기에 표시됩니다.",
+      "emptyDescription": "이 채팅의 파일과 관련 채팅이 여기에 표시됩니다.",
+      "emptyTitle": "아직 리소스가 없습니다",
       "loadFailed": "리소스를 불러오지 못했습니다",
       "loading": "리소스 불러오는 중",
-      "retry": "다시 시도",
       "showMore": "더 보기",
       "title": "채팅 리소스"
     },
@@ -2274,10 +2254,10 @@
       "copyFailed": "링크를 복사하지 못했습니다",
       "copyLink": "링크 복사",
       "create": "공유",
-      "createFailed": "공유된 대화를 만들지 못했습니다. 다시 시도하세요.",
+      "createFailed": "공유된 대화를 만들지 못했습니다.",
       "deselectGroup": "메시지 그룹 선택 해제",
       "linkCopied": "링크가 복사되었습니다",
-      "messageShareFailed": "공유 링크를 만들지 못했습니다. 다시 시도해 주세요.",
+      "messageShareFailed": "공유 링크를 만들지 못했습니다.",
       "publicDescription": "선택한 메시지와 첨부 파일이 공개됩니다.",
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
@@ -2335,7 +2315,7 @@
       "confirmUnknown": "—회 초기화",
       "credits_other": "남은 초기화 횟수: {{count}}",
       "creditsUnknown": "남은 초기화 횟수: 알 수 없음",
-      "error": "초기화하지 못했습니다. 같은 요청을 다시 시도하세요.",
+      "error": "초기화 결과를 확인할 수 없습니다.",
       "expiresAt": "크레딧 만료: {{time}}",
       "loadFailed": "구독 사용량을 읽을 수 없습니다.",
       "loading": "구독 불러오는 중…",
@@ -2349,7 +2329,6 @@
       "unknown": "알 수 없음",
       "unsupported": "수동 초기화는 지원되지 않으며 사용량은 자동으로 복구됩니다."
     },
-    "syncFailed": "채팅이 최신 상태가 아닐 수 있습니다",
     "taskChips": {
       "chooseTask": "작업 선택",
       "ideas": {
@@ -2939,9 +2918,6 @@
       "empty": "대화를 시작하려면 메시지를 보내세요",
       "frequentlyUsed": "자주 사용하는 항목",
       "icon": "채팅 스레드 아이콘",
-      "locator": {
-        "you": "나"
-      },
       "noEmojiFound": "이모지가 없습니다",
       "notFound": "채팅 스레드를 찾을 수 없습니다",
       "openBrowser": "브라우저 열기",
@@ -2968,7 +2944,7 @@
       "checkingLimit": "음성 입력 제한 확인 중",
       "cleanupFailed": "텍스트가 추가되었지만 저장된 녹음을 삭제하지 못했습니다.",
       "confirmRecording": "완료",
-      "detectionFailed": "음성 감지를 사용할 수 없습니다. 녹음은 보관됩니다. 다시 시도해 주세요.",
+      "detectionFailed": "음성 감지를 사용할 수 없습니다. 녹음은 보관됩니다.",
       "discarding": "음성 초안 삭제 중...",
       "input": "음성 입력",
       "inputLimitReached": "음성 입력 한도에 도달했습니다. 더 높은 한도를 원하시면 Pro 또는 Team으로 업그레이드하세요.",
@@ -2979,31 +2955,30 @@
       "microphoneAccessDenied": "마이크 접근이 거부되었습니다. 마이크 접근을 허용하고 다시 시도하세요.",
       "noSpeechDetected": "음성이 감지되지 않았습니다. 다시 녹음해 주세요.",
       "openingMicrophone": "마이크 열기 중...",
+      "recordingSaved": "녹음이 저장되었습니다.",
       "removeDraft": "음성 초안 삭제",
-      "restoreFailed": "음성 초안을 불러올 수 없습니다. 다시 시도하세요.",
-      "retry": "다시 시도",
-      "retryingSavedAudio": "저장된 오디오 재시도 중",
-      "retryReady": "녹음이 보관되어 있습니다. 텍스트 변환을 다시 시도하세요.",
+      "restoreFailed": "음성 초안을 불러올 수 없습니다.",
       "returningToComposer": "입력창으로 돌아가는 중",
       "starting": "음성 입력 시작",
       "stopRecording": "녹음 중지",
-      "storageFailed": "오디오를 저장하지 못했습니다. 재시도하면 이 기기에 이미 저장된 오디오만 복구됩니다.",
+      "storageFailed": "오디오를 저장하지 못했습니다. 이 기기에 저장된 오디오만 사용할 수 있습니다.",
       "textTakingShape": "텍스트를 만드는 중",
       "transcribing": "전사 중",
-      "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
+      "transcriptionFailed": "음성 전사 실패.",
+      "useRecording": "녹음 사용"
     },
     "walletAction": {
       "approvalApproved": "승인됨, 계속 진행 대기 중",
       "approvalContinued": "구매 요청을 이어서 진행합니다",
       "approvalRecorded": "상태 업데이트됨",
-      "approvalStopped": "자동 대기가 종료되었습니다. 직접 계속할 수 있습니다",
+      "approvalStopped": "자동 대기가 종료되었습니다.",
       "approvalWaiting": "구매 승인 대기 중",
       "approveButton": "검토",
       "approveTitle": "구매 검토",
       "authorized": "승인됨",
-      "callbackFailed": "승인되었습니다. 계속을 눌러 메시지 전송을 다시 시도하세요.",
+      "callbackFailed": "승인되었지만 메시지를 보내지 못했습니다.",
       "callbackPrompt": "Link 지갑 승인이 완료되었습니다. 이전 작업을 계속하세요.",
-      "checkFailed": "승인 상태를 확인할 수 없습니다. 다시 시도하세요.",
+      "checkFailed": "승인 상태를 확인할 수 없습니다.",
       "connectButton": "승인",
       "connectTitle": "Link 지갑 승인",
       "continueButton": "계속",
@@ -3022,7 +2997,7 @@
     "add": "Cloudflare Access 추가",
     "affectedMembers_other": "구성원 {{count}}명",
     "cancel": "취소",
-    "changed": "편집 중 이 Cloudflare Access가 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
+    "changed": "편집하는 동안 이 Cloudflare Access가 변경되었습니다. 변경 사항은 저장되지 않았습니다.",
     "clientId": "Service Token 클라이언트 ID",
     "clientIdPlaceholder": "Service Token의 Client ID 붙여넣기",
     "clientSecret": "Service Token 클라이언트 시크릿",
@@ -3030,20 +3005,18 @@
     "configuration": "Cloudflare Access",
     "convert": "개인용으로 전환",
     "convertHelp": "이 조직의 Cloudflare Access는 다른 사람이 만들었더라도 현재 작업 중인 관리자 본인의 개인 설정이 됩니다. Service Token은 그대로 유지되며 본인의 SSH 호스트는 연결을 유지할 수 있습니다.",
-    "convertUncertain": "전환 완료 여부를 확인할 수 없습니다. 다시 시도하기 전에 최신 설정을 확인하세요.",
+    "convertUncertain": "전환 완료 여부를 확인할 수 없습니다.",
     "createNew": "새 Cloudflare Access 만들기",
     "delete": "Cloudflare Access 삭제",
     "deleteHelp": "이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다. 내 호스트는 먼저 다시 연결해야 합니다.",
-    "deleteUncertain": "삭제 여부를 확인할 수 없습니다. 다시 시도하기 전에 최신 영향을 확인하세요.",
+    "deleteUncertain": "삭제 여부를 확인할 수 없습니다.",
     "edit": "Cloudflare Access 편집",
-    "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
+    "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다.",
     "forbidden": "조직 관리자만 공유 Cloudflare Access를 변경할 수 있습니다.",
-    "impactChanged": "영향을 받는 호스트가 변경되었습니다. 다시 확인하기 전에 최신 영향을 검토하세요.",
+    "impactChanged": "영향을 받는 호스트가 변경되었습니다. 변경 사항이 적용되지 않았습니다.",
     "inUse": "SSH 호스트가 이 Cloudflare Access를 사용 중입니다. 호스트 소유자가 먼저 다시 연결하거나 호스트를 삭제해야 합니다.",
     "invalidInput": "일부 Cloudflare Access 설정이 올바르지 않습니다. 입력 내용을 확인하고 다시 시도하세요.",
-    "keepChanges": "이 버전에 내 변경 사항 적용",
-    "latest": "최근 저장된 설정",
-    "loadFailed": "Cloudflare Access를 불러오지 못했습니다. 다시 시도하세요.",
+    "loadFailed": "Cloudflare Access를 불러오지 못했습니다.",
     "loading": "Cloudflare Access 불러오는 중…",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "이 Cloudflare Access는 더 이상 사용할 수 없습니다. 다른 항목을 선택하거나 새로 만드세요.",
@@ -3056,12 +3029,9 @@
     "promote": "조직용으로 전환",
     "promoteConfirm": "조직의 모든 구성원이 이 Service Token을 사용할 수 있음을 이해했습니다.",
     "promoteHelp": "개인 Cloudflare Access를 조직과 공유합니다. Service Token과 내 SSH 호스트 연결은 그대로 유지됩니다.",
-    "promoteUncertain": "전환 결과를 확인할 수 없습니다. 창을 닫고 최신 구성을 확인한 후 다시 시도하세요.",
+    "promoteUncertain": "전환을 확인할 수 없습니다.",
     "replace": "Service Token 교체",
-    "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
-    "retry": "다시 시도",
-    "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
-    "reviewLatest": "최신 영향 검토",
+    "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다.",
     "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요.",
     "save": "저장",
     "saveUncertain": "저장하지 못했습니다.",
@@ -3147,7 +3117,6 @@
       "save": "저장",
       "saving": "저장 중...",
       "savingEllipsis": "저장 중…",
-      "tryAgain": "다시 시도",
       "uninstall": "제거",
       "uninstalling": "제거 중..."
     },
@@ -3261,7 +3230,6 @@
         "loading": "커넥터 불러오는 중…",
         "noCategoryMatches": "이 카테고리에 일치하는 커넥터가 없습니다.",
         "noCustomMatches": "검색과 일치하는 사용자 지정 커넥터가 없습니다.",
-        "retry": "다시 시도",
         "searchAll": "모든 커넥터 검색"
       },
       "empty": {
@@ -3326,7 +3294,7 @@
         "denied": "연결이 거부되었습니다. 다시 시작하여 재시도하세요.",
         "expired": "연결 세션이 만료되었습니다. 다시 시작하여 재시도하세요.",
         "failed": "연결에 실패했습니다. 다시 시작하여 재시도하세요.",
-        "verificationOpen": "인증 페이지를 열 수 없습니다. 다시 시도하세요."
+        "verificationOpen": "인증 페이지를 열 수 없습니다."
       },
       "external": {
         "code": "코드",
@@ -3367,7 +3335,7 @@
           "clientRegistrationRejected": "OAuth 제공자가 자동 클라이언트 등록을 거부했으며 지원되는 MCP 클라이언트 또는 등록 메타데이터를 제한할 수 있습니다. 제공자가 지원하는 MCP 클라이언트를 사용하거나, 등록된 클라이언트 자격 증명을 이미 보유한 경우에만 사용자 지정 OAuth를 사용하거나, Okou 지원팀에 문의하세요.",
           "clientRegistrationUnavailable": "OAuth 제공자가 지원되는 자동 클라이언트 등록 방식을 제공하지 않습니다. 등록된 클라이언트 자격 증명을 이미 보유한 경우 사용자 지정 OAuth를 사용하거나 Okou 지원팀에 문의하세요.",
           "discoveryInvalid": "MCP 서버의 OAuth 검색 메타데이터가 불완전하거나 일치하지 않습니다. 서버를 관리하는 경우 게시된 메타데이터를 수정하거나 서버 관리자에게 문의하세요.",
-          "providerUnavailable": "MCP OAuth 제공자를 일시적으로 사용할 수 없거나 요청이 제한되었습니다. 나중에 다시 시도하고 제공자의 서비스 상태를 확인하세요.",
+          "providerUnavailable": "MCP OAuth 제공자를 일시적으로 사용할 수 없거나 요청이 제한되었습니다. 제공자의 서비스 상태를 확인하세요.",
           "unsafeUrl": "MCP 서버가 공개 HTTPS 엔드포인트가 아닌 OAuth URL을 게시했습니다. 다시 시도하기 전에 서버가 게시한 OAuth URL을 수정하세요."
         },
         "save": "저장",
@@ -3556,7 +3524,7 @@
         "linkIncompleteTitle": "연결 링크가 불완전합니다",
         "notInstalledDescription": "계정을 연결하기 전에 조직 관리자에게 GitHub 설치를 요청하세요.",
         "notInstalledTitle": "GitHub가 설치되어 있지 않습니다",
-        "refresh": "이 페이지를 새로고침하고 다시 시도하세요.",
+        "refresh": "로그인 상태를 확인할 수 없습니다.",
         "signInButton": "{{brandName}}에 로그인",
         "signInCheckFailed": "로그인 확인 실패",
         "signInDescription": "이 GitHub 사용자를 연결하기 전에 {{brandName}} 계정을 사용하세요.",
@@ -3579,17 +3547,15 @@
         "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
         "connectTitle": "Slack에 연결하기",
         "currentConnection": "Slack에 연결됨",
-        "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다. 다시 시도하세요.",
+        "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다.",
         "invalidDescription": "이 페이지는 Slack 연결 링크에서 열어야 합니다.",
         "keepAccount": "{{account}} 유지",
         "open": "Slack 열기",
         "reauthorize": "Slack 권한 업데이트",
-        "retryStatus": "다시 확인",
-        "startAgain": "다시 시작",
         "successDescription": "어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
         "successDescriptionWorkspace": "{{workspace}}에 연결되었습니다. 어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
         "switchAccount": "{{account}}(으)로 전환",
-        "unavailable": "현재 Slack에 연결할 수 없습니다. 나중에 다시 시도하세요.",
+        "unavailable": "현재 Slack에 연결할 수 없습니다.",
         "workspaceMismatchDescription": "이 Slack 워크스페이스는 현재 Okou 조직에서 사용할 수 없습니다. 조직을 전환하거나 관리자에게 도움을 요청하세요.",
         "workspaceMismatchDescriptionNamed": "현재 Okou 조직은 {{workspace}}에 연결되어 있습니다. 조직을 전환하거나 관리자에게 제거를 요청한 후 이 Slack 워크스페이스를 연결하세요.",
         "workspaceMismatchTitle": "Slack 워크스페이스가 일치하지 않음"
@@ -3608,7 +3574,7 @@
         "pendingTitle": "Teams에 설치하여 완료",
         "providerName": "Microsoft Teams",
         "reinstall": "Teams에 다시 설치",
-        "statusFailed": "Teams 연결을 확인할 수 없습니다. 다시 시도하세요.",
+        "statusFailed": "Teams 연결을 확인할 수 없습니다.",
         "successDescription": "{{team}}에 연결되었습니다. Teams에서 @{{botName}}를 언급하여 대화를 시작하세요.",
         "successTitle": "Microsoft Teams에 연결되었습니다",
         "unavailable": "Teams 설정을 사용할 수 없습니다. 조직 관리자에게 문의하세요."
@@ -3621,10 +3587,10 @@
         "conflictDescription": "현재 {{current}} 계정으로 연결되어 있지만 이 링크는 {{requested}} 계정을 요청합니다. 현재 연결을 유지하거나 연결을 직접 관리한 후 다시 시도하세요.",
         "conflictTitle": "다른 Telegram 계정이 연결되어 있습니다",
         "connectDescription": "이 Telegram 봇에 계정을 연결하여 Telegram에서 직접 에이전트와 상호작용하세요.",
-        "connectionCheckFailed": "연결을 확인하기 위해 Telegram에 접속할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        "connectionCheckFailed": "연결을 확인하기 위해 Telegram에 접속할 수 없습니다.",
         "connectTitle": "Telegram에 연결하기",
         "continue": "Telegram으로 계속하기",
-        "domainNotVerified": "이 앱의 Telegram 로그인을 확인할 수 없습니다. 다시 시도하고 문제가 계속되면 지원팀에 문의해 주세요.",
+        "domainNotVerified": "이 앱의 Telegram 로그인을 확인할 수 없습니다. 문제가 계속되면 지원팀에 문의해 주세요.",
         "errorFallback": "Telegram에 연결할 수 없습니다. Telegram에서 다시 시도하세요.",
         "interrupted": "이번 시도에서 연결을 확인하지 못했습니다. 현재 상태를 확인한 후 다시 시도하세요.",
         "invalidSignature": "이 링크의 서명이 유효하지 않습니다.",
@@ -3658,7 +3624,7 @@
         "copyCodeSuccess": "연결 코드를 복사했습니다",
         "copyError": "전화번호 복사 실패",
         "copySuccess": "전화번호가 복사되었습니다",
-        "createCodeError": "연결 코드를 만들지 못했습니다. 다시 시도하세요.",
+        "createCodeError": "연결 코드를 만들지 못했습니다.",
         "creatingCode": "연결 코드 만드는 중…",
         "description": "{{assistantName}}에 문자 메시지 접근",
         "openMessages": "메시지 열기",
@@ -3666,8 +3632,7 @@
         "phoneLabel": "전화",
         "qrTitle": "스캔하여 연결 코드가 미리 입력된 메시지 앱 열기",
         "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다.",
-        "sendToLabel": "받는 번호",
-        "tryAgain": "다시 시도"
+        "sendToLabel": "받는 번호"
       },
       "errors": {
         "githubAuthorizationWindow": "권한 부여 창을 열지 못했습니다"
@@ -3977,7 +3942,7 @@
     }
   },
   "desktopShellAuthorization": {
-    "actionFailed": "권한을 업데이트하지 못했습니다. 새로고침 후 다시 시도하세요.",
+    "actionFailed": "권한을 업데이트하지 못했습니다.",
     "allow": "1시간 허용",
     "approved": "Shell 접근 허용됨",
     "deadline": "만료: {{date}}",
@@ -3988,7 +3953,6 @@
     "expired": "권한 만료됨",
     "loading": "권한을 불러오는 중…",
     "pending": "승인 대기 중",
-    "refresh": "새로고침",
     "revoke": "접근 취소",
     "revoked": "Shell 접근 취소됨",
     "scope": "이 채팅과 컴퓨터에만 적용됩니다. 접근이 종료되어도 기존 터미널은 열린 상태로 유지됩니다.",
@@ -4047,14 +4011,10 @@
     "page": "{{page}} 페이지",
     "preview": "{{title}} 미리 보기",
     "previousPage": "이전 샘플 페이지",
-    "retry": "다시 시도",
     "title": "문서",
     "useNamed": "{{title}} 사용"
   },
   "global": {
-    "actions": {
-      "tryAgain": "다시 시도"
-    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "요청 실패"
@@ -4111,11 +4071,11 @@
           "title": "이미 이 혜택을 받으셨습니다"
         },
         "billingUnavailable": {
-          "body": "결제 시스템을 현재 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+          "body": "결제 시스템을 현재 사용할 수 없습니다.",
           "title": "결제 서비스 일시 중단"
         },
         "broken": {
-          "body": "크레딧 사용을 완료하지 못했습니다. 다시 시도하거나 지원팀에 문의하세요.",
+          "body": "크레딧 사용을 완료하지 못했습니다. 지원팀에 문의하세요.",
           "title": "문제가 발생했습니다"
         },
         "campaignUnavailable": {
@@ -4127,7 +4087,7 @@
           "title": "결제 성공"
         },
         "processing": {
-          "body": "크레딧을 {{orgName}}에 적용 중입니다. 보통 몇 초 걸리니 잠시 후 새로고침하여 잔액을 확인하세요.",
+          "body": "{{orgName}}에 크레딧을 적용하고 있습니다. 일반적으로 몇 초 정도 걸립니다.",
           "title": "결제 접수 완료"
         },
         "ready": {
@@ -4270,6 +4230,8 @@
         "teamTitle": "팀원 초대"
       },
       "prompt": {
+        "connectorsDescription": "업무 도구를 연결하면 Okou가 업무 맥락을 이해하고 상황에 맞게 작업을 수행할 수 있어요. 나중에 연결해도 됩니다.",
+        "connectorsTitle": "업무 도구 연결",
         "intro": "Okou는 나와 팀을 위한 업무 어시스턴트입니다. 흩어진 정보를 클라우드에서 완료된 업무로 바꿉니다."
       },
       "skills": {
@@ -4320,7 +4282,6 @@
         "showFullPrompt": "전체 프롬프트 보기",
         "startError": "가져오기 세션을 열지 못했습니다.",
         "title": "기존 스킬을 Okou로 가져오세요",
-        "tryAgain": "다시 시도",
         "waiting": "가져온 스킬은 도착하는 대로 여기에 표시됩니다."
       },
       "slack": {
@@ -4670,10 +4631,9 @@
         "connect": "{{provider}} 연결",
         "connected": "연결됨",
         "connecting": "연결 중…",
-        "failedNote": "{{provider}}을(를) 연결하지 못했습니다. 다시 시도하거나 나중에 연결할 수 있습니다.",
-        "retry": "다시 시도",
+        "failedNote": "{{provider}}을(를) 연결하지 못했습니다. 계속 진행하고 나중에 연결할 수 있습니다.",
         "rowCopy": "연결하면 Okou 크레딧 대신 내 요금제로 실행할 수 있습니다.",
-        "unconfirmedNote": "{{provider}} 연결 상태를 확인하지 못했습니다. 다시 시도하거나 나중에 연결할 수 있습니다."
+        "unconfirmedNote": "{{provider}} 연결 상태를 확인하지 못했습니다. 계속 진행하고 나중에 연결할 수 있습니다."
       },
       "team": {
         "copy": "팀원을 초대해 워크플로를 공유하세요. 도구는 각자 자신의 것을 연결합니다.",
@@ -4861,7 +4821,7 @@
     "emptyTitle": "아직 추가된 기기가 없습니다",
     "entryDescription": "Okou가 기기와 상호작용할 방법을 선택하세요.",
     "entryTitle": "원격 연결 추가",
-    "failedLoad": "이 단계를 불러올 수 없습니다. 입력 내용은 양식에 저장되어 있습니다. 다시 시도하세요.",
+    "failedLoad": "이 단계를 불러올 수 없습니다. 입력 내용은 양식에 저장되어 있습니다.",
     "hideSecret": "입력한 값 숨기기",
     "keepSavedLoginHelp": "저장된 로그인 정보를 유지하려면 입력란을 비워 두세요. 계정이나 인증서를 변경할 때는 인증서의 개인 키를 포함해 새 정보를 모두 입력하세요.",
     "keepSavedSecret": "저장된 값을 유지하려면 비워 두세요",
@@ -4889,7 +4849,7 @@
     "networkSettings": "비공개 네트워크 설정",
     "networkTailscaleHelp": "Tailscale로 기기 연결",
     "networkTitle": "비공개 네트워크",
-    "networkUnavailable": "이 네트워크를 사용할 수 없습니다. 다른 네트워크를 선택하거나 페이지를 새로고침하세요.",
+    "networkUnavailable": "이 네트워크는 더 이상 사용할 수 없습니다. 다른 네트워크를 선택하세요.",
     "newLogin": "직접 입력하기",
     "next": "계속",
     "optionalName": "연결 이름(선택 사항)",
@@ -4897,7 +4857,6 @@
     "passwordHelp": "기기 계정의 비밀번호를 입력하세요. Windows에서는 계정 비밀번호를 사용하세요. PIN은 지원되지 않습니다.",
     "passwordPlaceholder": "기기 계정 비밀번호 입력",
     "resourceUnavailable": "이 설정을 사용할 수 없거나 더 이상 접근 권한이 없습니다.",
-    "retry": "다시 시도",
     "rsaGroup": "RSA-AES",
     "saved": "연결 추가 완료",
     "savedHelp": "설정에서 연결 정보를 확인하거나 편집할 수 있습니다.",
@@ -5040,7 +4999,7 @@
     "scopeDescription": "네트워크 이름을 지정하고 사용할 사람을 선택하세요.",
     "scopeSaved": "네트워크 공유 설정이 저장되었습니다. 다른 변경 사항은 아직 저장되지 않았습니다. 변경 사항을 저장하거나 네트워크 세부 정보로 돌아가세요.",
     "scopeUnavailable": "이 네트워크를 사용할 수 없거나 필요한 관리자 권한이 없습니다.",
-    "scopeUncertain": "변경 사항을 확인할 수 없습니다. 다시 제출하기 전에 새로고침하고 저장된 설정을 확인하세요.",
+    "scopeUncertain": "변경 사항을 확인할 수 없습니다. 저장된 설정은 아직 확인되지 않았습니다.",
     "unknownOrganization": "내 조직",
     "view": "보기"
   },
@@ -5058,12 +5017,12 @@
     "contentPolicyRejected": "모델 제공업체가 콘텐츠 안전 정책에 따라 이 요청을 거부했습니다. 동일한 입력으로 재시도하면 다시 실패합니다. 요청을 바꾸거나 새 대화를 시작하거나 다른 모델로 전환하세요.",
     "executionTimeout": "이 실행이 시간 제한에 도달했습니다.",
     "failed": "실행 실패",
-    "modelRoutesUnavailable": "이 모델의 모든 기본 제공 경로를 일시적으로 사용할 수 없습니다. 나중에 다시 시도하세요.",
+    "modelRoutesUnavailable": "이 모델의 모든 기본 제공 경로를 일시적으로 사용할 수 없습니다.",
     "modelTemporarilyUnavailable": "모델을 일시적으로 사용할 수 없음",
     "modelUnavailable": "현재 모델을 사용할 수 없습니다.",
-    "overloaded": "{{model}}이(가) 과부하 상태입니다. 몇 분 후 다시 시도하거나 다른 모델로 전환하세요.",
+    "overloaded": "{{model}}이(가) 과부하 상태입니다. 다른 모델로 전환하세요.",
     "providerBalance": "연결된 구독 계정의 잔액이 부족합니다.",
-    "transient": "오류가 발생했습니다. 나중에 다시 시도하세요.",
+    "transient": "오류가 발생했습니다.",
     "vm0Credits": "크레딧이 부족합니다. 계속하려면 크레딧을 추가하거나 개인 Codex 또는 Claude 구독을 연결하세요."
   },
   "serviceStatus": {
@@ -5193,7 +5152,7 @@
         "downloadTitle": "내보내기 준비 완료",
         "expiredDescription": "새로운 다운로드 링크를 받으려면 새 내보내기를 시작하세요.",
         "expiredTitle": "이전 내보내기 만료됨",
-        "failedDescription": "다시 시도하거나 계속 문제가 발생하면 지원팀에 문의하세요.",
+        "failedDescription": "내보내기를 완료하지 못했습니다.",
         "failedTitle": "내보내기 완료되지 않음",
         "preparingDescription": "몇 분 정도 걸릴 수 있습니다. 이 페이지를 열어 두셔도 됩니다.",
         "preparingTitle": "내보내기 준비 중",
@@ -5284,7 +5243,6 @@
         "noAccounts": "연결된 계정이 없습니다.",
         "ownPlan": "내 요금제로 실행",
         "reconnectAccount": "다시 연결",
-        "retry": "다시 시도",
         "status": {
           "connected": "연결됨",
           "fiveHour": "5시간",
@@ -5366,7 +5324,6 @@
       "loadError": "도구 설정을 불러올 수 없습니다.",
       "loading": "도구 설정을 불러오는 중…",
       "openSettings": "설정 열기",
-      "retry": "다시 시도",
       "saveError": "변경 사항이 저장되지 않았습니다.",
       "saving": "저장 중…",
       "scope": "이 설정은 {{workspace}}의 본인에게만 적용됩니다.",
@@ -5464,11 +5421,10 @@
           "countExplanation": "읽기 전용 트랜잭션으로 개수를 집계하며 레코드 본문은 읽지 않습니다.",
           "description": "Shared Worker가 관리하는 로컬 채팅 캐시의 레코드 수를 확인합니다.",
           "loading": "IndexedDB 저장소를 불러오는 중...",
-          "measurementUnavailable": "스냅샷 측정에 실패했습니다. 다시 시도하세요.",
+          "measurementUnavailable": "스냅샷 측정에 실패했습니다.",
           "measureSnapshot": "스냅샷 측정",
           "measuring": "측정 중...",
           "records": "레코드",
-          "refresh": "새로고침",
           "schema": "스키마",
           "snapshotDescription": "하나의 레코드에 여러 스레드가 포함될 수 있습니다. 크기는 데이터베이스 오버헤드를 제외한 UTF-8 JSON 추정치이며, 읽기 시간에는 크기 추정 시간이 포함되지 않습니다.",
           "snapshotEmpty": "캐시된 스레드 스냅샷이 없습니다.",
@@ -5481,11 +5437,9 @@
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
         "morningBrief": {
-          "checkStatus": "실행 상태 확인",
           "description": "계정에서 활성화한 워크플로로 한 번 실행합니다. 제안을 업데이트하고 실제 이메일을 보낼 수 있습니다. 매일 실행 일정은 바뀌지 않습니다.",
           "openChat": "대화 열기",
-          "requestFailed": "요청이 완료되지 않았습니다. 재시도는 같은 요청을 사용하여 중복 실행을 방지합니다.",
-          "retry": "재시도",
+          "requestFailed": "요청 결과를 확인할 수 없습니다.",
           "run": "모닝 브리핑 실행",
           "runAgain": "다시 실행",
           "starting": "시작 중…",
@@ -5508,7 +5462,7 @@
           "create": "환영 채팅 만들기",
           "creating": "만드는 중…",
           "description": "소개와 예시가 포함된 환영 채팅을 만듭니다.",
-          "failed": "환영 채팅을 만들 수 없습니다. 다시 시도하세요.",
+          "failed": "환영 채팅을 만들 수 없습니다.",
           "title": "환영 채팅"
         }
       },
@@ -5540,44 +5494,40 @@
         "title": "언어"
       },
       "morningBrief": {
-        "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다. 조정이 완료되면 다시 시도하세요.",
+        "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다.",
         "description": "내 시간대 기준 오전 7:00 전에 일일 우선순위를 받습니다.",
+        "errorMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다.",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
-        "preparationFailed": "일시적으로 사용할 수 없습니다. Okou가 자동으로 다시 시도합니다.",
+        "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "첫 모닝 브리프를 준비하고 있습니다. 언제든지 끌 수 있습니다.",
-        "retry": "다시 시도",
-        "retryMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다. 계속하려면 다시 시도하세요.",
         "title": "모닝 브리프"
       },
       "proactiveLearning": {
         "description": "밤에 활동을 검토하고 개인 기억과 이해를 갱신합니다.",
+        "errorMessage": "이 설정을 불러오거나 업데이트하지 못했습니다.",
         "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다. Okou가 다시 시도합니다.",
+        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
         "preparing": "워크플로를 준비하고 있습니다.",
-        "retry": "Retry",
-        "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
         "title": "학습"
       },
       "proactivePlanningAction": {
         "description": "위임한 업무를 계획하고 실행하며, 입력이 필요할 때 알려드립니다.",
+        "errorMessage": "이 설정을 불러오거나 업데이트하지 못했습니다.",
         "missingDefaultAgent": "사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다. Okou가 다시 시도합니다.",
+        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
         "preparing": "워크플로를 준비하고 있습니다.",
-        "retry": "Retry",
-        "retryMessage": "이 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
         "title": "계획 및 실행"
       },
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
+        "errorMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다.",
         "missingDefaultAgent": "선제적 제안을 받으려면 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "일시적으로 사용할 수 없습니다. Okou가 자동으로 다시 시도합니다.",
+        "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
-        "retry": "다시 시도",
-        "retryMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
         "title": "제안"
       },
       "send": {
@@ -5638,7 +5588,7 @@
         "description": "Link 지갑에서 카드를 추가하거나 기본 카드를 변경하세요.",
         "empty": "Link 지갑에 아직 카드가 없습니다",
         "expires": "만료일 {{date}}",
-        "loadError": "카드를 불러오지 못했습니다. 다시 시도해 주세요.",
+        "loadError": "카드를 불러오지 못했습니다.",
         "loading": "카드 불러오는 중",
         "manage": "카드 관리",
         "title": "Link의 내 카드"
@@ -5647,13 +5597,12 @@
       "description": "에이전트가 구매를 요청하고 Link 거래를 확인할 수 있습니다. 모든 구매는 직접 승인합니다.",
       "disconnect": "연결 해제",
       "loadError": "지갑을 불러오지 못했습니다.",
-      "retry": "다시 시도",
       "scope": "Okou가 대신 구매하고 Link 거래를 확인하도록 허용하세요.",
       "title": "지갑",
       "transactions": {
         "description": "연결된 Link 계정의 최근 거래입니다.",
         "empty": "아직 Link 거래 내역이 없습니다",
-        "loadError": "거래 내역을 불러오지 못했습니다. 다시 시도하세요.",
+        "loadError": "거래 내역을 불러오지 못했습니다.",
         "loading": "거래 내역 로딩 중",
         "merchant": "판매자",
         "refunded": "환불됨",
@@ -5775,7 +5724,6 @@
           "fallbackAlt": "워크스페이스",
           "loadError": "워크스페이스 로고를 불러오지 못했습니다.",
           "loading": "워크스페이스 로고 불러오는 중",
-          "retry": "다시 시도",
           "title": "로고",
           "upload": "로고 업로드"
         },
@@ -5832,8 +5780,7 @@
       "title": "앗! 문제가 발생했습니다"
     },
     "forceUpgrade": {
-      "action": "새로 고침",
-      "description": "이 버전의 {{brandName}}은 더 이상 지원되지 않습니다. 최신 버전을 불러오려면 새로 고침하세요.",
+      "description": "이 버전의 {{brandName}}은 더 이상 지원되지 않습니다.",
       "title": "업데이트 필요"
     },
     "mermaid": {
@@ -5850,9 +5797,8 @@
       "title": "해당 페이지는 여기에 없습니다."
     },
     "workerFailure": {
-      "action": "새로 고침",
-      "description": "연결이 중단되었습니다. 계속하려면 페이지를 새로고침하세요.",
-      "title": "계속하려면 새로고침하세요"
+      "description": "이 앱과의 연결이 중단되었습니다.",
+      "title": "연결 중단"
     }
   },
   "sharedThread": {
@@ -5872,14 +5818,11 @@
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "cloudflare": {
       "direct": "직접 연결",
-      "keepChanges": "이 버전에 내 변경 사항 적용",
-      "latest": "최근 저장된 설정",
       "mode": "연결",
       "needsRebind": "이 호스트는 Cloudflare Access를 다시 연결해야 합니다. 호스트를 편집해 다른 설정에 연결하거나 직접 연결을 선택하세요. 그전에는 연결할 수 없습니다.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "공개 호스트 이름",
       "rebindHelp": "허용된 Cloudflare Access 설정 또는 직접 연결을 선택하고 저장해 호스트를 복구하세요. 저장하기 전에는 연결 방식이 바뀌지 않습니다.",
-      "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
       "title": "Cloudflare Access",
       "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다."
     },
@@ -5922,24 +5865,17 @@
     "credentialsHelp": "인증 정보는 쓰기 전용이며 샌드박스 외부에 보관됩니다. 전체 키를 붙여 넣으세요. 공백은 유지됩니다. 양식을 닫으면 입력란이 지워집니다.",
     "delete": "호스트 삭제",
     "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Agent의 호스트 목록에서 사라집니다.",
-    "deleteReview": {
-      "acknowledge": "이 버전을 삭제 대상으로 사용",
-      "changed": "이 호스트가 변경되었습니다. 삭제하기 전에 최근 저장된 설정을 검토하세요.",
-      "help": "저장된 설정을 검토한 후 호스트 삭제를 선택하여 이 버전을 삭제하세요.",
-      "unavailable": "이 호스트는 더 이상 사용할 수 없습니다. 대화 상자를 닫고 설정을 새로고침한 후 다시 시도하세요.",
-      "version": "버전 {{version}}"
-    },
     "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
     "displayName": "표시 이름",
     "edit": "호스트 편집",
     "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 직접 연결 대상 변경 시 저장된 호스트 키가 지워지며, Cloudflare Access 관련 변경 시에는 유지됩니다.",
     "empty": "구성된 SSH 호스트가 없습니다. 호스트를 추가한 뒤 기본으로 또는 개별 채팅에서 사용하도록 설정하세요.",
     "errors": {
-      "configurationChanged": "편집 중에 이 호스트가 변경되었습니다. 입력 내용은 유지됩니다. 변경 사항을 적용하기 전에 최신 설정을 검토하세요.",
-      "credentialChanged": "편집하는 동안 이 인증 정보가 변경되었습니다. 입력 내용은 유지됩니다. 저장하기 전에 최신 설정과 영향을 받는 호스트를 확인하세요.",
+      "configurationChanged": "편집하는 동안 이 호스트가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
+      "credentialChanged": "편집하는 동안 이 자격 증명이 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
       "credentialInUse": "이 자격 증명은 사용 중입니다. 호스트에 다른 자격 증명을 지정하거나 먼저 호스트를 삭제하세요.",
       "credentialUnavailable": "이 SSH 자격 증명을 더 이상 사용할 수 없습니다. 다른 자격 증명을 선택하거나 새로 만드세요.",
-      "failed": "SSH 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
+      "failed": "SSH 변경 사항을 저장하지 못했습니다.",
       "hostInUse": "이 SSH 호스트는 VNC 경로에서 사용 중입니다. 이 호스트를 삭제하기 전에 해당 VNC 경로에서 다른 SSH 호스트를 선택하거나 명시적으로 직접 연결로 전환하거나 경로를 삭제하세요.",
       "hostUnavailable": "이 SSH 호스트는 더 이상 사용할 수 없습니다. 호스트 목록으로 돌아가 기존 호스트를 선택하세요.",
       "invalidHost": "URL 스킴, 경로 또는 공백 없이 호스트 이름이나 IP 주소를 입력하세요.",
@@ -5953,7 +5889,7 @@
     "host": "공개 호스트 이름 또는 IP 주소",
     "hostSection": "호스트",
     "label": "SSH",
-    "loadFailed": "SSH 설정을 불러오지 못했습니다. 다시 시도하세요.",
+    "loadFailed": "SSH 설정을 불러오지 못했습니다.",
     "loading": "SSH 호스트 로딩 중…",
     "manage": "SSH 호스트 관리",
     "notLearned": "아직 저장된 호스트 키 없음",
@@ -5971,10 +5907,9 @@
     "privateKey": "개인 키",
     "reset": "호스트 키 재설정",
     "resetHelp": "새 서버의 신원을 독립적으로 확인한 후에만 재설정하세요. 다음 연결에서는 새 호스트 키를 신뢰하고 저장합니다.",
-    "retry": "다시 시도",
     "save": "저장",
     "saveRecovery": {
-      "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
+      "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다.",
       "uncertain": "저장하지 못했습니다."
     },
     "summary_one": "호스트 {{count}}개 구성됨",
@@ -5994,14 +5929,14 @@
     "add": "Tailscale 추가",
     "addressHelp": "등록된 Tailnet 피어의 IP, 전체 호스트 이름 또는 짧은 이름을 사용하세요. SSH 로그인과 호스트 키 검증은 여전히 필요합니다.",
     "adoptHelp": "이 조직 네트워크를 개인 네트워크로 변경합니다. 다른 소유자는 저장된 호스트를 다시 연결해야 합니다.",
-    "changed": "이 Tailscale 네트워크가 변경되었습니다. 초안을 저장하기 전에 최신 설정을 확인하세요.",
+    "changed": "이 Tailscale 네트워크가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
     "clientId": "OAuth 클라이언트 ID",
     "clientSecret": "OAuth 클라이언트 시크릿",
     "createNew": "Tailscale 네트워크 만들기",
     "delete": "Tailscale 삭제",
     "deleteHelp": "이 네트워크를 삭제할까요? 저장된 인증 정보는 복구할 수 없습니다. 먼저 자신의 호스트를 다시 연결하세요.",
     "edit": "Tailscale 편집",
-    "failed": "Tailscale 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
+    "failed": "Tailscale 변경 사항을 저장하지 못했습니다.",
     "forbidden": "이 Tailscale 네트워크를 관리할 수 없습니다. 조직 네트워크에는 관리자 권한이 필요합니다.",
     "guide": {
       "accessControls": "Access controls",
@@ -6023,7 +5958,7 @@
     },
     "inUse": "SSH 호스트가 아직 이 네트워크를 사용합니다. 먼저 다시 연결하거나 삭제하세요.",
     "invalid": "일부 Tailscale 설정이 올바르지 않습니다. 항목을 확인하고 다시 시도하세요.",
-    "loadFailed": "Tailscale을 불러오지 못했습니다. 다시 시도하세요.",
+    "loadFailed": "Tailscale을 불러오지 못했습니다.",
     "loading": "Tailscale 로딩 중…",
     "missing": "이 Tailscale 네트워크를 더 이상 사용할 수 없습니다. 다른 네트워크를 선택하거나 만드세요.",
     "peer": "Tailnet 호스트 이름 또는 IP 주소",
@@ -6056,7 +5991,7 @@
       "confirm": "템플릿 삭제",
       "deleting": "삭제 중...",
       "description": "\"{{title}}\"이(가) 볼 수 있는 모든 사용자에게서 제거됩니다. 이 작업은 되돌릴 수 없습니다.",
-      "failed": "템플릿을 삭제하지 못했습니다. 다시 시도하세요.",
+      "failed": "템플릿을 삭제하지 못했습니다.",
       "title": "템플릿을 삭제하시겠습니까?"
     },
     "detail": {
@@ -6070,7 +6005,6 @@
       "save": "저장"
     },
     "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
-    "retry": "다시 시도",
     "sharedBy": "{{owner}} 님이 공유함",
     "sharedByMember": "조직 구성원이 공유함",
     "visibility": {
@@ -6228,7 +6162,7 @@
       "keytabFile": "키탭 파일 (.keytab)",
       "lifetime": "요청 티켓 유효 기간(초)",
       "offlineHelp": "선택한 서비스 티켓만 사용합니다. KDC 연결이나 갱신은 없습니다.",
-      "onlineHelp": "별도의 KDC 경로를 통한 티켓 발급을 허용합니다. 갱신은 새 연결을 준비하며 기존 세션의 만료 시간은 유지됩니다.",
+      "onlineHelp": "이 소스가 별도의 KDC 경로를 통해 티켓을 얻도록 허용합니다. 새 연결은 새 티켓을 얻으며 기존 세션은 원래 만료 시간을 유지합니다.",
       "password": "Kerberos · 비밀번호",
       "realm": "시작 주체 영역",
       "renewableLifetime": "갱신 가능 기간(초, 0으로 비활성화)",
@@ -6265,7 +6199,6 @@
       "select": "저장된 네트워크 구성 선택"
     },
     "port": "포트",
-    "retry": "다시 시도",
     "rsaAes": {
       "fieldHelp": "각 필드는 NUL 없이 1–255 UTF-8 바이트여야 합니다. 공백은 유지되며 기존 8바이트 VNC 비밀번호가 아닙니다.",
       "fullHelp": "RA2와 RA2_256은 전체 RFB 세션을 EAX로 암호화합니다. 서버의 전체 RSA 와이어 키 pin을 독립적으로 확인하세요. CA 신뢰로 대체할 수 없습니다.",
@@ -6289,17 +6222,8 @@
     },
     "save": "저장",
     "saveRecovery": {
-      "deleteHelp": "삭제하기 전에 저장된 정보를 확인하세요. 이 작업은 버전만 선택합니다. 삭제는 별도로 확인하세요.",
-      "incompatible": "인증 방식이 변경되었습니다. 이 대화 상자를 닫고 자격 증명을 다시 열어 현재 방식을 수정하세요.",
-      "keepChanges": "이 버전으로 내 변경 사항 유지",
-      "keepDeletion": "이 버전으로 삭제 진행",
-      "keepHelp": "이 내용을 확인한 뒤 초안을 유지하고 이 버전을 기준으로 저장하세요. 인증 및 신뢰 설정은 유지됩니다.",
-      "latest": "현재 저장된 내용",
-      "resourceIdConflict": "리소스를 만들지 못했습니다. 이 창을 닫고 다시 시도하세요.",
-      "review": "설정을 새로고침했습니다. 이 창을 닫고 현재 내용을 확인한 후 다시 시도하세요.",
-      "unavailable": "이 리소스를 더 이상 사용할 수 없습니다. 대화 상자를 닫고 설정을 새로고침한 뒤 다시 시도하세요.",
-      "uncertain": "저장하지 못했습니다.",
-      "version": "버전 {{version}}"
+      "resourceIdConflict": "리소스를 만들지 못했습니다.",
+      "uncertain": "저장하지 못했습니다."
     },
     "saving": "저장 중…",
     "security": {
@@ -6377,25 +6301,20 @@
         "cancelledDescription": "캘린더 이벤트가 취소될 때 실행됩니다.",
         "cancelledRule": "캘린더 {{calendar}} 이벤트가 취소될 때",
         "cancelledTitle": "Google 캘린더 이벤트 취소됨",
-        "cancelRecovery": "취소",
         "changeAria": "Google Calendar 자동화 변경",
         "changeCalendar": "캘린더 변경",
-        "checkingRecovery": "이 자동화를 재개할 수 있는지 확인 중…",
-        "checkRecoveryStatus": "상태 확인",
         "createdDescription": "캘린더 이벤트가 생성될 때 실행됩니다.",
         "createdRule": "캘린더 {{calendar}}에 새 이벤트가 생길 때",
         "createdTitle": "Google 캘린더 이벤트 생성됨",
         "enabledIntent": "활성화됨",
         "reconnectDescription": "이 자동화를 재개하려면 먼저 Google Calendar를 다시 연결해야 합니다.",
         "reconnectGoogleCalendar": "Google Calendar 다시 연결",
-        "recoveryStatus": "Google Calendar 복구",
-        "recoveryUnconfirmed": "복구가 확인되지 않았습니다. 이 자동화의 경고를 검토한 후 상태를 다시 확인하세요.",
         "saveCalendar": "캘린더 저장",
         "summary": "캘린더 {{calendar}}",
         "updatedDescription": "캘린더 이벤트가 업데이트될 때 실행됩니다.",
         "updatedRule": "캘린더 {{calendar}} 이벤트가 업데이트될 때",
         "updatedTitle": "Google 캘린더 이벤트 업데이트됨",
-        "updateError": "이 캘린더를 변경하지 못했습니다. 다시 시도하세요."
+        "updateError": "이 캘린더를 변경하지 못했습니다."
       },
       "chat": {
         "addAction": "채팅 자동화 추가",
@@ -6634,6 +6553,7 @@
         "labelAppliedRule": "Gmail 라벨 {{label}}이(가) 적용될 때",
         "labelAppliedTitle": "Gmail 라벨 적용됨",
         "labelName": "라벨 이름",
+        "labelNotFound": "연결된 Gmail 계정에서 라벨을 찾을 수 없습니다. 라벨 이름과 연결된 계정을 확인하세요.",
         "labelPlaceholder": "지원",
         "labelSummary": "라벨 {{label}}",
         "messageMatchesRule": "Gmail 메시지가 {{summary}}와(과) 일치할 때",
@@ -6955,7 +6875,6 @@
       "open": "{{title}} 열기",
       "openRecovery": "{{title}} 복구 열기",
       "ownerLoading": "작성자 불러오는 중…",
-      "ownerRetry": "작성자 정보를 사용할 수 없습니다. 다시 열어 재시도하세요.",
       "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
       "runsAs": "다음 에이전트로 실행됨",
       "runsAsAria": "{{agent}}로 실행됨",
@@ -7004,8 +6923,8 @@
     "discord": {
       "addNewServer": "새 서버 참가",
       "approvalFailed": "확인에 실패했습니다. 원래 Okou 계정과 조직으로 로그인하거나 인증을 다시 시작하세요.",
-      "authorizationError": "Discord 인증을 완료하지 못했습니다. 다시 시도하세요.",
-      "cancelled": "Discord 인증이 취소되었습니다. 다시 시작할 수 있습니다.",
+      "authorizationError": "Discord 인증을 완료할 수 없습니다.",
+      "cancelled": "Discord 인증이 취소되었습니다.",
       "chooseWorkspace": "워크스페이스 선택",
       "connectDescription": "Discord 계정을 연결하여 에이전트와 대화하세요.",
       "connectedTitle": "Discord에 연결됨",
@@ -7017,10 +6936,8 @@
       "installTitle": "서버에 Okou 추가",
       "invalidLink": "이 Discord 연결 링크는 유효하지 않습니다. Discord에서 새 링크를 여세요.",
       "open": "Discord 열기",
-      "pendingConsent": "인증이 중단되었거나 페이지가 새로고침되었습니다. 새 연결을 확인하려면 다시 시작하세요.",
-      "popupBlocked": "Discord 인증을 위해 팝업을 허용한 다음 다시 시도하세요.",
-      "restartAuthorization": "인증 다시 시작",
-      "retry": "다시 시도",
+      "pendingConsent": "이 인증이 중단되었거나 페이지가 새로고침되었습니다.",
+      "popupBlocked": "Discord 인증 팝업이 차단되었습니다.",
       "serverPermissionRequired": "서버 멤버십, 봇 설치 및 봇 추가 권한을 확인한 후 다시 시도하세요.",
       "suspended": "Discord를 일시적으로 사용할 수 없습니다. 기존 연결은 유지됩니다.",
       "title": "Discord",
@@ -7075,7 +6992,7 @@
       "description": "WeChat에서 에이전트와 대화하세요.",
       "disconnect": "연결 해제",
       "expired": "이 QR 코드는 만료되었습니다. 새로 만드세요.",
-      "failed": "WeChat에 연결하지 못했습니다. 다시 시도하세요.",
+      "failed": "WeChat에 연결하지 못했습니다.",
       "instructions": "WeChat으로 이 QR 코드를 스캔한 다음 휴대전화에서 확인하세요.",
       "linkUnavailable": "이 링크를 사용할 수 없습니다. 기존 계정과 워크스페이스를 사용하고 WeChat에서 메시지를 다시 보내 새 링크를 받으세요. 새 QR 코드로도 연결할 수 있습니다.",
       "name": "WeChat",
@@ -7084,7 +7001,6 @@
       "reconnect_required": "다시 스캔하여 연결하세요.",
       "restart_required": "이 WeChat 계정은 이미 연결되어 있습니다. 다시 연결하려면 새 QR 코드를 만드세요.",
       "restoreDescription": "아래 계정과 워크스페이스에 WeChat을 다시 연결합니다.",
-      "retry": "새 QR 코드 만들기",
       "returnToWechat": "WeChat으로 돌아가 메시지를 보내 대화를 시작하세요.",
       "scanned": "스캔되었습니다. 휴대전화에서 확인하세요.",
       "scope": "이 에이전트에게 보내는 다이렉트 메시지만 연결됩니다. 텍스트 메시지를 지원합니다.",

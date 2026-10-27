@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
   surfaceVariants,
 } from "@okouai/ui";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { EllipsisVertical, Loader2, Wallet } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -16,7 +16,6 @@ import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings
 import {
   connectWallet$,
   disconnectWallet$,
-  refreshWalletConnection$,
   walletConnection$,
 } from "../../../../../signals/okou-page/settings/wallet.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
@@ -157,7 +156,6 @@ export function WalletSection() {
   const connection = useLastLoadable(walletConnection$);
   const [connecting, connect] = useLoadableSet(connectWallet$);
   const [disconnecting, disconnect] = useLoadableSet(disconnectWallet$);
-  const refresh = useSet(refreshWalletConnection$);
   const signal = useGet(settingsActionSignal$);
   const busy =
     connecting.state === "loading" || disconnecting.state === "loading";
@@ -235,17 +233,6 @@ export function WalletSection() {
                 return $.settings.wallet.loadError;
               })}
             </p>
-            <Button
-              variant="quiet"
-              size="sm"
-              onClick={() => {
-                refresh();
-              }}
-            >
-              {t(($) => {
-                return $.settings.wallet.retry;
-              })}
-            </Button>
           </div>
         ) : failed ? (
           <p role="alert" className="mt-4 text-sm text-destructive">

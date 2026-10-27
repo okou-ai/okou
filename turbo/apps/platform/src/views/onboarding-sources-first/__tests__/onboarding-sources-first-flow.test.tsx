@@ -1,6 +1,4 @@
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { requireConnectorFixtureAccount } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
   onboardingCompleteContract,
   onboardingRecommendationContract,
@@ -828,63 +826,32 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
   ).not.toBeInTheDocument();
 });
 
-test("A prompt that asks for a connector shows its Connect card", async () => {
+test("A prompt link prioritizes its connectors without duplicating recommendations", async () => {
   mockOnboardingNeeded();
 
   await setupPage({
     context,
     locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Review last week's Google Ads campaign performance")}&connector=google-ads`,
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Review last week's Google Ads campaign performance")}&connector=google-ads,gmail,gmail`,
   });
 
   await expect(
     screen.findByRole("heading", { name: PROMPT_TITLE }),
   ).resolves.toBeInTheDocument();
-  // The source step's own card, connected from anywhere on it.
   await waitFor(() => {
     expect(getButtonByName("Connect Google Ads")).toBeEnabled();
   });
+  const recommendations = screen.getByRole("region", {
+    name: "Connect your work tools",
+  });
+  const connections = queryAllByRoleFast("button", recommendations);
+  expect(connections[0]).toHaveAttribute("aria-label", "Connect Google Ads");
   expect(
-    screen.getByText("Manage Google Ads campaigns and reports."),
-  ).toBeInTheDocument();
-});
-
-test("A prompt link can retry unavailable account information", async () => {
-  mockOnboardingNeeded();
-  const gmail = onboardingSourceItem({
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    hasAccount: true,
-  });
-  const account = requireConnectorFixtureAccount(gmail);
-  mockOnboardingConnectorCatalog(context, [gmail]);
-  context.mocks.data.connectors([{ ...account, slug: gmail.slug }]);
-  let available = false;
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return available
-      ? respond(200, {
-          connections: [account],
-          defaultConnection: account,
-          nextCursor: null,
-        })
-      : respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "Accounts unavailable" },
-        });
-  });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&connector=gmail`,
-  });
-
-  const failure = await screen.findByRole("alert");
-  expect(failure).toHaveTextContent("Couldn't load built-in connectors.");
-  available = true;
-  click(getButtonByName("Try again", failure));
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
-  expect(screen.getByText("Gmail")).toBeInTheDocument();
+    connections.filter((button) => {
+      return button.getAttribute("aria-label") === "Connect Gmail";
+    }),
+  ).toHaveLength(1);
+  expect(getButtonByName("Connect Notion", recommendations)).toBeEnabled();
 });
 
 test("The sheet's connector card connects the tool the prompt link names", async () => {

@@ -367,7 +367,6 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
   const filtered = useLastLoadable(thread.mail.filtered$);
   const query = useGet(thread.mail.query$);
   const filter = useGet(thread.mail.filter$);
-  const refresh = useSet(thread.mail.refresh$);
   const listRef = useSet(thread.mail.listRef$);
   const rows = filtered.state === "hasData" ? filtered.data : [];
   const showSelection = rows.some((mail) => {
@@ -388,11 +387,6 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
               return $.chat.mail.manager.loadError;
             })}
           </p>
-          <Button variant="outline" size="sm" onClick={refresh}>
-            {t(($) => {
-              return $.chat.mail.manager.retry;
-            })}
-          </Button>
         </div>
       ) : filtered.state === "loading" ? (
         <ThreadMailRowsSkeleton />

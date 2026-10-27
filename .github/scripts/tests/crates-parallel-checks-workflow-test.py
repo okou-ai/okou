@@ -21,45 +21,9 @@ for name in lanes:
     cache = next(step for step in job["steps"] if step.get("uses", "").startswith("Swatinem/rust-cache@"))
     assert cache["with"]["shared-key"] == "check"
     assert cache["with"]["save-if"] == ("${{ github.ref == 'refs/heads/main' }}" if name == "check" else False)
+    # Once a lane is selected, its Cargo checks must run.
+    assert not any("if" in step for step in job["steps"] if "cargo " in step.get("run", "")), name
 
-# Preserve public Cargo invocation coverage when moving checks between runners.
-expected = {
-    "check": (
-        "cargo xtask check-rust-path-attributes",
-        "cargo fmt --all -- --check",
-        "cargo clippy --all-targets --all-features",
-    ),
-    "check-docs": ("cargo doc --workspace --all-features --no-deps",),
-    "check-guest-production": (
-        "cargo clippy -p guest-control-server --release --no-default-features --all-targets",
-        (
-            "cargo test -p guest-control-server --release --no-default-features --lib "
-            "exec_operation::tests::stdout_drain_spawn_failure_returns_wait_failed_and_cleans_registry -- --exact"
-        ),
-        (
-            "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
-            "--no-default-features --test production_identity -- --ignored --exact production_write_file_identity_matches_sudo_policy"
-        ),
-        (
-            "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
-            "--no-default-features --test production_identity -- --ignored --exact production_exec_identity_matches_sandbox_user"
-        ),
-        (
-            "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
-            "--no-default-features --test production_identity -- --ignored --exact production_env_script_remains_until_operation_cleanup"
-        ),
-    ),
-    "check-ably-smoke": ("cargo run -p ably-subscriber --example smoke_test",),
-}
-for name, commands in expected.items():
-    steps = jobs[name]["steps"]
-    actual = []
-    for step in steps:
-        script = re.sub(r"\\\n\s*", "", step.get("run", ""))
-        script = re.sub(r"\s+", " ", script)
-        actual.extend(command for command in commands if command in script)
-    assert sorted(actual) == sorted(commands), f"{name}: lost or duplicated Cargo coverage"
-    assert not any("if" in step for step in steps if "cargo " in step.get("run", "")), name
 secret_steps = [(name, step) for name in lanes for step in jobs[name]["steps"]
                 if "secrets.ABLY_API_KEY" in str(step)]
 assert len(secret_steps) == 1 and secret_steps[0][0] == "check-ably-smoke"

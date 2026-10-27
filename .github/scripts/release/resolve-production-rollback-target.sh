@@ -105,6 +105,7 @@ readonly CONNECTOR_DIAGNOSTIC_TARGETS_PATH=.github/rollback-floors/connector-dia
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
 readonly DECODED_STORAGE_CAPACITY_READER_PATH=.github/rollback-floors/decoded-storage-capacity-reader
+readonly DATA_ROUTER_RESPONSE_ID_PATH=.github/rollback-floors/data-router-response-id
 readonly DESKTOP_MANIFEST_R2_READER_PATH=.github/rollback-floors/desktop-manifest-r2-reader
 readonly WORKFLOW_ATTACHMENTS_DIRECT_PATH=.github/rollback-floors/workflow-attachments-direct
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
@@ -803,6 +804,19 @@ if ! git merge-base --is-ancestor "$decoded_storage_capacity_reader_commit" orig
   fail "Decoded storage capacity reader rollback floor is not on main."
 fi
 
+# Router generates billing request IDs after removing its legacy header input.
+# #43113 records the response ID in MITM; earlier Runner artifacts would retain
+# their locally generated ID and lose the billing association after rollback.
+if ! data_router_response_id_commit=$(git show "origin/main:${DATA_ROUTER_RESPONSE_ID_PATH}"); then
+  fail "Cannot read the Data Router response ID rollback floor from main."
+fi
+if [[ ! "$data_router_response_id_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Data Router response ID rollback floor."
+fi
+if ! git merge-base --is-ancestor "$data_router_response_id_commit" origin/main; then
+  fail "Data Router response ID rollback floor is not on main."
+fi
+
 # The GitHub manifest mirror is retired. Every supported API must read the
 # authoritative R2 manifest introduced by #43047, including after a rollback.
 if ! desktop_manifest_r2_reader_commit=$(git show "origin/main:${DESKTOP_MANIFEST_R2_READER_PATH}"); then
@@ -881,6 +895,10 @@ if ! git merge-base --is-ancestor "$decoded_storage_capacity_reader_commit" "$ru
 fi
 if ! git merge-base --is-ancestor "$workflow_attachments_direct_commit" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates verified Workflow attachment delivery: ${workflow_attachments_direct_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$data_router_response_id_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates Data Router response ID tracking: ${data_router_response_id_commit}."
 fi
 
 runner_matrix=$("${script_dir}/../runner/runner-host-architecture-groups.sh" target-matrix)

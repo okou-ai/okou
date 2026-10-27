@@ -101,6 +101,14 @@ export function badRequestMessage(message: string) {
   return httpError(400, "BAD_REQUEST", message);
 }
 
+export function connectorAccountUnavailable() {
+  return httpError(
+    400,
+    "CONNECTOR_ACCOUNT_UNAVAILABLE",
+    "The account selected for this chat is unavailable. Your message has not been sent. Choose another account or use default, then send again.",
+  );
+}
+
 interface ZodLikeIssue {
   readonly path: readonly PropertyKey[];
   readonly message: string;

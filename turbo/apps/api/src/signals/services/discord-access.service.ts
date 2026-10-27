@@ -1,7 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
 import { joinAll } from "../utils";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getDiscordAppConfig } from "./discord-config";
 import {
   createDiscordUserBinding,
@@ -25,8 +23,6 @@ import {
   measureApiDispatchTiming,
   type ApiDispatchTimingCollector,
 } from "./api-dispatch-timing.service";
-
-import { createUserFeatureSwitchContext } from "./feature-switches.service";
 
 interface DiscordBindingIdentity {
   readonly orgId: string;
@@ -61,30 +57,11 @@ export function discordBindingAccess(args: DiscordBindingIdentity) {
 function createDiscordBindingAccess(
   identity$: Computed<Promise<DiscordBindingIdentity | null>>,
 ): Computed<Promise<DiscordBindingAccess | null>> {
-  const features$ = createUserFeatureSwitchContext(identity$);
   const binding$ = createDiscordUserBinding(identity$);
   return computed(async (get): Promise<DiscordBindingAccess | null> => {
     const identity = await get(identity$);
     if (!identity) {
       return null;
-    }
-    const features = await get(features$);
-    if (
-      !features ||
-      !isFeatureEnabled(FeatureSwitchKey.DiscordIntegration, features)
-    ) {
-      return {
-        kind: "denied",
-        response: {
-          status: 403,
-          body: {
-            error: {
-              code: "FORBIDDEN",
-              message: "Discord integration is not available.",
-            },
-          },
-        },
-      };
     }
     const config = getDiscordAppConfig();
     if (!config) {

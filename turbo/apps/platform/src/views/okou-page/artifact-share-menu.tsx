@@ -188,13 +188,7 @@ export function ShareCopyButton({
   );
 }
 
-export function ShareRetryRow({
-  onRetry,
-  message,
-}: {
-  readonly onRetry: () => void;
-  readonly message?: string;
-}) {
+export function ShareLoadError({ message }: { readonly message?: string }) {
   const { t } = useTranslation();
   return (
     <div className="mt-1.5 flex items-center justify-between gap-3 px-2 py-1">
@@ -204,17 +198,6 @@ export function ShareRetryRow({
             return $.artifacts.sharing.loadFailed;
           })}
       </span>
-      <Button
-        size="sm"
-        variant="neutral"
-        onClick={() => {
-          return onRetry();
-        }}
-      >
-        {t(($) => {
-          return $.artifacts.sharing.retry;
-        })}
-      </Button>
     </div>
   );
 }
@@ -299,7 +282,6 @@ function ShareSessionMenu({
   const signal = useGet(session.signal$);
   const open = useSet(session.show$);
   const close = useSet(session.close$);
-  const refresh = useSet(session.refresh$);
   const copy = useSet(session.copy$);
   const copiedUrl = useGet(session.copiedUrl$);
   const title = t(($) => {
@@ -328,8 +310,7 @@ function ShareSessionMenu({
       >
         <Share2 size={iconSize} />
       </PopoverTrigger>
-      {/* Corner, stroke and shadow stay with `PopoverContent`; a share menu is
-          not a dialog and gets no title bar, close button or footer rule. */}
+
       <PopoverContent
         aria-label={title}
         align="end"
@@ -362,7 +343,7 @@ function ShareSessionMenu({
             ) : (
               /* A failed read leaves the audience unknown, not absent. Keeping
                  the choices in place, inert and unselected, holds the menu's
-                 shape and shows what Retry will restore. */
+                 shape while the audience remains unknown. */
               failed && (
                 <SharePermissionChoices
                   selected={undefined}
@@ -376,11 +357,7 @@ function ShareSessionMenu({
               )
             )}
             {failed ? (
-              <ShareRetryRow
-                onRetry={() => {
-                  refresh(signal);
-                }}
-              />
+              <ShareLoadError />
             ) : (
               /* Only the owner's stable app link is copied here, and its
                  artifact id tells the reader nothing, so the menu offers the

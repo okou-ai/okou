@@ -200,7 +200,7 @@ test("an external HTML preview receives no app or artifact referrer", async () =
 });
 
 test.each([403, 404] as const)(
-  "unavailable links offer recovery without disclosing content: status %s",
+  "unavailable links preserve access controls without disclosing content: status %s",
   async (status) => {
     context.mocks.browser.matchMedia(true);
     context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
@@ -235,9 +235,7 @@ test.each([403, 404] as const)(
     expect(document.title).toBe("Artifacts | Okou");
     expect(screen.queryByText("launch.png")).not.toBeInTheDocument();
     expect(action("button", "Switch account")).toBeEnabled();
-    expect(action("button", "Try again")).toBeEnabled();
     expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
-    expect(queryAllByRoleFast("button")).toHaveLength(2);
     // One status covers every denial, so a signed-in visitor is told both
     // possibilities rather than the signed-out guess about privacy.
     expect(

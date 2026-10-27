@@ -11,12 +11,10 @@ import { Check } from "lucide-react";
 import { Button, Card, cn, surfaceVariants } from "@okouai/ui";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   captureSourceOnboardingChannelClicked$,
   captureSourceOnboardingSlackInstallStarted$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { agentPhoneLinkStatus$ } from "../../signals/okou-page/agentphone.ts";
 import { connectDiscordFromWorks$ } from "../../signals/okou-page/discord-connect-signals.ts";
 import { discordOrgData$ } from "../../signals/okou-page/discord.ts";
@@ -304,7 +302,7 @@ function InlineImessageConnection() {
   const pageSignal = useGet(pageSignal$);
   const status =
     statusLoadable.state === "hasData" ? statusLoadable.data : null;
-  const onRetry = () => {
+  const createCode = () => {
     detach(requestCode(pageSignal), Reason.DomCallback);
   };
   return (
@@ -367,14 +365,19 @@ function InlineImessageConnection() {
               return $.onboarding.sourcesFirst.chatChannels.imessageExpired;
             })}
           </p>
-          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={createCode}
+          >
             {t(($) => {
               return $.onboarding.sourcesFirst.chatChannels.imessageRefresh;
             })}
           </Button>
         </div>
       ) : codeLoadable.state === "hasError" ? (
-        <AgentPhoneConnectionCodeError onRetry={onRetry} />
+        <AgentPhoneConnectionCodeError />
       ) : code?.kind === "unavailable" ? (
         <p className="text-sm text-muted-foreground" role="status">
           {t(
@@ -399,8 +402,6 @@ export function OnboardingSlackPage() {
   const { t } = useTranslation();
   const mobile = useMobileOnboarding();
   const flow = useSourcesFirstFlow("slack");
-  const discordEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.DiscordIntegration];
   const discord = useLastLoadable(discordOrgData$);
   const discordData = discord.state === "hasData" ? discord.data : null;
   const slack = loadedChannelState(useLastLoadable(slackOrgData$), (status) => {
@@ -435,7 +436,7 @@ export function OnboardingSlackPage() {
     slack.kind === "connected" ||
     teams.kind === "connected" ||
     (phone.state === "hasData" && phone.data.linked) ||
-    (discordEnabled && discordData?.isConnected === true) ||
+    discordData?.isConnected === true ||
     telegramConnected;
   return (
     <OnboardingStepLayout
@@ -488,7 +489,7 @@ export function OnboardingSlackPage() {
             <InstalledChannelButton channel="slack" state={slack} />
             <TelegramButton connected={telegramConnected} />
             <InstalledChannelButton channel="teams" state={teams} />
-            {discordEnabled ? <DiscordButton data={discordData} /> : null}
+            <DiscordButton data={discordData} />
           </div>
           <div className="mt-2 space-y-1">
             <ChannelNote

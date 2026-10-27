@@ -11,7 +11,6 @@ import {
   type State,
 } from "ccstate";
 import { onDomEventFn, onRef } from "../utils.ts";
-import { pageSignal$ } from "../page-signal.ts";
 import type {
   ImageAnnotation,
   ImageAnnotationMark,
@@ -1096,8 +1095,11 @@ function createCommitAnnotationSignal(session: AnnotationSessionSignals) {
     const annotations = isAnnotationMeaningful(current.present)
       ? current.present
       : null;
-    set(session.signals.closeAnnotationEditor$);
     await current.target.commit(annotations, signal);
+    signal.throwIfAborted();
+    if (get(session.internal.session$) === current) {
+      set(session.signals.closeAnnotationEditor$);
+    }
   });
 }
 
@@ -1232,35 +1234,31 @@ interface AnnotationShortcutActions {
  * an invariant neither a type nor a lint rule could hold.
  */
 function createAnnotationShortcutSignal(actions: AnnotationShortcutActions) {
-  const runAnnotationChord$ = command(
-    async (
-      { set },
-      action: ChordAction,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      switch (action.kind) {
-        case "undo": {
-          set(actions.undoAnnotation$);
-          return;
-        }
-        case "redo": {
-          set(actions.redoAnnotation$);
-          return;
-        }
-        case "commit": {
-          await set(actions.commitAnnotation$, signal);
-          return;
-        }
-        case "zoom": {
-          set(actions.zoomAnnotation$, action.direction);
-          return;
-        }
-        case "zoomReset": {
-          set(actions.resetAnnotationZoom$);
-        }
+  const runAnnotationChord$ = command(({ set }, action: ChordAction): void => {
+    switch (action.kind) {
+      case "undo": {
+        set(actions.undoAnnotation$);
+        return;
       }
-    },
-  );
+      case "redo": {
+        set(actions.redoAnnotation$);
+        return;
+      }
+      case "commit": {
+        document
+          .querySelector<HTMLButtonElement>("[data-annotation-commit]")
+          ?.click();
+        return;
+      }
+      case "zoom": {
+        set(actions.zoomAnnotation$, action.direction);
+        return;
+      }
+      case "zoomReset": {
+        set(actions.resetAnnotationZoom$);
+      }
+    }
+  });
   const runAnnotationBareKey$ = command(({ set }, action: BareAction) => {
     switch (action.kind) {
       case "remove": {
@@ -1285,7 +1283,7 @@ function createAnnotationShortcutSignal(actions: AnnotationShortcutActions) {
       const doc = element.ownerDocument;
       doc.addEventListener(
         "keydown",
-        onDomEventFn(async (event: KeyboardEvent) => {
+        onDomEventFn((event: KeyboardEvent) => {
           // A keystroke an input method is still composing belongs to the word
           // being written, not to a shortcut: picking a candidate for a Chinese
           // or Japanese note would otherwise switch tools underneath it.
@@ -1302,11 +1300,7 @@ function createAnnotationShortcutSignal(actions: AnnotationShortcutActions) {
           const chord = resolveChord(event);
           if (chord) {
             event.preventDefault();
-            // The attach closes the session before it awaits the upload, so the
-            // editor cannot own it: this element's signal — or any signal the
-            // session aborts — would cancel the upload halfway through and lose
-            // the marks with nothing shown. The page outlives both.
-            await set(runAnnotationChord$, chord, get(pageSignal$));
+            set(runAnnotationChord$, chord);
             return;
           }
           if (event.key === "Escape") {

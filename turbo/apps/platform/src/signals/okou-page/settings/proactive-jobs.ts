@@ -17,7 +17,7 @@ export const proactiveJobsPreference$ = computed(async (get) => {
   );
   return result.body;
 });
-export const reloadProactiveJobsPreference$ = command(({ set }) => {
+const reloadProactiveJobsPreference$ = command(({ set }) => {
   set(revision$, (value) => {
     return value + 1;
   });

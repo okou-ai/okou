@@ -103,9 +103,7 @@
 //! - `message_end` with an assistant message: the latest assistant terminal
 //!   state is cached. Supported content is emitted as an `assistant` event;
 //!   Empty content, unknown content blocks, and assistant messages with no
-//!   supported content emit no public event unless a hidden citation was
-//!   extracted; citation-only messages emit an empty assistant event carrying
-//!   structured provenance. Their raw records remain local.
+//!   supported content emit no public event. Their raw records remain local.
 //! - `message_end` with a `toolResult` message: required tool-result fields are
 //!   validated and one public `user` event containing one `tool_result` block is
 //!   emitted. The raw record remains local. Other message roles are ignored
@@ -122,9 +120,8 @@
 //!
 //! After projection, assistant and user events with multiple content blocks
 //! are split by `provider_event_normalization` into one independently
-//! sequenced public event per block. Citation metadata stays only on the final
-//! split assistant event. The source order is retained, and common masking and
-//! bounded delivery happen after that normalization.
+//! sequenced public event per block. The source order is retained, and common
+//! masking and bounded delivery happen after that normalization.
 //!
 //! ## Public event shapes
 //!
@@ -219,7 +216,6 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use super::pi_memory_citation::{CitationParser, CitationProjection, project_segments};
 use super::pi_session_output::{PiSessionOutputSender, SESSION_OUTPUT_DELTA_MAX_BYTES};
 use crate::active_input::{ActiveInputController, ActiveInputFrame, ActiveInputWriter};
 use crate::error::AgentError;
@@ -335,7 +331,6 @@ fn boundary_error(code: &str, message: &str) -> AgentError {
 
 struct PiAssistantStream<'a> {
     event_id_prefix: String,
-    parser: CitationParser,
     masker: &'a SecretMasker,
     masking: BTreeMap<usize, StreamingSecretMasker<'a>>,
     started_sources: HashSet<usize>,
@@ -347,7 +342,6 @@ impl<'a> PiAssistantStream<'a> {
     fn new(output: PiSessionOutputSender, masker: &'a SecretMasker) -> Self {
         Self {
             event_id_prefix: format!("sandbox:{}", uuid::Uuid::new_v4()),
-            parser: CitationParser::new(0),
             masker,
             masking: BTreeMap::new(),
             started_sources: HashSet::new(),
@@ -360,25 +354,16 @@ impl<'a> PiAssistantStream<'a> {
         if source > MAX_STREAM_CONTENT_INDEX || text.is_empty() {
             return;
         }
-        self.parser.push(text, source);
-        let visible = self.parser.take_visible_segments();
-        self.emit_visible(visible);
-    }
-
-    fn emit_visible(&mut self, visible: impl IntoIterator<Item = (usize, String)>) {
-        for (source, text) in visible {
-            if text.is_empty() || self.closed_sources.contains(&source) {
-                continue;
-            }
-            // Citation normalization can release text across provider deltas.
-            // Mask each source before trimming or transport chunk boundaries.
-            let masked = self
-                .masking
-                .entry(source)
-                .or_insert_with(|| self.masker.stream())
-                .push(&text);
-            self.emit_masked(source, &masked);
+        if self.closed_sources.contains(&source) {
+            return;
         }
+        // Mask each source before trimming or transport chunk boundaries.
+        let masked = self
+            .masking
+            .entry(source)
+            .or_insert_with(|| self.masker.stream())
+            .push(text);
+        self.emit_masked(source, &masked);
     }
 
     fn emit_masked(&mut self, source: usize, text: &str) {
@@ -409,9 +394,6 @@ impl<'a> PiAssistantStream<'a> {
     }
 
     fn finish(mut self) -> String {
-        let parser = std::mem::replace(&mut self.parser, CitationParser::new(0));
-        let projection = parser.finish();
-        self.emit_visible(projection.visible_segments.into_iter().enumerate());
         for (source, masking) in std::mem::take(&mut self.masking) {
             self.emit_masked(source, &masking.finish());
         }
@@ -428,7 +410,7 @@ struct PiAssistantTerminal {
 }
 
 impl PiAssistantTerminal {
-    fn from_message(message: &Value, preserve_empty_result: bool) -> Self {
+    fn from_message(message: &Value) -> Self {
         let stop_reason = message.get("stopReason").and_then(Value::as_str);
         let failed = matches!(stop_reason, Some("error" | "aborted"));
         // A model error is upstream-controlled text. Bounding it here keeps the
@@ -443,8 +425,7 @@ impl PiAssistantTerminal {
                 .and_then(Value::as_str)
                 .map_or_else(|| assistant_text(message), project_model_error_text)
         };
-        let result = if stop_reason != Some("length") && result.is_empty() && !preserve_empty_result
-        {
+        let result = if stop_reason != Some("length") && result.is_empty() {
             stop_reason.map_or_else(String::new, |reason| format!("Pi model turn {reason}"))
         } else {
             result
@@ -730,9 +711,7 @@ impl<'a> PiRpcProjection<'a> {
         mut message: Value,
         event_id_prefix: Option<&str>,
     ) -> Result<Option<Value>, AgentError> {
-        let citation_projection = normalize_assistant_citations(&mut message);
-        let mut terminal =
-            PiAssistantTerminal::from_message(&message, citation_projection.citation.is_some());
+        let mut terminal = PiAssistantTerminal::from_message(&message);
         let retry = self.pending_retry.take();
         if let Some(request) = terminal.model_request.as_mut() {
             // Only a scheduled SDK retry is a retry. Compaction and queued
@@ -742,7 +721,7 @@ impl<'a> PiRpcProjection<'a> {
         }
         self.assistant_terminal = Some(terminal);
         let content = assistant_content(&mut message, event_id_prefix)?;
-        if content.is_empty() && citation_projection.citation.is_none() {
+        if content.is_empty() {
             return Ok(None);
         }
         let timestamp = message
@@ -796,21 +775,13 @@ impl<'a> PiRpcProjection<'a> {
                 ),
             ),
         ]);
-        let mut projected_message = owned_object([
+        let projected_message = owned_object([
             ("id", Value::String(id)),
             ("role", Value::from("assistant")),
             ("content", Value::Array(content)),
             ("model", Value::String(model.to_string())),
             ("usage", usage),
         ]);
-        if let Some(citation) = citation_projection.citation
-            && let Value::Object(fields) = &mut projected_message
-        {
-            fields.insert(
-                "memoryCitation".to_string(),
-                serde_json::to_value(citation)?,
-            );
-        }
         Ok(Some(owned_object([
             ("type", Value::from("assistant")),
             ("message", projected_message),
@@ -898,61 +869,6 @@ impl<'a> PiRpcProjection<'a> {
         }
         Value::Object(result)
     }
-}
-
-fn normalize_assistant_citations(message: &mut Value) -> CitationProjection {
-    let mut segments: Vec<String> = message
-        .get("content")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|block| {
-            (block.get("type").and_then(Value::as_str) == Some("text"))
-                .then(|| block.get("text").and_then(Value::as_str))
-                .flatten()
-                .map(ToString::to_string)
-        })
-        .collect();
-    let error_index = message
-        .get("errorMessage")
-        .and_then(Value::as_str)
-        .map(|error| {
-            let index = segments.len();
-            segments.push(error.to_string());
-            index
-        });
-    let segment_refs: Vec<&str> = segments.iter().map(String::as_str).collect();
-    let projection = project_segments(&segment_refs);
-    let mut text_index = 0;
-    if let Some(blocks) = message.get_mut("content").and_then(Value::as_array_mut) {
-        for block in blocks {
-            if block.get("type").and_then(Value::as_str) != Some("text") {
-                continue;
-            }
-            if let Some(text) = block.get_mut("text") {
-                *text = Value::String(
-                    projection
-                        .visible_segments
-                        .get(text_index)
-                        .cloned()
-                        .unwrap_or_default(),
-                );
-            }
-            text_index += 1;
-        }
-    }
-    if let Some(error_index) = error_index
-        && let Some(error) = message.get_mut("errorMessage")
-    {
-        *error = Value::String(
-            projection
-                .visible_segments
-                .get(error_index)
-                .cloned()
-                .unwrap_or_default(),
-        );
-    }
-    projection
 }
 
 fn owned_object<const N: usize>(fields: [(&str, Value); N]) -> Value {
@@ -1340,7 +1256,7 @@ mod tests {
             }}]
         });
         assert_eq!(
-            PiAssistantTerminal::from_message(&message, false).failure_reason,
+            PiAssistantTerminal::from_message(&message).failure_reason,
             Some(guest_contracts::diagnostics::FailureReason::ProviderRateLimited)
         );
         for (path, value) in [
@@ -1358,7 +1274,7 @@ mod tests {
             let mut invalid = message.clone();
             *invalid.pointer_mut(path).unwrap() = value;
             assert_eq!(
-                PiAssistantTerminal::from_message(&invalid, false).failure_reason,
+                PiAssistantTerminal::from_message(&invalid).failure_reason,
                 None,
                 "{path}"
             );
@@ -1367,20 +1283,33 @@ mod tests {
 
     #[test]
     fn model_request_diagnostic_projects_chat_completions_messages() {
-        let message = json!({
-            "role": "assistant", "api": "openai-completions", "stopReason": "error",
-            "errorMessage": "private provider detail",
-            "diagnostics": [{"type": "okou_model_request", "details": {
-                "httpStatus": 503, "transportAttempts": 2, "failureReason": "provider_server_error"
-            }}]
-        });
-        let request = model_request_diagnostic(&message).expect("Chat Completions diagnostic");
-        assert_eq!(request.http_status, Some(503));
-        assert_eq!(request.transport_attempts, 2);
-        assert_eq!(
-            PiAssistantTerminal::from_message(&message, false).failure_reason,
-            Some(guest_contracts::diagnostics::FailureReason::ProviderServerError)
-        );
+        for (status, attempts, reason) in [
+            (
+                503,
+                2,
+                guest_contracts::diagnostics::FailureReason::ProviderServerError,
+            ),
+            (
+                404,
+                1,
+                guest_contracts::diagnostics::FailureReason::ProviderModelRestricted,
+            ),
+        ] {
+            let message = json!({
+                "role": "assistant", "api": "openai-completions", "stopReason": "error",
+                "errorMessage": "private provider detail",
+                "diagnostics": [{"type": "okou_model_request", "details": {
+                    "httpStatus": status, "transportAttempts": attempts, "failureReason": reason.as_str()
+                }}]
+            });
+            let request = model_request_diagnostic(&message).expect("Chat Completions diagnostic");
+            assert_eq!(request.http_status, Some(status));
+            assert_eq!(request.transport_attempts, attempts);
+            assert_eq!(
+                PiAssistantTerminal::from_message(&message).failure_reason,
+                Some(reason)
+            );
+        }
     }
 
     #[test]
@@ -1621,10 +1550,6 @@ mod tests {
 
     #[test]
     fn streaming_uses_native_content_indices_and_reconciles_each_response() {
-        let hidden = "<oai-mem-citation><citation_entries>memory.md:1-1|note=[used]</citation_entries></oai-mem-citation>";
-        let hidden_tail = hidden
-            .strip_prefix("<oai-mem-")
-            .expect("citation fixture prefix");
         let (output, mut output_rx) = super::super::pi_session_output::test_channel(32, "run-id");
         let (responses, _responses_rx) = response_channel();
         let masker = SecretMasker::from_raw("");
@@ -1665,7 +1590,7 @@ mod tests {
                     "assistantMessageEvent": {
                         "type": "text_delta",
                         "contentIndex": 0,
-                        "delta": "  Alpha<oai-mem-"
+                        "delta": "  Alpha"
                     },
                     "usage": {}
                 }),
@@ -1680,14 +1605,14 @@ mod tests {
                     "assistantMessageEvent": {
                         "type": "text_delta",
                         "contentIndex": 0,
-                        "delta": format!("{hidden_tail} one")
+                        "delta": " one"
                     },
                     "usage": {}
                 }),
                 &responses,
                 0,
             )
-            .expect("cross-delta citation should stream safely");
+            .expect("next text delta should stream");
         projection
             .project(
                 json!({
@@ -1725,7 +1650,7 @@ mod tests {
                     "message": {
                         "role": "assistant",
                         "content": [
-                            { "type": "text", "text": format!("  Alpha{hidden} one") },
+                            { "type": "text", "text": "  Alpha one" },
                             { "type": "toolCall", "id": "call-1", "name": "read", "arguments": {} },
                             { "type": "text", "text": "Third" }
                         ],
@@ -1771,12 +1696,6 @@ mod tests {
         assert_eq!(first_chunks[1].delta, " one");
         assert_eq!(first_chunks[2].run_event_id, third_id);
         assert_eq!(first_chunks[2].delta, "Third");
-        let streamed = first_chunks
-            .iter()
-            .map(|chunk| chunk.delta.as_str())
-            .collect::<String>();
-        assert!(!streamed.contains("oai-mem-citation"));
-        assert!(!streamed.contains("memory.md"));
 
         projection
             .project(
@@ -2103,178 +2022,6 @@ mod tests {
             .expect("agent_settled should emit result");
         assert_eq!(result["type"], "result");
         assert_eq!(result["result"], "done");
-    }
-
-    #[test]
-    fn projection_hides_citations_in_assistant_and_terminal_result() {
-        let hidden = "<oai-mem-citation><citation_entries>memory.md:2-3|note=[used]</citation_entries><rollout_ids>019c6e27-e55b-73d1-87d8-4e01f1f75043</rollout_ids></oai-mem-citation>";
-        let (responses, _rx) = response_channel();
-        let mut projection = PiRpcProjection::new("run", "session");
-        let assistant = projection
-            .project(
-                json!({
-                    "type": "message_end",
-                    "message": {
-                        "role": "assistant",
-                        "content": [
-                            { "type": "text", "text": format!("before{}", &hidden[..12]) },
-                            { "type": "text", "text": format!("{}after", &hidden[12..]) },
-                        ],
-                        "model": "model",
-                        "timestamp": 1,
-                        "usage": {},
-                        "stopReason": "stop",
-                    }
-                }),
-                &responses,
-                0,
-            )
-            .expect("message should project")
-            .expect("citation-bearing assistant should emit");
-        assert_eq!(assistant["message"]["content"][0]["text"], "before");
-        assert_eq!(assistant["message"]["content"][1]["text"], "after");
-        assert_eq!(
-            assistant["message"]["memoryCitation"]["entries"][0]["path"],
-            "memory.md"
-        );
-        assert_eq!(
-            assistant["message"]["memoryCitation"]["rolloutIds"][0],
-            "019c6e27-e55b-73d1-87d8-4e01f1f75043"
-        );
-
-        let result = projection
-            .project(json!({ "type": "agent_settled" }), &responses, 0)
-            .expect("settled event should project")
-            .expect("settled event should emit");
-        assert_eq!(result["result"], "before\n\nafter");
-        assert!(!result.to_string().contains("oai-mem-citation"));
-    }
-
-    #[test]
-    fn short_fence_runs_keep_citations_out_of_assistant_and_terminal_text() {
-        use super::super::pi_memory_citation::{CLOSE, OPEN};
-
-        for (fence, short) in [("```", "``"), ("~~~~", "~~~")] {
-            let (responses, _rx) = response_channel();
-            let mut projection = PiRpcProjection::new("run", "session");
-            let prefix = format!("before\n{fence}\n");
-            let assistant = projection
-                .project(
-                    json!({
-                        "type": "message_end",
-                        "message": {
-                            "role": "assistant",
-                            "content": [
-                                { "type": "text", "text": format!("{prefix}{OPEN}\n{short}") },
-                                { "type": "text", "text": format!("\n{fence}\n<citation_entries>private-synthetic.md:1-1|note=[synthetic note]</citation_entries>{CLOSE}after") },
-                            ],
-                            "model": "model",
-                            "timestamp": 1,
-                            "usage": {},
-                            "stopReason": "stop",
-                        }
-                    }),
-                    &responses,
-                    0,
-                )
-                .expect("message should project")
-                .expect("assistant should emit");
-            assert_eq!(
-                assistant["message"]["content"],
-                json!([
-                    { "type": "text", "text": format!("before\n{fence}") },
-                    { "type": "text", "text": "after" },
-                ])
-            );
-            assert_eq!(
-                assistant["message"]["memoryCitation"]["entries"],
-                json!([{
-                    "path": "private-synthetic.md",
-                    "lineStart": 1,
-                    "lineEnd": 1,
-                    "note": "synthetic note",
-                }])
-            );
-
-            let result = projection
-                .project(json!({ "type": "agent_settled" }), &responses, 0)
-                .expect("settled event should project")
-                .expect("settled event should emit");
-            assert_eq!(result["result"], format!("before\n{fence}\n\nafter"));
-        }
-    }
-
-    #[test]
-    fn citation_only_projection_keeps_provenance_without_fallback_text() {
-        let (responses, _rx) = response_channel();
-        let mut projection = PiRpcProjection::new("run", "session");
-        let assistant = projection
-            .project(
-                json!({
-                    "type": "message_end",
-                    "message": {
-                        "role": "assistant",
-                        "content": [{
-                            "type": "text",
-                            "text": "<oai-mem-citation><citation_entries>x:1-1|note=[n]</citation_entries></oai-mem-citation>"
-                        }],
-                        "model": "model",
-                        "timestamp": 1,
-                        "usage": {},
-                        "stopReason": "stop",
-                    }
-                }),
-                &responses,
-                0,
-            )
-            .expect("message should project")
-            .expect("citation-only assistant should emit");
-        assert_eq!(assistant["message"]["content"], json!([]));
-        assert_eq!(
-            assistant["message"]["memoryCitation"]["entries"][0]["path"],
-            "x"
-        );
-        let result = projection
-            .project(json!({ "type": "agent_settled" }), &responses, 0)
-            .expect("settled event should project")
-            .expect("settled event should emit");
-        assert_eq!(result["result"], "");
-    }
-
-    #[test]
-    fn projection_hides_citations_in_terminal_error_text() {
-        let (responses, _rx) = response_channel();
-        let mut projection = PiRpcProjection::new("run", "session");
-        let assistant = projection
-            .project(
-                json!({
-                    "type": "message_end",
-                    "message": {
-                        "role": "assistant",
-                        "content": [],
-                        "errorMessage": "failed<oai-mem-citation><citation_entries>x:1-1|note=[n]</citation_entries></oai-mem-citation>",
-                        "model": "model",
-                        "timestamp": 1,
-                        "usage": {},
-                        "stopReason": "error",
-                    }
-                }),
-                &responses,
-                0,
-            )
-            .expect("message should project")
-            .expect("citation-bearing error should emit");
-        assert_eq!(assistant["message"]["content"], json!([]));
-        assert_eq!(
-            assistant["message"]["memoryCitation"]["entries"][0]["path"],
-            "x"
-        );
-        let result = projection
-            .project(json!({ "type": "agent_settled" }), &responses, 0)
-            .expect("settled event should project")
-            .expect("settled event should emit");
-        assert_eq!(result["result"], "failed");
-        assert!(!result.to_string().contains("oai-mem-citation"));
     }
 
     #[test]

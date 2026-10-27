@@ -3,13 +3,10 @@ import {
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -34,7 +31,7 @@ function mountedAgent(): void {
   });
 }
 
-test("The chat home lists the compliance statuses with a security link", async () => {
+test("The chat home lists the compliance statuses", async () => {
   mountedAgent();
 
   await setupPage({
@@ -45,26 +42,19 @@ test("The chat home lists the compliance statuses with a security link", async (
   });
 
   const region = await screen.findByRole("region", { name: COMPLIANCE_TITLE });
-  const badges = Array.from(region.querySelectorAll('[data-slot="badge"]')).map(
-    (badge) => {
-      return badge.textContent;
-    },
-  );
+  const statuses = within(region)
+    .getAllByRole("listitem")
+    .map((item) => {
+      return item.textContent;
+    });
   // SOC 2 must read as in progress, never as certified.
-  expect(badges).toStrictEqual([
+  expect(statuses).toStrictEqual([
     "SOC 2 Type IIIn progress",
     "CCPA / CPRACompliant",
     "GDPRCompliant",
     "HIPAAAligned",
     "ISO/IEC 27001Aligned",
   ]);
-  const link = queryAllByRoleFast("link", region).find((candidate) => {
-    return candidate.textContent?.trim() === "Security details";
-  });
-  expect(link).toHaveAttribute(
-    "href",
-    "https://www.okou.ai/en/security#security-compliance-title",
-  );
 });
 
 test("The chat home shows no compliance row while the switch is off", async () => {
@@ -77,29 +67,7 @@ test("The chat home shows no compliance row while the switch is off", async () =
   });
 
   await screen.findByTestId("chat-tagline");
-  expect(screen.queryByText(COMPLIANCE_TITLE)).not.toBeInTheDocument();
-});
-
-test("Every locale links to the English compliance section", async () => {
-  mountedAgent();
-
-  await setupPage({
-    context,
-    locale: "ja-JP",
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ChatHomeCompliance]: true },
-  });
-
-  // Only the English security page carries the compliance section, so a
-  // Japanese app still links there.
-  const region = await screen.findByRole("region", {
-    name: COMPLIANCE_TITLE,
-  });
-  const link = queryAllByRoleFast("link", region).find((candidate) => {
-    return candidate.textContent?.trim() === "Security details";
-  });
-  expect(link).toHaveAttribute(
-    "href",
-    "https://www.okou.ai/en/security#security-compliance-title",
-  );
+  expect(
+    screen.queryByRole("region", { name: COMPLIANCE_TITLE }),
+  ).not.toBeInTheDocument();
 });

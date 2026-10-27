@@ -407,8 +407,12 @@ async function setupSnapshotMeasurement() {
 
 test("Measure the threads inside a singleton snapshot on demand", async () => {
   const { snapshot } = await setupSnapshotMeasurement();
-  click(buttonWithText(snapshot, "Measure snapshot"));
+  const measure = buttonWithText(snapshot, "Measure snapshot");
+  click(measure);
+  expect(measure).toBeDisabled();
+  click(measure);
   await within(snapshot).findByText("Threads in snapshot");
+  expect(measure).toBeEnabled();
   const values = within(snapshot).getAllByRole("definition");
   expect(values[0]).toHaveTextContent("3");
   expect(values[1]).toHaveTextContent(/^[1-9][\d.]*KB$/u);

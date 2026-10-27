@@ -227,11 +227,14 @@ function liveBrowserSidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Live browser" });
 }
 
-async function openViewerSizingMenu(): Promise<HTMLElement> {
-  click(buttonByName("Browser menu"));
-  const menu = await screen.findByRole("menu", { name: "Browser menu" });
+async function openViewerSizingMenu(viewer: HTMLElement): Promise<HTMLElement> {
+  const viewerQueries = within(viewer);
+  click(buttonByName("Browser menu", viewer));
+  const menu = await viewerQueries.findByRole("menu", {
+    name: "Browser menu",
+  });
   click(within(menu).getByText("Fit to this viewer"));
-  return screen.findByRole("menu", { name: "Fit to this viewer" });
+  return viewerQueries.findByRole("menu", { name: "Fit to this viewer" });
 }
 
 interface ViewportGeometry {
@@ -305,7 +308,10 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   click(buttonByName("Open browser"));
   const address = await screen.findByDisplayValue("https://example.com");
   expect(address).toBeEnabled();
-  const sizingMenu = await openViewerSizingMenu();
+  const viewer = screen.getByRole("region", {
+    name: "Remote browser viewer",
+  });
+  const sizingMenu = await openViewerSizingMenu(viewer);
   expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
     "aria-checked",
     "true",
@@ -314,11 +320,11 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   await waitFor(() => {
     expect(sizingMenu).not.toBeInTheDocument();
   });
-  const updatedSizingMenu = await openViewerSizingMenu();
+  const updatedSizingMenu = await openViewerSizingMenu(viewer);
   expect(
     within(updatedSizingMenu).getByText("Do not sync automatically"),
   ).toHaveAttribute("aria-checked", "true");
-  click(buttonByName("Browser menu"));
+  click(buttonByName("Browser menu", viewer));
   await waitFor(() => {
     expect(updatedSizingMenu).not.toBeInTheDocument();
   });

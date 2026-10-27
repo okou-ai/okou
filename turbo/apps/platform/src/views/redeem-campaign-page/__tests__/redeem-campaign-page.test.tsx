@@ -36,9 +36,7 @@ test("A billing outage shows a temporary redemption error", async () => {
     screen.findByText("Billing is temporarily unavailable"),
   ).resolves.toBeVisible();
   expect(
-    screen.getByText(
-      "Our payment system isn't available right now. Please try again in a few minutes.",
-    ),
+    screen.getByText("Our payment system isn't available right now."),
   ).toBeVisible();
   expect(
     queryAllByRoleFast("link").find((candidate) => {
@@ -86,7 +84,7 @@ test("A processing redemption confirms payment", async () => {
   await expect(screen.findByText("Payment received")).resolves.toBeVisible();
   expect(
     screen.getByText(
-      "We're applying your credits to Default Org now. This usually takes a few seconds — refresh in a moment to see the updated balance.",
+      "We're applying your credits to Default Org now. This usually takes a few seconds.",
     ),
   ).toBeVisible();
 });

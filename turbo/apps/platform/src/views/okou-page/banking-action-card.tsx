@@ -195,7 +195,7 @@ function BankingActionCardState({ signals }: { signals: BankingSignals }) {
     return <BankingActionCardLoading />;
   }
   if (loadable.state === "hasError" && last.state !== "hasData") {
-    return <BankingActionCardError signals={signals} />;
+    return <BankingActionCardError />;
   }
   const status =
     loadable.state === "hasData"
@@ -206,7 +206,7 @@ function BankingActionCardState({ signals }: { signals: BankingSignals }) {
   return status ? (
     <LoadedBankingActionCard signals={signals} status={status} />
   ) : (
-    <BankingActionCardError signals={signals} />
+    <BankingActionCardError />
   );
 }
 
@@ -221,8 +221,7 @@ function BankingActionCardLoading() {
   );
 }
 
-function BankingActionCardError({ signals }: { signals: BankingSignals }) {
-  const refresh = useSet(signals.refresh$);
+function BankingActionCardError() {
   const { t } = useTranslation();
   return (
     <div
@@ -235,11 +234,6 @@ function BankingActionCardError({ signals }: { signals: BankingSignals }) {
           return $.chat.banking.loadFailed;
         })}
       </div>
-      <Button size="sm" variant="outline" onClick={refresh}>
-        {t(($) => {
-          return $.chat.banking.retry;
-        })}
-      </Button>
     </div>
   );
 }
@@ -363,7 +357,7 @@ function BankingCardContent({
   readonly compact: boolean;
 }) {
   if (controller.pending) {
-    return <BankingPendingNotice controller={controller} compact={compact} />;
+    return <BankingPendingNotice compact={compact} />;
   }
   const connection = controller.status.connection;
   if (!connection) {
@@ -389,21 +383,14 @@ function BankingCardContent({
       !controller.editing ? (
         <ActiveBankingGrant controller={controller} />
       ) : (
-        <BankingGrantEditor controller={controller} connection={connection} />
+        <BankingGrantEditor controller={controller} />
       )}
     </>
   );
 }
 
-function BankingPendingNotice({
-  controller,
-  compact,
-}: {
-  readonly controller: BankingCardController;
-  readonly compact: boolean;
-}) {
+function BankingPendingNotice({ compact }: { readonly compact: boolean }) {
   const { t } = useTranslation();
-  const session = controller.status.session;
   return (
     <div
       className={cn(
@@ -417,24 +404,6 @@ function BankingPendingNotice({
           return $.chat.banking.waiting;
         })}
       </span>
-      {session ? (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-9 shrink-0"
-          disabled={controller.busy}
-          onClick={() => {
-            controller.openConnect(
-              session.mode,
-              session.institutionLoginId ?? undefined,
-            );
-          }}
-        >
-          {t(($) => {
-            return $.chat.banking.retry;
-          })}
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -659,10 +628,8 @@ function ActiveBankingGrantActions({
 
 function BankingGrantEditor({
   controller,
-  connection,
 }: {
   readonly controller: BankingCardController;
-  readonly connection: BankingConnection;
 }) {
   const { t } = useTranslation();
   return (
@@ -687,11 +654,7 @@ function BankingGrantEditor({
           );
         })}
         {controller.healthyAccounts.length === 0 ? (
-          <NoHealthyBankingAccounts
-            canReconnect={connection.repairInstitutions.length === 0}
-            busy={controller.busy}
-            openConnect={controller.openConnect}
-          />
+          <NoHealthyBankingAccounts />
         ) : null}
       </div>
       <BankingGrantControls controller={controller} />
@@ -742,37 +705,13 @@ function BankingAccountOption({
   );
 }
 
-function NoHealthyBankingAccounts({
-  canReconnect,
-  busy,
-  openConnect,
-}: {
-  readonly canReconnect: boolean;
-  readonly busy: boolean;
-  readonly openConnect: OpenBankingConnect;
-}) {
+function NoHealthyBankingAccounts() {
   const { t } = useTranslation();
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-      <span>
-        {t(($) => {
-          return $.chat.banking.noAccounts;
-        })}
-      </span>
-      {canReconnect ? (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            openConnect("connect");
-          }}
-        >
-          {t(($) => {
-            return $.chat.banking.retry;
-          })}
-        </Button>
-      ) : null}
+    <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+      {t(($) => {
+        return $.chat.banking.noAccounts;
+      })}
     </div>
   );
 }

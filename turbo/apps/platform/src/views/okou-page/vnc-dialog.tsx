@@ -41,7 +41,6 @@ import {
   vncDirectDestinationHost$,
   vncCredentialSelection$,
   vncCredentialMatchesProfile,
-  isVncReviewableConflict,
   vncSaveMessage$,
   vncNoticeSource$,
   vncSaveUncertain$,
@@ -56,7 +55,6 @@ import { sshConnections$ } from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerberos";
-import { VncConflictReview } from "./vnc-conflict-review.tsx";
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
 import {
   VncCredentialFields,
@@ -135,19 +133,11 @@ function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
   }
 }
 
-function VncSaveNotice({
-  dialog,
-  step,
-}: {
-  readonly dialog: VncDialogState;
-  readonly step?: RemoteVncStep;
-}) {
+function VncSaveNotice({ step }: { readonly step?: RemoteVncStep }) {
   const { t } = useTranslation();
   const uncertain = useGet(vncSaveUncertain$);
   const message = useGet(vncSaveMessage$);
   const source = useGet(vncNoticeSource$);
-  const conflict = useGet(vncConflict$);
-  const reviewable = isVncReviewableConflict(dialog, message);
   const noticeStep = source === "kerberos-import" ? "login" : "trust";
   if ((!uncertain && !message) || (step !== undefined && step !== noticeStep)) {
     return null;
@@ -164,13 +154,6 @@ function VncSaveNotice({
               return $.vnc.errors.failed;
             }))}
       </p>
-      {conflict && !reviewable && (
-        <p>
-          {t(($) => {
-            return $.vnc.saveRecovery.review;
-          })}
-        </p>
-      )}
     </div>
   );
 }
@@ -637,24 +620,20 @@ function useVncFormSubmission(
     saving,
     conflict,
     fieldsDisabled: saving || uncertain || conflict,
-    submitDisabled: saving || conflict || (!uncertain && blocked),
+    submitDisabled: saving || uncertain || conflict || blocked,
     inlineCreate,
     setup,
     submitLabel: saving
       ? t(($) => {
           return $.vnc.saving;
         })
-      : uncertain
-        ? t(($) => {
-            return $.vnc.retry;
-          })
-        : dialog.kind === "delete" || dialog.kind === "delete-credential"
-          ? title
-          : t(($) => {
-              return $.vnc.save;
-            }),
+      : dialog.kind === "delete" || dialog.kind === "delete-credential"
+        ? title
+        : t(($) => {
+            return $.vnc.save;
+          }),
     submit(form: HTMLFormElement) {
-      if (saving || conflict || (!uncertain && blocked)) {
+      if (saving || uncertain || conflict || blocked) {
         return;
       }
       if (
@@ -750,10 +729,7 @@ function VncForm({
             disabled={fieldsDisabled}
           />
           {!saving && (
-            <VncSaveNotice
-              dialog={dialog}
-              step={inlineCreate ? setup?.vncStep : undefined}
-            />
+            <VncSaveNotice step={inlineCreate ? setup?.vncStep : undefined} />
           )}
           {dialog.connectionSaved && (
             <p role="alert" className="text-sm text-muted-foreground">
@@ -762,7 +738,6 @@ function VncForm({
               })}
             </p>
           )}
-          <VncConflictReview dialog={dialog} />
         </DialogBody>
         {inlineCreate && setup?.vncStep !== "trust" ? (
           <fieldset disabled={saving} className="min-w-0">

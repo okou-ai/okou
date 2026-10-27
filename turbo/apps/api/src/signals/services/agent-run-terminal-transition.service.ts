@@ -1,5 +1,4 @@
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
-import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -37,9 +36,6 @@ import { notFound, runNotCancellable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
-
-import type { Tx } from "../../lib/db-types";
-import { disconnectedPersonalAccountCleanupSql } from "./model-provider-account.service";
 
 export interface CancelRunResult {
   readonly apiStartTime: number;
@@ -478,56 +474,12 @@ export const cancelRun$ = command(
   },
 );
 
-type TerminalRunStatus = Extract<
-  RunStatus,
-  "completed" | "failed" | "timeout" | "cancelled"
->;
-type AgentRunWrite = typeof agentRuns.$inferInsert;
-
-type TerminalRunValues = Readonly<
-  {
-    readonly status: TerminalRunStatus;
-    readonly completedAt: Date;
-  } & Partial<
-    Pick<
-      AgentRunWrite,
-      | "runnerCancellationMode"
-      | "error"
-      | "failureReason"
-      | "result"
-      | "sandboxId"
-    >
-  >
->;
-
-interface TransitionAgentRunsToTerminalArgs {
-  readonly values: TerminalRunValues;
-  readonly conditions: readonly [SQL, ...SQL[]];
-}
-
 interface TerminalRunTransition {
   readonly runId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly runnerGroup: string | null;
   readonly startedAt: Date | null;
-}
-
-/** Runs that became terminal before reaching `running` have no runner that
- * will report completion, so their active row is released by the transaction
- * that made them terminal. Started runs keep their row until the completion
- * webhook or timeout cleanup releases it.
- */
-export function neverStartedRunIds(
-  transitions: readonly TerminalRunTransition[],
-): readonly string[] {
-  return transitions
-    .filter((transition) => {
-      return transition.startedAt === null;
-    })
-    .map((transition) => {
-      return transition.runId;
-    });
 }
 
 export interface ReleasedRunSlot {
@@ -556,54 +508,6 @@ export function runSlotReleasePlan(runIds: readonly string[], condition?: SQL) {
       orgId: activeAgentRuns.orgId,
     },
   };
-}
-
-export async function transitionAgentRunsToTerminal(
-  tx: Tx,
-  args: TransitionAgentRunsToTerminalArgs,
-): Promise<readonly TerminalRunTransition[]> {
-  const terminal = tx.$with("terminal_runs").as(
-    tx
-      .update(agentRuns)
-      .set(args.values)
-      .where(and(...args.conditions))
-      .returning({ ...cancelledRunFields }),
-  );
-  // The terminal UPDATE and its billing capture are one atomic statement.
-  const capturedBilling = tx.$with("terminal_run_billing", {}).as(
-    captureBillingRunTerminalSql({
-      condition: inArray(
-        agentRuns.id,
-        tx.select({ runId: terminal.runId }).from(terminal),
-      ),
-      status: args.values.status,
-      completedAt: args.values.completedAt,
-    }),
-  );
-  const transitioned = await tx
-    .with(terminal, capturedBilling)
-    .select({
-      runId: terminal.runId,
-      orgId: terminal.orgId,
-      userId: terminal.userId,
-      runnerGroup: terminal.runnerGroup,
-      modelProviderId: terminal.modelProviderId,
-      startedAt: terminal.startedAt,
-    })
-    .from(terminal);
-  if (transitioned.length === 0) {
-    return transitioned;
-  }
-  const runIds = transitioned.map((run) => {
-    return run.runId;
-  });
-  await tx
-    .delete(agentRunConnectorDiagnosticRegistrations)
-    .where(inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds));
-  for (const statement of disconnectedPersonalAccountCleanupSql(transitioned)) {
-    await tx.execute(statement);
-  }
-  return transitioned;
 }
 
 export type DeletedOwner =

@@ -1,12 +1,10 @@
 import { command, computed, state } from "ccstate";
 import type { infer as zInfer } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { onDomEventFn, setLoop, settle } from "../utils.ts";
 import { refreshDiscordOrg$ } from "./discord.ts";
@@ -102,7 +100,7 @@ const showDiscordApprovalResult$ = command(
   ) => {
     signal.throwIfAborted();
     // A terminal result consumes this attempt. Its approval response may still
-    // be in flight, and must not overwrite the result or offer an obsolete retry.
+    // be in flight and must not overwrite the terminal result.
     set(approvalProof$, null);
     set(approvalRequest$, null);
     set(approvalSucceeded$, false);
@@ -214,13 +212,13 @@ export const approveDiscordAuthorization$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const proof = get(approvalProof$);
-    if (!proof || !get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
+    if (!proof) {
       return;
     }
     // The authenticated endpoint verifies the initiating account and workspace.
     const request = set(verifyDiscordAuthorization$, proof, signal);
     set(approvalRequest$, request);
-    // The panel owns failure and retry UI; a rejection must not fail route setup.
+    // The panel displays the failed request; a rejection must not fail route setup.
     await settle(request, signal);
   },
 );

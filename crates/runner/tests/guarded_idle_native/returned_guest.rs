@@ -70,7 +70,7 @@ pub async fn exercise(
     probe: &Arc<Probe>,
 ) -> TestResult<()> {
     let _release = Release(probe);
-    let original = startup::original(&context.budget, inputs, proof).await?;
+    let original = snapshot_inputs::original(&context.budget, proof).await?;
     probe.bind(&context)?;
     let admission = PreSpawnAdmission::new(2)?;
     let mut heartbeat = foreground_probe::Probe::new(
@@ -133,7 +133,7 @@ pub async fn exercise(
         source.wait_for_readers(1).await;
         proof.returned_guest_witness("inputs_verified",json!({"policy":serde_json::to_value(inputs)?,
             "inputs_sha256":continuation::digest(&original.raw),"snapshot_sha256":proof.snapshot_memory_hash()?,
-            "snapshot_bytes":original.bytes,"prefetch_overhead_bytes":original.overhead,
+            "snapshot_bytes":original.bytes,
             "stage":probe.stage.label(),"allocated":context.budget.allocated(),"checkpoint_models_stalled_io":false}))?;
         let first_sample = source.samples()?.len();
         source.resume();

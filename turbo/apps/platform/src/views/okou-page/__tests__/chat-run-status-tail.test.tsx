@@ -23,7 +23,7 @@ const RUN_B = "a0000000-0000-4000-a000-000000000292";
 const RESULT = "The API is checking dependencies. No errors so far.";
 const OLD_ERROR = "The provider could not complete the previous request.";
 const NEW_ERROR = "The provider could not complete the next request.";
-const GENERIC_ERROR = "Oops, something went wrong. Please try again later.";
+const GENERIC_ERROR = "Oops, something went wrong.";
 
 function failedEvent(
   runId = RUN_A,
@@ -122,13 +122,9 @@ test.each(["run.failed"] as const)(
     expect(error.closest("[data-chat-selection-source]")).toBeNull();
     expect(error.closest('[role="status"]')).toBeVisible();
     expect(screen.getByText("This run couldn't finish")).toBeVisible();
-    await waitFor(() => {
-      expect(
-        error
-          .closest('[data-role="assistant"]')
-          ?.querySelector("[data-chat-assistant-name-line]"),
-      ).toHaveTextContent("Run Agent");
-    });
+    expect(error.closest('[data-role="assistant"]')).toContainElement(
+      screen.getByLabelText("View agent profile"),
+    );
     expect(screen.queryByTestId("chat-event-actions")).toBeNull();
     expect(
       screen.getByText("This workflow started on schedule."),

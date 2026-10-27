@@ -1,4 +1,6 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
+import { and, eq } from "drizzle-orm";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   type CodexServiceTier,
   type ChatThreadServiceTier,
@@ -8,12 +10,14 @@ import {
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
+import { db$ } from "../external/db";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 
 import { publishThreadListChanged } from "../external/realtime";
 import {
   badRequestMessage,
+  connectorAccountUnavailable,
   notFound,
   resourceUnavailable,
 } from "../../lib/error";
@@ -33,12 +37,41 @@ import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.se
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
+import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import {
   modelCatalog$,
   type ModelCatalog,
 } from "../services/model-catalog.service";
 import type { RouteEntry } from "../route-entry";
 const createBody$ = bodyResultOf(chatThreadsContract.create);
+
+const committedClientThread$ = computed(async (get) => {
+  const body = await get(createBody$);
+  if (!body.ok || body.data.clientThreadId === undefined) {
+    return undefined;
+  }
+  const auth = get(organizationAuthContext$);
+  const db = get(db$);
+  const [thread] = await db
+    .select({
+      id: chatThreads.id,
+      title: chatThreads.title,
+      selectedModel: chatThreads.selectedModel,
+      codexServiceTier: chatThreads.codexServiceTier,
+      createdAt: chatThreads.createdAt,
+    })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, body.data.clientThreadId),
+        eq(chatThreads.userId, auth.userId),
+        eq(chatThreads.agentId, body.data.agentId),
+        chatThreadOrganizationPredicate(auth.orgId),
+      ),
+    )
+    .limit(1);
+  return thread ? { kind: "existing" as const, ...thread } : undefined;
+});
 
 function modelFirstSelection(selectedModel: string) {
   return {
@@ -194,7 +227,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const catalog = await get(modelCatalog$);
   signal.throwIfAborted();
-  const connectorSelections = body.data.connectorSelections ?? [];
   const { selectedModel, codexServiceTier } = await set(
     initialThreadModel$,
     auth,
@@ -264,12 +296,17 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       modelSettings: effort.modelSettings,
       cloudBrowserEnabled: defaults.cloudBrowserEnabled,
       codexServiceTier,
-      connectorSelections,
+      connectorSelections: body.data.connectorSelections ?? [],
+      connectorSelectionPolicy: body.data.connectorSelectionPolicy,
+      committedThread: await get(committedClientThread$),
       initialRemoteAccessOverrides,
     },
     signal,
   );
   signal.throwIfAborted();
+  if (thread.kind === "connector_account_unavailable") {
+    return connectorAccountUnavailable();
+  }
   if (thread.kind === "invalid_connector_selection") {
     return badRequestMessage(thread.message);
   }

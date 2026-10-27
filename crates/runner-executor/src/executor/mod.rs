@@ -759,18 +759,7 @@ pub async fn execute_job_with_prepared_notifier(
     let sandbox_id = dispatch.id.to_string();
     let outcome =
         match validate_execution_context_before_sandbox(&context, &config.api_url, &sandbox_id) {
-            Err(error) => ExecuteOutcome {
-                failure: Some(ExecutionFailure::from_error(error)),
-                sandbox_reuse_disposition: SandboxReuseDisposition::default(),
-                sandbox: None,
-                source_ip: String::new(),
-                network_log_session: None,
-                home_image: None,
-                home_reuse_result: None,
-                startup_report: None,
-                discovered_cli_agent_session_id: None,
-                restored_session_identity: None,
-            },
+            Err(error) => ExecuteOutcome::preparation_failure(error),
             Ok(prepared_run_payload) => match execute_new_sandbox_with_prepared_notifier(
                 factory,
                 &context,
@@ -790,18 +779,7 @@ pub async fn execute_job_with_prepared_notifier(
             .await
             {
                 Ok(outcome) => outcome,
-                Err(e) => ExecuteOutcome {
-                    failure: Some(ExecutionFailure::from_error(e.to_string())),
-                    sandbox_reuse_disposition: SandboxReuseDisposition::default(),
-                    sandbox: None,
-                    source_ip: String::new(),
-                    network_log_session: None,
-                    home_image: None,
-                    home_reuse_result: None,
-                    startup_report: None,
-                    discovered_cli_agent_session_id: None,
-                    restored_session_identity: None,
-                },
+                Err(e) => ExecuteOutcome::preparation_failure(e),
             },
         };
 

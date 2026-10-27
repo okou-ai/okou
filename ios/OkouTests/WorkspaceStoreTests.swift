@@ -133,8 +133,7 @@ final class WorkspaceStoreTests: XCTestCase {
   }
 
   func testBackgroundWarmingIncludesRecentAndActiveUnopenedChats() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let warmingScheduled = expectation(description: "History warming is scheduled")
     let releaseWarming = HTTPResponseGate()
     defer { releaseWarming.open() }
@@ -163,10 +162,9 @@ final class WorkspaceStoreTests: XCTestCase {
     }
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL,
-      cache: ChatCache(
+      cache: cacheDirectory.cache(
         scope: ChatCacheScope(
-          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
-        directory: directory),
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")),
       historyWarmingSleep: { _ in
         warmingScheduled.fulfill()
         await releaseWarming.wait()
@@ -184,8 +182,7 @@ final class WorkspaceStoreTests: XCTestCase {
   }
 
   func testBackgroundUpgradeResponseBlocksFurtherWorkspaceReads() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let warmingScheduled = expectation(description: "History warming is scheduled")
     let releaseWarming = HTTPResponseGate()
     defer { releaseWarming.open() }
@@ -205,10 +202,9 @@ final class WorkspaceStoreTests: XCTestCase {
     }
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL,
-      cache: ChatCache(
+      cache: cacheDirectory.cache(
         scope: ChatCacheScope(
-          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
-        directory: directory),
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")),
       historyWarmingSleep: { _ in
         warmingScheduled.fulfill()
         await releaseWarming.wait()
@@ -218,7 +214,7 @@ final class WorkspaceStoreTests: XCTestCase {
     await store.refresh()
     await fulfillment(of: [warmingScheduled], timeout: 3)
     releaseWarming.open()
-    try await eventually { store.needsUpgrade }
+    try await waitForBusinessResult { store.needsUpgrade }
     let before = requests.withLock { $0 }
     await store.refresh()
     XCTAssertEqual(requests.withLock { $0 }, before)
@@ -244,9 +240,7 @@ final class WorkspaceStoreTests: XCTestCase {
   func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
   {
     for archivingEnabled in [true, false] {
-      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        UUID().uuidString)
-      defer { try? FileManager.default.removeItem(at: directory) }
+      let cacheDirectory = CacheTestDirectory(owner: self)
       let archivedID = "40000000-0000-4000-8000-000000000004"
       let snapshot = ChatHTTPResponse(
         body: """
@@ -293,10 +287,9 @@ final class WorkspaceStoreTests: XCTestCase {
         default: throw URLError(.unsupportedURL)
         }
       }
-      let cache = ChatCache(
+      let cache = cacheDirectory.cache(
         scope: ChatCacheScope(
-          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
-        directory: directory)
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
       let previous = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
       await previous.list.refresh()
       XCTAssertNil(previous.list.error)
@@ -332,8 +325,7 @@ final class WorkspaceStoreTests: XCTestCase {
   }
 
   func testStartupRestoresNavigationAndChatsBeforeNetworkAndPersistsFreshNavigation() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let updated = Mutex(false)
     let started = expectation(description: "Fresh navigation is held after cache restore")
     let gate = HTTPResponseGate()
@@ -372,13 +364,13 @@ final class WorkspaceStoreTests: XCTestCase {
       apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")
     let previous = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL,
-      cache: ChatCache(scope: scope, directory: directory))
+      cache: cacheDirectory.cache(scope: scope))
     await previous.start(userID: "user", workspaceID: "workspace")
     previous.close()
     updated.withLock { $0 = true }
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL,
-      cache: ChatCache(scope: scope, directory: directory))
+      cache: cacheDirectory.cache(scope: scope))
     defer { store.close() }
     let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
     addTeardownBlock {
@@ -401,7 +393,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
     let reopened = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL,
-      cache: ChatCache(scope: scope, directory: directory))
+      cache: cacheDirectory.cache(scope: scope))
     defer { reopened.close() }
     await reopened.list.restoreCached()
     XCTAssertEqual(reopened.list.agents.first?.displayName, "Fresh assistant")
@@ -467,9 +459,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationReads() async throws {
     for cancelStartup in [false, true] {
-      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "okou-startup-tests-\(UUID().uuidString)", isDirectory: true)
-      defer { try? FileManager.default.removeItem(at: directory) }
+      let cacheDirectory = CacheTestDirectory(owner: self)
       let navigationStarted = expectation(description: "Navigation loads after cached chats")
       let releaseNavigation = HTTPResponseGate()
       defer { releaseNavigation.open() }
@@ -490,10 +480,9 @@ final class WorkspaceStoreTests: XCTestCase {
         default: throw URLError(.unsupportedURL)
         }
       }
-      let cache = ChatCache(
+      let cache = cacheDirectory.cache(
         scope: ChatCacheScope(
-          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
-        directory: directory)
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
       try await cache.replaceThreadList(
         snapshot: Data(threadSnapshot(title: "Cached chat").body.utf8),
         cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
@@ -1184,8 +1173,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testMemoryWarningPreservesDraftsAndRestoresReleasedHistoryFromSQLite() async throws {
     let otherID = "40000000-0000-4000-8000-000000000010"
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let snapshotRequests = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
@@ -1222,10 +1210,10 @@ final class WorkspaceStoreTests: XCTestCase {
         throw URLError(.unsupportedURL)
       }
     }
-    let cache = ChatCache(
+    let cache = cacheDirectory.cache(
       scope: ChatCacheScope(
         apiBaseURL: fixture.baseURL,
-        userID: "user", workspaceID: "workspace"), directory: directory)
+        userID: "user", workspaceID: "workspace"))
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL,
       cache: cache, conversationLimit: 1)

@@ -24,7 +24,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import {
   ShareCopyButton,
   SharePermissionChoices,
-  ShareRetryRow,
+  ShareLoadError,
   ShareSkeleton,
 } from "./artifact-share-menu.tsx";
 
@@ -75,8 +75,6 @@ function SiteStatus({
     <div className="flex items-start gap-2 text-sm">
       <Globe size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        {/* A failed read names no address; Retry below the title owns that
-            state, so only a pending read shows a placeholder. */}
         {link !== null && <SiteAddress link={link} />}
         {loading && <Skeleton className="h-5 w-40 rounded" />}
         <p className="text-xs text-muted-foreground">
@@ -101,7 +99,6 @@ function HostedSiteBannerSetting({
   const banner = useLoadable(session.banner$);
   const current = useLastResolved(session.banner$);
   const [operation, change] = useLoadableSet(session.changeBanner$);
-  const refresh = useSet(session.refreshBanner$);
   const signal = useGet(session.signal$);
   if (
     !signal ||
@@ -141,13 +138,10 @@ function HostedSiteBannerSetting({
         )}
       </div>
       {failed && (
-        <ShareRetryRow
+        <ShareLoadError
           message={t(($) => {
             return $.artifacts.siteBanner.loadFailed;
           })}
-          onRetry={() => {
-            detach(refresh(signal), Reason.DomCallback);
-          }}
         />
       )}
     </div>
@@ -164,7 +158,6 @@ function HostedSitePermissions({
   const [operation, change] = useLoadableSet(session.changeVisibility$);
   const organization = useLastResolved(currentOrgInfo$);
   const signal = useGet(session.signal$);
-  const refresh = useSet(session.refreshVisibility$);
   if (!signal || (loadable.state === "hasData" && !loadable.data)) {
     return null;
   }
@@ -195,13 +188,7 @@ function HostedSitePermissions({
               detach(change(visibility, signal), Reason.DomCallback);
             }}
           />
-          {failed && (
-            <ShareRetryRow
-              onRetry={() => {
-                detach(refresh(signal), Reason.DomCallback);
-              }}
-            />
-          )}
+          {failed && <ShareLoadError />}
         </>
       )}
     </>
@@ -349,8 +336,7 @@ function WebsiteUrlEditor({
         </label>
         <WebsiteUrlStatus status={feedback.status} />
       </div>
-      {/* The fixed domain is a segment of the field rather than text laid
-          over it, so the subdomain keeps the field's full width to itself. */}
+
       <Input
         id={id}
         autoFocus
@@ -434,7 +420,6 @@ function HostedSiteShareActions({
   const returnFocus = useGet(session.returnFocus$);
   const copiedUrl = useGet(session.copiedUrl$);
   const edit = useSet(session.edit$);
-  const refresh = useSet(session.refresh$);
   const copy = useSet(session.copy$);
   if (!signal) {
     return null;
@@ -448,17 +433,6 @@ function HostedSiteShareActions({
               return $.artifacts.siteUrl.loadFailed;
             })}
           </span>
-          <Button
-            variant="quiet"
-            size="sm"
-            onClick={() => {
-              refresh();
-            }}
-          >
-            {t(($) => {
-              return $.artifacts.sharing.retry;
-            })}
-          </Button>
         </div>
       )}
       <div className="mt-4 flex items-center gap-2">
@@ -587,8 +561,7 @@ function HostedSiteShareSessionMenu({
       >
         <Share2 size={iconSize} />
       </PopoverTrigger>
-      {/* The body matches artifact menu padding for permissions and keeps
-          dialog padding for the URL editor and published address. */}
+
       <PopoverContent
         align="end"
         aria-label={ariaLabel}

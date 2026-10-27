@@ -5,14 +5,13 @@ import {
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Button, cn } from "@okouai/ui";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import {
-  ConnectorAccountActionError,
-  type ConnectorAccountActionSignals,
-  type ConnectorAccountActionStatus,
+import type {
+  ConnectorAccountActionSignals,
+  ConnectorAccountActionStatus,
 } from "../../signals/chat-page/connector-account-action-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -45,7 +44,7 @@ function ConnectorAccountActionCardContent({
     return <ConnectorAccountActionCardLoading />;
   }
   if (loadable.state === "hasError" && last.state !== "hasData") {
-    return <ConnectorAccountActionCardError signals={signals} />;
+    return <ConnectorAccountActionCardError />;
   }
   const status =
     loadable.state === "hasData"
@@ -69,12 +68,7 @@ function ConnectorAccountActionCardLoading() {
   );
 }
 
-function ConnectorAccountActionCardError({
-  signals,
-}: {
-  readonly signals: ConnectorAccountActionSignals;
-}) {
-  const refresh = useSet(signals.refresh$);
+function ConnectorAccountActionCardError() {
   const { t } = useTranslation();
   return (
     <div
@@ -87,16 +81,6 @@ function ConnectorAccountActionCardError({
           return $.chat.connectorAccountSwitch.loadFailed;
         })}
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        className="shrink-0"
-        onClick={refresh}
-      >
-        {t(($) => {
-          return $.chat.connectorAccountSwitch.retry;
-        })}
-      </Button>
     </div>
   );
 }
@@ -274,18 +258,9 @@ function ReadyConnectorAccountActionCard({
         <Button
           size="sm"
           className="w-full shrink-0 @[640px]:w-auto"
-          disabled={switching}
+          disabled={switching || switchFailed}
           onClick={() => {
-            detach(
-              confirm(
-                operation.state === "hasError" &&
-                  operation.error instanceof ConnectorAccountActionError
-                  ? { type: "retry", callbackIds: operation.error.callbackIds }
-                  : { type: "select" },
-                pageSignal,
-              ),
-              Reason.DomCallback,
-            );
+            detach(confirm(pageSignal), Reason.DomCallback);
           }}
         >
           {switching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -293,13 +268,9 @@ function ReadyConnectorAccountActionCard({
             ? t(($) => {
                 return $.chat.connectorAccountSwitch.switching;
               })
-            : switchFailed
-              ? t(($) => {
-                  return $.chat.connectorAccountSwitch.retry;
-                })
-              : t(($) => {
-                  return $.chat.connectorAccountSwitch.switch;
-                })}
+            : t(($) => {
+                return $.chat.connectorAccountSwitch.switch;
+              })}
         </Button>
       )}
     </div>

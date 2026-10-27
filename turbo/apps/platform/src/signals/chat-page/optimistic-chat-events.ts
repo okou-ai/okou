@@ -1,15 +1,10 @@
 import { command, computed, state } from "ccstate";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import type { SessionOutputDelta } from "@okouai/api-contracts/contracts/realtime";
-import { logger } from "../log.ts";
 import type {
   OptimisticChatEvent,
   OptimisticUserMessageAssociation,
 } from "./chat-event-types.ts";
-import {
-  chatEventDebugSummaries,
-  chatEventTraceTime,
-} from "./chat-event-debug.ts";
 
 export interface OptimisticChatEventInput {
   threadId: string;
@@ -24,8 +19,6 @@ export function createOptimisticChatEventEntry(
 ): OptimisticChatEventEntry {
   return { ...input };
 }
-
-const L = logger("OptimisticChatEvents");
 
 const internalOptimisticChatEvents$ = state<OptimisticChatEventEntry[]>([]);
 
@@ -94,18 +87,6 @@ export const appendOptimisticSessionOutput$ = command(
   },
 );
 
-function pendingUserMessages(
-  entries: readonly OptimisticChatEventEntry[],
-  threadId: string,
-): { eventId: string; association: OptimisticUserMessageAssociation }[] {
-  return entries.flatMap((entry) => {
-    const association = entry.optimisticUserMessageAssociation;
-    return entry.threadId === threadId && association !== undefined
-      ? [{ eventId: entry.event.id, association }]
-      : [];
-  });
-}
-
 /**
  * Every event the page projected locally and no persistent event has replaced
  * yet. Event ids are unique across threads, so a view can ask about one message
@@ -127,29 +108,19 @@ export function createOptimisticChatEventsForThread(threadId: string) {
   });
 }
 export const appendOptimisticChatEvent$ = command(
-  ({ get, set }, entry: OptimisticChatEventEntry) => {
+  ({ set }, entry: OptimisticChatEventEntry) => {
     set(internalOptimisticChatEvents$, (prev) => {
       const next = prev.filter((item) => {
         return item.event.id !== entry.event.id;
       });
       return [...next, entry];
     });
-    L.debug("optimistic event appended", {
-      traceTime: chatEventTraceTime(),
-      threadId: entry.threadId,
-      eventId: entry.event.id,
-      association: entry.optimisticUserMessageAssociation ?? null,
-      pendingUserMessages: pendingUserMessages(
-        get(internalOptimisticChatEvents$),
-        entry.threadId,
-      ),
-    });
   },
 );
 
 export const reconcileOptimisticChatEvents$ = command(
   (
-    { get, set },
+    { set },
     { threadId, events }: { threadId: string; events: readonly ChatEvent[] },
   ) => {
     if (events.length === 0) {
@@ -160,28 +131,10 @@ export const reconcileOptimisticChatEvents$ = command(
         return event.id;
       }),
     );
-    const before = pendingUserMessages(
-      get(internalOptimisticChatEvents$),
-      threadId,
-    );
     set(internalOptimisticChatEvents$, (prev) => {
       return prev.filter((entry) => {
         return entry.threadId !== threadId || !serverIds.has(entry.event.id);
       });
-    });
-    const after = pendingUserMessages(
-      get(internalOptimisticChatEvents$),
-      threadId,
-    );
-    L.debug("optimistic events reconciled", {
-      traceTime: chatEventTraceTime(),
-      threadId,
-      serverEventCount: events.length,
-      // A pending user message that no server event ever matches keeps
-      // `hasOptimisticUserMessage$` true, which pins the thread to the tail.
-      pendingUserMessagesBefore: before,
-      pendingUserMessagesAfter: after,
-      serverEvents: chatEventDebugSummaries(events),
     });
   },
 );

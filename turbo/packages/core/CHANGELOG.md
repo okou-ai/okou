@@ -1,5 +1,60 @@
 # Changelog
 
+## [8.793.1](https://github.com/okou-ai/okou/compare/core-v8.793.0...core-v8.793.1) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.1
+
+## [8.793.0](https://github.com/okou-ai/okou/compare/core-v8.792.0...core-v8.793.0) (2026-10-27)
+
+
+### Features
+
+* **app:** add a unified chat workspace lab switch ([#43239](https://github.com/okou-ai/okou/issues/43239)) ([d384b85](https://github.com/okou-ai/okou/commit/d384b85c1b96fa440a5d1e92f76e6706eeba0c7b))
+* **app:** put the chat reply name line behind a lab switch ([#43217](https://github.com/okou-ai/okou/issues/43217)) ([4d4edd1](https://github.com/okou-ai/okou/commit/4d4edd10d927b67cccdf9473cdde466a45f3b7c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.0
+
+## [8.792.0](https://github.com/okou-ai/okou/compare/core-v8.791.4...core-v8.792.0) (2026-10-27)
+
+
+### Features
+
+* support gpt-6.1-terra fast mode and pi execution ([#43281](https://github.com/okou-ai/okou/issues/43281)) ([6a9b857](https://github.com/okou-ai/okou/commit/6a9b85755a3856bd81ba2dc9d3ce386f73dedc14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.9.0
+
+## [8.791.4](https://github.com/okou-ai/okou/compare/core-v8.791.3...core-v8.791.4) (2026-10-27)
+
+
+### Refactoring
+
+* remove discord integration switch ([#43183](https://github.com/okou-ai/okou/issues/43183)) ([721475a](https://github.com/okou-ai/okou/commit/721475a60a8ee46afd39e4bb112e1ffd08880eb6))
+* remove hosted site title editing switch ([#43172](https://github.com/okou-ai/okou/issues/43172)) ([6ccbf0c](https://github.com/okou-ai/okou/commit/6ccbf0c46160029d7cf45d4f76d40b382f90f774))
+* remove remote connection diagnostics feature switch ([#43208](https://github.com/okou-ai/okou/issues/43208)) ([e2abf5a](https://github.com/okou-ai/okou/commit/e2abf5ade9bb1322e519d839b47c66d2ec58a16c))
+* remove vnc access feature switch ([#43184](https://github.com/okou-ai/okou/issues/43184)) ([7caac90](https://github.com/okou-ai/okou/commit/7caac9058cd8740c5288ef0c560e723d562120a8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.8.3
+
 ## [8.791.3](https://github.com/okou-ai/okou/compare/core-v8.791.2...core-v8.791.3) (2026-10-26)
 
 

@@ -1,5 +1,8 @@
 import { RemoteNetworkAccessSummary } from "./remote-network-scope.tsx";
 import { useTranslation } from "react-i18next";
+import { useGet } from "ccstate-react";
+import { locale$ } from "../../signals/locale.ts";
+import { sortRemoteHosts } from "../../lib/remote-resource-order.ts";
 import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   Button,
@@ -66,11 +69,12 @@ export function RemoteNetworkConnections({
   readonly showHeading?: boolean;
 }) {
   const { t } = useTranslation();
+  const locale = useGet(locale$);
   const hosts = [
-    ...config.sshHosts.map((host) => {
+    ...sortRemoteHosts(config.sshHosts, locale).map((host) => {
       return { ...host, protocol: "ssh" as const };
     }),
-    ...config.vncHosts.map((host) => {
+    ...sortRemoteHosts(config.vncHosts, locale).map((host) => {
       return { ...host, protocol: "vnc" as const };
     }),
   ];

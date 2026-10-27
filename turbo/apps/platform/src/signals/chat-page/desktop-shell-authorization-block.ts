@@ -101,7 +101,7 @@ export function createDesktopShellAuthorizationSignals(
   });
   const act$ = command(
     async (
-      { get, set },
+      { get },
       action: "approve" | "deny" | "revoke",
       signal: AbortSignal,
     ) => {
@@ -120,7 +120,6 @@ export function createDesktopShellAuthorizationSignals(
         [200],
       );
       signal.throwIfAborted();
-      set(refresh$);
       return result.body;
     },
   );
@@ -144,7 +143,7 @@ export function createDesktopShellAuthorizationSignals(
       set(setAblyLoop$, { topic, loopCommand$: invalidate$ }, signal);
     }
   });
-  return { ...descriptor, request$, refresh$, act$, subscribe$ };
+  return { ...descriptor, request$, act$, subscribe$ };
 }
 
 export type DesktopShellAuthorizationSignals = ReturnType<

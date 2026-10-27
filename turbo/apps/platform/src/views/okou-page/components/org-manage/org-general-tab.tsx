@@ -27,11 +27,9 @@ import {
   clearPendingLogo$,
   profileName$,
   setProfileName$,
-  profileLogoUrl$,
   pendingLogoFile$,
   pendingLogoPreview$,
   setPendingLogo$,
-  loadOrgLogo$,
   deleteConfirm$,
   setDeleteConfirm$,
   resetDeleteConfirm$,
@@ -41,6 +39,7 @@ import {
   WORKSPACE_DELETE_CONFIRMATION,
 } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
 import { readImageDimensions } from "./read-image-dimensions.ts";
+import { profileLogoUrl$ } from "../../../../signals/okou-page/settings/workspace-logo.ts";
 
 const MIN_LOGO_DIMENSION = 100;
 const MAX_LOGO_DIMENSION = 4096;
@@ -67,7 +66,6 @@ function ProfileSection({
 
   const logoLoadable = useLoadable(profileLogoUrl$);
   const logoUrl = logoLoadable.state === "hasData" ? logoLoadable.data : null;
-  const loadLogo = useSet(loadOrgLogo$);
 
   const pendingLogoFile = useGet(pendingLogoFile$);
   const pendingLogoPreview = useGet(pendingLogoPreview$);
@@ -154,7 +152,6 @@ function ProfileSection({
         {labels.sectionTitle}
       </h3>
       <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-        {/* Logo row */}
         <div className="flex items-center justify-between gap-4 px-5 py-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
@@ -168,19 +165,6 @@ function ProfileSection({
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {logoFailed && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (modalSignal) {
-                    detach(loadLogo(modalSignal), Reason.DomCallback);
-                  }
-                }}
-              >
-                {labels.logo.retry}
-              </Button>
-            )}
             <label
               className={cn(
                 buttonVariants({ variant: "quiet", size: "icon" }),
@@ -226,7 +210,7 @@ function ProfileSection({
           </div>
         </div>
         <div className="h-0 border-t border-t-gray-400 mx-5" />
-        {/* Name row */}
+
         <div className="flex items-center justify-between gap-4 px-5 py-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
@@ -499,11 +483,9 @@ function GeneralTabSkeleton() {
         return $.settings.shared.loading;
       })}
     >
-      {/* Profile section skeleton */}
       <section className="flex flex-col gap-3">
         <div className="h-4 w-12 rounded bg-muted/50 animate-pulse" />
         <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-          {/* Logo row */}
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <div className="min-w-0">
               <div className="h-4 w-8 rounded bg-muted/50 animate-pulse" />
@@ -512,7 +494,7 @@ function GeneralTabSkeleton() {
             <div className="h-9 w-9 shrink-0 rounded-lg bg-muted/50 animate-pulse" />
           </div>
           <div className="h-0 border-t border-t-gray-400 mx-5" />
-          {/* Name row */}
+
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <div className="min-w-0">
               <div className="h-4 w-10 rounded bg-muted/50 animate-pulse" />
@@ -522,7 +504,7 @@ function GeneralTabSkeleton() {
           </div>
         </div>
       </section>
-      {/* Danger zone skeleton */}
+
       <section className="flex flex-col gap-3">
         <div className="h-4 w-20 rounded bg-muted/50 animate-pulse" />
         <div className="overflow-hidden rounded-xl bg-card border border-surface-border">

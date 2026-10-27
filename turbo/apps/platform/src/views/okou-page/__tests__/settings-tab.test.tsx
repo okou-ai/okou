@@ -1,5 +1,4 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { updateAgentSettings$ } from "../../../signals/okou-page/job-detail/settings.ts";
 import { deleteAgent$ } from "../../../signals/okou-page/job-detail/delete.ts";
@@ -788,17 +787,6 @@ function linkTo(path: string): HTMLElement {
   return link;
 }
 
-async function chooseWorkflowCopy(
-  dialog: HTMLElement,
-  title = "Daily research",
-) {
-  const user = userEvent.setup({ delay: null });
-  await user.click(
-    within(dialog).getByRole("combobox", { name: `Handle workflow ${title}` }),
-  );
-  await user.click(await screen.findByRole("option", { name: "Copy to Nova" }));
-}
-
 async function chooseBothWorkflowCopies(dialog: HTMLElement) {
   for (const title of ["Daily research", "Weekly research"]) {
     const selects = queryAllByRoleFast("combobox", dialog).filter((select) => {
@@ -823,7 +811,7 @@ async function chooseBothWorkflowCopies(dialog: HTMLElement) {
   }
 }
 
-async function preparePartialWorkflowRescue() {
+async function prepareWorkflowCopyDeletion(failSecondCopy: boolean) {
   prepareAgentProfile();
   const first = prepareDeleteWorkflow();
   const second: WorkflowSummary = {
@@ -833,7 +821,6 @@ async function preparePartialWorkflowRescue() {
     displayName: "Weekly research",
   };
   let workflows = [first, second];
-  let allowSecondCopy = false;
   context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
     return respond(
       200,
@@ -845,7 +832,7 @@ async function preparePartialWorkflowRescue() {
   context.mocks.api(
     workflowsDetailContract.copy,
     ({ params, body, respond }) => {
-      if (params.workflowId === second.id && !allowSecondCopy) {
+      if (params.workflowId === second.id && failSecondCopy) {
         return respond(403, {
           error: { code: "FORBIDDEN", message: "Second copy failed" },
         });
@@ -889,43 +876,31 @@ async function preparePartialWorkflowRescue() {
   const dialog = await screen.findByRole("dialog");
   await within(dialog).findByText("Weekly research");
   await chooseBothWorkflowCopies(dialog);
+  return dialog;
+}
+
+test("Copy selected workflows before deleting their source agent", async () => {
+  const dialog = await prepareWorkflowCopyDeletion(false);
+  click(within(dialog).getByText("Delete agent"));
+  await screen.findByText("Agent deleted");
+  click(linkTo("/workflows"));
+  await screen.findByText("Weekly research");
+  expect(screen.getAllByText("Daily research")).toHaveLength(1);
+  expect(screen.getAllByText("Weekly research")).toHaveLength(1);
+});
+
+test("A failed copy preserves the source agent and workflows already copied", async () => {
+  const dialog = await prepareWorkflowCopyDeletion(true);
   click(within(dialog).getByText("Delete agent"));
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
     "Second copy failed",
   );
-  return {
-    dialog,
-    allowRetry() {
-      allowSecondCopy = true;
-    },
-  };
-}
-
-test("A failed rescue keeps the source agent and the completed workflow copy", async () => {
-  const { dialog } = await preparePartialWorkflowRescue();
   expect(screen.getByDisplayValue("Research Agent")).toBeInTheDocument();
-  expect(
-    within(dialog).getByText("Daily research copied to Nova"),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("Weekly research copied to Nova"),
-  ).not.toBeInTheDocument();
-  for (const select of within(dialog).getAllByRole("combobox")) {
-    expect(select).toHaveTextContent("Copy to Nova");
-  }
-});
-
-test("Retry unfinished rescues without duplicating completed workflows", async () => {
-  const { dialog, allowRetry } = await preparePartialWorkflowRescue();
-  allowRetry();
-  click(within(dialog).getByText("Delete agent"));
-  await screen.findByText("Agent deleted");
-  await waitFor(() => {
-    expect(linkTo("/workflows")).toBeInTheDocument();
-  });
+  expect(within(dialog).getByText("Delete agent")).toBeDisabled();
+  click(within(dialog).getByText("Cancel"));
   click(linkTo("/workflows"));
   await screen.findByText("Weekly research");
-  expect(screen.getAllByText("Daily research")).toHaveLength(1);
+  expect(screen.getAllByText("Daily research")).toHaveLength(2);
   expect(screen.getAllByText("Weekly research")).toHaveLength(1);
 });
 
@@ -933,20 +908,14 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
   prepareAgentProfile();
   const workflow = prepareDeleteWorkflow();
   let copySucceeded = false;
-  let refreshRecovered = false;
   context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
-    return copySucceeded && !refreshRecovered
+    return copySucceeded
       ? respond(403, {
           error: { code: "FORBIDDEN", message: "Refresh failed" },
         })
       : respond(200, [workflow]);
   });
   context.mocks.api(workflowsDetailContract.copy, ({ respond }) => {
-    if (copySucceeded) {
-      return respond(409, {
-        error: { code: "CONFLICT", message: "The workflow was already copied" },
-      });
-    }
     copySucceeded = true;
     return respond(201, {
       ...workflow,
@@ -967,7 +936,7 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
   click(within(dialog).getByText("Delete agent"));
 
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-    "Could not load workflows. Retry before deleting this agent.",
+    "Could not load workflows.",
   );
   await waitFor(() => {
     expect(within(dialog).getByText("Delete agent")).toBeDisabled();
@@ -976,9 +945,6 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
     "Copy to Nova",
   );
   expect(within(dialog).getByRole("combobox")).toBeDisabled();
-  expect(
-    within(dialog).getByText("Daily research copied to Nova"),
-  ).toBeInTheDocument();
   click(within(dialog).getByText("Cancel"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -992,13 +958,4 @@ test("Keep the source agent when its workflow refresh fails after copying", asyn
   expect(within(reopened).getByRole("combobox")).toHaveTextContent(
     "Delete with agent",
   );
-  refreshRecovered = true;
-  click(within(reopened).getByText("Retry"));
-  await waitFor(() => {
-    expect(within(reopened).getByText("Delete agent")).toBeEnabled();
-  });
-  expect(within(reopened).queryByRole("alert")).not.toBeInTheDocument();
-  await chooseWorkflowCopy(reopened);
-  click(within(reopened).getByText("Delete agent"));
-  await screen.findByText("Agent deleted");
 });

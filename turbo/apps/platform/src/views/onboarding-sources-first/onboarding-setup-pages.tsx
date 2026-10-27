@@ -2,14 +2,13 @@ import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
-import { Button, Input, RadioGroup } from "@okouai/ui";
+import { Button, Input, RadioGroup, cn } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   OnboardingCompliance,
   OnboardingSecurityLink,
 } from "./onboarding-industry-parts.tsx";
 import { useMobileOnboarding } from "../onboarding/use-mobile-onboarding.ts";
-import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
   sourcesFirstInviteEmailValid,
@@ -62,7 +61,6 @@ export function OnboardingIndustryPage() {
   const [continueLoadable, continueToSources] = useLoadableSet(
     continueSourcesFirstIndustry$,
   );
-  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const captureIndustrySelected = useSet(
     captureSourceOnboardingIndustrySelected$,
   );
@@ -142,16 +140,6 @@ export function OnboardingIndustryPage() {
               return $.connectors.catalog.directory.builtinLoadFailed;
             })}
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={retryCatalog}
-          >
-            {t(($) => {
-              return $.connectors.catalog.directory.retry;
-            })}
-          </Button>
         </div>
       ) : null}
     </OnboardingStepLayout>
@@ -506,17 +494,12 @@ function SubscriptionConnectLabel({
       return $.onboarding.sourcesFirst.subscription.connecting;
     });
   }
-  if (status === "idle") {
-    return t(
-      ($) => {
-        return $.onboarding.sourcesFirst.subscription.connect;
-      },
-      { provider: providerName },
-    );
-  }
-  return t(($) => {
-    return $.onboarding.sourcesFirst.subscription.retry;
-  });
+  return t(
+    ($) => {
+      return $.onboarding.sourcesFirst.subscription.connect;
+    },
+    { provider: providerName },
+  );
 }
 
 /**
@@ -562,9 +545,15 @@ function SubscriptionConnect({
     <div className="flex w-full flex-col gap-2">
       <Button
         type="button"
-        variant={connected ? "outline" : "neutral"}
+        variant={connected ? "outline" : "default"}
         size="lg"
-        className="w-full"
+        className={cn(
+          "w-full",
+          !connected &&
+            (provider === "claudeCode"
+              ? "bg-[#c97d5d] text-[#fff] hover:bg-[#b57154] active:bg-[#a9694e]"
+              : "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"),
+        )}
         disabled={connected || connecting}
         aria-busy={connecting}
         onClick={() => {
@@ -574,12 +563,19 @@ function SubscriptionConnect({
         {connected ? (
           <Check size={16} aria-hidden="true" />
         ) : (
-          <ProductMark
-            name={provider === "codex" ? "openai" : "anthropic"}
-            alt=""
-            size="mark"
-            invertInDarkMode={provider === "codex"}
-          />
+          <span
+            className={cn(
+              "invert",
+              provider === "claudeCode" && "brightness-0",
+            )}
+          >
+            <ProductMark
+              name={provider === "codex" ? "openai" : "anthropic"}
+              alt=""
+              size="mark"
+              invertInDarkMode={provider === "codex"}
+            />
+          </span>
         )}
         <SubscriptionConnectLabel status={status} providerName={providerName} />
       </Button>

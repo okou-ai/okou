@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.109.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.10...guest-agent-v0.109.11) (2026-10-27)
+
+
+### Bug Fixes
+
+* classify all-endpoint model guardrail refusals ([#43337](https://github.com/okou-ai/okou/issues/43337)) ([c2a90f0](https://github.com/okou-ai/okou/commit/c2a90f0c2bf594775579b7b00c27e3cad6d87a19))
+
+## [0.109.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.9...guest-agent-v0.109.10) (2026-10-27)
+
+
+### Refactoring
+
+* **chat:** remove citation processing and reduce history rendering ([#43148](https://github.com/okou-ai/okou/issues/43148)) ([26bacab](https://github.com/okou-ai/okou/commit/26bacab4693d32e4a4453dce5c84e565d7129b9c))
+
 ## [0.109.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.8...guest-agent-v0.109.9) (2026-10-26)
 
 ## [0.109.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.7...guest-agent-v0.109.8) (2026-10-26)

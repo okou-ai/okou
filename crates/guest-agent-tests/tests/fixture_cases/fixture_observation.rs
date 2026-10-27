@@ -9,7 +9,7 @@ use std::time::Duration;
 fn textual_json_observation_preserves_fixture_sentinel_checks() -> serde_json::Result<()> {
     let fixtures = [
         json!({"nested":[null,true,19,{"text":"你好\"\\\nbytes truncated for delivery"}]}),
-        json!({"memoryCitation":null,"private-memory-key":[{"note":"private-note"}]}),
+        json!({"metadata":null,"fixture-key":[{"note":"fixture-note"}]}),
         json!([
             "delivery-secret-value",
             "[event content truncated for delivery]",
@@ -21,9 +21,9 @@ fn textual_json_observation_preserves_fixture_sentinel_checks() -> serde_json::R
         let serialized = serde_json::to_string(&value)?;
         for needle in [
             "for delivery",
-            "memoryCitation",
-            "private-memory",
-            "private-note",
+            "metadata",
+            "fixture-key",
+            "fixture-note",
             "delivery-secret-value",
             "[event content truncated for delivery]",
             "11111111-1111-4111-8111-111111111111",
@@ -50,7 +50,7 @@ fn sequence_observation_preserves_order_and_u32_boundaries()
             {"sequenceNumber":u32::MAX,"nested":{"sequenceNumber":99}},
             {"sequenceNumber":7,"content":[null,true,19,{"text":"tail"}]},
         ],
-        "piMemoryCitationTransport":{"citations":[{"sequenceNumber":3}]}
+        "metadata":{"records":[{"sequenceNumber":3}]}
     });
     let request = RecordedRequest {
         path: "/api/webhooks/agent/events".into(),

@@ -398,7 +398,7 @@ test("retains retired packages for a pending claim, then binds only its selected
   await finish(run.runId, claim.sandboxToken);
 });
 
-test("retains claimed attachments through cancellation and clock skew until authenticated Runner completion", async () => {
+test("retains claimed attachments through rejected completion, cancellation and clock skew until Runner acknowledgement", async () => {
   await setupApp({
     context,
     routes: [...workflowsRoutes, ...cronProcessBackgroundJobsRoutes],
@@ -422,6 +422,26 @@ test("retains claimed attachments through cancellation and clock skew until auth
       body: { files: [] },
     }),
     [200],
+  );
+  await webhooks.requestAgentComplete(
+    {
+      runId: run.runId,
+      exitCode: 0,
+      completion: {
+        cliAgentType: "claude-code",
+        cliAgentSessionId: randomUUID(),
+        cliAgentSessionHistoryDisposition: "native_only",
+        storageOutputs: [
+          {
+            name: "unclaimed-output",
+            mountPath: "/unclaimed-output",
+            version: "a".repeat(64),
+          },
+        ],
+      },
+    },
+    { authorization: `Bearer ${claim.sandboxToken}` },
+    [400],
   );
   await runs.requestCancelRun(actor, run.runId, [200]);
   const clock = now();

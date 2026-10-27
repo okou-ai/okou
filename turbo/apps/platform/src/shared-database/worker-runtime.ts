@@ -146,15 +146,6 @@ function dataKeyDiagnosticDetails(dataKey: ScopedSharedDatabaseDataKey): {
   };
 }
 
-function isRecoverableChatIdbTransactionError(error: unknown): boolean {
-  return (
-    error instanceof DOMException &&
-    (error.name === "UnknownError" ||
-      error.name === "TransactionInactiveError" ||
-      error.name === "InvalidStateError")
-  );
-}
-
 function logDataKeyError(
   dataKey: ScopedSharedDatabaseDataKey,
   operation: string,
@@ -769,7 +760,12 @@ export class SharedDatabaseWorkerRuntime {
       if (page.status !== 200) {
         throw new SharedDatabaseHttpError(page.status);
       }
-      remoteRows = mergeChatEventRows([remoteRows, page.body.rows]);
+      // The page receives Worker rows without decoding them again, so row pages
+      // are decoded here like cached and snapshot rows.
+      const pageRows = page.body.rows.map((row) => {
+        return chatEventRowSchema.parse(row);
+      });
+      remoteRows = mergeChatEventRows([remoteRows, pageRows]);
       cursor = page.body.cursor;
       const confirmColdStartTail = needsColdStartTailConfirmation;
       needsColdStartTailConfirmation = false;
@@ -1136,32 +1132,8 @@ export class SharedDatabaseWorkerRuntime {
         }),
       );
     };
-    const firstConnection = await this.getDatabaseConnection(signal);
-    const firstResult = await settle(run(firstConnection.database), signal);
-    if (firstResult.ok) {
-      return firstResult.value;
-    }
-    if (!isRecoverableChatIdbTransactionError(firstResult.error)) {
-      throw firstResult.error;
-    }
-    this.discardDatabase(firstConnection.entry);
-    const retryConnection = await this.getDatabaseConnection(signal);
-    const retryResult = await settle(run(retryConnection.database), signal);
-    if (retryResult.ok) {
-      return retryResult.value;
-    }
-    if (isRecoverableChatIdbTransactionError(retryResult.error)) {
-      this.discardDatabase(retryConnection.entry);
-    }
-    throw retryResult.error;
-  }
-
-  private discardDatabase(entry: ChatDatabaseEntry): void {
-    if (this.databaseEntry !== entry) {
-      return;
-    }
-    entry.database?.close();
-    this.databaseEntry = null;
+    const connection = await this.getDatabaseConnection(signal);
+    return await run(connection.database);
   }
 
   private async getDatabaseConnection(signal: AbortSignal): Promise<{

@@ -69,7 +69,7 @@ export const createSubagentWithSetupThread$ = command(
     const createClient = get(apiClient$);
 
     // Both requests start together, but a failed prompt must not discard an
-    // Agent that creation already committed and leave the dialog retryable.
+    // Agent that creation already committed.
     const [created, setupPrompt] = await Promise.allSettled([
       createAgent(
         createClient,

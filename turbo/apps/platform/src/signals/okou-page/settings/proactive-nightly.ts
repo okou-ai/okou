@@ -34,7 +34,7 @@ function createNightlyPreferenceSignals(
       return response.body;
     },
   );
-  return { preference$, reload$, update$ };
+  return { preference$, update$ };
 }
 
 export const proactiveLearningSignals = createNightlyPreferenceSignals(

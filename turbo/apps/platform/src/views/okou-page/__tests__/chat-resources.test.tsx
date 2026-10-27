@@ -77,10 +77,13 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
   await expect(
-    within(panel).findByText(
-      "Artifacts and related chats from this chat appear here.",
-    ),
+    within(panel).findByText("No resources yet"),
   ).resolves.toBeInTheDocument();
+  expect(
+    within(panel).getByText(
+      "Files and chats from this chat will show up here.",
+    ),
+  ).toBeInTheDocument();
 });
 
 test("Draw a pressed panel only once its artifacts and related chats have answered", async () => {
@@ -187,23 +190,15 @@ test("Keep loading when the panel loses its room before the resources answer", a
   expect(resourceButton()).not.toHaveAttribute("aria-disabled");
 });
 
-test("Retry a resource loading error without showing an empty state", async () => {
+test("Display a resource loading error without showing an empty state", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
-  let failed = true;
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: { message: "Attachments are unavailable" },
-        })
-      : respond(200, {
-          artifacts: [
-            artifactSummary(RESOURCE_ARTIFACT_ID, "file", "recovered.pdf"),
-          ],
-          nextCursor: null,
-        });
+    return respond(500, {
+      error: { message: "Attachments are unavailable" },
+    });
   });
   await setupPage({
     context,
@@ -219,11 +214,6 @@ test("Retry a resource loading error without showing an empty state", async () =
   await expect(
     within(panel).findByText("Could not load resources"),
   ).resolves.toBeInTheDocument();
-
-  failed = false;
-  click(buttonNamed("Try again", panel));
-  await within(panel).findByText("recovered.pdf");
-  expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("Name the closed resource trigger in a tooltip until the panel opens", async () => {
@@ -351,9 +341,7 @@ test.each([0, 20])(
     expect(resourcePanel()).not.toBeInTheDocument();
     click(resourceButton());
     const panel = await screen.findByRole("region", { name: "Resources" });
-    await within(panel).findByText(
-      "Artifacts and related chats from this chat appear here.",
-    );
+    await within(panel).findByText("No resources yet");
     expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   },
 );

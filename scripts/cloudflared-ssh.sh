@@ -9,8 +9,11 @@
 #   CF_TUNNEL_ACCOUNT_ID  — Cloudflare account ID
 #
 # Usage:
-#   scripts/cloudflared-ssh.sh provision <host> [--domain vm3.ai] [--user ubuntu] [--version 2026.6.0]
+#   scripts/cloudflared-ssh.sh provision <host> [--domain vm3.ai] [--user ubuntu] [--version 2026.10.4] [--sha256 <sha256>]
 #   scripts/cloudflared-ssh.sh deprovision <host> [--domain vm3.ai] [--user ubuntu]
+#
+# Alternate versions require --sha256 for the target host's Debian architecture.
+# The remote installer requires curl, sha256sum, mktemp, dpkg, and sudo.
 #
 # Examples:
 #   scripts/cloudflared-ssh.sh provision prod-1.aws.vm3.ai
@@ -29,7 +32,9 @@ fi
 
 DEFAULT_DOMAIN="vm3.ai"
 DEFAULT_USER="ubuntu"
-DEFAULT_VERSION="2026.6.0"
+DEFAULT_VERSION="2026.10.4"
+DEFAULT_SHA256_AMD64="3d73cd9f085de5a947fce8a72d0acc34a6a18cb23f369549b1cd0efc51121e98"
+DEFAULT_SHA256_ARM64="d0d08a43521e52ba0707900ebe67314e7ca6f610b88024fe6562a408ab6a0f4d"
 
 log() { echo -e "\033[1;34m[cloudflared-ssh]\033[0m $1" >&2; }
 err() { echo -e "\033[1;31m[cloudflared-ssh]\033[0m $1" >&2; }
@@ -99,18 +104,32 @@ parse_host() {
 # ==========================================
 do_provision() {
   local host="" domain="$DEFAULT_DOMAIN" user="$DEFAULT_USER" version="$DEFAULT_VERSION"
+  local sha256=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --domain)  domain="$2"; shift 2 ;;
       --user)    user="$2"; shift 2 ;;
       --version) version="$2"; shift 2 ;;
+      --sha256)  sha256="$2"; shift 2 ;;
       -*)        err "Unknown option: $1"; exit 1 ;;
       *)         host="$1"; shift ;;
     esac
   done
   if [[ -z "$host" ]]; then
-    err "Usage: $0 provision <host> [--domain vm3.ai] [--user ubuntu] [--version 2026.6.0]"
+    err "Usage: $0 provision <host> [--domain vm3.ai] [--user ubuntu] [--version ${DEFAULT_VERSION}] [--sha256 <sha256>]"
+    exit 1
+  fi
+  if [[ ! "$version" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+    err "Invalid cloudflared version: ${version}"
+    exit 1
+  fi
+  if [[ -n "$sha256" && ! "$sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    err "--sha256 must contain exactly 64 lowercase hexadecimal characters"
+    exit 1
+  fi
+  if [[ "$version" != "$DEFAULT_VERSION" && -z "$sha256" ]]; then
+    err "--sha256 is required when selecting a non-default cloudflared version"
     exit 1
   fi
 
@@ -181,22 +200,32 @@ do_provision() {
   log "Deploying cloudflared ${version} to ${host}..."
 
   # Install cloudflared binary if needed
-  ssh "$remote" bash -s -- "$version" <<'INSTALL_SCRIPT'
+  ssh "$remote" bash -s -- "$version" \
+    "${sha256:-$DEFAULT_SHA256_AMD64}" "${sha256:-$DEFAULT_SHA256_ARM64}" <<'INSTALL_SCRIPT'
 set -euo pipefail
 VERSION="$1"
 ARCH="$(dpkg --print-architecture)"
 case "$ARCH" in
-  amd64|arm64) ;;
+  amd64) SHA256="$2" ;;
+  arm64) SHA256="$3" ;;
   *)
     echo "Unsupported cloudflared Debian architecture: ${ARCH}" >&2
     exit 1
     ;;
 esac
-if ! cloudflared --version 2>/dev/null | grep -q "$VERSION"; then
+if ! cloudflared --version 2>/dev/null | grep -Fq "cloudflared version ${VERSION} "; then
+  DOWNLOAD_DIR="$(mktemp -d)"
+  trap 'rm -rf -- "$DOWNLOAD_DIR"' EXIT
+  PACKAGE_PATH="${DOWNLOAD_DIR}/cloudflared.deb"
   echo "Downloading cloudflared ${VERSION}..."
-  curl -sfL "https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/cloudflared-linux-${ARCH}.deb" \
-    -o "/tmp/cloudflared-${VERSION}.deb"
-  sudo dpkg -i "/tmp/cloudflared-${VERSION}.deb"
+  curl -fsSL --connect-timeout 10 --max-time 60 \
+    "https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/cloudflared-linux-${ARCH}.deb" \
+    -o "$PACKAGE_PATH"
+  if ! printf '%s  %s\n' "$SHA256" "$PACKAGE_PATH" | sha256sum --check --status; then
+    echo "SHA-256 verification failed for cloudflared ${VERSION} (${ARCH})" >&2
+    exit 1
+  fi
+  sudo dpkg -i "$PACKAGE_PATH"
 else
   echo "cloudflared ${VERSION} already installed"
 fi

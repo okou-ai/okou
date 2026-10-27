@@ -54,55 +54,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
-test("Retry a failed target account read from the directed connection page", async () => {
-  mockPublicConnectorStatus(
-    publicOAuthConnectorStatus({
-      slug: "github",
-      label: "Public GitHub",
-      singleAuthCodeAuthMethodId: "oauth",
-    }),
-  );
-  let unavailable = true;
-  context.mocks.api(
-    connectorAccountsContract.connections,
-    ({ query, respond }) => {
-      expect(query).toMatchObject({
-        kind: "builtin",
-        connectorSlug: "github",
-      });
-      return unavailable
-        ? respond(403, {
-            error: { code: "FORBIDDEN", message: "Account list unavailable" },
-          })
-        : respond(200, {
-            connections: [],
-            defaultConnection: null,
-            nextCursor: null,
-          });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
-  });
-  await expect(
-    screen.findByText("Accounts are unavailable for this connector."),
-  ).resolves.toBeVisible();
-  expect(
-    queryAllByRoleFast("button").find((button) => {
-      return button.textContent?.trim() === "Connect";
-    }),
-  ).toBeUndefined();
-  unavailable = false;
-  click(
-    await waitFor(() => {
-      return getButtonByText("Try again");
-    }),
-  );
-  await screen.findByText("Okou needs Public GitHub to proceed");
-  expect(getButtonByText("Connect")).toBeEnabled();
-});
-
 function mockAccounts(read: () => readonly ConnectorAccountConnection[]) {
   context.mocks.api(
     connectorAccountsContract.connection,

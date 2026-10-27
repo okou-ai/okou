@@ -17,6 +17,8 @@ import { command, computed, state } from "ccstate";
 import { object, string } from "zod";
 
 import { accept } from "../lib/accept.ts";
+import { sortByName, sortRemoteHosts } from "../lib/remote-resource-order.ts";
+import { locale$ } from "./locale.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import {
@@ -85,7 +87,7 @@ export const invalidateCloudflareAccess$ = command(({ set }) => {
   set(invalidateRemoteAccess$);
 });
 
-export const cloudflareAccessConfigs$ = computed(async (get) => {
+const cloudflareAccessConfigsData$ = computed(async (get) => {
   get(reload$);
   if (!(await get(cloudflareAccessIdentity$))) {
     return null;
@@ -104,18 +106,30 @@ export const cloudflareAccessConfigs$ = computed(async (get) => {
       })
     : null;
 });
+export const cloudflareAccessConfigs$ = computed(async (get) => {
+  const locale = get(locale$);
+  const configs = await get(cloudflareAccessConfigsData$);
+  return configs
+    ? sortByName(
+        configs.map((config) => {
+          return {
+            ...config,
+            sshHosts: sortRemoteHosts(config.sshHosts, locale),
+            vncHosts: sortRemoteHosts(config.vncHosts, locale),
+          };
+        }),
+        locale,
+        (config) => {
+          return { name: config.name, id: config.id };
+        },
+      )
+    : null;
+});
 
 export const cloudflareAccessSummary$ = computed(async (get) => {
   const configs = await get(cloudflareAccessConfigs$);
   return configs ? { configuredCount: configs.length } : null;
 });
-
-export const retryCloudflareAccess$ = command(
-  ({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(invalidateCloudflareAccess$);
-  },
-);
 
 const catchUpCloudflareAccess$ = command(({ set }) => {
   set(invalidateCloudflareAccess$);
@@ -166,7 +180,6 @@ export const cloudflareAccessCreateScope$ = computed((get) => {
   return get(createScope$);
 });
 const conflict$ = state<string | null>(null);
-const reviewedRevision$ = state<number | null>(null);
 const replaceToken$ = state(false);
 const saveMessage$ = state<string | null>(null);
 const unresolvedSave$ = state<{
@@ -264,7 +277,6 @@ export const openCloudflareAccessDialog$ = command(
     }
     signal.throwIfAborted();
     set(conflict$, null);
-    set(reviewedRevision$, null);
     set(replaceToken$, false);
     set(createScope$, "personal");
     set(dialog$, {
@@ -289,7 +301,6 @@ export const closeCloudflareAccessDialog$ = command(
     set(abandonCloudflareAccessSave$);
     set(conflict$, null);
     set(replaceToken$, false);
-    set(reviewedRevision$, null);
     set(dialog$, null);
   },
 );
@@ -314,7 +325,6 @@ async function updateCloudflareAccessConfig(
   dialog: CloudflareAccessDialogState,
   form: HTMLFormElement,
   editor: {
-    readonly reviewedRevision: number | null;
     readonly replace: boolean;
   },
   signal: AbortSignal,
@@ -324,7 +334,7 @@ async function updateCloudflareAccessConfig(
     throw new Error("Cloudflare Access edit requires a configuration");
   }
   const params = { configId: config.id };
-  const expectedRevision = editor.reviewedRevision ?? config.revision;
+  const expectedRevision = config.revision;
   if (dialog.kind === "delete") {
     const result = await accept(
       client.delete({
@@ -339,11 +349,7 @@ async function updateCloudflareAccessConfig(
     return result.status === 204 ? null : result.body.error.code;
   }
   const name = textField(form, "accessName").trim();
-  if (
-    editor.reviewedRevision === null &&
-    name === config.name &&
-    !editor.replace
-  ) {
+  if (name === config.name && !editor.replace) {
     return null;
   }
   const result = await accept(
@@ -373,7 +379,6 @@ const finishCloudflareAccessCreate$ = command(
           readonly status: 400 | 403 | 404 | 409 | 500;
           readonly body: { readonly error: { readonly code: string } };
         },
-    retrying: boolean,
   ) => {
     if (get(dialog$) !== dialog) {
       return false;
@@ -382,7 +387,7 @@ const finishCloudflareAccessCreate$ = command(
       set(unresolvedSave$, null);
       return true;
     }
-    if (result.status === 500 || retrying) {
+    if (result.status === 500) {
       return false;
     }
     if (!("body" in result)) {
@@ -393,7 +398,6 @@ const finishCloudflareAccessCreate$ = command(
       set(saveMessage$, result.body.error.code);
     } else {
       set(conflict$, result.body.error.code);
-      set(invalidateCloudflareAccess$);
     }
     return false;
   },
@@ -401,6 +405,9 @@ const finishCloudflareAccessCreate$ = command(
 
 export const saveCloudflareAccess$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+    if (get(cloudflareAccessSaveUncertain$)) {
+      return;
+    }
     const signal = set(resetFormSave$, parentSignal);
     let dialog = await get(cloudflareAccessDialog$);
     signal.throwIfAborted();
@@ -421,7 +428,6 @@ export const saveCloudflareAccess$ = command(
       );
       signal.throwIfAborted();
       if (!config) {
-        set(invalidateCloudflareAccess$);
         return;
       }
       if (get(dialog$) !== dialog) {
@@ -430,17 +436,14 @@ export const saveCloudflareAccess$ = command(
       if (config !== dialog.config) {
         dialog = { ...dialog, config, scope: config.scope };
         set(dialog$, dialog);
-        set(reviewedRevision$, null);
         set(invalidateCloudflareAccess$);
       }
     }
-    const retrying = get(cloudflareAccessSaveUncertain$);
     let conflict: string | null = null;
     let savedId: string | undefined;
     if (dialog.kind === "create") {
       const scope = get(createScope$);
-      const retry = get(unresolvedSave$);
-      const id = retry?.dialog === dialog ? retry.id : crypto.randomUUID();
+      const id = crypto.randomUUID();
       if (scope === "organization" && !(await get(isOrgAdmin$))) {
         set(conflict$, CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN);
         return;
@@ -463,7 +466,7 @@ export const saveCloudflareAccess$ = command(
         [201, 204, 400, 403, 404, 409, 500],
         signal,
       );
-      if (!set(finishCloudflareAccessCreate$, dialog, result, retrying)) {
+      if (!set(finishCloudflareAccessCreate$, dialog, result)) {
         return;
       }
       savedId = id;
@@ -478,7 +481,6 @@ export const saveCloudflareAccess$ = command(
         dialog,
         form,
         {
-          reviewedRevision: get(reviewedRevision$),
           replace: get(cloudflareAccessReplaceToken$),
         },
         signal,
@@ -489,7 +491,6 @@ export const saveCloudflareAccess$ = command(
       return;
     }
     signal.throwIfAborted();
-    set(invalidateCloudflareAccess$);
     if (get(dialog$) !== dialog) {
       return;
     }
@@ -498,44 +499,8 @@ export const saveCloudflareAccess$ = command(
       return;
     }
     set(closeCloudflareAccessDialog$);
+    set(invalidateCloudflareAccess$);
     return savedId;
-  },
-);
-
-export const cloudflareAccessConflictReview$ = computed(async (get) => {
-  const dialog = await get(cloudflareAccessDialog$);
-  const conflict = get(conflict$);
-  if (
-    !dialog?.config ||
-    (conflict !== CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT &&
-      conflict !== CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE)
-  ) {
-    return null;
-  }
-  const config = (await get(cloudflareAccessConfigs$))?.find((value) => {
-    return value.id === dialog.config?.id;
-  });
-  return config ? { ...dialog, config } : null;
-});
-
-export const acceptCloudflareAccessConflictReview$ = command(
-  async (
-    { get, set },
-    reviewed: CloudflareAccessDialogState,
-    signal: AbortSignal,
-  ) => {
-    const current = await get(cloudflareAccessDialog$);
-    signal.throwIfAborted();
-    if (
-      !current ||
-      reviewed.identity !== current.identity ||
-      reviewed.kind !== current.kind ||
-      reviewed.config?.id !== current.config?.id
-    ) {
-      return;
-    }
-    set(reviewedRevision$, reviewed.config?.revision ?? null);
-    set(conflict$, null);
   },
 );
 
@@ -546,7 +511,6 @@ interface ConversionDialog {
 }
 
 const conversionDialog$ = state<ConversionDialog | null>(null);
-const conversionPreviewReload$ = state(0);
 const conversionError$ = state<string | null>(null);
 const conversionAcknowledgedSnapshot$ = state<string | null>(null);
 
@@ -603,18 +567,8 @@ export const closeCloudflareAccessConversion$ = command(({ set }) => {
   set(conversionAcknowledgedSnapshot$, null);
 });
 
-export const reviewCloudflareAccessConversion$ = command(({ set }) => {
-  set(conversionError$, null);
-  set(conversionAcknowledgedSnapshot$, null);
-  set(conversionPreviewReload$, (value) => {
-    return value + 1;
-  });
-  set(invalidateCloudflareAccess$);
-});
-
 export const cloudflareAccessConversionPreview$ = computed(async (get) => {
   get(reload$);
-  get(conversionPreviewReload$);
   const dialog = await get(cloudflareAccessConversionDialog$);
   if (!dialog) {
     return null;
@@ -718,10 +672,10 @@ export const confirmCloudflareAccessPromotion$ = command(
     if (get(promotionDialog$) !== dialog) {
       return;
     }
-    set(invalidateCloudflareAccess$);
     if (outcome.status === "rejected") {
       set(promotionError$, "uncertain");
     } else if (outcome.value.status === 200) {
+      set(invalidateCloudflareAccess$);
       set(closeCloudflareAccessPromotion$);
     } else {
       set(promotionError$, outcome.value.body.error.code);
@@ -730,7 +684,6 @@ export const confirmCloudflareAccessPromotion$ = command(
 );
 
 const deletionDialog$ = state<ReviewedAccessDialog | null>(null);
-const deletionReload$ = state(0);
 const deletionError$ = state<string | null>(null);
 const deletionAcknowledged$ = state<string | null>(null);
 export const cloudflareAccessDeletionDialog$ = computed(async (get) => {
@@ -779,17 +732,8 @@ export const closeCloudflareAccessDeletion$ = command(({ set }) => {
   set(deletionError$, null);
   set(deletionAcknowledged$, null);
 });
-export const reviewCloudflareAccessDeletion$ = command(({ set }) => {
-  set(deletionError$, null);
-  set(deletionAcknowledged$, null);
-  set(deletionReload$, (value) => {
-    return value + 1;
-  });
-  set(invalidateCloudflareAccess$);
-});
 export const cloudflareAccessDeletionPreview$ = computed(async (get) => {
   get(reload$);
-  get(deletionReload$);
   const dialog = await get(cloudflareAccessDeletionDialog$);
   if (!dialog) {
     return null;
@@ -852,10 +796,10 @@ export const confirmCloudflareAccessDeletion$ = command(
     if (get(deletionDialog$) !== dialog) {
       return;
     }
-    set(invalidateCloudflareAccess$);
     if (outcome.status === "rejected") {
       set(deletionError$, "uncertain");
     } else if (outcome.value.status === 204) {
+      set(invalidateCloudflareAccess$);
       set(closeCloudflareAccessDeletion$);
     } else {
       set(deletionError$, outcome.value.body.error.code);
@@ -898,16 +842,15 @@ export const confirmCloudflareAccessConversion$ = command(
     if (outcome.status === "rejected") {
       if (dialog === get(conversionDialog$)) {
         set(conversionError$, "uncertain");
-        set(invalidateCloudflareAccess$);
       }
       return;
     }
     if (dialog !== get(conversionDialog$)) {
       return;
     }
-    set(invalidateCloudflareAccess$);
     const result = outcome.value;
     if (result.status === 200) {
+      set(invalidateCloudflareAccess$);
       set(closeCloudflareAccessConversion$);
       return;
     }

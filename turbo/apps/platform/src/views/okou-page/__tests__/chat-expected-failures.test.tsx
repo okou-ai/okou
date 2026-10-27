@@ -39,7 +39,6 @@ test.each(["direct", "message-port"] as const)(
     await expect(
       screen.findByRole("dialog", { name: "Update required" }),
     ).resolves.toBeVisible();
-    await expect(findEnabledButton("Refresh")).resolves.toBeVisible();
   },
 );
 

@@ -4,7 +4,6 @@ import {
   type DiscordOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-discord";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -46,7 +45,7 @@ function mockDiscord(overrides: Partial<DiscordOrgStatus> = {}) {
   };
 }
 
-function openChatChannelStep(enabled = true, mobile = false) {
+function openChatChannelStep(mobile = false) {
   if (mobile) {
     context.mocks.browser.matchMedia((query) => {
       return query === "(width < 640px)";
@@ -71,7 +70,6 @@ function openChatChannelStep(enabled = true, mobile = false) {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSlack,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: enabled },
   });
 }
 
@@ -113,7 +111,7 @@ test.each([false, true])(
     });
     const opened = context.mocks.browser.open(popup);
 
-    await openChatChannelStep(true, mobile);
+    await openChatChannelStep(mobile);
 
     await waitFor(() => {
       expect(getButton("Discord")).toBeEnabled();
@@ -188,11 +186,4 @@ test("An unavailable Discord integration explains why it cannot connect", async 
   ).resolves.toBeInTheDocument();
   expect(getButton("Discord")).toBeDisabled();
   expect(getButton("Continue")).toBeDisabled();
-});
-
-test("Onboarding hides Discord while its integration switch is off", async () => {
-  await openChatChannelStep(false);
-
-  expect(screen.getByText("Teams")).toBeInTheDocument();
-  expect(screen.queryByText("Discord")).not.toBeInTheDocument();
 });

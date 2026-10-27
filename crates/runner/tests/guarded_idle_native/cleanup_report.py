@@ -5,7 +5,7 @@ import hashlib
 import json
 
 import pressure_report as pressure
-from startup_report import exact
+from snapshot_report import exact
 
 COUNTS = {"registered_operations", "queued", "granted", "started", "uncertain",
           "ordinary_growth_bytes", "cleanup_growth_bytes", "tracked_tasks"}

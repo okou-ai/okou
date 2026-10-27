@@ -80,7 +80,7 @@ import {
 } from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
-import { ChatSyncStatus } from "./chat-sync-status.tsx";
+import { unifiedChatWorkspace$ } from "../../signals/okou-page/unified-chat-workspace.ts";
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -410,6 +410,8 @@ function ChatWorkspace({
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
   const syncImageLayout = useSet(syncActiveImageLayout$);
+  const joinedToChatList =
+    useGet(unifiedChatWorkspace$) && beside === "chat-list";
   return (
     <ChatThreadSidebarShell
       layout={chatLayout}
@@ -417,12 +419,23 @@ function ChatWorkspace({
       open={active !== null}
       onSidebarLayoutCommit={syncImageLayout}
       sidebar={<ChatThreadSidebarPane />}
+      // The browser scales a 1440px screen into the panel and wants room;
+      // every other panel shares one remembered width.
+      widthKey={active?.target.type === "browser" ? "browser" : "panel"}
       workspace={{ beside, header, footer, pwaNavigation, fullscreen }}
     >
       <WorkspaceInset
         beside={beside}
         framed={false}
-        className={active ? "md:rounded-l-2xl" : "md:rounded-2xl"}
+        className={
+          joinedToChatList
+            ? active
+              ? "md:rounded-none"
+              : "md:rounded-r-2xl"
+            : active
+              ? "md:rounded-l-2xl"
+              : "md:rounded-2xl"
+        }
       >
         {children}
       </WorkspaceInset>
@@ -443,6 +456,7 @@ function SidebarWorkspaceFrame({
 }) {
   const chatListHidden = useGet(sidebarOff$);
   const activeRoute = useGet(activeRoute$);
+  const unified = useGet(unifiedChatWorkspace$);
   const beside = chatListHidden ? "nav-rail" : "chat-list";
 
   return activeRoute === "chat" ? (
@@ -455,7 +469,7 @@ function SidebarWorkspaceFrame({
       {children}
     </ChatWorkspace>
   ) : (
-    <WorkspaceInset beside={beside}>
+    <WorkspaceInset beside={beside} joined={unified}>
       {header}
       {children}
       {footer}
@@ -477,7 +491,6 @@ function SidebarWorkspace({
 
   const workspaceHeader = (
     <>
-      <ChatSyncStatus />
       <InstallBanner />
       <IosInstallModal />
       {!isDesktop &&

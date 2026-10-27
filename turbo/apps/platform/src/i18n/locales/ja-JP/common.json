@@ -87,7 +87,7 @@
           "title": "クレジットが枯渇しました"
         },
         "noModelProvider": {
-          "guidance": "しばらくしてからもう一度お試しいただくか、設定で個人の Claude Code または Codex サブスクリプションを接続してください。",
+          "guidance": "設定で個人の Claude Code または Codex サブスクリプションを接続してください。",
           "title": "この実行に使用できるモデルプロバイダーがありません"
         },
         "paidPlanRequired": {
@@ -99,7 +99,7 @@
           "title": "プロバイダーに互換性がありません"
         },
         "providerTemporarilyUnavailable": {
-          "guidance": "モデルプロバイダーは一時的に利用できません。後でもう一度試してください。",
+          "guidance": "モデルプロバイダーは一時的に利用できません。",
           "title": "モデルプロバイダーが一時的に利用できません"
         }
       },
@@ -112,7 +112,6 @@
         "time": "時間"
       },
       "log": "ログ",
-      "manualReloadNotice": "ログは自動更新されません。",
       "modelProvidedBy": "{{model}} は {{provider}} によって提供されます",
       "networkEmpty": {
         "description": "この実行ではネットワーク トラフィックは記録されませんでした。",
@@ -123,7 +122,6 @@
         "description": "このログは存在しないか、現在のワークスペースで表示する権限がありません。",
         "title": "ログが見つかりません"
       },
-      "refresh": "更新",
       "runner": {
         "environment": "環境",
         "framework": "フレームワーク",
@@ -414,6 +412,7 @@
         "workflows": "ワークフロー",
         "works": "連携先"
       },
+      "resizeChatList": "チャットリストのサイズを変更する",
       "searchWorkspace": "ワークスペースを検索",
       "showChatList": "チャットリストを表示",
       "workspaceSwitcher": {
@@ -437,16 +436,15 @@
       "signedInAs": "{{email}} としてログイン中",
       "signedInDescription": "存在しないか、別のアカウントまたは組織に共有されている可能性があります。",
       "signIn": "ログイン",
-      "signInFailed": "ログイン画面を開けませんでした。もう一度お試しください。",
+      "signInFailed": "ログイン画面を開けませんでした。",
       "switchAccount": "アカウントを切り替える",
-      "switchAccountFailed": "アカウント切り替え画面を開けませんでした。もう一度お試しください。",
+      "switchAccountFailed": "アカウント切り替え画面を開けませんでした。",
       "title": "このアーティファクトを表示できません",
-      "tryAgain": "再試行",
       "websiteAuthenticationDescription": "このウェブサイトにアクセスできるアカウントでログインしてください。",
       "websiteAuthenticationSignedInDescription": "現在のアカウントでアクセス権を確認するには、続行してください。",
       "websiteAuthenticationTitle": "このウェブサイトへのアクセス権を確認",
       "websiteTitle": "このウェブサイトは表示できません",
-      "websiteUnavailableDescription": "しばらくしてからもう一度お試しください。",
+      "websiteUnavailableDescription": "このウェブサイトは一時的に利用できません。",
       "websiteUnavailableTitle": "このウェブサイトは一時的に利用できません"
     },
     "actions": {
@@ -621,8 +619,7 @@
       "organizationOptionUnnamed": "組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
-      "publicOption": "リンクを知っている全員",
-      "retry": "再試行"
+      "publicOption": "リンクを知っている全員"
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",
@@ -638,7 +635,7 @@
     "siteUrl": {
       "available": "使用できます",
       "cancel": "キャンセル",
-      "checkFailed": "確認できませんでした。編集して再試行してください。",
+      "checkFailed": "このアドレスを確認できませんでした。",
       "checking": "確認中…",
       "customize": "URL をカスタマイズ",
       "hint": "短く覚えやすい名前を選択",
@@ -648,7 +645,7 @@
       "oldUrlWarning": "以前の URL は使えなくなります。共有済みのリンクを更新してください。",
       "published": "公開済み",
       "save": "保存",
-      "saveFailed": "保存できませんでした。使用済みまたは変更済みの可能性があります。再読み込みして再試行してください。",
+      "saveFailed": "保存できませんでした。アドレスが使用中か、変更された可能性があります。",
       "taken": "このアドレスは使用されています",
       "updated": "ウェブサイトの URL を更新しました"
     },
@@ -950,7 +947,7 @@
   },
   "authorization": {
     "browser": {
-      "actionFailed": "続行できませんでした。再試行してください。",
+      "actionFailed": "続行できませんでした。",
       "allow": "許可",
       "allowed": "許可済み",
       "callbackPrompt": "クラウドブラウザーが有効になりました。前のタスクを続行してください。",
@@ -959,7 +956,6 @@
       "enable": "このスレッドに対して有効にする",
       "enabled": "クラウドブラウザが有効になっている",
       "linkExpires": "リンクの有効期限が切れます {{date}}。",
-      "retry": "再試行",
       "title": "クラウドブラウザを有効にする",
       "unavailableDescription": "このクラウド ブラウザ認証リンクは無効であるか、期限切れであるか、このワークスペースでは使用できません。",
       "unavailableTitle": "認証リンクは使用できません"
@@ -973,7 +969,7 @@
       "lastSeen": "最後に表示されたのは {{date}}",
       "linkExpires": "リンクの有効期限が切れます {{date}}。",
       "macRequirement": "macOS 14 以降を搭載した Apple Silicon Mac が必要です。 Intel Mac はサポートされていません。",
-      "noHostsDescription": "Mac で {{desktopApplicationName}} を開き、オンラインになったらこのページを更新します。",
+      "noHostsDescription": "Mac で {{desktopApplicationName}} を開いてオンラインにしてください。",
       "noHostsTitle": "オンラインコンピュータはありません",
       "sources": {
         "chat": "このチャットスレッド",
@@ -1037,10 +1033,8 @@
       "allowed": "権限を許可しました",
       "allowedCount": "{{total}} 件中 {{allowed}} 件の権限を許可済み",
       "alwaysNote": "これらの権限は、変更または取り消すまで許可されたままになります。",
-      "continue": "続ける",
       "continued": "会話を再開しました。",
-      "continueFailed": "権限は許可されましたが、会話を再開できませんでした。もう一度「続ける」をお試しください。",
-      "continuing": "再開中…",
+      "continueFailed": "権限は許可されましたが、会話を再開できませんでした。",
       "details": "権限の詳細を表示",
       "dismissed": "権限は変更されませんでした。",
       "invalid": "この権限リンクは無効か、利用できません。",
@@ -1074,7 +1068,6 @@
       "preparing": "準備中...",
       "redirecting": "リダイレクト中...",
       "restore": "復元",
-      "retry": "再試行",
       "unavailable": "利用不可",
       "updating": "更新中..."
     },
@@ -1255,7 +1248,7 @@
           "confirmDescription": "現在のプランと権限は、この請求期間が終了するまで有効です。新しいプランの開始時に Stripe が新しい月額合計を請求します。",
           "convertPlan": "プランを切り替える",
           "description": "従来の {{plan}} ワークスペースを、各メンバー向けの個別月額利用パッケージを含む新しいプランへ切り替えます。",
-          "error": "このサブスクリプションを移行できませんでした。ページを更新してもう一度お試しください。",
+          "error": "このサブスクリプションを移行できませんでした。",
           "invoice": "請求書を表示",
           "processing": "Stripe で切り替えを予約しています。",
           "ready": "各メンバーと招待中のユーザーに月額パッケージを選択するか、「パッケージなし」を選択してください。",
@@ -1274,7 +1267,7 @@
         "packCreditsDiscount": "{{credits}} クレジット · {{discount}}% オフ",
         "packOption": "{{price}} · {{credits}} クレジット · {{discount}}%オフ",
         "paidPackageRequired": "続行するには、少なくとも1人のメンバーに有料パッケージを選択してください。",
-        "planChangeError": "サブスクリプションの変更を準備できませんでした。もう一度お試しください。",
+        "planChangeError": "サブスクリプションの変更を準備できませんでした。",
         "planPlusPackages": "プラン {{plan}} · メンバーパッケージ 各 {{lowest}}〜{{highest}}",
         "planStep": "プラン",
         "priceFrom": "最低",
@@ -1400,7 +1393,7 @@
       "generatePdf": "PDFを生成",
       "generatingPdf": "PDFを生成中…",
       "more": "さらなるアクション",
-      "pdfGenerationFailed": "PDFを生成できませんでした。もう一度お試しください。",
+      "pdfGenerationFailed": "PDFを生成できませんでした。",
       "remove": "削除",
       "rename": "名前の変更",
       "saving": "保存中...",
@@ -1447,7 +1440,7 @@
             "connected": "接続済み",
             "description": "1 つ選ぶと、{{assistantName}} がその中で作業を始めます。",
             "notConnected": "未接続",
-            "pickerFailed": "コネクターを読み込めませんでした。コネクターページで再試行してください。",
+            "pickerFailed": "コネクターを読み込めませんでした。",
             "pickerLoading": "コネクターを読み込み中…",
             "title": "{{assistantName}} は、あなたが普段使っているツールの中で働きます"
           },
@@ -1558,7 +1551,8 @@
         "whatsCooking": "{{userName}}、料理は何ですか?",
         "whatsOnYourMind": "{{userName}} さん、何を考えていますか?",
         "whatsTheMove": "{{userName}} さん、どうしますか?"
-      }
+      },
+      "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
       "dismiss": "非表示にする",
@@ -1566,8 +1560,7 @@
       "next": "次の提案",
       "position": "{{current}} / {{total}}",
       "previous": "前の提案",
-      "recoveryHint": "再送信する前にチャットを確認してください。提案を下書きに戻せます。",
-      "restoreDraft": "下書きに戻す"
+      "useSuggestion": "提案を使う"
     },
     "attachments": {
       "attach": "添付する",
@@ -1578,7 +1571,7 @@
       "title": "添付ファイル",
       "unavailable": "{{filename}} は利用できなくなりました。送信するにはもう一度アップロードしてください。",
       "unavailableCount_other": "{{count}} 件の添付ファイルは利用できなくなりました。送信するにはもう一度アップロードしてください。",
-      "uploadFailedRetry": "{{filename}} のアップロードに失敗しました。もう一度やり直してください。"
+      "uploadFailed": "{{filename}} のアップロードに失敗しました。"
     },
     "automations": {
       "active": "アクティブ",
@@ -1698,7 +1691,6 @@
       "readOnly": "口座、残高、取引 · 読み取り専用",
       "repair": "修復",
       "repairRequired": "{{institution}}は修復が必要です",
-      "retry": "再試行",
       "revoke": "取り消す",
       "revokeConfirm": "このエージェントの銀行アクセスを取り消しますか？",
       "selectAccounts": "口座を選択",
@@ -1733,21 +1725,18 @@
       "unavailableDescription": "このブラウザリクエストは無効か、利用できなくなっています。"
     },
     "browserInput": {
-      "applyFailed": "情報を追加できませんでした。入力内容は保持されています。もう一度お試しください。",
+      "applyFailed": "情報を追加できませんでした。入力内容は保持されています。",
       "applying": "情報を追加しています",
       "applyingDescription": "ブラウザでこのリクエストを完了しています。",
-      "callbackFailed": "エージェントに通知できませんでした。",
       "cancel": "キャンセル",
-      "cancelFailed": "リクエストをキャンセルできませんでした。もう一度お試しください。",
+      "cancelFailed": "リクエストをキャンセルできませんでした。",
       "cancelled": "リクエストをキャンセルしました",
       "cancelling": "キャンセルしています…",
-      "checkFailed": "ブラウザーを確認できませんでした。入力内容は保持されています。送信前に再試行してください。",
+      "checkFailed": "ブラウザーを確認できませんでした。入力内容は保持されています。",
       "checkingOutcome": "ブラウザーの状態を確認中",
       "checkingOutcomeDescription": "ブラウザーがこのリクエストを確認するのを待っています。",
       "completed": "情報を追加しました",
       "confirmRangeValue": "現在の値を使用",
-      "continue": "エージェントに通知",
-      "continuing": "通知しています…",
       "delivered": "エージェントに通知しました",
       "expired": "リクエストの有効期限が切れました",
       "expiredDescription": "ブラウザが閉じられたか、このリクエストは無効になりました。",
@@ -1755,12 +1744,11 @@
       "fileLimit": "最大3ファイル（単一ファイルの場合は1ファイル）、合計10 MiBまで選択できます。",
       "fileNotice": "ブラウザーに追加すると、選択したファイルがこのサイトに転送されます。ファイル選択の変更時にサイトがアップロードや送信を行う場合があります：",
       "loadFailed": "このリクエストを読み込めませんでした",
-      "loadFailedDescription": "しばらくしてからもう一度お試しください。",
+      "loadFailedDescription": "このリクエストは現在利用できません。",
       "loadingDescription": "リクエストを確認しています…",
       "open": "情報を入力",
       "optional": "（任意）",
       "required": "（必須）",
-      "retry": "再試行",
       "site": "サイト",
       "stale": "フィールドが変更されました",
       "staleDescription": "エージェントに新しいリクエストの作成を依頼してください。",
@@ -1770,7 +1758,7 @@
       "title": "ブラウザに情報を入力",
       "unavailable": "リクエストを利用できません",
       "uncertain": "ブラウザを確認してください",
-      "uncertainDescription": "ブラウザが情報を受け取った可能性があります。再試行する前にエージェントに確認を依頼してください。"
+      "uncertainDescription": "ブラウザが情報を受け取った可能性があります。エージェントに結果の確認を依頼してください。"
     },
     "cards": {
       "viewDetails": "詳細を表示"
@@ -1866,11 +1854,10 @@
     },
     "connectorAccountSwitch": {
       "accountFallback": "コネクターアカウント",
-      "actionFailed": "アカウントを切り替えられませんでした。もう一度お試しください。",
+      "actionFailed": "アカウントを切り替えられませんでした。",
       "customConnector": "カスタムコネクター",
       "loadFailed": "このコネクターアカウントを読み込めませんでした。",
       "reconnectRequired": "再接続が必要です。以降の実行では既存のフォールバックが使用される場合があります。",
-      "retry": "再試行",
       "selected": "{{account}}に切り替えました",
       "switch": "切り替える",
       "switching": "切り替え中...",
@@ -1952,7 +1939,6 @@
       "replies": "Your replies",
       "reply": "Reply",
       "result": "Result",
-      "retry": "Retry",
       "saved": "Saved for the next evaluation",
       "saveReply": "Save reply",
       "sourceUpdate": "情報の更新",
@@ -1968,22 +1954,21 @@
       "genericTitle": "この実行を完了できませんでした",
       "loadMessages": "メッセージの読み込みに失敗しました",
       "noModelProviderAction": "サブスクリプションを管理",
-      "noModelProviderPrefix": "この実行に使用できるモデルプロバイダーがありません。もう一度お試しいただくか、個人サブスクリプションを接続してください。",
+      "noModelProviderPrefix": "この実行に使用できるモデルプロバイダーがありません。個人サブスクリプションを接続してください。",
       "providerIncompatibleAction": "新しいセッションを開始する",
       "providerIncompatiblePrefix": "このセッションは別のモデル プロバイダーで開始されたため、現在のモデル プロバイダーでは続行できません。",
       "recovery": {
-        "accessProgramDescription": "少し時間をおいて再試行してください。このチャットは開いたままにできます。",
+        "accessProgramDescription": "このチャットは開いたままにできます。",
         "accessProgramTitle": "Codex へのアクセスは一時的に利用できません",
-        "autonomyLimitDescription": "連続自動実行の上限に達しました。続行するには確認が必要です。",
+        "autonomyLimitDescription": "連続自動実行の上限に達しました。",
         "autonomyLimitTitle": "自動実行の上限に達しました",
-        "capacityDescription": "少し待ってから再試行するか、別のモデルで続けてください。",
+        "capacityDescription": "別のモデルで続けてください。",
         "capacityTitle": "このモデルは現在混雑しています",
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "connectionLostTitle": "応答が途中で途切れました",
         "contextWindowTitle": "このチャットは長すぎます",
-        "continue": "続ける",
-        "filesystemFullDescription": "この実行ではこれ以上ファイルを保存できません。再試行して続けてください。",
+        "filesystemFullDescription": "この実行ではこれ以上ファイルを保存できません。",
         "filesystemFullTitle": "この実行の保存容量が足りません",
         "fiveHourReset": "5時間の上限は {{time}} にリセット",
         "inputTooLargeDescription": "メッセージを短くして、もう一度送信してください。",
@@ -1993,7 +1978,7 @@
         "newChat": "新しいチャット",
         "newChatDescription": "新しいチャットを始め、引き継ぎたい大切な情報を含めてください。",
         "openClaude": "Claude を開く",
-        "outputLimitDescription": "応答が完了する前に止まりました。「続ける」を選ぶと続きから生成できます。",
+        "outputLimitDescription": "応答が完了する前に止まりました。",
         "outputLimitTitle": "応答が長さの上限に達しました",
         "personalAccount": "個人サブスクリプション {{account}}",
         "personalAccountDisconnected": "個人サブスクリプションの接続が切れています",
@@ -2006,16 +1991,13 @@
         "providerStreamTimeoutTitle": "モデルの応答がタイムアウトしました",
         "reconnectTitle": "モデルアカウントを再接続",
         "resetsAt": "{{time}} にリセット",
-        "resetUsageRemaining": "リセット · 残り {{value}}",
         "safetyDescription": "このリクエストはモデルの安全基準を満たしませんでした。表現を変えるか、別のモデルを選んでください。",
         "safetyTitle": "モデルはこのリクエストに対応できませんでした",
-        "selectModel": "モデルを切り替える",
         "sessionHistoryTitle": "このチャットは上限に達しました",
         "termsDescription": "Claude で最新の利用規約に同意してから、こちらで再試行してください。",
         "termsTitle": "Claude の規約への同意が必要です",
-        "timeoutDescription": "停止したところから続けられます。",
+        "timeoutDescription": "続けるには新しいメッセージを送信してください。",
         "timeoutTitle": "時間制限に達しました",
-        "tryAgain": "もう一度試す",
         "unavailableDescription": "このプロバイダーアカウントで使える別のモデルを選んでください。",
         "unavailableTitle": "選択したモデルは利用できません",
         "usageDescription": "使用制限がリセットされた後に続行するか、今すぐ別のモデルに切り替えられます。",
@@ -2081,7 +2063,6 @@
         "open": "メールを管理",
         "openEmail": "メールを開く：{{subject}}",
         "result": "{{succeeded}} 件完了 · {{failed}} 件失敗",
-        "retry": "再試行",
         "search": "件名または送信者で検索",
         "selectAll": "すべて選択",
         "selected": "{{quantity}} 件選択中",
@@ -2205,7 +2186,6 @@
       "off": "オフ",
       "on": "オン",
       "requiresSsh": "SSH が必要：{{name}}",
-      "retry": "再試行",
       "sshDisabled": "SSH をオンに：{{name}}",
       "sshEnabled": "SSH 有効：{{name}}",
       "title": "リモートアクセス",
@@ -2214,10 +2194,10 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "empty": "このチャットの成果物と関連チャットがここに表示されます。",
+      "emptyDescription": "このチャットのファイルと関連チャットがここに表示されます。",
+      "emptyTitle": "まだリソースはありません",
       "loadFailed": "リソースを読み込めませんでした",
       "loading": "リソースを読み込み中",
-      "retry": "再試行",
       "showMore": "もっと見る",
       "title": "チャットのリソース"
     },
@@ -2274,10 +2254,10 @@
       "copyFailed": "リンクをコピーできませんでした",
       "copyLink": "リンクをコピー",
       "create": "共有",
-      "createFailed": "共有された会話を作成できませんでした。もう一度お試しください。",
+      "createFailed": "共有された会話を作成できませんでした。",
       "deselectGroup": "メッセージグループの選択を解除",
       "linkCopied": "リンクをコピーしました",
-      "messageShareFailed": "共有リンクを作成できませんでした。もう一度お試しください。",
+      "messageShareFailed": "共有リンクを作成できませんでした。",
       "publicDescription": "選択したメッセージと添付ファイルが公開されます。",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
@@ -2335,7 +2315,7 @@
       "confirmUnknown": "— 回のリセット",
       "credits_other": "残りのリセット回数：{{count}}",
       "creditsUnknown": "残りのリセット回数：不明",
-      "error": "リセットに失敗しました。同じ要求を再試行してください。",
+      "error": "リセットの結果を確認できませんでした。",
       "expiresAt": "クレジットの有効期限：{{time}}",
       "loadFailed": "サブスクリプションの使用量を読み取れませんでした。",
       "loading": "サブスクリプションを読み込み中…",
@@ -2349,7 +2329,6 @@
       "unknown": "不明",
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
-    "syncFailed": "チャットが最新ではない可能性があります",
     "taskChips": {
       "chooseTask": "タスクを選ぶ",
       "ideas": {
@@ -2939,9 +2918,6 @@
       "empty": "メッセージを送信して会話を始めましょう",
       "frequentlyUsed": "頻繁に使用される",
       "icon": "チャットスレッドアイコン",
-      "locator": {
-        "you": "あなた"
-      },
       "noEmojiFound": "絵文字が見つかりませんでした",
       "notFound": "チャットスレッドが見つかりません",
       "openBrowser": "ブラウザを開く",
@@ -2968,7 +2944,7 @@
       "checkingLimit": "音声入力制限を確認する",
       "cleanupFailed": "テキストは追加されましたが、保存済みの録音を削除できませんでした。",
       "confirmRecording": "完了",
-      "detectionFailed": "音声検出を利用できません。録音は保存されています。再試行してください。",
+      "detectionFailed": "音声検出を利用できません。録音は保存されています。",
       "discarding": "音声の下書きを削除中...",
       "input": "音声入力",
       "inputLimitReached": "音声入力の制限に達しました。より高い制限を得るには、Pro または Team にアップグレードしてください。",
@@ -2979,31 +2955,30 @@
       "microphoneAccessDenied": "マイクへのアクセスが拒否されました。マイクへのアクセスを許可して、再試行してください。",
       "noSpeechDetected": "発話が検出されませんでした。もう一度録音してください。",
       "openingMicrophone": "マイクを開いて...",
+      "recordingSaved": "録音を保存しました。",
       "removeDraft": "音声の下書きを削除",
-      "restoreFailed": "音声の下書きを読み込めませんでした。再試行してください。",
-      "retry": "再試行",
-      "retryingSavedAudio": "保存した音声を再試行中",
-      "retryReady": "録音は保持されています。文字起こしを再試行してください。",
+      "restoreFailed": "音声の下書きを読み込めませんでした。",
       "returningToComposer": "入力欄に戻ります",
       "starting": "音声入力を開始する",
       "stopRecording": "録音を停止する",
-      "storageFailed": "音声を保存できませんでした。再試行で復元できるのは、この端末に保存済みの音声のみです。",
+      "storageFailed": "音声を保存できませんでした。この端末に保存済みの音声のみ利用できます。",
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
-      "transcriptionFailed": "音声の転写に失敗しました。もう一度やり直してください。"
+      "transcriptionFailed": "音声の転写に失敗しました。",
+      "useRecording": "録音を使う"
     },
     "walletAction": {
       "approvalApproved": "承認済み、続行を待っています",
       "approvalContinued": "購入リクエストを再開しました",
       "approvalRecorded": "状態を更新しました",
-      "approvalStopped": "自動待機が終了しました。手動で続行できます",
+      "approvalStopped": "自動待機は終了しました。",
       "approvalWaiting": "購入の承認を待っています",
       "approveButton": "確認",
       "approveTitle": "購入内容を確認",
       "authorized": "認証済み",
-      "callbackFailed": "認証済みです。「続ける」でメッセージの送信を再試行してください。",
+      "callbackFailed": "認証されましたが、メッセージを送信できませんでした。",
       "callbackPrompt": "Link ウォレットの認証が完了しました。前のタスクを続けてください。",
-      "checkFailed": "認証状態を確認できません。もう一度お試しください。",
+      "checkFailed": "認証状態を確認できません。",
       "connectButton": "認証",
       "connectTitle": "Link ウォレットを認証",
       "continueButton": "続ける",
@@ -3022,7 +2997,7 @@
     "add": "Cloudflare Access を追加",
     "affectedMembers_other": "{{count}} 人のメンバー",
     "cancel": "キャンセル",
-    "changed": "編集中にこの Cloudflare Access が変更されました。保存する前に最新の設定を確認してください。",
+    "changed": "編集中にこの Cloudflare Access が変更されました。変更は保存されていません。",
     "clientId": "Service Token のクライアント ID",
     "clientIdPlaceholder": "Service Token の Client ID を貼り付け",
     "clientSecret": "Service Token のクライアントシークレット",
@@ -3030,20 +3005,18 @@
     "configuration": "Cloudflare Access",
     "convert": "個人用に変更",
     "convertHelp": "この組織の Cloudflare Access は、作成者が別の人でも、操作しているあなた自身の個人用設定になります。Service Token はそのままで、自分の SSH ホストは接続を維持できます。",
-    "convertUncertain": "変更を確認できませんでした。再試行する前に最新の設定を確認してください。",
+    "convertUncertain": "変更を確認できませんでした。",
     "createNew": "新しい Cloudflare Access を作成",
     "delete": "Cloudflare Access を削除",
     "deleteHelp": "この Cloudflare Access を削除しますか？保存された Service Token は復元できません。自分のホストは先に再バインドしてください。",
-    "deleteUncertain": "削除結果を確認できませんでした。再試行する前に最新の影響を確認してください。",
+    "deleteUncertain": "削除結果を確認できませんでした。",
     "edit": "Cloudflare Access を編集",
-    "failed": "Cloudflare Accessの変更を保存できませんでした。再試行してください。",
+    "failed": "Cloudflare Accessの変更を保存できませんでした。",
     "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
-    "impactChanged": "この変更で影響を受けるホストが変わりました。再度確認する前に最新の影響を確認してください。",
+    "impactChanged": "影響を受けるホストが変更されました。変更は適用されていません。",
     "inUse": "SSH ホストがこの Cloudflare Access を使用しています。ホストの所有者が先に別の設定へ再接続するか、ホストを削除する必要があります。",
     "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
-    "keepChanges": "このバージョンに自分の変更を適用",
-    "latest": "最後に保存された設定",
-    "loadFailed": "Cloudflare Access を読み込めませんでした。もう一度お試しください。",
+    "loadFailed": "Cloudflare Access を読み込めませんでした。",
     "loading": "Cloudflare Access を読み込み中…",
     "memberIdentifier": "（ID {{identifier}}）",
     "missing": "この Cloudflare Access は利用できなくなりました。別のものを選択するか作成してください。",
@@ -3056,12 +3029,9 @@
     "promote": "組織用に変換",
     "promoteConfirm": "組織の全メンバーがこの Service Token を使用できるようになることを理解しました。",
     "promoteHelp": "個人用 Cloudflare Access を組織と共有します。Service Token と自分の SSH ホストのバインドは維持されます。",
-    "promoteUncertain": "変換結果を確認できませんでした。この画面を閉じ、最新の設定を確認してから再試行してください。",
+    "promoteUncertain": "変換を確認できませんでした。",
     "replace": "Service Token を置換",
-    "resourceIdConflict": "このリソース ID は使用できません。フォームを閉じて開き直し、もう一度お試しください。",
-    "retry": "再試行",
-    "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
-    "reviewLatest": "最新の影響を確認",
+    "resourceIdConflict": "このリソース ID は使用できません。",
     "revisionExhausted": "これ以上更新できません。新しく作成してください。",
     "save": "保存",
     "saveUncertain": "保存に失敗しました。",
@@ -3147,7 +3117,6 @@
       "save": "保存",
       "saving": "保存中...",
       "savingEllipsis": "保存中…",
-      "tryAgain": "もう一度試してください",
       "uninstall": "アンインストール",
       "uninstalling": "アンインストール中..."
     },
@@ -3261,7 +3230,6 @@
         "loading": "コネクターを読み込み中…",
         "noCategoryMatches": "このカテゴリに一致するコネクターはありません。",
         "noCustomMatches": "検索に一致するカスタムコネクターはありません。",
-        "retry": "再試行",
         "searchAll": "すべてのコネクターを検索"
       },
       "empty": {
@@ -3326,7 +3294,7 @@
         "denied": "接続が拒否されました。もう一度やり直してください。",
         "expired": "接続セッションの有効期限が切れました。もう一度やり直してください。",
         "failed": "接続に失敗しました。もう一度やり直してください。",
-        "verificationOpen": "確認ページを開けませんでした。もう一度やり直してください。"
+        "verificationOpen": "確認ページを開けませんでした。"
       },
       "external": {
         "code": "コード",
@@ -3367,7 +3335,7 @@
           "clientRegistrationRejected": "OAuth プロバイダーが自動クライアント登録を拒否しました。サポート対象の MCP クライアントまたは登録メタデータが制限されている可能性があります。プロバイダーがサポートする MCP クライアントを使用するか、登録済みのクライアント認証情報をすでにお持ちの場合のみカスタム OAuth を使用するか、Okou サポートにお問い合わせください。",
           "clientRegistrationUnavailable": "OAuth プロバイダーはサポート対象の自動クライアント登録方法を提供していません。登録済みのクライアント認証情報をすでにお持ちの場合はカスタム OAuth を使用するか、Okou サポートにお問い合わせください。",
           "discoveryInvalid": "MCP サーバーの OAuth ディスカバリメタデータが不完全または不整合です。サーバーを管理している場合は公開メタデータを修正するか、サーバー管理者にお問い合わせください。",
-          "providerUnavailable": "MCP OAuth プロバイダーは一時的に利用できないか、リクエストを制限しています。時間をおいて再試行し、プロバイダーの稼働状況を確認してください。",
+          "providerUnavailable": "MCP OAuth プロバイダーは一時的に利用できないか、リクエストを制限しています。プロバイダーの稼働状況を確認してください。",
           "unsafeUrl": "MCP サーバーが公開 HTTPS エンドポイントではない OAuth URL を通知しました。サーバーが通知する OAuth URL を修正してから、もう一度お試しください。"
         },
         "save": "保存",
@@ -3556,7 +3524,7 @@
         "linkIncompleteTitle": "接続リンクが不完全です",
         "notInstalledDescription": "アカウントを接続する前に、組織管理者に GitHub をインストールするよう依頼してください。",
         "notInstalledTitle": "GitHub がインストールされていません",
-        "refresh": "このページを更新して、もう一度お試しください。",
+        "refresh": "ログイン状態を確認できませんでした。",
         "signInButton": "{{brandName}} にサインインします",
         "signInCheckFailed": "サインインを確認できませんでした",
         "signInDescription": "この GitHub ユーザーに接続する前に、{{brandName}} アカウントを使用してください。",
@@ -3579,17 +3547,15 @@
         "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
         "connectTitle": "Slack に接続します",
         "currentConnection": "Slack に接続済み",
-        "errorFallback": "Slack接続を確認または開始できませんでした。もう一度お試しください。",
+        "errorFallback": "Slack接続を確認または開始できませんでした。",
         "invalidDescription": "このページは、Slack 接続リンクから開かれるように設計されています。",
         "keepAccount": "{{account}}を維持",
         "open": "Slack を開く",
         "reauthorize": "Slack の権限を更新",
-        "retryStatus": "再確認",
-        "startAgain": "やり直す",
         "successDescription": "チャットを開始するには、任意のチャンネルでインストール済みのボットにメンションするか、DM を送信してください。",
         "successDescriptionWorkspace": "{{workspace}} に接続しています。チャットを開始するには、任意のチャンネルでインストール済みのボットにメンションするか、DM を送信してください。",
         "switchAccount": "{{account}}に切り替える",
-        "unavailable": "現在 Slack に接続できません。後でもう一度お試しください。",
+        "unavailable": "現在 Slack に接続できません。",
         "workspaceMismatchDescription": "このSlackワークスペースは現在のOkou組織では利用できません。組織を切り替えるか、管理者にお問い合わせください。",
         "workspaceMismatchDescriptionNamed": "現在のOkou組織は{{workspace}}に接続されています。組織を切り替えるか、管理者にアンインストールを依頼してから、このSlackワークスペースに接続してください。",
         "workspaceMismatchTitle": "Slackワークスペースが一致しません"
@@ -3608,7 +3574,7 @@
         "pendingTitle": "Teams にインストールして完了",
         "providerName": "Microsoft Teams",
         "reinstall": "Teams に再インストール",
-        "statusFailed": "Teams の接続を確認できません。再試行してください。",
+        "statusFailed": "Teams の接続を確認できません。",
         "successDescription": "{{team}} に接続されています。チャットを開始するには、Teams で @{{botName}} にメンションします。",
         "successTitle": "Microsoft Teams に接続されました",
         "unavailable": "Teams の設定は利用できません。組織の管理者にお問い合わせください。"
@@ -3621,10 +3587,10 @@
         "conflictDescription": "現在は {{current}} として接続していますが、このリンクは {{requested}} を指定しています。現在の接続を維持するか、接続を管理してから再試行してください。",
         "conflictTitle": "別の Telegram アカウントが接続されています",
         "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram からエージェントと直接対話できるようになります。",
-        "connectionCheckFailed": "接続を確認するために Telegram にアクセスできませんでした。しばらくしてからもう一度お試しください。",
+        "connectionCheckFailed": "接続を確認するために Telegram にアクセスできませんでした。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
-        "domainNotVerified": "このアプリの Telegram ログインを確認できませんでした。もう一度お試しください。問題が続く場合はサポートにお問い合わせください。",
+        "domainNotVerified": "このアプリの Telegram ログインを確認できませんでした。問題が続く場合はサポートにお問い合わせください。",
         "errorFallback": "Telegram に接続できませんでした。 Telegram から再試行してください。",
         "interrupted": "今回の操作では接続を確認できませんでした。現在の状態を確認してから再試行してください。",
         "invalidSignature": "このリンクの署名は無効です。",
@@ -3658,7 +3624,7 @@
         "copyCodeSuccess": "接続コードをコピーしました",
         "copyError": "電話番号のコピーに失敗しました",
         "copySuccess": "電話番号をコピーしました",
-        "createCodeError": "接続コードを作成できませんでした。もう一度お試しください。",
+        "createCodeError": "接続コードを作成できませんでした。",
         "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "openMessages": "メッセージを開く",
@@ -3666,8 +3632,7 @@
         "phoneLabel": "電話",
         "qrTitle": "スキャンして、接続コードが入力された「メッセージ」を開く",
         "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。",
-        "sendToLabel": "送信先",
-        "tryAgain": "もう一度試す"
+        "sendToLabel": "送信先"
       },
       "errors": {
         "githubAuthorizationWindow": "認証ウィンドウを開けませんでした"
@@ -3977,7 +3942,7 @@
     }
   },
   "desktopShellAuthorization": {
-    "actionFailed": "承認を更新できませんでした。更新してもう一度お試しください。",
+    "actionFailed": "承認を更新できませんでした。",
     "allow": "1 時間許可",
     "approved": "Shell へのアクセスを許可しました",
     "deadline": "有効期限：{{date}}",
@@ -3988,7 +3953,6 @@
     "expired": "承認の有効期限が切れました",
     "loading": "承認を読み込み中…",
     "pending": "承認待ち",
-    "refresh": "更新",
     "revoke": "アクセスを取り消す",
     "revoked": "Shell へのアクセスを取り消しました",
     "scope": "このチャットとコンピュータのみ。アクセス終了後も既存のターミナルは開いたままです。",
@@ -4047,14 +4011,10 @@
     "page": "{{page}} ページ",
     "preview": "{{title}} をプレビュー",
     "previousPage": "前のサンプルページ",
-    "retry": "再試行",
     "title": "ドキュメント",
     "useNamed": "{{title}} を使用"
   },
   "global": {
-    "actions": {
-      "tryAgain": "再試行"
-    },
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"
@@ -4111,11 +4071,11 @@
           "title": "あなたはすでにこの特典を利用しています"
         },
         "billingUnavailable": {
-          "body": "現在、弊社の支払いシステムはご利用いただけません。数分後にもう一度試してください。",
+          "body": "現在、弊社の支払いシステムはご利用いただけません。",
           "title": "課金は一時的に利用できません"
         },
         "broken": {
-          "body": "あなたの償還を完了できませんでした。もう一度試すか、サポートにお問い合わせください。",
+          "body": "あなたの償還を完了できませんでした。サポートにお問い合わせください。",
           "title": "何か問題が発生しました"
         },
         "campaignUnavailable": {
@@ -4127,7 +4087,7 @@
           "title": "支払いが成功しました"
         },
         "processing": {
-          "body": "現在、あなたのクレジットを {{orgName}} に適用しています。通常、これには数秒かかります。すぐに更新すると、更新された残高が表示されます。",
+          "body": "{{orgName}} にクレジットを適用しています。通常は数秒で完了します。",
           "title": "支払いを受け取りました"
         },
         "ready": {
@@ -4270,6 +4230,8 @@
         "teamTitle": "メンバーを招待"
       },
       "prompt": {
+        "connectorsDescription": "ツールを接続すると、Okou が仕事の状況を理解し、あなたに合った方法でタスクを進められます。後から接続することもできます。",
+        "connectorsTitle": "仕事で使うツールを接続",
         "intro": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。"
       },
       "skills": {
@@ -4320,7 +4282,6 @@
         "showFullPrompt": "プロンプト全文を表示",
         "startError": "インポートセッションを開けませんでした。",
         "title": "作成済みのスキルを Okou に取り込む",
-        "tryAgain": "もう一度試す",
         "waiting": "インポートされたスキルは、届き次第ここに表示されます。"
       },
       "slack": {
@@ -4670,10 +4631,9 @@
         "connect": "{{provider}} をつなぐ",
         "connected": "接続済み",
         "connecting": "接続中…",
-        "failedNote": "{{provider}} をつなげませんでした。もう一度試すか、あとでつなげます。",
-        "retry": "もう一度試す",
+        "failedNote": "{{provider}} に接続できませんでした。このまま進み、後から接続できます。",
         "rowCopy": "接続すると、Okouクレジットではなく自分のプランで実行できます。",
-        "unconfirmedNote": "{{provider}} の接続を確認できませんでした。もう一度試すか、あとでつなげます。"
+        "unconfirmedNote": "{{provider}} の接続を確認できませんでした。このまま進み、後から接続できます。"
       },
       "team": {
         "copy": "チームメンバーを招待してワークフローを共有しましょう。ツールはそれぞれが自分で接続します。",
@@ -4861,7 +4821,7 @@
     "emptyTitle": "デバイスはまだ追加されていません",
     "entryDescription": "Okouがデバイスを操作する方法を選択してください。",
     "entryTitle": "リモート接続を追加",
-    "failedLoad": "この手順を読み込めません。入力内容はフォームに保存されています。もう一度お試しください。",
+    "failedLoad": "この手順を読み込めません。入力内容はフォームに保存されています。",
     "hideSecret": "入力した値を隠す",
     "keepSavedLoginHelp": "保存済みのログイン情報を使うには、欄を空白のままにしてください。アカウントや証明書を変更する場合は、証明書の秘密鍵を含む新しい情報をすべて入力してください。",
     "keepSavedSecret": "空白のままにすると保存済みの値を使用します",
@@ -4889,7 +4849,7 @@
     "networkSettings": "プライベートネットワーク設定",
     "networkTailscaleHelp": "Tailscaleでデバイスに接続",
     "networkTitle": "プライベートネットワーク",
-    "networkUnavailable": "このネットワークは利用できません。別のネットワークを選ぶか、ページを再読み込みしてください。",
+    "networkUnavailable": "このネットワークは利用できなくなりました。別のネットワークを選択してください。",
     "newLogin": "手動入力に切り替える",
     "next": "続ける",
     "optionalName": "接続名（任意）",
@@ -4897,7 +4857,6 @@
     "passwordHelp": "デバイスのアカウントパスワードを入力してください。Windowsではアカウントパスワードを使用します。PINは使えません。",
     "passwordPlaceholder": "デバイスのアカウントパスワードを入力",
     "resourceUnavailable": "この設定は利用できないか、アクセス権がありません。",
-    "retry": "もう一度試す",
     "rsaGroup": "RSA-AES",
     "saved": "接続を追加しました",
     "savedHelp": "設定で接続の詳細を表示または編集できます。",
@@ -5040,7 +4999,7 @@
     "scopeDescription": "ネットワーク名を付け、使用できる人を選択してください。",
     "scopeSaved": "ネットワークの共有設定を保存しました。他の変更はまだ保存されていません。保存するか、ネットワークの詳細に戻ってください。",
     "scopeUnavailable": "このネットワークは利用できないか、必要な管理者権限がありません。",
-    "scopeUncertain": "変更を確認できませんでした。再読み込みして保存済みの設定を確認してから、もう一度送信してください。",
+    "scopeUncertain": "変更を確認できませんでした。保存済みの設定は未確認です。",
     "unknownOrganization": "組織",
     "view": "表示"
   },
@@ -5058,12 +5017,12 @@
     "contentPolicyRejected": "モデルプロバイダーのコンテンツ安全ポリシーにより、このリクエストは拒否されました。同じ入力で再試行しても失敗します。リクエストを言い換えるか、新しい会話を始めるか、別のモデルに切り替えてください。",
     "executionTimeout": "この実行は時間制限に達しました。",
     "failed": "実行に失敗しました",
-    "modelRoutesUnavailable": "このモデルのすべての組み込みルートは一時的に利用できません。しばらくしてからもう一度お試しください。",
+    "modelRoutesUnavailable": "このモデルのすべての組み込みルートは一時的に利用できません。",
     "modelTemporarilyUnavailable": "モデルは一時的に利用できません",
     "modelUnavailable": "現在のモデルは利用できません。",
-    "overloaded": "{{model}} は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
+    "overloaded": "{{model}} は混雑しています。別のモデルに切り替えてください。",
     "providerBalance": "接続されたサブスクリプションアカウントの残高が不足しています。",
-    "transient": "エラーが発生しました。しばらくしてからもう一度お試しください。",
+    "transient": "エラーが発生しました。",
     "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、個人の Codex または Claude サブスクリプションを接続してください。"
   },
   "serviceStatus": {
@@ -5193,7 +5152,7 @@
         "downloadTitle": "エクスポートの準備が完了しました",
         "expiredDescription": "新しいエクスポートを開始して、新しいダウンロード リンクを取得します。",
         "expiredTitle": "前回のエクスポートの有効期限が切れました",
-        "failedDescription": "もう一度試すか、これが続く場合はサポートにお問い合わせください。",
+        "failedDescription": "エクスポートを完了できませんでした。",
         "failedTitle": "エクスポートが完了しませんでした",
         "preparingDescription": "これには数分かかる場合があります。このページは開いたままにしておいても構いません。",
         "preparingTitle": "エクスポートの準備",
@@ -5284,7 +5243,6 @@
         "noAccounts": "接続済みのアカウントはありません。",
         "ownPlan": "自分のプランで実行",
         "reconnectAccount": "再接続",
-        "retry": "再試行",
         "status": {
           "connected": "接続済み",
           "fiveHour": "5時間",
@@ -5366,7 +5324,6 @@
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
       "openSettings": "設定を開く",
-      "retry": "再試行",
       "saveError": "変更を保存できませんでした。",
       "saving": "保存中…",
       "scope": "この設定は {{workspace}} のあなたにのみ適用されます。",
@@ -5464,11 +5421,10 @@
           "countExplanation": "件数は読み取り専用トランザクションで取得し、レコード本体は読み取りません。",
           "description": "Shared Worker が管理するローカルチャットキャッシュのレコード件数を確認します。",
           "loading": "IndexedDB ストレージを読み込んでいます...",
-          "measurementUnavailable": "スナップショットの測定に失敗しました。再試行してください。",
+          "measurementUnavailable": "スナップショットの測定に失敗しました。",
           "measureSnapshot": "スナップショットを測定",
           "measuring": "測定中...",
           "records": "レコード",
-          "refresh": "更新",
           "schema": "スキーマ",
           "snapshotDescription": "1件のレコードに多数のスレッドが含まれる場合があります。サイズはデータベースの管理領域を除く UTF-8 JSON の推定値で、読み取り時間にはサイズの推定処理を含みません。",
           "snapshotEmpty": "キャッシュにスレッドのスナップショットがありません。",
@@ -5481,11 +5437,9 @@
           "unavailable": "IndexedDB ストレージを利用できません。"
         },
         "morningBrief": {
-          "checkStatus": "実行状況を確認",
           "description": "アカウントで有効なワークフローを使って一度実行します。提案の更新や実際のメール送信が行われる場合があります。毎日のスケジュールは変わりません。",
           "openChat": "会話を開く",
-          "requestFailed": "リクエストが完了しませんでした。再試行では同じリクエストを使い、重複実行を防ぎます。",
-          "retry": "再試行",
+          "requestFailed": "リクエストの結果を確認できませんでした。",
           "run": "ブリーフを実行",
           "runAgain": "もう一度実行",
           "starting": "開始中…",
@@ -5508,7 +5462,7 @@
           "create": "ウェルカムチャットを作成",
           "creating": "作成中…",
           "description": "紹介とサンプルを含むウェルカムチャットを作成します。",
-          "failed": "ウェルカムチャットを作成できませんでした。もう一度お試しください。",
+          "failed": "ウェルカムチャットを作成できませんでした。",
           "title": "ウェルカムチャット"
         }
       },
@@ -5540,44 +5494,40 @@
         "title": "言語"
       },
       "morningBrief": {
-        "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
+        "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。",
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
+        "errorMessage": "Morning Brief の設定を読み込むか更新できませんでした。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
+        "preparationFailed": "一時的に利用できません。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
-        "retry": "再試行",
-        "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
         "title": "モーニングブリーフ"
       },
       "proactiveLearning": {
         "description": "夜間に活動を振り返り、個人の記憶と理解を更新します。",
+        "errorMessage": "設定を読み込むか更新できませんでした。",
         "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
-        "preparationFailed": "このワークフローは一時的に利用できません。Okou が再試行します。",
+        "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
-        "retry": "Retry",
-        "retryMessage": "設定を読み込むか更新できませんでした。再試行してください。",
         "title": "学習"
       },
       "proactivePlanningAction": {
         "description": "依頼された作業を計画・実行し、あなたの対応が必要なときに通知します。",
+        "errorMessage": "設定を読み込むか更新できませんでした。",
         "missingDefaultAgent": "利用可能な既定の Agent を選択してください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
-        "preparationFailed": "このワークフローは一時的に利用できません。Okou が再試行します。",
+        "preparationFailed": "このワークフローは一時的に利用できません。",
         "preparing": "ワークフローを準備しています。",
-        "retry": "Retry",
-        "retryMessage": "設定を読み込むか更新できませんでした。再試行してください。",
         "title": "計画と実行"
       },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
+        "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
         "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
-        "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
+        "preparationFailed": "一時的に利用できません。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
-        "retry": "再試行",
-        "retryMessage": "提案の設定を読み込みまたは更新できませんでした。再試行してください。",
         "title": "提案"
       },
       "send": {
@@ -5638,7 +5588,7 @@
         "description": "Link ウォレットでカードの追加やデフォルトカードの変更ができます。",
         "empty": "Link ウォレットにカードはまだありません",
         "expires": "有効期限 {{date}}",
-        "loadError": "カードを読み込めませんでした。もう一度お試しください。",
+        "loadError": "カードを読み込めませんでした。",
         "loading": "カードを読み込み中",
         "manage": "カードを管理",
         "title": "Link のカード"
@@ -5647,13 +5597,12 @@
       "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
-      "retry": "再試行",
       "scope": "Okou が購入を代行し、Link の取引を確認します。",
       "title": "ウォレット",
       "transactions": {
         "description": "接続した Link アカウントの最近の取引。",
         "empty": "Link の取引履歴はまだありません",
-        "loadError": "取引履歴を読み込めませんでした。もう一度お試しください。",
+        "loadError": "取引履歴を読み込めませんでした。",
         "loading": "取引履歴を読み込み中",
         "merchant": "販売店",
         "refunded": "返金済み",
@@ -5775,7 +5724,6 @@
           "fallbackAlt": "ワークスペース",
           "loadError": "ワークスペースのロゴを読み込めませんでした。",
           "loading": "ワークスペースのロゴを読み込み中",
-          "retry": "再試行",
           "title": "ロゴ",
           "upload": "ロゴをアップロードする"
         },
@@ -5832,8 +5780,7 @@
       "title": "問題が発生しました"
     },
     "forceUpgrade": {
-      "action": "リフレッシュ",
-      "description": "このバージョンの {{brandName}} はサポートされなくなりました。更新して最新バージョンをロードします。",
+      "description": "このバージョンの {{brandName}} はサポートされなくなりました。",
       "title": "アップデートが必要です"
     },
     "mermaid": {
@@ -5850,9 +5797,8 @@
       "title": "そのページはここにありません。"
     },
     "workerFailure": {
-      "action": "リフレッシュ",
-      "description": "接続が中断されました。続行するにはページを再読み込みしてください。",
-      "title": "続行するには再読み込みしてください"
+      "description": "このアプリへの接続が中断されました。",
+      "title": "接続が中断されました"
     }
   },
   "sharedThread": {
@@ -5872,14 +5818,11 @@
     "choosePrivateKeyFile": "秘密鍵ファイルを選択",
     "cloudflare": {
       "direct": "直接接続",
-      "keepChanges": "このバージョンに自分の変更を適用",
-      "latest": "最後に保存された設定",
       "mode": "接続",
       "needsRebind": "このホストは Cloudflare Access の再設定が必要です。編集して別の設定に紐付けるか、直接接続を選んでください。それまでは接続できません。",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "公開ホスト名",
       "rebindHelp": "このホストを復旧するには、使用可能な Cloudflare Access 設定または直接接続を選んで保存してください。保存するまで接続方法は変わりません。",
-      "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
       "title": "Cloudflare Access",
       "unavailable": "このアカウントでは Cloudflare Access を利用できません。"
     },
@@ -5922,24 +5865,17 @@
     "credentialsHelp": "認証情報は書き込み専用で、サンドボックスの外部に保持されます。鍵全体を貼り付けてください。空白はそのまま保持されます。フォームを閉じたときに入力欄を消去します。",
     "delete": "ホストを削除",
     "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
-    "deleteReview": {
-      "acknowledge": "このバージョンを削除対象にする",
-      "changed": "このホストは変更されました。削除する前に最新の保存済み設定を確認してください。",
-      "help": "保存された設定を確認し、「ホストを削除」を選んでこのバージョンを削除してください。",
-      "unavailable": "このホストは利用できなくなりました。ダイアログを閉じて設定を更新してから、もう一度お試しください。",
-      "version": "バージョン {{version}}"
-    },
     "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
     "displayName": "表示名",
     "edit": "ホストを編集",
     "editHelp": "別の認証情報を選ぶと、このホストだけが変更されます。直接接続先の変更は保存済みホスト鍵を消去します。Cloudflare Access が関係する変更では保持されます。",
     "empty": "SSH ホストが設定されていません。ホストを追加して、既定で、または個別のチャットで有効にしてください。",
     "errors": {
-      "configurationChanged": "編集中にこのホストが変更されました。入力内容は保持されています。最新の設定を確認してから変更を適用してください。",
-      "credentialChanged": "編集中にこの認証情報が変更されました。入力内容は保持されています。保存する前に最新の設定と影響を受けるホストを確認してください。",
+      "configurationChanged": "編集中にこのホストが変更されました。変更は保存されていません。下書きは保持されています。",
+      "credentialChanged": "編集中にこの認証情報が変更されました。変更は保存されていません。下書きは保持されています。",
       "credentialInUse": "この認証情報は使用中です。先に対象ホストに別の認証情報を割り当てるか、対象ホストを削除してください。",
       "credentialUnavailable": "この SSH 認証情報は利用できません。別の認証情報を選択するか、新しく作成してください。",
-      "failed": "SSHの変更を保存できませんでした。再試行してください。",
+      "failed": "SSHの変更を保存できませんでした。",
       "hostInUse": "このSSHホストはVNCルートで使用されています。このホストを削除する前に、対象のVNCルートで別のSSHホストを選択するか、明示的に直接接続へ切り替えるか、ルートを削除してください。",
       "hostUnavailable": "このSSHホストは利用できなくなりました。ホスト一覧に戻り、既存のホストを選択してください。",
       "invalidHost": "URLスキーム、パス、空白を含めずにホスト名またはIPアドレスを入力してください。",
@@ -5953,7 +5889,7 @@
     "host": "公開ホスト名または IP アドレス",
     "hostSection": "ホスト",
     "label": "SSH",
-    "loadFailed": "SSH設定を読み込めませんでした。再試行してください。",
+    "loadFailed": "SSH設定を読み込めませんでした。",
     "loading": "SSH ホストを読み込み中…",
     "manage": "SSH ホストを管理",
     "notLearned": "ホスト鍵はまだ記憶されていません",
@@ -5971,10 +5907,9 @@
     "privateKey": "秘密鍵",
     "reset": "ホスト鍵をリセット",
     "resetHelp": "新しいサーバーの識別情報を別の方法で確認してからリセットしてください。次の接続では新しいホスト鍵を信頼し、記憶します。",
-    "retry": "再試行",
     "save": "保存",
     "saveRecovery": {
-      "resourceIdConflict": "このリソース ID は使用できません。フォームを閉じて開き直し、もう一度お試しください。",
+      "resourceIdConflict": "このリソース ID は使用できません。",
       "uncertain": "保存に失敗しました。"
     },
     "summary_one": "{{count}} 台のホストを設定済み",
@@ -5994,14 +5929,14 @@
     "add": "Tailscale を追加",
     "addressHelp": "登録された Tailnet ピアの IP、完全なホスト名、または短い名前を使用してください。SSH ログインとホスト鍵の検証は別途必要です。",
     "adoptHelp": "組織のネットワークを自分の個人用ネットワークに変更します。他の所有者は保存済みホストを再関連付けする必要があります。",
-    "changed": "Tailscale ネットワークが変更されました。下書きの保存前に最新の設定を確認してください。",
+    "changed": "この Tailscale ネットワークが変更されました。変更は保存されていません。下書きは保持されています。",
     "clientId": "OAuth クライアント ID",
     "clientSecret": "OAuth クライアントシークレット",
     "createNew": "Tailscale ネットワークを作成",
     "delete": "Tailscale を削除",
     "deleteHelp": "このネットワークを削除しますか？保存済みの認証情報は復元できません。先に自分のホストを再関連付けしてください。",
     "edit": "Tailscale を編集",
-    "failed": "Tailscale の変更を保存できませんでした。再試行してください。",
+    "failed": "Tailscale の変更を保存できませんでした。",
     "forbidden": "この Tailscale ネットワークは管理できません。組織のネットワークには管理者権限が必要です。",
     "guide": {
       "accessControls": "Access controls",
@@ -6023,7 +5958,7 @@
     },
     "inUse": "SSH ホストがこのネットワークを使用中です。先に再関連付けまたは削除してください。",
     "invalid": "Tailscale の設定に無効な項目があります。確認して再試行してください。",
-    "loadFailed": "Tailscale を読み込めませんでした。再試行してください。",
+    "loadFailed": "Tailscale を読み込めませんでした。",
     "loading": "Tailscale を読み込み中…",
     "missing": "この Tailscale ネットワークは利用できません。別のネットワークを選択するか作成してください。",
     "peer": "Tailnet のホスト名または IP アドレス",
@@ -6056,7 +5991,7 @@
       "confirm": "テンプレートを削除",
       "deleting": "削除中...",
       "description": "「{{title}}」は、閲覧できるすべてのユーザーから削除されます。この操作は取り消せません。",
-      "failed": "テンプレートを削除できませんでした。もう一度お試しください。",
+      "failed": "テンプレートを削除できませんでした。",
       "title": "テンプレートを削除しますか？"
     },
     "detail": {
@@ -6070,7 +6005,6 @@
       "save": "保存"
     },
     "renameFailed": "テンプレートの名前を変更できませんでした。",
-    "retry": "再試行",
     "sharedBy": "{{owner}} が共有",
     "sharedByMember": "組織のメンバーが共有",
     "visibility": {
@@ -6228,7 +6162,7 @@
       "keytabFile": "キータブファイル（.keytab）",
       "lifetime": "要求するチケット有効期間（秒）",
       "offlineHelp": "選択したサービスチケットのみを使用します。KDC 接続や更新は行いません。",
-      "onlineHelp": "独立した KDC 経路でチケット取得を許可します。更新は新しい接続の準備に使われ、既存セッションの有効期限は変わりません。",
+      "onlineHelp": "このソースが独立した KDC ルートでチケットを取得できるようにします。新しい接続は新しいチケットを取得し、既存のセッションは元の有効期限を維持します。",
       "password": "Kerberos · パスワード",
       "realm": "開始側レルム",
       "renewableLifetime": "更新可能期間（秒、0 で無効）",
@@ -6265,7 +6199,6 @@
       "select": "保存済みのネットワーク設定を選択"
     },
     "port": "ポート",
-    "retry": "再試行",
     "rsaAes": {
       "fieldHelp": "各項目は 1～255 UTF-8 バイトで、NUL は不可。空白は保持されます。従来の 8 バイト VNC パスワードとは異なります。",
       "fullHelp": "RA2 と RA2_256 は RFB セッション全体を EAX で暗号化します。サーバーの完全な RSA ワイヤー鍵 pin を独立に確認してください。CA 信頼で代用できません。",
@@ -6289,17 +6222,8 @@
     },
     "save": "保存",
     "saveRecovery": {
-      "deleteHelp": "削除する前に、保存されている内容を確認してください。この操作ではバージョンを選択するだけです。削除は別途確定してください。",
-      "incompatible": "認証方法が変更されました。このダイアログを閉じて認証情報を開き直し、現在の方法を編集してください。",
-      "keepChanges": "このバージョンで変更を保持",
-      "keepDeletion": "このバージョンを削除対象にする",
-      "keepHelp": "内容を確認して下書きを保持し、このバージョンに対して保存してください。認証と信頼の選択は保持されます。",
-      "latest": "現在保存されている内容",
-      "resourceIdConflict": "作成できませんでした。この画面を閉じて再試行してください。",
-      "review": "設定を更新しました。この画面を閉じ、現在の内容を確認してから再試行してください。",
-      "unavailable": "このリソースは利用できません。ダイアログを閉じ、設定を再読み込みしてからお試しください。",
-      "uncertain": "保存に失敗しました。",
-      "version": "バージョン {{version}}"
+      "resourceIdConflict": "このリソースを作成できませんでした。",
+      "uncertain": "保存に失敗しました。"
     },
     "saving": "保存中…",
     "security": {
@@ -6377,25 +6301,20 @@
         "cancelledDescription": "カレンダーイベントがキャンセルされたときに実行されます。",
         "cancelledRule": "カレンダー {{calendar}} イベントがキャンセルされた場合",
         "cancelledTitle": "Google Calendar イベントがキャンセルされました",
-        "cancelRecovery": "キャンセル",
         "changeAria": "Google Calendar オートメーションを変更",
         "changeCalendar": "カレンダーを変更",
-        "checkingRecovery": "この自動化を再開できるか確認しています…",
-        "checkRecoveryStatus": "状態を確認",
         "createdDescription": "カレンダーイベントの作成時に実行します。",
         "createdRule": "カレンダー {{calendar}} が新しいイベントを取得したとき",
         "createdTitle": "Google Calendar イベントが作成されました",
         "enabledIntent": "有効",
         "reconnectDescription": "このオートメーションを再開するには、Google Calendar を再接続する必要があります。",
         "reconnectGoogleCalendar": "Google Calendar を再接続",
-        "recoveryStatus": "Google カレンダーの復旧",
-        "recoveryUnconfirmed": "復旧を確認できませんでした。この自動化の警告を確認してから、状態を再確認してください。",
         "saveCalendar": "カレンダーを保存",
         "summary": "カレンダー {{calendar}}",
         "updatedDescription": "カレンダーイベントが更新されたときに実行します。",
         "updatedRule": "カレンダー {{calendar}} イベントが更新されたとき",
         "updatedTitle": "Google Calendar イベントが更新されました",
-        "updateError": "このカレンダーを変更できませんでした。もう一度お試しください。"
+        "updateError": "このカレンダーを変更できませんでした。"
       },
       "chat": {
         "addAction": "チャットオートメーションを追加する",
@@ -6634,6 +6553,7 @@
         "labelAppliedRule": "Gmail ラベル {{label}} が適用される場合",
         "labelAppliedTitle": "Gmail ラベルが適用されました",
         "labelName": "レーベル名",
+        "labelNotFound": "接続中の Gmail アカウントにラベルが見つかりません。ラベル名と接続中のアカウントを確認してください。",
         "labelPlaceholder": "サポート",
         "labelSummary": "ラベル {{label}}",
         "messageMatchesRule": "Gmail メッセージが {{summary}} と一致する場合",
@@ -6955,7 +6875,6 @@
       "open": "{{title}} を開く",
       "openRecovery": "{{title}} の復旧を開く",
       "ownerLoading": "作成者を読み込み中…",
-      "ownerRetry": "作成者情報を取得できません。再度開いてお試しください。",
       "ownerUnavailable": "作成者情報を取得できません",
       "runsAs": "として実行",
       "runsAsAria": "{{agent}} として実行",
@@ -7004,8 +6923,8 @@
     "discord": {
       "addNewServer": "新しいサーバーに参加",
       "approvalFailed": "確認できませんでした。元の Okou アカウントと組織でログインするか、認証をやり直してください。",
-      "authorizationError": "Discord の認証を完了できませんでした。もう一度お試しください。",
-      "cancelled": "Discord の認証がキャンセルされました。もう一度開始できます。",
+      "authorizationError": "Discord の認証を完了できませんでした。",
+      "cancelled": "Discord の認証はキャンセルされました。",
       "chooseWorkspace": "ワークスペースを選択",
       "connectDescription": "Discord アカウントを接続して、エージェントとチャットしましょう。",
       "connectedTitle": "Discord に接続済み",
@@ -7017,10 +6936,8 @@
       "installTitle": "Okou をサーバーに追加",
       "invalidLink": "この Discord 接続リンクは無効です。Discord から新しいリンクを開いてください。",
       "open": "Discord を開く",
-      "pendingConsent": "認証が中断されたか、ページが再読み込みされました。新しい接続を確認するため、やり直してください。",
-      "popupBlocked": "Discord の認証のためにポップアップを許可し、再試行してください。",
-      "restartAuthorization": "認証をやり直す",
-      "retry": "再試行",
+      "pendingConsent": "この認証は中断されたか、ページが再読み込みされました。",
+      "popupBlocked": "Discord の認証ポップアップがブロックされました。",
       "serverPermissionRequired": "サーバーへの参加、ボットのインストール、ボットを追加する権限を確認して再試行してください。",
       "suspended": "Discord は一時的に利用できません。既存の接続は保持されます。",
       "title": "Discord",
@@ -7075,7 +6992,7 @@
       "description": "WeChatでエージェントとチャットできます。",
       "disconnect": "接続解除",
       "expired": "このQRコードは期限切れです。新しく作成してください。",
-      "failed": "WeChatに接続できませんでした。もう一度お試しください。",
+      "failed": "WeChatに接続できませんでした。",
       "instructions": "WeChatでこのQRコードをスキャンし、スマートフォンで確認してください。",
       "linkUnavailable": "このリンクは利用できません。元のアカウントとワークスペースを使用し、WeChat で再度メッセージを送信して新しいリンクを取得してください。新しい QR コードでも接続できます。",
       "name": "WeChat",
@@ -7084,7 +7001,6 @@
       "reconnect_required": "もう一度スキャンして再接続してください。",
       "restart_required": "このWeChatアカウントはすでに連携されています。再接続するには新しいQRコードを作成してください。",
       "restoreDescription": "以下のアカウントとワークスペースに WeChat を再接続します。",
-      "retry": "新しいQRコードを作成",
       "returnToWechat": "WeChat に戻り、メッセージを送信して会話を始めましょう。",
       "scanned": "スキャンしました。スマートフォンで確認してください。",
       "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",

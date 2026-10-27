@@ -1162,6 +1162,25 @@ impl NetnsPool {
     /// Call this after the DNS service is listening and before the first
     /// [`Self::acquire`] when both proxy and DNS ports are configured. Pools
     /// without DNS redirect return immediately.
+    ///
+    /// # Cancellation and recovery
+    ///
+    /// Dropping this future before activation starts leaves readiness unchanged.
+    /// Once activation changes `Pending` to `Activating`, dropping the future
+    /// before its final commit leaves the pool in `Activating`. While the pool
+    /// remains active, both another activation attempt and [`Self::acquire`]
+    /// return `PoolDnsNotReady`; DNS becoming healthy does not finish the
+    /// abandoned activation.
+    ///
+    /// To retain the pool, preserve the original future and poll it to completion.
+    /// After dropping an in-progress activation future, await [`Self::cleanup`]
+    /// according to its best-effort cleanup contract, then discard the pool and
+    /// use [`Self::create`] to create a replacement.
+    ///
+    /// Probe failures handled to completion differ from cancellation: if no
+    /// initial namespace passes its probe, activation removes the failed entries,
+    /// restores `Pending`, and returns `NoDnsReadyNamespaces`. A returned error
+    /// does not guarantee that retrying the same pool can succeed.
     pub async fn activate_dns_readiness(&self) -> Result<()> {
         self.inner.activate_dns_readiness().await
     }

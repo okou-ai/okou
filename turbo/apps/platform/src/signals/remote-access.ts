@@ -8,6 +8,8 @@ import {
 import { command, computed, state, type Computed } from "ccstate";
 
 import { accept } from "../lib/accept.ts";
+import { sortRemoteHosts } from "../lib/remote-resource-order.ts";
+import { locale$ } from "./locale.ts";
 import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
 import { sshIdentity$ } from "./ssh.ts";
@@ -46,7 +48,7 @@ const client$ = computed(async (get) => {
   };
 });
 
-export const remoteHostDefaults$ = computed(async (get) => {
+const remoteHostDefaultsData$ = computed(async (get) => {
   get(remoteHostDefaultsReload$);
   const client = await get(client$);
   if (!client.identity) {
@@ -56,6 +58,16 @@ export const remoteHostDefaults$ = computed(async (get) => {
     showErrorToast: false,
   });
   return result.body;
+});
+export const remoteHostDefaults$ = computed(async (get) => {
+  const locale = get(locale$);
+  const hosts = await get(remoteHostDefaultsData$);
+  return hosts
+    ? {
+        ssh: sortRemoteHosts(hosts.ssh, locale),
+        vnc: sortRemoteHosts(hosts.vnc, locale),
+      }
+    : null;
 });
 
 /** Draft choices belong to one new-chat composer until its thread is created. */
@@ -89,7 +101,7 @@ export function threadRemoteAccess$(
   threadId: string,
   openedVersion$: Computed<number>,
 ) {
-  return computed(async (get) => {
+  const data$ = computed(async (get) => {
     get(openedVersion$);
     get(threadRemoteAccessReload$);
     if (!threadId) {
@@ -106,6 +118,16 @@ export function threadRemoteAccess$(
       { showErrorToast: false },
     );
     return result.status === 200 ? result.body : null;
+  });
+  return computed(async (get) => {
+    const locale = get(locale$);
+    const hosts = await get(data$);
+    return hosts
+      ? {
+          ssh: sortRemoteHosts(hosts.ssh, locale),
+          vnc: sortRemoteHosts(hosts.vnc, locale),
+        }
+      : null;
   });
 }
 

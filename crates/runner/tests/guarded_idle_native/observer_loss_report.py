@@ -5,11 +5,11 @@ import argparse
 import json
 import pathlib
 
-import foreground_report as foreground
+import progress_report as foreground
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
 import pressure_report as pressure
 import report
-from startup_report import exact
+from snapshot_report import exact
 
 PREFIX = "NATIVE_OBSERVER_LOSS_WITNESS "
 CASES = {f"Observer{kind}-{mode}" for kind in ("Drop", "Panic") for mode in ("fresh", "snapshot")}

@@ -8,7 +8,6 @@ import {
   text,
   timestamp,
   unique,
-  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -33,17 +32,10 @@ export const browserOwnerProfiles = pgTable(
   },
   (table) => {
     return [
-      uniqueIndex("uq_browser_owner_profiles_owner").on(
-        table.orgId,
-        table.userId,
-      ),
-      uniqueIndex("uq_browser_owner_profiles_provider").on(
-        table.providerProfileId,
-      ),
+      unique("uq_browser_owner_profiles_owner").on(table.orgId, table.userId),
+      unique("uq_browser_owner_profiles_provider").on(table.providerProfileId),
       unique("uq_browser_owner_profiles_instance").on(table.instanceId),
-      uniqueIndex("uq_browser_owner_profiles_session").on(
-        table.providerSessionId,
-      ),
+      unique("uq_browser_owner_profiles_session").on(table.providerSessionId),
       unique("uq_browser_owner_profiles_instance_state").on(
         table.instanceId,
         table.status,
@@ -104,7 +96,7 @@ export const browserOwnerWindows = pgTable(
           browserOwnerProfiles.status,
         ],
       }),
-      uniqueIndex("uq_browser_owner_windows_native_window").on(
+      unique("uq_browser_owner_windows_native_window").on(
         table.instanceId,
         table.primaryWindowId,
       ),

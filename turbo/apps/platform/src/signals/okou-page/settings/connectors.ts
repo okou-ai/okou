@@ -1539,7 +1539,6 @@ const pollConnectorOAuthDeviceAuth$ = command(
       },
       0,
       signal,
-      { retryTransientErrors: false },
     );
     signal.throwIfAborted();
 

@@ -103,11 +103,6 @@ test("Lab groups active feature switches", async () => {
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
-    within(featureSwitchGroup("Released")).getByText(
-      FeatureSwitchKey.DiscordIntegration,
-    ),
-  ).toBeVisible();
-  expect(
     within(featureSwitchGroup("Internal")).getByText(
       FeatureSwitchKey.TestOauthConnector,
     ),

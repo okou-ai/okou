@@ -134,4 +134,22 @@ describe("official Pi model limits at the provider boundary", () => {
       });
     },
   );
+
+  it("uses the official 6.1 Terra subscription default", () => {
+    const resolved = resolvePiAgentModel({
+      provider: "openai-codex",
+      model: "gpt-6.1-terra",
+      baseUrl: "https://chatgpt.com/backend-api",
+      apiKey: "synthetic-subscription-key",
+      accountId: "synthetic-subscription-account",
+      dialect: "openai-codex-responses",
+      transport: "sse",
+    });
+    expect(resolved).toMatchObject({
+      provider: "openai-codex",
+      id: "gpt-6.1-terra",
+      contextWindow: 500_000,
+      maxTokens: 128_000,
+    });
+  });
 });

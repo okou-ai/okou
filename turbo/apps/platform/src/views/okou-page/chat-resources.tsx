@@ -15,7 +15,6 @@ import {
   PopoverContent,
   PopoverTrigger,
   RunningIndicator,
-  surfaceVariants,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -32,6 +31,7 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
+import { emptyArtifactImg } from "./platform-assets.ts";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import {
@@ -76,13 +76,15 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
+  const [preference, press] = useLoadableSet(resources.press$);
   const requested = useLastResolved(resources.requested$) ?? false;
   const wanted = useLastResolved(resources.wanted$) ?? false;
   const settled = useLastResolved(resources.settled$) ?? null;
   // Nothing draws before the resources have answered. Until then the button
   // breathes and takes no presses, however long the answer takes and even if
   // the layout no longer has room for the panel.
-  const loading = wanted && settled === null;
+  const loading =
+    (wanted && settled === null) || preference.state === "loading";
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown = settled !== null && requested && (settled || chosen !== null);
@@ -93,7 +95,6 @@ function ChatResourcesButtonInner({
   const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
-  const press = useSet(resources.press$);
   const rootSignal = useGet(rootSignal$);
   const visible = shown && boundary !== null;
   const copyLabel = t(($) => {
@@ -160,10 +161,7 @@ function ChatResourcesButtonInner({
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
-        className={surfaceVariants({
-          className:
-            "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
-        })}
+        className="flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0"
       >
         {visible ? (
           <ChatResourcesBody
@@ -202,7 +200,6 @@ function ChatResourcesTrigger({
   });
   return (
     <TooltipProvider delay={300}>
-      {/* The open panel sits below the button, where the tooltip would cover it. */}
       <Tooltip disabled={open}>
         <TooltipTrigger
           render={
@@ -240,8 +237,6 @@ function ChatResourcesTrigger({
             />
           }
         >
-          {/* A quick load finishes before the delayed pulse ever starts.
-              Without motion the icon dims instead. */}
           <Package
             size={18}
             className={cn(
@@ -316,7 +311,6 @@ function ChatResourcesStatus({
   const { t } = useTranslation();
   const content = useLastLoadable(thread.resources.content$);
   const data = useLastResolved(thread.resources.content$);
-  const reload = useSet(thread.resources.catalog.reload$);
   const origin = useGet(thread.relations.origin$);
   const chats = useLastLoadable(thread.relations.chats.data$);
   if (content.state === "hasError") {
@@ -330,11 +324,6 @@ function ChatResourcesStatus({
             return $.chat.resources.loadFailed;
           })}
         </p>
-        <Button variant="quiet" size="xs" onClick={reload}>
-          {t(($) => {
-            return $.chat.resources.retry;
-          })}
-        </Button>
       </div>
     );
   }
@@ -348,12 +337,28 @@ function ChatResourcesStatus({
   if (!data || chats.state !== "hasData" || chats.data.failed) {
     return null;
   }
+  // The scroller leaves 4px above for sections that add their own top space
+  // and 12px below. The illustration's transparent margin takes the rest, so
+  // the visible empty state sits centred.
   return (
-    <p className="px-2 py-6 text-center text-[13px] leading-5 text-muted-foreground">
-      {t(($) => {
-        return $.chat.resources.empty;
-      })}
-    </p>
+    <div className="flex flex-col items-center px-4 pt-6 pb-5 text-center">
+      <img
+        src={emptyArtifactImg}
+        alt=""
+        role="presentation"
+        className="h-16 w-16 object-contain opacity-80"
+      />
+      <p className="mt-2 text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.chat.resources.emptyTitle;
+        })}
+      </p>
+      <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
+        {t(($) => {
+          return $.chat.resources.emptyDescription;
+        })}
+      </p>
+    </div>
   );
 }
 

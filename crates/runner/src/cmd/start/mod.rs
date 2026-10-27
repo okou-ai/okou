@@ -58,7 +58,7 @@ use crate::network_log_manager::NetworkLogManager;
 use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::resource_budget::ResourceBudget;
 use crate::status::{StatusTracker, remove_stale_status_file};
-use crate::{deps, dns, kmsg_log, prefetch, proxy};
+use crate::{deps, dns, kmsg_log, proxy};
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use runner_host::runner_process_identity::load_runner_process_identity;
 use runner_host::{host, lock};
@@ -212,27 +212,23 @@ async fn finish_dns_startup(
         Err(error) => (None, error),
     };
 
-    if let Some(handle) = dns_handle
-        && let Err(error) = handle.stop().await
-    {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
-    runtime.shutdown().await;
-    if let Err(error) = mitm.kill_now().await {
-        let context = match &failure {
-            DnsStartupFailure::MissingInterfacePattern(_) => {
-                "failed to kill proxy after DNS interface resolution failed"
-            }
-            DnsStartupFailure::Proxy(_) => "failed to kill proxy after DNS startup failed",
-            DnsStartupFailure::Readiness(_) => {
-                "failed to kill proxy after namespace DNS readiness failed"
-            }
-        };
-        warn!(%error, "{context}");
-    }
-    if let Err(error) = kmsg_handle.stop().await {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
+    let proxy_failure_context = match &failure {
+        DnsStartupFailure::MissingInterfacePattern(_) => {
+            "failed to kill proxy after DNS interface resolution failed"
+        }
+        DnsStartupFailure::Proxy(_) => "failed to kill proxy after DNS startup failed",
+        DnsStartupFailure::Readiness(_) => {
+            "failed to kill proxy after namespace DNS readiness failed"
+        }
+    };
+    shutdown_startup_runtime_resources(
+        runtime.as_mut(),
+        dns_handle,
+        mitm,
+        kmsg_handle,
+        proxy_failure_context,
+    )
+    .await;
     Err(match failure {
         DnsStartupFailure::MissingInterfacePattern(_reservation) => {
             RunnerError::Internal("sandbox runtime did not provide DNS interface pattern".into())
@@ -242,6 +238,27 @@ async fn finish_dns_startup(
             RunnerError::Internal(format!("sandbox runtime DNS readiness: {error}"))
         }
     })
+}
+
+async fn shutdown_startup_runtime_resources(
+    runtime: &mut dyn SandboxRuntime,
+    dns_handle: Option<dns::DnsProxy>,
+    mitm: &mut proxy::MitmProxy,
+    kmsg_handle: kmsg_log::KmsgHandle,
+    proxy_failure_context: &'static str,
+) {
+    if let Some(handle) = dns_handle
+        && let Err(error) = handle.stop().await
+    {
+        warn!(%error, "failed to clean up network-log helper after startup failure");
+    }
+    runtime.shutdown().await;
+    if let Err(error) = mitm.kill_now().await {
+        warn!(%error, "{proxy_failure_context}");
+    }
+    if let Err(error) = kmsg_handle.stop().await {
+        warn!(%error, "failed to clean up network-log helper after startup failure");
+    }
 }
 
 async fn publish_live_runner_instance_or_shutdown_startup_resources(
@@ -257,16 +274,14 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
         Ok(handle) => Ok((handle, resources.kmsg_handle, resources.dns_handle)),
         Err(e) => {
             resources.provider.shutdown().await;
-            if let Err(error) = resources.dns_handle.stop().await {
-                warn!(%error, "failed to clean up network-log helper after startup failure");
-            }
-            resources.runtime.shutdown().await;
-            if let Err(kill_error) = resources.mitm.kill_now().await {
-                warn!(error = %kill_error, "failed to kill proxy after live runner instance publish failed");
-            }
-            if let Err(error) = resources.kmsg_handle.stop().await {
-                warn!(%error, "failed to clean up network-log helper after startup failure");
-            }
+            shutdown_startup_runtime_resources(
+                resources.runtime,
+                Some(resources.dns_handle),
+                resources.mitm,
+                resources.kmsg_handle,
+                "failed to kill proxy after live runner instance publish failed",
+            )
+            .await;
             if let Err(status_error) = resources.status.set_mode(RunnerMode::Stopped).await {
                 warn!(
                     error = %status_error,
@@ -310,8 +325,8 @@ async fn run_start_with_observer(
     load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
     signals: EarlySignals,
 ) -> RunnerResult<()> {
-    // This passive owner surrounds every fallible startup/reactor return. It starts
-    // before optional warming and never depends on heartbeat, pool or status locks.
+    // This passive owner surrounds every fallible startup/reactor return and
+    // never depends on heartbeat, pool or status locks.
     let observer = runner_supervisor::host_memory::HostMemoryObserver::spawn();
     // Construct startup inside this boundary to retain a single startup await slot.
     let result = run_start_observed(args, runtime_provider, load_home, signals).await;
@@ -545,22 +560,6 @@ async fn run_start_observed(
             );
         }
     }
-
-    let memory_prefetch_candidates = resource_locks
-        .profile_paths()
-        .map(|(name, profile_paths)| {
-            let profile = runner_config.profiles.get(name).ok_or_else(|| {
-                RunnerError::Internal(format!(
-                    "missing runner profile for locked image artifacts {name}"
-                ))
-            })?;
-            Ok(prefetch::MemoryPrefetchCandidate {
-                path: profile_paths.snapshot_paths().memory(),
-                memory_mb: profile.memory_mb,
-            })
-        })
-        .collect::<RunnerResult<Vec<_>>>()?;
-    let memory_prefetch_budget_mb = u64::from(budget.effective_memory_mb().min(host_memory_mb));
 
     // Compute the smallest profile resources for budget pre-check.
     // When budget is exhausted for all profiles, we wait instead of polling.
@@ -798,12 +797,6 @@ async fn run_start_observed(
 
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
-    // Accept optional reads only after fallible root setup has completed. The
-    // concrete reactor handoff below gives its startup owner custody before
-    // another await; startup rollback and normal teardown both join real IO
-    // while the root's image and base-directory locks remain held.
-    let memory_prefetch =
-        prefetch::MemoryPrefetchTasks::spawn(memory_prefetch_candidates, memory_prefetch_budget_mb);
     let config = RunConfig {
         sandbox_op_reporter: host_telemetry
             .as_ref()
@@ -851,7 +844,6 @@ async fn run_start_observed(
         shutdown: ShutdownHandles {
             kmsg_handle,
             dns_handle,
-            memory_prefetch,
         },
         usage_flush_tx,
         usage_flush_rx,

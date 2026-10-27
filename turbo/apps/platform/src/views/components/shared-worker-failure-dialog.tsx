@@ -1,11 +1,9 @@
 import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
@@ -36,18 +34,6 @@ export function SharedWorkerFailureDialog() {
             })}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter>
-          <Button
-            type="button"
-            onClick={() => {
-              window.location.reload();
-            }}
-          >
-            {t(($) => {
-              return $.shared.workerFailure.action;
-            })}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

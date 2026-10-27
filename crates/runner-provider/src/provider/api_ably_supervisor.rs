@@ -30,10 +30,13 @@ use super::api_direct_candidates::{
     DirectJobCandidate,
 };
 use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
+use super::worker_join::join_retained_worker;
 use super::{RunnerPreferenceContext, parse_runner_preference};
 use crate::active_input::ActiveInputNotifications;
 use crate::duration::duration_ms;
-use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
+use crate::run_cancellation::{
+    RunCancellationHandle, RunCancellationMode, RunCancellationRegistry,
+};
 use runner_types::ids::RunId;
 use runner_types::types::ConnectorRuntimeTarget;
 
@@ -526,7 +529,7 @@ pub(super) struct PollWakeupsSnapshot {
 
 pub(super) struct AblySupervisor {
     shutdown: CancellationToken,
-    task: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+    task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 pub(super) struct AblySupervisorConfig {
@@ -585,16 +588,13 @@ impl AblySupervisor {
         });
         Self {
             shutdown,
-            task: StdMutex::new(Some(task)),
+            task: tokio::sync::Mutex::new(Some(task)),
         }
     }
 
     pub(super) async fn shutdown(&self) {
         self.shutdown.cancel();
-        let task = self.take_task();
-        if let Some(task) = task
-            && let Err(e) = task.await
-        {
+        if let Err(e) = join_retained_worker(&self.task).await {
             warn!(error = %e, "ably supervisor task failed during shutdown");
         }
     }
@@ -611,7 +611,7 @@ impl AblySupervisor {
     pub(super) fn disabled() -> Self {
         Self {
             shutdown: CancellationToken::new(),
-            task: StdMutex::new(None),
+            task: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -624,15 +624,8 @@ impl AblySupervisor {
         let task = tokio::spawn(build(shutdown.clone()));
         Self {
             shutdown,
-            task: StdMutex::new(Some(task)),
+            task: tokio::sync::Mutex::new(Some(task)),
         }
-    }
-
-    fn take_task(&self) -> Option<tokio::task::JoinHandle<()>> {
-        self.task
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .take()
     }
 }
 
@@ -974,15 +967,9 @@ fn log_direct_candidate_pruned(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CancelNotificationMode {
-    Cooperative,
-    Hard,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CancelNotification {
     run_id: RunId,
-    mode: CancelNotificationMode,
+    mode: RunCancellationMode,
 }
 
 async fn prepare_cancel_delivery(
@@ -1013,11 +1000,11 @@ async fn deliver_cancel_notification(
 ) {
     let run_id = notification.run_id;
     match notification.mode {
-        CancelNotificationMode::Cooperative => {
+        RunCancellationMode::Cooperative => {
             info!(run_id = %run_id, "ably: cancel notification, requesting cooperative cancellation");
             handle.request_cooperative_user_cancellation().await;
         }
-        CancelNotificationMode::Hard => {
+        RunCancellationMode::Hard => {
             info!(run_id = %run_id, "ably: cancel notification, requesting hard cancellation");
             handle.request_hard_cancellation().await;
         }
@@ -1038,20 +1025,20 @@ fn parse_cancel_notification(msg: &ably_subscriber::Message) -> Option<CancelNot
     };
     let mode = match msg.data.get("mode") {
         Some(serde_json::Value::String(mode)) if mode == "cooperative" => {
-            CancelNotificationMode::Cooperative
+            RunCancellationMode::Cooperative
         }
-        Some(serde_json::Value::String(mode)) if mode == "hard" => CancelNotificationMode::Hard,
+        Some(serde_json::Value::String(mode)) if mode == "hard" => RunCancellationMode::Hard,
         Some(mode) => {
             warn!(
                 run_id = %run_id,
                 mode = %mode,
                 "ably: unknown cancel mode, using hard cancellation"
             );
-            CancelNotificationMode::Hard
+            RunCancellationMode::Hard
         }
         // Default to hard cancellation when the API omits the mode so a
         // malformed or stale notification still stops the run safely.
-        None => CancelNotificationMode::Hard,
+        None => RunCancellationMode::Hard,
     };
     Some(CancelNotification { run_id, mode })
 }
@@ -1230,6 +1217,7 @@ mod tests {
     use super::*;
     use crate::provider::{RunnerPreference, RunnerPreferenceTier};
     use tracing::Level;
+    use tracing::instrument::WithSubscriber;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::CapturedEvents;
 
@@ -2536,6 +2524,41 @@ mod tests {
             .unwrap();
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn supervisor_shutdown_reports_panicked_task_once_after_cancelled_waiter() {
+        let captured = CapturedEvents::default();
+        async {
+            let supervisor = AblySupervisor::spawn_test_task(|shutdown| async move {
+                shutdown.cancelled().await;
+                panic!("expected supervisor panic");
+            });
+
+            // Neither poll yields to the signalled worker on this runtime.
+            let mut first = Box::pin(supervisor.shutdown());
+            assert!(futures_util::poll!(first.as_mut()).is_pending());
+            let mut concurrent = Box::pin(supervisor.shutdown());
+            assert!(futures_util::poll!(concurrent.as_mut()).is_pending());
+            drop(first);
+            assert!(futures_util::poll!(concurrent.as_mut()).is_pending());
+
+            tokio::time::timeout(Duration::from_secs(1), concurrent)
+                .await
+                .expect("remaining shutdown should join the panicked worker");
+            supervisor.shutdown().await;
+        }
+        .with_subscriber(tracing_subscriber::registry().with(captured.clone()))
+        .await;
+
+        let events = captured.entries();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].level, Level::WARN);
+        assert_eq!(
+            events[0].fields.get("message").map(String::as_str),
+            Some("ably supervisor task failed during shutdown")
+        );
+        assert!(events[0].fields["error"].contains("expected supervisor panic"));
+    }
+
     #[tokio::test]
     async fn supervisor_drop_cancels_task() {
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
@@ -2634,6 +2657,6 @@ mod tests {
             notification.run_id.to_string(),
             "00000000-0000-0000-0000-000000000002"
         );
-        assert_eq!(notification.mode, CancelNotificationMode::Cooperative);
+        assert_eq!(notification.mode, RunCancellationMode::Cooperative);
     }
 }

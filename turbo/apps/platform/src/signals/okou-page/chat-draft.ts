@@ -272,7 +272,6 @@ function createUploadAnnotatedCopy(
   args: {
     readonly filename: string;
     readonly fileInfo$: Computed<Promise<FileInfo | null>>;
-    readonly reloadFailedResource$?: Command<Promise<void>, [AbortSignal]>;
   },
   annotatedFileId$: State<string | null>,
 ) {
@@ -280,12 +279,8 @@ function createUploadAnnotatedCopy(
     async (
       { get, set },
       annotations: ImageAnnotation,
-      retryOriginal: boolean,
       signal: AbortSignal,
     ): Promise<void> => {
-      if (retryOriginal && args.reloadFailedResource$) {
-        await set(args.reloadFailedResource$, signal);
-      }
       const original = await get(args.fileInfo$);
       signal.throwIfAborted();
       if (!original) {
@@ -314,7 +309,6 @@ function createUploadAnnotatedCopy(
 function createAttachmentAnnotationSignals(args: {
   readonly filename: string;
   readonly fileInfo$: Computed<Promise<FileInfo | null>>;
-  readonly reloadFailedResource$?: Command<Promise<void>, [AbortSignal]>;
   readonly initialAnnotations?: ImageAnnotation;
   readonly initialAnnotatedFileId?: string;
 }) {
@@ -329,10 +323,6 @@ function createAttachmentAnnotationSignals(args: {
       ? (args.initialAnnotatedFileId ?? null)
       : null,
   );
-  // Keep the actual terminal promise so chips mounted after the editor closes
-  // can still observe its result. Replacing or removing the attachment aborts
-  // the old work through its existing owner, not through a local hook.
-  const internalAnnotationOperation$ = state<Promise<void> | null>(null);
   const resetUploadSignal$ = resetSignal();
 
   const annotations$ = computed((get) => {
@@ -340,9 +330,6 @@ function createAttachmentAnnotationSignals(args: {
   });
   const annotatedFileId$ = computed((get) => {
     return get(internalAnnotatedFileId$);
-  });
-  const annotationOperation$ = computed((get) => {
-    return get(internalAnnotationOperation$);
   });
   const annotationReady$ = computed((get): boolean => {
     return (
@@ -360,7 +347,6 @@ function createAttachmentAnnotationSignals(args: {
     (
       { set },
       annotations: ImageAnnotation | null,
-      retryOriginal: boolean,
       parentSignal: AbortSignal,
     ): Promise<void> => {
       parentSignal.throwIfAborted();
@@ -368,26 +354,19 @@ function createAttachmentAnnotationSignals(args: {
       set(internalAnnotations$, annotations);
       set(internalAnnotatedFileId$, null);
       if (!annotations || !isAnnotationMeaningful(annotations)) {
-        set(internalAnnotationOperation$, null);
         return Promise.resolve();
       }
-      const operation = set(
-        uploadAnnotatedCopy$,
-        annotations,
-        retryOriginal,
-        signal,
-      );
-      set(internalAnnotationOperation$, operation);
+      const operation = set(uploadAnnotatedCopy$, annotations, signal);
       return operation;
     },
   );
 
   const confirmAnnotations$ = command(
     ({ set }, annotations: ImageAnnotation | null, signal: AbortSignal) => {
-      return set(setAnnotations$, annotations, false, signal);
+      return set(setAnnotations$, annotations, signal);
     },
   );
-  const retryAnnotationUpload$ = command(
+  const prepareAnnotatedCopy$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const annotations = get(internalAnnotations$);
       if (
@@ -397,7 +376,7 @@ function createAttachmentAnnotationSignals(args: {
       ) {
         return;
       }
-      await set(setAnnotations$, annotations, true, signal);
+      await set(setAnnotations$, annotations, signal);
     },
   );
 
@@ -408,10 +387,9 @@ function createAttachmentAnnotationSignals(args: {
   return {
     annotations$,
     annotatedFileId$,
-    annotationOperation$,
     annotationReady$,
     confirmAnnotations$,
-    retryAnnotationUpload$,
+    prepareAnnotatedCopy$,
     cancelAnnotationUpload$,
   };
 }
@@ -427,8 +405,6 @@ export interface ChatAttachment {
   imageLoad: ImageLoadSignals;
   /** Reactive file info (id + url) — loading while uploading, hasData when done. */
   fileInfo$: Computed<Promise<FileInfo | null>>;
-  /** Explicit retry only: invalidate a rejected original lookup, not a 404. */
-  reloadFailedResource$?: Command<Promise<void>, [AbortSignal]>;
   preview$: Computed<Promise<AttachmentPreviewSignals | null>>;
   /** Whether the annotated derivative required by a send is available. */
   annotationReady$: Computed<boolean>;
@@ -438,13 +414,11 @@ export interface ChatAttachment {
   upload$: Command<Promise<void>, [AbortSignal]>;
   annotations$: Computed<ImageAnnotation | null>;
   annotatedFileId$: Computed<string | null>;
-  /** Actual decode/render/upload operation, retained through success or failure. */
-  annotationOperation$: Computed<Promise<void> | null>;
   confirmAnnotations$: Command<
     Promise<void>,
     [ImageAnnotation | null, AbortSignal]
   >;
-  retryAnnotationUpload$: Command<Promise<void>, [AbortSignal]>;
+  prepareAnnotatedCopy$: Command<Promise<void>, [AbortSignal]>;
   cancelAnnotationUpload$: Command<void, []>;
 }
 
@@ -506,7 +480,16 @@ function createChatAttachment(file: File): ChatAttachment {
 // DraftSignals — encapsulates per-thread composer state
 // ---------------------------------------------------------------------------
 
+export interface PendingThreadIdentity {
+  readonly intent: string;
+  readonly threadId: string;
+  readonly clientEventId: string;
+  readonly chatThreadEventId: string;
+}
+
 export interface DraftSignals {
+  reserveThreadIdentity$: Command<PendingThreadIdentity, [string]>;
+  confirmThreadIdentity$: Command<void, [string]>;
   hasLocalInput$: Computed<boolean>;
   input$: Computed<string>;
   hasInput$: Computed<boolean>;
@@ -600,9 +583,7 @@ export type RestorableAttachment = Omit<PersistedAttachment, "url"> & {
 export function createRestoredAttachment(
   persisted: RestorableAttachment,
 ): ChatAttachment {
-  const resourceRevision$ = state(0);
   const restored$ = computed(async (get) => {
-    get(resourceRevision$);
     const client = get(apiClient$)(webFilesContract);
     const resolved = await accept(
       client.fileUrl({
@@ -634,26 +615,9 @@ export function createRestoredAttachment(
   const fileInfo$ = computed(async (get): Promise<FileInfo | null> => {
     return (await get(restored$))?.fileInfo ?? null;
   });
-  const reloadFailedResource$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      signal.throwIfAborted();
-      const [result] = await Promise.allSettled([get(restored$)]);
-      signal.throwIfAborted();
-      if (result?.status === "rejected") {
-        set(resourceRevision$, (revision) => {
-          return revision + 1;
-        });
-        // Re-read after invalidation: this is a new lookup, whose failure must
-        // remain visible to both recovery and annotation operation callers.
-        await get(restored$);
-        signal.throwIfAborted();
-      }
-    },
-  );
   const annotation = createAttachmentAnnotationSignals({
     filename: persisted.filename,
     fileInfo$,
-    reloadFailedResource$,
     ...(persisted.annotations
       ? { initialAnnotations: persisted.annotations }
       : {}),
@@ -678,7 +642,6 @@ export function createRestoredAttachment(
     size: persisted.size,
     imageLoad: createImageLoadSignals(),
     fileInfo$,
-    reloadFailedResource$,
     preview$: computed(async (get) => {
       return (await get(restored$))?.preview ?? null;
     }),
@@ -879,7 +842,7 @@ function createReconcileRestoredAttachments(
             );
           })
           .map((attachment) => {
-            return set(attachment.retryAnnotationUpload$, signal);
+            return set(attachment.prepareAnnotatedCopy$, signal);
           }),
       );
       signal.throwIfAborted();
@@ -1038,21 +1001,8 @@ function createComposerDraftReconcile(
     [readonly ChatAttachment[], AbortSignal]
   >,
 ) {
-  return command(async ({ get, set }, signal: AbortSignal) => {
+  return command(({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    const reloads = await Promise.allSettled(
-      get(internalAttachments$).map((attachment) => {
-        return attachment.reloadFailedResource$
-          ? set(attachment.reloadFailedResource$, signal)
-          : undefined;
-      }),
-    );
-    signal.throwIfAborted();
-    for (const result of reloads) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-    }
     return set(
       reconcileRestoredAttachments$,
       get(internalAttachments$),
@@ -1117,10 +1067,8 @@ function createComposerDraftHandoffSignals({
       if (!handoff) {
         return false;
       }
-      // Retain an applied-merge checkpoint until reconciliation succeeds.
-      // Retrying must reconcile the installed resources, not merge them again.
-      // An empty remote draft is also a completed merge decision: cleanup may
-      // save the local handoff before a later reconciliation failure is retried.
+      // Persist the applied merge decision before resolving attachments so a
+      // remount cannot prepend the same saved draft a second time.
       set(composerDraftHandoffState$, { needsRemoteMerge: false });
       if (handoff.needsRemoteMerge && restored) {
         const localInput = get(draftInput.input$);
@@ -1168,7 +1116,32 @@ function createComposerDraftHandoffSignals({
   };
 }
 
+function createDraftThreadIdentitySignals() {
+  const pendingIdentity$ = state<PendingThreadIdentity | null>(null);
+  const reserveThreadIdentity$ = command(({ get, set }, intent: string) => {
+    const pending = get(pendingIdentity$);
+    if (pending?.intent === intent) {
+      return pending;
+    }
+    const identity = {
+      intent,
+      threadId: crypto.randomUUID(),
+      clientEventId: crypto.randomUUID(),
+      chatThreadEventId: crypto.randomUUID(),
+    };
+    set(pendingIdentity$, identity);
+    return identity;
+  });
+  const confirmThreadIdentity$ = command(({ get, set }, threadId: string) => {
+    if (get(pendingIdentity$)?.threadId === threadId) {
+      set(pendingIdentity$, null);
+    }
+  });
+  return { reserveThreadIdentity$, confirmThreadIdentity$ };
+}
+
 export function createDraftSignals(): DraftSignals {
+  const threadIdentity = createDraftThreadIdentitySignals();
   const draftDocument = createDraftDocumentSignals();
   const draftInput = createDraftInputSignals(draftDocument);
   const internalGenerationTemplate$ = state<
@@ -1282,6 +1255,7 @@ export function createDraftSignals(): DraftSignals {
   });
 
   return {
+    ...threadIdentity,
     ...draftInput,
     reconcileComposerDraft$,
     prependComposerDraft$,

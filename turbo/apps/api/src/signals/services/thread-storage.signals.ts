@@ -1,8 +1,15 @@
 import { computed, type Computed } from "ccstate";
+import { isValidVersionPrefix } from "@okouai/core/version-id";
+import { storageVersions } from "@okouai/db/schema/storage";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { and, desc, eq, like, or, sql } from "drizzle-orm";
+import { unionAll } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
+import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { measureApiDispatchTiming } from "./api-dispatch-timing.service";
+import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
 import {
   createResolvedExecutionStorageObjects,
   type ExecutionStorageRequest,
@@ -15,7 +22,6 @@ import {
   type AgentRunStorageSelection,
   assertUniquePersistedMountPaths,
   finalizePreparedStorage,
-  loadStorageBaseIndex,
   type MaterializedAgentRunStorage,
   persistedStorageMountRequests,
   prepareRequestStorageResolution,
@@ -26,12 +32,15 @@ import {
   StorageManifestBuildStats,
   storageEntriesMetadata,
   storageIndexKey,
+  storageIndexWithPrefixVersions,
+  storagePrefixVersionRequests,
   storedMountFromPrepared,
-  withStoragePrefixVersions,
 } from "./run-storage-manifest.service";
 import {
   exactStorageVersionsFromIndex,
   mergeStorageIndexes,
+  storageBaseIndexFromRows,
+  storageBaseIndexReadPlan,
   storageRequestKey,
 } from "./storage-index.service";
 import type { ThreadContext } from "./thread-context.signals";
@@ -207,10 +216,11 @@ function createStorageInputSignal(
       body: {},
       resolved,
     });
+    // Initialize the existing database dependency before returning captured data.
+    get(db$);
     return {
       kind: "requested",
       args: {
-        db: get(db$),
         agentOrgId: resolved.orgId,
         runtimeOrgId: bootstrap.orgId,
         userId: bootstrap.userId,
@@ -227,7 +237,7 @@ function createStorageInputSignal(
 
 type StorageInput$ = ReturnType<typeof createStorageInputSignal>;
 
-function createStorageIndexSignals(
+function createStorageBaseIndexSignal(
   threadContext: ThreadContext,
   storageInput$: StorageInput$,
 ) {
@@ -285,8 +295,8 @@ function createStorageIndexSignals(
   );
   const capturedStorageBaseIndex$ = computed(async (get) => {
     const selection = await get(storageSelection$);
+    const db = get(db$);
     const input = {
-      db: selection.args.db,
       requests: selection.requests,
       timing: selection.args.timing,
     };
@@ -300,10 +310,32 @@ function createStorageIndexSignals(
         ),
       );
     });
-    const index = mergeStorageIndexes(
-      prefetched.index,
-      await loadStorageBaseIndex(input.db, ownedRequests, input.timing),
-    );
+    const timing = input.timing;
+    const startedAt = timing ? performance.now() : undefined;
+    const ownedIndex = await (async () => {
+      const readPlan = storageBaseIndexReadPlan(ownedRequests);
+      if (readPlan === null) {
+        return new Map();
+      }
+      const rows = await db
+        .select(readPlan.columns)
+        .from(readPlan.from)
+        .innerJoin(readPlan.requested, readPlan.requestedCondition)
+        .leftJoin(readPlan.head, readPlan.headCondition)
+        .leftJoin(readPlan.exact, readPlan.exactCondition)
+        .leftJoin(readPlan.cache, readPlan.cacheCondition);
+      return storageBaseIndexFromRows(rows);
+    })().finally(() => {
+      if (timing && startedAt !== undefined) {
+        timing.recordDuration(
+          "api_dispatch_prepare_storage_manifest_load_storage_index",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      }
+    });
+    const index = mergeStorageIndexes(prefetched.index, ownedIndex);
     // Keep the query and its selection together so dependent version reads
     // reuse this snapshot without walking the same upstream graph again.
     const capturedVersionKeys = new Set(
@@ -320,15 +352,76 @@ function createStorageIndexSignals(
       index,
     };
   });
+  return capturedStorageBaseIndex$;
+}
+
+function createStorageIndexSignals(
+  threadContext: ThreadContext,
+  storageInput$: StorageInput$,
+) {
+  const capturedStorageBaseIndex$ = createStorageBaseIndexSignal(
+    threadContext,
+    storageInput$,
+  );
   const capturedStorageIndex$ = computed(async (get) => {
     const { selection, input, index } = await get(capturedStorageBaseIndex$);
+    const db = get(db$);
     return {
       selection,
-      storageIndex: await withStoragePrefixVersions(
-        input.db,
-        input.requests,
-        index,
-      ),
+      storageIndex: await (async () => {
+        const queries = [];
+        for (const request of storagePrefixVersionRequests(
+          input.requests,
+          index,
+        )) {
+          queries.push(
+            db
+              .select({
+                storageId: storageVersions.storageId,
+                id: storageVersions.id,
+                s3Key: storageVersions.s3Key,
+                archiveSize: storageVersions.archiveSize,
+                fileCount: storageVersions.fileCount,
+                cacheKey: systemStoragePresignedUrlCache.cacheKey,
+                cacheScope: systemStoragePresignedUrlCache.scope,
+                presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+                expiresAt: systemStoragePresignedUrlCache.expiresAt,
+              })
+              .from(storageVersions)
+              .leftJoin(
+                systemStoragePresignedUrlCache,
+                eq(
+                  systemStoragePresignedUrlCache.cacheKey,
+                  storageVersionCacheKeySql({
+                    orgId: sql`${request.lookup.orgId}`,
+                    userId: sql`${request.lookup.userId}`,
+                    name: sql`${request.lookup.name}`,
+                    versionId: sql`${storageVersions.id}`,
+                    s3Key: sql`${storageVersions.s3Key}`,
+                  }),
+                ),
+              )
+              .where(
+                and(
+                  eq(storageVersions.storageId, request.storageId),
+                  or(
+                    eq(storageVersions.id, request.version),
+                    isValidVersionPrefix(request.version)
+                      ? like(storageVersions.id, `${request.version}%`)
+                      : undefined,
+                  ),
+                ),
+              )
+              .orderBy(desc(eq(storageVersions.id, request.version)))
+              .limit(2),
+          );
+        }
+        const [first, second, ...remaining] = queries;
+        const versions = first
+          ? await (second ? unionAll(first, second, ...remaining) : first)
+          : [];
+        return storageIndexWithPrefixVersions(index, versions);
+      })(),
     };
   });
   return { capturedStorageIndex$ };

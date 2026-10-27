@@ -5,7 +5,6 @@ import {
   literal,
   number,
   strictObject,
-  url,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -34,11 +33,6 @@ const actionSchema = discriminatedUnion("kind", [
   strictObject({
     kind: literal("inspect"),
     instanceId: uuid().optional(),
-  }),
-  strictObject({
-    kind: literal("authorize"),
-    ...windowIdentity,
-    providerSessionId: uuid(),
   }),
   strictObject({ kind: literal("allocate") }),
   strictObject({
@@ -77,42 +71,6 @@ const instanceSchema = strictObject({
 });
 
 export const runnerBrowserContract = c.router({
-  connection: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/browser/connection",
-    pathParams: strictObject({ runId: uuid() }),
-    headers: authHeadersSchema,
-    body: strictObject({
-      runnerIdentity: runnerIdentitySchema,
-      ...windowIdentity,
-      providerSessionId: uuid(),
-    }),
-    responses: {
-      200: discriminatedUnion("outcome", [
-        strictObject({
-          outcome: literal("accepted"),
-          connection: strictObject({
-            ...windowIdentity,
-            providerSessionId: uuid(),
-            chatThreadId: uuid(),
-            cdpUrl: url({
-              protocol: /^(https|wss)$/u,
-              hostname: /(^|\.)browser-use\.com$/u,
-            }),
-            expiresAt: int().nonnegative(),
-          }),
-        }),
-        strictObject({ outcome: literal("unavailable") }),
-      ]),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Resolve an exact live Browser connection for the official Runner",
-  },
   control: {
     method: "POST",
     path: "/api/runners/runs/:runId/browser/control",
@@ -142,7 +100,4 @@ export type RunnerBrowserRequest = zInfer<typeof requestSchema>;
 export type RunnerBrowserAction = zInfer<typeof actionSchema>;
 export type RunnerBrowserResponse = zInfer<
   (typeof runnerBrowserContract.control.responses)[200]
->;
-export type RunnerBrowserConnectionResponse = zInfer<
-  (typeof runnerBrowserContract.connection.responses)[200]
 >;

@@ -7,7 +7,6 @@
     "delete": "删除智能体",
     "deleting": "删除中…",
     "discard": "放弃更改",
-    "retry": "重试",
     "save": "保存",
     "saving": "保存中…"
   },
@@ -61,16 +60,13 @@
     "success": "智能体已删除",
     "title": "删除{{agentName}}？",
     "workflows": {
-      "copiedTitle": "已复制",
-      "copiedTo": "{{workflowTitle}}已复制到{{agentName}}",
       "copyTo": "复制到{{agentName}}",
       "deleteWithAgent": "随智能体一起删除",
       "description": "把想保留的工作流复制到其他智能体，剩下的都会被删除。",
       "handle": "处理工作流{{workflowTitle}}",
-      "loadFailed": "无法加载工作流。请重试后再删除这个智能体。",
+      "loadFailed": "无法加载工作流。",
       "loading": "正在加载工作流…",
-      "title": "要保留哪些工作流？",
-      "untitled": "工作流"
+      "title": "要保留哪些工作流？"
     }
   },
   "detail": {

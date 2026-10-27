@@ -1,4 +1,3 @@
-import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
 import {
   AVAILABLE_PAID_TOOL_IDS,
   paidToolsContract,
@@ -6,16 +5,12 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../../auth.ts";
-import {
-  effectiveImageModel$,
-  reloadUserModelPreference$,
-  userModelPreference$,
-} from "../../external/user-model-preference.ts";
-import { reloadDisabledPaidTools$ } from "../paid-tools.ts";
+import { effectiveImageModel$ } from "../../external/user-model-preference.ts";
+import { disabledPaidTools$, reloadDisabledPaidTools$ } from "../paid-tools.ts";
 import {
   settingsActiveSection$,
   settingsDialogOpen$,
@@ -32,38 +27,12 @@ function createPaidToolsSignals(
       return assertCurrent;
     },
   });
-  const revision$ = state(0);
-  const confirmedChanges$ = state<Partial<Record<PaidToolId, boolean>>>({});
-  const disabledTools$ = computed(async (get) => {
-    get(revision$);
-    assertCurrent();
-    const response = await accept(client.get(), [200]);
-    assertCurrent();
-    return response.body.disabledTools;
-  });
-  const retry$ = command(({ set }) => {
-    assertCurrent();
-    set(revision$, (revision) => {
-      return revision + 1;
-    });
-  });
+  const disabledTools$ = disabledPaidTools$;
   const imageModel = createImageModelSignals(createClient, assertCurrent);
-  function createTool<T extends PaidToolId>(toolId: T, family?: PaidToolId) {
-    const familyEnabled$ = computed(async (get) => {
-      if (!family) {
-        return true;
-      }
-      const changes = get(confirmedChanges$);
-      const disabled = await get(disabledTools$);
-      return !(changes[family] ?? disabled.includes(family));
-    });
+  function createTool<T extends PaidToolId>(toolId: T) {
     const enabled$ = computed(async (get) => {
-      const changes = get(confirmedChanges$);
       const disabledTools = await get(disabledTools$);
-      return (
-        (await get(familyEnabled$)) &&
-        !(changes[toolId] ?? disabledTools.includes(toolId))
-      );
+      return !disabledTools.includes(toolId);
     });
     const update$ = command(
       async ({ set }, enabled: boolean, signal: AbortSignal) => {
@@ -80,59 +49,20 @@ function createPaidToolsSignals(
         );
         signal.throwIfAborted();
         assertCurrent();
-        // Merge only the confirmed tool so simultaneous saves cannot replace
-        // another row's result with an older full-list response.
-        set(confirmedChanges$, (changes) => {
-          return {
-            ...changes,
-            [response.body.toolId]: response.body.disabled,
-          };
-        });
         if (toolId === "image-generation" && response.body.disabled) {
           set(imageModel.discardDraft$);
         }
         set(reloadDisabledPaidTools$);
       },
     );
-    return { toolId, enabled$, familyEnabled$, update$ };
+    return { toolId, enabled$, update$ };
   }
   const tools = AVAILABLE_PAID_TOOL_IDS.map((toolId) => {
     return createTool(toolId);
   });
-  const routerClient = createClient(dataRouterToolsContract, {
-    getTokenGuard: () => {
-      assertCurrent();
-      return assertCurrent;
-    },
-  });
-  const dataTools$ = computed(async (get) => {
-    get(revision$);
-    assertCurrent();
-    const response = await accept(routerClient.list(), [200]);
-    assertCurrent();
-    return response.body.tools.flatMap((tool) => {
-      const metadata = tool._meta?.["ai.okou/data"];
-      if (!metadata) {
-        return [];
-      }
-      return [
-        {
-          ...createTool(`data:${tool.name}`, metadata.family),
-          definition: {
-            name: tool.name,
-            title: tool.title ?? tool.name,
-            description: tool.description ?? "",
-            family: metadata.family,
-          },
-        },
-      ];
-    });
-  });
   return {
     disabledTools$,
-    retry$,
     tools,
-    dataTools$,
     imageModel,
   };
 }
@@ -162,7 +92,7 @@ function createImageModelSignals(
     set(draft$, null);
   });
   const update$ = command(
-    async ({ get, set }, model: ImageModel, signal: AbortSignal) => {
+    async ({ set }, model: ImageModel, signal: AbortSignal) => {
       signal.throwIfAborted();
       assertCurrent();
       set(draft$, model);
@@ -185,12 +115,6 @@ function createImageModelSignals(
         [200],
         signal,
       );
-      signal.throwIfAborted();
-      assertCurrent();
-      // The realtime push refreshes other sessions; this one reads its own
-      // write back so the save settles on the stored value.
-      set(reloadUserModelPreference$);
-      await get(userModelPreference$);
       signal.throwIfAborted();
       assertCurrent();
       set(draft$, null);
@@ -247,10 +171,3 @@ export type PaidToolsSettings = ReturnType<typeof createPaidToolsSignals> & {
 };
 export type PaidToolSettings = PaidToolsSettings["tools"][number];
 export type ImageModelSettings = PaidToolsSettings["imageModel"];
-
-export type DataRouterToolSettings =
-  PaidToolsSettings["dataTools$"] extends Computed<Promise<infer Tools>>
-    ? Tools extends readonly (infer Tool)[]
-      ? Tool
-      : never
-    : never;

@@ -1,16 +1,8 @@
-import type * as React from "react";
-
 import { cn } from "../../lib/utils";
-import { Button } from "./button";
 
 interface LoadErrorProps {
   /** One sentence about what the reader is missing: "Couldn't load artifacts." */
   readonly message: string;
-  /** The label of the in-place re-read. Only a re-read is called "Try again". */
-  readonly retryLabel: string;
-  readonly onRetry: () => void;
-  /** The re-read the button started is still running. */
-  readonly pending?: boolean;
   readonly className?: string;
 }
 
@@ -21,13 +13,7 @@ interface LoadErrorProps {
  * A failed read is not an alarm, so it is announced politely (`status`) and
  * drawn in the muted ink; red is kept for actions the reader started.
  */
-export function LoadErrorRow({
-  message,
-  retryLabel,
-  onRetry,
-  pending = false,
-  className,
-}: LoadErrorProps) {
+export function LoadErrorRow({ message, className }: LoadErrorProps) {
   return (
     <div
       role="status"
@@ -37,23 +23,12 @@ export function LoadErrorRow({
       )}
     >
       <p className="min-w-0">{message}</p>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        pending={pending}
-        onClick={onRetry}
-      >
-        {retryLabel}
-      </Button>
     </div>
   );
 }
 
 interface LoadErrorSectionProps extends LoadErrorProps {
   readonly description?: string;
-  /** A second way out, e.g. a quiet "Reload page" after a repeated failure. */
-  readonly secondaryAction?: React.ReactNode;
 }
 
 /**
@@ -64,10 +39,6 @@ interface LoadErrorSectionProps extends LoadErrorProps {
 export function LoadErrorSection({
   message,
   description,
-  retryLabel,
-  onRetry,
-  pending = false,
-  secondaryAction,
   className,
 }: LoadErrorSectionProps) {
   return (
@@ -84,18 +55,6 @@ export function LoadErrorSection({
           {description}
         </p>
       ) : null}
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          pending={pending}
-          onClick={onRetry}
-        >
-          {retryLabel}
-        </Button>
-        {secondaryAction}
-      </div>
     </div>
   );
 }

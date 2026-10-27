@@ -17,7 +17,6 @@ use tokio::io::AsyncWriteExt;
 const RUN_ID: &str = "00000000-0000-4000-8000-000000038132";
 const PLAIN: &str = "audit-secret-12345";
 const ENCODED_SECRET: &str = "audit/+secret π";
-const HIDDEN: &str = "<oai-mem-citation><citation_entries>memory.md:1-1|note=[test]</citation_entries></oai-mem-citation>";
 
 #[tokio::test]
 async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
@@ -41,11 +40,18 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
             pi_launch_config: r#"{"schemaVersion":2}"#.into(),
             pi_model_config: "{}".into(),
             pi_session_id: session_id.clone(),
-            secret_values: [PLAIN, ENCODED_SECRET, "abcde", "cdefg", "aaaaa", "<oai-"]
-                .iter()
-                .map(|secret| base64::engine::general_purpose::STANDARD.encode(secret))
-                .collect::<Vec<_>>()
-                .join(","),
+            secret_values: [
+                PLAIN,
+                ENCODED_SECRET,
+                "abcde",
+                "cdefg",
+                "aaaaa",
+                "partial-secret",
+            ]
+            .iter()
+            .map(|secret| base64::engine::general_purpose::STANDARD.encode(secret))
+            .collect::<Vec<_>>()
+            .join(","),
             ..Default::default()
         },
     )?;
@@ -71,7 +77,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
     let forbidden = variants
         .iter()
         .map(String::as_str)
-        .chain([ENCODED_SECRET, "abcde", "cdefg", "aaaaa", "<oai-"])
+        .chain([ENCODED_SECRET, "abcde", "cdefg", "aaaaa", "partial-secret"])
         .collect::<Vec<_>>();
     let mut expected = Vec::new();
     let mut stages = Vec::new();
@@ -84,14 +90,9 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
         // The unmasked value straddles a 4096-byte transport chunk boundary.
         let padding = "z".repeat(4096 - prefix.len() - variant.len() / 2);
         let prefix = format!("{prefix}{padding}");
-        let variant = if stage == 0 {
-            format!("audit-sec{HIDDEN}ret-12345")
-        } else {
-            variant.clone()
-        };
         let tail = format!(" [live-{stage}-0] {} done", "🦀".repeat(20));
         let final_tail = if stage == variants.len() - 1 {
-            "<oai-"
+            "partial-secret"
         } else {
             ""
         };
@@ -102,10 +103,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
             "é".repeat(50)
         );
         let second = format!("{second_prefix}{second_tail}");
-        expected.push([
-            masker.mask_string(&first.replace(HIDDEN, "")),
-            masker.mask_string(&second),
-        ]);
+        expected.push([masker.mask_string(&first), masker.mask_string(&second)]);
         let updates = if stage == 1 {
             // A single large delta also puts a complete Base64 value across
             // output chunks; masking each already-split chunk is insufficient.
@@ -117,7 +115,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
         } else {
             let mut updates = vec![json!([0, prefix]), json!([1, second_prefix])];
             // Every scalar is its own provider delta, including percent escapes
-            // and the citation delimiter inserted inside the configured value.
+            // across the configured secret value.
             updates.extend(variant.chars().map(|ch| json!([0, ch.to_string()])));
             updates.push(json!([1, second_tail]));
             updates.push(json!([0, format!("{tail}{final_tail}")]));

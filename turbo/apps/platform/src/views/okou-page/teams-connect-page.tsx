@@ -1,4 +1,4 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, buttonVariants, cn } from "@okouai/ui";
 import { CircleCheck } from "lucide-react";
@@ -11,7 +11,6 @@ import {
   type TeamsConnectPageState,
 } from "../../signals/okou-page/teams-connect-signals.ts";
 import { teamsConnectUrl } from "../../signals/okou-page/teams-connect-context.ts";
-import { refreshTeamsOrg$ } from "../../signals/okou-page/teams.ts";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -43,7 +42,6 @@ function PageContent() {
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const status = useLoadable(teamsConnectPageState$);
-  const refresh = useSet(refreshTeamsOrg$);
   const [binding, connect] = useLoadableSet(connectTeamsAccount$);
   const signal = useGet(pageSignal$);
   const failure = t(($) => {
@@ -99,18 +97,6 @@ function PageContent() {
               return $.connectors.providerConnect.teams.open;
             })}
           </a>
-        )}
-        {status.state === "hasError" && (
-          <Button
-            className="w-full"
-            onClick={() => {
-              detach(refresh(signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.connectors.actions.tryAgain;
-            })}
-          </Button>
         )}
         <div className="flex justify-center">
           <SettingsBackLink />

@@ -90,9 +90,7 @@ test("A chat with no artifacts shows an empty resources panel", async () => {
   ).resolves.toBeVisible();
   click(await findFastControl("button", "Resources"));
   await expect(
-    screen.findByText(
-      "Artifacts and related chats from this chat appear here.",
-    ),
+    screen.findByText("No resources yet"),
   ).resolves.toBeInTheDocument();
 });
 

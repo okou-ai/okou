@@ -1,5 +1,56 @@
 # Changelog
 
+## [10.3.8](https://github.com/okou-ai/okou/compare/cli-v10.3.7...cli-v10.3.8) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.10.1
+    * @okouai/core bumped to 8.793.1
+    * @okouai/pi-agent-runtime bumped to 1.51.2
+
+## [10.3.7](https://github.com/okou-ai/okou/compare/cli-v10.3.6...cli-v10.3.7) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.10.0
+    * @okouai/core bumped to 8.793.0
+    * @okouai/pi-agent-runtime bumped to 1.51.1
+
+## [10.3.6](https://github.com/okou-ai/okou/compare/cli-v10.3.5...cli-v10.3.6) (2026-10-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.9.0
+    * @okouai/core bumped to 8.792.0
+    * @okouai/pi-agent-runtime bumped to 1.51.0
+
+## [10.3.5](https://github.com/okou-ai/okou/compare/cli-v10.3.4...cli-v10.3.5) (2026-10-27)
+
+
+### Refactoring
+
+* remove hosted site title editing switch ([#43172](https://github.com/okou-ai/okou/issues/43172)) ([6ccbf0c](https://github.com/okou-ai/okou/commit/6ccbf0c46160029d7cf45d4f76d40b382f90f774))
+* remove remote connection diagnostics feature switch ([#43208](https://github.com/okou-ai/okou/issues/43208)) ([e2abf5a](https://github.com/okou-ai/okou/commit/e2abf5ade9bb1322e519d839b47c66d2ec58a16c))
+* remove vnc access feature switch ([#43184](https://github.com/okou-ai/okou/issues/43184)) ([7caac90](https://github.com/okou-ai/okou/commit/7caac9058cd8740c5288ef0c560e723d562120a8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.8.3
+    * @okouai/core bumped to 8.791.4
+    * @okouai/pi-agent-runtime bumped to 1.50.81
+
 ## [10.3.4](https://github.com/okou-ai/okou/compare/cli-v10.3.3...cli-v10.3.4) (2026-10-26)
 
 

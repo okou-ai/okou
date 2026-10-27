@@ -113,7 +113,7 @@ function createMailBulkSignals(
       return;
     }
     set(result$, null);
-    // Keep failed drafts selected; a retry never includes earlier successes.
+    // Remove successful drafts from the selection and retain unsuccessful drafts.
     let succeeded = 0;
     let failed = 0;
     for (const mail of pending.mails) {

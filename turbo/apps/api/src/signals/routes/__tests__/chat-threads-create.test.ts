@@ -522,12 +522,15 @@ describe("POST /api/chat-threads", () => {
     expect(afterClear.body.selections).toStrictEqual([]);
     expect(afterClear.body.selectedConnections).toStrictEqual([]);
 
+    const clientThreadId = randomUUID();
     const staleSelectionThread = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
+          clientThreadId,
           agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
+          connectorSelectionPolicy: "required",
           connectorSelections: [
             {
               connectionId: firstResponse.body.connectionId,
@@ -536,19 +539,44 @@ describe("POST /api/chat-threads", () => {
           ],
         },
       }),
+      [400],
+    );
+    expect(staleSelectionThread.body.error.code).toBe(
+      "CONNECTOR_ACCOUNT_UNAVAILABLE",
+    );
+    await accept(
+      metadataClient().get({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: clientThreadId },
+      }),
+      [404],
+    );
+    await expect(
+      readCreatedThreadEvents(clientThreadId, token),
+    ).resolves.toHaveLength(0);
+    // An already committed request still replays after its account is deleted.
+    const replayed = await accept(
+      threadsClient().create({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          clientThreadId: selectedThread.body.id,
+          connectorSelectionPolicy: "required",
+          agentId: fixture.agentId,
+          model: WORKSPACE_DEFAULT_MODEL,
+          connectorSelections: [
+            {
+              connectionId: secondResponse.body.connectionId,
+              target: { kind: "builtin", connectorSlug: "openai" },
+            },
+          ],
+        },
+      }),
       [201],
     );
-    const staleSelection = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: staleSelectionThread.body.id },
-      }),
-      [200],
-    );
-    expect(staleSelection.body).toStrictEqual({
-      selections: [],
-      selectedConnections: [],
-    });
+    expect(replayed.body).toStrictEqual(selectedThread.body);
+    await expect(
+      readCreatedThreadEvents(selectedThread.body.id, token),
+    ).resolves.toHaveLength(1);
   });
 
   it("refreshes builtin and custom selection authorization after grant changes", async () => {
@@ -927,154 +955,27 @@ describe("POST /api/chat-threads", () => {
     expect(afterDisconnect.body.selections).toStrictEqual([]);
   });
 
-  it("creates exact custom HTTP and MCP connector selections", async () => {
+  it("rejects a required built-in account when deletion wins concurrent creation", async () => {
     const fixture = await seedAgent();
-    const httpConnector = await connectorApi.createCustomConnector(
+    const account = await connectorApi.connectManualGrant(
       fixture.actor,
-      manualHttpCustomConnectorCreateBody({
-        slug: `_thread-http-${randomUUID()}`,
-        displayName: "Thread HTTP connector",
-        prefixTemplates: ["https://thread-http.example.test/v1/"],
-      }),
-    );
-    const mcpConnector = await connectorApi.createCustomConnector(
-      fixture.actor,
-      {
-        kind: "mcp",
-        slug: `_thread-mcp-${randomUUID()}`,
-        displayName: "Thread MCP connector",
-        endpoint: "https://thread-mcp.example.test/server",
-        transport: "streamable-http",
-        fields: [
-          {
-            key: "secret",
-            label: "API token",
-            kind: "secret",
-            required: true,
-          },
-        ],
-        headerInjections: [
-          {
-            name: "Authorization",
-            valueTemplate: "Bearer {{secrets.secret}}",
-          },
-        ],
-        queryInjections: [],
-        authMode: "manual",
-      },
-    );
-    const httpConnection = await connectorApi.setCustomConnectorValues(
-      fixture.actor,
-      httpConnector.id,
-      [{ key: "secret", kind: "secret", value: "thread-http-secret" }],
-    );
-    const mcpConnection = await connectorApi.setCustomConnectorValues(
-      fixture.actor,
-      mcpConnector.id,
-      [{ key: "secret", kind: "secret", value: "thread-mcp-secret" }],
-    );
-    await connectorApi.updateAgentCustomConnectors(
-      fixture.actor,
+      "openai",
+      "api-token",
+      { apiKey: "concurrent-create-key" },
       fixture.agentId,
-      [httpConnector.id, mcpConnector.id],
     );
-    const httpConnectionId = httpConnection.connectionId;
-    const mcpConnectionId = mcpConnection.connectionId;
-    if (!httpConnectionId || !mcpConnectionId) {
-      throw new Error("Expected custom connector account fixtures");
-    }
     const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
-
-    const created = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          agentId: fixture.agentId,
-          model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: [
-            {
-              connectionId: httpConnectionId,
-              target: {
-                kind: "custom",
-                customConnectorId: httpConnector.id,
-              },
-            },
-            {
-              connectionId: mcpConnectionId,
-              target: {
-                kind: "custom",
-                customConnectorId: mcpConnector.id,
-              },
-            },
-          ],
-        },
-      }),
-      [201],
-    );
-    const selections = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toHaveLength(2);
-    expect(selections.body.selectedConnections).toHaveLength(2);
-    expect(
-      selections.body.selections.map((selection) => {
-        return selection.connectionId;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([httpConnectionId, mcpConnectionId]),
-    );
-
+    const clientThreadId = randomUUID();
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    await accept(
-      connectorAccountsClient().delete({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: httpConnectionId },
-        body: {
-          target: { kind: "custom", customConnectorId: httpConnector.id },
-        },
-      }),
-      [200],
-    );
-    const withMissingSelection = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          agentId: fixture.agentId,
-          model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: selections.body.selections,
-        },
-      }),
-      [201],
-    );
-    const survivingSelection = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: withMissingSelection.body.id },
-      }),
-      [200],
-    );
-    expect(survivingSelection.body.selections).toStrictEqual([
-      {
-        connectionId: mcpConnectionId,
-        target: { kind: "custom", customConnectorId: mcpConnector.id },
-      },
-    ]);
-
-    const [, concurrentThread] = await Promise.all([
+    const [, created] = await Promise.all([
       accept(
         connectorAccountsClient().delete({
           headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId: mcpConnectionId },
-          body: {
-            target: { kind: "custom", customConnectorId: mcpConnector.id },
-          },
+          params: { connectionId: account.id },
+          body: { target: { kind: "builtin", connectorSlug: "openai" } },
         }),
         [200],
       ),
@@ -1082,34 +983,320 @@ describe("POST /api/chat-threads", () => {
         threadsClient().create({
           headers: { authorization: `Bearer ${token}` },
           body: {
+            clientThreadId,
+            agentId: fixture.agentId,
+            model: WORKSPACE_DEFAULT_MODEL,
+            connectorSelectionPolicy: "required",
+            connectorSelections: [
+              {
+                connectionId: account.id,
+                target: { kind: "builtin", connectorSlug: "openai" },
+              },
+            ],
+          },
+        }),
+        [201, 400],
+      ),
+    ]);
+    if (created.status === 400) {
+      expect(created.body.error.code).toBe("CONNECTOR_ACCOUNT_UNAVAILABLE");
+      await accept(
+        metadataClient().get({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: clientThreadId },
+        }),
+        [404],
+      );
+      await expect(
+        readCreatedThreadEvents(clientThreadId, token),
+      ).resolves.toHaveLength(0);
+    } else {
+      const selected = await accept(
+        connectorSelectionsClient().get({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: clientThreadId },
+        }),
+        [200],
+      );
+      expect(selected.body.selections).toStrictEqual([]);
+      await expect(
+        readCreatedThreadEvents(clientThreadId, token),
+      ).resolves.toHaveLength(1);
+    }
+  });
+
+  it.each(["required", "legacy"] as const)(
+    "creates exact custom HTTP and MCP connector selections (%s clients)",
+    async (policy) => {
+      const fixture = await seedAgent();
+      const creationPolicy =
+        policy === "required" ? { connectorSelectionPolicy: policy } : {};
+      const httpConnector = await connectorApi.createCustomConnector(
+        fixture.actor,
+        manualHttpCustomConnectorCreateBody({
+          slug: `_thread-http-${randomUUID()}`,
+          displayName: "Thread HTTP connector",
+          prefixTemplates: ["https://thread-http.example.test/v1/"],
+        }),
+      );
+      const mcpConnector = await connectorApi.createCustomConnector(
+        fixture.actor,
+        {
+          kind: "mcp",
+          slug: `_thread-mcp-${randomUUID()}`,
+          displayName: "Thread MCP connector",
+          endpoint: "https://thread-mcp.example.test/server",
+          transport: "streamable-http",
+          fields: [
+            {
+              key: "secret",
+              label: "API token",
+              kind: "secret",
+              required: true,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.secret}}",
+            },
+          ],
+          queryInjections: [],
+          authMode: "manual",
+        },
+      );
+      const httpConnection = await connectorApi.setCustomConnectorValues(
+        fixture.actor,
+        httpConnector.id,
+        [{ key: "secret", kind: "secret", value: "thread-http-secret" }],
+      );
+      const mcpConnection = await connectorApi.setCustomConnectorValues(
+        fixture.actor,
+        mcpConnector.id,
+        [{ key: "secret", kind: "secret", value: "thread-mcp-secret" }],
+      );
+      await connectorApi.updateAgentCustomConnectors(
+        fixture.actor,
+        fixture.agentId,
+        [httpConnector.id, mcpConnector.id],
+      );
+      const httpConnectionId = httpConnection.connectionId;
+      const mcpConnectionId = mcpConnection.connectionId;
+      if (!httpConnectionId || !mcpConnectionId) {
+        throw new Error("Expected custom connector account fixtures");
+      }
+      const token = await claimedToken({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+      });
+
+      const created = await accept(
+        threadsClient().create({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            ...creationPolicy,
+            agentId: fixture.agentId,
+            model: WORKSPACE_DEFAULT_MODEL,
+            connectorSelections: [
+              {
+                connectionId: httpConnectionId,
+                target: {
+                  kind: "custom",
+                  customConnectorId: httpConnector.id,
+                },
+              },
+              {
+                connectionId: mcpConnectionId,
+                target: {
+                  kind: "custom",
+                  customConnectorId: mcpConnector.id,
+                },
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+      const selections = await accept(
+        connectorSelectionsClient().get({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(selections.body.selections).toHaveLength(2);
+      expect(selections.body.selectedConnections).toHaveLength(2);
+      expect(
+        selections.body.selections.map((selection) => {
+          return selection.connectionId;
+        }),
+      ).toStrictEqual(
+        expect.arrayContaining([httpConnectionId, mcpConnectionId]),
+      );
+
+      createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+      await accept(
+        connectorAccountsClient().delete({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { connectionId: httpConnectionId },
+          body: {
+            target: { kind: "custom", customConnectorId: httpConnector.id },
+          },
+        }),
+        [200],
+      );
+      const rejectedThreadId = randomUUID();
+      const withMissingSelection = await accept(
+        threadsClient().create({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            clientThreadId: rejectedThreadId,
+            ...creationPolicy,
             agentId: fixture.agentId,
             model: WORKSPACE_DEFAULT_MODEL,
             connectorSelections: selections.body.selections,
           },
         }),
+        [201, 400],
+      );
+      expect(withMissingSelection.status).toBe(
+        policy === "required" ? 400 : 201,
+      );
+      if (withMissingSelection.status === 400) {
+        expect(withMissingSelection.body.error.code).toBe(
+          "CONNECTOR_ACCOUNT_UNAVAILABLE",
+        );
+        await accept(
+          metadataClient().get({
+            headers: { authorization: `Bearer ${token}` },
+            params: { id: rejectedThreadId },
+          }),
+          [404],
+        );
+        await expect(
+          readCreatedThreadEvents(rejectedThreadId, token),
+        ).resolves.toHaveLength(0);
+      } else {
+        const legacySelections = await accept(
+          connectorSelectionsClient().get({
+            headers: { authorization: `Bearer ${token}` },
+            params: { id: rejectedThreadId },
+          }),
+          [200],
+        );
+        expect(legacySelections.body.selections).toStrictEqual([
+          {
+            connectionId: mcpConnectionId,
+            target: { kind: "custom", customConnectorId: mcpConnector.id },
+          },
+        ]);
+      }
+
+      // Correcting the choice can create the same client ID exactly once.
+      const correctedBody = {
+        clientThreadId: rejectedThreadId,
+        ...creationPolicy,
+        agentId: fixture.agentId,
+        model: WORKSPACE_DEFAULT_MODEL,
+        connectorSelections: [
+          {
+            connectionId: mcpConnectionId,
+            target: {
+              kind: "custom" as const,
+              customConnectorId: mcpConnector.id,
+            },
+          },
+        ],
+      };
+      const corrected = await accept(
+        threadsClient().create({
+          headers: { authorization: `Bearer ${token}` },
+          body: correctedBody,
+        }),
         [201],
-      ),
-    ]);
-    const afterConcurrentDelete = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: concurrentThread.body.id },
-      }),
-      [200],
-    );
-    expect(afterConcurrentDelete.body.selections).toStrictEqual([]);
-    await expect(
-      readCreatedThreadEvents(concurrentThread.body.id, token),
-    ).resolves.toHaveLength(1);
-    const afterDisconnect = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(afterDisconnect.body.selections).toStrictEqual([]);
-  });
+      );
+      const correctedReplay = await accept(
+        threadsClient().create({
+          headers: { authorization: `Bearer ${token}` },
+          body: correctedBody,
+        }),
+        [201],
+      );
+      expect(correctedReplay.body).toStrictEqual(corrected.body);
+      await expect(
+        readCreatedThreadEvents(rejectedThreadId, token),
+      ).resolves.toHaveLength(1);
+      const correctedSelections = await accept(
+        connectorSelectionsClient().get({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: rejectedThreadId },
+        }),
+        [200],
+      );
+      expect(correctedSelections.body.selections).toStrictEqual(
+        correctedBody.connectorSelections,
+      );
+
+      const concurrentThreadId = randomUUID();
+      const [, concurrentThread] = await Promise.all([
+        accept(
+          connectorAccountsClient().delete({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { connectionId: mcpConnectionId },
+            body: {
+              target: { kind: "custom", customConnectorId: mcpConnector.id },
+            },
+          }),
+          [200],
+        ),
+        accept(
+          threadsClient().create({
+            headers: { authorization: `Bearer ${token}` },
+            body: { ...correctedBody, clientThreadId: concurrentThreadId },
+          }),
+          [201, 400],
+        ),
+      ]);
+      if (concurrentThread.status === 201) {
+        // Creation won; the later disconnect removes its saved preference.
+        const afterConcurrentDelete = await accept(
+          connectorSelectionsClient().get({
+            headers: { authorization: `Bearer ${token}` },
+            params: { id: concurrentThreadId },
+          }),
+          [200],
+        );
+        expect(afterConcurrentDelete.body.selections).toStrictEqual([]);
+        await expect(
+          readCreatedThreadEvents(concurrentThreadId, token),
+        ).resolves.toHaveLength(1);
+      } else {
+        // Deletion won; initialization is fully rolled back and is recoverable.
+        expect(policy).toBe("required");
+        expect(concurrentThread.body.error.code).toBe(
+          "CONNECTOR_ACCOUNT_UNAVAILABLE",
+        );
+        await accept(
+          metadataClient().get({
+            headers: { authorization: `Bearer ${token}` },
+            params: { id: concurrentThreadId },
+          }),
+          [404],
+        );
+        await expect(
+          readCreatedThreadEvents(concurrentThreadId, token),
+        ).resolves.toHaveLength(0);
+      }
+      const afterDisconnect = await accept(
+        connectorSelectionsClient().get({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      expect(afterDisconnect.body.selections).toStrictEqual([]);
+    },
+  );
 
   it.each([
     { initial: "deleted", selected: "surviving" },

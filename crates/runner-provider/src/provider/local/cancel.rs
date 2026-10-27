@@ -16,6 +16,7 @@ use crate::run_cancellation::RunCancellationRegistration;
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
 use runner_types::ids::RunId;
 
+use super::super::worker_join::join_retained_worker;
 #[cfg(test)]
 use super::ScanObserver;
 use super::watch::{QueueFileKind, RECONCILE_INTERVAL, ensure_watcher, next_change_or_pending};
@@ -345,15 +346,7 @@ impl LocalCancelWatcher {
     pub(super) async fn shutdown(&self) {
         self.scanner.stop_cancel_deliveries();
         self.shutdown.cancel();
-        // Retain join custody if this waiter is cancelled. Concurrent callers
-        // must wait for the same watcher to retire before returning.
-        let mut slot = self.handle.lock().await;
-        let Some(handle) = slot.as_mut() else {
-            return;
-        };
-        let result = handle.await;
-        *slot = None;
-        if let Err(e) = result {
+        if let Err(e) = join_retained_worker(&self.handle).await {
             warn!(error = %e, "local: cancel watcher task failed");
         }
     }

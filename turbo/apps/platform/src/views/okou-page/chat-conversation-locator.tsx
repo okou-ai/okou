@@ -54,7 +54,8 @@ function LocatorPreviewCard({
   preview: LocatorPreview;
   tickCount: number;
 }) {
-  const { t } = useTranslation();
+  // Timestamp formatting follows the active language while the preview is open.
+  useTranslation();
 
   return (
     <Popover open modal={false}>
@@ -82,21 +83,13 @@ function LocatorPreviewCard({
         initialFocus={false}
         finalFocus={false}
         positionerClassName="pointer-events-none data-anchor-hidden:invisible"
-        className="pointer-events-none w-[340px] rounded-xl border-border bg-background px-4 py-3.5"
+        className="pointer-events-none w-auto rounded-lg border-border bg-background px-3 py-2 text-xs whitespace-nowrap text-muted-foreground"
       >
-        <div className="mb-2 flex items-center gap-2 text-[11.5px] font-medium text-muted-foreground">
-          <span>
-            {t(($) => {
-              return $.chat.thread.locator.you;
-            })}
-          </span>
-          <span className="tabular-nums">
-            {preview.createdAt ? formatChatTimestamp(preview.createdAt) : null}
-          </span>
-        </div>
-        <p className="line-clamp-2 text-sm leading-[1.62] text-muted-foreground [overflow-wrap:anywhere]">
-          {preview.text}
-        </p>
+        {preview.createdAt ? (
+          <time dateTime={preview.createdAt} className="tabular-nums">
+            {formatChatTimestamp(preview.createdAt)}
+          </time>
+        ) : null}
       </PopoverContent>
     </Popover>
   );
@@ -186,7 +179,7 @@ export function ChatConversationLandingHighlight({
   );
 }
 
-/** Tick rail beside a long thread: hover to preview a turn, click to jump. */
+/** Tick rail beside a long thread: hover for its timestamp, click to jump. */
 export function ChatConversationLocator({
   thread,
 }: {

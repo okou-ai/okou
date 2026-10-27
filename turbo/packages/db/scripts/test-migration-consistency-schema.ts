@@ -61,6 +61,7 @@ import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitl
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
+import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
@@ -2806,6 +2807,8 @@ async function main(): Promise<void> {
 
     // Step 1.5: Validate latest snapshot accuracy (NEW)
     await validateLatestSnapshotAccuracy();
+
+    await validateBrowserOwnerDdlReplay(dbUrl.href);
 
     // Step 1: Test with existing migrations
     console.log("=== Phase 2: Test existing migrations ===\n");

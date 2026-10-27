@@ -5,11 +5,7 @@ import {
   proactiveSuggestionsContract,
   type ProactiveSuggestionsPreference,
 } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -102,9 +98,9 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
   });
 });
 
-test("retries a failed opt-out without enabling proactive suggestions", async () => {
+test("a failed opt-out preserves the current preference", async () => {
   const preference: ProactiveSuggestionsPreference = {
-    enabled: false,
+    enabled: true,
     status: "error",
     unavailableReason: null,
   };
@@ -116,7 +112,12 @@ test("retries a failed opt-out without enabling proactive suggestions", async ()
     proactiveSuggestionsContract.update,
     ({ body, respond }) => {
       choices.push(body.enabled);
-      return respond(200, { ...preference, status: "paused" });
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Preference not saved",
+        },
+      });
     },
   );
   await setupPage({
@@ -128,23 +129,14 @@ test("retries a failed opt-out without enabling proactive suggestions", async ()
     },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
-  const retry = await waitFor(() => {
-    const button = queryAllByRoleFast("button", card).find((item) => {
-      return item.textContent === "Retry";
-    });
-    if (!button) {
-      throw new Error("Retry button is not available");
-    }
-    expect(button).toBeEnabled();
-    return button;
-  });
-  click(retry);
-  await waitFor(() => {
-    return expect(choices).toStrictEqual([false]);
-  });
-  expect(
-    within(card).getByRole("switch", { name: "Suggestions" }),
-  ).not.toBeChecked();
+  const toggle = within(card).getByRole("switch", { name: "Suggestions" });
+  expect(toggle).toBeChecked();
+  click(toggle);
+  await within(card).findByText(
+    "Proactive Suggestions settings could not be loaded or updated.",
+  );
+  expect(toggle).toBeChecked();
+  expect(choices).toStrictEqual([false]);
 });
 
 test("keeps suggestions opted in during platform recovery without asking the user to restart them", async () => {
@@ -173,19 +165,12 @@ test("keeps suggestions opted in during platform recovery without asking the use
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
   await expect(
-    within(card).findByText(
-      "Temporarily unavailable. Okou will retry automatically.",
-    ),
+    within(card).findByText("Temporarily unavailable."),
   ).resolves.toBeInTheDocument();
   const toggle = within(card).getByRole("switch", {
     name: "Suggestions",
   });
   expect(toggle).toBeChecked();
-  expect(
-    queryAllByRoleFast("button", card).find((button) => {
-      return button.textContent?.trim() === "Retry";
-    }),
-  ).toBeUndefined();
   click(toggle);
   await waitFor(() => {
     expect(toggle).not.toBeChecked();

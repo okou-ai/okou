@@ -35,6 +35,9 @@ from zlib_input import ZlibInputCursor
 _BROTLI_DECOMPRESS_MIN_INPUT_CHUNK_SIZE = 16
 _BROTLI_DECOMPRESS_MAX_INPUT_CHUNK_SIZE = 1024
 _BROTLI_DECOMPRESS_TARGET_INPUT_CHUNKS = 64
+# Metadata blocks consume no decoded-output allowance. Bound optional request
+# capture before decoding, with headroom for incompressible 64 KiB bodies.
+_BROTLI_REQUEST_CAPTURE_MAX_INPUT_BYTES = 128 * 1024
 # Keep copied unused tails small across concatenated frames. The codec's
 # max_length also bounds each returned allocation, including buffered output.
 _ZSTD_PREFIX_INPUT_CHUNK_SIZE = 1024
@@ -864,7 +867,7 @@ def decode_request_body_for_network_log_capture(
 
     Request capture hides unsupported encodings and supported-codec decode
     failures instead of keeping best-effort fallback bytes. Gzip/deflate member
-    traversal and zstd compressed input have capture-only budgets independent
+    traversal and Brotli/zstd compressed input have capture-only budgets independent
     of decoded output; exhausted input validation hides the body without
     affecting forwarded wire bytes.
     This helper is separate from billing inspection and its fail-closed policy.
@@ -875,6 +878,8 @@ def decode_request_body_for_network_log_capture(
     if not encoding or encoding == "identity":
         return data
     if encoding not in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS:
+        return None
+    if encoding == "br" and len(data) > _BROTLI_REQUEST_CAPTURE_MAX_INPUT_BYTES:
         return None
     if encoding == "zstd" and len(data) > _ZSTD_REQUEST_CAPTURE_MAX_INPUT_BYTES:
         return None

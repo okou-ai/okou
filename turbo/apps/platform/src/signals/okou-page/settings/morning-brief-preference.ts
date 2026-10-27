@@ -68,24 +68,11 @@ export const updateMorningBriefPreference$ = command(
       [200, 400, 409],
     );
     signal.throwIfAborted();
-    set(morningBriefPreferenceVersion$, (version) => {
-      return version + 1;
-    });
-    return preferenceState(result);
-  },
-);
-
-export const retryMorningBriefPreference$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const client = get(apiClient$)(morningBriefPreferenceContract);
-    const result = await accept(
-      client.retry({ fetchOptions: { signal } }),
-      [200, 409],
-    );
-    signal.throwIfAborted();
-    set(morningBriefPreferenceVersion$, (version) => {
-      return version + 1;
-    });
+    if (result.status === 200) {
+      set(morningBriefPreferenceVersion$, (version) => {
+        return version + 1;
+      });
+    }
     return preferenceState(result);
   },
 );

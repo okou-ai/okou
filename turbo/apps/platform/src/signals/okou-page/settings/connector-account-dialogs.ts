@@ -449,7 +449,6 @@ const saveConnectorAccountRenameCommand$ = command(
       },
       0,
       signal,
-      { retryTransientErrors: false },
     );
   },
 );

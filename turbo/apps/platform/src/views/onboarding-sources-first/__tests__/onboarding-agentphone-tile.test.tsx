@@ -237,37 +237,6 @@ test("An unconfigured phone leaves the other channels and skip available", async
   expect(getButton("Not now")).toBeEnabled();
 });
 
-test("A failed code can be retried without leaving onboarding", async () => {
-  let available = false;
-  context.mocks.api(
-    integrationsAgentPhoneContract.createLinkCode,
-    ({ respond }) => {
-      return available
-        ? respond(200, {
-            code: CONNECTION_CODE,
-            expiresAt: new Date(now() + 600_000).toISOString(),
-          })
-        : respond(503, {
-            error: {
-              code: "PROVIDER_UNAVAILABLE",
-              message: "Phone service unavailable",
-            },
-          });
-    },
-  );
-  await openChatStep();
-  await expect(screen.findByRole("alert")).resolves.toBeInTheDocument();
-  expect(screen.queryByTestId("agentphone-link-qr")).not.toBeInTheDocument();
-  available = true;
-  click(getButton("Try again"));
-  await expect(
-    screen.findByTestId("agentphone-link-qr"),
-  ).resolves.toHaveAttribute(
-    "data-sms-href",
-    `sms:+19039853128?body=${CONNECTION_CODE}`,
-  );
-});
-
 test("An expired code is not scannable and can be replaced", async () => {
   let expired = true;
   context.mocks.api(

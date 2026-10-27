@@ -110,14 +110,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.RemoteConnectionDiagnostics]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Remote connection diagnostics",
-    description:
-      "Retain and query safe SSH and VNC failure evidence in the same Run.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",
@@ -130,6 +122,20 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Slash actions",
     description:
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.ChatReplyNameLine]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Agent name on replies",
+    description:
+      "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.UnifiedChatWorkspace]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Unified chat workspace",
+    description:
+      "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
     enabled: false,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
@@ -411,11 +417,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Connect WeChat by QR code and chat with Okou in direct messages.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.DiscordIntegration]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the verified Discord guild and bot DM integration.",
-    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",

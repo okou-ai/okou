@@ -8,14 +8,12 @@ import XCTest
 final class ChatModelEntryTests: XCTestCase {
   func testColdComposerLoadsModelSettingsWithoutPreloadingOrReplacingTheEditor() async throws {
     let requested = expectation(description: "Mounted composer requests model settings")
-    let delivered = expectation(description: "Model settings responses delivered")
     let (responses, response) = AsyncStream<Void>.makeStream()
     defer { response.finish() }
     let fixture = ChatHTTPFixture { request in
       if request.url?.path == "/api/run-models" {
         requested.fulfill()
         for await _ in responses { break }
-        delivered.fulfill()
       }
       let result = try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
       return result
@@ -38,8 +36,9 @@ final class ChatModelEntryTests: XCTestCase {
     let selection = NSRange(location: 5, length: 4)
     input.selectedRange = selection
     response.yield()
-    await fulfillment(of: [delivered], timeout: 3)
-    await hostingPresentationFrame()
+    try await waitForBusinessResult {
+      workspace.modelStore.configuration?.defaultSelection.model == "codex-model"
+    }
     await hostingPresentationFrame()
     let current = try XCTUnwrap(textView(in: host.view))
     XCTAssertTrue(current.isFirstResponder)

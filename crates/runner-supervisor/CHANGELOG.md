@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.20.41](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.40...runner-supervisor-v0.20.41) (2026-10-27)
+
+## [0.20.40](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.39...runner-supervisor-v0.20.40) (2026-10-27)
+
+
+### Bug Fixes
+
+* classify all-endpoint model guardrail refusals ([#43337](https://github.com/okou-ai/okou/issues/43337)) ([c2a90f0](https://github.com/okou-ai/okou/commit/c2a90f0c2bf594775579b7b00c27e3cad6d87a19))
+
+## [0.20.39](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.38...runner-supervisor-v0.20.39) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner-supervisor:** retain heartbeat drain send custody ([#43253](https://github.com/okou-ai/okou/issues/43253)) ([c58fa1c](https://github.com/okou-ai/okou/commit/c58fa1ce4be75d0406cae28a8d3ec898720bee1b))
+* **runner:** remove snapshot memory prefetch ([#43220](https://github.com/okou-ai/okou/issues/43220)) ([9da4c0b](https://github.com/okou-ai/okou/commit/9da4c0b2ef35464a1be4bdb1ea9cb897da14cf3d))
+
+
+### Refactoring
+
+* **runner-supervisor:** reuse signal task custody guard ([#43266](https://github.com/okou-ai/okou/issues/43266)) ([7460f2e](https://github.com/okou-ai/okou/commit/7460f2e6aa39a9b864915a0f1f9a331458305caa))
+
 ## [0.20.38](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.37...runner-supervisor-v0.20.38) (2026-10-26)
 
 ## [0.20.37](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.36...runner-supervisor-v0.20.37) (2026-10-26)

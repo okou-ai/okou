@@ -2132,8 +2132,7 @@ mod tests {
                     "type": "agentMessage",
                     "id": "item-1",
                     "text": "hello",
-                    "phase": null,
-                    "memoryCitation": null
+                    "phase": null
                 }
             }),
         );

@@ -1,4 +1,4 @@
-//! Active-run handoff, idle sandbox, memory prefetch, and home image lifecycle owned below the Runner process.
+//! Active-run handoff, idle sandbox, and home image lifecycle owned below the Runner process.
 
 // The opt-in test-support build compiles fixture-only branches without the
 // crate's own tests. Default production builds keep the workspace lint policy.
@@ -19,7 +19,6 @@ pub mod host_memory_pressure;
 pub mod idle_pool;
 pub mod idle_reuse_preparation;
 pub mod lifecycle;
-pub mod prefetch;
 pub mod resource_budget;
 pub mod restored_session_identity;
 pub mod status;

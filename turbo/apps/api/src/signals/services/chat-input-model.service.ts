@@ -15,9 +15,7 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { and, eq } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 import { badRequestMessage } from "../../lib/error";
-import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { db$ } from "../external/db";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
@@ -269,44 +267,43 @@ export interface EnqueuedChatInputModel {
 }
 
 /**
- * Rewrite the thread to the successor its input captured, inside the input's
- * enqueue transaction and after the input event (the send's lock order). Only
- * a thread still on the replaced selection changes, so a concurrent model
- * change wins. The snapshot and its `model_selection_updated` event commit
- * together; a Fast tier the successor lacks is cleared with its event.
+ * Guarded snapshot update for the input's enqueue transaction, after its input
+ * event. Only a thread still on the replaced selection changes, so a concurrent
+ * model change wins. The owner appends model/tier events only after this wins.
  */
-export async function applyThreadModelReplacement(
-  tx: Tx,
-  replacement: ThreadModelReplacement | null,
-): Promise<void> {
-  if (!replacement) {
-    return;
-  }
-  const updatedAt = nowDate();
+export function threadModelReplacementWritePlan(
+  replacement: ThreadModelReplacement,
+  updatedAt: Date,
+) {
   // The tier is written only with its event, so a concurrent tier change the
   // replacement does not clear stays with the snapshot that recorded it.
   const tierChanged =
     replacement.codexServiceTier !== replacement.replacedCodexServiceTier;
-  const [updated] = await tx
-    .update(chatThreads)
-    .set({
+  return {
+    table: chatThreads,
+    eventScope: { replacement, updatedAt, tierChanged },
+    values: {
       selectedModel: replacement.selectedModel,
       ...(tierChanged
         ? { codexServiceTier: replacement.codexServiceTier }
         : {}),
       updatedAt,
-    })
-    .where(
-      and(
-        eq(chatThreads.id, replacement.chatThreadId),
-        eq(chatThreads.userId, replacement.userId),
-        eq(chatThreads.selectedModel, replacement.replacedModel),
-      ),
-    )
-    .returning({ id: chatThreads.id });
-  if (!updated) {
-    return;
-  }
+    },
+    where: and(
+      eq(chatThreads.id, replacement.chatThreadId),
+      eq(chatThreads.userId, replacement.userId),
+      eq(chatThreads.selectedModel, replacement.replacedModel),
+    ),
+    returning: { id: chatThreads.id },
+  };
+}
+
+/** Build each event only when its owner is ready to execute it. */
+export function* threadModelReplacementEventStatements({
+  replacement,
+  updatedAt,
+  tierChanged,
+}: ReturnType<typeof threadModelReplacementWritePlan>["eventScope"]) {
   const event = {
     userId: replacement.userId,
     orgId: replacement.orgId,
@@ -314,23 +311,17 @@ export async function applyThreadModelReplacement(
     agentId: replacement.agentId,
     createdAt: updatedAt,
   };
-  await tx.execute(
-    chatThreadEventInsertSql({
-      ...event,
-      kind: "model_selection_updated",
-      selectedModel: replacement.selectedModel,
-    }),
-  );
+  yield chatThreadEventInsertSql({
+    ...event,
+    kind: "model_selection_updated",
+    selectedModel: replacement.selectedModel,
+  });
   if (tierChanged) {
-    await tx.execute(
-      chatThreadEventInsertSql({
-        ...event,
-        kind: "service_tier_updated",
-        serviceTier: chatThreadServiceTierFromCodex(
-          replacement.codexServiceTier,
-        ),
-      }),
-    );
+    yield chatThreadEventInsertSql({
+      ...event,
+      kind: "service_tier_updated",
+      serviceTier: chatThreadServiceTierFromCodex(replacement.codexServiceTier),
+    });
   }
 }
 

@@ -1,14 +1,12 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { CircleCheck } from "lucide-react";
-import { Button, BrandSlack, buttonVariants, cn } from "@okouai/ui";
+import { BrandSlack, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { detach, Reason } from "../../signals/utils.ts";
-import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import {
   effectiveError$,
-  initSlackConnectPage$,
   slackReturnUrl$,
   slackConnectStatus$,
   type SlackConnectStatus,
@@ -79,7 +77,6 @@ function PageContent() {
               ),
             }
           : { kind: "checking" };
-  const reload = useSet(initSlackConnectPage$);
   const [connectLoadable, connect] = useLoadableSet(connectSlackAccount$);
   const connectLoading = connectLoadable.state === "loading";
   const connectError =
@@ -102,15 +99,6 @@ function PageContent() {
     return (
       <>
         <ConnectErrorState message={status.message} />
-        <Button
-          onClick={() => {
-            return detach(reload(pageSignal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.connectors.providerConnect.slack.retryStatus;
-          })}
-        </Button>
       </>
     );
   }
@@ -155,11 +143,6 @@ function PageContent() {
             return $.connectors.providerConnect.slack.invalidDescription;
           })}
         />
-        <a href={INTEGRATION_SETTINGS_PATHS.slack} className={buttonVariants()}>
-          {t(($) => {
-            return $.connectors.providerConnect.slack.startAgain;
-          })}
-        </a>
       </>
     );
   }

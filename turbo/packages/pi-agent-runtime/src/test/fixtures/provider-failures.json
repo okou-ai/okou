@@ -1,5 +1,45 @@
 [
   {
+    "message": "404: {\"code\":404,\"message\":\"Model blocked by guardrail; https://example.invalid/invalid_api_key\",\"metadata\":{\"input_endpoint_count\":5,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":5}]}}",
+    "reason": "provider_model_restricted"
+  },
+  {
+    "message": "{\"error\":{\"code\":404,\"metadata\":{\"input_endpoint_count\":5,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":5}]}}}",
+    "reason": "provider_model_restricted"
+  },
+  {
+    "message": "{\"code\":404.0,\"metadata\":{\"input_endpoint_count\":5.0,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":5.0}]}}",
+    "reason": "provider_model_restricted"
+  },
+  {
+    "message": "404: {\"code\":404,\"message\":\"Model blocked by guardrail\"}",
+    "reason": null
+  },
+  {
+    "message": "{\"code\":404,\"metadata\":{\"input_endpoint_count\":5,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":4}]}}",
+    "reason": null
+  },
+  {
+    "message": "{\"code\":404,\"metadata\":{\"input_endpoint_count\":0,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":0}]}}",
+    "reason": null
+  },
+  {
+    "message": "{\"code\":404,\"metadata\":{\"input_endpoint_count\":5,\"ineligibility_reasons\":[{\"reason\":\"provider-ignored-by-guardrail\",\"endpoint_count\":5}]}}",
+    "reason": null
+  },
+  {
+    "message": "{\"code\":403,\"message\":\"Budget limit exceeded (daily limit)\",\"metadata\":{\"input_endpoint_count\":5,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":5}]}}",
+    "reason": null
+  },
+  {
+    "message": "{\"code\":404,\"type\":\"authentication_error\",\"metadata\":{\"input_endpoint_count\":5,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":5}]}}",
+    "reason": "invalid_credentials"
+  },
+  {
+    "message": "Example response: {\"code\":404,\"metadata\":{\"input_endpoint_count\":5,\"ineligibility_reasons\":[{\"reason\":\"model-ignored-by-guardrail\",\"endpoint_count\":5}]}}",
+    "reason": null
+  },
+  {
     "message": "{\"error\":{\"code\":429,\"message\":\"Specific upstream rate failure\"}}",
     "reason": "provider_rate_limited"
   },

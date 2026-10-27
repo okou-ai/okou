@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.17.26](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.25...runner-lifecycle-v0.17.26) (2026-10-27)
+
+## [0.17.25](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.24...runner-lifecycle-v0.17.25) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner:** remove snapshot memory prefetch ([#43220](https://github.com/okou-ai/okou/issues/43220)) ([9da4c0b](https://github.com/okou-ai/okou/commit/9da4c0b2ef35464a1be4bdb1ea9cb897da14cf3d))
+* **rust:** enforce workspace production lint checks ([#43218](https://github.com/okou-ai/okou/issues/43218)) ([7354c6e](https://github.com/okou-ai/okou/commit/7354c6eab0a5165a144156606a32449862fa10be))
+
 ## [0.17.24](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.23...runner-lifecycle-v0.17.24) (2026-10-26)
 
 ## [0.17.23](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.22...runner-lifecycle-v0.17.23) (2026-10-26)

@@ -54,7 +54,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{SecondsFormat, Utc};
@@ -68,6 +68,7 @@ use api_contracts::generated::constants::runners::{
 };
 
 use super::api::{ApiClient, DegradationEpisodeTracker};
+use super::worker_join::join_retained_worker;
 use crate::duration::duration_ms;
 use crate::error::{
     ApiBodyReadError, ApiTransportCause, ApiTransportError, ProviderError, ProviderResult,
@@ -157,7 +158,7 @@ struct BuiltinFirewallCatalogRefreshControllerInner {
 
 struct BuiltinFirewallCatalogRefreshInner {
     cancel: CancellationToken,
-    task: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+    task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl BuiltinFirewallCatalogRefreshController {
@@ -208,9 +209,10 @@ impl BuiltinFirewallCatalogRefreshController {
         let Some(inner) = &self.inner else {
             return;
         };
-        let refresh_handle = inner.handle.lock().await.take();
-        if let Some(refresh_handle) = refresh_handle {
-            refresh_handle.shutdown().await;
+        let mut owner = inner.handle.lock().await;
+        if let Some(handle) = owner.as_ref() {
+            handle.shutdown().await;
+            *owner = None;
         }
     }
 }
@@ -235,35 +237,23 @@ impl BuiltinFirewallCatalogRefreshHandle {
         Ok(Self {
             inner: Arc::new(BuiltinFirewallCatalogRefreshInner {
                 cancel,
-                task: StdMutex::new(Some(task)),
+                task: Mutex::new(Some(task)),
             }),
         })
     }
 
     pub(super) async fn shutdown(&self) {
         self.inner.cancel.cancel();
-        let task = self.inner.take_task();
-        if let Some(task) = task
-            && let Err(error) = task.await
-        {
+        if let Err(error) = join_retained_worker(&self.inner.task).await {
             warn!(error = %error, "builtin firewall catalog refresh task failed during shutdown");
         }
-    }
-}
-
-impl BuiltinFirewallCatalogRefreshInner {
-    fn take_task(&self) -> Option<tokio::task::JoinHandle<()>> {
-        self.task
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .take()
     }
 }
 
 impl Drop for BuiltinFirewallCatalogRefreshInner {
     fn drop(&mut self) {
         self.cancel.cancel();
-        if let Some(task) = self.take_task() {
+        if let Some(task) = self.task.get_mut().take() {
             task.abort();
         }
     }
@@ -671,6 +661,7 @@ fn validate_catalog_digest(value: &str) -> Result<(), String> {
 mod tests {
     mod download_timeout;
     mod send_transport;
+    mod shutdown;
 
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};

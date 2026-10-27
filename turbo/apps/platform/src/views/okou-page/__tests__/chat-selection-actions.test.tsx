@@ -1,6 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -178,37 +178,4 @@ test("Dismiss the passage actions when a press lands outside them", async () => 
   await waitFor(() => {
     expect(queryQuoteButton()).not.toBeInTheDocument();
   });
-});
-
-test("Finish a keyboard copy through the legacy clipboard fallback", async () => {
-  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
-    new DOMException("Clipboard API denied", "NotAllowedError"),
-  );
-  context.mocks.browser.clipboardExecCommand();
-  let selectedText: string | null = null;
-  const clipboardWrites: string[] = [];
-  vi.spyOn(HTMLTextAreaElement.prototype, "select").mockImplementation(
-    function (this: HTMLTextAreaElement) {
-      selectedText = this.value;
-    },
-  );
-  vi.spyOn(document, "execCommand").mockImplementation((command) => {
-    if (command !== "copy" || selectedText === null) {
-      return false;
-    }
-    const defaultCopy = document.dispatchEvent(
-      new Event("copy", { bubbles: true, cancelable: true }),
-    );
-    if (defaultCopy) {
-      clipboardWrites.push(selectedText);
-    }
-    return defaultCopy;
-  });
-  await openSelection();
-
-  fireEvent.keyDown(document, { key: "c" });
-
-  await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
-  expect(clipboardWrites).toStrictEqual([PASSAGE]);
-  expect(queryQuoteButton()).not.toBeInTheDocument();
 });

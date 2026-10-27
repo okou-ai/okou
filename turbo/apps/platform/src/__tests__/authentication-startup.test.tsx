@@ -3,12 +3,7 @@ import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
 import { mockedClerk } from "./mock-auth.ts";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-  startPage,
-} from "./page-helper.ts";
+import { queryAllByRoleFast, setupPage, startPage } from "./page-helper.ts";
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
 import {
   createTestRuntime,
@@ -312,7 +307,7 @@ test("Authentication startup is reused without a duplicate load", async () => {
   expect(clerk.uiRequests).toStrictEqual([]);
 });
 
-test("A Clerk core failure offers a visible refresh without an automatic retry", async () => {
+test("A Clerk core failure reports the error without initializing an auth form", async () => {
   const failure = new Error("Clerk core resource is unavailable");
   const clerk = context.mocks.clerk();
   clerk.resourceUnavailable(failure);
@@ -341,19 +336,6 @@ test("A Clerk core failure offers a visible refresh without an automatic retry",
     { publishableKey: "test_production_key" },
   ]);
   expect(clerk.loads).toHaveLength(0);
-
-  const reload = vi
-    .spyOn(window.location, "reload")
-    .mockImplementation(() => {});
-  const refresh = queryAllByRoleFast("button", alert).find((button) => {
-    return button.textContent === "Refresh";
-  });
-  expect(refresh).toBeDefined();
-  if (!refresh) {
-    throw new Error("Refresh action is missing");
-  }
-  click(refresh);
-  expect(reload).toHaveBeenCalledOnce();
 });
 
 test("Startup onboarding follows the current account and workspace", async () => {

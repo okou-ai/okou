@@ -803,6 +803,7 @@ export type GmailLabelResolveResult =
       readonly labelId: string;
       readonly labelName: string;
     }
+  | { readonly kind: "not_found" }
   | { readonly kind: "bad_request"; readonly message: string };
 
 export async function resolveGmailLabelByName(
@@ -825,10 +826,7 @@ export async function resolveGmailLabelByName(
     return label.name === args.labelName;
   });
   if (matches.length === 0) {
-    return {
-      kind: "bad_request",
-      message: `Gmail label not found: ${args.labelName}`,
-    };
+    return { kind: "not_found" };
   }
   if (matches.length > 1) {
     return {

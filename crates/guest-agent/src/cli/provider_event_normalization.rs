@@ -7,8 +7,8 @@ use crate::env::Framework;
 
 pub(super) fn normalize_for_sequencing(framework: Framework, event: Value) -> Vec<Value> {
     let events = match framework {
-        Framework::ClaudeCode => expand_message_content(event, false, false),
-        Framework::Pi => expand_message_content(event, true, true),
+        Framework::ClaudeCode => expand_message_content(event, false),
+        Framework::Pi => expand_message_content(event, true),
         Framework::Codex => expand_codex_file_changes(event),
     };
     events
@@ -60,11 +60,7 @@ fn codex_command_mut(event: &mut Value) -> Option<&mut Value> {
     item.get_mut("command")
 }
 
-fn expand_message_content(
-    event: Value,
-    retain_memory_citation_on_last: bool,
-    lift_block_run_event_id: bool,
-) -> Vec<Value> {
+fn expand_message_content(event: Value, lift_block_run_event_id: bool) -> Vec<Value> {
     let Value::Object(mut outer) = event else {
         return vec![event];
     };
@@ -92,15 +88,10 @@ fn expand_message_content(
     }
 
     let blocks = std::mem::take(content);
-    let last_index = blocks.len() - 1;
-    let memory_citation = retain_memory_citation_on_last
-        .then(|| message.remove("memoryCitation"))
-        .flatten();
     let message = message.clone();
     blocks
         .into_iter()
-        .enumerate()
-        .map(|(index, mut block)| {
+        .map(|mut block| {
             let run_event_id = lift_block_run_event_id
                 .then(|| take_block_run_event_id(&mut block))
                 .flatten();
@@ -110,11 +101,6 @@ fn expand_message_content(
             }
             let mut normalized_message = message.clone();
             normalized_message.insert("content".to_string(), Value::Array(vec![block]));
-            if index == last_index
-                && let Some(citation) = &memory_citation
-            {
-                normalized_message.insert("memoryCitation".to_string(), citation.clone());
-            }
             normalized_outer.insert("message".to_string(), Value::Object(normalized_message));
             Value::Object(normalized_outer)
         })
@@ -393,41 +379,6 @@ mod tests {
         assert_eq!(
             events[1].pointer("/message/content/0/name"),
             Some(&json!("Read"))
-        );
-    }
-
-    #[test]
-    fn pi_citation_metadata_stays_on_the_last_split_event() {
-        let events = normalize_for_sequencing(
-            Framework::Pi,
-            json!({
-                "type": "assistant",
-                "message": {
-                    "content": [
-                        { "type": "text", "text": "first", "runEventId": "sandbox:response:0" },
-                        { "type": "text", "text": "last", "runEventId": "sandbox:response:2" }
-                    ],
-                    "memoryCitation": {
-                        "entries": [{
-                            "path": "memory.md",
-                            "lineStart": 1,
-                            "lineEnd": 1,
-                            "note": "used"
-                        }],
-                        "rolloutIds": []
-                    }
-                }
-            }),
-        );
-        assert_eq!(events.len(), 2);
-        assert_eq!(events[0]["runEventId"], "sandbox:response:0");
-        assert_eq!(events[1]["runEventId"], "sandbox:response:2");
-        assert!(events[0].pointer("/message/content/0/runEventId").is_none());
-        assert!(events[1].pointer("/message/content/0/runEventId").is_none());
-        assert!(events[0].pointer("/message/memoryCitation").is_none());
-        assert_eq!(
-            events[1].pointer("/message/memoryCitation/entries/0/path"),
-            Some(&json!("memory.md"))
         );
     }
 

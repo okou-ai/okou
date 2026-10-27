@@ -300,10 +300,13 @@ impl HeartbeatController {
     /// Hard stopping calls this before provider shutdown. Awaiting the bounded
     /// request preserves local ordering without assuming that dropping a
     /// client future retracts a request already queued remotely.
+    /// Cancelling this wait retains the send; dropping its controller aborts it.
     pub async fn drain(&mut self) -> HeartbeatResult<()> {
         self.pending = None;
-        if let Some(send) = self.in_flight.take() {
-            let _ = send.await.map_err(HeartbeatError::TaskFailed)?;
+        if let Some(send) = self.in_flight.as_mut() {
+            let result = send.await;
+            self.in_flight = None;
+            let _ = result.map_err(HeartbeatError::TaskFailed)?;
         }
         Ok(())
     }

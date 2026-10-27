@@ -7,29 +7,22 @@ import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation"
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { nowDate } from "../../lib/time";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
-import { secrets } from "@okouai/db/schema/secret";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
-import {
-  neverStartedRunIds,
-  runSlotReleasePlan,
-  transitionAgentRunsToTerminal,
-  type ReleasedRunSlot,
-} from "./agent-run-terminal-transition.service";
-import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
+import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
+import { memberRunRevocationSql } from "./org-member-run-revocation";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { object, string } from "zod";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { deleteDiscordOrgMemberData$ } from "./discord-owner-cleanup.service";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
 import { command } from "ccstate";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 
 interface OrgMemberCleanupInput {
   readonly orgId: string;
@@ -98,8 +91,8 @@ export const cleanupOrgMemberResources$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
-    signal.throwIfAborted();
+    const revoked = await set(commitOrgMemberRunRevocation$, args, signal);
+    await notifyRevokedOrgMemberRuns(revoked, onSlotsReleased, signal);
     // Keep the earlier VNC invalidation before Run revocation. Recheck both
     // protocols here before removing the member's independent configurations.
     await set(
@@ -239,79 +232,52 @@ export const cleanupOrgMemberResources$ = command(
   },
 );
 
-async function revokeOrgMemberRunAuthority(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
+const revokedMemberRunSchema = object({
+  runId: string(),
+  orgId: string(),
+  runnerGroup: string().nullable(),
+  releasedOrgId: string().nullable(),
+});
+
+function releasedMemberRunSlots(
+  runs: readonly {
+    readonly runId: string;
+    readonly releasedOrgId: string | null;
+  }[],
+): readonly ReleasedRunSlot[] {
+  return runs.flatMap((run) => {
+    return run.releasedOrgId === null
+      ? []
+      : [{ runId: run.runId, orgId: run.releasedOrgId }];
+  });
+}
+
+const commitOrgMemberRunRevocation$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    _signal: AbortSignal,
+  ) => {
+    // Membership revocation is a hard authority boundary, including credentials
+    // retained by ordinary personal-settings disconnect. Commit revocation before
+    // best-effort runner notification or the remaining member resource cleanup.
+    const db = set(writeDb$);
+    const query = memberRunRevocationSql(args, nowDate(), nowDate());
+    // The entry records released slots before observing cancellation, as before.
+    return parseRawRows(revokedMemberRunSchema, await db.execute(query));
+  },
+);
+
+async function notifyRevokedOrgMemberRuns(
+  cancelled: readonly {
+    readonly runId: string;
+    readonly runnerGroup: string | null;
+    readonly releasedOrgId: string | null;
+  }[],
   onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  // Membership revocation is a hard authority boundary, including credentials
-  // retained by ordinary personal-settings disconnect. Commit revocation before
-  // best-effort runner notification or the remaining member resource cleanup.
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0220; new non-billing transactions are prohibited.
-  const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
-    const rows = await transitionAgentRunsToTerminal(tx, {
-      values: {
-        status: "cancelled",
-        completedAt: nowDate(),
-        runnerCancellationMode: "hard",
-      },
-      conditions: [
-        eq(agentRuns.orgId, args.orgId),
-        eq(agentRuns.userId, args.userId),
-        inArray(agentRuns.status, ["pending", "running"]),
-      ],
-    });
-
-    // The departing member's legacy schedule occurrences lose the same
-    // authority here, before the rows they hang from are torn down.
-    await revokeMorningBriefScheduleOwnership(tx, {
-      kind: "membership",
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-
-    await tx
-      .delete(modelProviders)
-      .where(
-        and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, args.userId),
-        ),
-      );
-    await tx
-      .delete(modelProviderAuthSessions)
-      .where(
-        and(
-          eq(modelProviderAuthSessions.orgId, args.orgId),
-          eq(modelProviderAuthSessions.userId, args.userId),
-        ),
-      );
-    await tx
-      .delete(secrets)
-      .where(
-        and(
-          eq(secrets.orgId, args.orgId),
-          eq(secrets.userId, args.userId),
-          eq(secrets.type, "model-provider"),
-        ),
-      );
-    const released = await (async () => {
-      const runIds = neverStartedRunIds(rows);
-      return await (async () => {
-        const plan = runSlotReleasePlan(runIds);
-        if (plan === null) {
-          return [];
-        }
-        return await tx
-          .delete(plan.from)
-          .where(plan.where)
-          .returning(plan.returning);
-      })();
-    })();
-    return { cancelled: rows, releasedSlots: released };
-  });
-  onSlotsReleased(releasedSlots);
+  onSlotsReleased(releasedMemberRunSlots(cancelled));
   signal.throwIfAborted();
   await Promise.all(
     cancelled.map(async (run) => {

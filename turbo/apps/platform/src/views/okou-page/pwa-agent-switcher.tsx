@@ -16,7 +16,6 @@ import {
   currentChatAgentDisplayName$,
   currentChatAgentId$,
 } from "../../signals/agent-chat.ts";
-import { reloadAgents$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import {
@@ -38,7 +37,6 @@ function AgentOptions() {
   const options = useLoadable(pwaAgentOptions$);
   const currentAgentId = useLastResolved(currentChatAgentId$);
   const selectAgent = useSet(selectPwaAgent$);
-  const reloadAgents = useSet(reloadAgents$);
   const unreadAgentIds = useLastResolved(unreadAgentIds$, {
     equalityFn: equalSets,
   });
@@ -54,11 +52,6 @@ function AgentOptions() {
             return $.appShell.pwaNavigation.agentsUnavailable;
           })}
         </p>
-        <Button variant="neutral" className="mt-3" onClick={reloadAgents}>
-          {ta(($) => {
-            return $.actions.retry;
-          })}
-        </Button>
       </div>
     );
   }
@@ -134,8 +127,7 @@ export function PwaAgentSwitcher() {
           {agentDisplayName ?? assistantName}
         </span>
         <ChevronDown size={16} aria-hidden="true" />
-        {/* The chevron's ink sits 4px inside its box, so -ml-1 leaves the dot
-            8px from the ink, on the same centre line as the name. */}
+
         {otherAgentsUnread && (
           <span className="-ml-1 flex shrink-0">
             <AgentUnreadIndicator />

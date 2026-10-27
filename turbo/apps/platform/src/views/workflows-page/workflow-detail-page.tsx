@@ -5,29 +5,30 @@ import type { FormEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type {
-  ChatRunFinishedEventConfig,
-  ChatRunFinishedRunStatus,
-  GmailNewMessageEventConfig,
-  GoogleCalendarAutomationEventConfig,
-  GithubDeploymentState,
-  GithubDeploymentStatusCreatedEventConfig,
-  GithubIssueCommentCreatedEventConfig,
-  GithubIssueCommentSubjectFilter,
-  GithubPullRequestAction,
-  GithubPullRequestEventConfig,
-  GithubPullRequestReviewState,
-  GithubPullRequestReviewSubmittedEventConfig,
-  GithubWorkflowJobCompletedEventConfig,
-  GithubWorkflowRunCompletedEventConfig,
-  GithubWorkflowRunConclusion,
-  NotionPageContentUpdatedEventCreateConfig,
-  WorkflowFileEntry,
-  WorkflowFileMetadata,
-  WorkflowDetailResponse,
-  WorkflowSchedule,
-  WorkflowScheduleType,
-  WorkflowAutomationSummary,
+import {
+  GMAIL_LABEL_NOT_FOUND_ERROR_CODE,
+  type ChatRunFinishedEventConfig,
+  type ChatRunFinishedRunStatus,
+  type GmailNewMessageEventConfig,
+  type GoogleCalendarAutomationEventConfig,
+  type GithubDeploymentState,
+  type GithubDeploymentStatusCreatedEventConfig,
+  type GithubIssueCommentCreatedEventConfig,
+  type GithubIssueCommentSubjectFilter,
+  type GithubPullRequestAction,
+  type GithubPullRequestEventConfig,
+  type GithubPullRequestReviewState,
+  type GithubPullRequestReviewSubmittedEventConfig,
+  type GithubWorkflowJobCompletedEventConfig,
+  type GithubWorkflowRunCompletedEventConfig,
+  type GithubWorkflowRunConclusion,
+  type NotionPageContentUpdatedEventCreateConfig,
+  type WorkflowFileEntry,
+  type WorkflowFileMetadata,
+  type WorkflowDetailResponse,
+  type WorkflowSchedule,
+  type WorkflowScheduleType,
+  type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import {
   AlertTriangle,
@@ -99,6 +100,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { currentLocale, i18n } from "../../i18n/index.ts";
+import { ApiError } from "../../lib/api-error.ts";
 import { agents$ } from "../../signals/agent.ts";
 import { user$ } from "../../signals/auth.ts";
 import { brandName$ } from "../../signals/branding.ts";
@@ -6060,12 +6062,6 @@ function CreateGmailLabelAppliedAutomationDialog({
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
-  const pageSignal = useGet(pageSignal$);
-  const [createLoadable, createGmailLabelAutomation] = useLoadableSet(
-    createWorkflowGmailLabelAppliedAutomation$,
-  );
-  const creating = createLoadable.state === "loading";
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -6081,57 +6077,112 @@ function CreateGmailLabelAppliedAutomationDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        <form
-          aria-label={i18n.t(($) => {
-            return $.workflows.automations.gmail.addLabelAria;
-          })}
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = new FormData(event.currentTarget);
-            const eventConfig = buildGmailLabelAppliedEventConfig(form);
-            if (!eventConfig) {
-              return;
-            }
-            detach(
-              createGmailLabelAutomation(
-                { workflowId, eventConfig },
-                pageSignal,
-              ),
-              Reason.DomCallback,
-            );
+        <CreateGmailLabelAppliedAutomationForm
+          workflowId={workflowId}
+          onCancel={() => {
+            onOpenChange(false);
           }}
-        >
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {i18n.t(($) => {
-              return $.workflows.automations.gmail.labelName;
-            })}
-            <Input
-              name="labelName"
-              aria-label={i18n.t(($) => {
-                return $.workflows.automations.gmail.labelName;
-              })}
-              required
-              disabled={creating}
-              placeholder={i18n.t(($) => {
-                return $.workflows.automations.gmail.labelPlaceholder;
-              })}
-            />
-          </label>
-          <AutomationFormActions
-            pending={creating}
-            onCancel={() => {
-              onOpenChange(false);
-            }}
-          >
-            {creating ? <Loader2 size={14} className="animate-spin" /> : null}
-            {i18n.t(($) => {
-              return $.workflows.automations.gmail.addLabelAction;
-            })}
-          </AutomationFormActions>
-        </form>
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function GmailLabelNameField({
+  error,
+  disabled,
+  defaultValue,
+  className,
+}: {
+  readonly error: unknown;
+  readonly disabled: boolean;
+  readonly defaultValue?: string;
+  readonly className?: string;
+}) {
+  const labelNotFound =
+    error instanceof ApiError &&
+    error.status === 400 &&
+    error.code === GMAIL_LABEL_NOT_FOUND_ERROR_CODE &&
+    error.expected;
+
+  return (
+    <Field.Root
+      invalid={labelNotFound}
+      className="flex flex-col gap-1 text-xs text-muted-foreground"
+    >
+      <Field.Label>
+        {i18n.t(($) => {
+          return $.workflows.automations.gmail.labelName;
+        })}
+      </Field.Label>
+      <Input
+        name="labelName"
+        required
+        disabled={disabled}
+        defaultValue={defaultValue}
+        placeholder={i18n.t(($) => {
+          return $.workflows.automations.gmail.labelPlaceholder;
+        })}
+        className={className}
+      />
+      <Field.Error
+        match={labelNotFound}
+        role="alert"
+        className="text-xs text-destructive"
+      >
+        {i18n.t(($) => {
+          return $.workflows.automations.gmail.labelNotFound;
+        })}
+      </Field.Error>
+    </Field.Root>
+  );
+}
+
+function CreateGmailLabelAppliedAutomationForm({
+  workflowId,
+  onCancel,
+}: {
+  readonly workflowId: string;
+  readonly onCancel: () => void;
+}) {
+  const pageSignal = useGet(pageSignal$);
+  const [createLoadable, createGmailLabelAutomation] = useLoadableSet(
+    createWorkflowGmailLabelAppliedAutomation$,
+  );
+  const creating = createLoadable.state === "loading";
+
+  return (
+    <form
+      aria-label={i18n.t(($) => {
+        return $.workflows.automations.gmail.addLabelAria;
+      })}
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const eventConfig = buildGmailLabelAppliedEventConfig(form);
+        if (!eventConfig) {
+          return;
+        }
+        detach(
+          createGmailLabelAutomation({ workflowId, eventConfig }, pageSignal),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      <GmailLabelNameField
+        error={
+          createLoadable.state === "hasError" ? createLoadable.error : undefined
+        }
+        disabled={creating}
+      />
+      <AutomationFormActions pending={creating} onCancel={onCancel}>
+        {creating ? <Loader2 size={14} className="animate-spin" /> : null}
+        {i18n.t(($) => {
+          return $.workflows.automations.gmail.addLabelAction;
+        })}
+      </AutomationFormActions>
+    </form>
   );
 }
 
@@ -8804,24 +8855,14 @@ function UpdateGmailLabelAppliedAutomationForm({
         );
       }}
     >
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        {i18n.t(($) => {
-          return $.workflows.automations.gmail.labelName;
-        })}
-        <Input
-          name="labelName"
-          aria-label={i18n.t(($) => {
-            return $.workflows.automations.gmail.labelName;
-          })}
-          required
-          defaultValue={automation.eventConfig.labelName}
-          disabled={saving}
-          placeholder={i18n.t(($) => {
-            return $.workflows.automations.gmail.labelPlaceholder;
-          })}
-          className={AUTOMATION_FIELD_CLASS}
-        />
-      </label>
+      <GmailLabelNameField
+        error={
+          updateLoadable.state === "hasError" ? updateLoadable.error : undefined
+        }
+        defaultValue={automation.eventConfig.labelName}
+        disabled={saving}
+        className={AUTOMATION_FIELD_CLASS}
+      />
       <AutomationFormActions pending={saving} onCancel={onCancel}>
         {saving ? (
           <Loader2 size={13} className="animate-spin" />

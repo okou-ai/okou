@@ -275,28 +275,6 @@ test("A successful POST without connected readback does not claim completion", a
   ).toBeInTheDocument();
 });
 
-test("Read failures remain visible and recover through manual retry", async () => {
-  let failed = true;
-  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-    if (failed) {
-      throw Response.error();
-    }
-    return respond(
-      200,
-      status({ isConnected: true, linkedAccounts: [account] }),
-    );
-  });
-  await expect(
-    setupPage({ context, path: path({ ...target, status: "connected" }) }),
-  ).rejects.toThrow("Failed to fetch");
-  await expect(
-    screen.findByRole("heading", { name: "Connection failed" }),
-  ).resolves.toBeInTheDocument();
-  failed = false;
-  click(getAction("button", "Try again"));
-  await expectConnected();
-});
-
 test("Prepared installation stays pending and reconciles on visibility return", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
   const setStatus = mockStatus(
@@ -639,32 +617,4 @@ test("Reloading a success link with no current connection remains read-only", as
     "old@example.com",
   );
   expect(attemptedBinding).toBeUndefined();
-});
-
-test("A failed readback after binding stays visible until a successful retry", async () => {
-  let failed = false;
-  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-    if (failed) {
-      throw Response.error();
-    }
-    return respond(200, status());
-  });
-  context.mocks.api(teamsConnectContract.connect, ({ respond }) => {
-    failed = true;
-    return respond(200, {
-      success: true,
-      connectionId: "accepted",
-      role: "admin",
-    });
-  });
-  await setupPage({ context, path: path(target) });
-  click(getAction("button", "Connect"));
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Connection failed" }),
-    ).toBeInTheDocument();
-  });
-  mockStatus(status({ isConnected: true, linkedAccounts: [account] }));
-  click(getAction("button", "Try again"));
-  await expectConnected();
 });

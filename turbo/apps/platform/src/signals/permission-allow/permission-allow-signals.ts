@@ -108,12 +108,6 @@ export function findPermissionInMetadata(
 
 const internalUserPermissionGrantsReload$ = state(0);
 
-export const refreshUserPermissionGrants$ = command(({ set }) => {
-  set(internalUserPermissionGrantsReload$, (version) => {
-    return version + 1;
-  });
-});
-
 const onPermissionUpdated$ = command(({ set }) => {
   set(internalUserPermissionGrantsReload$, (version) => {
     return version + 1;
@@ -198,7 +192,7 @@ export const permissionAllowFirewallPermissionMetadata$ = computed(
 
 export const applyUserPermissionGrants$ = command(
   async (
-    { get, set },
+    { get },
     params: {
       agentId?: string;
       connectorSlug: string;
@@ -224,9 +218,6 @@ export const applyUserPermissionGrants$ = command(
       [200],
     );
     signal.throwIfAborted();
-    set(internalUserPermissionGrantsReload$, (prev) => {
-      return prev + 1;
-    });
     return result.body;
   },
 );

@@ -7,7 +7,6 @@
     "delete": "Hapus agen",
     "deleting": "Menghapus…",
     "discard": "Buang",
-    "retry": "Coba lagi",
     "save": "Simpan",
     "saving": "Menyimpan…"
   },
@@ -61,16 +60,13 @@
     "success": "Agen dihapus",
     "title": "Hapus {{agentName}}?",
     "workflows": {
-      "copiedTitle": "Sudah disalin",
-      "copiedTo": "{{workflowTitle}} disalin ke {{agentName}}",
       "copyTo": "Salin ke {{agentName}}",
       "deleteWithAgent": "Hapus bersama agen",
       "description": "Salin alur kerja ke agen lain agar tetap tersimpan. Sisanya akan dihapus.",
       "handle": "Tangani alur kerja {{workflowTitle}}",
-      "loadFailed": "Tidak dapat memuat alur kerja. Coba lagi sebelum menghapus agen ini.",
+      "loadFailed": "Alur kerja tidak dapat dimuat.",
       "loading": "Memuat alur kerja…",
-      "title": "Simpan alur kerja yang ingin dipertahankan?",
-      "untitled": "Alur kerja"
+      "title": "Simpan alur kerja yang ingin dipertahankan?"
     }
   },
   "detail": {

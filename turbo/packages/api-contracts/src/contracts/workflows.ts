@@ -203,6 +203,8 @@ export type GmailNewMessageEventConfig = zInfer<
   typeof gmailNewMessageEventConfigSchema
 >;
 
+export const GMAIL_LABEL_NOT_FOUND_ERROR_CODE = "GMAIL_LABEL_NOT_FOUND";
+
 export const gmailLabelAppliedEventConfigSchema = object({
   provider: literal("gmail"),
   event: literal("label_applied"),

@@ -101,19 +101,43 @@ final class FailureRecoveryTests: XCTestCase {
       models.close()
     }
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
-    let gate = ModelResponseGate()
-    defer { gate.open() }
+    let cardGate = ModelResponseGate()
+    let settingsGate = ModelResponseGate()
+    let cardStarted = expectation(description: "The card account request is held")
+    let settingsStarted = expectation(description: "The superseding settings request is held")
+    defer {
+      cardGate.open()
+      settingsGate.open()
+    }
     fixture.state.value.withLock {
-      $0.accountGate = gate
+      $0.accountGate = cardGate
+      $0.accountRequested = { cardStarted.fulfill() }
       $0.accounts = $0.accounts.replacingOccurrences(
         of: "sample@example.invalid", with: "new-active@example.invalid")
     }
     let cardRead = Task { await conversation.refreshFailureAccounts() }
-    try await eventually { models.subscriptions.isLoading }
+    addTeardownBlock {
+      cardRead.cancel()
+      cardGate.open()
+      settingsGate.open()
+      await cardRead.value
+    }
+    await fulfillment(of: [cardStarted], timeout: 3)
+    fixture.state.value.withLock {
+      $0.accountGate = settingsGate
+      $0.accountRequested = { settingsStarted.fulfill() }
+    }
     let settingsRead = Task { await models.subscriptions.refresh(force: true) }
-    await Task.yield()
-    gate.open()
+    addTeardownBlock {
+      settingsRead.cancel()
+      cardGate.open()
+      settingsGate.open()
+      _ = await settingsRead.value
+    }
+    await fulfillment(of: [settingsStarted], timeout: 3)
+    cardGate.open()
     await cardRead.value
+    settingsGate.open()
     _ = await settingsRead.value
     XCTAssertEqual(conversation.failureState(failure).accountLabel, "new-active@example.invalid")
     XCTAssertFalse(conversation.failureState(failure).isBusy)
@@ -132,6 +156,11 @@ final class FailureRecoveryTests: XCTestCase {
     defer { gate.open() }
     fixture.state.value.withLock { $0.resetGate = gate }
     let recovering = Task { await conversation.recoverFailure(failure.id, resetUsage: true) }
+    addTeardownBlock {
+      recovering.cancel()
+      gate.open()
+      await recovering.value
+    }
     try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
     fixture.state.value.withLock {
       $0.rows.append(
@@ -290,6 +319,11 @@ final class FailureRecoveryTests: XCTestCase {
     let first = Task {
       await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
     }
+    addTeardownBlock {
+      first.cancel()
+      gate.open()
+      await first.value
+    }
     try await eventually { fixture.state.value.withLock { !$0.resetKeys.isEmpty } }
     await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
     XCTAssertEqual(fixture.state.value.withLock { $0.resetKeys.count }, 1)
@@ -302,18 +336,17 @@ final class FailureRecoveryTests: XCTestCase {
 
   func testHTTPFailureFactsSurviveSQLiteReplay() async throws {
     let fixture = FailureRecoveryFixture(reason: "provider_image_too_large", error: "Image limit")
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
     let (conversation, models) = await fixture.conversation(
-      cache: ChatCache(scope: scope, directory: directory))
+      cache: cacheDirectory.cache(scope: scope))
     defer {
       conversation.close()
       models.close()
     }
     let restarted = ChatSync(
-      client: fixture.http.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.http.client, cache: cacheDirectory.cache(scope: scope))
     let history = await restarted.cachedHistory(threadID: ModelHTTPFixtures.threadID)
     let failure = try XCTUnwrap(history?.messages.last?.failure)
     XCTAssertEqual(failure.reason, "provider_image_too_large")

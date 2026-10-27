@@ -25,7 +25,11 @@ import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { logger } from "../log.ts";
 import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
-import { talkDraft$, type DraftSignals } from "../okou-page/chat-draft.ts";
+import {
+  talkDraft$,
+  type DraftSignals,
+  type PendingThreadIdentity,
+} from "../okou-page/chat-draft.ts";
 import { chatPageModelSelection$ } from "../okou-page/chat-page.ts";
 import {
   rememberComposerTaskForThread$,
@@ -404,7 +408,10 @@ async function createChatThread(
           : { reasoningEffort: selectedEffort }),
         ...(args.title ? { title: args.title } : {}),
         ...(args.connectorSelections?.length
-          ? { connectorSelections: [...args.connectorSelections] }
+          ? {
+              connectorSelections: [...args.connectorSelections],
+              connectorSelectionPolicy: "required" as const,
+            }
           : {}),
         ...(args.initialRemoteAccessOverrides?.length
           ? {
@@ -417,6 +424,8 @@ async function createChatThread(
       fetchOptions: { signal },
     }),
     [201],
+    signal,
+    { expectedErrors: { 400: ["CONNECTOR_ACCOUNT_UNAVAILABLE"] } },
   );
   signal.throwIfAborted();
 }
@@ -519,6 +528,49 @@ async function createNewThreadRecord(
   signal.throwIfAborted();
 }
 
+const mintNewThreadSubmission$ = command(
+  async (
+    { set },
+    request: Pick<
+      SendNewThreadMessageRequest,
+      "agentId" | "computerUseHostId" | "cloudBrowserEnabled"
+    >,
+    identity: Omit<PendingThreadIdentity, "intent">,
+    submission: {
+      readonly modelSelection: ModelProviderSelection;
+      readonly userMessage: UserMessageDocument;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const { modelSelection, userMessage } = submission;
+    set(
+      appendOptimisticChatEvent$,
+      createOptimisticChatEventEntry(
+        createNewThreadOptimisticEventEntry({
+          threadId: identity.threadId,
+          clientEventId: identity.clientEventId,
+          userMessage,
+        }),
+      ),
+    );
+    await set(
+      mintOptimisticThreadWithEvent$,
+      {
+        threadId: identity.threadId,
+        eventId: identity.chatThreadEventId,
+        agentId: request.agentId,
+        selectedModel: modelSelection.selectedModel,
+        modelSettings: modelSelection.modelSettings ?? {},
+        serviceTier: apiServiceTierFromSelection(modelSelection),
+        computerUseHostId: request.computerUseHostId ?? null,
+        cloudBrowserEnabled: request.cloudBrowserEnabled ?? false,
+      },
+      signal,
+    );
+  },
+);
+
 const sendNewThreadMessage$ = command(
   async (
     { get, set },
@@ -531,6 +583,10 @@ const sendNewThreadMessage$ = command(
     const { agentId, prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
     const draft = request.draft ?? get(talkDraft$);
+    const submittedInput = get(draft.input$);
+    const submittedDocument = set(draft.readEditorDocument$);
+    const submittedAttachments = get(draft.attachments$);
+    const submittedTemplate = get(draft.generationTemplate$);
     const resolved = await set(
       resolveNewThreadModelSelection$,
       request.modelSelection,
@@ -556,30 +612,52 @@ const sendNewThreadMessage$ = command(
         userMessageForNewThread(request, prepared),
         resolvedModelSelection,
       );
-    const threadId = crypto.randomUUID();
-    const clientEventId = crypto.randomUUID();
-    const chatThreadEventId = crypto.randomUUID();
-    set(
-      appendOptimisticChatEvent$,
-      createOptimisticChatEventEntry(
-        createNewThreadOptimisticEventEntry({
-          threadId,
-          clientEventId,
-          userMessage: optimisticUserMessage,
-        }),
-      ),
-    );
-    await set(
-      mintOptimisticThreadWithEvent$,
-      {
-        threadId,
-        eventId: chatThreadEventId,
+    // An unknown create outcome retains the identity for an explicit resend of
+    // the same submission. A changed draft or account choice is a new intent.
+    const { threadId, clientEventId, chatThreadEventId } = set(
+      draft.reserveThreadIdentity$,
+      JSON.stringify({
         agentId,
-        selectedModel: resolvedModelSelection.selectedModel,
-        modelSettings: resolvedModelSelection.modelSettings ?? {},
-        serviceTier: apiServiceTierFromSelection(resolvedModelSelection),
-        computerUseHostId: computerUseHostId ?? null,
-        cloudBrowserEnabled: cloudBrowserEnabled ?? false,
+        userMessage: annotatedUserMessage,
+        modelSelection: resolvedModelSelection,
+        computerUseHostId,
+        cloudBrowserEnabled,
+        connectorSelections: request.connectorSelections,
+        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+      }),
+    );
+    const createClient = get(apiClient$);
+    L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
+    const creation = {
+      createClient,
+      agentId,
+      title: undefined,
+      clientThreadId: threadId,
+      eventId: chatThreadEventId,
+      modelSelection: resolvedModelSelection,
+      models: resolved.models,
+      catalog: resolved.catalog,
+      codexExecution: features[FeatureSwitchKey.CodexExecution],
+      connectorSelections: request.connectorSelections,
+      initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+    };
+    const createResult = request.connectorSelections?.length
+      ? createNewThreadRecord(creation, signal)
+      : null;
+    // An explicit account choice must be accepted before publishing an
+    // optimistic chat or clearing its composer. A rejected creation leaves the
+    // entire draft and its pending connector/remote preferences in place.
+    if (createResult) {
+      await createResult;
+      signal.throwIfAborted();
+    }
+    await set(
+      mintNewThreadSubmission$,
+      request,
+      { threadId, clientEventId, chatThreadEventId },
+      {
+        modelSelection: resolvedModelSelection,
+        userMessage: optimisticUserMessage,
       },
       signal,
     );
@@ -587,29 +665,18 @@ const sendNewThreadMessage$ = command(
       set(rememberComposerTaskForThread$, threadId, request.composerTask);
     }
     request.onOptimisticSend?.();
-    set(draft.clear$);
+    const draftUnchanged =
+      get(draft.input$) === submittedInput &&
+      set(draft.readEditorDocument$) === submittedDocument &&
+      get(draft.attachments$) === submittedAttachments &&
+      get(draft.generationTemplate$) === submittedTemplate;
+    if (draftUnchanged) {
+      set(draft.clear$);
+    }
     const clearDraftResult =
-      request.forward || request.preserveAgentDraft
+      !draftUnchanged || request.forward || request.preserveAgentDraft
         ? Promise.resolve()
         : set(clearAgentDraftById$, agentId, signal);
-    const createClient = get(apiClient$);
-    L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
-    const createResult = createNewThreadRecord(
-      {
-        createClient,
-        agentId,
-        title: undefined,
-        clientThreadId: threadId,
-        eventId: chatThreadEventId,
-        modelSelection: resolvedModelSelection,
-        models: resolved.models,
-        catalog: resolved.catalog,
-        codexExecution: features[FeatureSwitchKey.CodexExecution],
-        connectorSelections: request.connectorSelections,
-        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
-      },
-      signal,
-    );
     const sendBody = newThreadSendBody({
       agentId,
       threadId,
@@ -624,8 +691,12 @@ const sendNewThreadMessage$ = command(
       sourceRunId: request.forward?.runId,
     });
     const sendResult = (async (): Promise<void> => {
-      await Promise.all([clearDraftResult, createResult]);
+      await Promise.all([
+        clearDraftResult,
+        createResult ?? createNewThreadRecord(creation, signal),
+      ]);
       signal.throwIfAborted();
+      set(draft.confirmThreadIdentity$, threadId);
       await sendChatEvent(createClient, sendBody, signal);
       signal.throwIfAborted();
       L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });

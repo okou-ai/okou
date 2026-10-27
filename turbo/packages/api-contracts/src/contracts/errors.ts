@@ -1,5 +1,8 @@
 import { literal, object, string, tuple } from "zod";
-import { formatRunBalanceError } from "./run-balance-errors";
+import {
+  formatRunBalanceError,
+  MODEL_UNAVAILABLE_MESSAGE,
+} from "./run-balance-errors";
 import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
 import {
@@ -694,6 +697,7 @@ type StructuredRunErrorBehavior =
   | "overloaded"
   | "usage-limit"
   | "unsupported-model"
+  | "model-restricted"
   | "reconnect"
   | "terms";
 
@@ -724,6 +728,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   reconnect_required: "reconnect",
   codex_access_program_unavailable: "codex-access-program-unavailable",
   unsupported_model: "unsupported-model",
+  provider_model_restricted: "model-restricted",
   usage_limit: "usage-limit",
 };
 
@@ -753,6 +758,13 @@ function formatOverloadedRunError(
     return CODEX_PROVIDER_OVERLOADED_MESSAGE;
   }
   return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
+}
+
+function actionableRunErrorOrDefault(
+  errorMessage: string,
+  defaultMessage: string,
+): string {
+  return isActionableRunError(errorMessage) ? errorMessage : defaultMessage;
 }
 
 function formatStructuredRunError(params: {
@@ -818,14 +830,19 @@ function formatStructuredRunError(params: {
       );
     }
     case "usage-limit": {
-      return isActionableRunError(params.errorMessage)
-        ? params.errorMessage
-        : CHAT_RUN_USAGE_LIMIT_MESSAGE;
+      return actionableRunErrorOrDefault(
+        params.errorMessage,
+        CHAT_RUN_USAGE_LIMIT_MESSAGE,
+      );
     }
     case "unsupported-model": {
-      return isActionableRunError(params.errorMessage)
-        ? params.errorMessage
-        : CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE;
+      return actionableRunErrorOrDefault(
+        params.errorMessage,
+        CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
+      );
+    }
+    case "model-restricted": {
+      return MODEL_UNAVAILABLE_MESSAGE;
     }
     case "generic": {
       return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;

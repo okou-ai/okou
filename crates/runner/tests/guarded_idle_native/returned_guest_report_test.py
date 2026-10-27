@@ -10,15 +10,15 @@ import sys
 import unittest
 import uuid
 
-import read_cancellation_report_test
+import snapshot_report_fixture
 import report
 import returned_guest_report as returned
-import startup_report as startup
+import snapshot_report as startup
 
 
 class ReturnedGuestTests(unittest.TestCase):
     def setUp(self):
-        read_cancellation_report_test.ReadCancellationTests.setUp(self)
+        snapshot_report_fixture.prepare(self)
         raw = json.dumps(self.inputs)
         self.collector["metadata"].update(native_returned_guest_policy_json=json.dumps(self.policy),
             native_returned_guest_inputs_json=raw, native_returned_guest_snapshot_bytes=startup.BYTES)
@@ -77,7 +77,7 @@ class ReturnedGuestTests(unittest.TestCase):
             values = [
                 {"policy": self.policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
                  "snapshot_sha256": self.artifacts["snapshot_files"]["memory.bin"], "snapshot_bytes": startup.BYTES,
-                 "prefetch_overhead_bytes": 1024**2, "stage": stage, "allocated": [2,4096,1], "checkpoint_models_stalled_io": False},
+                 "stage": stage, "allocated": [2,4096,1], "checkpoint_models_stalled_io": False},
                 {"pool_pending_ns": clock(20), "foreground_acquired_ns": clock(30), "joined_ns": clock(40),
                  "pool_released_ns": clock(80), "wait_pending": True, "wait_dropped": True, "no_provider_create": True,
                  "result": {"finished": True, "prepared": False, "published": False, "retained_resource": False,

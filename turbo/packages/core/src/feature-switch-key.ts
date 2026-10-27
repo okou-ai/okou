@@ -50,8 +50,6 @@ export enum FeatureSwitchKey {
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",
-  DiscordIntegration = "discordIntegration",
-  RemoteConnectionDiagnostics = "remoteConnectionDiagnostics",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
   ChatThreadArchiving = "chatThreadArchiving",
@@ -67,4 +65,6 @@ export enum FeatureSwitchKey {
   ProactiveAgent = "proactiveAgent",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
+  ChatReplyNameLine = "chatReplyNameLine",
+  UnifiedChatWorkspace = "unifiedChatWorkspace",
 }

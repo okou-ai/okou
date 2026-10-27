@@ -138,6 +138,7 @@ import {
 } from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import {
+  automaticNoAuthPublicationSql,
   customConnectorOAuthBindingDeletionPlan as customOAuthBindingDeletion,
   customConnectorOAuthStartFromRow,
   customConnectorOAuthStartResultSchema,
@@ -1081,6 +1082,11 @@ function automaticNoAuthWakeupFailure(
   };
 }
 
+const automaticNoAuthPublicationRow = object({
+  contract_current: boolean(),
+  connection_id: string().uuid().nullable(),
+});
+
 const commitAutomaticNoAuthConnection$ = command(
   function persistAutomaticNoAuthConnection(
     { set },
@@ -1089,29 +1095,21 @@ const commitAutomaticNoAuthConnection$ = command(
   ) {
     const { connector, args } = context;
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0139; new non-billing transactions are prohibited.
-    const transaction = db.transaction(async (tx) => {
+    const publication = (async () => {
       const contractRef = automaticNoAuthCredentialContractRef(args, connector);
-      await (async () => {
-        const plan =
-          customConnectorOAuth2CredentialContractReadPlan(contractRef);
-        const rows = await tx
-          .select(plan.columns)
-          .from(plan.from)
-          .leftJoin(plan.join.table, plan.join.on)
-          .where(plan.where)
-          .for("update", { of: plan.from })
-          .limit(1);
-        return customConnectorOAuth2CredentialContractFromRows(
-          rows,
-          contractRef,
-        );
-      })();
+      const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
+      const definitions = await db
+        .select(plan.columns)
+        .from(plan.from)
+        .leftJoin(plan.join.table, plan.join.on)
+        .where(plan.where)
+        .limit(1);
+      customConnectorOAuth2CredentialContractFromRows(definitions, contractRef);
       const mutationReadArgs = automaticNoAuthMutation(args, connector);
       const resolution = await (async () => {
         let read = connectionMutationReadPlan(mutationReadArgs);
         for (;;) {
-          const rows = await tx
+          const rows = await db
             .select(read.columns)
             .from(read.from)
             .where(read.where)
@@ -1131,59 +1129,32 @@ const commitAutomaticNoAuthConnection$ = command(
       if (resolution.kind !== "ready") {
         return { resolution, connection: null };
       }
-
-      const connectionArgs = noAuthWriteArgs(args, connector, resolution);
-
-      const connection = await awaitConnectorConnectionRow(
-        (async () => {
-          const outcome = await (async () => {
-            let write = connectionMetadataWritePlan(connectionArgs);
-            for (;;) {
-              const query: ConnectorConnectionMetadataQuery =
-                write.kind === "update"
-                  ? tx.update(connectors).set(write.values).where(write.where)
-                  : write.conflict
-                    ? tx
-                        .insert(connectors)
-                        .values(write.values)
-                        .onConflictDoNothing(write.conflict)
-                    : tx.insert(connectors).values(write.values);
-              const [row] = await query.returning(connectionSelection());
-              const result = connectionMetadataWriteResult(write, row);
-              if (result.kind === "resolved") {
-                return write.phase === "existing"
-                  ? result.outcome
-                  : await Promise.resolve(result.outcome);
-              }
-              write = result.write;
-            }
-          })();
-          signal.throwIfAborted();
-          if (outcome.kind !== "written") {
-            return outcome;
-          }
-          const connection = outcome.row;
-
-          for (const kind of connectorCredentialDeletionKinds) {
-            const deletion = connectorCredentialDeletion(kind, connection);
-            await tx.delete(deletion.from).where(deletion.where);
-            if (kind !== "builtin-oauth") {
-              signal.throwIfAborted();
-            }
-          }
-          const connectorId = connection.id;
-          await (async () => {
-            const deletion = customOAuthBindingDeletion(connectorId);
-            await tx.delete(deletion.from).where(deletion.where);
-          })();
-          signal.throwIfAborted();
-          return outcome;
-        })(),
+      const statement = automaticNoAuthPublicationSql(
+        noAuthWriteArgs(args, connector, resolution),
       );
-      return { resolution, connection };
-    });
+      signal.throwIfAborted();
+      const [row] = parseRawRows(
+        automaticNoAuthPublicationRow,
+        await db.execute(statement),
+      );
+      if (!row) {
+        throw new Error("Automatic no-auth publication returned no row");
+      }
+      if (!row.contract_current) {
+        throw new Error(
+          "Custom connector credential contract changed during OAuth connection",
+        );
+      }
+      if (row.connection_id === null) {
+        return { changed: true as const };
+      }
+      return { resolution, connection: { id: row.connection_id } };
+    })();
     return (async () => {
-      const result = await transaction;
+      const result = await publication;
+      if ("changed" in result) {
+        return result;
+      }
       const wakeup = automaticNoAuthWakeup(args, connector, result.connection);
       if (wakeup) {
         await (async () => {
@@ -1225,6 +1196,10 @@ const persistAutomaticNoAuthConnection$ = command(
     const { connector, args } = context;
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
     const result = await set(commitAutomaticNoAuthConnection$, context, signal);
+    if ("changed" in result) {
+      signal.throwIfAborted();
+      return conflict("Connector changed while connecting; retry the request");
+    }
     if (signal.aborted) {
       postCommitAbort = { reason: signal.reason };
     }

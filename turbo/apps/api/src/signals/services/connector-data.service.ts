@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   connectorCredentialDeletion,
   connectorCredentialDeletionKinds,
@@ -43,7 +44,10 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { array, string } from "zod";
+import { array, object, string } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { contextProjectionSchema } from "./context-rowset";
+import { builtinManualGrantPublicationSql } from "./builtin-manual-grant-publication";
 import {
   completedGetStartedQuestSql,
   memberRewardWalletQuery,
@@ -133,11 +137,7 @@ import {
   type PreparedBuiltinConnectorTokenState,
   manualGrantConnectionMetadata,
   manualGrantCredentialArgs,
-  manualGrantCredentialFields,
-  manualGrantCredentialWrite,
   requireManualGrantWrite,
-  manualGrantUserSecretDeletion,
-  manualGrantUserVariableDeletion,
 } from "./connector-credential-storage-write.service";
 import {
   decryptStoredSecretValue,
@@ -1596,134 +1596,160 @@ function manualGrantCleanupValues(
   };
 }
 
-async function commitManualGrantConnector(
-  db: Tx,
-  args: CommitManualGrantConnectorArgs,
-  signal: AbortSignal,
-): Promise<ManualGrantConnectorCommitResult> {
-  const mutationReadArgs = builtinConnectorLocalMutationValues(args);
-  const resolution = await (async () => {
-    let read = connectionMutationReadPlan(mutationReadArgs);
-    for (;;) {
-      const rows = await db
-        .select(read.columns)
-        .from(read.from)
-        .where(read.where)
-        .orderBy(...read.orderBy)
-        .limit(read.limit);
-      const result = connectionMutationReadResult(mutationReadArgs, read, rows);
-      if (result.kind === "resolved") {
-        return result.resolution;
-      }
-      read = result.read;
-    }
-  })();
-  signal.throwIfAborted();
-  if (resolution.kind !== "ready") {
-    return connectorConnectionMutationFailure(resolution);
-  }
+interface PreparedManualGrantPublication {
+  readonly kind: "ready";
+  readonly metadata: ConnectorConnectionWriteArgs;
+  readonly accountId: string;
+  readonly accountRevision: string | null;
+  readonly credentials: ReturnType<typeof manualGrantCredentialArgs>;
+  readonly secretCleanup: ReturnType<typeof manualGrantCleanupValues>;
+  readonly variableCleanup: ReturnType<typeof manualGrantCleanupValues>;
+  readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+}
 
-  const revokeReadArgs = localTokenRevokeValues(
-    args,
-    resolution.mutation,
-    args.featureSwitchContext,
-  );
-  const pendingTokenRevoke = await (async () => {
-    const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
-    if (!preparation) {
-      return null;
-    }
-    return await (async () => {
-      const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
-      if (read.kind !== "read") {
-        return builtinTokenRevokeFromRows(preparation, read, []);
-      }
-      const secretRows = await db
-        .select(read.columns)
-        .from(read.from)
-        .where(read.where);
-      signal.throwIfAborted();
-      return builtinTokenRevokeFromRows(preparation, read, secretRows);
-    })();
-  })();
-  const writeArgs = manualGrantWriteArgs(args, resolution);
-  const written = await (async () => {
-    const outcome = await (async () => {
-      let write = connectionMetadataWritePlan(writeArgs);
+const prepareManualGrantPublication$ = command(
+  async (
+    { set },
+    args: CommitManualGrantConnectorArgs,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const mutationReadArgs = builtinConnectorLocalMutationValues(args);
+    const observedRevisions = new Map<string, string>();
+    const resolution = await (async () => {
+      let read = connectionMutationReadPlan(mutationReadArgs);
       for (;;) {
-        const query: ConnectorConnectionMetadataQuery =
-          write.kind === "update"
-            ? db.update(connectors).set(write.values).where(write.where)
-            : write.conflict
-              ? db
-                  .insert(connectors)
-                  .values(write.values)
-                  .onConflictDoNothing(write.conflict)
-              : db.insert(connectors).values(write.values);
-        const [row] = await query.returning(connectionSelection());
-        const result = connectionMetadataWriteResult(write, row);
-        if (result.kind === "resolved") {
-          return write.phase === "existing"
-            ? result.outcome
-            : await Promise.resolve(result.outcome);
+        const rows = await db
+          .select({
+            ...read.columns,
+            publicationRevision: sql`${connectors}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(read.from)
+          .where(read.where)
+          .orderBy(...read.orderBy)
+          .limit(read.limit);
+        for (const row of rows) {
+          observedRevisions.set(row.id, row.publicationRevision);
         }
-        write = result.write;
+        const result = connectionMutationReadResult(
+          mutationReadArgs,
+          read,
+          rows,
+        );
+        if (result.kind === "resolved") {
+          return result.resolution;
+        }
+        read = result.read;
       }
     })();
     signal.throwIfAborted();
-    if (outcome.kind !== "written") {
-      return outcome;
+    if (resolution.kind !== "ready") {
+      return {
+        kind: "rejected" as const,
+        result: connectorConnectionMutationFailure(resolution),
+      };
     }
-    const connection = outcome.row;
 
-    for (const kind of connectorCredentialDeletionKinds) {
-      const deletion = connectorCredentialDeletion(kind, connection);
-      await db.delete(deletion.from).where(deletion.where);
-      if (kind !== "builtin-oauth") {
-        signal.throwIfAborted();
+    const revokeReadArgs = localTokenRevokeValues(
+      args,
+      resolution.mutation,
+      args.featureSwitchContext,
+    );
+    const pendingTokenRevoke = await (async () => {
+      const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
+      if (!preparation) {
+        return null;
       }
-    }
-    const connectorId = connection.id;
-    await (async () => {
-      const credentialArgs = manualGrantCredentialArgs(args, connectorId);
-      await (async (): Promise<void> => {
-        for (const entry of manualGrantCredentialFields(credentialArgs)) {
-          const write = manualGrantCredentialWrite(credentialArgs, entry);
-          const [row] = await db
-            .insert(write.table)
-            .values(write.values)
-            .onConflictDoUpdate(write.conflict)
-            .returning({ id: write.table.id });
-          requireManualGrantWrite(row, entry.kind, write.values.name);
-          signal.throwIfAborted();
+      return await (async () => {
+        const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
+        if (read.kind !== "read") {
+          return builtinTokenRevokeFromRows(preparation, read, []);
         }
+        const secretRows = await db
+          .select(read.columns)
+          .from(read.from)
+          .where(read.where);
+        signal.throwIfAborted();
+        return builtinTokenRevokeFromRows(preparation, read, secretRows);
       })();
     })();
     signal.throwIfAborted();
-    return outcome;
-  })();
-  if (written.kind !== "written") {
-    return connectorConnectionMutationFailure(written);
-  }
-  const connectorRow = written.row;
-  const secretScope = manualGrantCleanupValues(args, "secret");
-  await (async (): Promise<void> => {
-    for (const name of secretScope.names) {
-      const deletion = manualGrantUserSecretDeletion({ ...secretScope, name });
-      await db.delete(deletion.from).where(deletion.where);
-      signal.throwIfAborted();
+    const accountId =
+      resolution.mutation.kind === "update"
+        ? resolution.mutation.existing.id
+        : randomUUID();
+    const accountRevision =
+      resolution.mutation.kind === "update"
+        ? observedRevisions.get(accountId)
+        : null;
+    if (accountRevision === undefined) {
+      throw new Error("Manual reconnect has no observed publication revision");
     }
-  })();
-  const variableRef = manualGrantCleanupValues(args, "variable");
-  await (async (): Promise<void> => {
-    for (const name of variableRef.names) {
-      const deletion = manualGrantUserVariableDeletion(variableRef, name);
-      await db.delete(deletion.from).where(deletion.where);
-      signal.throwIfAborted();
+    return {
+      kind: "ready" as const,
+      metadata: {
+        ...manualGrantWriteArgs(args, resolution),
+        insertConnectionId: accountId,
+      },
+      accountId,
+      accountRevision,
+      credentials: manualGrantCredentialArgs(args, accountId),
+      secretCleanup: manualGrantCleanupValues(args, "secret"),
+      variableCleanup: manualGrantCleanupValues(args, "variable"),
+      pendingTokenRevoke,
+    };
+  },
+);
+
+const manualGrantPublicationRow = object({
+  connector: contextProjectionSchema(connectionSelection()).nullable(),
+}).strict();
+
+// Finish this finite SQL publication before the caller records post-commit Abort.
+const publishManualGrantConnection$ = command(
+  async (
+    { set },
+    prepared: PreparedManualGrantPublication,
+  ): Promise<ManualGrantConnectorCommitResult> => {
+    const db = set(writeDb$);
+    const rows = parseRawRows(
+      manualGrantPublicationRow,
+      await db.execute(builtinManualGrantPublicationSql(prepared)),
+    );
+    const [row] = rows;
+    if (rows.length !== 1 || !row) {
+      throw new Error(
+        "Manual connector publication returned an invalid result",
+      );
     }
-  })();
-  return { status: "connected", connectorRow, pendingTokenRevoke };
-}
+    if (row.connector === null) {
+      const write = connectionMetadataWritePlan(prepared.metadata);
+      if (write.kind !== "update") {
+        throw new Error(
+          "Manual connector publication did not create an account",
+        );
+      }
+      const [existing] = await db
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(write.where)
+        .limit(1);
+      if (!existing) {
+        return connectorConnectionMutationFailure({ kind: "missing" });
+      }
+      throw new Error(
+        "Connector account changed while connecting; submit the connection again",
+      );
+    }
+    return {
+      status: "connected",
+      connectorRow: row.connector,
+      pendingTokenRevoke: prepared.pendingTokenRevoke,
+    };
+  },
+);
 
 export const connectManualGrantBuiltinConnector$ = command(
   async (
@@ -1760,23 +1786,25 @@ export const connectManualGrantBuiltinConnector$ = command(
     );
     signal.throwIfAborted();
     let postCommitAbort: unknown = null;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0117; new non-billing transactions are prohibited.
-    const committed = await set(writeDb$).transaction(async (tx) => {
-      return await commitManualGrantConnector(
-        tx,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          runtimeMethod: args.runtimeMethod,
-          snapshot: args.snapshot,
-          account: args.account,
-          prepared: preparedResult.prepared,
-          encryptedSecrets,
-          featureSwitchContext,
-        },
-        signal,
-      );
-    });
+    const publication = await set(
+      prepareManualGrantPublication$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        runtimeMethod: args.runtimeMethod,
+        snapshot: args.snapshot,
+        account: args.account,
+        prepared: preparedResult.prepared,
+        encryptedSecrets,
+        featureSwitchContext,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const committed =
+      publication.kind === "rejected"
+        ? publication.result
+        : await set(publishManualGrantConnection$, publication);
     if (signal.aborted) {
       postCommitAbort ??= signal.reason;
     }

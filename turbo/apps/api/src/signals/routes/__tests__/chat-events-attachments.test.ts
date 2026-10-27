@@ -2246,6 +2246,49 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, run.runId);
   }, 60_000);
 
+  it("accepts repeated references to one uploaded file in the same input", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const fileId = randomUUID();
+    const filename = "repeated attachment.png";
+    chat.mockCompletedUploadObject(actor, fileId, filename, 42);
+    const file = {
+      type: "file" as const,
+      fileId,
+      filenameSnapshot: filename,
+      contentType: "image/png",
+    };
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "compare both references",
+      userMessage: {
+        version: 1,
+        parts: [file, { type: "text", text: "compare both references" }, file],
+      },
+    });
+    const messages = await waitForThreadMessages(
+      actor,
+      run.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return message.runId === run.runId;
+        });
+      },
+    );
+    const input = userMessages(messages.events).find((message) => {
+      return message.runId === run.runId;
+    });
+    if (!input || input.eventType !== "input.prompt") {
+      throw new Error("Expected the accepted repeated-file input");
+    }
+    expect(
+      input.userMessage.parts.filter((part) => {
+        return part.type === "file";
+      }),
+    ).toStrictEqual([file, file]);
+    expect((await api.readRun(actor, run.runId)).prompt).toContain(filename);
+    await cancelChatRun(actor, run.runId);
+  }, 60_000);
+
   it("projects one structured annotated file through its rendered derivative", async () => {
     const { actor, agentId } = await entitledChatActor();
     const fileId = randomUUID();

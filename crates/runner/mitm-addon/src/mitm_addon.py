@@ -573,7 +573,8 @@ def _buffered_auth_body_header_check(
     max_body_bytes: int,
     method_allows_missing_content_length: bool,
 ) -> _BufferedRequestBodyCheck:
-    if flow.request.headers.get_all("Transfer-Encoding"):
+    # Only presence matters; decoding ignored values can do input-sized work.
+    if any(name.lower() == b"transfer-encoding" for name, _value in flow.request.headers.fields):
         return _BufferedRequestBodyCheck(
             kind="length_required",
             reason="transfer_encoding",

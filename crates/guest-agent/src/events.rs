@@ -26,10 +26,6 @@ const EVENT_PAYLOAD_RUN_ID_PREFIX: &[u8] = b"{\"runId\":";
 const EVENT_PAYLOAD_EVENTS_PREFIX: &[u8] = b",\"events\":[";
 const EVENT_PAYLOAD_EVENTS_SUFFIX: &[u8] = b"]";
 const EVENT_PAYLOAD_PUBLIC_SUFFIX: &[u8] = b"}";
-const PI_MEMORY_CITATION_TRANSPORT_PREFIX: &[u8] =
-    b",\"piMemoryCitationTransport\":{\"schemaVersion\":1,\"citations\":[";
-const PI_MEMORY_CITATION_TRANSPORT_SUFFIX: &[u8] = b"]}}";
-
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct CodexFailureDiagnostic {
     pub event_type: &'static str,
@@ -116,14 +112,10 @@ pub(crate) fn event_payload_for_run_id(events: Vec<Value>, run_id: &str) -> Valu
 
 pub(crate) struct EventPayloadEnvelope {
     prefix: Bytes,
-    pi_memory_citation_transport: bool,
 }
 
 impl EventPayloadEnvelope {
-    pub(crate) fn new(
-        run_id: &str,
-        pi_memory_citation_transport: bool,
-    ) -> Result<Self, AgentError> {
+    pub(crate) fn new(run_id: &str) -> Result<Self, AgentError> {
         let run_id = serde_json::to_vec(run_id)?;
         let mut prefix = Vec::with_capacity(
             EVENT_PAYLOAD_RUN_ID_PREFIX.len() + run_id.len() + EVENT_PAYLOAD_EVENTS_PREFIX.len(),
@@ -133,91 +125,21 @@ impl EventPayloadEnvelope {
         prefix.extend_from_slice(EVENT_PAYLOAD_EVENTS_PREFIX);
         Ok(Self {
             prefix: Bytes::from(prefix),
-            pi_memory_citation_transport,
         })
     }
 
-    pub(crate) fn take_private_citation(
-        &self,
-        sequence: u32,
-        event: &mut Value,
-        masker: &SecretMasker,
-    ) -> Result<Option<Bytes>, AgentError> {
-        if !self.pi_memory_citation_transport {
-            return Ok(None);
-        }
-        let Some(event_fields) = event.as_object_mut() else {
-            return Ok(None);
-        };
-        let event_citation = event_fields.remove("memoryCitation");
-        let message_citation = event_fields
-            .get_mut("message")
-            .and_then(Value::as_object_mut)
-            .and_then(|message| message.remove("memoryCitation"));
-        let Some(mut citation) = message_citation.or(event_citation) else {
-            return Ok(None);
-        };
-        // Citation fields are a system-owned schema, unlike arbitrary event keys.
-        // A redacted UUID is neither valid transport nor usable provenance.
-        if let Some(rollout_ids) = citation.get_mut("rolloutIds").and_then(Value::as_array_mut) {
-            rollout_ids.retain(|id| id.as_str().is_some_and(|id| masker.mask_string(id) == id));
-        }
-        masker.mask_string_values(&mut citation);
-        if citation
-            .get("entries")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty)
-            && citation
-                .get("rolloutIds")
-                .and_then(Value::as_array)
-                .is_some_and(Vec::is_empty)
-        {
-            return Ok(None);
-        }
-        Ok(Some(Bytes::from(serde_json::to_vec(&json!({
-            "sequenceNumber": sequence,
-            "citation": citation,
-        }))?)))
-    }
-
-    pub(crate) fn singleton_bytes(
-        &self,
-        event_bytes: usize,
-        private_citation_bytes: usize,
-    ) -> usize {
+    pub(crate) fn singleton_bytes(&self, event_bytes: usize) -> usize {
         self.prefix
             .len()
             .saturating_add(event_bytes)
             .saturating_add(EVENT_PAYLOAD_EVENTS_SUFFIX.len())
-            .saturating_add(if self.pi_memory_citation_transport {
-                PI_MEMORY_CITATION_TRANSPORT_PREFIX
-                    .len()
-                    .saturating_add(private_citation_bytes)
-                    .saturating_add(PI_MEMORY_CITATION_TRANSPORT_SUFFIX.len())
-            } else {
-                EVENT_PAYLOAD_PUBLIC_SUFFIX.len()
-            })
+            .saturating_add(EVENT_PAYLOAD_PUBLIC_SUFFIX.len())
     }
 
-    pub(crate) fn payload(&self, events: &[Bytes], private_citations: &[Bytes]) -> Bytes {
+    pub(crate) fn payload(&self, events: &[Bytes]) -> Bytes {
         let event_bytes = events.iter().map(Bytes::len).sum::<usize>();
         let event_separators = events.len().saturating_sub(1);
-        let private_citation_bytes = private_citations.iter().map(Bytes::len).sum::<usize>();
-        let private_citation_separators = private_citations.len().saturating_sub(1);
-        let mut payload = Vec::with_capacity(
-            self.prefix.len()
-                + event_bytes
-                + event_separators
-                + EVENT_PAYLOAD_EVENTS_SUFFIX.len()
-                + if self.pi_memory_citation_transport {
-                    PI_MEMORY_CITATION_TRANSPORT_PREFIX.len()
-                        + private_citation_bytes
-                        + private_citation_separators
-                        + PI_MEMORY_CITATION_TRANSPORT_SUFFIX.len()
-                } else {
-                    EVENT_PAYLOAD_PUBLIC_SUFFIX.len()
-                },
-        );
+        let mut payload = Vec::with_capacity(self.singleton_bytes(event_bytes) + event_separators);
         payload.extend_from_slice(&self.prefix);
         let mut needs_separator = false;
         for event in events {
@@ -228,20 +150,7 @@ impl EventPayloadEnvelope {
             needs_separator = true;
         }
         payload.extend_from_slice(EVENT_PAYLOAD_EVENTS_SUFFIX);
-        if self.pi_memory_citation_transport {
-            payload.extend_from_slice(PI_MEMORY_CITATION_TRANSPORT_PREFIX);
-            needs_separator = false;
-            for citation in private_citations {
-                if needs_separator {
-                    payload.push(b',');
-                }
-                payload.extend_from_slice(citation);
-                needs_separator = true;
-            }
-            payload.extend_from_slice(PI_MEMORY_CITATION_TRANSPORT_SUFFIX);
-        } else {
-            payload.extend_from_slice(EVENT_PAYLOAD_PUBLIC_SUFFIX);
-        }
+        payload.extend_from_slice(EVENT_PAYLOAD_PUBLIC_SUFFIX);
         Bytes::from(payload)
     }
 }
@@ -708,59 +617,13 @@ mod tests {
     }
 
     #[test]
-    fn pi_private_citation_sidecar_matches_shared_rollback_wire_fixture() {
-        let fixture: Value = serde_json::from_str(include_str!(
-            "../../../fixtures/pi-memory-citation-new-guest-wire.json"
-        ))
-        .expect("shared rollback fixture must be valid JSON");
-        let expected = fixture["wirePayload"].clone();
-        let mut assistant = expected["events"][0].clone();
-        assistant["message"]["memoryCitation"] =
-            expected["piMemoryCitationTransport"]["citations"][0]["citation"].clone();
-        let result = expected["events"][1].clone();
-
-        let envelope = EventPayloadEnvelope::new(
-            expected["runId"]
-                .as_str()
-                .expect("fixture run ID must be a string"),
-            true,
-        )
-        .expect("Pi event envelope must be constructible");
-        let citation = envelope
-            .take_private_citation(7, &mut assistant, &SecretMasker::from_raw(""))
-            .expect("structured citation must be serializable")
-            .expect("fixture must carry one structured citation");
-        let events = [assistant, result].map(|event| {
-            Bytes::from(serde_json::to_vec(&event).expect("public event must be serializable"))
-        });
-        let actual: Value = serde_json::from_slice(&envelope.payload(&events, &[citation]))
-            .expect("wire payload must be valid JSON");
-
-        assert_eq!(actual, expected);
-        let public_events =
-            serde_json::to_string(&actual["events"]).expect("public events must be serializable");
-        for private_value in fixture["privateValues"]
-            .as_array()
-            .expect("fixture private values must be an array")
-        {
-            assert!(
-                !public_events.contains(
-                    private_value
-                        .as_str()
-                        .expect("fixture private value must be a string")
-                )
-            );
-        }
-    }
-
-    #[test]
-    fn non_pi_event_envelope_remains_byte_for_byte_unchanged() {
-        let envelope = EventPayloadEnvelope::new("ordinary-run", false)
+    fn event_envelope_serializes_run_id_and_events() {
+        let envelope = EventPayloadEnvelope::new("ordinary-run")
             .expect("ordinary event envelope must be constructible");
         let event = Bytes::from_static(br#"{"type":"assistant","sequenceNumber":0}"#);
 
         assert_eq!(
-            envelope.payload(&[event], &[]).as_ref(),
+            envelope.payload(&[event]).as_ref(),
             br#"{"runId":"ordinary-run","events":[{"type":"assistant","sequenceNumber":0}]}"#
         );
     }

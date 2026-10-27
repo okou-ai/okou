@@ -1,4 +1,4 @@
-import { Button, Card } from "@okouai/ui";
+import { Card } from "@okouai/ui";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -38,16 +38,6 @@ export function AuthV1LoadError() {
               })}
             </a>
           </p>
-          <Button
-            className="border-0 py-0 bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-pressed text-[length:var(--text-action)] leading-[var(--text-action--line-height)]"
-            onClick={() => {
-              return window.location.reload();
-            }}
-          >
-            {t(($) => {
-              return $.shared.forceUpgrade.action;
-            })}
-          </Button>
           <span ref={contentReady} hidden />
         </Card>
       </div>

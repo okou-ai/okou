@@ -1,11 +1,9 @@
 import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
@@ -13,17 +11,7 @@ import {
 import { forceUpgradeDialogOpen$ } from "../../signals/force-upgrade.ts";
 import { brandName$ } from "../../signals/branding.ts";
 
-type ForceUpgradeDialogProps = {
-  readonly reload?: () => void;
-};
-
-function reloadPage(): void {
-  window.location.reload();
-}
-
-export function ForceUpgradeDialog({
-  reload = reloadPage,
-}: ForceUpgradeDialogProps) {
+export function ForceUpgradeDialog() {
   const open = useGet(forceUpgradeDialogOpen$);
   const brandName = useGet(brandName$);
   const { t } = useTranslation();
@@ -51,13 +39,6 @@ export function ForceUpgradeDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter>
-          <Button type="button" onClick={reload}>
-            {t(($) => {
-              return $.shared.forceUpgrade.action;
-            })}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

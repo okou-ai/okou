@@ -193,6 +193,11 @@ final class ChatThreadActionsTests: XCTestCase {
     let archiving = Task {
       await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     }
+    addTeardownBlock {
+      archiving.cancel()
+      gate.open()
+      _ = await archiving.value
+    }
     try await eventually { fixture.writes.contains { $0.action == "archive" } }
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)

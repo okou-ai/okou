@@ -9,7 +9,6 @@ import { delay } from "signal-timers";
 
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
-import { ApiError } from "../../../lib/api-error.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { brandName$, type BrandName } from "../../branding.ts";
@@ -265,13 +264,6 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
         },
         0,
         signal,
-        {
-          // 503 was already terminal when accepted as a domain result. Keep
-          // all previously rejected errors on the existing retry policy.
-          shouldRetryError: (error) => {
-            return !(error instanceof ApiError && error.status === 503);
-          },
-        },
       );
 
       const latest = get(ctx.internalFlowState$);
@@ -337,7 +329,7 @@ function createCodexRun$(
       set(ctx.internalFlowState$, createIdleFlowState());
       const requestId = createRequestId(ctx.scope);
       const operation = set(startFlow$, requestId, flowSignal);
-      // Retain the actual startup result until retry or dialog-session release.
+      // Retain the actual startup result for this authorization session.
       set(ctx.internalStartOperation$, operation);
       if (!(await operation)) {
         return false;

@@ -58,8 +58,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
-  ["discord:read", FeatureSwitchKey.DiscordIntegration],
-  ["discord:write", FeatureSwitchKey.DiscordIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 

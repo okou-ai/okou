@@ -79,7 +79,17 @@ type PrepareChatThreadConnectorSelectionsResult =
       readonly kind: "ready";
       readonly selections: readonly PreparedChatThreadConnectorSelection[];
     }
-  | { readonly kind: "invalid"; readonly message: string };
+  | {
+      readonly kind: "invalid";
+      readonly message: string;
+      readonly accountUnavailable?: true;
+    };
+
+const unavailableConnectorSelection = Object.freeze({
+  kind: "invalid",
+  message: "Connector account is unavailable for thread selection",
+  accountUnavailable: true,
+});
 
 interface ChatThreadConnectorSelectionList {
   readonly selections: readonly ConnectorAccountSelection[];
@@ -385,10 +395,7 @@ export const prepareChatThreadConnectorSelections$ = command(
           byTarget.delete(key);
           continue;
         }
-        return {
-          kind: "invalid",
-          message: "Connector account does not match the requested target",
-        };
+        return unavailableConnectorSelection;
       }
       if (!connectorTargetOwnershipMatches(ownership, args, selection.target)) {
         return {
@@ -399,9 +406,8 @@ export const prepareChatThreadConnectorSelections$ = command(
       const projected = projectedById.get(selection.connectionId);
       if (!projected) {
         if (args.missingAccountPolicy === "omit") {
-          // Deletion can commit between the ownership read and the projection.
-          // Initial thread creation omits a deleted account at either boundary;
-          // an existing but unavailable account still receives the same error.
+          // Older clients still require omission if deletion committed between
+          // ownership and projection. Retire this compatibility with #42681.
           const current = connectorTargetOwnershipsFromRows(
             await db
               .select(connectorTargetOwnershipColumns)
@@ -414,10 +420,7 @@ export const prepareChatThreadConnectorSelections$ = command(
             continue;
           }
         }
-        return {
-          kind: "invalid",
-          message: "Connector account is unavailable for thread selection",
-        };
+        return unavailableConnectorSelection;
       }
     }
     signal.throwIfAborted();
@@ -793,10 +796,11 @@ export const clearChatThreadConnectorSelection$ = command(
   },
 );
 
-/** Pure, stably ordered statements. The creation owner executes savepoints. */
+/** Required choices reject initialization; legacy clients omit missing accounts. */
 export function initialChatThreadConnectorSelectionStatements(args: {
   readonly chatThreadId: string;
   readonly selections: readonly PreparedChatThreadConnectorSelection[];
+  readonly required: boolean;
 }) {
   return [...args.selections]
     .sort((a, b) => {
@@ -808,9 +812,15 @@ export function initialChatThreadConnectorSelectionStatements(args: {
     })
     .map((selection) => {
       const target = targetColumns(selection.target);
+      if (!args.required) {
+        return sql`INSERT INTO ${chatThreadConnectorSelections}
+        (chat_thread_id, connector_id, connector_slug, custom_connector_id)
+        SELECT ${args.chatThreadId}::uuid, ${connectors.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid
+        FROM ${connectors} WHERE ${connectors.id} = ${selection.connectionId}::uuid`;
+      }
       return sql`INSERT INTO ${chatThreadConnectorSelections}
       (chat_thread_id, connector_id, connector_slug, custom_connector_id)
-      SELECT ${args.chatThreadId}::uuid, ${connectors.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid
-      FROM ${connectors} WHERE ${connectors.id} = ${selection.connectionId}::uuid`;
+      VALUES (${args.chatThreadId}::uuid, ${selection.connectionId}::uuid,
+        ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid)`;
     });
 }

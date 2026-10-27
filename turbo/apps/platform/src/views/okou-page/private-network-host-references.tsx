@@ -1,4 +1,7 @@
 import { useTranslation } from "react-i18next";
+import { useGet } from "ccstate-react";
+import { locale$ } from "../../signals/locale.ts";
+import { sortRemoteHosts } from "../../lib/remote-resource-order.ts";
 import type { CloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 
@@ -8,6 +11,7 @@ export function PrivateNetworkHostReferences({
   readonly config: Pick<CloudflareAccessConfig, "sshHosts" | "vncHosts">;
 }) {
   const { t } = useTranslation();
+  const locale = useGet(locale$);
   const count = privateNetworkHostCount(config);
   return (
     <div className="grid gap-1 text-sm text-muted-foreground">
@@ -25,7 +29,7 @@ export function PrivateNetworkHostReferences({
       </p>
       {count > 0 && (
         <ul className="list-inside list-disc">
-          {config.sshHosts.map((host) => {
+          {sortRemoteHosts(config.sshHosts, locale).map((host) => {
             return (
               <li key={`ssh:${host.id}`}>
                 <span>{host.displayName}</span> ·{" "}
@@ -35,7 +39,7 @@ export function PrivateNetworkHostReferences({
               </li>
             );
           })}
-          {config.vncHosts.map((host) => {
+          {sortRemoteHosts(config.vncHosts, locale).map((host) => {
             return (
               <li key={`vnc:${host.id}`}>
                 <span>{host.displayName}</span> ·{" "}

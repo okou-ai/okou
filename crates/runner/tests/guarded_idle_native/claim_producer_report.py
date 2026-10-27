@@ -11,12 +11,12 @@ import subprocess
 
 import batch_aba_report as batch
 import cleanup_report as cleanup
-import foreground_report as foreground
+import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
 import status_failure_report as status
-from startup_report import exact
+from snapshot_report import exact
 
 PREFIX = "NATIVE_CLAIM_PRODUCER_WITNESS "
 PHASES = ("original_data_durable", "claim_waiting", "claim_wait_progress", "producer_joined",

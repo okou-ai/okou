@@ -1,22 +1,18 @@
 import { Button } from "@okouai/ui/components/ui/button";
 import { Badge } from "@okouai/ui";
-import {
-  useLastResolved,
-  useLoadable,
-  useLoadableState,
-  useSet,
-} from "ccstate-react";
-import { ChevronDown, ChevronUp, Database, RefreshCw } from "lucide-react";
+import { useGet, useLastResolved, useLoadableState } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
+import { ChevronDown, ChevronUp, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { formatLocalizedNumber } from "../../../../i18n/format.ts";
 import type { IndexedDbDiagnostics } from "../../../../shared-database/computed-key.ts";
 import {
   indexedDbDiagnosticsFromWorker$,
-  indexedDbSnapshotMeasurementFromWorker$,
   measureIndexedDbSnapshotFromWorker$,
-  reloadIndexedDbDiagnosticsFromWorker$,
 } from "../../../../signals/shared-database.ts";
+import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { detach, Reason } from "../../../../signals/utils.ts";
 import { formatSize } from "../network-badge.tsx";
 
 function totalRecords(diagnostics: IndexedDbDiagnostics): number {
@@ -80,8 +76,10 @@ function IndexedDbDiagnosticsSummary({
 
 function SnapshotMeasurement() {
   const { t } = useTranslation();
-  const measurement = useLoadable(indexedDbSnapshotMeasurementFromWorker$);
-  const measure = useSet(measureIndexedDbSnapshotFromWorker$);
+  const pageSignal = useGet(pageSignal$);
+  const [measurement, measure] = useLoadableSet(
+    measureIndexedDbSnapshotFromWorker$,
+  );
   const loading = measurement.state === "loading";
   const result = measurement.state === "hasData" ? measurement.data : undefined;
 
@@ -113,7 +111,7 @@ function SnapshotMeasurement() {
           className="h-8 px-2.5 text-xs"
           disabled={loading}
           onClick={() => {
-            measure();
+            detach(measure(pageSignal), Reason.DomCallback);
           }}
         >
           {loading
@@ -185,15 +183,12 @@ function SnapshotMeasurement() {
 
 function IndexedDbDiagnosticsContent({
   diagnostics,
-  loading,
   failed,
 }: {
   readonly diagnostics: IndexedDbDiagnostics;
-  readonly loading: boolean;
   readonly failed: boolean;
 }) {
   const { t } = useTranslation();
-  const reload = useSet(reloadIndexedDbDiagnosticsFromWorker$);
 
   return (
     <div className="flex flex-col gap-4">
@@ -203,21 +198,6 @@ function IndexedDbDiagnosticsContent({
             return $.settings.preferences.debug.indexedDb.countExplanation;
           })}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 px-2.5 text-xs"
-          disabled={loading}
-          onClick={() => {
-            reload();
-          }}
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          {t(($) => {
-            return $.settings.preferences.debug.indexedDb.refresh;
-          })}
-        </Button>
       </div>
       {failed && (
         <p role="status" className="text-xs text-destructive">
@@ -253,7 +233,6 @@ export function IndexedDbDiagnosticsBlock() {
   const diagnostics = useLastResolved(indexedDbDiagnosticsFromWorker$);
   const loadableState = useLoadableState(indexedDbDiagnosticsFromWorker$);
   const loading = loadableState === "loading";
-  const reload = useSet(reloadIndexedDbDiagnosticsFromWorker$);
 
   return (
     <section
@@ -266,7 +245,6 @@ export function IndexedDbDiagnosticsBlock() {
           <div className="border-t border-border/60 p-4">
             <IndexedDbDiagnosticsContent
               diagnostics={diagnostics}
-              loading={loading}
               failed={loadableState === "hasError"}
             />
           </div>
@@ -295,22 +273,6 @@ export function IndexedDbDiagnosticsBlock() {
                       return $.settings.preferences.debug.indexedDb.unavailable;
                     })}
               </div>
-              {!loading && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 px-2.5 text-xs"
-                  onClick={() => {
-                    reload();
-                  }}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {t(($) => {
-                    return $.settings.preferences.debug.indexedDb.refresh;
-                  })}
-                </Button>
-              )}
             </div>
           </div>
         </div>

@@ -52,7 +52,7 @@ const runSharedDatabaseHeartbeatLoop: SharedDatabaseHeartbeatLoop = (
     },
     TAB_HEARTBEAT_INTERVAL_MS,
     signal,
-    { retryTransientErrors: false, testIntervalMs: 100 },
+    { testIntervalMs: 100 },
   );
 };
 

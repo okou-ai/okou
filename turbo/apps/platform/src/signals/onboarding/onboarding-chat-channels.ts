@@ -64,7 +64,7 @@ const loadOnboardingPhoneCode$ = command(
   },
 );
 
-/** Retry replaces the promise and cancels the previous route-owned attempt. */
+/** A new code generation replaces the expired code and its route-owned lifetime. */
 export const requestOnboardingPhoneCode$ = command(
   async ({ set }, parentSignal: AbortSignal): Promise<void> => {
     const signal = set(resetPhoneCodeSignal$, parentSignal);

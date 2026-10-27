@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.29.40](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.39...runner-remote-v0.29.40) (2026-10-27)
+
+## [0.29.39](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.38...runner-remote-v0.29.39) (2026-10-27)
+
+
+### Refactoring
+
+* remove remote connection diagnostics feature switch ([#43208](https://github.com/okou-ai/okou/issues/43208)) ([e2abf5a](https://github.com/okou-ai/okou/commit/e2abf5ade9bb1322e519d839b47c66d2ec58a16c))
+
 ## [0.29.38](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.37...runner-remote-v0.29.38) (2026-10-26)
 
 ## [0.29.37](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.36...runner-remote-v0.29.37) (2026-10-26)

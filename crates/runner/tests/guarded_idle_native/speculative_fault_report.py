@@ -7,13 +7,13 @@ import json
 import pathlib
 
 import batch_aba_report as batch
-import foreground_report as foreground
+import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
 import status_failure_report as failure
 from cleanup_report import accounting, coverage, supplied_policy
-from startup_report import exact
+from snapshot_report import exact
 
 PREFIX = "NATIVE_SPECULATIVE_FAULT_WITNESS "
 CASES = {f"Speculative{fault}-{mode}" for fault in ("Drop", "Panic") for mode in ("fresh", "snapshot")}

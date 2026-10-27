@@ -221,7 +221,7 @@ pub async fn exercise(
     let _release_on_drop = ReleaseOnDrop(&probe.gate);
     let proof =
         proof.ok_or_else(|| io::Error::other("create cancellation needs measured owners"))?;
-    let original = startup::original(&context.budget, inputs, proof).await?;
+    let original = snapshot_inputs::original(&context.budget, proof).await?;
     probe
         .state
         .lock()
@@ -281,7 +281,7 @@ pub async fn exercise(
         source.wait_for_readers(1).await;
         proof.create_cancellation_witness("inputs_verified", json!({"policy": serde_json::to_value(inputs)?,
             "inputs_sha256": continuation::digest(&original.raw), "snapshot_sha256": proof.snapshot_memory_hash()?,
-            "snapshot_bytes": original.bytes, "prefetch_overhead_bytes": original.overhead,
+            "snapshot_bytes": original.bytes,
             "preparation_bytes": inputs.preparation_bytes(), "allocated": context.budget.allocated(),
             "checkpoint_models_stalled_storage": false}))?;
         let first_sample = source.samples()?.len();

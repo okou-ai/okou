@@ -22,7 +22,6 @@ import {
   concurrencyPurchaseDialogOpen$,
   concurrencySubscriptionQuantity$,
   confirmConcurrencySubscriptionChange$,
-  reloadBillingStatus$,
   openConcurrencyConfirmDialog$,
   openConcurrencyPurchaseDialog$,
   openConcurrencyPurchaseReview$,
@@ -2058,7 +2057,6 @@ export function OrgBillingTab({
     return setBillingSubPage(true);
   };
   const pageSignal = useGet(pageSignal$);
-  const reloadBilling = useSet(reloadBillingStatus$);
   const openDowngrade = useSet(openDowngradeDialog$);
   const setLockedTarget = useSet(setLockedTarget$);
   const openRestore = useSet(openRestoreDialog$);
@@ -2186,17 +2184,6 @@ export function OrgBillingTab({
                   return $.billing.plans.loadError;
                 })}
               </p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  return reloadBilling();
-                }}
-              >
-                {t(($) => {
-                  return $.billing.common.retry;
-                })}
-              </Button>
             </div>
           ) : (
             <>

@@ -15,21 +15,15 @@ import {
   knownRunFailureReasonSchema,
   type KnownRunFailureReason,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command, computed, type Computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { modelCatalog$ } from "../external/model-catalog.ts";
 import { personalModelProviderAccountRevision$ } from "../external/third-party-subscriptions.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
-import { resetPersonalCodexAccountSubscriptionUsage$ } from "../okou-page/settings/personal-model-providers.ts";
-import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
 import { hasChatEventBodyContent } from "./chat-event-body-blocks.ts";
 import type { ChatEventSignals } from "./chat-event-signals.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import { threadMeta } from "./chat-thread-event-sourcing.ts";
-import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
 
 type AssistantErrorRecoveryKind =
   | "subscription-error"
@@ -56,7 +50,7 @@ type SubscriptionResetWindow = Exclude<
 /**
  * The personal subscription the thread's current model routes through. The
  * card reads the route the next run will take rather than the failed run's
- * captured account: retrying always goes through the current route.
+ * captured account; sending a new message uses the current route.
  */
 interface CurrentPersonalSubscription {
   readonly providerType: PersonalSubscriptionProviderType;
@@ -78,28 +72,16 @@ export type AssistantErrorRecovery = ClassifiedAssistantError & {
   /** Present when the current route is a personal subscription. */
   readonly personalSubscription: "connected" | "disconnected" | null;
   readonly accountLabel: string | null;
-  readonly retryAt: string | null;
   readonly resetWindows: readonly {
     readonly limitWindow: SubscriptionResetWindow;
     readonly resetAt: string | null;
   }[];
-  readonly actions: {
-    readonly tryAgain: {
-      readonly notBefore: string | null;
-    } | null;
-    readonly resetAndTryAgain: {
-      readonly resetsRemaining: number;
-      readonly accountId: string;
-    } | null;
-  };
 };
 
 interface SubscriptionReset {
   readonly resetAt: string | null;
   readonly limitWindow: SubscriptionResetWindow;
 }
-
-const CONTINUE_PROMPT = "continue";
 
 function normalizedProviderMessage(error: string): string {
   return error.replace(/\s+/gu, " ").trim();
@@ -283,6 +265,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   safety_policy_refusal: "safety-policy-refusal",
   reconnect_required: "provider-settings",
   unsupported_model: "model-unavailable",
+  provider_model_restricted: "model-unavailable",
   usage_limit: "usage-limit",
 } satisfies Record<KnownRunFailureReason, AssistantErrorRecoveryKind | null>);
 
@@ -468,22 +451,6 @@ function providerSubscriptionResets(
     ];
   }
   return limitWindow === "unknown" ? exhaustedUsageWindows(provider) : [];
-}
-
-function latestKnownResetAt(
-  resets: readonly SubscriptionReset[],
-): string | null {
-  let latest: { readonly value: string; readonly time: number } | null = null;
-  for (const reset of resets) {
-    if (!reset.resetAt) {
-      continue;
-    }
-    const time = new Date(reset.resetAt).getTime();
-    if (!Number.isNaN(time) && (latest === null || time > latest.time)) {
-      latest = { value: reset.resetAt, time };
-    }
-  }
-  return latest?.value ?? null;
 }
 
 function createCurrentPersonalSubscriptionComputed(
@@ -699,53 +666,20 @@ function recoveryForAccount(
   provider: ModelProviderResponse | undefined,
 ): Pick<
   AssistantErrorRecovery,
-  "accountLabel" | "limitWindow" | "resetWindows" | "retryAt"
-> &
-  Pick<AssistantErrorRecovery["actions"], "resetAndTryAgain"> {
+  "accountLabel" | "limitWindow" | "resetWindows"
+> {
   const resetWindows = providerSubscriptionResets(
     provider,
     classified.limitWindow,
   );
-  const resetsRemaining = provider?.subscriptionResetCredits ?? 0;
-  const resetAndTryAgain =
-    classified.framework === "codex" &&
-    classified.scope === "framework" &&
-    provider &&
-    resetsRemaining > 0
-      ? { resetsRemaining, accountId: provider.id }
-      : null;
   return {
     accountLabel: provider?.accountEmail ?? provider?.workspaceName ?? null,
-    retryAt: latestKnownResetAt(resetWindows),
     resetWindows,
     limitWindow:
       resetWindows.length === 1
         ? resetWindows[0].limitWindow
         : classified.limitWindow,
-    resetAndTryAgain,
   };
-}
-
-/**
- * Failures requiring settings changes, a new chat, smaller input, or terms
- * acceptance never offer a blind retry. Every other failure retries on the
- * thread's current selection, which the card's model picker writes; the
- * card does not track which model failed, so switching models is the user's
- * call. A usage limit keeps its retry and shows when each window resets.
- */
-function tryAgainAction(
-  classified: ClassifiedAssistantError,
-  retryAt: string | null,
-): AssistantErrorRecovery["actions"]["tryAgain"] {
-  if (
-    classified.kind === "provider-settings" ||
-    classified.kind === "new-chat-required" ||
-    classified.kind === "input-too-large" ||
-    classified.kind === "terms-acceptance-required"
-  ) {
-    return null;
-  }
-  return { notBefore: retryAt };
 }
 
 function createAssistantErrorRecoveryComputed(
@@ -781,12 +715,7 @@ function createAssistantErrorRecoveryComputed(
       personalSubscription,
       accountLabel: recovery.accountLabel,
       limitWindow: recovery.limitWindow,
-      retryAt: recovery.retryAt,
       resetWindows: recovery.resetWindows,
-      actions: {
-        tryAgain: tryAgainAction(classified, recovery.retryAt),
-        resetAndTryAgain: recovery.resetAndTryAgain,
-      },
     };
   });
 }
@@ -826,89 +755,8 @@ export function createAssistantErrorRecoverySignals(deps: {
       return candidate?.event.id ?? null;
     },
   );
-  const sendContinueMessage$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const meta = get(threadMeta$);
-      if (!meta) {
-        return false;
-      }
-      const userMessage = textToMessageDocument(CONTINUE_PROMPT);
-      if (!userMessage) {
-        throw new Error("Failed to serialize continue message");
-      }
-      // A pin of a retired model continues on its catalog replacement.
-      const resolvedModel = (await get(modelCatalog$)).resolve(
-        meta.selectedModel,
-      );
-      signal.throwIfAborted();
-      const modelSelection = resolvedModel
-        ? {
-            selectedModel: resolvedModel,
-            ...(meta.serviceTier === "priority"
-              ? { codexServiceTier: "fast" as const }
-              : {}),
-          }
-        : null;
-      const features = get(featureSwitch$);
-      const runOptions = runOptionsFromModelProviderSelection(modelSelection);
-      await set(
-        deps.chatEvents.sendEvent$,
-        {
-          kind: "input",
-          delivery: "run",
-          agentId: meta.agentId,
-          prompt: CONTINUE_PROMPT,
-          hasTextContent: true,
-          userMessage,
-          // The recovery card's model picker writes the thread selection, so
-          // the continue run already uses it. Sending it here is what lets the
-          // optimistic event carry the run-model annotation the transcript's
-          // model-change divider reads, instead of waiting for the server copy.
-          selectedModel: meta.selectedModel,
-          ...(runOptions ? { runOptions } : {}),
-          ...(features[FeatureSwitchKey.RealAgentInPreview]
-            ? { realAgentInPreview: true }
-            : {}),
-        },
-        signal,
-      );
-      return true;
-    },
-  );
-  const retryAssistantError$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const recovery = await get(assistantErrorRecovery$);
-      signal.throwIfAborted();
-      if (!recovery?.actions.tryAgain) {
-        return false;
-      }
-      return await set(sendContinueMessage$, signal);
-    },
-  );
-  const resetCodexSubscriptionAndRetry$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const recovery = await get(assistantErrorRecovery$);
-      signal.throwIfAborted();
-      if (!recovery?.actions.resetAndTryAgain) {
-        return false;
-      }
-      const result = await set(
-        resetPersonalCodexAccountSubscriptionUsage$,
-        recovery.actions.resetAndTryAgain.accountId,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (result.outcome === "noCredit") {
-        return false;
-      }
-      return await set(sendContinueMessage$, signal);
-    },
-  );
-
   return {
     assistantErrorRecovery$,
     assistantErrorRecoveryEventId$,
-    retryAssistantError$,
-    resetCodexSubscriptionAndRetry$,
   };
 }

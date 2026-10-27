@@ -3,7 +3,6 @@ import {
   type DiscordOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -82,7 +81,6 @@ test.each([true, false])(
     await setupPage({
       context,
       path: `/settings/discord/install?guild_id=${guildId}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(
       screen.getByRole("heading", { name: "Add Okou to a server" }),
@@ -99,7 +97,7 @@ test.each([true, false])(
       screen.findByText(
         approved
           ? "Connected to Discord"
-          : "Discord authorization could not be completed. Try again.",
+          : "Discord authorization could not be completed.",
       ),
     ).resolves.toBeInTheDocument();
     expect(popup.closed).toBeFalsy();
@@ -125,9 +123,6 @@ test.each([true, false])(
     expect(
       queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
     ).toBe(approved ? `discord://-/channels/${guildId}` : null);
-    expect(
-      queryAction("button", "Retry")?.hasAttribute("disabled") ?? null,
-    ).toBe(approved ? null : false);
   },
 );
 
@@ -176,7 +171,6 @@ test.each(["install", "connect"] as const)(
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(
       screen.getByRole("heading", { name: "Connect to Discord" }),
@@ -265,7 +259,6 @@ test.each(["connected", "disconnected", "error"] as const)(
     const page = await startPage({
       context,
       path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${approvalProof}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     await page.content;
     await approving.promise;
@@ -329,7 +322,6 @@ test.each(["connected", "error"] as const)(
     await setupPage({
       context,
       path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${"p".repeat(43)}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(
       screen.getByRole("heading", { name: "Checking account status..." }),
@@ -406,7 +398,6 @@ test.each([
     const page = await startPage({
       context,
       path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${"p".repeat(43)}`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     await page.content;
     await approving.promise;
@@ -423,7 +414,7 @@ test.each([
       screen.findByRole("heading", { name: title }),
     ).resolves.toBeInTheDocument();
     expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
-    expect(queryAction("button", "Retry")).toBeNull();
+    expect(queryAction("button", "Connect")).toBeNull();
     expect(new URLSearchParams(window.location.search).get("status")).toBe(
       result,
     );
@@ -441,7 +432,7 @@ test.each([
       );
     });
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-    expect(queryAction("button", "Retry")).toBeNull();
+    expect(queryAction("button", "Connect")).toBeNull();
     expect(new URLSearchParams(window.location.search).get("status")).toBe(
       result,
     );
@@ -458,7 +449,6 @@ test.each([false, true])(
     await setupPage({
       context,
       path: `${path}&status=connected&workspace=Unverified+server`,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     expect(screen.queryByText(/Unverified server/u)).not.toBeInTheDocument();
     expect(
@@ -476,7 +466,7 @@ test.each([false, true])(
   },
 );
 
-test("A blocked Discord popup shows a retry action on the connection page", async () => {
+test("A blocked Discord popup keeps authorization incomplete", async () => {
   context.mocks.browser.open(null);
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, status());
@@ -484,25 +474,18 @@ test("A blocked Discord popup shows a retry action on the connection page", asyn
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   click(getAction("button", "Connect"));
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Allow popups to authorize Discord, then try again.",
+    "The Discord authorization popup was blocked.",
   );
-  expect(getAction("button", "Retry")).toBeEnabled();
   expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
 });
 
-test("Closing Discord consent shows cancellation without failure capture and can retry to a verified connection", async () => {
+test("Closing Discord consent shows cancellation without failure capture", async () => {
   const sentry = context.mocks.sentry();
   initSentry();
-  let current = status();
-  let retrying = false;
-  let approved = false;
-  const retryState = "r".repeat(43);
-  const retryToken = "t".repeat(43);
-  let completionBody: unknown;
+  const current = status();
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, current);
   });
@@ -513,22 +496,13 @@ test("Closing Discord consent shows cancellation without failure capture and can
   });
   context.mocks.browser.open(popup);
   const authorizationUrl = `https://discord.com/oauth2/authorize?state=${"s".repeat(43)}`;
-  const retryUrl = `https://discord.com/oauth2/authorize?state=${retryState}`;
   context.mocks.api(discordOauthContract.start, ({ respond }) => {
     return respond(200, {
-      authorizationUrl: retrying ? retryUrl : authorizationUrl,
-      completionToken: retrying ? retryToken : "c".repeat(43),
+      authorizationUrl,
+      completionToken: "c".repeat(43),
     });
   });
-  context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
-    completionBody = body;
-    if (body.state === retryState && approved) {
-      current = status({
-        isConnected: true,
-        discordUserId: "234567890123456789",
-      });
-      return respond(200, { status: "connected" });
-    }
+  context.mocks.api(discordOauthContract.complete, ({ respond }) => {
     return respond(409, {
       error: {
         code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
@@ -539,7 +513,6 @@ test("Closing Discord consent shows cancellation without failure capture and can
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   click(getAction("button", "Connect"));
   await waitFor(() => {
@@ -547,9 +520,8 @@ test("Closing Discord consent shows cancellation without failure capture and can
   });
   popup.close();
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Discord authorization was cancelled. You can start again.",
+    "Discord authorization was cancelled.",
   );
-  expect(getAction("button", "Retry")).toBeEnabled();
   expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
   expect(new URLSearchParams(window.location.search).get("status")).not.toBe(
     "connected",
@@ -557,39 +529,6 @@ test("Closing Discord consent shows cancellation without failure capture and can
   expect(
     screen.queryByText("Discord consent has not been approved"),
   ).toBeNull();
-  expect(sentry.reports).toStrictEqual([]);
-
-  const retryPopup = context.mocks.browser.authWindow();
-  Object.defineProperty(retryPopup, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  context.mocks.browser.open(retryPopup);
-  retrying = true;
-  click(getAction("button", "Retry"));
-  await waitFor(() => {
-    expect(retryPopup.location.href).toBe(retryUrl);
-  });
-  expect(getAction("button", "Connecting...")).toBeDisabled();
-  expect(queryAction("link", "Open Discord")).toBeNull();
-  approved = true;
-  await expect(
-    screen.findByRole("heading", { name: "Connected to Discord" }),
-  ).resolves.toBeInTheDocument();
-  expect(getAction("link", "Open Discord")).toHaveAttribute(
-    "href",
-    `discord://-/channels/${guildId}`,
-  );
-  await waitFor(() => {
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
-      "connected",
-    );
-  });
-  expect(retryPopup.closed).toBeFalsy();
-  expect(completionBody).toStrictEqual({
-    state: retryState,
-    completionToken: retryToken,
-  });
   expect(sentry.reports).toStrictEqual([]);
 });
 
@@ -630,19 +569,17 @@ test.each([
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
     click(getAction("button", "Connect"));
     await completing.promise;
     popup.close();
     respondToCompletion.resolve();
     await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-      "Discord authorization could not be completed. Try again.",
+      "Discord authorization could not be completed.",
     );
     expect(
       screen.getByText("Discord completion failed verification"),
     ).toBeInTheDocument();
-    expect(getAction("button", "Retry")).toBeEnabled();
     expect(queryAction("link", "Open Discord")).toBeNull();
     expect(new URLSearchParams(window.location.search).get("status")).not.toBe(
       "connected",
@@ -663,7 +600,6 @@ test("A Discord DM link can connect without a server hint", async () => {
   await setupPage({
     context,
     path: "/settings/discord",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   expect(getAction("button", "Connect")).toBeEnabled();
 });
@@ -678,7 +614,6 @@ test("A failed Discord status request exposes the error page and its back link",
     setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     }),
   ).rejects.toThrow("Discord access denied");
   await expect(
@@ -701,7 +636,6 @@ test("A server link is independent of the workspace's previous server", async ()
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   expect(getAction("button", "Connect")).toBeEnabled();
 });
@@ -713,7 +647,6 @@ test("A malformed server link cannot start consent", async () => {
   await setupPage({
     context,
     path: "/settings/discord?guild_id=invalid",
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   expect(
     screen.getByText(
@@ -722,31 +655,6 @@ test("A malformed server link cannot start consent", async () => {
   ).toBeInTheDocument();
   expect(queryAction("button", "Connect")).not.toBeInTheDocument();
 });
-
-test.each([
-  path,
-  `/settings/discord?status=pending#discord_oauth=approve&state=${"s".repeat(43)}&approval_proof=${"p".repeat(43)}`,
-])(
-  "A disabled Discord integration at %s offers no authorization action",
-  async (disabledPath) => {
-    const approvals: unknown[] = [];
-    context.mocks.api(discordOauthContract.approve, ({ body, respond }) => {
-      approvals.push(body);
-      return respond(200, { approved: true });
-    });
-    await setupPage({
-      context,
-      path: disabledPath,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: false },
-    });
-    expect(
-      screen.getByText("Discord is not configured for this organization yet."),
-    ).toBeInTheDocument();
-    expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-    expect(approvals).toStrictEqual([]);
-    expect(window.location.hash).toBe("");
-  },
-);
 
 test("A Discord connection link requires sign-in and preserves its server", async () => {
   await startPage({ context, path, host: "app.okou.ai", auth: null });

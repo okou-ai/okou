@@ -9,7 +9,6 @@ import {
   startComposerSubmission,
   useComposerActions,
   useComposerPrimaryAction,
-  useComposerVoiceAction,
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
@@ -209,6 +208,7 @@ import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/pe
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { locale$ } from "../../signals/locale.ts";
 import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { sendMode$ } from "../../signals/send-mode.ts";
@@ -327,7 +327,6 @@ interface ComposerComputerUse {
   readonly hosts: readonly ComposerComputerUseHost[];
   readonly loading: boolean;
   readonly failed: boolean;
-  readonly retry: () => void;
   readonly cloudBrowserAvailable: boolean;
   readonly selectedHostId: string | null;
   readonly onChange: (hostId: string | null) => void;
@@ -4107,11 +4106,6 @@ function ComputerUseConnectorMenuSection({
               return $.chat.remoteAccess.loadFailed;
             })}
           </span>
-          <Button variant="outline" size="sm" onClick={computerUse.retry}>
-            {t(($) => {
-              return $.chat.remoteAccess.retry;
-            })}
-          </Button>
         </div>
       ) : computerUse.loading ? (
         <div className="flex flex-col animate-pulse">
@@ -4213,7 +4207,6 @@ function ComposerRemoteAccessMenu({
       threadId={signals.threadId}
       remoteAccess$={signals.remoteAccess$}
       defaults$={signals.connector.resources.remoteHostDefaults$}
-      reloadRemotes$={signals.connector.resources.reloadRemotes$}
       pendingRemoteAccess={signals.pendingRemoteAccess}
       open={remoteMenuOpen}
       onOpenChange={onRemoteMenuOpenChange}
@@ -5125,7 +5118,6 @@ function ComposerConnectorsPopoverBody({
         : undefined;
   const connectorsLoading =
     connectorState.state === "loading" && connectorData === undefined;
-  const retryConnectors = useSet(signals.connector.resources.reloadConnected$);
   const { agentConnectors, agentCustomConnectors } =
     resolveComposerAgentConnectors(connectorData);
   const connectorUi = useGet(signals.connector.connectorUiState$);
@@ -5207,11 +5199,6 @@ function ComposerConnectorsPopoverBody({
               return $.chat.connectors.loadFailed;
             })}
           </span>
-          <Button variant="outline" size="sm" onClick={retryConnectors}>
-            {t(($) => {
-              return $.chat.remoteAccess.retry;
-            })}
-          </Button>
         </div>
       )}
       {(connectorItems.length > 0 || connectorsLoading) && (
@@ -5510,21 +5497,15 @@ function micButtonTooltip(status: MicButtonStatus): string {
   });
 }
 
-function MicButton({
-  signals,
-  actions,
-}: {
-  signals: ComposerSignals;
-  actions: ComposerActions;
-}) {
+function MicButton({ signals }: { signals: ComposerSignals }) {
   const available = useGet(audioInputAvailable$);
   const quotaState = useLoadableState(audioInputQuota$);
   const quotaResolved = useLastResolved(audioInputQuota$) !== undefined;
   // The last resolved status keeps this control stable while a composer
   // target reads its stored draft; run$ awaits that read before acting.
   const voiceDraftStatus = useLastResolved(signals.voice.state$)?.status;
-  const voiceAction = useComposerVoiceAction(signals);
-  const starting = voiceAction === "start";
+  const [operation, runVoice] = useLoadableSet(signals.voice.run$);
+  const starting = operation.state === "loading";
 
   const signal = useGet(pageSignal$);
   const draftLoading = voiceDraftStatus === undefined;
@@ -5539,7 +5520,7 @@ function MicButton({
   }
 
   const handleClick = () => {
-    detach(actions.voice("toggle", signal), Reason.DomCallback);
+    detach(runVoice("toggle", signal), Reason.DomCallback);
   };
 
   return (
@@ -5605,28 +5586,32 @@ const VOICE_DRAFT_TRAY_CLASS =
 
 function VoiceDraftFooter({
   signals,
-  actions,
-  status,
+  status: draftStatus,
   recordingAvailable,
   voiceMessage,
+  children,
 }: {
   signals: ComposerSignals;
-  actions: ComposerActions;
-  status: Exclude<ComposerVoiceInputStatus, "idle">;
+  status: ComposerVoiceInputStatus | undefined;
   recordingAvailable: boolean;
   voiceMessage: string | undefined;
+  children: ReactNode;
 }) {
   const { t } = useTranslation();
   const capture = useGet(signals.voice.capture$);
   const recording = capture !== null;
-  const voiceAction = useComposerVoiceAction(signals);
-  const starting = voiceAction === "start";
+  const [operation, runVoice] = useLoadableSet(signals.voice.run$);
+  const status = operation.state === "loading" ? "transcribing" : draftStatus;
+  const starting = false;
   const recordingStartedAt = capture?.startedAt ?? null;
 
   const voiceLevelSamples = useGet(signals.voice.voiceLevelSamples$);
   const signal = useGet(pageSignal$);
 
-  if (status === "failed") {
+  if (status === undefined || status === "idle") {
+    return children;
+  }
+  if (status === "recorded" || status === "failed") {
     return (
       <div
         className={cn("flex w-full items-center gap-3", VOICE_DRAFT_TRAY_CLASS)}
@@ -5639,7 +5624,7 @@ function VoiceDraftFooter({
           {voiceMessage ??
             (recordingAvailable
               ? t(($) => {
-                  return $.chat.voice.retryReady;
+                  return $.chat.voice.recordingSaved;
                 })
               : t(($) => {
                   return $.chat.voice.restoreFailed;
@@ -5654,7 +5639,7 @@ function VoiceDraftFooter({
               return $.chat.voice.removeDraft;
             })}
             onClick={() => {
-              detach(actions.voice("discard", signal), Reason.DomCallback);
+              detach(runVoice("discard", signal), Reason.DomCallback);
             }}
           >
             <Trash2 size={16} />
@@ -5666,12 +5651,17 @@ function VoiceDraftFooter({
           size="sm"
           className="min-w-14 shrink-0 bg-background"
           data-composer-voice-toggle
+          disabled={
+            !recordingAvailable ||
+            operation.state === "hasError" ||
+            voiceMessage !== undefined
+          }
           onClick={() => {
-            detach(actions.voice("retry", signal), Reason.DomCallback);
+            detach(runVoice("finish", signal), Reason.DomCallback);
           }}
         >
           {t(($) => {
-            return $.chat.voice.retry;
+            return $.chat.voice.useRecording;
           })}
         </Button>
       </div>
@@ -5692,13 +5682,9 @@ function VoiceDraftFooter({
         ? t(($) => {
             return $.chat.voice.returningToComposer;
           })
-        : voiceAction === "retry"
-          ? t(($) => {
-              return $.chat.voice.retryingSavedAudio;
-            })
-          : t(($) => {
-              return $.chat.voice.textTakingShape;
-            });
+        : t(($) => {
+            return $.chat.voice.textTakingShape;
+          });
     return (
       <div
         className={cn(
@@ -5757,7 +5743,7 @@ function VoiceDraftFooter({
         aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
         disabled={starting || !recording}
         onClick={() => {
-          detach(actions.voice("toggle", signal), Reason.DomCallback);
+          detach(runVoice("toggle", signal), Reason.DomCallback);
         }}
       >
         {t(($) => {
@@ -6698,6 +6684,7 @@ function ComposerConnectorConnectDialogs({
 }
 
 function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
+  const locale = useGet(locale$);
   const storedComputerUseHostId = useGet(signals.computer.computerUseHostId$);
   const cloudBrowserState = useLastLoadable(
     signals.computer.cloudBrowserEnabled$,
@@ -6716,7 +6703,6 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   const computerUseHostsState = useLoadable(
     signals.connector.resources.remotes$,
   );
-  const retry = useSet(signals.connector.resources.reloadRemotes$);
   const computerUseHosts =
     computerUseHostsState.state === "hasData"
       ? computerUseHostsState.data.computerUseHosts
@@ -6727,7 +6713,11 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   );
   const composerPageSignal = useGet(pageSignal$);
   return {
-    hosts: visibleComputerUseHosts(computerUseHosts, resolvedComputerUseHostId),
+    hosts: visibleComputerUseHosts(
+      computerUseHosts,
+      resolvedComputerUseHostId,
+      locale,
+    ),
     loading:
       computerUseHostsState.state === "loading" &&
       computerUseHosts.length === 0,
@@ -6739,7 +6729,6 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
       );
     },
     failed: computerUseHostsState.state === "hasError",
-    retry,
     cloudBrowserAvailable:
       computerUseHostsState.state === "hasData" &&
       computerUseHostsState.data.cloudBrowserAvailable,
@@ -7070,7 +7059,7 @@ function ComposerIdleControls({
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
         <ComposerModelPickerSlot signals={signals} />
-        <MicButton signals={signals} actions={actions} />
+        <MicButton signals={signals} />
         <ComposerSendControl signals={signals} actions={actions} />
       </div>
     </>
@@ -7079,42 +7068,29 @@ function ComposerIdleControls({
 
 function ComposerFooter({
   signals,
-  actions,
   children,
 }: {
   signals: ComposerSignals;
-  actions: ComposerActions;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const voiceDraftLoadable = useLoadable(signals.voice.state$);
+  const voiceDraftLoadable = useLastLoadable(signals.voice.state$);
   const voiceDraft =
     voiceDraftLoadable.state === "hasData"
       ? voiceDraftLoadable.data
       : undefined;
   const capture = useGet(signals.voice.capture$);
-  const voiceAction = useComposerVoiceAction(signals);
-  const status =
-    voiceAction === "start"
-      ? "idle"
-      : voiceAction === "discard"
-        ? "discarding"
-        : voiceAction === "finish" || voiceAction === "retry"
-          ? "transcribing"
-          : capture
-            ? "recording"
-            : voiceDraftLoadable.state === "hasError"
-              ? "failed"
-              : voiceDraft?.status;
+  const status = capture
+    ? "recording"
+    : voiceDraftLoadable.state === "hasError"
+      ? "failed"
+      : voiceDraft?.status === "recording"
+        ? "recorded"
+        : voiceDraft?.status;
   const activeVoiceDraftStatus: Exclude<
     ComposerVoiceInputStatus,
     "idle"
-  > | null =
-    status !== undefined &&
-    status !== "idle" &&
-    (status !== "recording" || capture !== null)
-      ? status
-      : null;
+  > | null = status !== undefined && status !== "idle" ? status : null;
   return withChatScrollLayout(
     <div
       className={cn(
@@ -7125,23 +7101,20 @@ function ComposerFooter({
         activeVoiceDraftStatus ? "px-2 pb-3 pt-3" : "px-4 pb-4 pt-1",
       )}
     >
-      {activeVoiceDraftStatus ? (
-        <VoiceDraftFooter
-          signals={signals}
-          actions={actions}
-          status={activeVoiceDraftStatus}
-          recordingAvailable={Boolean(voiceDraft?.recording)}
-          voiceMessage={
-            voiceDraftLoadable.state === "hasError"
-              ? t(($) => {
-                  return $.chat.voice.storageFailed;
-                })
-              : voiceDraft?.message
-          }
-        />
-      ) : (
-        children
-      )}
+      <VoiceDraftFooter
+        signals={signals}
+        status={status}
+        recordingAvailable={Boolean(voiceDraft?.recording)}
+        voiceMessage={
+          voiceDraftLoadable.state === "hasError"
+            ? t(($) => {
+                return $.chat.voice.storageFailed;
+              })
+            : voiceDraft?.message
+        }
+      >
+        {children}
+      </VoiceDraftFooter>
     </div>,
   );
 }
@@ -7217,7 +7190,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
-          <ComposerFooter signals={signals} actions={actions}>
+          <ComposerFooter key={signals.voice.key} signals={signals}>
             <ComposerIdleControls
               signals={signals}
               actions={actions}

@@ -25,11 +25,7 @@ import {
 import type { TFunction } from "i18next";
 import { equalArrays, equalSets } from "../../lib/equality.ts";
 import { useTranslation } from "react-i18next";
-import {
-  formatAppNumber,
-  formatChatTimestamp,
-  formatLocalizedNumber,
-} from "../../i18n/format.ts";
+import { formatAppNumber, formatChatTimestamp } from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts";
 import {
@@ -312,10 +308,6 @@ import {
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { ChatComposer } from "./chat-composer.tsx";
-import {
-  ModelProviderPicker,
-  type ModelProviderSelection,
-} from "./components/model-provider-picker.tsx";
 import { ChatFeedbackSelection } from "./chat-feedback-selection.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
@@ -349,13 +341,19 @@ import {
   CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS,
   CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS,
+  CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS,
+  CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS,
+  CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS,
   CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
+  CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
+  CHAT_THREAD_NAME_LINE_ASSISTANT_MESSAGE_ROW_CLASS,
+  CHAT_THREAD_NAME_LINE_USER_MESSAGE_ROW_CLASS,
   CHAT_THREAD_RESPONSE_FLUSH_CLASS,
   CHAT_THREAD_RESPONSE_LINE_CLASS,
   CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS,
@@ -3510,6 +3508,8 @@ function formatCompactDuration(totalSeconds: number): string {
 
 const RUN_SECTION_LABEL_CLASS =
   "min-w-0 max-w-full shrink-0 break-words font-serif text-sm leading-5 italic text-muted-foreground/50";
+const RUN_SECTION_ROW_CLASS =
+  "@[900px]:grid @[900px]:grid-cols-[36px_1fr] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
 
 function RunSectionDivider({
   label,
@@ -3549,13 +3549,17 @@ function RunSectionDividerRow({
   label: string;
   announce?: boolean;
 }) {
+  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
   return (
     <div
       role={announce ? "status" : undefined}
       aria-live={announce ? "polite" : undefined}
-      className="min-w-0"
+      className={nameLine ? undefined : RUN_SECTION_ROW_CLASS}
     >
-      <RunSectionDivider label={label} labelPosition="right" />
+      {nameLine ? null : <div className="hidden @[900px]:block" />}
+      <div className="min-w-0">
+        <RunSectionDivider label={label} labelPosition="right" />
+      </div>
     </div>
   );
 }
@@ -4270,6 +4274,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
 // ---------------------------------------------------------------------------
 
 function ChatEventSkeletonPair({ compact = false }: { compact?: boolean }) {
+  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
   return (
     <>
       {/* User bubble skeleton */}
@@ -4286,12 +4291,20 @@ function ChatEventSkeletonPair({ compact = false }: { compact?: boolean }) {
       <div
         data-chat-event-skeleton="assistant"
         aria-hidden
-        className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}
+        className={
+          nameLine
+            ? CHAT_THREAD_NAME_LINE_ASSISTANT_MESSAGE_ROW_CLASS
+            : "flex flex-col gap-2 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start"
+        }
       >
-        <div className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>
-          <Skeleton className="size-5 shrink-0 rounded-md" />
-          <Skeleton className="h-3 w-16 rounded-lg" />
-        </div>
+        {nameLine ? (
+          <div className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>
+            <Skeleton className="size-7 shrink-0 rounded-lg" />
+            <Skeleton className="h-3 w-16 rounded-lg" />
+          </div>
+        ) : (
+          <Skeleton className="h-7 w-7 @[900px]:h-9 @[900px]:w-9 shrink-0 @[900px]:mt-0.5 rounded-xl" />
+        )}
         <div className="flex flex-col gap-2">
           <Skeleton
             className={cn("h-4 rounded-lg", compact ? "w-[85%]" : "w-[90%]")}
@@ -5081,66 +5094,6 @@ function assistantRecoveryResetTexts(
   ];
 }
 
-function AssistantRecoveryActionSpinner({ loading }: { loading: boolean }) {
-  return loading ? <Loader2 size={16} className="animate-spin" /> : null;
-}
-
-function hasAssistantRecoveryModelPicker(
-  recovery: AssistantErrorRecovery,
-): boolean {
-  return (
-    recovery.kind === "subscription-error" ||
-    recovery.kind === "usage-limit" ||
-    recovery.kind === "model-capacity" ||
-    recovery.kind === "model-unavailable" ||
-    recovery.kind === "safety-policy-refusal" ||
-    (recovery.kind === "provider-retryable" &&
-      recovery.failureReason !== "guest_root_filesystem_full" &&
-      recovery.failureReason !== "guest_home_filesystem_full" &&
-      recovery.failureReason !== "codex_access_program_unavailable")
-  );
-}
-
-/**
- * The retry reads the thread's persisted model, so the card's actions wait for
- * the selection write this picker starts. `onSelect` is owned by the actions
- * row, which disables its buttons while the write is pending.
- */
-function AssistantRecoveryModelPicker({
-  recovery,
-  thread,
-  onSelect,
-}: {
-  readonly recovery: AssistantErrorRecovery;
-  readonly thread: ChatPanelSignals;
-  readonly onSelect: (selection: ModelProviderSelection) => void;
-}) {
-  const { t } = useTranslation();
-  const modelSelection =
-    useLastResolved(thread.composer.model.modelSelection$) ?? null;
-  if (!hasAssistantRecoveryModelPicker(recovery)) {
-    return null;
-  }
-  const handleModelSelection = (
-    selection: ModelProviderSelection | null,
-  ): void => {
-    if (!selection) {
-      return;
-    }
-    onSelect(selection);
-  };
-  return (
-    <ModelProviderPicker
-      value={modelSelection}
-      onChange={handleModelSelection}
-      placeholder={t(($) => {
-        return $.chat.errors.recovery.selectModel;
-      })}
-      triggerClassName="h-8 w-auto min-w-24 max-w-36 bg-background text-sm"
-    />
-  );
-}
-
 function AssistantRecoveryDestinationAction({
   recovery,
 }: {
@@ -5199,88 +5152,6 @@ function AssistantRecoveryDestinationAction({
     );
   }
   return null;
-}
-
-function AssistantRecoveryActions({
-  recovery,
-  thread,
-}: {
-  recovery: AssistantErrorRecovery;
-  thread: ChatPanelSignals;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [retryLoadable, retry] = useLoadableSet(thread.retryAssistantError$);
-  const [resetLoadable, resetAndRetry] = useLoadableSet(
-    thread.resetCodexSubscriptionAndRetry$,
-  );
-  const [selectModelLoadable, selectModel] = useLoadableSet(
-    thread.composer.model.setModelSelection$,
-  );
-  const retrying = retryLoadable.state === "loading";
-  const resetting = resetLoadable.state === "loading";
-  const selectingModel = selectModelLoadable.state === "loading";
-  const actionsDisabled = retrying || resetting || selectingModel;
-  const resetAction = recovery.actions.resetAndTryAgain;
-  const hasRetryAction = recovery.actions.tryAgain !== null;
-  const continueAction =
-    recovery.kind === "execution-timeout" ||
-    recovery.kind === "autonomy-budget-exhausted" ||
-    recovery.kind === "output-token-limit";
-
-  return (
-    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-      <AssistantRecoveryModelPicker
-        recovery={recovery}
-        thread={thread}
-        onSelect={(selection) => {
-          detach(selectModel(selection, pageSignal), Reason.DomCallback);
-        }}
-      />
-      {hasRetryAction && (
-        <Button
-          type="button"
-          size="sm"
-          variant="neutral"
-          className={ERROR_CARD_ACTION_CLASS}
-          disabled={actionsDisabled}
-          onClick={() => {
-            detach(retry(pageSignal), Reason.DomCallback);
-          }}
-        >
-          <AssistantRecoveryActionSpinner loading={retrying} />
-          {continueAction
-            ? t(($) => {
-                return $.chat.errors.recovery.continue;
-              })
-            : t(($) => {
-                return $.chat.errors.recovery.tryAgain;
-              })}
-        </Button>
-      )}
-      {resetAction && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={ERROR_CARD_ACTION_CLASS}
-          disabled={actionsDisabled}
-          onClick={() => {
-            detach(resetAndRetry(pageSignal), Reason.DomCallback);
-          }}
-        >
-          <AssistantRecoveryActionSpinner loading={resetting} />
-          {t(
-            ($) => {
-              return $.chat.errors.recovery.resetUsageRemaining;
-            },
-            { value: formatLocalizedNumber(resetAction.resetsRemaining) },
-          )}
-        </Button>
-      )}
-      <AssistantRecoveryDestinationAction recovery={recovery} />
-    </div>
-  );
 }
 
 /**
@@ -5502,6 +5373,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.unavailableTitle;
     });
   },
+  provider_model_restricted: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.unavailableTitle;
+    });
+  },
   usage_limit: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.usageFallbackTitle;
@@ -5609,6 +5485,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
   reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
   unsupported_model: FAILURE_DESCRIPTIONS.unavailable,
+  provider_model_restricted: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.modelUnavailable;
+    });
+  },
   usage_limit: FAILURE_DESCRIPTIONS.usage,
 } satisfies Record<KnownRunFailureReason, StructuredFailureDescription>);
 
@@ -5650,9 +5531,13 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
 
 function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
   return (
-    reason !== "insufficient_credits" &&
-    reason !== "input_too_large" &&
-    reason !== "provider_image_too_large"
+    reason === "session_history_limit" ||
+    reason === "context_window_exceeded" ||
+    reason === "provider_insufficient_credits" ||
+    reason === "invalid_api_key" ||
+    reason === "invalid_credentials" ||
+    reason === "reconnect_required" ||
+    reason === "terms_acceptance_required"
   );
 }
 
@@ -5833,13 +5718,12 @@ function assistantRecoveryIcon(recovery: AssistantErrorRecovery): LucideIcon {
 
 function assistantErrorRecoveryContent(
   recovery: AssistantErrorRecovery,
-  thread: ChatPanelSignals,
   t: TFunction<"common">,
 ): AssistantErrorCardContent {
   const hasActions =
-    recovery.kind !== "input-too-large" &&
-    (recovery.failureReason === null ||
-      structuredFailureHasActions(recovery.failureReason));
+    recovery.kind === "provider-settings" ||
+    recovery.kind === "new-chat-required" ||
+    recovery.kind === "terms-acceptance-required";
   const description = assistantRecoveryDescription(recovery, t);
   return {
     icon: assistantRecoveryIcon(recovery),
@@ -5852,9 +5736,7 @@ function assistantErrorRecoveryContent(
       : {}),
     ...(hasActions
       ? {
-          actions: (
-            <AssistantRecoveryActions recovery={recovery} thread={thread} />
-          ),
+          actions: <AssistantRecoveryDestinationAction recovery={recovery} />,
         }
       : {}),
     reserveActions: hasActions,
@@ -6010,7 +5892,6 @@ function assistantErrorFallbackContent(
 
   const description = localizedRunError(error);
   const showDetails = /[\r\n]/u.test(description) || description.length > 240;
-  const legacyUsageLimit = isLegacyUsageLimitError(error, failureReason);
   return {
     icon: AlertCircle,
     title: t(($) => {
@@ -6026,7 +5907,7 @@ function assistantErrorFallbackContent(
           ),
         }
       : {}),
-    reserveActions: showDetails || legacyUsageLimit,
+    reserveActions: showDetails,
   };
 }
 
@@ -6081,13 +5962,34 @@ function AssistantErrorState({
   // not a component: choosing between two card components here would remove
   // the mounted card and move the transcript by its height.
   const content = recovery
-    ? assistantErrorRecoveryContent(recovery, thread, t)
+    ? assistantErrorRecoveryContent(recovery, t)
     : fallback;
   return (
     <AssistantErrorCard
       {...content}
       pending={loadable.state === "loading" && pendingEventId === eventId}
     />
+  );
+}
+
+function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const agentId = thread.agentId;
+  return (
+    <Link
+      pathname="/agents/:agentId"
+      options={{ pathParams: { agentId } }}
+      className={`${CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS} transition-colors duration-150 hover:bg-state-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
+      aria-label={t(($) => {
+        return $.chat.agentPage.viewAgentProfile;
+      })}
+    >
+      <AgentAvatarImg
+        name={agentId}
+        alt=""
+        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
+      />
+    </Link>
   );
 }
 
@@ -6117,11 +6019,11 @@ function AssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
         "-ml-1 rounded-lg pr-2 pl-1 transition-colors duration-150 hover:bg-state-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       )}
     >
-      <span className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}>
+      <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS}>
         <AgentAvatarImg
           name={agentId}
           alt=""
-          className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
+          className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS}
         />
       </span>
       <span className="min-w-0 truncate">{name}</span>
@@ -6205,66 +6107,6 @@ function shareableEventFromChatEvent(
     : null;
 }
 
-function ShareGroupSelection({
-  role,
-  allSelected,
-  indeterminate,
-  selecting,
-  onToggle,
-}: {
-  role: ChatEventGroup["role"];
-  allSelected: boolean;
-  indeterminate: boolean;
-  selecting: boolean;
-  onToggle: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Field.Root
-      data-chat-share-selection
-      className="group/share-selection relative flex justify-center"
-      disabled={!selecting}
-    >
-      {/* The label covers the whole column, including the row's padding,
-          and keeps its text for assistive technology only. */}
-      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-pointer data-disabled:pointer-events-none @[960px]:-right-2.5">
-        <span className="sr-only">
-          {t(($) => {
-            return allSelected
-              ? $.chat.sharing.deselectGroup
-              : $.chat.sharing.selectGroup;
-          })}
-        </span>
-      </Field.Label>
-      {/* Centred on the group's first line: the name line of a reply, or the
-          first text line of a bubble. Sticky, so a long reply keeps its
-          checkbox in view. */}
-      <span
-        className={cn(
-          "sticky top-2 flex items-center",
-          role === "assistant"
-            ? "h-7"
-            : "h-[calc(1lh+1.5rem)] text-[0.9375rem] leading-[1.7]",
-        )}
-      >
-        <Checkbox
-          checked={allSelected}
-          indeterminate={indeterminate}
-          disabled={!selecting}
-          className={cn(
-            "h-5 w-5 border-muted-foreground",
-            selecting &&
-              !allSelected &&
-              !indeterminate &&
-              "group-hover/share-selection:border-foreground group-hover/share-selection:bg-state-hover-overlay",
-          )}
-          onCheckedChange={onToggle}
-        />
-      </span>
-    </Field.Root>
-  );
-}
-
 function SelectablePagedGroupRow({
   group,
   thread,
@@ -6278,6 +6120,7 @@ function SelectablePagedGroupRow({
   const phase = useGet(thread.sharing.phase$);
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const toggle = useSet(thread.sharing.toggle$);
+  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
   const sharing = phase !== "idle";
   const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
@@ -6318,62 +6161,185 @@ function SelectablePagedGroupRow({
     }
   };
 
+  const aliasEventIds =
+    group.role === "assistant"
+      ? [
+          ...group.events,
+          ...(runWorkSection
+            ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
+                return hiddenGroup.events;
+              })
+            : []),
+        ]
+          .map((event) => {
+            return event.id;
+          })
+          .join(" ")
+      : undefined;
+  const selection = {
+    allSelected,
+    indeterminate,
+    selecting: phase === "selecting",
+    onToggle: toggleGroup,
+  };
+  // Preserve the message list's rhythm inside this group, including the gaps
+  // that back-to-back user bubbles stack into.
+  const messages = (
+    <div
+      className={cn("flex min-w-0 flex-col", CHAT_THREAD_MESSAGE_ROW_GAP_CLASS)}
+    >
+      {content}
+    </div>
+  );
+
+  if (nameLine) {
+    return (
+      <div
+        data-chat-share-selectable-group
+        data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
+        data-selected={allSelected || undefined}
+        className={cn(
+          // The padding the tint needs is spent by the negative margin, so
+          // the group keeps the height it has outside sharing.
+          "relative -mx-2 -my-1.5 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
+          // Once the gutter has room, the selection column sits outside the
+          // reading column, so starting a share does not move the transcript.
+          // The 900px column is centred in 24px of padding, so the 54px gutter
+          // clears the scroll viewport's edge only from a 960px container.
+          "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3",
+          "data-selected:bg-state-selected",
+          phase === "selecting" &&
+            (allSelected
+              ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-selected-hover"
+              : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
+        )}
+      >
+        {/* The selection column owns selection. Message content stays
+            outside it so text selection, links, and message actions keep
+            their owners. */}
+        <ShareGroupSelectionColumn role={group.role} {...selection} />
+        {messages}
+      </div>
+    );
+  }
+
   return (
     <div
       data-chat-share-selectable-group
-      data-chat-scroll-anchor-alias-event-ids={
-        group.role === "assistant"
-          ? [
-              ...group.events,
-              ...(runWorkSection
-                ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
-                    return hiddenGroup.events;
-                  })
-                : []),
-            ]
-              .map((event) => {
-                return event.id;
-              })
-              .join(" ")
-          : undefined
-      }
-      data-selected={allSelected || undefined}
-      className={cn(
-        // The padding the tint needs is spent by the negative margin, so the
-        // group keeps the height it has outside sharing.
-        "relative -mx-2 -my-1.5 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
-        // Once the gutter has room, the selection column sits outside the
-        // reading column, so starting a share does not move the transcript.
-        // The 900px column is centred in 24px of padding, so the 54px gutter
-        // clears the scroll viewport's edge only from a 960px container.
-        "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3",
-        "data-selected:bg-state-selected",
-        phase === "selecting" &&
-          (allSelected
-            ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-selected-hover"
-            : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
-      )}
+      data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
+      className="relative -my-1 flex flex-col gap-2 rounded-lg py-1"
     >
-      {/* The selection column owns selection. Message content stays outside
+      {/* The full-width label owns selection. Message content stays outside
           it so text selection, links, and message actions keep their owners. */}
-      <ShareGroupSelection
-        role={group.role}
-        allSelected={allSelected}
-        indeterminate={indeterminate}
-        selecting={phase === "selecting"}
-        onToggle={toggleGroup}
-      />
-      <div
-        // Preserve the message list's rhythm inside this group, including
-        // the gaps that back-to-back user bubbles stack into.
+      <ShareGroupLabelRow {...selection} />
+      {messages}
+    </div>
+  );
+}
+
+interface ShareGroupSelectionProps {
+  allSelected: boolean;
+  indeterminate: boolean;
+  selecting: boolean;
+  onToggle: () => void;
+}
+
+function shareGroupSelectionLabel(
+  t: TFunction<"common">,
+  allSelected: boolean,
+): string {
+  return t(($) => {
+    return allSelected
+      ? $.chat.sharing.deselectGroup
+      : $.chat.sharing.selectGroup;
+  });
+}
+
+function shareGroupCheckboxHoverClass({
+  allSelected,
+  indeterminate,
+  selecting,
+}: Omit<ShareGroupSelectionProps, "onToggle">): string | false {
+  return (
+    selecting &&
+    !allSelected &&
+    !indeterminate &&
+    "group-hover/share-selection:border-foreground group-hover/share-selection:bg-state-hover-overlay"
+  );
+}
+
+function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
+  const { t } = useTranslation();
+  const { allSelected, indeterminate, selecting, onToggle } = props;
+  return (
+    <Field.Root
+      className="group/share-selection relative"
+      disabled={!selecting}
+    >
+      <Field.Label
         className={cn(
-          "flex min-w-0 flex-col",
-          CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
+          buttonVariants({ variant: "quiet", size: "lg" }),
+          "w-full justify-start pr-10 pl-3 data-disabled:pointer-events-none data-disabled:opacity-50",
         )}
       >
-        {content}
-      </div>
-    </div>
+        {shareGroupSelectionLabel(t, allSelected)}
+      </Field.Label>
+      <Checkbox
+        checked={allSelected}
+        indeterminate={indeterminate}
+        disabled={!selecting}
+        className={cn(
+          "absolute top-1/2 right-3 h-5 w-5 -translate-y-1/2 border-muted-foreground",
+          shareGroupCheckboxHoverClass(props),
+        )}
+        onCheckedChange={onToggle}
+      />
+    </Field.Root>
+  );
+}
+
+function ShareGroupSelectionColumn({
+  role,
+  ...props
+}: ShareGroupSelectionProps & { role: ChatEventGroup["role"] }) {
+  const { t } = useTranslation();
+  const { allSelected, indeterminate, selecting, onToggle } = props;
+  return (
+    <Field.Root
+      data-chat-share-selection
+      className="group/share-selection relative flex justify-center"
+      disabled={!selecting}
+    >
+      {/* The label covers the whole column, including the row's padding,
+          and keeps its text for assistive technology only. */}
+      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-pointer data-disabled:pointer-events-none @[960px]:-right-2.5">
+        <span className="sr-only">
+          {shareGroupSelectionLabel(t, allSelected)}
+        </span>
+      </Field.Label>
+      {/* Centred on the group's first line: the name line of a reply, or the
+          first text line of a bubble. Sticky, so a long reply keeps its
+          checkbox in view. */}
+      <span
+        className={cn(
+          "sticky top-2 flex items-center",
+          role === "assistant"
+            ? "h-8"
+            : "h-[calc(1lh+1.5rem)] text-[0.9375rem] leading-[1.7]",
+        )}
+      >
+        <Checkbox
+          checked={allSelected}
+          indeterminate={indeterminate}
+          disabled={!selecting}
+          className={cn(
+            "h-5 w-5 border-muted-foreground",
+            shareGroupCheckboxHoverClass(props),
+          )}
+          onCheckedChange={onToggle}
+        />
+      </span>
+    </Field.Root>
   );
 }
 
@@ -7511,6 +7477,7 @@ function WorkflowUserMessage({
   thread: ChatPanelSignals;
 }) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
+  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -7536,7 +7503,16 @@ function WorkflowUserMessage({
       ref={turnOnRef}
     >
       <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
-      <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
+      <div
+        className={
+          nameLine
+            ? CHAT_THREAD_NAME_LINE_USER_MESSAGE_ROW_CLASS
+            : CHAT_THREAD_USER_MESSAGE_ROW_CLASS
+        }
+      >
+        {nameLine ? null : (
+          <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
+        )}
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
           {body}
@@ -7648,7 +7624,11 @@ function PagedUserMessage({
     });
   };
   const copyEvent = useSet(thread.copyEvent$);
-  const sharing = useGet(thread.sharing.phase$) !== "idle";
+  const sharingPhase = useGet(thread.sharing.phase$);
+  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  // Under `chatReplyNameLine` a selected group is tinted, so sharing drops the
+  // empty copy row together with the pull measured against it.
+  const collapseForSharing = nameLine && sharingPhase !== "idle";
   const allAttachments = userMessageRenderAttachments(renderDocument);
   const canCopy =
     canonicalUserMessage !== undefined ||
@@ -7673,7 +7653,7 @@ function PagedUserMessage({
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
   const annotationPart =
     nonContentRenderPart?.type === "source" ? nonContentRenderPart : undefined;
-  const pulled = stackedOnPrevious && !sharing;
+  const pulled = stackedOnPrevious && !collapseForSharing;
   return (
     <div
       id={inputPromptRunAnchor(inputEvent)}
@@ -7688,7 +7668,16 @@ function PagedUserMessage({
       )}
     >
       <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
-      <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
+      <div
+        className={
+          nameLine
+            ? CHAT_THREAD_NAME_LINE_USER_MESSAGE_ROW_CLASS
+            : CHAT_THREAD_USER_MESSAGE_ROW_CLASS
+        }
+      >
+        {nameLine ? null : (
+          <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
+        )}
         <div className="flex flex-col items-end w-full">
           {annotationPart ? (
             <MessageAnnotation renderPart={annotationPart} />
@@ -7703,14 +7692,15 @@ function PagedUserMessage({
                 leading={<OptimisticSpinner eventId={event.id} />}
               />
               {/* The row belongs to the bubble, not to the button inside it.
-                  A message nobody can copy has no button, and the next
-                  message in the burst is still pulled up by the height this
-                  row holds. Sharing drops the row and the pull together, so
-                  a selected group's tint ends at its last bubble. */}
-              {sharing ? null : (
+                  Sharing hides the button and a message nobody can copy has
+                  none, and in both cases the next message in the burst is
+                  still pulled up by the height this row holds. */}
+              {collapseForSharing ? null : (
                 <UserMessageActions
-                  showCopy={canCopy}
-                  runId={inputEvent?.runId}
+                  showCopy={canCopy && sharingPhase === "idle"}
+                  runId={
+                    sharingPhase === "idle" ? inputEvent?.runId : undefined
+                  }
                   onCopy={handleCopy}
                 />
               )}
@@ -7939,6 +7929,7 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         shareEvents={[mainEvent]}
         relatedArtifacts={runWorkSection?.remainingArtifactCards}
+        embedded
       />
     ) : undefined;
 
@@ -7982,6 +7973,7 @@ function PagedAssistantGroup({
   statusTailEvents,
 }: PagedAssistantGroupProps) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
+  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
   const hasRenderableEvent = group.events.some((event) => {
     return isRenderableAssistantEvent(event);
   });
@@ -8018,9 +8010,25 @@ function PagedAssistantGroup({
           group.events.find(isRenderableAssistantEvent)?.id
         }
       />
-      <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
-        <AssistantNameLine thread={thread} />
-        <div className={cn("relative", CHAT_THREAD_RESPONSE_STACK_CLASS)}>
+      <div
+        className={
+          nameLine
+            ? CHAT_THREAD_NAME_LINE_ASSISTANT_MESSAGE_ROW_CLASS
+            : CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS
+        }
+      >
+        {nameLine ? (
+          <AssistantNameLine thread={thread} />
+        ) : (
+          <AssistantBubbleAvatar thread={thread} />
+        )}
+        <div
+          className={cn(
+            "relative",
+            CHAT_THREAD_RESPONSE_STACK_CLASS,
+            !nameLine && CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
+          )}
+        >
           {usesRunWorkPresentation ? (
             <PagedRunWorkAssistantContent
               group={group}
@@ -8526,6 +8534,7 @@ function PagedGroupActions({
   thread,
   shareEvents,
   relatedArtifacts,
+  embedded = false,
 }: {
   group: ChatEventGroup;
   content: string;
@@ -8533,12 +8542,14 @@ function PagedGroupActions({
   /** The assistant events this action bar shares, with their user prompt. */
   shareEvents: readonly EnrichedChatEvent[];
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
+  embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
   const shareMessage = useSet(thread.sharing.shareMessage$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const pdfEnabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatMessagePdf];
+  const switches = useGet(featureSwitch$);
+  const pdfEnabled = switches[FeatureSwitchKey.ChatMessagePdf];
   if (sharingPhase !== "idle") {
     return null;
   }
@@ -8580,7 +8591,7 @@ function PagedGroupActions({
         }
       : undefined;
 
-  return (
+  const actions = (
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
@@ -8607,6 +8618,15 @@ function PagedGroupActions({
         }
         relatedArtifacts={relatedArtifacts}
       />
+    </div>
+  );
+  if (embedded || switches[FeatureSwitchKey.ChatReplyNameLine]) {
+    return actions;
+  }
+  return (
+    <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS}>
+      <div className="hidden @[900px]:block" />
+      {actions}
     </div>
   );
 }

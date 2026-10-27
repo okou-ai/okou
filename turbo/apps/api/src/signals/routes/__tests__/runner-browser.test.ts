@@ -15,7 +15,11 @@ import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise, settle } from "../../utils";
+import {
+  createDeferredPromise,
+  settle,
+  settleIncludingAbort,
+} from "../../utils";
 import {
   mockNow,
   withMockNowForTest,
@@ -143,23 +147,7 @@ async function fixture(enabled = true, provider = profileProvider()) {
         const result = await accept(control(action), [200]);
         return result.body;
       }
-      function connect(identity: {
-        readonly instanceId: string;
-        readonly providerSessionId: string;
-        readonly primaryWindowId: number;
-      }) {
-        return client().connection({
-          headers: officialHeaders(),
-          params: { runId: sent.runId },
-          body: {
-            runnerIdentity,
-            instanceId: identity.instanceId,
-            providerSessionId: identity.providerSessionId,
-            primaryWindowId: identity.primaryWindowId,
-          },
-        });
-      }
-      return { ...sent, runnerIdentity, claim, request, control, connect };
+      return { ...sent, runnerIdentity, claim, request, control };
     });
   }
   return { owned, start, featureActor, provider };
@@ -187,633 +175,6 @@ async function admit(chat: Chat, instanceId: string, primaryWindowId: number) {
   return { instanceId, primaryWindowId };
 }
 
-function authorization(
-  instance: ReturnType<typeof accepted>,
-  primaryWindowId: number,
-) {
-  if (instance.providerSessionId === null) {
-    throw new Error("Expected a published provider session");
-  }
-  return {
-    kind: "authorize" as const,
-    instanceId: instance.id,
-    providerSessionId: instance.providerSessionId,
-    primaryWindowId,
-  };
-}
-
-const RUNNER_CDP_URL =
-  "wss://connect.browser-use.com/?token=private-runner-capability";
-
-function connectionSession(id: string) {
-  return {
-    id,
-    status: "active",
-    timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
-    startedAt: new Date(START).toISOString(),
-    cdpUrl: RUNNER_CDP_URL,
-    liveUrl: null,
-    finishedAt: null,
-  };
-}
-
-describe("official Runner Browser connections", () => {
-  it("returns an exact connection with original chat and provider deadlines without renewing", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const chat = await f.start();
-      const instance = await allocate(chat);
-      await admit(chat, instance.id, 0);
-      const identity = authorization(instance, 0);
-      const before = accepted(await chat.request({ kind: "inspect" }));
-      let timeoutAt = new Date(START + 5 * MINUTE).toISOString();
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/:id`, ({ request, params }) => {
-          expect(params.id).toBe(identity.providerSessionId);
-          expect(request.headers.get("X-Browser-Use-API-Key")).toBe(
-            "owner-profile-test-key",
-          );
-          return HttpResponse.json({
-            ...connectionSession(identity.providerSessionId),
-            timeoutAt,
-          });
-        }),
-      );
-      const first = await accept(chat.connect(identity), [200]);
-      expect(first.headers.get("Cache-Control")).toBe("no-store");
-      expect(first.body).toStrictEqual({
-        outcome: "accepted",
-        connection: {
-          instanceId: instance.id,
-          providerSessionId: identity.providerSessionId,
-          chatThreadId: chat.threadId,
-          primaryWindowId: 0,
-          cdpUrl: RUNNER_CDP_URL,
-          expiresAt: START + 5 * MINUTE,
-        },
-      });
-      mockNow(START + 4 * MINUTE);
-      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual(
-        first.body,
-      );
-      expect(accepted(await chat.request({ kind: "inspect" }))).toStrictEqual(
-        before,
-      );
-      mockNow(START + 5 * MINUTE);
-      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      timeoutAt = instance.timeoutAt;
-      expect((await accept(chat.connect(identity), [200])).body).toMatchObject({
-        outcome: "accepted",
-        connection: { expiresAt: START + 10 * MINUTE },
-      });
-      mockNow(START + 10 * MINUTE);
-      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(accepted(await chat.request({ kind: "inspect" }))).toStrictEqual(
-        before,
-      );
-    });
-  });
-
-  it("denies untrusted credentials and foreign selectors before provider lookup", async () => {
-    const f = await fixture();
-    const other = await fixture();
-    await f.owned.run(async () => {
-      const chat = await f.start();
-      const sibling = await f.start();
-      const instance = await allocate(chat);
-      await admit(chat, instance.id, 0);
-      await admit(sibling, instance.id, 102);
-      const identity = authorization(instance, 0);
-      let lookups = 0;
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/:id`, () => {
-          ++lookups;
-          return HttpResponse.json(
-            connectionSession(identity.providerSessionId),
-          );
-        }),
-      );
-      const pat = await createAuthOrgAgentsBddApi(context).createCliToken(
-        f.owned.actor,
-      );
-      for (const [token, status] of [
-        [undefined, 401],
-        [okouTokenFromClaim(chat.claim), 401],
-        [chat.claim.sandboxToken, 401],
-        [pat.token, 403],
-      ] as const) {
-        await accept(
-          client().connection({
-            headers: token ? { authorization: `Bearer ${token}` } : {},
-            params: { runId: chat.runId },
-            body: {
-              runnerIdentity: chat.runnerIdentity,
-              instanceId: identity.instanceId,
-              providerSessionId: identity.providerSessionId,
-              primaryWindowId: 0,
-            },
-          }),
-          [status],
-        );
-      }
-      for (const forged of [
-        { ...identity, instanceId: randomUUID() },
-        { ...identity, providerSessionId: randomUUID() },
-        { ...identity, primaryWindowId: 102 },
-      ]) {
-        expect((await accept(chat.connect(forged), [200])).body).toStrictEqual({
-          outcome: "unavailable",
-        });
-      }
-      expect(
-        (await accept(sibling.connect(identity), [200])).body,
-      ).toStrictEqual({ outcome: "unavailable" });
-      const wrongRunner = await accept(
-        client().connection({
-          headers: officialHeaders(),
-          params: { runId: chat.runId },
-          body: {
-            runnerIdentity: { ...chat.runnerIdentity, runnerId: randomUUID() },
-            instanceId: identity.instanceId,
-            providerSessionId: identity.providerSessionId,
-            primaryWindowId: 0,
-          },
-        }),
-        [200],
-      );
-      expect(wrongRunner.body).toStrictEqual({ outcome: "unavailable" });
-      await other.owned.run(async () => {
-        const foreign = await other.start();
-        expect(
-          (await accept(foreign.connect(identity), [200])).body,
-        ).toStrictEqual({ outcome: "unavailable" });
-      });
-      const denied = await f.start(false);
-      expect(
-        (await accept(denied.connect(identity), [200])).body,
-      ).toStrictEqual({ outcome: "unavailable" });
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: false,
-      });
-      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(lookups).toBe(0);
-    });
-  });
-
-  it.each([
-    "permission",
-    "switch",
-    "runner",
-    "run",
-    "retire",
-    "window",
-    "instance",
-    "expiry",
-  ] as const)(
-    "withholds the endpoint when %s authority changes during provider lookup",
-    async (revocation) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        const chat = await f.start();
-        const instance = await allocate(chat);
-        const window = await admit(chat, instance.id, 0);
-        const identity = authorization(instance, 0);
-        const entered = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        server.use(
-          http.get(`${PROVIDER_URL}/browsers/:id`, async () => {
-            entered.resolve();
-            await release.promise;
-            return HttpResponse.json(
-              connectionSession(identity.providerSessionId),
-            );
-          }),
-        );
-        const pending = settle(chat.connect(identity));
-        await entered.promise;
-        const changed = await settle(
-          (async () => {
-            switch (revocation) {
-              case "permission": {
-                await createChatFilesBddApi(
-                  context,
-                ).updateThreadComputerUseHost(
-                  f.owned.actor,
-                  chat.threadId,
-                  null,
-                  { cloudBrowserEnabled: false },
-                );
-                break;
-              }
-              case "switch": {
-                await updateFeatureSwitchesForUser(context, f.featureActor, {
-                  [FeatureSwitchKey.BrowserSharedOwner]: false,
-                });
-                break;
-              }
-              case "runner": {
-                await withNowScopeForTest(() => {
-                  return runs.requestHeartbeatRunner(true, [200], {
-                    group: f.owned.runnerGroup,
-                    runnerId: chat.runnerIdentity.runnerId,
-                    snapshotGeneration: 8,
-                  });
-                });
-                break;
-              }
-              case "run": {
-                await createWebhookCallbackApi(context).requestAgentComplete(
-                  {
-                    runId: chat.runId,
-                    exitCode: 1,
-                    error: "Run ended during Browser connection lookup",
-                  },
-                  { authorization: `Bearer ${chat.claim.sandboxToken}` },
-                  [200],
-                );
-                break;
-              }
-              case "retire": {
-                accepted(
-                  await chat.request({
-                    kind: "retire",
-                    ...window,
-                    reason: "closed",
-                  }),
-                );
-                break;
-              }
-              case "window": {
-                accepted(
-                  await chat.request({
-                    kind: "retire",
-                    ...window,
-                    reason: "closed",
-                  }),
-                );
-                accepted(
-                  await chat.request({
-                    kind: "completeWindowClose",
-                    ...window,
-                  }),
-                );
-                await admit(chat, instance.id, 1);
-                break;
-              }
-              case "instance": {
-                accepted(
-                  await chat.request({
-                    kind: "retire",
-                    ...window,
-                    reason: "closed",
-                  }),
-                );
-                accepted(
-                  await chat.request({
-                    kind: "beginStop",
-                    instanceId: instance.id,
-                  }),
-                );
-                accepted(
-                  await chat.request({
-                    kind: "completeStop",
-                    instanceId: instance.id,
-                  }),
-                );
-                const replacement = await allocate(chat);
-                await admit(chat, replacement.id, 0);
-                break;
-              }
-              case "expiry": {
-                mockNow(START + 10 * MINUTE);
-                break;
-              }
-            }
-          })(),
-        );
-        release.resolve();
-        const result = await pending;
-        if (!changed.ok) {
-          throw changed.error;
-        }
-        if (!result.ok) {
-          throw result.error;
-        }
-        expect(result.value).toMatchObject({
-          status: 200,
-          body: { outcome: "unavailable" },
-        });
-        expect(JSON.stringify(result.value.body)).not.toContain(RUNNER_CDP_URL);
-      });
-    },
-  );
-
-  it("distinguishes missing provider sessions from sanitized invalid and dependency failures", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const chat = await f.start();
-      const instance = await allocate(chat);
-      await admit(chat, instance.id, 0);
-      const identity = authorization(instance, 0);
-      const session = connectionSession(identity.providerSessionId);
-      const privateDetail = "provider-private-connection-detail";
-      for (const body of [
-        { ...session, status: "stopped" },
-        { ...session, cdpUrl: null },
-        { ...session, timeoutAt: new Date(START).toISOString() },
-      ]) {
-        server.use(
-          http.get(`${PROVIDER_URL}/browsers/:id`, () => {
-            return HttpResponse.json(body);
-          }),
-        );
-        expect(
-          (await accept(chat.connect(identity), [200])).body,
-        ).toStrictEqual({ outcome: "unavailable" });
-      }
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/:id`, () => {
-          return HttpResponse.json({ detail: privateDetail }, { status: 404 });
-        }),
-      );
-      expect((await accept(chat.connect(identity), [200])).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      for (const body of [
-        { ...session, id: randomUUID() },
-        { ...session, timeoutAt: privateDetail },
-        { ...session, cdpUrl: `wss://foreign.example/?token=${privateDetail}` },
-        {
-          ...session,
-          cdpUrl: `wss://user:${privateDetail}@connect.browser-use.com/`,
-        },
-      ]) {
-        server.use(
-          http.get(`${PROVIDER_URL}/browsers/:id`, () => {
-            return HttpResponse.json(body);
-          }),
-        );
-        const result = await accept(chat.connect(identity), [502]);
-        expect(result.body.error.code).toBe("BROWSER_USE_INVALID_RESPONSE");
-        expect(JSON.stringify(result.body)).not.toContain(privateDetail);
-        expect(JSON.stringify(result.body)).not.toContain(RUNNER_CDP_URL);
-      }
-      for (const [providerStatus, expectedStatus, code] of [
-        [500, 502, "BROWSER_USE_ERROR"],
-        [403, 503, "BROWSER_USE_AUTH_ERROR"],
-        [429, 503, "BROWSER_USE_CAPACITY"],
-      ] as const) {
-        server.use(
-          http.get(`${PROVIDER_URL}/browsers/:id`, () => {
-            return HttpResponse.json(
-              { detail: `${privateDetail} ${RUNNER_CDP_URL}` },
-              { status: providerStatus },
-            );
-          }),
-        );
-        const result = await accept(chat.connect(identity), [expectedStatus]);
-        expect(result.body.error).toStrictEqual({
-          code,
-          message: "Managed browser provider connection is unavailable",
-        });
-        expect(JSON.stringify(result.body)).not.toContain(privateDetail);
-        expect(JSON.stringify(result.body)).not.toContain(RUNNER_CDP_URL);
-      }
-      let redirected = false;
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/:id`, () => {
-          return HttpResponse.redirect(
-            "https://foreign.example/connection",
-            302,
-          );
-        }),
-        http.get("https://foreign.example/connection", () => {
-          redirected = true;
-          return HttpResponse.json(session);
-        }),
-      );
-      const redirect = await accept(chat.connect(identity), [502]);
-      expect(redirect.body.error.code).toBe("BROWSER_USE_ERROR");
-      expect(redirected).toBeFalsy();
-    });
-  });
-
-  it("bounds the provider read and reports a sanitized timeout", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const chat = await f.start();
-      const instance = await allocate(chat);
-      await admit(chat, instance.id, 0);
-      const identity = authorization(instance, 0);
-      const entered = createDeferredPromise<void>(context.signal);
-      const aborted = createDeferredPromise<void>(context.signal);
-      const deadline = new AbortController();
-      context.mocks.abortSignal.timeout.mockReturnValueOnce(deadline.signal);
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/:id`, async ({ request }) => {
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              return aborted.resolve();
-            },
-            {
-              once: true,
-            },
-          );
-          entered.resolve();
-          await aborted.promise;
-          return HttpResponse.error();
-        }),
-      );
-      const pending = chat.connect(identity);
-      await entered.promise;
-      deadline.abort(new DOMException("Provider deadline", "TimeoutError"));
-      const result = await accept(pending, [502]);
-      await aborted.promise;
-      context.mocks.abortSignal.timeout.mockReset();
-      expect(result.body.error).toStrictEqual({
-        code: "BROWSER_USE_TIMEOUT",
-        message: "Managed browser provider connection is unavailable",
-      });
-    });
-  });
-});
-
-describe("official Runner Browser authorization", () => {
-  it("authorizes only the exact live chat window without renewing its lease", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const a = await f.start(),
-        b = await f.start();
-      await expect(
-        a.request({
-          kind: "authorize",
-          instanceId: randomUUID(),
-          providerSessionId: randomUUID(),
-          primaryWindowId: 0,
-        }),
-      ).resolves.toStrictEqual({ outcome: "unavailable" });
-      const instance = await allocate(a);
-      const action = authorization(instance, 0);
-      await expect(a.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      await admit(a, instance.id, 0);
-      const wb = await admit(b, instance.id, 102);
-      const before = accepted(await a.request({ kind: "inspect" }));
-      expect(accepted(await a.request(action))).toStrictEqual(before);
-      expect(before.window).toMatchObject({
-        primaryWindowId: 0,
-        expiresAt: START + 10 * MINUTE,
-      });
-      for (const forged of [
-        { ...action, instanceId: randomUUID() },
-        { ...action, providerSessionId: randomUUID() },
-        { ...action, primaryWindowId: wb.primaryWindowId },
-      ]) {
-        await expect(a.request(forged)).resolves.toStrictEqual({
-          outcome: "unavailable",
-        });
-      }
-      await expect(b.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      const siblingAction = authorization(instance, wb.primaryWindowId);
-      expect(
-        accepted(await b.request(siblingAction)).window?.chatThreadId,
-      ).toBe(b.threadId);
-
-      mockNow(START + 9 * MINUTE);
-      expect(accepted(await a.request(action))).toStrictEqual(before);
-      accepted(await b.request({ kind: "renew", ...wb }));
-      mockNow(START + 10 * MINUTE);
-      await expect(a.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(accepted(await a.request({ kind: "inspect" }))).toStrictEqual(
-        before,
-      );
-      expect(accepted(await b.request(siblingAction)).window?.state).toBe(
-        "active",
-      );
-    });
-  });
-
-  it("retains cleanup identities while rejecting unpublished, closing, stopped and replaced windows", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const chat = await f.start();
-      const creating = accepted(await chat.request({ kind: "allocate" }));
-      const action = {
-        kind: "authorize" as const,
-        instanceId: creating.id,
-        providerSessionId: randomUUID(),
-        primaryWindowId: 0,
-      };
-      await expect(chat.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(accepted(await chat.request({ kind: "inspect" })).status).toBe(
-        "creating",
-      );
-      accepted(
-        await chat.request({
-          kind: "publish",
-          instanceId: creating.id,
-          providerSessionId: action.providerSessionId,
-          timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
-        }),
-      );
-      const original = await admit(chat, creating.id, 0);
-      accepted(await chat.request(action));
-      accepted(
-        await chat.request({ kind: "retire", ...original, reason: "closed" }),
-      );
-      await expect(chat.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(
-        accepted(await chat.request({ kind: "inspect" })).window?.state,
-      ).toBe("closing");
-      accepted(
-        await chat.request({ kind: "completeWindowClose", ...original }),
-      );
-      await expect(chat.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      const reopened = await admit(chat, creating.id, 1);
-      await expect(chat.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      const currentAction = { ...action, primaryWindowId: 1 };
-      accepted(await chat.request(currentAction));
-      accepted(
-        await chat.request({ kind: "retire", ...reopened, reason: "closed" }),
-      );
-      accepted(
-        await chat.request({ kind: "beginStop", instanceId: creating.id }),
-      );
-      await expect(chat.request(currentAction)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(accepted(await chat.request({ kind: "inspect" })).status).toBe(
-        "stopping",
-      );
-      accepted(
-        await chat.request({ kind: "completeStop", instanceId: creating.id }),
-      );
-      await expect(chat.request(currentAction)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(accepted(await chat.request({ kind: "inspect" })).status).toBe(
-        "stopped",
-      );
-      const replacement = await allocate(chat);
-      await admit(chat, replacement.id, 1);
-      await expect(chat.request(currentAction)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(
-        accepted(await chat.request(authorization(replacement, 1))).id,
-      ).toBe(replacement.id);
-    });
-  });
-
-  it("rejects authorization at the physical deadline without changing lifecycle metadata", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const chat = await f.start();
-      const creating = accepted(await chat.request({ kind: "allocate" }));
-      const instance = accepted(
-        await chat.request({
-          kind: "publish",
-          instanceId: creating.id,
-          providerSessionId: randomUUID(),
-          timeoutAt: new Date(START + 5 * MINUTE).toISOString(),
-        }),
-      );
-      await admit(chat, instance.id, 0);
-      const action = authorization(instance, 0);
-      const before = accepted(await chat.request({ kind: "inspect" }));
-      mockNow(START + 4 * MINUTE);
-      expect(accepted(await chat.request(action))).toStrictEqual(before);
-      mockNow(START + 5 * MINUTE);
-      await expect(chat.request(action)).resolves.toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect(accepted(await chat.request({ kind: "inspect" }))).toStrictEqual(
-        before,
-      );
-    });
-  });
-});
-
 describe("official Runner Browser lifecycle", () => {
   it("does not expose or mutate another owner's Browser generation", async () => {
     const first = await fixture();
@@ -824,9 +185,6 @@ describe("official Runner Browser lifecycle", () => {
       await admit(a, instance.id, 0);
       await other.owned.run(async () => {
         const b = await other.start();
-        await expect(
-          b.request(authorization(instance, 0)),
-        ).resolves.toStrictEqual({ outcome: "unavailable" });
         await expect(
           b.request({ kind: "inspect", instanceId: instance.id }),
         ).resolves.toStrictEqual({ outcome: "unavailable" });
@@ -913,8 +271,8 @@ describe("official Runner Browser lifecycle", () => {
       ).resolves.toStrictEqual({ outcome: "unavailable" });
 
       const instance = await allocate(chat);
-      await admit(chat, instance.id, 0);
-      const action = authorization(instance, 0);
+      const window = await admit(chat, instance.id, 0);
+      const action: RunnerBrowserAction = { kind: "renew", ...window };
       accepted(await chat.request(action));
       await updateFeatureSwitchesForUser(context, f.featureActor, {
         [FeatureSwitchKey.BrowserSharedOwner]: false,
@@ -969,8 +327,11 @@ describe("official Runner Browser lifecycle", () => {
         outcome: "unavailable",
       });
       const terminal = await f.start();
-      await admit(terminal, instance.id, 1);
-      const terminalAction = authorization(instance, 1);
+      const terminalWindow = await admit(terminal, instance.id, 1);
+      const terminalAction: RunnerBrowserAction = {
+        kind: "renew",
+        ...terminalWindow,
+      };
       accepted(await terminal.request(terminalAction));
       expect(accepted(await terminal.request({ kind: "inspect" })).id).toBe(
         instance.id,
@@ -1419,25 +780,48 @@ describe("owner provider profiles", () => {
     await f.owned.run(async () => {
       const a = await f.start(),
         b = await f.start();
-      const late = settle(a.request({ kind: "allocate" }));
-      await prepared.promise;
-      const winner = await allocate(b);
-      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
-      accepted(
-        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      const late = settleIncludingAbort(
+        f.owned.run(() => {
+          return a.request({ kind: "allocate" });
+        }),
       );
-      expect(
-        (
-          await fetch(`${PROVIDER_URL}/profiles/${winner.providerProfileId}`, {
-            method: "DELETE",
-          })
-        ).status,
-      ).toBe(204);
-      release.resolve();
+      async function transitionWinner() {
+        await prepared.promise;
+        const winner = await allocate(b);
+        accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+        accepted(
+          await b.request({ kind: "completeStop", instanceId: winner.id }),
+        );
+        expect(
+          (
+            await fetch(
+              `${PROVIDER_URL}/profiles/${winner.providerProfileId}`,
+              {
+                method: "DELETE",
+              },
+            )
+          ).status,
+        ).toBe(204);
+        return winner;
+      }
+      const transition = await settleIncludingAbort(transitionWinner());
+      if (!release.settled()) {
+        release.resolve();
+      }
       const result = await late;
+      if (!transition.ok && !result.ok) {
+        throw new AggregateError(
+          [transition.error, result.error],
+          "Winner transition and late allocation failed",
+        );
+      }
+      if (!transition.ok) {
+        throw transition.error;
+      }
       if (!result.ok) {
         throw result.error;
       }
+      const winner = transition.value;
       expect(result.value).toStrictEqual({ outcome: "unavailable" });
       expect(accepted(await b.request({ kind: "inspect" }))).toMatchObject({
         id: winner.id,
@@ -1490,18 +874,38 @@ describe("owner provider profiles", () => {
         ).status,
       ).toBe(204);
 
-      const late = settle(a.request({ kind: "allocate" }));
-      await prepared.promise;
-      const winner = await allocate(b);
-      accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
-      accepted(
-        await b.request({ kind: "completeStop", instanceId: winner.id }),
+      const late = settleIncludingAbort(
+        f.owned.run(() => {
+          return a.request({ kind: "allocate" });
+        }),
       );
-      release.resolve();
+      async function transitionWinner() {
+        await prepared.promise;
+        const winner = await allocate(b);
+        accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
+        accepted(
+          await b.request({ kind: "completeStop", instanceId: winner.id }),
+        );
+        return winner;
+      }
+      const transition = await settleIncludingAbort(transitionWinner());
+      if (!release.settled()) {
+        release.resolve();
+      }
       const result = await late;
+      if (!transition.ok && !result.ok) {
+        throw new AggregateError(
+          [transition.error, result.error],
+          "Winner transition and late recovery failed",
+        );
+      }
+      if (!transition.ok) {
+        throw transition.error;
+      }
       if (!result.ok) {
         throw result.error;
       }
+      const winner = transition.value;
       expect(result.value).toStrictEqual({ outcome: "unavailable" });
       expect(winner.ownerProfileId).toBe(original.ownerProfileId);
       expect(winner.providerProfileId).not.toBe(original.providerProfileId);

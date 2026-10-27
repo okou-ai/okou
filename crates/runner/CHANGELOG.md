@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.237.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.15...runner-rs-v0.237.16) (2026-10-27)
+
+## [0.237.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.14...runner-rs-v0.237.15) (2026-10-27)
+
+
+### Refactoring
+
+* **runner:** share terminal startup runtime retirement ([#43334](https://github.com/okou-ai/okou/issues/43334)) ([d66c619](https://github.com/okou-ai/okou/commit/d66c6193255f0dbc3f2aa848e2678e2a932f621c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.13...runner-rs-v0.237.14) (2026-10-27)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.12...runner-rs-v0.237.13) (2026-10-27)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.237.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.11...runner-rs-v0.237.12) (2026-10-27)
+
+
+### Bug Fixes
+
+* **runner:** preserve router billing ids on connection errors ([#43190](https://github.com/okou-ai/okou/issues/43190)) ([4342d45](https://github.com/okou-ai/okou/commit/4342d458820653a04bf0c6403d4721f60acb5500))
+* **runner:** remove snapshot memory prefetch ([#43220](https://github.com/okou-ai/okou/issues/43220)) ([9da4c0b](https://github.com/okou-ai/okou/commit/9da4c0b2ef35464a1be4bdb1ea9cb897da14cf3d))
+
+
+### Documentation
+
+* **python:** clarify json key overflow in document policy mode ([#43200](https://github.com/okou-ai/okou/issues/43200)) ([9cd869d](https://github.com/okou-ai/okou/commit/9cd869de096d1a8d0eade403337561f1c185d739))
+
+
+### Performance Improvements
+
+* **runner:** bound managed openrouter content-encoding acquisition ([#43205](https://github.com/okou-ai/okou/issues/43205)) ([8076346](https://github.com/okou-ai/okou/commit/8076346bb44d68f78c689c19b6572c21c55223a3))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.10...runner-rs-v0.237.11) (2026-10-26)
 
 

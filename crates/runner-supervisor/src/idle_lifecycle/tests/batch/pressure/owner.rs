@@ -5,8 +5,6 @@ use tokio::io::AsyncWriteExt;
 
 use super::*;
 
-mod accepted_reads;
-
 #[tokio::test]
 async fn job_free_physical_pressure_retires_while_logical_capacity_is_free() {
     let fixture = fixture(24).await;

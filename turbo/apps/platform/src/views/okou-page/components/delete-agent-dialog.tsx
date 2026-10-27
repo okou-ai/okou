@@ -30,9 +30,7 @@ import {
   agentDeleteSession$,
   setAgentDeleteCopyChoices$,
   setAgentDeleteDialogOpen$,
-  reloadAgentDeleteWorkflows$,
   type AgentDeleteWorkflow,
-  type AgentDeleteSession,
 } from "../../../signals/okou-page/settings/settings-tab.ts";
 
 export interface AgentDeleteCopyTarget {
@@ -391,19 +389,11 @@ function AgentDeleteError({ error }: { error: unknown }) {
 }
 
 function AgentDeleteFeedback({
-  session,
-  busy,
   error,
   deleteWorkflowsState,
-  deleteCopyTargets,
-  onRetry,
 }: {
-  session: AgentDeleteSession | null;
-  busy: boolean;
   error: unknown;
   deleteWorkflowsState: "loading" | "error" | "ready";
-  deleteCopyTargets: readonly AgentDeleteCopyTarget[];
-  onRetry: (sessionId: string) => void;
 }) {
   const { t } = useTranslation("agents");
   return (
@@ -425,60 +415,9 @@ function AgentDeleteFeedback({
               return $.delete.workflows.loadFailed;
             })}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (session) {
-                onRetry(session.id);
-              }
-            }}
-            disabled={busy}
-          >
-            {t(($) => {
-              return $.actions.retry;
-            })}
-          </Button>
         </div>
       ) : (
         <AgentDeleteError error={error} />
-      )}
-      {session && session.completedRescues.length > 0 && (
-        <div role="status" className="space-y-2 px-6 pb-6 text-sm">
-          <p className="font-medium">
-            {t(($) => {
-              return $.delete.workflows.copiedTitle;
-            })}
-          </p>
-          <ul className="space-y-1 break-words text-muted-foreground">
-            {session.completedRescues.map(([workflowId, targetId]) => {
-              const workflowTitle =
-                session.workflows.find((workflow) => {
-                  return workflow.id === workflowId;
-                })?.title ??
-                t(($) => {
-                  return $.delete.workflows.untitled;
-                });
-              const agentName =
-                deleteCopyTargets.find((target) => {
-                  return target.id === targetId;
-                })?.displayName ??
-                t(($) => {
-                  return $.fallbackName;
-                });
-              return (
-                <li key={`${workflowId}:${targetId}`}>
-                  {t(
-                    ($) => {
-                      return $.delete.workflows.copiedTo;
-                    },
-                    { workflowTitle, agentName },
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
       )}
     </>
   );
@@ -509,7 +448,6 @@ function useAgentDeleteConfirmation({
   const error = deletion.state === "hasError" ? deletion.error : null;
   const setOpen = useSet(setAgentDeleteDialogOpen$);
   const updateCopyChoices = useSet(setAgentDeleteCopyChoices$);
-  const reloadWorkflows = useSet(reloadAgentDeleteWorkflows$);
   const copyChoices = session?.choices ?? {};
   // Retain this confirmation's last known workflow rows if a refresh fails.
   const workflows = deleteWorkflows ?? session?.workflows ?? [];
@@ -521,14 +459,12 @@ function useAgentDeleteConfirmation({
         targetId !== DELETE_WITH_AGENT &&
         workflows.some((workflow) => {
           return workflow.id === workflowId;
-        }) &&
-        !session?.completedRescues.some(([copiedId, copiedTo]) => {
-          return copiedId === workflowId && copiedTo === targetId;
         })
       );
     });
   const deleting = busy && !copying;
-  const workflowsReady = deleteWorkflowsState === "ready";
+  const workflowsReady =
+    deleteWorkflowsState === "ready" && deletion.state !== "hasError";
   const setCopyChoices = (choices: Record<string, string>) => {
     if (session) {
       updateCopyChoices(session.id, choices, workflows);
@@ -563,7 +499,6 @@ function useAgentDeleteConfirmation({
     busy,
     error,
     setOpen,
-    reloadWorkflows,
     copyChoices,
     workflows,
     copying,
@@ -590,7 +525,6 @@ function AgentDeleteDialogContent(props: AgentDeleteDialogProps) {
     busy,
     error,
     setOpen,
-    reloadWorkflows,
     copyChoices,
     workflows,
     copying,
@@ -667,12 +601,8 @@ function AgentDeleteDialogContent(props: AgentDeleteDialogProps) {
                   />
                 )}
                 <AgentDeleteFeedback
-                  session={session}
-                  busy={busy}
                   error={error}
                   deleteWorkflowsState={deleteWorkflowsState}
-                  deleteCopyTargets={deleteCopyTargets}
-                  onRetry={reloadWorkflows}
                 />
               </DialogContent>
             </Dialog>

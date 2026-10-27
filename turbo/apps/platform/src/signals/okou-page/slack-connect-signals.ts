@@ -113,7 +113,7 @@ export const slackReturnUrl$ = computed((get) => {
   return url.toString();
 });
 
-// Reconcile authenticated state before returning to Slack, once per entry or retry.
+// Reconcile authenticated state once on entry before returning to Slack.
 export const initSlackConnectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -121,7 +121,7 @@ export const initSlackConnectPage$ = command(
     set(reloadSlackConnectStatus$);
     const pending = get(slackConnectStatus$);
     const result = await settle(pending, signal);
-    // The page owns read errors and retry; a failed or superseded read cannot launch Slack.
+    // The page displays read errors; a failed or superseded read cannot launch Slack.
     if (
       !result.ok ||
       !owner ||

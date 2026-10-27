@@ -20,12 +20,6 @@ async fn guest_projects_pi_blocks_with_canonical_sequences_and_run_id()
     let payload_capture_path = tmp.path().join("pi-launch-payload-path.txt");
     let final_assistant_event_path = tmp.path().join("pi-final-assistant-event.jsonl");
     let large_tool_payload = "x".repeat(1024 * 1024);
-    let private_path = "memory/private-pi-cli.md";
-    let private_note = "private Pi CLI transport note";
-    let private_rollout_id = "019c6e27-e55b-73d1-87d8-4e01f1f75043";
-    let hidden_citation_middle = format!(
-        "tion><citation_entries>{private_path}:11-13|note=[{private_note}]</citation_entries><rollout_ids>{private_rollout_id}</rollout_ids></oai-mem-cita"
-    );
     std::fs::write(
         &final_assistant_event_path,
         format!(
@@ -37,7 +31,7 @@ async fn guest_projects_pi_blocks_with_canonical_sequences_and_run_id()
                     "content": [
                         {
                             "type": "text",
-                            "text": "official rpc projection 界<oai-",
+                            "text": "official rpc projection 界<div>",
                         },
                         {
                             "type": "toolCall",
@@ -47,15 +41,11 @@ async fn guest_projects_pi_blocks_with_canonical_sequences_and_run_id()
                         },
                         {
                             "type": "text",
-                            "text": "界🙂<oai-mem-cita",
+                            "text": "界🙂",
                         },
                         {
                             "type": "text",
-                            "text": hidden_citation_middle,
-                        },
-                        {
-                            "type": "text",
-                            "text": "tion>完成</oai-mem-citation><oai-mem",
+                            "text": "完成</div>",
                         },
                     ],
                     "model": "deepseek-v4-flash",
@@ -189,22 +179,10 @@ fi
         Some(guest_agent::cli::JsonlResultStatus::Success)
     );
     let mut delivered_events = Vec::new();
-    let mut delivered_citations = Vec::new();
     for request in server.requests()? {
         assert_eq!(request.path, "/api/webhooks/agent/events");
         assert_eq!(request.authorization.as_deref(), Some("Bearer test-token"));
         let body: Value = serde_json::from_str(&request.body)?;
-        assert_eq!(
-            body.pointer("/piMemoryCitationTransport/schemaVersion"),
-            Some(&Value::from(1))
-        );
-        delivered_citations.extend(
-            body.pointer("/piMemoryCitationTransport/citations")
-                .and_then(Value::as_array)
-                .expect("Pi event request should contain a private citation transport")
-                .iter()
-                .cloned(),
-        );
         delivered_events.extend(
             body.get("events")
                 .and_then(Value::as_array)
@@ -220,20 +198,6 @@ fi
             .unwrap_or(u64::MAX)
     });
     assert_eq!(delivered_events.len(), 14);
-    assert_eq!(delivered_citations.len(), 1);
-    assert_eq!(delivered_citations[0]["sequenceNumber"], 13);
-    assert_eq!(
-        delivered_citations[0].pointer("/citation/entries/0/path"),
-        Some(&Value::String(private_path.to_string()))
-    );
-    assert_eq!(
-        delivered_citations[0].pointer("/citation/entries/0/note"),
-        Some(&Value::String(private_note.to_string()))
-    );
-    assert_eq!(
-        delivered_citations[0].pointer("/citation/rolloutIds/0"),
-        Some(&Value::String(private_rollout_id.to_string()))
-    );
     assert_eq!(
         delivered_events
             .iter()
@@ -244,10 +208,6 @@ fi
     assert!(delivered_events.iter().all(|event| {
         let serialized = event.to_string();
         !serialized.contains("supersecret")
-            && !serialized.contains("memoryCitation")
-            && !serialized.contains(private_path)
-            && !serialized.contains(private_note)
-            && !serialized.contains(private_rollout_id)
     }));
     assert_eq!(delivered_events[0]["type"], "system");
     assert_eq!(delivered_events[0]["subtype"], "init");
@@ -380,7 +340,7 @@ fi
     assert_eq!(
         delivered_events[9].pointer("/message/content/0/text"),
         Some(&Value::String(
-            "official rpc projection 界<oai-".to_string()
+            "official rpc projection 界<div>".to_string()
         ))
     );
     assert_eq!(
@@ -407,7 +367,7 @@ fi
     );
     assert_eq!(
         delivered_events[12].pointer("/message/content/0/text"),
-        Some(&Value::String("完成<oai-mem".to_string()))
+        Some(&Value::String("完成</div>".to_string()))
     );
     for assistant in &delivered_events[9..=12] {
         assert_eq!(assistant["message"]["id"], "response-3");
@@ -425,7 +385,7 @@ fi
     assert_eq!(delivered_events[13]["subtype"], "success");
     assert_eq!(
         delivered_events[13]["result"],
-        "official rpc projection 界<oai-\n\n界🙂\n\n完成<oai-mem"
+        "official rpc projection 界<div>\n\n界🙂\n\n完成</div>"
     );
     assert_eq!(std::fs::read_to_string(capture_path)?, run_id);
 

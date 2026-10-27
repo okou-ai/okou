@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.55](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.54...guest-control-client-v0.23.55) (2026-10-27)
+
+## [0.23.54](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.53...guest-control-client-v0.23.54) (2026-10-27)
+
+
+### Documentation
+
+* **rust:** clarify supervised cancellation result semantics ([#43203](https://github.com/okou-ai/okou/issues/43203)) ([a96f442](https://github.com/okou-ai/okou/commit/a96f4421dde63de41f3db2658ad4b60f1d6f950f))
+
 ## [0.23.53](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.52...guest-control-client-v0.23.53) (2026-10-26)
 
 ## [0.23.52](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.51...guest-control-client-v0.23.52) (2026-10-26)

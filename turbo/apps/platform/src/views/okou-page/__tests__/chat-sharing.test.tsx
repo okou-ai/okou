@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { expect, test } from "vitest";
 
@@ -138,6 +139,16 @@ function selectableGroupForText(text: string): HTMLElement {
   return group;
 }
 
+// The row under a user bubble holds the space the next bubble in a burst is
+// pulled into, so it is part of that message's frame rather than part of the
+// copy button it usually carries. jsdom computes no layout, so the overlap this
+// guards against has no page-observable form: the reserved row is the only
+// evidence available for it, and the case is still worth covering because
+// losing that row is exactly what put two bubbles on top of each other.
+function nameLineSwitches(): Partial<Record<FeatureSwitchKey, boolean>> {
+  return { [FeatureSwitchKey.ChatReplyNameLine]: true };
+}
+
 function userMessageFor(text: string): HTMLElement {
   const message = screen
     .getByText(text)
@@ -148,25 +159,21 @@ function userMessageFor(text: string): HTMLElement {
   return message;
 }
 
-// The row under a user bubble holds the space the next bubble in a burst is
-// pulled into, so it is part of that message's frame rather than part of the
-// copy button it usually carries. jsdom computes no layout, so the overlap this
-// guards against has no page-observable form: the reserved row and the stacked
-// marker are the only evidence available for it, and the case is still worth
-// covering because a pull without its row is exactly what put two bubbles on
-// top of each other.
 function actionRowFor(text: string): HTMLElement | null {
   return userMessageFor(text).querySelector<HTMLElement>(
     "[data-chat-user-message-actions]",
   );
 }
 
+// Alongside the reserved row, the stacked marker is the only evidence of the
+// pull itself, for the same reason: jsdom computes no layout.
 function isStackedOnPrevious(text: string): boolean {
   return userMessageFor(text).dataset.chatUserMessageStacked !== undefined;
 }
 
 async function setupMessageSharing(
   chatEvents: MockChatEventInput[] = standardConversation(),
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
 ) {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const createRequests: string[][] = [];
@@ -179,6 +186,7 @@ async function setupMessageSharing(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches,
   });
   await screen.findByText(PROMPT);
   await waitFor(() => {
@@ -201,8 +209,13 @@ async function setupMessageSharing(
   };
 }
 
-async function prepareGroupSelection() {
-  const { promptGroup } = await setupMessageSharing();
+async function prepareGroupSelection(
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
+) {
+  const { promptGroup } = await setupMessageSharing(
+    standardConversation(),
+    featureSwitches,
+  );
   const selection = within(promptGroup).getByRole("checkbox", {
     name: "Select message group",
   });
@@ -236,8 +249,9 @@ test("The row label toggles a message group once", async () => {
   await expectNoSelectedGroups(selection);
 });
 
-test("A selected message group is marked as a whole, not only by its checkbox", async () => {
-  const { promptGroup, selection } = await prepareGroupSelection();
+test("With Agent name on replies, the selection column toggles a group and marks it as a whole", async () => {
+  const { promptGroup, selection } =
+    await prepareGroupSelection(nameLineSwitches());
   expect(promptGroup).not.toHaveAttribute("data-selected");
   click(within(promptGroup).getByText("Select message group"));
   await expectOneSelectedGroup(selection);
@@ -457,12 +471,9 @@ test("Hide passage actions throughout sharing and restore them afterward", async
   });
 });
 
-// Back-to-back user messages are pulled together by a negative margin sized
-// against the row that sits under every bubble. Sharing drops that row so a
-// selected group's tint ends at its last bubble, which is only safe because the
-// pull goes with it: a pull without its row put the second bubble on top of the
-// first.
-test("Back-to-back user messages drop their pull with the copy row while sharing", async () => {
+async function startSharingBackToBackPrompts(
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
+): Promise<void> {
   mockConversation([
     {
       id: PROMPT_EVENT_ID,
@@ -490,6 +501,7 @@ test("Back-to-back user messages drop their pull with the copy row while sharing
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches,
   });
 
   await screen.findByText(FOLLOW_UP_PROMPT);
@@ -505,6 +517,25 @@ test("Back-to-back user messages drop their pull with the copy row while sharing
   await waitFor(() => {
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
   });
+}
+
+// Back-to-back user messages are pulled together by a negative margin sized
+// against the row that sits under every bubble. Share selection hides the copy
+// button in that row; when it took the row with it, the second bubble climbed
+// into the first one and the two rendered on top of each other.
+test("Back-to-back user messages keep their frame apart while sharing", async () => {
+  await startSharingBackToBackPrompts();
+  expect(actionRowFor(PROMPT)).toBeInTheDocument();
+  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
+  expect(isStackedOnPrevious(FOLLOW_UP_PROMPT)).toBeTruthy();
+  expect(buttonsNamed("Copy message")).toHaveLength(0);
+});
+
+// With Agent name on replies, a selected group is tinted, so sharing drops the
+// row and the pull measured against it together; a pull without its row would
+// put the second bubble on top of the first.
+test("With Agent name on replies, back-to-back user messages drop their pull with the copy row while sharing", async () => {
+  await startSharingBackToBackPrompts(nameLineSwitches());
   expect(actionRowFor(PROMPT)).toBeNull();
   expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeNull();
   expect(isStackedOnPrevious(FOLLOW_UP_PROMPT)).toBeFalsy();
@@ -929,7 +960,7 @@ test("Revert the button and report a dead copied link when creation fails", asyn
   expect(buttonsNamed("Share link copied")).toHaveLength(1);
   response.resolve();
   await expect(
-    screen.findByText("The shared link could not be created. Try again."),
+    screen.findByText("The shared link could not be created."),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(buttonsNamed("Share message")).toHaveLength(1);

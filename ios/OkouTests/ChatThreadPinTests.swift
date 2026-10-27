@@ -75,38 +75,12 @@ final class ChatThreadPinTests: XCTestCase {
   func testFailedPinKeepsOptimisticDisplayAndNextSaveStillRuns() async throws {
     let fixture = PinFixture(statuses: [503, 204, 204])
     defer { fixture.releaseAll() }
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let cache = ChatCache(
+    let cacheDirectory = CacheTestDirectory(owner: self)
+    var cache: ChatCache? = cacheDirectory.cache(
       scope: ChatCacheScope(
-        apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"),
-      directory: directory)
-    let store = fixture.workspace(cache: cache)
-    defer { store.close() }
-    await store.refresh()
-    let pin = Task { await store.list.togglePinned(PinFixture.target) }
-    try await eventually { fixture.writes.count == 1 }
-    fixture.gates[0].open()
-    await pin.value
-    XCTAssertEqual(store.list.error, "Pin save unavailable")
-    XCTAssertNotNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
-    await store.refresh()
-    XCTAssertNotNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
-    fixture.remoteUnpin()
-    await store.refresh()
-    XCTAssertNotNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
-    let reopened = fixture.workspace(cache: cache)
-    defer { reopened.close() }
-    await reopened.list.restoreCached()
-    XCTAssertNil(reopened.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
-
-    let unpin = Task { await store.list.togglePinned(PinFixture.target) }
-    try await eventually { fixture.writes.count == 2 }
-    XCTAssertNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
-    fixture.gates[1].open()
-    await unpin.value
-    XCTAssertEqual(fixture.writes.map(\.action), ["pin", "unpin"])
-    XCTAssertNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
+        apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"))
+    defer { cache = nil }
+    try await exerciseFailedPinRecovery(fixture, cache: XCTUnwrap(cache))
   }
 
   func testQueuedPinChangesContinueAfterEarlierRequestsFail() async throws {
@@ -145,10 +119,23 @@ final class ChatThreadPinTests: XCTestCase {
     let fixture = PinFixture()
     defer { fixture.releaseAll() }
     let store = fixture.workspace()
+    defer { store.close() }
     await store.refresh()
     let pin = Task { await store.list.togglePinned(PinFixture.target) }
+    addTeardownBlock { @MainActor in
+      store.close()
+      pin.cancel()
+      fixture.releaseAll()
+      await pin.value
+    }
     try await eventually { fixture.writes.count == 1 }
     let unpin = Task { await store.list.togglePinned(PinFixture.target) }
+    addTeardownBlock { @MainActor in
+      store.close()
+      unpin.cancel()
+      fixture.releaseAll()
+      await unpin.value
+    }
     try await eventually {
       store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt == nil
     }
@@ -184,6 +171,38 @@ final class ChatThreadPinTests: XCTestCase {
     await store.list.togglePinned(PinFixture.target)
     XCTAssertEqual(fixture.writes.count, 1)
   }
+  private func exerciseFailedPinRecovery(_ fixture: PinFixture, cache: ChatCache) async throws {
+    let store = fixture.workspace(cache: cache)
+    defer { store.close() }
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      defer { fixture.releaseAll() }
+      await store.refresh()
+      group.addTask { await store.list.togglePinned(PinFixture.target) }
+      try await eventually { fixture.writes.count == 1 }
+      fixture.gates[0].open()
+      try await group.waitForAll()
+      XCTAssertEqual(store.list.error, "Pin save unavailable")
+      XCTAssertNotNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
+      await store.refresh()
+      XCTAssertNotNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
+      fixture.remoteUnpin()
+      await store.refresh()
+      XCTAssertNotNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
+      let reopened = fixture.workspace(cache: cache)
+      defer { reopened.close() }
+      await reopened.list.restoreCached()
+      XCTAssertNil(reopened.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
+
+      group.addTask { await store.list.togglePinned(PinFixture.target) }
+      try await eventually { fixture.writes.count == 2 }
+      XCTAssertNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
+      fixture.gates[1].open()
+      try await group.waitForAll()
+      XCTAssertEqual(fixture.writes.map(\.action), ["pin", "unpin"])
+      XCTAssertNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
+    }
+  }
+
   private func queueToggle(in store: WorkspaceStore, fixture: PinFixture) {
     let task = Task { await store.list.togglePinned(PinFixture.target) }
     addTeardownBlock { @MainActor in

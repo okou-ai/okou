@@ -99,7 +99,7 @@ export const prepareUserMessageFromDraft$ = command(
               throw new Error(
                 i18n.t(
                   ($) => {
-                    return $.chat.attachments.uploadFailedRetry;
+                    return $.chat.attachments.uploadFailed;
                   },
                   { filename: r.attachment.filename },
                 ),

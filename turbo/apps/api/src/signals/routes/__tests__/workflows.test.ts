@@ -1296,6 +1296,65 @@ describe("workflows", () => {
     },
   );
 
+  it("rejects an older attachment publication after a metadata-only edit at the same clock instant", async () => {
+    const actor = user();
+    const agent = await createAgent(actor, {
+      displayName: "Concurrent Workflow Metadata Agent",
+      visibility: "public",
+    });
+    const s3 = installVolumeS3Fixture();
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `metadata-edit-${randomUUID().slice(0, 8)}`,
+      instruction: "# original Workflow",
+    });
+    mockNow(now());
+    const signal = AbortSignal.timeout(10_000);
+    const uploadEntered = createDeferredPromise<void>(signal);
+    const uploadReleased = createDeferredPromise<void>(signal);
+    s3.beforeNextArchiveWrite(async () => {
+      uploadEntered.resolve();
+      await uploadReleased.promise;
+    });
+    const older = accept(
+      detailClient().update({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+        body: {
+          displayName: "Older label",
+          files: [{ path: "notes.md", content: "older attachment" }],
+        },
+      }),
+      [200, 409],
+    );
+    let released = false;
+    onTestFinished(async () => {
+      if (!released) {
+        uploadReleased.resolve();
+      }
+      await older;
+    });
+    await uploadEntered.promise;
+    await updateWorkflow(actor, workflow.body.id, {
+      displayName: "Newer label",
+    });
+    released = true;
+    uploadReleased.resolve();
+    expect((await older).status).toBe(409);
+    const current = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      displayName: "Newer label",
+      instruction: "# original Workflow",
+      fileContents: [],
+    });
+  });
+
   it("keeps concurrent Workflow instruction updates on the same Agent", async () => {
     const actor = user();
     const agent = await createAgent(actor, {

@@ -1,13 +1,18 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { EventEmitter, once } from "node:events";
 import type { ServerHttp2Session } from "node:http2";
+import { http, HttpResponse } from "msw";
 import { onTestFinished, vi } from "vitest";
 import { iosPushRegistrationsContract } from "@okouai/api-contracts/contracts/ios-push-registrations";
+import { iosNotificationsContract } from "@okouai/api-contracts/contracts/ios-notifications";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
+import { server as providerServer } from "../../../../mocks/server";
+import { createDeferredPromise, settleIncludingAbort } from "../../../utils";
 import { iosPushRegistrationsRoutes } from "../../ios-push-registrations";
+import { iosNotificationsRoutes } from "../../ios-notifications";
 
 export function authenticateIosSession(
   context: TestContext,
@@ -40,6 +45,7 @@ export async function registerIosPush(
     revision?: number;
     deviceToken?: string;
     environment?: "production" | "sandbox";
+    supportsNotificationState?: boolean;
   } = {},
 ) {
   authenticateIosSession(context, actor.userId, actor.orgId);
@@ -58,10 +64,34 @@ export async function registerIosPush(
     }),
     [200],
   );
+  if (options.supportsNotificationState !== false) {
+    await reconcileIosNotifications(context, actor, binding);
+  }
   return binding;
 }
 
-/** Real HTTP/2 framing and provider response lifecycle; only the remote APNs origin is replaced. */
+export async function reconcileIosNotifications(
+  context: TestContext,
+  actor: { userId: string; orgId: string },
+  binding: { installationId: string; revision: number },
+) {
+  authenticateIosSession(context, actor.userId, actor.orgId);
+  return await accept(
+    setupApp({ context, routes: iosNotificationsRoutes })(
+      iosNotificationsContract,
+    ).reconcile({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        installationId: binding.installationId,
+        registrationRevision: binding.revision,
+        notifications: [],
+      },
+    }),
+    [200],
+  );
+}
+
+/** Keep HTTP/2 framing while routing provider requests through shared MSW handlers. */
 export async function createApnsFixture(
   context: TestContext,
   environment: "production" | "sandbox" = "production",
@@ -103,20 +133,56 @@ export async function createApnsFixture(
   const responses: { status: number; reason?: string; pause?: boolean }[] = [];
   const arrivals = new EventEmitter();
   const pendingReplies: (() => void)[] = [];
+  const transfers: Promise<void>[] = [];
+  const failures: unknown[] = [];
   const sessions = new Set<ServerHttp2Session>();
+  const origin =
+    environment === "production"
+      ? "https://api.push.apple.com"
+      : "https://api.sandbox.push.apple.com";
+  providerServer.use(
+    http.post(`${origin}/3/device/:deviceToken`, async ({ params }) => {
+      if (!/^(?:[0-9a-f]{2}){32,256}$/u.test(String(params.deviceToken))) {
+        const error = new Error("Unexpected APNs device token");
+        failures.push(error);
+        throw error;
+      }
+      const response = responses.shift() ?? { status: 200 };
+      const released = createDeferredPromise<void>(context.signal);
+      if (response.pause) {
+        pendingReplies.push(() => {
+          released.resolve();
+        });
+      } else {
+        released.resolve();
+      }
+      arrivals.emit("request");
+      await released.promise;
+      return new HttpResponse(
+        response.reason ? JSON.stringify({ reason: response.reason }) : null,
+        { status: response.status },
+      );
+    }),
+  );
   const server = http2.createServer();
   onTestFinished(async () => {
+    for (const reply of pendingReplies.splice(0)) {
+      reply();
+    }
+    await Promise.all(transfers);
     for (const session of sessions) {
       session.destroy();
     }
     const closed = once(server, "close");
     server.close();
     await closed;
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "Unhandled APNs fixture requests");
+    }
   });
   server.on("session", (session) => {
     sessions.add(session);
   });
-  let origin = "";
   server.on("stream", (stream, headers) => {
     let body = "";
     stream.setEncoding("utf8");
@@ -124,20 +190,37 @@ export async function createApnsFixture(
       body += chunk;
     });
     stream.on("end", () => {
-      requests.push({ origin, headers, payload: JSON.parse(body) });
-      const response = responses.shift() ?? { status: 200 };
-      const reply = () => {
-        stream.respond({ ":status": response.status });
-        stream.end(
-          response.reason ? JSON.stringify({ reason: response.reason }) : "",
+      const forward = async () => {
+        requests.push({ origin, headers, payload: JSON.parse(body) });
+        const requestHeaders = new Headers();
+        for (const [name, value] of Object.entries(headers)) {
+          if (!name.startsWith(":") && typeof value === "string") {
+            requestHeaders.set(name, value);
+          }
+        }
+        const response = await fetch(
+          new URL(String(headers[":path"]), origin),
+          {
+            method: headers[":method"],
+            headers: requestHeaders,
+            body,
+            signal: context.signal,
+          },
         );
+        const responseBody = await response.text();
+        if (!stream.destroyed) {
+          stream.respond({ ":status": response.status });
+          stream.end(responseBody);
+        }
       };
-      if (response.pause) {
-        pendingReplies.push(reply);
-      } else {
-        reply();
-      }
-      arrivals.emit("request");
+      transfers.push(
+        settleIncludingAbort(forward()).then((result) => {
+          if (!result.ok) {
+            failures.push(result.error);
+            stream.close(http2.constants.NGHTTP2_INTERNAL_ERROR);
+          }
+        }),
+      );
     });
   });
   server.listen(0, "127.0.0.1");
@@ -147,7 +230,11 @@ export async function createApnsFixture(
     throw new Error("Missing test APNs address");
   }
   context.mocks.apns.connect.mockImplementation((authority) => {
-    origin = String(authority);
+    if (String(authority) !== origin) {
+      const error = new Error(`Unhandled APNs origin: ${String(authority)}`);
+      failures.push(error);
+      throw error;
+    }
     return http2.connect(`http://127.0.0.1:${address.port}`);
   });
   return {

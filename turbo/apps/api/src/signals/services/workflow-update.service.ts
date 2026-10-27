@@ -20,6 +20,7 @@ import {
 
 interface UpdateWorkflowInput {
   readonly workflow: WorkflowRow;
+  readonly observedXmin: string;
   readonly body: WorkflowUpdateRequest;
   readonly updatedByUserId: string;
   readonly member: WorkflowMember;
@@ -109,10 +110,9 @@ export const updateWorkflow$ = command(
             eq(workflows.ownerUserId, workflow.ownerUserId),
             eq(workflows.visibility, workflow.visibility),
             isNull(workflows.officialDefinitionName),
-            eq(workflows.name, workflow.name),
-            sql`${workflows.instruction} IS NOT DISTINCT FROM ${workflow.instruction}`,
-            sql`${workflows.description} IS NOT DISTINCT FROM ${workflow.description}`,
-            sql`${workflows.attachments} IS NOT DISTINCT FROM ${sql.param(workflow.attachments, workflows.attachments)}`,
+            // Even value-preserving Stage 1 metadata writes create a new row
+            // version. Their token can be invisible to this statement's snapshot.
+            sql`${workflows}.xmin::text = ${args.observedXmin}`,
             exists(
               db
                 .select({ id: agents.id })
