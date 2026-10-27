@@ -9,6 +9,7 @@ import {
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -214,6 +215,19 @@ test("Keep rapid pin changes responsive across resize and save", async () => {
 
 test("Keep Share and More in the header and match the sidebar menu order", async () => {
   context.mocks.browser.matchMedia(false);
+  context.mocks.api(mailContract.listThreadMail, ({ respond }) => {
+    return respond(200, {
+      mails: [
+        {
+          mailDraftId: "e0000000-0000-4000-a000-000000000951",
+          status: "draft",
+          subject: "Header planning",
+          from: "sender@example.com",
+          createdAt: "2026-09-01T10:00:00Z",
+        },
+      ],
+    });
+  });
   await setupHeaderPage();
   const more = buttonNamed("More actions");
   const group = more.parentElement;
@@ -224,7 +238,12 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     queryAllByRoleFast("button", group).map((button) => {
       return button.getAttribute("aria-label");
     }),
-  ).toStrictEqual(["Share messages", "Resources", "More actions"]);
+  ).toStrictEqual([
+    "Share messages",
+    "Manage emails",
+    "Resources",
+    "More actions",
+  ]);
   expect(buttonNamed("Open menu")).toBeInTheDocument();
   expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
 
