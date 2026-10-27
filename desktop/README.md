@@ -36,9 +36,10 @@ Host heartbeat failures upload a correlated episode to the Desktop Sentry projec
 The first failed attempt emits an error immediately; recovery, stopping the host,
 or rejection of its authority emits one summary with the same `episodeId`.
 Filter by `heartbeatOutcome` (`failed`, `recovered`, `stopped`, or
-`authority_rejected`) or `heartbeatEpisodeId` and inspect `contexts.heartbeat`. Normal heartbeats do not
-emit events, and the SDK's automatic heartbeat `HTTPClientError` is suppressed to
-avoid duplicate reports. Automatic HTTP error capture for other routes is unchanged.
+`authority_rejected`) or `heartbeatEpisodeId` and inspect `contexts.heartbeat`.
+Normal heartbeats do not emit events, and the SDK's automatic heartbeat
+`HTTPClientError` is suppressed to avoid duplicate reports. Automatic HTTP error
+capture for other routes is unchanged.
 
 Each episode retains its first failure and its ten most recent failed attempts,
 the total failure count, omitted-history count, retry delays, and observed duration.

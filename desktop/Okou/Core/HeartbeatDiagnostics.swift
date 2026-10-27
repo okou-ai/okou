@@ -21,7 +21,7 @@ struct HeartbeatDiagnostics {
         "observedDurationMs": started.duration(to: .now).seconds * 1000,
         "failedAttempts": attempts, "firstFailure": firstFailure,
         "recentFailures": recentFailures,
-        "omittedFailures": max(0, attempts - recentFailures.count),
+        "omittedFailures": max(0, attempts - recentFailures.count - 1),
       ]
     }
   }
