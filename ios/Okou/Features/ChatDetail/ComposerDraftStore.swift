@@ -144,10 +144,10 @@ final class ComposerDraftStore {
   }
 
   func removeFeedback(_ id: UUID) {
-    guard !closed, let ordinal = quoteIDs.firstIndex(of: id),
-      let block = editorBlocks.first(where: { $0.id == id })
-    else { return }
+    guard !closed, let ordinal = quoteIDs.firstIndex(of: id) else { return }
+    let focusedID = editor.prepareForFeedbackRemoval(id)
     let blocks = editorBlocks
+    guard let block = blocks.first(where: { $0.id == id }) else { return }
     // Removing a block between text sections leaves two paragraphs, as on the web.
     let separatesParagraphs =
       blocks[ordinal * 2].hasParagraph && blocks[ordinal * 2 + 2].hasParagraph
@@ -155,10 +155,13 @@ final class ComposerDraftStore {
       block.indices,
       with: separatesParagraphs
         ? [.object(["type": .string("text"), "text": .string("\n")])] : [])
+    // Keep the native first responder when its note or adjacent text gaps merge.
+    if let focusedID, [textIDs[ordinal], id, textIDs[ordinal + 1]].contains(focusedID) {
+      textIDs[ordinal] = focusedID
+    }
     quoteIDs.remove(at: ordinal)
     textIDs.remove(at: ordinal + 1)
-    // The removed note hands focus to the preceding text gap in this composer.
-    focusRequest = EditorFocusRequest(blockID: textIDs[ordinal])
+    focusRequest = focusedID.map { EditorFocusRequest(blockID: $0) }
     changed()
   }
 
