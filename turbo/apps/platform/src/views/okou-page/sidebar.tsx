@@ -928,9 +928,10 @@ function ChatListResizeSeam() {
       valueMax={CHAT_LIST_MAX_WIDTH}
       valueNow={width}
       resizing={resizing}
-      // The sheet's own border already draws the resting line.
-      restLine={false}
-      className="absolute inset-y-0 right-0 translate-x-1/2"
+      // The target stays inside the list so it needs no paint priority over
+      // the sheet; the sheet's own border draws the resting line at its end.
+      line="end"
+      className="absolute inset-y-0 right-0"
     />
   );
 }
@@ -946,7 +947,7 @@ function ChatListColumn() {
         // Unified: the list is the left part of the workspace sheet, which
         // continues it from the divider rightwards.
         unified
-          ? "relative z-10 my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas"
+          ? "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas"
           : "h-full w-[300px] bg-sidebar",
       )}
       style={unified ? { width } : undefined}

@@ -67,6 +67,9 @@ function ChatThreadSidebarResizeHandle({
   const resizeHandleRef = useSet(chatThreadSidebarResizeHandleRef$);
 
   if (unified) {
+    // Rendered after the panel and centred on its leading edge, so ordinary
+    // paint order puts the target above both panes without a z-index. The
+    // panel's own border draws the resting line.
     return (
       <ResizeSeam
         ref={resizeHandleRef}
@@ -76,8 +79,8 @@ function ChatThreadSidebarResizeHandle({
         valueMin={CHAT_THREAD_SIDEBAR_MIN_WIDTH}
         valueNow={width}
         resizing={resizing}
-        restLine
-        className="hidden xl:flex"
+        line="center"
+        className="absolute inset-y-0 right-[var(--chat-thread-sidebar-width)] hidden translate-x-1/2 xl:block"
         widthKey={widthKey}
       />
     );
@@ -126,11 +129,42 @@ function workspaceFrameClassName(
     beside === "chat-list" && "md:ml-0",
     // The unified chat list supplies this sheet's left edge and corners.
     beside === "chat-list" && unified && "md:rounded-l-none",
+    // Positions the unified divider without a stacking context; fixed
+    // surfaces inside still compete in #root.
+    !beside && unified && "relative",
   );
   const fill = beside
     ? "bg-workspace-canvas bg-workspace-canvas-image bg-[length:100%_100%]"
     : "bg-transparent";
   return `${frame} ${fill}`;
+}
+
+function sidebarPanelClassName({
+  open,
+  unified,
+  animateEntry,
+  transition,
+  workspace,
+}: {
+  readonly open: boolean;
+  readonly unified: boolean;
+  readonly animateEntry: boolean;
+  readonly transition: string;
+  readonly workspace:
+    | { readonly pwaNavigation: boolean; readonly fullscreen: boolean }
+    | undefined;
+}): string {
+  return cn(
+    "flex min-h-0 min-w-0 overflow-hidden",
+    workspace && "md:rounded-2xl xl:rounded-l-none",
+    workspace?.pwaNavigation && !workspace.fullscreen && "[--okou-safe-b:0px]",
+    transition,
+    open && animateEntry && "duration-[180ms]",
+    open
+      ? "flex-1 basis-0 xl:w-[var(--chat-thread-sidebar-width)] xl:flex-none xl:basis-[var(--chat-thread-sidebar-width)]"
+      : "pointer-events-none w-0 flex-none basis-0",
+    open && unified && "xl:border-l xl:border-border",
+  );
 }
 
 export function ChatThreadSidebarShell({
@@ -192,6 +226,15 @@ export function ChatThreadSidebarShell({
     syncActiveBrowserFitAction();
   }
 
+  const handle = open ? (
+    <ChatThreadSidebarResizeHandle
+      unified={unified}
+      widthKey={widthKey}
+      width={width}
+      resizing={resizing}
+    />
+  ) : null;
+
   const panes = (
     <>
       <div
@@ -203,36 +246,25 @@ export function ChatThreadSidebarShell({
       >
         {children}
       </div>
-      {open && (
-        <ChatThreadSidebarResizeHandle
-          unified={unified}
-          widthKey={widthKey}
-          width={width}
-          resizing={resizing}
-        />
-      )}
+      {!unified && handle}
       <LayoutPanel
         active={open}
         layoutKey={sidebarLayoutKey}
         onLayoutCommit={onSidebarLayoutCommit}
         data-testid="chat-thread-sidebar-pane"
         onTransitionEnd={handleSidebarTransitionEnd}
-        className={cn(
-          "flex min-h-0 min-w-0 overflow-hidden",
-          workspace && "md:rounded-2xl xl:rounded-l-none",
-          workspace?.pwaNavigation &&
-            !workspace.fullscreen &&
-            "[--okou-safe-b:0px]",
+        className={sidebarPanelClassName({
+          open,
+          unified,
+          animateEntry,
           transition,
-          open && animateEntry && "duration-[180ms]",
-          open
-            ? "flex-1 basis-0 xl:w-[var(--chat-thread-sidebar-width)] xl:flex-none xl:basis-[var(--chat-thread-sidebar-width)]"
-            : "pointer-events-none w-0 flex-none basis-0",
-        )}
+          workspace,
+        })}
         aria-hidden={!open}
       >
         {sidebar}
       </LayoutPanel>
+      {unified && handle}
     </>
   );
 
@@ -247,7 +279,11 @@ export function ChatThreadSidebarShell({
       {workspace ? (
         <>
           {workspace.header}
-          <div className="flex min-h-0 min-w-0 flex-1">{panes}</div>
+          <div
+            className={cn("flex min-h-0 min-w-0 flex-1", unified && "relative")}
+          >
+            {panes}
+          </div>
           {workspace.footer}
         </>
       ) : (

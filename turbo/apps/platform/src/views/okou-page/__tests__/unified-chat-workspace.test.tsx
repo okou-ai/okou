@@ -1,9 +1,13 @@
 import { FeatureSwitchKey } from "@okouai/core";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   buttonNamed,
@@ -14,6 +18,8 @@ import {
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
+// A second runtime stands in for the page after a reload.
+const reloadedContext = createTestRuntime(context);
 const POINTER = Object.freeze({
   pointerId: 1,
   pointerType: "mouse",
@@ -30,10 +36,18 @@ function chatListSeam(): Promise<HTMLElement> {
   return screen.findByRole("separator", { name: "Resize chat list" });
 }
 
+function releasePageDom(): void {
+  cleanup();
+  vi.mocked(window.history.pushState).mockRestore();
+  vi.mocked(window.history.replaceState).mockRestore();
+  vi.mocked(window.history.back).mockRestore();
+}
+
 async function openUnifiedWorkspace(
   options: {
     readonly unified?: boolean;
     readonly containerWidth?: number;
+    readonly pageContext?: Parameters<typeof setupPage>[0]["context"];
   } = {},
 ): Promise<{ handle: HTMLElement; shell: HTMLElement }> {
   context.mocks.browser.matchMedia((query) => {
@@ -51,7 +65,7 @@ async function openUnifiedWorkspace(
     ],
   });
   await setupPage({
-    context,
+    context: options.pageContext ?? context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: {
@@ -155,6 +169,38 @@ test("The chat list resizes from its divider and folds when dragged past its min
   });
   expect(document.querySelector("[data-chat-list-resize-mask]")).toBeNull();
   expect(buttonNamed("Show chat list")).toBeInTheDocument();
+});
+
+test("The workspace remembers the chat list and the panel width after a reload", async () => {
+  const resetFirstPage$ = resetSignal();
+  const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
+  const { handle } = await openUnifiedWorkspace({
+    pageContext: { ...context, signal: firstPageSignal },
+  });
+  const listSeam = await chatListSeam();
+  listSeam.focus();
+  fireEvent.keyDown(listSeam, { key: "ArrowRight" });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "316");
+  handle.focus();
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  expect(handle).toHaveAttribute("aria-valuenow", "808");
+  click(buttonNamed("Hide chat list"));
+  await waitFor(() => {
+    expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  });
+
+  context.store.set(resetFirstPage$);
+  releasePageDom();
+  const { shell } = await openUnifiedWorkspace({
+    pageContext: reloadedContext,
+  });
+  await waitFor(() => {
+    expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  });
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 808px, calc(100% - 420px))");
+
+  click(buttonNamed("Show chat list"));
+  await expect(chatListSeam()).resolves.toHaveAttribute("aria-valuenow", "316");
 });
 
 test("Without the switch the chat list keeps its fixed width", async () => {

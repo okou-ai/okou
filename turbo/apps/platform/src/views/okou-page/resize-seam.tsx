@@ -2,11 +2,15 @@ import type { Ref } from "react";
 import { cn } from "@okouai/ui";
 
 /**
- * A focusable divider between two resizable panes. The seam takes 1px of
- * layout; its 12px pointer target overlaps the panes on either side. At rest it
- * draws at most a hairline. Hover waits 150ms before showing a 2px line, so a
- * pointer passing over the seam does not flash it; a drag darkens the line and
- * keyboard focus paints it in the ring colour.
+ * A focusable 12px pointer target on the edge between two resizable panes.
+ * The caller positions it and leaves the resting line to the panes' own
+ * border. Hover waits 150ms before showing a 2px line, so a pointer passing
+ * over the edge does not flash it; a drag darkens the line and keyboard focus
+ * paints it in the ring colour.
+ *
+ * The target never takes a z-index. Each caller places it later in tree order
+ * than the panes it overlaps, or wholly inside one of them, so ordinary paint
+ * order puts it on top without ranking it against the shell.
  */
 export function ResizeSeam({
   ref,
@@ -15,7 +19,7 @@ export function ResizeSeam({
   valueMax,
   valueNow,
   resizing,
-  restLine,
+  line,
   widthKey,
   className,
 }: {
@@ -25,8 +29,8 @@ export function ResizeSeam({
   readonly valueMax?: number;
   readonly valueNow: number | null;
   readonly resizing: boolean;
-  /** Draw the resting hairline; omit it where a border already draws one. */
-  readonly restLine: boolean;
+  /** Where the edge falls in the target: its middle, or its trailing side. */
+  readonly line: "center" | "end";
   readonly widthKey?: string;
   readonly className?: string;
 }) {
@@ -43,16 +47,15 @@ export function ResizeSeam({
       data-width-key={widthKey}
       data-resizing={resizing ? "" : undefined}
       className={cn(
-        "group relative z-10 w-px shrink-0 cursor-col-resize touch-none outline-none",
-        "before:absolute before:inset-y-0 before:-left-[5.5px] before:-right-[5.5px] before:content-['']",
+        "group w-3 cursor-col-resize touch-none outline-none",
         className,
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-[width,background-color] delay-0 duration-150",
-          restLine ? "bg-divider" : "bg-transparent",
+          "pointer-events-none absolute inset-y-0 w-px transition-[width,background-color] delay-0 duration-150",
+          line === "center" ? "left-1/2 -translate-x-1/2" : "right-0",
           "group-hover:w-0.5 group-hover:bg-gray-500 group-hover:delay-150",
           "group-focus-visible:w-0.5 group-focus-visible:bg-ring group-focus-visible:delay-0",
           "group-data-[resizing]:w-0.5 group-data-[resizing]:bg-gray-700 group-data-[resizing]:delay-0",
