@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use nix::fcntl::Flock;
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
@@ -16,6 +18,10 @@ use super::filesystem::{
 use super::image_refs::{ProtectedImageRefs, is_protected_image_ref};
 use super::lock_file::{LockProbe, probe_lock};
 use super::report::GcReport;
+
+mod removal;
+
+use removal::{SnapshotRemovalLocks, remove_image_dir, remove_snapshot_dir};
 
 const TEMPLATE_WARM_DIR_PREFIX: &str = "template-warm-";
 
@@ -48,19 +54,20 @@ struct SnapshotDeletion {
 
 /// Try to delete an orphaned rootfs directory (no surviving snapshots).
 ///
-/// Caller must hold the exclusive rootfs lock. Returns the freed bytes when
-/// deletion succeeds or would occur, including `Some(0)` for zero-byte work.
+/// Transfers the exclusive rootfs lock through physical deletion and returns it
+/// with freed bytes on success or dry-run, including `Some(0)` for zero-byte work.
 async fn try_delete_orphan_rootfs(
     rootfs_path: &Path,
     rootfs_hash: &str,
     dry_run: bool,
-) -> Option<u64> {
+    rootfs_lock: Flock<File>,
+) -> (Flock<File>, Option<u64>) {
     match gc_path_dir_status(rootfs_path).await {
         Ok(GcDirStatus::RealDir(_)) => {}
-        Ok(GcDirStatus::Missing | GcDirStatus::NotDirectory) => return None,
+        Ok(GcDirStatus::Missing | GcDirStatus::NotDirectory) => return (rootfs_lock, None),
         Err(e) => {
             warn!("images/{rootfs_hash}: stat failed ({e}), skipping");
-            return None;
+            return (rootfs_lock, None);
         }
     }
 
@@ -75,18 +82,21 @@ async fn try_delete_orphan_rootfs(
                 age.as_secs()
             );
         }
-        return None;
+        return (rootfs_lock, None);
     }
     if dry_run {
         info!(
             "[dry-run] would delete orphaned rootfs images/{rootfs_hash} ({})",
             human_bytes(rootfs_size)
         );
-    } else if let Err(e) = tokio::fs::remove_dir_all(rootfs_path).await {
-        warn!("failed to remove orphaned rootfs images/{rootfs_hash}: {e}");
-        return None;
+        return (rootfs_lock, Some(rootfs_size));
     }
-    Some(rootfs_size)
+    let (rootfs_lock, result) = remove_image_dir(rootfs_path, rootfs_lock).await;
+    if let Err(e) = result {
+        warn!("failed to remove orphaned rootfs images/{rootfs_hash}: {e}");
+        return (rootfs_lock, None);
+    }
+    (rootfs_lock, Some(rootfs_size))
 }
 
 /// Try to delete an abandoned `runner build --warm-rootfs-cache` working dir.
@@ -102,7 +112,7 @@ async fn gc_template_warm_dir(
     dry_run: bool,
 ) -> Option<u64> {
     let lock_path = home.template_lock(template_hash);
-    let _lock = match probe_lock(&lock_path) {
+    let lock = match probe_lock(&lock_path) {
         LockProbe::Free(lock) => lock,
         LockProbe::Held => {
             if dry_run {
@@ -141,9 +151,12 @@ async fn gc_template_warm_dir(
             "[dry-run] would delete template warm dir images/{warm_name} ({})",
             human_bytes(size)
         );
-    } else if let Err(e) = tokio::fs::remove_dir_all(warm_path).await {
-        warn!("failed to remove template warm dir images/{warm_name}: {e}");
-        return None;
+    } else {
+        let (_lock, result) = remove_image_dir(warm_path, lock).await;
+        if let Err(e) = result {
+            warn!("failed to remove template warm dir images/{warm_name}: {e}");
+            return None;
+        }
     }
     Some(size)
 }
@@ -159,7 +172,7 @@ async fn gc_rootfs_action(
     dry_run: bool,
     snapshot_entry_reader: &mut GcDirEntryReader,
 ) -> GcReport {
-    let _rootfs_lock = match probe_lock(&home.rootfs_lock(&state.hash)) {
+    let mut rootfs_lock = match probe_lock(&home.rootfs_lock(&state.hash)) {
         LockProbe::Free(lock) => lock,
         LockProbe::Held => {
             if dry_run {
@@ -190,11 +203,11 @@ async fn gc_rootfs_action(
     match gc_path_dir_status(&snapshots_dir).await {
         Ok(GcDirStatus::RealDir(_)) => {}
         Ok(GcDirStatus::Missing) => {
-            return try_delete_orphan_rootfs(&state.path, &state.hash, dry_run)
-                .await
-                .map_or_else(GcReport::default, |freed_bytes| {
-                    GcReport::cleanup(1, freed_bytes)
-                });
+            let (_rootfs_lock, freed_bytes) =
+                try_delete_orphan_rootfs(&state.path, &state.hash, dry_run, rootfs_lock).await;
+            return freed_bytes.map_or_else(GcReport::default, |freed_bytes| {
+                GcReport::cleanup(1, freed_bytes)
+            });
         }
         Ok(GcDirStatus::NotDirectory) => {
             warn!(
@@ -257,7 +270,7 @@ async fn gc_rootfs_action(
     let mut dry_run_snapshot_bytes = 0u64;
     for deletion in deletions {
         let lock_path = home.snapshot_lock(&deletion.hash);
-        let _snapshot_lock = match probe_lock(&lock_path) {
+        let snapshot_lock = match probe_lock(&lock_path) {
             LockProbe::Free(lock) => lock,
             LockProbe::Held => {
                 any_snapshot_survives = true;
@@ -315,7 +328,7 @@ async fn gc_rootfs_action(
             continue;
         }
 
-        if dry_run {
+        let _snapshot_lock = if dry_run {
             info!(
                 "[dry-run] would delete images/{}/snapshots/{} ({})",
                 state.hash,
@@ -323,8 +336,19 @@ async fn gc_rootfs_action(
                 human_bytes(size)
             );
             dry_run_snapshot_bytes = dry_run_snapshot_bytes.saturating_add(size);
+            snapshot_lock
         } else {
-            match tokio::fs::remove_dir_all(&deletion.path).await {
+            let (locks, result) = remove_snapshot_dir(
+                &deletion.path,
+                SnapshotRemovalLocks {
+                    rootfs: rootfs_lock,
+                    snapshot: snapshot_lock,
+                },
+            )
+            .await;
+            rootfs_lock = locks.rootfs;
+            let snapshot_lock = locks.snapshot;
+            match result {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(e) => {
@@ -336,16 +360,18 @@ async fn gc_rootfs_action(
                     continue;
                 }
             }
-        }
+            snapshot_lock
+        };
         report += GcReport::cleanup(1, size);
     }
 
-    if !any_snapshot_survives
-        && let Some(rootfs_bytes) =
-            try_delete_orphan_rootfs(&state.path, &state.hash, dry_run).await
-    {
-        let overlap = if dry_run { dry_run_snapshot_bytes } else { 0 };
-        report += GcReport::cleanup(1, rootfs_bytes.saturating_sub(overlap));
+    if !any_snapshot_survives {
+        let (_rootfs_lock, freed_bytes) =
+            try_delete_orphan_rootfs(&state.path, &state.hash, dry_run, rootfs_lock).await;
+        if let Some(rootfs_bytes) = freed_bytes {
+            let overlap = if dry_run { dry_run_snapshot_bytes } else { 0 };
+            report += GcReport::cleanup(1, rootfs_bytes.saturating_sub(overlap));
+        }
     }
 
     report
@@ -481,9 +507,10 @@ async fn gc_nested_images_with_protected_refs_and_readers(
             Ok(GcDirStatus::RealDir(_)) => {}
             Ok(GcDirStatus::Missing) => {
                 // No snapshots/ subdirectory — orphaned rootfs, handle inline.
-                if let Some(freed_bytes) =
-                    try_delete_orphan_rootfs(&rootfs_path, &rootfs_hash, dry_run).await
-                {
+                let (_rootfs_lock, freed_bytes) =
+                    try_delete_orphan_rootfs(&rootfs_path, &rootfs_hash, dry_run, rootfs_lock)
+                        .await;
+                if let Some(freed_bytes) = freed_bytes {
                     report += GcReport::cleanup(1, freed_bytes);
                 }
                 continue;
