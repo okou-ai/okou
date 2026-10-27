@@ -8,10 +8,12 @@ import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant
 import {
   and,
   eq,
+  exists,
   getTableColumns,
   isNotNull,
   isNull,
   notInArray,
+  notExists,
   sql,
   SQL,
   type Column,
@@ -176,7 +178,7 @@ export function orgLimitedFreeBootstrapPublicationSql(
   const agent = publicationInsert(
     agents,
     bootstrapAgentValues(args),
-    sql`WHERE NOT EXISTS (${existingDefault})`,
+    sql`WHERE ${notExists(existingDefault)}`,
     sql`ON CONFLICT DO NOTHING`,
     sql`id`,
   );
@@ -232,6 +234,6 @@ export function orgLimitedFreeBootstrapPublicationSql(
           (SELECT count(*) FROM bootstrap_org WHERE tier = 'limited-free-1')
         AND ((SELECT count(*) FROM bootstrap_grant) = (SELECT count(*) FROM bootstrap_receipt)
           OR (EXISTS (SELECT 1 FROM bootstrap_receipt) AND NOT EXISTS (SELECT 1 FROM bootstrap_grant)
-            AND EXISTS (${existingGrant})))
+            AND ${exists(existingGrant)}))
         THEN 1 ELSE 0 END AS complete`;
 }
