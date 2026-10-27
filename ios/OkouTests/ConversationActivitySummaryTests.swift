@@ -253,7 +253,7 @@ private final class ActivityScenario: Sendable {
           $0 += 1
           return $0
         }
-        requestEvents.yield(count)
+        defer { requestEvents.yield(count) }
         if let wait = state.hold.withLock({ $0 }) { await wait() }
         if let override = state.response.withLock({ $0 }) { return override }
         let body =
