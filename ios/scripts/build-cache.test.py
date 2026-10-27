@@ -226,6 +226,7 @@ class BuildCacheTests(unittest.TestCase):
                 for compilation in ("true", "false", ""):
                     prepare = dependencies != "true" or compilation != "true"
                     needed = {
+                        "limit-compilation": compilation != "true",
                         "prepare": prepare,
                         "save-dependencies": dependencies != "true",
                         "verify-dependencies": dependencies != "true",
