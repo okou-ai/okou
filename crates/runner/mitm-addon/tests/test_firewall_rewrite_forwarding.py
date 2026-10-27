@@ -691,12 +691,58 @@ class TestAuthBaseUrlRewriteForwarding:
         assert upstream.socket.request_header_values("X-Drop") == []
         assert bytes(upstream.socket.sent).endswith(b"\r\n\r\n" + request_body)
 
+    async def test_large_repeated_connection_fields_filter_only_client_representation(
+        self, headers, real_flow, mitm_ctx, tmp_path
+    ):
+        request_body = b"\x1f\x8b\x08\x00coded-body"
+        irrelevant = ",".join(f"x{i:06x}" for i in range(8_192))
+        flow, allow, sandbox_info, token_meta = make_forwarding_rewrite_inputs(
+            real_flow,
+            tmp_path,
+            method="POST",
+            request_body=request_body,
+            request_headers=headers(
+                ("Connection", f"Content-Type,{irrelevant}"),
+                ("Content-Type", "application/client"),
+                ("Content-Encoding", "gzip"),
+                ("connection", f"{irrelevant},CONTENT-ENCODING"),
+                ("content-encoding", "br"),
+            ),
+            auth_overrides={
+                "headers": {
+                    "content-type": "${{ vars.CONTENT_TYPE }}",
+                    "Authorization": "Bearer ${{ secrets.TOKEN }}",
+                }
+            },
+            token_overrides={
+                "headers": {
+                    "content-type": "application/provider",
+                    "Authorization": "Bearer real",
+                }
+            },
+        )
+
+        with (
+            fake_forwarder_upstream() as upstream,
+            patch.object(auth, "get_firewall_headers", AsyncMock(return_value=token_meta)),
+            mitm_ctx(),
+        ):
+            await handle_firewall_request_without_upstream_admission(flow, allow, sandbox_info)
+
+        assert upstream.socket.request_header_values("Connection") == []
+        assert upstream.socket.request_header_values("Content-Encoding") == []
+        assert upstream.socket.request_header_values("Content-Type") == ["application/provider"]
+        assert upstream.socket.request_header_values("Authorization") == ["Bearer real"]
+        assert bytes(upstream.socket.sent).endswith(b"\r\n\r\n" + request_body)
+
+    @pytest.mark.parametrize("connection", ["", "Content-Type, Content-Encoding"])
     async def test_duplicate_content_type_returns_400_before_auth_or_forwarding(
         self,
         headers,
         real_flow,
         mitm_ctx,
         tmp_path,
+        connection,
     ):
         flow, allow, sandbox_info, token_meta = make_forwarding_rewrite_inputs(
             real_flow,
@@ -704,6 +750,7 @@ class TestAuthBaseUrlRewriteForwarding:
             method="POST",
             request_body=b"body",
             request_headers=headers(
+                ("Connection", connection),
                 ("Content-Type", "application/json"),
                 ("content-type", "text/plain"),
             ),
