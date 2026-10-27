@@ -65,17 +65,20 @@ public actor APIClient {
   /// Includes SDK lookup, one forced refresh on 401, and HTTP in one budget.
   public func authenticatedRequest(
     _ route: ApiRoute, body: JSONValue? = nil, timeout: TimeInterval,
+    trace: APIRequestTrace? = nil,
     tokenProvider: @escaping @Sendable (Bool) async throws -> String
   ) async throws -> APIResponse {
     try await withThrowingTaskGroup(of: APIResponse.self) { group in
       group.addTask {
         let token = try await tokenProvider(false)
         try Task.checkCancellation()
-        let response = try await self.request(route, token: token, body: body, timeout: timeout)
+        let response = try await self.request(
+          route, token: token, body: body, timeout: timeout, trace: trace)
         guard response.status == 401 else { return response }
         let renewed = try await tokenProvider(true)
         try Task.checkCancellation()
-        return try await self.request(route, token: renewed, body: body, timeout: timeout)
+        return try await self.request(
+          route, token: renewed, body: body, timeout: timeout, trace: trace)
       }
       group.addTask {
         try await Task.sleep(for: .seconds(timeout))
@@ -86,7 +89,8 @@ public actor APIClient {
     }
   }
   public func request(
-    _ route: ApiRoute, token: String? = nil, body: JSONValue? = nil, timeout: TimeInterval = 30
+    _ route: ApiRoute, token: String? = nil, body: JSONValue? = nil, timeout: TimeInterval = 30,
+    trace: APIRequestTrace? = nil
   ) async throws -> APIResponse {
     var request = URLRequest(
       url: try Self.url(for: route, baseURL: baseURL), timeoutInterval: timeout)
@@ -96,23 +100,41 @@ public actor APIClient {
       ApiConstants.clientTypeDesktop, forHTTPHeaderField: ApiConstants.clientTypeHeader)
     request.setValue(version, forHTTPHeaderField: ApiConstants.clientVersionHeader)
     request.setValue(sessionId, forHTTPHeaderField: ApiConstants.clientSessionIdHeader)
-    request.setValue(
-      UUID().uuidString.lowercased(), forHTTPHeaderField: ApiConstants.clientRequestIdHeader)
+    let requestId = UUID().uuidString.lowercased()
+    request.setValue(requestId, forHTTPHeaderField: ApiConstants.clientRequestIdHeader)
     if let body {
       request.httpBody = try JSONEncoder().encode(body)
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     }
     // URLRequest's timeout is an inactivity timeout. Claims and completion
     // reports require a total wall-clock deadline even if bytes keep arriving.
-    let (data, response) = try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
-      group.addTask { [session, request] in try await session.data(for: request) }
-      group.addTask {
-        try await Task.sleep(for: .seconds(timeout))
-        throw DesktopFailure("network_error", "Desktop API request timed out")
+    let started = ContinuousClock.now
+    let startedAt = Date()
+    let data: Data
+    let response: URLResponse
+    do {
+      (data, response) = try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+        group.addTask { [session, request] in try await session.data(for: request) }
+        group.addTask {
+          try await Task.sleep(for: .seconds(timeout))
+          throw DesktopFailure("network_error", "Desktop API request timed out")
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
       }
-      defer { group.cancelAll() }
-      return try await group.next()!
+    } catch {
+      await trace?.record(
+        APIRequestDiagnostic(
+          requestId: requestId, sessionId: sessionId, startedAt: startedAt,
+          duration: started.duration(to: .now), error: error))
+      throw error
     }
+    // Preserve HTTP evidence even when an edge's HTML error page fails JSON decoding.
+    await trace?.record(
+      APIRequestDiagnostic(
+        requestId: requestId, sessionId: sessionId, startedAt: startedAt,
+        duration: started.duration(to: .now), response: response as? HTTPURLResponse,
+        responseBytes: data.count))
     guard let http = response as? HTTPURLResponse else {
       throw DesktopFailure("network_error", "Invalid API response")
     }

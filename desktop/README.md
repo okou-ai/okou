@@ -32,6 +32,30 @@ verification rejects a missing DSN so error reporting cannot silently disappear.
 
 ### Error diagnostics
 
+Host heartbeat failures upload a correlated episode to the Desktop Sentry project.
+The first failed attempt emits an error immediately; recovery, stopping the host,
+or rejection of its authority emits one summary with the same `episodeId`.
+Filter by `heartbeatOutcome` (`failed`, `recovered`, `stopped`, or
+`authority_rejected`) or `heartbeatEpisodeId` and inspect `contexts.heartbeat`.
+Normal heartbeats do not emit events, and the SDK's automatic heartbeat
+`HTTPClientError` is suppressed to avoid duplicate reports. Automatic HTTP error
+capture for other routes is unchanged.
+
+Each episode retains its first failure and its ten most recent failed attempts,
+the total failure count, omitted-history count, retry delays, and observed duration.
+Request diagnostics include client request/session IDs, HTTP status, response byte
+count, duration, and bounded response headers (`cf-ray`, `x-vercel-id`,
+`x-vercel-cache`, `x-request-id`, `server`, `content-type`, and `retry-after`).
+A forced 401 refresh retains both wire attempts with distinct request IDs.
+HTTP metadata is recorded before JSON decoding, so HTML edge errors remain
+attributable. Transport failures retain their error type and URL error code.
+Raw URLs, host IDs/names, request/response bodies, credentials, cookies, and error
+descriptions are excluded. Events use an event-local context, not shared breadcrumbs.
+Retry, authentication, command execution, and cancellation behavior are unchanged.
+The SDK owns delivery and caching; a capture call does not prove ingestion.
+An interrupted process may leave only its initial failure event. These diagnostics
+provide correlation evidence, not proof of a Cloudflare or origin root cause.
+
 Malformed native helper responses and responses without a numeric request ID
 automatically attach `native-helper-response.bin` and
 `native-helper-diagnostics.txt` to their Sentry error event. The binary file
