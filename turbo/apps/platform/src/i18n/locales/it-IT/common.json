@@ -623,8 +623,7 @@
       },
       "slideTitle": "Diapositiva {{number}}",
       "unavailable": "{{kind}} anteprima non disponibile.",
-      "videoLabel": "Anteprima video per {{filename}}",
-      "wordSeparateTab": "Apri questo documento Word in una scheda separata per evitare che lo zoom ridimensioni questa pagina."
+      "videoLabel": "Anteprima video per {{filename}}"
     },
     "sharing": {
       "accessLabel": "Chi può accedere",

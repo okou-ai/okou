@@ -623,8 +623,7 @@
       },
       "slideTitle": "Slide {{number}}",
       "unavailable": "Visualização de {{kind}} indisponível.",
-      "videoLabel": "Visualização de vídeo de {{filename}}",
-      "wordSeparateTab": "Abra este documento do Word em outra aba para que o zoom não altere o tamanho desta página."
+      "videoLabel": "Visualização de vídeo de {{filename}}"
     },
     "sharing": {
       "accessLabel": "Quem pode acessar",

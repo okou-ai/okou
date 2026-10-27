@@ -606,8 +606,7 @@
       },
       "slideTitle": "スライド {{number}}",
       "unavailable": "{{kind}} プレビューは利用できません。",
-      "videoLabel": "{{filename}} のビデオ プレビュー",
-      "wordSeparateTab": "Word 文書を別のタブで開くと、ズームしてもこのページの表示サイズは変わりません。"
+      "videoLabel": "{{filename}} のビデオ プレビュー"
     },
     "sharing": {
       "accessLabel": "アクセスできるユーザー",

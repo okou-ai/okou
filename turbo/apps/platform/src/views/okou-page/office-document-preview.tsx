@@ -55,11 +55,6 @@ export function OfficeDocumentPreview({
         <p className="max-w-full truncate text-sm font-medium" title={filename}>
           {filename}
         </p>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          {t(($) => {
-            return $.artifacts.preview.wordSeparateTab;
-          })}
-        </p>
         <a
           href={officeDocumentViewerUrl(resourceUrl)}
           target="_blank"

@@ -607,8 +607,7 @@
       },
       "slideTitle": "Folie {{number}}",
       "unavailable": "{{kind}}-Vorschau nicht verfügbar.",
-      "videoLabel": "Videovorschau für {{filename}}",
-      "wordSeparateTab": "Öffne dieses Word-Dokument in einem separaten Tab, damit das Zoomen diese Seite nicht vergrößert."
+      "videoLabel": "Videovorschau für {{filename}}"
     },
     "sharing": {
       "accessLabel": "Wer hat Zugriff",

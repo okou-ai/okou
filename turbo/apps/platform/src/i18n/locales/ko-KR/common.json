@@ -606,8 +606,7 @@
       },
       "slideTitle": "슬라이드 {{number}}",
       "unavailable": "{{kind}} 미리보기를 사용할 수 없습니다.",
-      "videoLabel": "{{filename}} 비디오 미리보기",
-      "wordSeparateTab": "Word 문서를 새 탭에서 열면 확대하거나 축소해도 이 페이지의 크기가 바뀌지 않습니다."
+      "videoLabel": "{{filename}} 비디오 미리보기"
     },
     "sharing": {
       "accessLabel": "액세스 권한",
