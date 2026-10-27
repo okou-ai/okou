@@ -10,7 +10,6 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
-  private(set) var canUseComposerConnectors = false
   private var archivingEnabled: Bool?
   var canArchiveChats: Bool { archivingEnabled == true }
   private(set) var canMuteChats = false
@@ -169,7 +168,6 @@ final class ThreadListStore {
   }
 
   private func applySwitches(_ switches: SidebarFeatureSwitches) {
-    canUseComposerConnectors = switches.effectiveSwitches["iosComposerConnectors"] == true
     archivingEnabled = switches.effectiveSwitches["chatThreadArchiving"] == true
     canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }

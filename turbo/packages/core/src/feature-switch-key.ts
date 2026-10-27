@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  IosComposerConnectors = "iosComposerConnectors",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
   HostedSiteVisibility = "hostedSiteVisibility",

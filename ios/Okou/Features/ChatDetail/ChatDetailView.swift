@@ -7,7 +7,6 @@ struct ChatDetailView: View {
   let topContentInset: CGFloat
   let sidebar: SidebarInteraction?
   let mentionSource: ComposerMentionSource?
-  let connectorsEnabled: Bool
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,14 +23,12 @@ struct ChatDetailView: View {
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0,
-    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil,
-    connectorsEnabled: Bool = false
+    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil
   ) {
     self.conversation = conversation
     self.topContentInset = topContentInset
     self.sidebar = sidebar
     self.mentionSource = mentionSource
-    self.connectorsEnabled = connectorsEnabled
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -217,7 +214,7 @@ struct ChatDetailView: View {
             await scrolling.send()
           }
         }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
-        connectorSelection: connectorsEnabled ? conversation.modelSelection?.connectors : nil,
+        connectorSelection: conversation.modelSelection?.connectors,
         mentionSource: mentionSource,
         workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
         sendTransition: scrolling.sendTransition

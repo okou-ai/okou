@@ -46,14 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.IosComposerConnectors]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "iOS composer connectors",
-    description:
-      "Choose connector accounts, permissions, and remote access from native iOS chat.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.SlackWorkspaceIdentity]: {
     maintainer: "yuma@okou.ai",
     displayName: "Slack workspace identity",
