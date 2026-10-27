@@ -1,5 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -36,6 +37,7 @@ test("VNC is available in the Remote control connection list", async () => {
   await setupPage({
     context,
     path: "/connectors?scope=remote-control",
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
   });
   await expect(
     screen.findByRole("heading", { name: "VNC" }),

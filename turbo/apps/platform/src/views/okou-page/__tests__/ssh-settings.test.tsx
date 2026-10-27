@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sshCredentialsContract,
   type SshCredentialResponse,
@@ -402,6 +403,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
 async function page(path = "/connectors?scope=remote-control&type=ssh") {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path,
     auth,
   });
@@ -513,9 +515,9 @@ test("SSH host settings update the chat remote access default", async () => {
   );
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=ssh",
     auth,
-    featureSwitches: {},
   });
   const toggle = await screen.findByRole("switch", {
     name: "Enabled by default for chats",
@@ -926,12 +928,13 @@ test.each([
   },
 );
 
-test("An ordinary owner can manage SSH without feature overrides", async () => {
+test("An opted-out owner can manage SSH", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [base] });
   });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=ssh",
   });
   await screen.findByText("deploy@ssh.example.com:22");

@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
@@ -746,8 +747,8 @@ test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
       await fill(search, "ssh");
       const entry = await findFastControl("link", "Manage SSH hosts", dialog);
       click(entry);
-      click(await findFastControl("button", "Add host"));
-      await screen.findByRole("dialog", { name: "Add host" });
+      click(await findFastControl("button", "Add connection"));
+      await screen.findByRole("heading", { name: "Add remote connection" });
     }
     await waitFor(() => {
       return expect(window.location.pathname).toBe(
@@ -755,7 +756,7 @@ test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
       );
     });
     expect(window.location.search).toBe(
-      showEntry ? "?scope=remote-control&type=ssh" : "",
+      showEntry ? "?scope=remote-control&type=ssh&setup=add" : "",
     );
   },
 );
@@ -798,13 +799,15 @@ test("Directory SSH setup follows shelves and categories", async () => {
   await within(dialog).findByTestId("connector-shelf-head");
   const entry = await findFastControl("link", "Manage SSH hosts", dialog);
   click(entry);
-  click(await findFastControl("button", "Add host"));
-  await screen.findByRole("dialog", { name: "Add host" });
+  click(await findFastControl("button", "Add connection"));
+  await screen.findByRole("heading", { name: "Add remote connection" });
   expect(window.location.pathname).toBe("/connectors");
-  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
+  expect(window.location.search).toBe(
+    "?scope=remote-control&type=ssh&setup=add",
+  );
 });
 
-test("Manage SSH hosts reopens Remote control on connections after viewing credentials", async () => {
+test("Manage SSH hosts reopens opted-out Remote control on connections after viewing credentials", async () => {
   installComposerConnectorFixture();
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: 0 });
@@ -815,7 +818,11 @@ test("Manage SSH hosts reopens Remote control on connections after viewing crede
   context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
     return respond(200, { credentials: [] });
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
+  });
   const openSshFromComposer = async () => {
     click(await findFastControl("button", "Connectors"));
     click(await findFastControl("button", "Add connectors"));

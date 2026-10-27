@@ -167,62 +167,74 @@ test("Maintainer filters narrow the feature list", async () => {
 });
 
 test.each([
-  FeatureSwitchKey.TestOauthConnector,
-  FeatureSwitchKey.RemoteControlGuidedSetup,
-])("Toggle and reset a Lab override: %s", async (featureKey) => {
-  const user = userEvent.setup();
-  const updatedSwitches: Record<string, boolean>[] = [];
-  let resetRequested = false;
+  [FeatureSwitchKey.TestOauthConnector, false],
+  [FeatureSwitchKey.RemoteControlGuidedSetup, true],
+] as const)(
+  "Toggle and reset a Lab override: %s",
+  async (featureKey, defaultEnabled) => {
+    const user = userEvent.setup();
+    const updatedSwitches: Record<string, boolean>[] = [];
+    let resetRequested = false;
 
-  await setupPage({
-    context,
-    path: "/_/lab",
-    featureSwitches: {
+    await setupPage({
+      context,
+      path: "/_/lab",
+      featureSwitches: {
+        [FeatureSwitchKey.Lab]: true,
+        [featureKey]: defaultEnabled,
+      },
+    });
+    await screen.findByRole("heading", { name: "Lab" });
+
+    let effectiveSwitches: Record<string, boolean> = {
       [FeatureSwitchKey.Lab]: true,
-      [featureKey]: false,
-    },
-  });
-  await screen.findByRole("heading", { name: "Lab" });
-
-  let effectiveSwitches: Record<string, boolean> = {
-    [FeatureSwitchKey.Lab]: true,
-    [featureKey]: false,
-  };
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, {
-      switches: effectiveSwitches,
-      effectiveSwitches,
+      [featureKey]: defaultEnabled,
+    };
+    context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+      return respond(200, {
+        switches: effectiveSwitches,
+        effectiveSwitches,
+      });
     });
-  });
-  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    updatedSwitches.push(body.switches);
-    effectiveSwitches = { ...effectiveSwitches, ...body.switches };
-    return respond(200, {
-      switches: effectiveSwitches,
-      effectiveSwitches,
+    context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+      updatedSwitches.push(body.switches);
+      effectiveSwitches = { ...effectiveSwitches, ...body.switches };
+      return respond(200, {
+        switches: effectiveSwitches,
+        effectiveSwitches,
+      });
     });
-  });
-  context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
-    resetRequested = true;
-    effectiveSwitches = { [FeatureSwitchKey.Lab]: true };
-    return respond(200, { deleted: true });
-  });
+    context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
+      resetRequested = true;
+      effectiveSwitches = { [FeatureSwitchKey.Lab]: true };
+      return respond(200, { deleted: true });
+    });
 
-  const feature = featureSwitchRow(featureKey);
-  const featureControl = within(feature).getByRole("switch");
-  expect(featureControl).not.toBeChecked();
+    const feature = featureSwitchRow(featureKey);
+    const featureControl = within(feature).getByRole("switch");
+    expect(featureControl).toHaveAttribute(
+      "aria-checked",
+      String(defaultEnabled),
+    );
 
-  await user.click(featureControl);
+    await user.click(featureControl);
 
-  await waitFor(() => {
-    expect(featureControl).toBeChecked();
-  });
-  expect(updatedSwitches).toStrictEqual([{ [featureKey]: true }]);
+    await waitFor(() => {
+      expect(featureControl).toHaveAttribute(
+        "aria-checked",
+        String(!defaultEnabled),
+      );
+    });
+    expect(updatedSwitches).toStrictEqual([{ [featureKey]: !defaultEnabled }]);
 
-  await user.click(buttonNamed("Reset all"));
+    await user.click(buttonNamed("Reset all"));
 
-  await waitFor(() => {
-    expect(resetRequested).toBeTruthy();
-    expect(featureControl).not.toBeChecked();
-  });
-});
+    await waitFor(() => {
+      expect(resetRequested).toBeTruthy();
+      expect(featureControl).toHaveAttribute(
+        "aria-checked",
+        String(defaultEnabled),
+      );
+    });
+  },
+);

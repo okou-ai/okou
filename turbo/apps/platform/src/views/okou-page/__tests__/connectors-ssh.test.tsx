@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -80,6 +81,7 @@ test("Remote control summarizes SSH hosts that need attention and recovers", asy
   });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=ssh",
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
@@ -133,6 +135,7 @@ test("Management scope changes release hidden lists and read current data on ret
   });
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path: "/connectors?scope=remote-control&type=ssh",
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
@@ -240,7 +243,11 @@ function mockCatalog() {
 }
 
 async function page(path: string) {
-  await setupPage({ context, path });
+  await setupPage({
+    context,
+    path,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
+  });
 }
 
 test("Deleting an SSH host referenced by VNC explains how to resolve the dependency", async () => {

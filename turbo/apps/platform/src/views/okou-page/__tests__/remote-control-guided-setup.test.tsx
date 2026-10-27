@@ -679,14 +679,19 @@ test("Other computer screen-sharing services retain explicit authentication and 
 });
 
 test.each(["staff-colleague", "external-user"])(
-  "A stored UI opt-in enables guided setup for %s",
+  "Guided setup is enabled by default for %s",
   async (userId) => {
-    await page(
-      "/connectors?scope=remote-control&setup=vnc",
-      true,
-      "member",
-      userId,
-    );
+    await setupPage({
+      context,
+      path: "/connectors?scope=remote-control&setup=vnc",
+      auth: {
+        user: { id: userId, fullName: "Network Owner" },
+        organization: {
+          activeOrg: { id: "external-org", name: "External" },
+          memberships: [{ id: "external-org" }],
+        },
+      },
+    });
     await expect(
       screen.findByRole("heading", { name: "Add remote connection" }),
     ).resolves.toBeInTheDocument();

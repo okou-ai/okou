@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
@@ -45,6 +46,7 @@ function mockRemoteAccess() {
 async function page(path = "/connectors") {
   await setupPage({
     context,
+    featureSwitches: { [FeatureSwitchKey.RemoteControlGuidedSetup]: false },
     path,
   });
 }
