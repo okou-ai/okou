@@ -85,7 +85,8 @@ final class NotificationTests: XCTestCase {
     XCTAssertFalse(fixture.requests.values.withLock { $0.contains { $0.contains("mark-read") } })
   }
 
-  func testBackgroundLaunchRestoresAuthenticationBeforeRejectingUnavailableMembership() async throws {
+  func testBackgroundLaunchRestoresAuthenticationBeforeRejectingUnavailableMembership() async throws
+  {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
     identity.state.withLock { $0.failMemberships = true }
