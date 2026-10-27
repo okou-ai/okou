@@ -13,6 +13,16 @@ name: iOS Warm Cache Probe Experiment
         description: Comparison label
         type: string
         required: true
+      scenario:
+        description: Exact-hit timing or isolated recovery proof
+        type: choice
+        options:
+        - exact
+        - cold
+        - partial
+        - healed
+        default: exact
+        required: true
 permissions:
   contents: read
   actions: read
@@ -82,6 +92,7 @@ jobs:
         vm_stat
         bash ios/scripts/ci-test.sh compile
         vm_stat
+    if: inputs.scenario == 'exact'
   warm-archive:
     runs-on: xcode-27
     timeout-minutes: 8
@@ -136,3 +147,206 @@ jobs:
       id: compile
       if: steps.cache.outputs.dependencies-hit != 'true' || steps.cache.outputs.compilation-hit != 'true'
       run: bash ios/scripts/build-archive.sh
+    if: inputs.scenario == 'exact'
+  recovery-warm:
+    if: inputs.scenario != 'exact'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: a1eaff89f5c436d173378e780aa89808d4395bc1
+        persist-credentials: false
+    - name: Receive experiment action
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        path: .cache-experiment-driver
+        sparse-checkout: .github/actions/ios-cache-probe-candidate
+        persist-credentials: false
+    - name: Select candidate action
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p .github/actions/ios-cache-under-test
+        cp .cache-experiment-driver/.github/actions/ios-cache-probe-candidate/action.yml .github/actions/ios-cache-under-test/action.yml
+    - name: Restore native cache
+      id: cache
+      uses: ./.github/actions/ios-cache-under-test
+      with:
+        skip-restore-on-hit: 'true'
+    - name: Verify controlled cache state
+      shell: bash
+      env:
+        SCENARIO: ${{ inputs.scenario }}
+        DEPENDENCIES_HIT: ${{ steps.cache.outputs.dependencies-hit }}
+        COMPILATION_HIT: ${{ steps.cache.outputs.compilation-hit }}
+        DEPENDENCIES_PATH: ${{ steps.cache.outputs.dependencies-path }}
+        COMPILATION_PATH: ${{ steps.cache.outputs.compilation-path }}
+        DEPENDENCIES_KEY: ${{ steps.cache.outputs.dependencies-key }}
+        COMPILATION_KEY: ${{ steps.cache.outputs.compilation-key }}
+      run: |
+        set -euo pipefail
+        case "$SCENARIO" in
+          cold) [[ "$DEPENDENCIES_HIT" != true && "$COMPILATION_HIT" != true ]] ;;
+          partial) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" != true && -d "$DEPENDENCIES_PATH" ]] ;;
+          healed) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" == true && ! -e "$DEPENDENCIES_PATH" && ! -e "$COMPILATION_PATH" ]] ;;
+          *) exit 1 ;;
+        esac
+        python3 - <<'PROOF'
+        import json,os,pathlib
+        fields=['SCENARIO','DEPENDENCIES_HIT','COMPILATION_HIT','DEPENDENCIES_KEY','COMPILATION_KEY','GITHUB_REF','GITHUB_SHA']
+        pathlib.Path(os.environ['RUNNER_TEMP'],'cache-proof.json').write_text(json.dumps({x:os.environ.get(x,'') for x in fields},indent=2)+'\n')
+        PROOF
+    - name: Prepare locked dependencies
+      id: prepare
+      if: steps.cache.outputs.dependencies-hit != 'true' || steps.cache.outputs.compilation-hit != 'true'
+      run: bash ios/scripts/ci-test.sh prepare
+    - name: Save main SwiftPM cache
+      id: save-dependencies
+      if: steps.cache.outputs.dependencies-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.dependencies-path }}
+        key: ${{ steps.cache.outputs.dependencies-key }}
+    - name: Verify main SwiftPM cache
+      id: verify-dependencies
+      if: steps.cache.outputs.dependencies-hit != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.dependencies-path }}
+        key: ${{ steps.cache.outputs.dependencies-key }}
+        lookup-only: 'true'
+        fail-on-cache-miss: 'true'
+    - name: Prepare compiler cache
+      id: compile
+      if: steps.cache.outputs.compilation-hit != 'true'
+      run: |
+        sysctl hw.ncpu hw.memsize
+        vm_stat
+        bash ios/scripts/ci-test.sh compile
+        vm_stat
+    - name: Save main Xcode compilation cache
+      id: save-compilation
+      if: steps.cache.outputs.compilation-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.compilation-path }}
+        key: ${{ steps.cache.outputs.compilation-key }}
+    - name: Verify main Xcode compilation cache
+      id: verify-compilation
+      if: steps.cache.outputs.compilation-hit != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.compilation-path }}
+        key: ${{ steps.cache.outputs.compilation-key }}
+        lookup-only: 'true'
+        fail-on-cache-miss: 'true'
+    - name: Retain recovery proof
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: cache-proof-warm-${{ inputs.scenario }}-${{ github.run_id }}
+        path: ${{ runner.temp }}/cache-proof.json
+        if-no-files-found: error
+        retention-days: 7
+    env:
+      IOS_TEST_DESTINATION: platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro,arch=arm64
+  recovery-warm-archive:
+    if: inputs.scenario != 'exact'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      IOS_ARCHIVE_CACHE_ENABLED: 'true'
+      IOS_TEST_DESTINATION: platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro,arch=arm64
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: a1eaff89f5c436d173378e780aa89808d4395bc1
+        persist-credentials: false
+    - name: Receive experiment action
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        path: .cache-experiment-driver
+        sparse-checkout: .github/actions/ios-cache-probe-candidate
+        persist-credentials: false
+    - name: Select candidate action
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p .github/actions/ios-cache-under-test
+        cp .cache-experiment-driver/.github/actions/ios-cache-probe-candidate/action.yml .github/actions/ios-cache-under-test/action.yml
+    - name: Configure Release archive workspace
+      run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+    - name: Restore Release archive caches
+      id: cache
+      uses: ./.github/actions/ios-cache-under-test
+      with:
+        target: archive
+        skip-restore-on-hit: 'true'
+    - name: Verify controlled cache state
+      shell: bash
+      env:
+        SCENARIO: ${{ inputs.scenario }}
+        DEPENDENCIES_HIT: ${{ steps.cache.outputs.dependencies-hit }}
+        COMPILATION_HIT: ${{ steps.cache.outputs.compilation-hit }}
+        DEPENDENCIES_PATH: ${{ steps.cache.outputs.dependencies-path }}
+        COMPILATION_PATH: ${{ steps.cache.outputs.compilation-path }}
+        DEPENDENCIES_KEY: ${{ steps.cache.outputs.dependencies-key }}
+        COMPILATION_KEY: ${{ steps.cache.outputs.compilation-key }}
+      run: |
+        set -euo pipefail
+        case "$SCENARIO" in
+          cold) [[ "$DEPENDENCIES_HIT" != true && "$COMPILATION_HIT" != true ]] ;;
+          partial) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" != true && -d "$DEPENDENCIES_PATH" ]] ;;
+          healed) [[ "$DEPENDENCIES_HIT" == true && "$COMPILATION_HIT" == true && ! -e "$DEPENDENCIES_PATH" && ! -e "$COMPILATION_PATH" ]] ;;
+          *) exit 1 ;;
+        esac
+        python3 - <<'PROOF'
+        import json,os,pathlib
+        fields=['SCENARIO','DEPENDENCIES_HIT','COMPILATION_HIT','DEPENDENCIES_KEY','COMPILATION_KEY','GITHUB_REF','GITHUB_SHA']
+        pathlib.Path(os.environ['RUNNER_TEMP'],'cache-proof.json').write_text(json.dumps({x:os.environ.get(x,'') for x in fields},indent=2)+'\n')
+        PROOF
+    - name: Build and validate main Release archive caches
+      id: compile
+      if: steps.cache.outputs.dependencies-hit != 'true' || steps.cache.outputs.compilation-hit != 'true'
+      run: bash ios/scripts/build-archive.sh
+    - name: Save main Release dependencies
+      id: save-dependencies
+      if: steps.cache.outputs.dependencies-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.dependencies-path }}
+        key: ${{ steps.cache.outputs.dependencies-key }}
+    - name: Verify main Release dependency cache
+      id: verify-dependencies
+      if: steps.cache.outputs.dependencies-hit != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.dependencies-path }}
+        key: ${{ steps.cache.outputs.dependencies-key }}
+        lookup-only: 'true'
+        fail-on-cache-miss: 'true'
+    - name: Save main Release compilation cache
+      id: save-compilation
+      if: steps.cache.outputs.compilation-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.compilation-path }}
+        key: ${{ steps.cache.outputs.compilation-key }}
+    - name: Verify main Release compilation cache
+      id: verify-compilation
+      if: steps.cache.outputs.compilation-hit != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.cache.outputs.compilation-path }}
+        key: ${{ steps.cache.outputs.compilation-key }}
+        lookup-only: 'true'
+        fail-on-cache-miss: 'true'
+    - name: Retain recovery proof
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: cache-proof-warm-archive-${{ inputs.scenario }}-${{ github.run_id }}
+        path: ${{ runner.temp }}/cache-proof.json
+        if-no-files-found: error
+        retention-days: 7
