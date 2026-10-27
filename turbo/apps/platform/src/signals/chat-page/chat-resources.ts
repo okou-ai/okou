@@ -22,6 +22,24 @@ const chatResourcesEnabledByDefault$ = computed(async (get) => {
   return (await get(userPreferences$)).chatResourcesEnabledByDefault;
 });
 
+const saveChatResourcesPreference$ = command(
+  async ({ get, set }, open: boolean, signal: AbortSignal) => {
+    const preferred = await get(chatResourcesEnabledByDefault$);
+    signal.throwIfAborted();
+    // An empty chat can be hidden while its saved preference is already on.
+    if (preferred === open) {
+      return;
+    }
+    await set(
+      updateUserPreference$,
+      { chatResourcesEnabledByDefault: open },
+      signal,
+    );
+    await get(userPreferences$);
+    signal.throwIfAborted();
+  },
+);
+
 export const copyChatResourceArtifact$ = command(
   async (
     { get, set },
@@ -185,13 +203,7 @@ function createChatResourcePanelSignals() {
         set(choice$, { open, narrow: true });
         return;
       }
-      await set(
-        updateUserPreference$,
-        { chatResourcesEnabledByDefault: open },
-        signal,
-      );
-      await get(userPreferences$);
-      signal.throwIfAborted();
+      await set(saveChatResourcesPreference$, open, signal);
       // An explicit open also shows a chat that has nothing to list yet.
       set(choice$, open ? { open, narrow: false } : null);
     },
