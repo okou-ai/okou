@@ -33,10 +33,9 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command } from "ccstate";
-import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lte, not, sql } from "drizzle-orm";
 import { object, string, type infer as zInfer } from "zod";
 
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -47,10 +46,8 @@ import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import {
-  recordSandboxOperation,
-  recordSandboxOperations,
-} from "../external/sandbox-op-log";
+import { recordSandboxOperations } from "../external/sandbox-op-log";
+import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
 import {
   onRejection,
   settle,
@@ -799,46 +796,6 @@ async function loadCompletedChatOutput(
     latestAssistant: dbOutput.latestAssistant,
     resultFallback: dbOutput.resultFallback,
   };
-}
-
-async function recordLastEventToComplete(db: Db, runId: string): Promise<void> {
-  const [run] = await db
-    .select({ completedAt: agentRuns.completedAt })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!run?.completedAt) {
-    return;
-  }
-
-  const [event] = await db
-    .select({
-      lastEventAt: max(chatEvents.createdAt).mapWith(
-        nullableDriverValueDecoder(chatEvents.createdAt),
-      ),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.runId, runId),
-        chatEventTypeIn(["output.message"]),
-        isNotNull(chatEvents.runEventSequenceNumber),
-      ),
-    );
-  if (!event?.lastEventAt) {
-    return;
-  }
-
-  recordSandboxOperation({
-    sandboxType: "runner",
-    actionType: "last_event_to_complete",
-    durationMs: Math.max(
-      0,
-      run.completedAt.getTime() - event.lastEventAt.getTime(),
-    ),
-    success: true,
-    runId,
-  });
 }
 
 interface SlackDeliveryTarget {
@@ -1831,7 +1788,7 @@ const handleCompletedChatCallback$ = command(
     signal.throwIfAborted();
 
     waitUntil(
-      tapError(recordLastEventToComplete(args.db, args.runId), (error) => {
+      tapError(set(recordLastEventToComplete$, args.runId), (error) => {
         log.warn("Failed to record last_event_to_complete", {
           runId: args.runId,
           error,
