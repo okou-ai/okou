@@ -381,19 +381,54 @@ async fn cancelled_dns_does_not_block_guest_park_or_the_next_runs_quota() {
 
 #[tokio::test]
 async fn timeout_after_exec_ack_is_unknown_without_replay() {
-    let h = Harness::new(Reply::Hold).await;
-    let _resolve = h.resolve(h.credential(true)).await;
-    let frames = h
-        .raw(
-            json!({"version":1,"method":"ssh.exec","remaining_ms":2000,"params":params()})
+    use raw_http_test_support::clock::advance_timer_phase;
+    use runner_rpc_proto::ResponseReader;
+    use tokio::time::{Instant, timeout};
+
+    for setup_delay in [Duration::ZERO, Duration::from_millis(1_100)] {
+        let mut h = Harness::new(Reply::Hold).await;
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *h.network.resolve_gate.lock().unwrap() = Some(Arc::clone(&gate));
+        let _resolve = h.resolve(h.credential(true)).await;
+        let mut guest = h.open().await;
+        let started = Instant::now();
+        harness::send_request(
+            &mut guest,
+            &json!({"version":1,"method":"ssh.exec","remaining_ms":60000,"params":params()})
                 .to_string(),
         )
         .await;
-    assert_eq!(frames[0]["data"]["type"], "accepted");
-    assert_eq!(terminal(&frames)["failure_reason"], "timed_out");
-    assert_eq!(terminal(&frames)["effects"], "unknown");
-    assert_eq!(h.observed.commands.lock().unwrap().len(), 1);
-    assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
+        wait_for(|| !h.observed.queries.lock().unwrap().is_empty()).await;
+        // Delay admitted setup beyond the old work budget without pausing I/O.
+        advance_timer_phase(setup_delay).await;
+        gate.add_permits(1);
+
+        let mut reader = ResponseReader::new(guest);
+        let accepted = timeout(Duration::from_secs(5), reader.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let mut frames = vec![serde_json::to_value(accepted).unwrap()];
+        assert_eq!(frames[0]["type"], "event");
+        assert_eq!(frames[0]["data"]["type"], "accepted");
+
+        // Account for setup already spent and keep the terminal reserve intact.
+        let work_budget = Duration::from_secs(60) - super::TERMINAL_RESERVE;
+        advance_timer_phase(work_budget.saturating_sub(started.elapsed())).await;
+        timeout(Duration::from_secs(5), async {
+            while let Some(frame) = reader.next().await.unwrap() {
+                frames.push(serde_json::to_value(frame).unwrap());
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(terminal(&frames)["failure_reason"], "timed_out");
+        assert_eq!(terminal(&frames)["effects"], "unknown");
+        assert_eq!(h.observed.commands.lock().unwrap().len(), 1);
+        assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
+        h.shutdown().await;
+    }
 }
 
 #[tokio::test]
