@@ -251,20 +251,63 @@ describe("Halloween quiz", () => {
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
+    const enabledActor = actor();
+    let activeRound: HalloweenRound | null = null;
     for (const now of ["2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z"]) {
       mockNow(new Date(now));
       expect(
         (await accept(game.status({ headers }), [200])).body,
       ).toStrictEqual({ phase: "open" });
-      await accept(game.start({ headers, body: { restart: true } }), [200]);
+      activeRound = (
+        await accept(game.start({ headers, body: { restart: true } }), [200])
+      ).body;
+    }
+    if (!activeRound?.question) {
+      throw new Error("Expected an active Halloween round");
     }
 
-    actor(false);
+    mocks.clerk.session(enabledActor.userId, `org_${randomUUID()}`);
     expect((await accept(game.status({ headers }), [200])).body).toStrictEqual({
       phase: "unavailable",
     });
     await accept(game.current({ headers }), [409]);
     await accept(game.start({ headers, body: { restart: false } }), [409]);
+    const unavailable = {
+      status: 409,
+      body: {
+        error: {
+          code: "CONFLICT",
+          message: "This Halloween quiz is not open",
+        },
+      },
+    };
+    await expect(
+      game.answer({
+        headers,
+        body: {
+          ...roundReference(activeRound),
+          questionId: activeRound.question.id,
+          optionId: correctOption(activeRound),
+        },
+      }),
+    ).resolves.toMatchObject(unavailable);
+    await expect(
+      game.next({
+        headers,
+        body: {
+          ...roundReference(activeRound),
+          questionId: activeRound.question.id,
+        },
+      }),
+    ).resolves.toMatchObject(unavailable);
+    await expect(
+      game.leave({ headers, body: roundReference(activeRound) }),
+    ).resolves.toMatchObject(unavailable);
+
+    mocks.clerk.session(enabledActor.userId, enabledActor.orgId);
+    expect((await accept(game.current({ headers }), [200])).body).toStrictEqual(
+      activeRound,
+    );
   });
 
   it("requires authentication for every gameplay endpoint", async () => {

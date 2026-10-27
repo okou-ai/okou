@@ -78,6 +78,9 @@ const answer$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
+  if ((await set(phase$, signal)) !== "open") {
+    return conflict("This Halloween quiz is not open");
+  }
   return await set(
     answerHalloweenRound$,
     { ...body.data, userId: get(authContext$).userId },
@@ -90,6 +93,9 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
+  if ((await set(phase$, signal)) !== "open") {
+    return conflict("This Halloween quiz is not open");
+  }
   return await set(
     advanceHalloweenRound$,
     { ...body.data, userId: get(authContext$).userId },
@@ -101,6 +107,9 @@ const leave$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
+  }
+  if ((await set(phase$, signal)) !== "open") {
+    return conflict("This Halloween quiz is not open");
   }
   return await set(
     leaveHalloweenRound$,
