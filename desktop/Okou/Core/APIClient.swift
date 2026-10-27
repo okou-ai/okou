@@ -88,6 +88,8 @@ public actor APIClient {
       return try await group.next()!
     }
   }
+  /// Transport errors, including native timeouts and cancellation, propagate unchanged.
+  /// The total request deadline throws a `DesktopFailure` with code `network_error`.
   public func request(
     _ route: ApiRoute, token: String? = nil, body: JSONValue? = nil, timeout: TimeInterval = 30,
     trace: APIRequestTrace? = nil
