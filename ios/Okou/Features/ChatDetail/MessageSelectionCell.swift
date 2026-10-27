@@ -16,7 +16,7 @@ final class MessageSelectionCell: UICollectionViewCell {
     super.buildMenu(with: builder)
     guard let action = quoteAction() else { return }
     builder.insertChild(
-      UIMenu(options: .displayInline, children: [action]), atStartOfMenu: .standardEdit)
+      UIMenu(options: .displayInline, children: [action]), atEndOfMenu: .standardEdit)
   }
 
   func quoteAction() -> UIAction? {
