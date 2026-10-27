@@ -2,6 +2,7 @@ import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agents } from "@okouai/db/schema/agent";
 import {
   chatEvents,
@@ -10,6 +11,7 @@ import {
 import { command } from "ccstate";
 import {
   and,
+  asc,
   eq,
   exists,
   isNotNull,
@@ -22,6 +24,75 @@ import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
 
 const log = logger("callback:chat");
+
+function terminalChatCallbackRunReadPlan(runId: string) {
+  return {
+    columns: {
+      threadId: agentRuns.chatThreadId,
+      triggerSource: agentRuns.triggerSource,
+    },
+    condition: eq(agentRuns.id, runId),
+    limit: 1,
+  };
+}
+
+export const loadTerminalChatCallbackLocator$ = command(
+  async ({ get }, runId: string) => {
+    const db = get(db$);
+    const plan = terminalChatCallbackRunReadPlan(runId);
+    const [run] = await db
+      .select(plan.columns)
+      .from(agentRuns)
+      .where(plan.condition)
+      .limit(plan.limit);
+    return run;
+  },
+);
+
+export function sourceChatCallbackReadPlan(args: {
+  readonly runId: string;
+  readonly sourceCallbackId?: string;
+}) {
+  return {
+    columns: {
+      id: agentRunCallbacks.id,
+      encryptedSecret: agentRunCallbacks.encryptedSecret,
+    },
+    condition: and(
+      eq(agentRunCallbacks.runId, args.runId),
+      eq(agentRunCallbacks.internalKind, "chat"),
+      args.sourceCallbackId
+        ? eq(agentRunCallbacks.id, args.sourceCallbackId)
+        : undefined,
+    ),
+    order: asc(agentRunCallbacks.id),
+    limit: 1,
+  };
+}
+
+export const requireSourceChatCallback$ = command(
+  async (
+    { get },
+    args: {
+      readonly runId: string;
+      readonly sourceCallbackId?: string;
+    },
+  ) => {
+    const db = get(db$);
+    const plan = sourceChatCallbackReadPlan(args);
+    const [source] = await db
+      .select(plan.columns)
+      .from(agentRunCallbacks)
+      .where(plan.condition)
+      .orderBy(plan.order)
+      .limit(plan.limit);
+    if (!source) {
+      throw new Error("Canonical delivery run is missing its chat callback");
+    }
+
+    return source;
+  },
+);
 
 export interface ChatThreadForRunRow {
   readonly chatThreadId: string;
