@@ -110,21 +110,48 @@ async fn write_registry(
     value: &ProxyRegistry,
 ) -> RunnerResult<RegistryDigest> {
     let fail_closed_reserve = fail_closed_capacity_bytes(value)?;
-    write_registry_with_reserve(path, value, fail_closed_reserve).await
+    let content = serialize_registry(path, value, fail_closed_reserve)?;
+    let digest = RegistryDigest::of(&content);
+    runner_host::state_file::write_private_atomic(path, &content).await?;
+    Ok(digest)
 }
 
-async fn write_registry_consuming_fail_closed_capacity(
+async fn write_locked_registry(
     path: &Path,
     value: &ProxyRegistry,
+    guard: Flock<File>,
 ) -> RunnerResult<RegistryDigest> {
-    write_registry_with_reserve(path, value, 0).await
+    let fail_closed_reserve = fail_closed_capacity_bytes(value)?;
+    write_registry_with_reserve(path, value, fail_closed_reserve, guard).await
 }
 
 async fn write_registry_with_reserve(
     path: &Path,
     value: &ProxyRegistry,
     fail_closed_reserve: u64,
+    guard: Flock<File>,
 ) -> RunnerResult<RegistryDigest> {
+    let content = serialize_registry(path, value, fail_closed_reserve)?;
+    let digest = RegistryDigest::of(&content);
+    let path = path.to_path_buf();
+    // A cancelled observer cannot release exclusion while accepted physical
+    // publication or its staging cleanup can still modify the registry.
+    tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        runner_host::state_file::write_private_atomic_blocking(&path, &content)
+    })
+    .await
+    .map_err(|error| {
+        RunnerError::Internal(format!("proxy registry publication task failed: {error}"))
+    })??;
+    Ok(digest)
+}
+
+fn serialize_registry(
+    path: &Path,
+    value: &ProxyRegistry,
+    fail_closed_reserve: u64,
+) -> RunnerResult<Vec<u8>> {
     let content = serde_json::to_vec(value)
         .map_err(|e| RunnerError::Internal(format!("serialize registry: {e}")))?;
     let content_bytes = content.len() as u64;
@@ -139,10 +166,7 @@ async fn write_registry_with_reserve(
             path.display()
         )));
     }
-    let digest = RegistryDigest::of(&content);
-    let write_result = runner_host::state_file::write_private_atomic(path, &content).await;
-    write_result?;
-    Ok(digest)
+    Ok(content)
 }
 
 fn fail_closed_capacity_bytes(value: &ProxyRegistry) -> RunnerResult<u64> {
@@ -615,7 +639,7 @@ impl ProxyRegistryHandle {
     ) -> RunnerResult<RegistryPublication> {
         validate_custom_connector_resource_ownership(registration.firewalls.unwrap_or_default())?;
         let connector_routing_variables = initial_connector_routing_variables(registration)?;
-        let _guard = lock::acquire(self.lock_path.clone()).await?;
+        let guard = lock::acquire(self.lock_path.clone()).await?;
 
         let mut registry = read_registry(&self.registry_path).await?;
         let now = chrono::Utc::now().timestamp_millis();
@@ -664,7 +688,7 @@ impl ProxyRegistryHandle {
             },
         );
         registry.updated_at = now;
-        let digest = write_registry(&self.registry_path, &registry).await?;
+        let digest = write_locked_registry(&self.registry_path, &registry, guard).await?;
         info!(
             source_ip,
             run_id = registration.run_id,
@@ -678,12 +702,12 @@ impl ProxyRegistryHandle {
 
     /// Unregister a sandbox from the proxy registry.
     pub async fn unregister_sandbox(&self, source_ip: &str) -> RunnerResult<RegistryPublication> {
-        let _guard = lock::acquire(self.lock_path.clone()).await?;
+        let guard = lock::acquire(self.lock_path.clone()).await?;
 
         let mut registry = read_registry(&self.registry_path).await?;
         registry.sandboxes.remove(source_ip);
         registry.updated_at = chrono::Utc::now().timestamp_millis();
-        let digest = write_registry(&self.registry_path, &registry).await?;
+        let digest = write_locked_registry(&self.registry_path, &registry, guard).await?;
         info!(source_ip, "unregistered sandbox from proxy registry");
         Ok(RegistryPublication {
             digest,
@@ -827,7 +851,7 @@ impl ConnectorRuntimeRegistryTransaction {
 
         registry.updated_at = chrono::Utc::now().timestamp_millis();
         let digest =
-            write_registry_consuming_fail_closed_capacity(&self.registry_path, &registry).await?;
+            write_registry_with_reserve(&self.registry_path, &registry, 0, self._guard).await?;
         info!(
             source_ip,
             run_id,
@@ -895,7 +919,7 @@ impl ConnectorRuntimeRegistryTransaction {
             }));
         }
         registry.updated_at = chrono::Utc::now().timestamp_millis();
-        let digest = write_registry(&self.registry_path, &registry).await?;
+        let digest = write_locked_registry(&self.registry_path, &registry, self._guard).await?;
         info!(
             source_ip,
             run_id,
@@ -1006,6 +1030,8 @@ pub(super) async fn write_empty_registry(path: &Path) -> RunnerResult<()> {
 
 #[cfg(test)]
 mod tests {
+    mod publication;
+
     use super::*;
     use runner_types::types::{
         Firewall, FirewallApi, FirewallAuth, FirewallEntry, FirewallPermission,
