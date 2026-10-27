@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.792.0](https://github.com/okou-ai/okou/compare/core-v8.791.4...core-v8.792.0) (2026-10-27)
+
+
+### Features
+
+* support gpt-6.1-terra fast mode and pi execution ([#43281](https://github.com/okou-ai/okou/issues/43281)) ([6a9b857](https://github.com/okou-ai/okou/commit/6a9b85755a3856bd81ba2dc9d3ce386f73dedc14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.9.0
+
 ## [8.791.4](https://github.com/okou-ai/okou/compare/core-v8.791.3...core-v8.791.4) (2026-10-27)
 
 
