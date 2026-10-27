@@ -139,9 +139,9 @@ final class NotificationStateTests: XCTestCase {
     }
     let client = APIClient(
       baseURL: fixture.baseURL, clientVersion: fixture.clientVersion, session: fixture.session
-    ) {
+    ) { [fixture] in
       await gate.enter()
-      return "fixture-token"
+      return withExtendedLifetime(fixture) { "fixture-token" }
     }
     let service = notifications(system)
     await service.update(
