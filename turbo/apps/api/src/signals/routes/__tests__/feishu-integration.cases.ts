@@ -1211,9 +1211,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       "Expected the normal default Agent",
     );
     const defaultAgent = await own(() => {
-      return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-        visibility: "public",
-      });
+      return authOrgApi.readAgent(actor, defaultAgentId);
     });
     await grantEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
@@ -1254,9 +1252,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     );
     const [defaultAgent, alternateAgent] = await Promise.all([
       own(() => {
-        return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-          visibility: "public",
-        });
+        return authOrgApi.readAgent(actor, defaultAgentId);
       }),
       own(() => {
         return authOrgApi.createAgent(actor, {
@@ -2946,9 +2942,7 @@ export function registerFeishuIntegrationTests(
           "Expected the normal default Agent",
         );
         await own(() => {
-          return authOrgApi.updateAgentMetadata(admin, defaultAgentId, {
-            visibility: "public",
-          });
+          return authOrgApi.readAgent(admin, defaultAgentId);
         });
         mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -3797,9 +3791,7 @@ export function registerFeishuIntegrationTests(
           "Expected the normal default Agent",
         );
         await own(() => {
-          return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-            visibility: "public",
-          });
+          return authOrgApi.readAgent(actor, defaultAgentId);
         });
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -6781,9 +6773,7 @@ export function registerFeishuIntegrationTests(
           );
         });
         await own(() => {
-          return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-            visibility: "public",
-          });
+          return authOrgApi.readAgent(actor, defaultAgentId);
         });
         fixtureState.outboundMessages = [];
         const firstMessageId = `om_${randomUUID()}`;

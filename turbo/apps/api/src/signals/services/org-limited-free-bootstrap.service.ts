@@ -16,10 +16,11 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq, notInArray, sql } from "drizzle-orm";
+import { and, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import { defaultAgentJoinCondition } from "./agent-data.service";
 import {
   DEFAULT_AGENT_AVATAR_URL,
   DEFAULT_AGENT_DISPLAY_NAME,
@@ -59,12 +60,6 @@ type BootstrapReservation =
 interface EnsureOrgLimitedFreeBootstrapResult {
   readonly bootstrapped: boolean;
   readonly agentId: string | null;
-}
-
-function isPaidTier(tier: string): boolean {
-  return PAID_TIERS.some((paidTier) => {
-    return paidTier === tier;
-  });
 }
 
 const reserveBootstrapAgent$ = command(
@@ -116,16 +111,14 @@ const reserveBootstrapAgent$ = command(
         .select({ id: agents.id })
         .from(agents)
         .where(
-          and(
-            eq(agents.id, orgRow.defaultAgentId),
-            eq(agents.orgId, args.orgId),
-          ),
+          defaultAgentReferenceCondition(args.orgId, orgRow.defaultAgentId),
         )
         .limit(1);
       signal.throwIfAborted();
       if (existing) {
         return { status: "skipped", agentId: existing.id };
       }
+      throw new Error("The workspace default Agent reference is invalid");
     }
 
     return { status: "reserved", agentId: args.agentId };
@@ -153,6 +146,14 @@ function bootstrapAgentValues(
   };
 }
 
+function defaultAgentReferenceCondition(orgId: string, agentId: string) {
+  return and(eq(agents.orgId, orgId), eq(agents.id, agentId));
+}
+
+function unboundDefaultAgentCondition(orgId: string) {
+  return and(eq(orgMetadata.orgId, orgId), isNull(orgMetadata.defaultAgentId));
+}
+
 function bootstrapMetadataWritePlan(orgId: string, agentId: string) {
   return {
     values: {
@@ -171,8 +172,11 @@ function bootstrapMetadataWritePlan(orgId: string, agentId: string) {
         onboardingPaymentPending: false,
         updatedAt: nowDate(),
       },
-      // The earlier tier read is not write authority. Preserve a concurrent paid writer.
-      setWhere: notInArray(orgMetadataCanonicalWrites.tier, [...PAID_TIERS]),
+      // Preserve both an already-published default and a paid workspace.
+      setWhere: and(
+        isNull(orgMetadataCanonicalWrites.defaultAgentId),
+        notInArray(orgMetadataCanonicalWrites.tier, [...PAID_TIERS]),
+      ),
     },
   };
 }
@@ -192,9 +196,7 @@ function bootstrapEntitlementValues(orgId: string) {
 function completedBootstrapResult(
   args: EnsureOrgLimitedFreeBootstrapArgs,
   result: EnsureOrgLimitedFreeBootstrapResult,
-  signal: AbortSignal,
 ) {
-  signal.throwIfAborted();
   if (result.bootstrapped) {
     L.debug("Org limited-free bootstrap completed", {
       orgId: args.orgId,
@@ -237,44 +239,37 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
               .select({ id: agents.id })
               .from(agents)
               .where(
-                and(
-                  eq(agents.id, existingOrg.defaultAgentId),
-                  eq(agents.orgId, args.orgId),
+                defaultAgentReferenceCondition(
+                  args.orgId,
+                  existingOrg.defaultAgentId,
                 ),
               )
               .limit(1);
             if (existing) {
               return { bootstrapped: false, agentId: existing.id };
             }
+            throw new Error("The workspace default Agent reference is invalid");
           }
-          await tx
+          const [agentRow] = await tx
             .insert(agents)
             .values(bootstrapAgentValues(args, reservation.agentId))
-            .onConflictDoNothing();
-          const [agentRow] = await tx
-            .select({ id: agents.id })
-            .from(agents)
-            .where(
-              and(
-                eq(agents.orgId, args.orgId),
-                eq(agents.name, DEFAULT_AGENT_NAME),
-              ),
-            )
-            .limit(1);
+            .onConflictDoNothing()
+            .returning({ id: agents.id });
           if (!agentRow) {
-            throw new Error("Expected canonical Agent after bootstrap upsert");
-          }
-          const [orgRow] = await tx
-            .select({ tier: orgMetadata.tier })
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, args.orgId))
-            .limit(1);
-          if (isPaidTier(orgRow?.tier ?? "limited-free-1")) {
-            await tx
-              .update(orgMetadata)
-              .set({ defaultAgentId: agentRow.id, updatedAt: nowDate() })
-              .where(eq(orgMetadata.orgId, args.orgId));
-            return { bootstrapped: true, agentId: agentRow.id };
+            // A competing bootstrap publishes its Agent and reference together.
+            // A same-name row without that reference must never be adopted.
+            const [published] = await tx
+              .select({ id: agents.id })
+              .from(orgMetadata)
+              .innerJoin(agents, defaultAgentJoinCondition())
+              .where(eq(orgMetadata.orgId, args.orgId))
+              .limit(1);
+            if (published) {
+              return { bootstrapped: false, agentId: published.id };
+            }
+            throw new Error(
+              "Cannot bootstrap Okou over an unbound existing Agent",
+            );
           }
           const metadata = bootstrapMetadataWritePlan(args.orgId, agentRow.id);
           const initialized = await tx
@@ -293,11 +288,15 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
               });
           }
           if (initialized.length === 0) {
-            // A paid writer won the row; complete only the Agent reference.
-            await tx
+            // Paid workspaces retain their entitlements; publish only the Agent reference.
+            const [bound] = await tx
               .update(orgMetadata)
               .set({ defaultAgentId: agentRow.id, updatedAt: nowDate() })
-              .where(eq(orgMetadata.orgId, args.orgId));
+              .where(unboundDefaultAgentCondition(args.orgId))
+              .returning({ orgId: orgMetadata.orgId });
+            if (!bound) {
+              throw new Error("The workspace default Agent was already bound");
+            }
             return { bootstrapped: true, agentId: agentRow.id };
           }
           const plan = onboardingCreditGrantPlan(
@@ -337,6 +336,8 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
         { isolationLevel: "read committed" },
       );
     })();
-    return completedBootstrapResult(args, await bootstrap, signal);
+    const result = await bootstrap;
+    signal.throwIfAborted();
+    return completedBootstrapResult(args, result);
   },
 );

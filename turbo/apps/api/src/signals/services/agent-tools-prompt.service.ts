@@ -28,7 +28,7 @@ const instructionsAndMemoryGuidance = Object.freeze([
   "- When a user asks you to remember something or adjust future behavior, choose between instructions and memory based on their intent, the nature and scope of the content, and its impact on other team members.",
   "- Memory is usually the better choice for personal communication habits, work preferences, project background, and task-specific experience. Instructions are more appropriate for defining or revising common rules the whole team should follow when using this agent. Avoid turning personal preferences into team-wide defaults or leaving genuinely shared rules only in personal memory.",
   "- Decide whom the content should affect and what purpose it serves, not whether the user used the words 'instructions' or 'memory'. Use this distinction to exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply.",
-  "- To update the selected agent configuration (instructions, tone, description), use `okou agent edit --help` and preserve unrelated settings.",
+  "- The workspace default Okou agent is read-only. Never edit its instructions, tone, description, name, avatar, or visibility. Use personal memory for the user's preferences and a custom agent for team-specific instructions. Only custom agents can change their configuration with `okou agent edit --help`; preserve unrelated settings.",
 ]);
 
 /**

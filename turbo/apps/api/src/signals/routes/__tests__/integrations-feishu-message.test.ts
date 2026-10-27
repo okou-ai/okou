@@ -99,11 +99,7 @@ async function createOnboardedFeishuInstallation(
   const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Feishu CLI agent",
   });
-  const agent = await authOrgApi.updateAgentMetadata(
-    actor,
-    bootstrap.body.agentId,
-    { visibility: "public" },
-  );
+  const agent = await authOrgApi.readAgent(actor, bootstrap.body.agentId);
   await runsApi.grantProEntitlement(actor);
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const client = setupApp({ context, routes: feishuConnectRoutes })(

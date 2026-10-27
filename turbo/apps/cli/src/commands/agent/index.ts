@@ -18,11 +18,12 @@ export const agentCommand = new Command("agent")
 Examples:
   Your agent ID is in $OKOU_AGENT_ID (or run: okou whoami)
   View your config:      okou agent view $OKOU_AGENT_ID --instructions
-  Update description:    okou agent edit $OKOU_AGENT_ID --description "new role"
-  Update tone:           okou agent edit $OKOU_AGENT_ID --sound friendly
-  Update instructions:   okou agent edit $OKOU_AGENT_ID --instructions-file <path>
+  Update description:    okou agent edit <custom-agent-id> --description "new role"
+  Update tone:           okou agent edit <custom-agent-id> --sound friendly
+  Update instructions:   okou agent edit <custom-agent-id> --instructions-file <path>
   Attach a workflow:     okou workflow attach <name> --agent $OKOU_AGENT_ID
 
 Notes:
+  The workspace default Okou agent is read-only
   Manage workflows with 'okou workflow --help'`,
   );

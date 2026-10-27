@@ -54,7 +54,6 @@ async function onboardAdmin(
   api.mockClerkOrg(admin, orgState);
   const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
     displayName: "BDD User Config Agent",
-    sound: "calm",
   });
   if (bootstrap.status !== 200) {
     throw new Error(

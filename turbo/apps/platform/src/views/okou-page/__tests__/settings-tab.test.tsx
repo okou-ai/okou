@@ -1,7 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { updateAgentSettings$ } from "../../../signals/okou-page/job-detail/settings.ts";
-import { deleteAgent$ } from "../../../signals/okou-page/job-detail/delete.ts";
 
 import {
   agentInstructionsContract,
@@ -418,126 +416,37 @@ test("Allow an org admin to update another user's public agent avatar", async ()
   expect(update).not.toHaveProperty("visibility");
 });
 
-test("Keep the default agent’s canonical identity read-only", async () => {
-  const defaultAgent: AgentResponse = {
-    agentId: DEFAULT_AGENT_ID,
-    isDefaultAgent: true,
-    ownerId: "test-user-123",
-    description: "The default assistant",
-    displayName: "Okou",
-    sound: "professional",
-    avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-    visibility: "public",
-  };
-  let saved: AgentMetadataRequest | undefined;
-  context.mocks.api(agentsByIdContract.updateMetadata, ({ body, respond }) => {
-    saved = body;
-    return respond(200, { ...defaultAgent, ...body });
-  });
-  context.mocks.data.agents([defaultAgent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, defaultAgent);
-  });
-  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
-    return respond(200, { content: null, filename: null });
-  });
-  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
-
-  await setupPage({
-    context,
-    path: `/agents/${DEFAULT_AGENT_ID}?tab=profile`,
-  });
-
-  const avatarLabel = await screen.findByText("Avatar", { selector: "p" });
-  const avatarRow = avatarLabel.parentElement?.parentElement;
-  if (!avatarRow) {
-    throw new Error("Avatar profile row not found");
-  }
-  expect(within(avatarRow).getByRole("img", { name: "Okou" })).toHaveAttribute(
-    "src",
-    DEFAULT_AGENT_AVATAR_URL,
-  );
-  expect(screen.queryByLabelText("Customize avatar")).not.toBeInTheDocument();
-  expect(
-    within(avatarRow).queryByLabelText("Create custom avatar"),
-  ).not.toBeInTheDocument();
-
-  const nameLabel = screen.getByText("Name", { selector: "p" });
-  const nameRow = nameLabel.parentElement?.parentElement;
-  if (!nameRow) {
-    throw new Error("Name profile row not found");
-  }
-  expect(within(nameRow).getByText("Okou")).toBeVisible();
-  expect(within(nameRow).queryByLabelText("Name")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("switch", { name: "Make public" }),
-  ).not.toBeInTheDocument();
-  expect(screen.getByText("Public", { selector: "p" })).toBeVisible();
-  expect(screen.queryByText("Delete agent")).not.toBeInTheDocument();
-  await fill(
-    screen.getByDisplayValue("The default assistant"),
-    "Workspace helper",
-  );
-  click(screen.getByText("Save"));
-  await waitFor(() => {
-    return expect(saved).toMatchObject({ description: "Workspace helper" });
-  });
-  expect(saved).not.toHaveProperty("displayName");
-  expect(saved).not.toHaveProperty("avatarUrl");
-  expect(saved).not.toHaveProperty("visibility");
-});
-
-test.each([true])(
-  "Reject queued protected actions for default identity %s",
-  async (identity) => {
-    const agent: AgentResponse = {
-      agentId: AGENT_ID,
-      isDefaultAgent: identity,
+test.each(["profile", "instructions"])(
+  "Keep default Okou read-only through the %s deep link",
+  async (tab) => {
+    const defaultAgent: AgentResponse = {
+      agentId: DEFAULT_AGENT_ID,
+      isDefaultAgent: true,
       ownerId: "test-user-123",
+      description: "The default assistant",
       displayName: "Okou",
-      description: "Workspace helper",
       sound: "professional",
       avatarUrl: DEFAULT_AGENT_AVATAR_URL,
       visibility: "public",
     };
-    // The optional identity models a previous API during the rollout window.
+    context.mocks.data.agents([defaultAgent]);
     context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-      return respond(200, agent);
+      return respond(200, defaultAgent);
     });
-    context.mocks.api(agentsByIdContract.updateMetadata, ({ respond }) => {
-      return respond(400, {
-        error: { code: "UNEXPECTED_WRITE", message: "Unexpected write" },
-      });
+    context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
+    await setupPage({
+      context,
+      path: `/agents/${DEFAULT_AGENT_ID}?tab=${tab}`,
     });
-    context.mocks.api(agentsByIdContract.delete, ({ respond }) => {
-      return respond(204);
+    expect(tabByText("Authorization")).toHaveAttribute("aria-selected", "true");
+    const tabs = queryAllByRoleFast("tab").map((candidate) => {
+      return candidate.textContent?.trim();
     });
-    await setupPage({ context, path: `/agents/${AGENT_ID}?tab=profile` });
-    await screen.findByText("Avatar", { selector: "p" });
-    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    expect(tabs).not.toContain("Profile");
+    expect(tabs).not.toContain("Instructions");
     expect(screen.queryByLabelText("Customize avatar")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("switch", { name: "Make public" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByText("Delete agent")).not.toBeInTheDocument();
-    // Locked controls cannot produce these inputs through the current page.
-    // Exercise the queued-command boundary explicitly for stale editor submissions.
-    for (const update of [
-      { displayName: "Renamed" },
-      { avatarUrl: "preset:2" },
-      { visibility: "private" as const },
-    ]) {
-      await expect(
-        context.store.set(
-          updateAgentSettings$,
-          { ...update, description: "Must not be saved" },
-          context.signal,
-        ),
-      ).rejects.toThrow("workspace default");
-    }
-    await expect(
-      context.store.set(deleteAgent$, context.signal),
-    ).rejects.toThrow("cannot be deleted");
   },
 );
 

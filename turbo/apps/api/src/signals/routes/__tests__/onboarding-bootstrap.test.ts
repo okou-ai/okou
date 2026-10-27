@@ -173,21 +173,66 @@ describe("default Agent bootstrap", () => {
       }),
     ]);
 
-    const edited = "Keep the workspace's edited instructions.";
+    const edited = "Must not replace the system instructions.";
     await accept(
       api.instructions.update({
         headers,
         params: { id: agentId },
         body: { content: edited },
       }),
-      [200],
+      [400],
     );
     await accept(api.status.getStatus({ headers }), [200]);
     const after = await accept(
       api.instructions.get({ headers, params: { id: agentId } }),
       [200],
     );
-    expect(after.body.content).toBe(edited);
+    expect(after.body.content).toBe(SEED_INSTRUCTIONS);
+    await expectSingleOnboardingGrant(api);
+  });
+
+  it("creates a separate system Okou and preserves its reference when custom agents change", async () => {
+    authenticateAdmin();
+    const api = clients();
+    const custom = await accept(
+      api.agents.create({
+        headers,
+        body: {
+          displayName: "Okou",
+          visibility: "private",
+          description: "A custom role",
+        },
+      }),
+      [201],
+    );
+    const agentId = await readDefaultId(api);
+    expect(agentId).not.toBe(custom.body.agentId);
+    const listed = await accept(api.agents.list({ headers }), [200]);
+    expect(listed.body).toHaveLength(2);
+    expect(listed.body).toContainEqual(custom.body);
+    expect(listed.body).toContainEqual(
+      expect.objectContaining({
+        agentId,
+        isDefaultAgent: true,
+        displayName: "Okou",
+        visibility: "public",
+      }),
+    );
+    await accept(
+      api.instructions.update({
+        headers,
+        params: { id: custom.body.agentId },
+        body: { content: "Custom instructions" },
+      }),
+      [200],
+    );
+    const repeated = await Promise.all([
+      readDefaultId(api),
+      readDefaultId(api),
+    ]);
+    expect(repeated).toStrictEqual([agentId, agentId]);
+    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
+    await expectInstructions(api, custom.body.agentId, "Custom instructions");
     await expectSingleOnboardingGrant(api);
   });
 
@@ -293,7 +338,7 @@ describe("default Agent bootstrap", () => {
     expect(replayed.body).toStrictEqual(initial.body);
   });
 
-  it("bootstraps and preserves edits while object storage is unavailable", async () => {
+  it("bootstraps and preserves the read-only default while object storage is unavailable", async () => {
     authenticateAdmin();
     context.mocks.s3.send.mockRejectedValue(
       new Error("Object storage is unavailable"),
@@ -307,11 +352,11 @@ describe("default Agent bootstrap", () => {
         params: { id: agentId },
         body: { content: "Edited default" },
       }),
-      [200],
+      [400],
     );
     const peers = await Promise.all([readDefaultId(api), readDefaultId(api)]);
     expect(peers).toStrictEqual([agentId, agentId]);
-    await expectInstructions(api, agentId, "Edited default");
+    await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     await expectSingleOnboardingGrant(api);
   });
 
