@@ -8,6 +8,34 @@ import XCTest
 
 @MainActor
 final class ChatSyncTests: XCTestCase {
+  func testNotificationPrefetchReportsThePersistedTargetRunAndReopensOffline() async throws {
+    let directory = try syncDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let offline = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+      switch request.url?.path {
+      case syncPath + "/event-snapshot": return syncMissingSnapshot()
+      case syncPath + "/event-rows":
+        return syncSequence(request) == 0
+          ? syncPage([syncRow(1, text: "Prefetched answer"), syncRow(2)], cursor: 2)
+          : syncPage([], cursor: 2)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = syncScope(fixture)
+    let service = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let receipt = try await service.prefetchHistory(threadID: syncThreadID, runID: syncRunID)
+    XCTAssertEqual(receipt.lastSeqID, 2)
+    XCTAssertTrue(receipt.containsRun)
+    offline.withLock { $0 = true }
+    let reopened = ChatSync(
+      client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
+    let cached = await reopened.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(cached?.messages.map(\.text), ["Prefetched answer"])
+  }
+
   func testPreviousSchemaCacheRebuildsFromHeaderFreeSnapshotAndTail() async throws {
     let directory = try syncDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

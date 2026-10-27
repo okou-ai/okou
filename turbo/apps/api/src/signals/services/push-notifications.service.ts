@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { recordIosNotificationFact } from "./ios-notification-telemetry";
 import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
 import { hasApnsConfiguration, sendApnsNotification } from "../external/apns";
 import { isActiveIosPushSession$ } from "./ios-push-registrations.service";
@@ -301,6 +302,12 @@ const sendNativeRegistration$ = command(
       (status === 400 &&
         (reason === "BadDeviceToken" || reason === "DeviceTokenNotForTopic"))
     ) {
+      log.warn("APNs registration disabled", {
+        notificationId: args.notificationId,
+        runId: args.runId,
+        status,
+        reason,
+      });
       await set(writeDb$)
         .update(iosPushRegistrations)
         .set({ enabled: false })
@@ -322,7 +329,15 @@ const sendNativeRegistration$ = command(
         durationMs: performance.now() - started,
       });
     } else {
+      recordIosNotificationFact({
+        event: "apns_accepted",
+        source: "api",
+        notificationId: args.notificationId,
+        runId: args.runId,
+        durationMs: performance.now() - started,
+      });
       log.debug("APNs accepted notification", {
+        notificationId: args.notificationId,
         runId: args.runId,
         durationMs: performance.now() - started,
       });

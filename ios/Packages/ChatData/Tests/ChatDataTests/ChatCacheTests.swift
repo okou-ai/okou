@@ -6,6 +6,26 @@ import XCTest
 
 @MainActor
 final class ChatCacheTests: XCTestCase {
+  func testClosedCacheRejectsLateWritesAndANewConnectionRetainsCommittedHistory() async throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = ChatCache(scope: scope(), directory: directory)
+    try await cache.replaceHistory(
+      threadID: "chat", rows: [event(1)],
+      cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
+    await cache.close()
+    do {
+      try await cache.appendHistory(
+        threadID: "chat", rows: [event(2)],
+        cursor: ChatCacheCursor(eventID: event(2).id, seqID: 2), schemaVersion: 8)
+      XCTFail("A retired connection must reject late work")
+    } catch ChatCacheError.unavailable {}
+    let reopened = ChatCache(scope: scope(), directory: directory)
+    let history = try await reopened.loadHistory(threadID: "chat")
+    XCTAssertEqual(history?.rows, [event(1)])
+    await reopened.close()
+  }
+
   func testThreadListSurvivesRestartAndIsScopedToIdentity() async throws {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

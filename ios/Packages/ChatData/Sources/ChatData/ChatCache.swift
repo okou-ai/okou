@@ -98,6 +98,7 @@ public actor ChatCache {
 
   private let fileURL: URL
   private var connection: CacheDatabase?
+  private var isClosed = false
 
   public init(scope: ChatCacheScope, directory: URL? = nil) {
     let root =
@@ -110,6 +111,13 @@ public actor ChatCache {
     let filename = digest.map { String(format: "%02x", $0) }.joined() + ".sqlite"
     fileURL = root.appendingPathComponent("ChatCache", isDirectory: true)
       .appendingPathComponent(filename)
+  }
+
+  /// Retire this connection even when a completed task still retains its owner.
+  /// Later work must create a new scoped cache instead of reopening a retired one.
+  public func close() {
+    isClosed = true
+    connection = nil
   }
 
   public func loadNavigation() throws -> SidebarNavigationSnapshot? {
@@ -340,6 +348,7 @@ public actor ChatCache {
   }
 
   private func database() throws -> CacheDatabase {
+    guard !isClosed else { throw ChatCacheError.unavailable }
     if let connection { return connection }
     let directory = fileURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(

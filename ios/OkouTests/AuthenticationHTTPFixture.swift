@@ -93,7 +93,9 @@ final class AuthenticationHTTPFixture: Sendable {
       }
       listener.start(queue: queue)
     }
-    let options = Clerk.Options(telemetryEnabled: false, proxyUrl: url.absoluteString)
+    let options = Clerk.Options(
+      telemetryEnabled: false, keychainConfig: .init(service: "ai.okou.tests." + host),
+      proxyUrl: url.absoluteString)
     let snapshot = state.withLock { value in
       let snapshot = value
       value.failActivation = false
