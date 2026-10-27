@@ -418,8 +418,7 @@ final class ChatClientTests: XCTestCase {
   }
 
   func testServerTimestampsKeepTheirUTCInstantsAndPrecisionAcrossOfflineRestart() async throws {
-    let directory = try temporaryChatCacheDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let directory = CacheTestDirectory(owner: self)
     let dates: [(value: String, seconds: TimeInterval)] = [
       ("2026-09-17T10:00:00.123Z", 1_789_639_200.123),
       ("2026-09-17T10:00:00Z", 1_789_639_200),
@@ -446,14 +445,12 @@ final class ChatClientTests: XCTestCase {
     addTeardownBlock { fixture.session.invalidateAndCancel() }
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "timestamp-user", workspaceID: "timestamp-workspace")
-    let cache = ChatCache(scope: scope, directory: directory)
-    addTeardownBlock { await cache.close() }
+    let cache = directory.cache(scope: scope)
     let service = ChatSync(client: fixture.client, cache: cache)
     let online = try await service.threads()
     await cache.close()
     fixture.session.invalidateAndCancel()
-    let reopened = ChatCache(scope: scope, directory: directory)
-    addTeardownBlock { await reopened.close() }
+    let reopened = directory.cache(scope: scope)
     let restored = await ChatSync(client: fixture.client, cache: reopened).cachedThreads()
     for threads in [online, try XCTUnwrap(restored)] {
       XCTAssertEqual(threads.count, dates.count)

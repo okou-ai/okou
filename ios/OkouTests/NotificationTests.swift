@@ -50,10 +50,10 @@ final class NotificationTests: XCTestCase {
   {
     let fixture = ConversationHistoryFixture(count: 2)
     let http = fixture.http
-    let directory = directory()
+    let directory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: http.baseURL, userID: "user_push", workspaceID: "org_push")
-    let sync = ChatSync(client: http.client, cache: ChatCache(scope: scope, directory: directory))
+    let sync = ChatSync(client: http.client, cache: directory.cache(scope: scope))
     let service = notifications()
     await service.update(
       workspace: NotificationWorkspace(
@@ -68,7 +68,7 @@ final class NotificationTests: XCTestCase {
     }
     await fulfillment(of: [complete], timeout: 3)
     // Simulate an existing cache's protection policy before reopening it with the new build.
-    let cacheDirectory = directory.appending(path: "ChatCache")
+    let cacheDirectory = directory.url.appending(path: "ChatCache")
     try FileManager.default.setAttributes(
       [.protectionKey: FileProtectionType.complete], ofItemAtPath: cacheDirectory.path)
     for file in try FileManager.default.contentsOfDirectory(
@@ -78,17 +78,19 @@ final class NotificationTests: XCTestCase {
         [.protectionKey: FileProtectionType.complete], ofItemAtPath: file.path)
     }
     let reopened = ChatSync(
-      client: http.client, cache: ChatCache(scope: scope, directory: directory))
+      client: http.client, cache: directory.cache(scope: scope))
     let history = await reopened.cachedHistory(threadID: ConversationHistoryFixture.threadID)
     XCTAssertEqual(history?.messages.count, 2)
     XCTAssertTrue(history?.messages.last?.text.contains("Message 2") == true)
     XCTAssertFalse(fixture.requests.values.withLock { $0.contains { $0.contains("mark-read") } })
   }
 
-  func testBackgroundLaunchRestoresAuthenticationBeforeAnyPageTask() async throws {
+  func testBackgroundLaunchRestoresAuthenticationBeforeRejectingUnavailableMembership() async throws {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
+    identity.state.withLock { $0.failMemberships = true }
     let authentication = try await identity.authentication()
+    XCTAssertTrue(authentication.isLoading)
     let fixture = ConversationHistoryFixture(count: 2)
     let bundleURL = directory().appendingPathComponent("Notification.bundle")
     try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
@@ -104,20 +106,20 @@ final class NotificationTests: XCTestCase {
     service.configure(
       authentication: authentication, configuration: configuration, session: fixture.http.session)
     let user = identity.state.withLock { $0.userID }
-    let completed = expectation(description: "Cold background callback saved messages")
+    let completed = expectation(description: "Cold background callback validates membership")
     NotificationAppDelegate(notifications: service).application(
       UIApplication.shared, didReceiveRemoteNotification: payload(user: user, workspace: "org_one")
     ) { result in
-      XCTAssertEqual(result, .newData)
+      XCTAssertEqual(result, .noData)
       completed.fulfill()
     }
     await fulfillment(of: [completed], timeout: 5)
-    let data = try XCTUnwrap(
-      service.data(
-        authentication: authentication,
-        configuration: configuration, session: fixture.http.session))
-    let restored = await data.sync.cachedHistory(threadID: ConversationHistoryFixture.threadID)
-    XCTAssertEqual(restored?.messages.count, 2)
+    XCTAssertFalse(authentication.isLoading)
+    XCTAssertEqual(authentication.userID, user)
+    XCTAssertTrue(authentication.isAuthenticated)
+    XCTAssertNotNil(authentication.errorMessage)
+    XCTAssertNil(authentication.activeWorkspaceID)
+    XCTAssertTrue(fixture.requests.values.withLock { $0.isEmpty })
   }
 
   func testLaterNotificationCatchesUpWhileAnEarlierNotificationIsStillFinishing() async throws {
@@ -173,10 +175,9 @@ final class NotificationTests: XCTestCase {
       })
     let data = workspace(fixture)
     // The mounted list has already shown an empty authoritative cache.
-    let emptyCache = ChatCache(
+    let emptyCache = CacheTestDirectory(owner: self).cache(
       scope: ChatCacheScope(
-        apiBaseURL: fixture.http.baseURL, userID: "user_push", workspaceID: "org_push"),
-      directory: directory())
+        apiBaseURL: fixture.http.baseURL, userID: "user_push", workspaceID: "org_push"))
     try await emptyCache.replaceThreadList(
       snapshot: Data(#"{"chatThreads":[]}"#.utf8),
       cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
@@ -399,7 +400,7 @@ final class NotificationTests: XCTestCase {
       scopeID: "session_push", userID: "user_push", workspaceID: "org_push",
       client: fixture.http.client,
       sync: ChatSync(
-        client: fixture.http.client, cache: ChatCache(scope: scope, directory: directory())))
+        client: fixture.http.client, cache: CacheTestDirectory(owner: self).cache(scope: scope)))
   }
 
   private func payload(
