@@ -177,7 +177,7 @@ final class ChatThreadPinTests: XCTestCase {
     try await withThrowingTaskGroup(of: Void.self) { group in
       defer { fixture.releaseAll() }
       await store.refresh()
-      group.addTask { @MainActor in await store.list.togglePinned(PinFixture.target) }
+      group.addTask { await store.list.togglePinned(PinFixture.target) }
       try await eventually { fixture.writes.count == 1 }
       fixture.gates[0].open()
       try await group.waitForAll()
@@ -193,7 +193,7 @@ final class ChatThreadPinTests: XCTestCase {
       await reopened.list.restoreCached()
       XCTAssertNil(reopened.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
 
-      group.addTask { @MainActor in await store.list.togglePinned(PinFixture.target) }
+      group.addTask { await store.list.togglePinned(PinFixture.target) }
       try await eventually { fixture.writes.count == 2 }
       XCTAssertNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
       fixture.gates[1].open()
