@@ -683,7 +683,10 @@ async fn try_delete_orphan_rootfs_skips_symlink_replacement() {
     let rootfs_link = home.images_dir().join("rootfs_replaced");
     std::os::unix::fs::symlink(&outside_rootfs, &rootfs_link).unwrap();
 
-    let freed = try_delete_orphan_rootfs(&rootfs_link, "rootfs_replaced", false).await;
+    let lock_file = lock::open_lock_file(&home.rootfs_lock("rootfs_replaced")).unwrap();
+    let rootfs_lock = Flock::lock(lock_file, FlockArg::LockExclusive).unwrap();
+    let (_rootfs_lock, freed) =
+        try_delete_orphan_rootfs(&rootfs_link, "rootfs_replaced", false, rootfs_lock).await;
 
     assert_eq!(freed, None);
     assert_is_symlink(&rootfs_link, "symlink replacement must remain");
