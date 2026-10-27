@@ -2,6 +2,7 @@ import ChatDataTestSupport
 import ClerkKit
 import Foundation
 import Network
+import Security
 import Synchronization
 import XCTest
 
@@ -110,6 +111,26 @@ final class AuthenticationHTTPFixture: Sendable {
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
+    if restoredAccessGroup != nil {
+      // SDK refreshes enqueue Keychain writes. Its test-only configure resets
+      // the previous SDK and cancels pending persistence, unlike a cold launch.
+      // Wait for the actual old-group session before testing its restoration.
+      try await eventually(message: "The initial session must be committed to Keychain") {
+        let query: [String: Any] = [
+          kSecClass as String: kSecClassGenericPassword,
+          kSecAttrService as String: "ai.okou.tests." + self.host,
+          kSecAttrAccount as String: "cachedClient",
+          kSecReturnData as String: true,
+          kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+          let data = result as? Data,
+          let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return value["last_active_session_id"] as? String == snapshot.sessionID
+      }
+    }
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,
