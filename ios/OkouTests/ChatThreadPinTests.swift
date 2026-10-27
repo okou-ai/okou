@@ -75,12 +75,10 @@ final class ChatThreadPinTests: XCTestCase {
   func testFailedPinKeepsOptimisticDisplayAndNextSaveStillRuns() async throws {
     let fixture = PinFixture(statuses: [503, 204, 204])
     defer { fixture.releaseAll() }
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let cache = ChatCache(
+    let cacheDirectory = CacheTestDirectory(owner: self)
+    let cache = cacheDirectory.cache(
       scope: ChatCacheScope(
-        apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"),
-      directory: directory)
+        apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"))
     let store = fixture.workspace(cache: cache)
     defer { store.close() }
     await store.refresh()
