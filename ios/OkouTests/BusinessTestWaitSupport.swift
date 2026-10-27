@@ -34,14 +34,20 @@ extension XCTestCase {
       throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
     }
     let removed = expectation(description: "The owned file was removed")
+    let stopped = expectation(description: "The file observer released its descriptor")
     let source = DispatchSource.makeFileSystemObjectSource(
       fileDescriptor: descriptor, eventMask: .delete, queue: .main)
     source.setEventHandler { removed.fulfill() }
-    source.setCancelHandler { _ = Darwin.close(descriptor) }
+    source.setCancelHandler {
+      _ = Darwin.close(descriptor)
+      stopped.fulfill()
+    }
     source.activate()
     defer { source.cancel() }
     removing()
     await fulfillment(of: [removed], timeout: 3)
+    source.cancel()
+    await fulfillment(of: [stopped], timeout: 3)
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), file: file, line: line)
   }
 }
