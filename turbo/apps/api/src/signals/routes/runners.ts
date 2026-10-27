@@ -52,6 +52,7 @@ import {
   isNull,
   lt,
   ne,
+  not,
   notExists,
   notInArray,
   or,
@@ -185,6 +186,14 @@ const INVALID_EXECUTION_CONTEXT_ERROR =
   "Runner job missing valid execution context";
 const runnerClaimVersionHeaderSchema = runnerVersionSchema.optional();
 const MAX_VALIDATION_ISSUES_TO_LOG = 10;
+// Reader-only preparation for #42362. Activation #43216 removes these gates
+// after this reader is deployed and pre-preparation API requests/rollback targets
+// are excluded. The selector fields remain part of the active contract.
+const WORKFLOW_DOCUMENT_SELECTION_FIELDS = [
+  "invokedWorkflowId",
+  "automationId",
+  "protectedMountPaths",
+] as const;
 
 function mergeClaimVars(args: {
   readonly runVars: Record<string, string> | null;
@@ -811,6 +820,9 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     eq(runnerJobQueue.runnerGroup, group),
     gt(runnerJobQueue.expiresAt, sql`now()`),
     eq(agentRuns.status, "pending"),
+    not(
+      sql`COALESCE(${runnerJobQueue.executionContext}->'customWorkflowSelection' ?| ${sql.param(WORKFLOW_DOCUMENT_SELECTION_FIELDS)}::text[], false)`,
+    ),
   ];
 
   if (auth.type === "official-runner") {
@@ -1846,6 +1858,20 @@ const resolveStoredExecutionContextForClaim$ = command(
           args,
           signal,
         ),
+      };
+    }
+    const workflowSelection = storedContextResult.data.customWorkflowSelection;
+    if (
+      workflowSelection &&
+      WORKFLOW_DOCUMENT_SELECTION_FIELDS.some((field) => {
+        return workflowSelection[field] !== undefined;
+      })
+    ) {
+      // New-only Workflow content cannot be served by the legacy Storage reader.
+      // Keep both Run and queue intact until the activation API handles claim.
+      return {
+        compatible: false as const,
+        response: notFound("Job requires a Workflow document claim API"),
       };
     }
     const piModelConfigResolution = resolvePiModelConfigForClaim({
