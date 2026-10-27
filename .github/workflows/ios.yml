@@ -46,14 +46,12 @@ jobs:
         variant:
           - baseline
     steps:
-      - &id001
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
           fetch-depth: 32
           persist-credentials: false
-      - &id002
-        name: Restore locked sources and identify frozen cache
+      - name: Restore locked sources and identify frozen cache
         id: cache
         uses: ./.github/actions/setup-ios-build-cache
         with:
@@ -344,8 +342,16 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 15
     steps:
-      - *id001
-      - *id002
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 430013c10ec6b5adc6ccea82f94539b7c9c1bd30
+          fetch-depth: 32
+          persist-credentials: false
+      - name: Restore locked sources and identify frozen cache
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          restore-compilation: "false"
       - name: Restore isolated baseline for native prune inspection
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
