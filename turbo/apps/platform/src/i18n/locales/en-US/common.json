@@ -5322,37 +5322,9 @@
       "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
       "title": "Built-in tools",
       "tools": {
-        "data-search": {
-          "description": "Enrich professional profiles and research companies, traffic, ads, creators, and other business data.",
-          "name": "Advanced data research"
-        },
-        "finance": {
-          "description": "Look up companies, quotes, and market data.",
-          "name": "Financial data"
-        },
         "image-generation": {
           "description": "Create images with built-in models.",
           "name": "Image generation"
-        },
-        "maps": {
-          "description": "Find places, addresses, and directions.",
-          "name": "Maps and places"
-        },
-        "people-search": {
-          "description": "Find public professional profiles.",
-          "name": "People search"
-        },
-        "scrape": {
-          "description": "Read and extract content from web pages.",
-          "name": "Page extraction"
-        },
-        "seo": {
-          "description": "Research search rankings, keywords, and backlinks.",
-          "name": "SEO research"
-        },
-        "social": {
-          "description": "Research public social posts and collect media.",
-          "name": "Social research"
         },
         "web-search": {
           "description": "Find current information on the web.",

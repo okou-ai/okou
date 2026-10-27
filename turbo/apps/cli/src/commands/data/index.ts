@@ -3,9 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command, InvalidArgumentError } from "commander";
 import { json, record, string } from "zod";
+import { dataRouterFamilyText } from "@okouai/api-contracts/contracts/data-router-tools";
 import {
   callDataRouterTool,
-  listDataRouterTools,
+  listDataRouterCatalog,
 } from "../../lib/api/data-router-client";
 import { isDataRouterToolEnabled } from "../../lib/command/paid-tools";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -99,10 +100,11 @@ export function createDataCommand(): Command {
     .command("tools")
     .description("List currently enabled tools from Data Router")
     .option("--json", "Print compact JSON")
-    .option("--family <family>", "Filter by the family reported by Router")
+    .option("--family <id>", "Filter by a family ID reported by Router")
     .action(
       withErrorHandler(async (options: { json?: boolean; family?: string }) => {
-        const tools = (await listDataRouterTools())
+        const catalog = await listDataRouterCatalog();
+        const tools = catalog.tools
           .filter(isDataRouterToolEnabled)
           .filter((tool) => {
             return (
@@ -118,8 +120,28 @@ export function createDataCommand(): Command {
               family: _meta?.["ai.okou/data"]?.family,
             };
           });
+        const listed = new Set(
+          tools.map((tool) => {
+            return tool.family;
+          }),
+        );
+        const families = catalog.families
+          .filter((family) => {
+            return listed.has(family.id);
+          })
+          .map((family) => {
+            return {
+              id: family.id,
+              title: dataRouterFamilyText(family.title, "en-US", family.id),
+              summary: family.summary,
+            };
+          });
         console.log(
-          JSON.stringify({ tools }, null, options.json ? undefined : 2),
+          JSON.stringify(
+            { families, tools },
+            null,
+            options.json ? undefined : 2,
+          ),
         );
       }),
     );
@@ -130,7 +152,7 @@ export function createDataCommand(): Command {
     .option("--json", "Print compact JSON")
     .action(
       withErrorHandler(async (name: string, options: { json?: boolean }) => {
-        const tool = (await listDataRouterTools()).find((entry) => {
+        const tool = (await listDataRouterCatalog()).tools.find((entry) => {
           return entry.name === name && isDataRouterToolEnabled(entry);
         });
         if (!tool)

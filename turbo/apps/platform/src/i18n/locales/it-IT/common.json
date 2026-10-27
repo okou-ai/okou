@@ -5386,37 +5386,9 @@
       "timing": "Le modifiche valgono per le esecuzioni future. Le attività in corso o già preparate potrebbero mantenere le impostazioni precedenti.",
       "title": "Strumenti integrati",
       "tools": {
-        "data-search": {
-          "description": "Arricchisci i profili professionali e ricerca aziende, traffico, annunci, creator e altri dati aziendali.",
-          "name": "Ricerca dati avanzata"
-        },
-        "finance": {
-          "description": "Consulta aziende, quotazioni e dati di mercato.",
-          "name": "Dati finanziari"
-        },
         "image-generation": {
           "description": "Crea immagini con i modelli integrati.",
           "name": "Generazione di immagini"
-        },
-        "maps": {
-          "description": "Trova luoghi, indirizzi e indicazioni.",
-          "name": "Mappe e luoghi"
-        },
-        "people-search": {
-          "description": "Trova profili professionali pubblici.",
-          "name": "Ricerca di persone"
-        },
-        "scrape": {
-          "description": "Leggi ed estrai contenuti dalle pagine web.",
-          "name": "Estrazione di pagine"
-        },
-        "seo": {
-          "description": "Analizza posizionamenti, parole chiave e backlink.",
-          "name": "Ricerca SEO"
-        },
-        "social": {
-          "description": "Analizza post pubblici e raccogli contenuti multimediali.",
-          "name": "Ricerca sui social"
         },
         "web-search": {
           "description": "Trova informazioni aggiornate sul web.",

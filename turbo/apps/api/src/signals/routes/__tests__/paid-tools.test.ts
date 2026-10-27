@@ -1,9 +1,3 @@
-import { dataRouterToolsContract } from "@okouai/api-contracts/contracts/data-router-catalog";
-import { DATA_ROUTER_PROTOCOL_VERSION } from "@okouai/api-contracts/contracts/data-router-tools";
-import { http, HttpResponse } from "msw";
-import { literal, object, string } from "zod";
-import { server } from "../../../mocks/server";
-import { dataRouterToolsRoutes } from "../data-router-tools";
 import { randomUUID } from "node:crypto";
 
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
@@ -13,7 +7,7 @@ import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { generateOkouToken, generateSandboxToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -90,7 +84,7 @@ test("lets an ordinary member disable and re-enable a tool idempotently", async 
 
 test.each([
   "data-search",
-  "data:future_research",
+  "future-family",
   "image-generation",
   "video-generation",
   "voice-generation",
@@ -272,67 +266,4 @@ test("membership deletion clears exactly its paid tool preferences", async () =>
   await expect(listFor(current)).resolves.toStrictEqual([]);
   await expect(listFor(peer)).resolves.toStrictEqual(["web-search"]);
   await expect(listFor(elsewhere)).resolves.toStrictEqual(["web-search"]);
-});
-
-test("discovers Router tools and schemas across pages without a local tool catalog", async () => {
-  await owner();
-  mockEnv("OKOU_DATA_ROUTER_URL", "https://router.test/mcp");
-  mockEnv("OKOU_DATA_TOKEN", "test-router-token");
-  const tool = {
-    name: "future_research",
-    title: "New research tool",
-    description: "New Router capability",
-    inputSchema: {
-      type: "object" as const,
-      properties: { topic: { type: "string" } },
-      required: ["topic"],
-    },
-    _meta: { "ai.okou/data": { family: "data-search" as const } },
-  };
-  server.use(
-    http.post("https://router.test/mcp", async ({ request }) => {
-      expect(request.headers.get("authorization")).toBe(
-        "Bearer test-router-token",
-      );
-      // A stateless 2026-07-28 request that accepts only a JSON response.
-      expect(request.headers.get("accept")).toBe("application/json");
-      expect(request.headers.get("mcp-protocol-version")).toBe(
-        DATA_ROUTER_PROTOCOL_VERSION,
-      );
-      expect(request.headers.get("mcp-method")).toBe("tools/list");
-      const message = object({
-        id: string(),
-        method: literal("tools/list"),
-        params: object({
-          cursor: string().optional(),
-          _meta: object({
-            "io.modelcontextprotocol/protocolVersion": literal(
-              DATA_ROUTER_PROTOCOL_VERSION,
-            ),
-            "io.modelcontextprotocol/clientCapabilities": object({}),
-          }),
-        }),
-      }).parse(await request.json());
-      return HttpResponse.json({
-        jsonrpc: "2.0",
-        id: message.id,
-        result:
-          message.params.cursor === "next-page"
-            ? { tools: [tool] }
-            : {
-                tools: [
-                  { name: "billing_get", inputSchema: { type: "object" } },
-                ],
-                nextCursor: "next-page",
-              },
-      });
-    }),
-  );
-  const result = await accept(
-    setupApp({ context, routes: dataRouterToolsRoutes })(
-      dataRouterToolsContract,
-    ).list({ headers }),
-    [200],
-  );
-  expect(result.body).toStrictEqual({ tools: [tool] });
 });

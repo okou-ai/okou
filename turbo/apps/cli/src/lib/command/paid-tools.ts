@@ -26,13 +26,10 @@ export function isPaidToolEnabled(tool: PaidToolId): boolean {
   return policy !== null && !policy.has(tool);
 }
 
+/** Preferences apply per Router family; tools without Okou metadata are internal. */
 export function isDataRouterToolEnabled(tool: DataRouterTool): boolean {
   const metadata = tool._meta?.["ai.okou/data"];
-  return Boolean(
-    metadata &&
-    isPaidToolEnabled(metadata.family) &&
-    isPaidToolEnabled(`data:${tool.name}`),
-  );
+  return Boolean(metadata && isPaidToolEnabled(metadata.family));
 }
 
 async function getPaidToolUnavailableMessage(

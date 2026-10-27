@@ -5324,37 +5324,9 @@
       "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
       "title": "Integrierte Tools",
       "tools": {
-        "data-search": {
-          "description": "Berufsprofile ergänzen und Unternehmen, Traffic, Anzeigen, Creator und weitere Geschäftsdaten recherchieren.",
-          "name": "Erweiterte Datenrecherche"
-        },
-        "finance": {
-          "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
-          "name": "Finanzdaten"
-        },
         "image-generation": {
           "description": "Bilder mit integrierten Modellen erstellen.",
           "name": "Bilderzeugung"
-        },
-        "maps": {
-          "description": "Finde Orte, Adressen und Wegbeschreibungen.",
-          "name": "Karten und Orte"
-        },
-        "people-search": {
-          "description": "Finde öffentliche berufliche Profile.",
-          "name": "Personensuche"
-        },
-        "scrape": {
-          "description": "Lies und extrahiere Inhalte von Webseiten.",
-          "name": "Seitenextraktion"
-        },
-        "seo": {
-          "description": "Recherchiere Suchrankings, Keywords und Backlinks.",
-          "name": "SEO-Recherche"
-        },
-        "social": {
-          "description": "Recherchiere öffentliche Beiträge und sammle Medien.",
-          "name": "Social-Media-Recherche"
         },
         "web-search": {
           "description": "Finde aktuelle Informationen im Web.",
