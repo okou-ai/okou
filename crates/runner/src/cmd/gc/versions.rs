@@ -720,7 +720,7 @@ async fn gc_versions_with_analysis_and_operations(
         if dry_run {
             info!("[dry-run] would remove version {name}");
         } else {
-            let Some(service_lock) = service_lock.as_ref() else {
+            let Some(service_lock) = service_lock else {
                 warn!("version {name}: service lock missing before delete, skipping");
                 continue;
             };

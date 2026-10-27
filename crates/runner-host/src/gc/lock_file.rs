@@ -44,22 +44,43 @@ pub fn probe_existing_lock(path: &Path) -> ExistingLockProbe {
     }
 }
 
+/// Retire a lock path while retaining its acquired flock through physical IO.
+///
+/// Accepted blocking work owns the guard even if its observer is cancelled.
+/// Revalidate path identity inside that owner before unlinking a free lock.
+/// Unexpected worker panics propagate with their original payload.
 pub async fn remove_unused_lock_after_probe(
     lock_path: &Path,
-    lock: &Flock<std::fs::File>,
+    lock: Flock<std::fs::File>,
     name: &str,
     dry_run: bool,
 ) -> bool {
-    if !lock_guard_matches_path(lock_path, lock) {
-        return false;
-    }
+    let lock_path = lock_path.to_path_buf();
+    let name = name.to_owned();
+    let dispatcher = tracing::dispatcher::get_default(Clone::clone);
+    let span = tracing::Span::current();
+    let result = tokio::task::spawn_blocking(move || {
+        tracing::dispatcher::with_default(&dispatcher, || {
+            span.in_scope(|| {
+                if !lock_guard_matches_path(&lock_path, &lock) {
+                    return false;
+                }
 
-    if dry_run {
-        info!("[dry-run] would remove unused lock {name}");
-        return true;
-    }
+                if dry_run {
+                    info!("[dry-run] would remove unused lock {name}");
+                    return true;
+                }
 
-    remove_lock_file(lock_path).await
+                remove_lock_file(&lock_path)
+            })
+        })
+    })
+    .await;
+
+    match result {
+        Ok(removed) => removed,
+        Err(error) => std::panic::resume_unwind(error.into_panic()),
+    }
 }
 
 fn lock_guard_matches_path(lock_path: &Path, lock: &Flock<std::fs::File>) -> bool {
@@ -73,8 +94,8 @@ fn lock_guard_matches_path(lock_path: &Path, lock: &Flock<std::fs::File>) -> boo
     }
 }
 
-async fn remove_lock_file(lock_path: &Path) -> bool {
-    match tokio::fs::remove_file(lock_path).await {
+fn remove_lock_file(lock_path: &Path) -> bool {
+    match std::fs::remove_file(lock_path) {
         Ok(()) => true,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
         Err(e) => {
@@ -86,9 +107,10 @@ async fn remove_lock_file(lock_path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    mod custody;
+
     use super::*;
     use nix::fcntl::FlockArg;
-    use tracing::instrument::WithSubscriber;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::CapturedEvents;
 
@@ -210,7 +232,7 @@ mod tests {
         );
 
         let removed =
-            remove_unused_lock_after_probe(&path, &held_lock, "home-image-cache-test.lock", false)
+            remove_unused_lock_after_probe(&path, held_lock, "home-image-cache-test.lock", false)
                 .await;
 
         assert!(!removed, "stale lock fd must not remove a recreated path");
@@ -220,14 +242,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn remove_lock_file_treats_missing_path_as_benign() {
+    #[test]
+    fn remove_lock_file_treats_missing_path_as_benign() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("missing.lock");
         let captured = CapturedEvents::default();
         let subscriber = tracing_subscriber::registry().with(captured.clone());
 
-        let removed = remove_lock_file(&path).with_subscriber(subscriber).await;
+        let removed = tracing::subscriber::with_default(subscriber, || remove_lock_file(&path));
 
         assert!(
             !removed,
