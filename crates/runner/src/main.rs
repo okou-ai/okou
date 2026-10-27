@@ -786,7 +786,7 @@ mod tests {
         ));
         assert!(help.contains("valid entries, oldest-first"));
         assert!(help.contains("below the filesystem low-water mark toward its high-water mark"));
-        assert!(help.contains("independent 1,024-entry cap"));
+        assert!(help.contains("independent 4,096-entry cap"));
         assert!(help.contains("Count-only cleanup does not activate a free-byte target"));
         assert!(help.contains("Actual free space controls recovery"));
         assert!(help.contains("deleting an open image does not imply its blocks were released"));
