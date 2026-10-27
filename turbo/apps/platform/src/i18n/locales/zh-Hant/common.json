@@ -4277,6 +4277,12 @@
         "copy": "Okou 越了解你的工作，就越聰明。連接一個你每天在用的工具，從一項基於真實工作的任務開始。",
         "permissions": "Okou 會參考少量資訊為你量身打造第一項任務；Agent 能做什麼、授權多久，都由你決定。",
         "securityLink": "瞭解 Okou 如何保護你的資料",
+        "skipDialog": {
+          "connect": "繼續連接",
+          "description": "建議先連接常用工具，讓 Okou 更了解你的工作，提供更貼近需求的協助。你也可以稍後再連接。",
+          "skip": "仍然略過",
+          "title": "連接工具，讓 Okou 更懂你的工作"
+        },
         "title": "連接一個工作工具"
       },
       "startingPrompt": {

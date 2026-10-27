@@ -131,6 +131,30 @@ test("Skipping sources reports the step skip and keeps a single onboarding start
   ).resolves.toBeInTheDocument();
   click(getButtonByName("Skip"));
 
+  await screen.findByRole("dialog", {
+    name: "Okou works better with your tools",
+  });
+  expect(
+    posthog.events.filter((event) => {
+      return event.name === "Onboarding: Skip";
+    }),
+  ).toStrictEqual([]);
+  click(getButtonByName("Connect a tool"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(
+    posthog.events.filter((event) => {
+      return event.name === "Onboarding: Skip";
+    }),
+  ).toStrictEqual([]);
+
+  click(getButtonByName("Skip"));
+  await screen.findByRole("dialog", {
+    name: "Okou works better with your tools",
+  });
+  click(getButtonByName("Skip for now"));
+
   await expect(
     screen.findByRole("heading", { name: TEAM_QUESTION }),
   ).resolves.toBeInTheDocument();

@@ -1,5 +1,16 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
@@ -13,6 +24,7 @@ import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboard
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
+import { noConnectorImg } from "../okou-page/platform-assets.ts";
 import { securityPageUrl } from "./onboarding-security.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
@@ -69,86 +81,139 @@ export function OnboardingSourcesPage() {
   });
 
   return (
-    <OnboardingStepLayout
-      currentStep={flow.currentStep}
-      totalSteps={flow.totalSteps}
-      title={t(($) => {
-        return $.onboarding.sourcesFirst.sources.title;
-      })}
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.sources.copy;
-      })}
-      mobileDescription={t(($) => {
-        return $.onboarding.sourcesFirst.mobile.sourcesCopy;
-      })}
-      mobileFooter={
-        <details className="text-sm text-muted-foreground">
-          <summary className="cursor-pointer rounded-lg py-3 hover:text-foreground">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.mobile.permissionsLabel;
-            })}
-          </summary>
-          <p className="mt-1 leading-6">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.sources.permissions;
-            })}
-          </p>
-          <OnboardingSecurityLink />
-        </details>
-      }
-      trustPoints={[
-        t(($) => {
-          return $.onboarding.sourcesFirst.sources.permissions;
-        }),
-      ]}
-      footnote={
-        <a
-          className="text-brand-text hover:text-brand-text-hover"
-          href={securityPageUrl(i18n.resolvedLanguage ?? i18n.language)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t(($) => {
-            return $.onboarding.sourcesFirst.sources.securityLink;
-          })}
-        </a>
-      }
-      primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.continue;
-      })}
-      onPrimary={() => {
-        const industry = flow.draft.industry;
-        if (industry) {
-          const generation = startRecommendation(
-            {
-              industry,
-              locale: onboardingRecommendationLocaleSchema.parse(
-                i18n.resolvedLanguage || i18n.language || "en-US",
-              ),
-            },
-            rootSignal,
-          );
-          detach(
-            generation,
-            Reason.DomCallback,
-            "onboarding context recommendation",
-          );
+    <Dialog>
+      <OnboardingStepLayout
+        currentStep={flow.currentStep}
+        totalSteps={flow.totalSteps}
+        title={t(($) => {
+          return $.onboarding.sourcesFirst.sources.title;
+        })}
+        description={t(($) => {
+          return $.onboarding.sourcesFirst.sources.copy;
+        })}
+        mobileDescription={t(($) => {
+          return $.onboarding.sourcesFirst.mobile.sourcesCopy;
+        })}
+        mobileFooter={
+          <details className="text-sm text-muted-foreground">
+            <summary className="cursor-pointer rounded-lg py-3 hover:text-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.mobile.permissionsLabel;
+              })}
+            </summary>
+            <p className="mt-1 leading-6">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.sources.permissions;
+              })}
+            </p>
+            <OnboardingSecurityLink />
+          </details>
         }
-        flow.goNext();
-      }}
-      primaryDisabled={connectedSlugs.length === 0}
-      secondaryLabel={t(($) => {
-        return $.onboarding.common.skip;
-      })}
-      onSecondary={flow.goSkip}
-      onBack={flow.goBack}
-    >
-      <OnboardingConnectorSetup
-        connectorSlugs={[...featuredSlugs, ...extraConnectedSlugs]}
-        variant="sources"
-        onConnectStart={captureConnectStarted}
-        onConnected={captureConnected}
-      />
-    </OnboardingStepLayout>
+        trustPoints={[
+          t(($) => {
+            return $.onboarding.sourcesFirst.sources.permissions;
+          }),
+        ]}
+        footnote={
+          <a
+            className="text-brand-text hover:text-brand-text-hover"
+            href={securityPageUrl(i18n.resolvedLanguage ?? i18n.language)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t(($) => {
+              return $.onboarding.sourcesFirst.sources.securityLink;
+            })}
+          </a>
+        }
+        primaryLabel={t(($) => {
+          return $.onboarding.sourcesFirst.common.continue;
+        })}
+        onPrimary={() => {
+          const industry = flow.draft.industry;
+          if (industry) {
+            const generation = startRecommendation(
+              {
+                industry,
+                locale: onboardingRecommendationLocaleSchema.parse(
+                  i18n.resolvedLanguage || i18n.language || "en-US",
+                ),
+              },
+              rootSignal,
+            );
+            detach(
+              generation,
+              Reason.DomCallback,
+              "onboarding context recommendation",
+            );
+          }
+          flow.goNext();
+        }}
+        primaryDisabled={connectedSlugs.length === 0}
+        secondaryAction={
+          <DialogTrigger
+            render={
+              <Button
+                type="button"
+                size="lg"
+                variant="quiet"
+                className="max-sm:px-3"
+              />
+            }
+          >
+            {t(($) => {
+              return $.onboarding.common.skip;
+            })}
+          </DialogTrigger>
+        }
+        onBack={flow.goBack}
+      >
+        <OnboardingConnectorSetup
+          connectorSlugs={[...featuredSlugs, ...extraConnectedSlugs]}
+          variant="sources"
+          onConnectStart={captureConnectStarted}
+          onConnected={captureConnected}
+        />
+      </OnboardingStepLayout>
+      <DialogContent
+        maxWidth="md"
+        closeLabel={t(($) => {
+          return $.connectors.actions.close;
+        })}
+      >
+        <img
+          src={noConnectorImg}
+          alt=""
+          className="mx-auto size-40 object-contain"
+        />
+        <DialogHeader className="space-y-3 sm:text-center">
+          <DialogTitle className="leading-6">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.sources.skipDialog.title;
+            })}
+          </DialogTitle>
+          <DialogDescription className="leading-6">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.sources.skipDialog.description;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="flex-col sm:flex-col">
+          <DialogClose render={<Button type="button" />}>
+            {t(($) => {
+              return $.onboarding.sourcesFirst.sources.skipDialog.connect;
+            })}
+          </DialogClose>
+          <DialogClose
+            render={<Button type="button" variant="quiet" />}
+            onClick={flow.goSkip}
+          >
+            {t(($) => {
+              return $.onboarding.sourcesFirst.sources.skipDialog.skip;
+            })}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

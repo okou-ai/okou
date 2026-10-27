@@ -129,6 +129,7 @@ function OnboardingStepExplanation({
 function OnboardingStepTopBar({
   current,
   total,
+  secondaryAction,
   secondaryLabel,
   onSecondary,
   secondaryDisabled,
@@ -137,6 +138,7 @@ function OnboardingStepTopBar({
 }: {
   readonly current: number;
   readonly total: number;
+  readonly secondaryAction?: ReactNode;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly secondaryDisabled: boolean;
@@ -163,21 +165,22 @@ function OnboardingStepTopBar({
       <div className="min-w-0 flex-1 px-1">
         <OnboardingStepProgress current={current} total={total} />
       </div>
-      {secondaryLabel && onSecondary ? (
-        <Button
-          type="button"
-          size="lg"
-          variant="quiet"
-          className="px-3"
-          onClick={onSecondary}
-          disabled={secondaryDisabled}
-          aria-busy={secondaryBusy}
-        >
-          {secondaryLabel}
-        </Button>
-      ) : (
-        <span className="size-10 shrink-0" />
-      )}
+      {secondaryAction ??
+        (secondaryLabel && onSecondary ? (
+          <Button
+            type="button"
+            size="lg"
+            variant="quiet"
+            className="px-3"
+            onClick={onSecondary}
+            disabled={secondaryDisabled}
+            aria-busy={secondaryBusy}
+          >
+            {secondaryLabel}
+          </Button>
+        ) : (
+          <span className="size-10 shrink-0" />
+        ))}
     </div>
   );
 }
@@ -193,6 +196,7 @@ function OnboardingStepActions({
   onPrimary,
   primaryDisabled,
   primaryBusy,
+  secondaryAction,
   secondaryLabel,
   onSecondary,
   secondaryDisabled,
@@ -204,6 +208,7 @@ function OnboardingStepActions({
   readonly onPrimary: () => void;
   readonly primaryDisabled: boolean;
   readonly primaryBusy: boolean;
+  readonly secondaryAction?: ReactNode;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly secondaryDisabled: boolean;
@@ -230,7 +235,9 @@ function OnboardingStepActions({
         <span className="max-sm:hidden" />
       )}
       <div className="flex items-center gap-2 max-sm:flex-1">
-        {secondaryLabel && onSecondary ? (
+        {secondaryAction ? (
+          <div className="max-sm:hidden">{secondaryAction}</div>
+        ) : secondaryLabel && onSecondary ? (
           <Button
             type="button"
             size="lg"
@@ -279,6 +286,7 @@ interface OnboardingStepLayoutProps {
   readonly onPrimary: () => void;
   readonly primaryDisabled?: boolean;
   readonly primaryBusy?: boolean;
+  readonly secondaryAction?: ReactNode;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly onBack?: () => void;
@@ -304,6 +312,7 @@ export function OnboardingStepLayout({
   onPrimary,
   primaryDisabled = false,
   primaryBusy = false,
+  secondaryAction,
   secondaryLabel,
   onSecondary,
   onBack,
@@ -324,7 +333,7 @@ export function OnboardingStepLayout({
         return $.onboarding.common.skip;
       })
     : secondaryLabel;
-  const secondaryAction = canSkipPreview
+  const secondaryHandler = canSkipPreview
     ? () => {
         detach(skipPreview(pageSignal), Reason.DomCallback);
       }
@@ -348,8 +357,9 @@ export function OnboardingStepLayout({
         <OnboardingStepTopBar
           current={currentStep}
           total={totalSteps}
+          secondaryAction={canSkipPreview ? undefined : secondaryAction}
           secondaryLabel={secondaryActionLabel}
-          onSecondary={secondaryAction}
+          onSecondary={secondaryHandler}
           secondaryDisabled={canSkipPreview && (skipping || primaryBusy)}
           secondaryBusy={skipping}
           onBack={onBack}
@@ -397,8 +407,9 @@ export function OnboardingStepLayout({
             onPrimary={onPrimary}
             primaryDisabled={primaryDisabled || skipping}
             primaryBusy={primaryBusy}
+            secondaryAction={canSkipPreview ? undefined : secondaryAction}
             secondaryLabel={secondaryActionLabel}
-            onSecondary={secondaryAction}
+            onSecondary={secondaryHandler}
             secondaryDisabled={canSkipPreview && (skipping || primaryBusy)}
             secondaryBusy={skipping}
             onBack={onBack}

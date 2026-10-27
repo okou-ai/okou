@@ -378,6 +378,23 @@ test.each([false, true])(
     expect(getButtonByName("Continue")).toBeDisabled();
     click(getButtonByName("Skip"));
 
+    const dialog = await screen.findByRole("dialog", {
+      name: "Okou works better with your tools",
+    });
+    expect(pathname()).toBe(ROUTES.onboardingSources);
+    click(getButtonByName("Connect a tool", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(pathname()).toBe(ROUTES.onboardingSources);
+    expect(getButtonByName("Connect Gmail")).toBeEnabled();
+
+    click(getButtonByName("Skip"));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Okou works better with your tools",
+    });
+    click(getButtonByName("Skip for now", confirmation));
+
     await screen.findByRole("heading", {
       name: mobile
         ? "Invite a teammate"
@@ -778,8 +795,12 @@ test("A member skips sources, completes their own onboarding and enters chat", a
   click(getButtonByName("Continue"));
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
   click(getButtonByName("Skip"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Okou works better with your tools",
+  });
+  click(getButtonByName("Skip for now", confirmation));
 
-  // Straight from the sources to the AI question: no invite step.
+  // Confirming the skip goes to the AI question: no invite step.
   await screen.findByRole("heading", {
     name: "How would you like to start with Okou?",
   });

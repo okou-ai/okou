@@ -94,6 +94,12 @@ test("Skipping sources in a preview continues onboarding", async () => {
   ).toBeInTheDocument();
   click(buttonNamed("Skip"));
 
+  await screen.findByRole("dialog", {
+    name: "Okou works better with your tools",
+  });
+  expect(pathname()).toBe(ROUTES.onboardingSources);
+  click(buttonNamed("Skip for now"));
+
   await screen.findByRole("heading", {
     name: "Make Okou useful to your whole team",
   });
