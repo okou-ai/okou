@@ -98,29 +98,28 @@ final class ChatComposerPasteTests: XCTestCase {
       replacement.close()
     }
     let file = try makeImage()
-    defer { try? FileManager.default.removeItem(at: file) }
     let started = expectation(description: "Image provider started")
-    let completed = expectation(description: "Image provider completed after workspace close")
-    let (stream, continuation) = AsyncStream<Void>.makeStream()
-    defer { continuation.finish() }
+    addTeardownBlock { try FileManager.default.removeItem(at: file) }
+    let cancelled = expectation(description: "The closed workspace cancelled the image load")
+    let completed = expectation(description: "The cancelled provider still returned its late result")
+    let delivery = DelayedProviderTasks(owner: self)
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
     ) {
       callback in
       started.fulfill()
-      Task {
-        for await _ in stream { break }
+      return delivery.hold(onCancel: { cancelled.fulfill() }) {
         callback(file, false, nil)
         completed.fulfill()
       }
-      return Progress(totalUnitCount: 1)
     }
     oldWorkspace.newAttachmentDraft.importPastedImages([provider])
     await fulfillment(of: [started], timeout: 3)
     XCTAssertFalse(oldWorkspace.newAttachmentDraft.isReady)
     oldWorkspace.close()
-    continuation.yield()
+    await fulfillment(of: [cancelled], timeout: 3)
+    delivery.release()
     await fulfillment(of: [completed], timeout: 3)
     XCTAssertFalse(replacement.newAttachmentDraft.hasAttachments)
     XCTAssertFalse(oldWorkspace.newAttachmentDraft.hasAttachments)
@@ -135,14 +134,13 @@ final class ChatComposerPasteTests: XCTestCase {
     let originalComposer = workspace.newComposer
     let host = UIHostingController(rootView: WorkspacePasteComposerHarness(workspace: workspace))
     let window = try await mount(host)
-    defer { unmount(window) }
+    addTeardownBlock { @MainActor in unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     input.becomeFirstResponder()
     let file = try makeImage()
-    defer { try? FileManager.default.removeItem(at: file) }
+    addTeardownBlock { try FileManager.default.removeItem(at: file) }
     let started = expectation(description: "Mixed text provider started")
-    let (stream, continuation) = AsyncStream<Void>.makeStream()
-    defer { continuation.finish() }
+    let delivery = DelayedProviderTasks(owner: self)
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
@@ -156,11 +154,9 @@ final class ChatComposerPasteTests: XCTestCase {
     ) {
       callback in
       started.fulfill()
-      Task {
-        for await _ in stream { break }
+      return delivery.hold {
         callback(Data("late text".utf8), nil)
       }
-      return Progress(totalUnitCount: 1)
     }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
@@ -169,7 +165,7 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertEqual(workspace.newChatDraft, "")
     XCTAssertTrue(originalComposer.text.contains("stale edit"))
     try await eventually { self.textView(in: host.view) !== input && input.delegate == nil }
-    continuation.yield()
+    delivery.release()
     // Wait until UIKit has resolved the old paste, rather than waiting a fixed delay.
     try await eventually { input.text.contains("late text") }
     XCTAssertEqual(workspace.newChatDraft, "")
@@ -186,27 +182,24 @@ final class ChatComposerPasteTests: XCTestCase {
       next.close()
     }
     let file = try makeImage()
-    defer { try? FileManager.default.removeItem(at: file) }
+    addTeardownBlock { try FileManager.default.removeItem(at: file) }
     let started = expectation(description: "Image requested in original conversation")
-    let (stream, continuation) = AsyncStream<Void>.makeStream()
-    defer { continuation.finish() }
+    let delivery = DelayedProviderTasks(owner: self)
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
     ) {
       callback in
       started.fulfill()
-      Task {
-        for await _ in stream { break }
+      return delivery.hold {
         callback(file, false, nil)
       }
-      return Progress(totalUnitCount: 1)
     }
     original.attachmentDraft.importPastedImages([provider])
     await fulfillment(of: [started], timeout: 3)
     next.draft = "Next conversation"
     await next.send()
-    continuation.yield()
+    delivery.release()
     try await eventually {
       original.attachmentDraft.hasAttachments && original.attachmentDraft.isReady
     }
@@ -285,11 +278,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let reading = expectation(description: "Draft hydration started")
     let loading = expectation(description: "Image provider started")
     let (readStream, readGate) = AsyncStream<Void>.makeStream()
-    let (imageStream, imageGate) = AsyncStream<Void>.makeStream()
-    defer {
-      readGate.finish()
-      imageGate.finish()
-    }
+    defer { readGate.finish() }
     let reads = Mutex(0)
     let fixture = AttachmentFlowFixture(draftRead: {
       let first = reads.withLock {
@@ -301,7 +290,7 @@ final class ChatComposerPasteTests: XCTestCase {
       for await _ in readStream { break }
     })
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    addTeardownBlock { try FileManager.default.removeItem(at: directory) }
     let storage = ChatDraftStorage(
       scope: ChatCacheScope(
         apiBaseURL: fixture.http.baseURL, userID: "paste-user", workspaceID: "paste-workspace"),
@@ -317,25 +306,30 @@ final class ChatComposerPasteTests: XCTestCase {
       conversation.close()
     }
     let synchronization = Task { await conversation.composer.synchronize() }
+    addTeardownBlock { @MainActor in
+      conversation.close()
+      synchronization.cancel()
+      readGate.finish()
+      await synchronization.value
+    }
     await fulfillment(of: [reading], timeout: 3)
     let file = try makeImage()
-    defer { try? FileManager.default.removeItem(at: file) }
+    addTeardownBlock { try FileManager.default.removeItem(at: file) }
+    let delivery = DelayedProviderTasks(owner: self)
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: .openInPlace, visibility: .all
     ) { callback in
       loading.fulfill()
-      Task {
-        for await _ in imageStream { break }
+      return delivery.hold {
         callback(file, true, nil)
       }
-      return Progress(totalUnitCount: 1)
     }
     conversation.attachmentDraft.importPastedImages([provider])
     await fulfillment(of: [loading], timeout: 3)
     readGate.yield()
     await synchronization.value
-    imageGate.yield()
+    delivery.release()
     try await eventually {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
         && fixture.state.value.withLock { $0.preparations.count == 1 }
