@@ -9,6 +9,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.14.0](https://github.com/okou-ai/okou/compare/api-v2.13.5...api-v2.14.0) (2026-10-27)
+
+
+### Features
+
+* **api:** honor claim response budgets before accepting jobs ([#43296](https://github.com/okou-ai/okou/issues/43296)) ([fbe7f30](https://github.com/okou-ai/okou/commit/fbe7f30e1bc1e3379069bda30fe73b12e103439a))
+
+
+### Bug Fixes
+
+* **chat:** preserve drafts when selected connector accounts disappear ([#43293](https://github.com/okou-ai/okou/issues/43293)) ([351b13f](https://github.com/okou-ai/okou/commit/351b13f0f371eeae1f968a57887595b25b7762dc))
+* prepare workflow claim readers for document contexts ([#43310](https://github.com/okou-ai/okou/issues/43310)) ([9adf103](https://github.com/okou-ai/okou/commit/9adf103d18ed8987942777df4b79fddebdcc9778))
+
+
+### Refactoring
+
+* **api:** localize runner output projection database ownership ([#43311](https://github.com/okou-ai/okou/issues/43311)) ([17d8e57](https://github.com/okou-ai/okou/commit/17d8e57903e61fcb0a4ee5179767993349273322))
+* **api:** settle morning brief schedules atomically ([#43305](https://github.com/okou-ai/okou/issues/43305)) ([bb7bb3e](https://github.com/okou-ai/okou/commit/bb7bb3e24c2c12302e2b841aeda7b00f9233c7df))
+* **browser:** remove unused runner cdp access apis ([#43301](https://github.com/okou-ai/okou/issues/43301)) ([5bc0e69](https://github.com/okou-ai/okou/commit/5bc0e697dc50b1f623f56c4c943bd28808d132c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.0
+    * @okouai/core bumped to 8.793.0
+    * @okouai/db bumped to 2.6.8
+    * @okouai/pi-agent-runtime bumped to 1.51.1
+
 ## [2.13.5](https://github.com/okou-ai/okou/compare/api-v2.13.4...api-v2.13.5) (2026-10-27)
 
 

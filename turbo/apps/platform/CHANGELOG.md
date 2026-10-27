@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1068.0](https://github.com/okou-ai/okou/compare/app-v0.1067.1...app-v0.1068.0) (2026-10-27)
+
+
+### Features
+
+* **app:** add a unified chat workspace lab switch ([#43239](https://github.com/okou-ai/okou/issues/43239)) ([d384b85](https://github.com/okou-ai/okou/commit/d384b85c1b96fa440a5d1e92f76e6706eeba0c7b))
+* **app:** put the chat reply name line behind a lab switch ([#43217](https://github.com/okou-ai/okou/issues/43217)) ([4d4edd1](https://github.com/okou-ai/okou/commit/4d4edd10d927b67cccdf9473cdde466a45f3b7c5))
+
+
+### Bug Fixes
+
+* **app:** float the chat resources panel and centre its empty state ([#43306](https://github.com/okou-ai/okou/issues/43306)) ([76085ff](https://github.com/okou-ai/okou/commit/76085ff07ee85cdc42ed7228eff14e01b60def89))
+* **chat:** preserve drafts when selected connector accounts disappear ([#43293](https://github.com/okou-ai/okou/issues/43293)) ([351b13f](https://github.com/okou-ai/okou/commit/351b13f0f371eeae1f968a57887595b25b7762dc))
+* sort remote access resources naturally by name ([#43309](https://github.com/okou-ai/okou/issues/43309)) ([216ac13](https://github.com/okou-ai/okou/commit/216ac13fac69db77789aaf6bb60fac8d33b805e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.10.0
+    * @okouai/core bumped to 8.793.0
+
 ## [0.1067.1](https://github.com/okou-ai/okou/compare/app-v0.1067.0...app-v0.1067.1) (2026-10-27)
 
 

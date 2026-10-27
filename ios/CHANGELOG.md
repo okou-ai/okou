@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.5](https://github.com/okou-ai/okou/compare/ios-v0.20.4...ios-v0.20.5) (2026-10-27)
+
+
+### Bug Fixes
+
+* **chat:** preserve drafts when selected connector accounts disappear ([#43293](https://github.com/okou-ai/okou/issues/43293)) ([351b13f](https://github.com/okou-ai/okou/commit/351b13f0f371eeae1f968a57887595b25b7762dc))
+* **ios:** refine scroll-to-bottom button size, spacing and motion ([#43282](https://github.com/okou-ai/okou/issues/43282)) ([1abd90a](https://github.com/okou-ai/okou/commit/1abd90aa9f5ef0c8e40b631100b5b647674e6bd0))
+
 ## [0.20.4](https://github.com/okou-ai/okou/compare/ios-v0.20.3...ios-v0.20.4) (2026-10-27)
 
 
