@@ -10,6 +10,9 @@ describe("model run options", () => {
     expect(getModelRunOptions("gpt-5.6-sol").fast).toStrictEqual({
       chatGptUsageMultiplier: 2.5,
     });
+    expect(getModelRunOptions("gpt-6.1-terra").fast).toStrictEqual({
+      chatGptUsageMultiplier: 2.5,
+    });
   });
 
   it("has no options for unknown models", () => {

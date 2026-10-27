@@ -496,6 +496,41 @@ describe("Pi agent model adapter", () => {
     });
   });
 
+  it("pins the official 6.1 Terra identity and prices for Codex", () => {
+    const model = resolvePiAgentModel({
+      provider: "openai-codex",
+      baseUrl: "https://chatgpt.com/backend-api",
+      apiKey: "test-key",
+      model: "gpt-6.1-terra",
+      dialect: "openai-codex-responses",
+      accountId: "test",
+      transport: "sse",
+    });
+    expect(model).toMatchObject({
+      id: "gpt-6.1-terra",
+      name: "GPT 6.1 Terra",
+      api: "openai-codex-responses",
+      reasoning: true,
+      contextWindow: 500_000,
+      maxTokens: 128_000,
+      cost: {
+        input: 1,
+        output: 5,
+        cacheRead: 0.05,
+        cacheWrite: 1.25,
+        tiers: [
+          {
+            inputTokensAbove: 272_000,
+            input: 2,
+            output: 7.5,
+            cacheRead: 0.1,
+            cacheWrite: 2.5,
+          },
+        ],
+      },
+    });
+  });
+
   it.each([
     {
       name: "public Responses",

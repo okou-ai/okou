@@ -33,7 +33,7 @@ describe("Auto and personal-subscription Pi execution", () => {
     }
   });
 
-  it.each(["gpt-6.1-sol", "gpt-6-luna"])(
+  it.each(["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"])(
     "uses the native Codex harness for %s only when requested",
     (model) => {
       const args = {
