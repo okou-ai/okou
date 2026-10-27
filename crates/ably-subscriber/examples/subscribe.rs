@@ -11,8 +11,9 @@
 //! Message JSON is printed to stdout, while tracing and status diagnostics are
 //! printed to stderr, so stdout can be piped directly to `jq` for formatting.
 //! `RUST_LOG` controls tracing verbosity and target filters (INFO by default).
+//! Terminal subscription errors produce a nonzero process exit status.
 
-use ably_subscriber::{Event, SubscribeConfig, subscribe};
+use ably_subscriber::{Error, Event, SubscribeConfig, subscribe};
 
 mod common;
 
@@ -79,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sub = subscribe(config).await?;
 
     while let Some(event) = sub.next().await {
-        match &event {
+        match event {
             Event::Message(msg) => {
                 eprintln!(
                     "[message] name={} id={} ts={}",
@@ -95,8 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("[disconnected] {}", reason.as_deref().unwrap_or("-"));
             }
             Event::Error { code, message } => {
-                eprintln!("[error] code={code} {message}");
-                break;
+                return Err(Error::Protocol { code, message }.into());
             }
         }
     }
