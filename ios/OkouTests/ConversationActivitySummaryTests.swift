@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import Observation
 import Synchronization
 import XCTest
 
@@ -10,17 +11,25 @@ import XCTest
 final class ConversationActivitySummaryTests: XCTestCase {
 
   private func waitForSleep(_ clock: ActivityClock, _ duration: Duration) async throws {
-    let deadline = ContinuousClock.now + .seconds(3)
-    while !(await clock.hasSleeper(duration)), ContinuousClock.now < deadline { await Task.yield() }
-    let waiting = await clock.hasSleeper(duration)
-    XCTAssertTrue(waiting, "Expected a suspended timer for \(duration)")
+    try await waitForBusinessResult { clock.hasSleeper(duration) }
   }
 
   private func waitForNoSleep(_ clock: ActivityClock, duration: Duration? = nil) async throws {
-    let deadline = ContinuousClock.now + .seconds(3)
-    while await clock.hasSleeper(duration), ContinuousClock.now < deadline { await Task.yield() }
-    let waiting = await clock.hasSleeper(duration)
-    XCTAssertFalse(waiting, "Cancelled timers must stop")
+    try await waitForBusinessResult { !clock.hasSleeper(duration) }
+  }
+
+  private func waitForRequest(_ scenario: ActivityScenario, after count: Int) async throws {
+    let received = expectation(description: "The activity summary request reached HTTP")
+    let observation = Task {
+      for await total in scenario.requests where total > count {
+        received.fulfill()
+        return
+      }
+    }
+    await fulfillment(of: [received], timeout: 3)
+    observation.cancel()
+    await observation.value
+    _ = try XCTUnwrap(scenario.state.requests.withLock { $0 } > count ? true : nil)
   }
   func testRefreshRotationAndFailureDegradationDoNotChangeTranscript() async throws {
     let scenario = ActivityScenario()
@@ -31,17 +40,18 @@ final class ConversationActivitySummaryTests: XCTestCase {
     XCTAssertNil(conversation.activitySummary.text)
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 0)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await eventually { conversation.activitySummary.text == "Checking the sources" }
+    try await waitForBusinessResult { conversation.activitySummary.text == "Checking the sources" }
     let messages = conversation.messages
     let items = conversation.visibleItems
     let history = conversation.history
     try await waitForSleep(clock, .seconds(5))
-    await clock.advance(.seconds(5))
-    try await eventually { conversation.activitySummary.text == "Comparing the results" }
+    clock.advance(.seconds(5))
+    try await waitForBusinessResult { conversation.activitySummary.text == "Comparing the results" }
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 1)
     try await waitForSleep(clock, .seconds(15))
-    await clock.advance(.seconds(15))
-    try await eventually { scenario.state.requests.withLock { $0 } == 2 }
+    clock.advance(.seconds(15))
+    try await waitForRequest(scenario, after: 1)
+    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 2)
     XCTAssertEqual(conversation.activitySummary.text, "Comparing the results")
     XCTAssertEqual(conversation.messages, messages)
     XCTAssertEqual(conversation.visibleItems, items)
@@ -60,16 +70,20 @@ final class ConversationActivitySummaryTests: XCTestCase {
       scenario.state.response.withLock { $0 = response }
       let previous = scenario.state.requests.withLock { $0 }
       try await waitForSleep(clock, .seconds(15))
-      await clock.advance(.seconds(15))
-      try await eventually { scenario.state.requests.withLock { $0 } > previous }
-      try await eventually { conversation.activitySummary.text == nil }
+      clock.advance(.seconds(15))
+      try await waitForRequest(scenario, after: previous)
+      try await waitForBusinessResult { conversation.activitySummary.text == nil }
       XCTAssertNil(conversation.error)
       XCTAssertEqual(conversation.history, history)
+
+      // Restore visible content so the next empty/error response must be consumed.
+      scenario.state.response.withLock { $0 = nil }
+      try await waitForSleep(clock, .seconds(15))
+      clock.advance(.seconds(15))
+      try await waitForBusinessResult {
+        conversation.activitySummary.text == "Checking the sources"
+      }
     }
-    scenario.state.response.withLock { $0 = nil }
-    try await waitForSleep(clock, .seconds(15))
-    await clock.advance(.seconds(15))
-    try await eventually { conversation.activitySummary.text == "Checking the sources" }
   }
 
   func testHiddenBackgroundCompletedAndClosedDetailsCancelDemand() async throws {
@@ -80,7 +94,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     defer { conversation.close() }
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await eventually { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { conversation.activitySummary.text != nil }
     let replacementOwner = UUID()
     conversation.setDetailVisible(true, owner: replacementOwner)
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
@@ -92,16 +106,14 @@ final class ConversationActivitySummaryTests: XCTestCase {
     try await waitForNoSleep(clock)
     visible.active = true
     conversation.reconcileActivitySummary()
-    try await eventually {
-      scenario.state.requests.withLock { $0 } == 2 && conversation.activitySummary.text != nil
-    }
+    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 2)
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
     XCTAssertNil(conversation.activitySummary.text)
     try await waitForNoSleep(clock)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await eventually {
-      scenario.state.requests.withLock { $0 } == 3 && conversation.activitySummary.text != nil
-    }
+    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 3)
     scenario.append(type: "run.completed")
     await conversation.refresh()
     XCTAssertEqual(conversation.history?.executionState, .completed)
@@ -136,9 +148,9 @@ final class ConversationActivitySummaryTests: XCTestCase {
     scenario.append(type: "input.prompt", run: newer)
     await conversation.refresh()
     await fulfillment(of: [cancelled], timeout: 3)
-    try await eventually { conversation.activitySummary.text == "Checking the sources" }
+    try await waitForBusinessResult { conversation.activitySummary.text == "Checking the sources" }
     XCTAssertEqual(conversation.history?.activityRunID, newer)
-    await release.advance(.seconds(1))
+    release.advance(.seconds(1))
     scenario.append(type: "control.interrupt", run: newer)
     await conversation.refresh()
     XCTAssertEqual(conversation.history?.executionState, .stopping)
@@ -158,15 +170,15 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await eventually { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { conversation.activitySummary.text != nil }
     workspace.setForeground(false)
     XCTAssertNil(conversation.activitySummary.text)
     workspace.setForeground(true)
-    try await eventually { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { conversation.activitySummary.text != nil }
     workspace.selectedThreadID = nil
     XCTAssertNil(conversation.activitySummary.text)
     workspace.selectedThreadID = ActivityScenario.thread
-    try await eventually { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { conversation.activitySummary.text != nil }
     workspace.close()
     XCTAssertNil(conversation.activitySummary.text)
   }
@@ -174,7 +186,8 @@ final class ConversationActivitySummaryTests: XCTestCase {
 
 @MainActor private final class ActivityVisibility { var active = true }
 
-private actor ActivityClock {
+@MainActor @Observable
+private final class ActivityClock {
   private var sleepers: [UUID: (Duration, CheckedContinuation<Void, Error>)] = [:]
 
   func sleep(_ duration: Duration) async throws {
@@ -183,7 +196,7 @@ private actor ActivityClock {
       try Task.checkCancellation()
       try await withCheckedThrowingContinuation { sleepers[id] = (duration, $0) }
     } onCancel: {
-      Task { await self.cancel(id) }
+      Task { @MainActor in self.cancel(id) }
     }
   }
 
@@ -209,10 +222,14 @@ private final class ActivityScenario: Sendable {
   static let thread = "10000000-0000-4000-8000-000000000001"
   static let run = "f0000000-0000-4000-8000-000000000003"
   let state = ActivityHTTPState()
+  let requests: AsyncStream<Int>
+  private let requestEvents: AsyncStream<Int>.Continuation
   private let fixture: ChatHTTPFixture
 
   init() {
+    (requests, requestEvents) = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingNewest(1))
     let state = state
+    let requestEvents = requestEvents
     fixture = ChatHTTPFixture { request in
       let path = "/api/chat-threads/\(Self.thread)"
       switch request.url?.path {
@@ -232,7 +249,11 @@ private final class ActivityScenario: Sendable {
       case path + "/mark-read":
         return ChatHTTPResponse(body: #"{"lastReadAt":"2026-10-20T00:00:00Z"}"#)
       case path + "/activity-summary":
-        state.requests.withLock { $0 += 1 }
+        let count = state.requests.withLock {
+          $0 += 1
+          return $0
+        }
+        requestEvents.yield(count)
         if let wait = state.hold.withLock({ $0 }) { await wait() }
         if let override = state.response.withLock({ $0 }) { return override }
         let body =
@@ -263,6 +284,8 @@ private final class ActivityScenario: Sendable {
     }
     append(type: "input.prompt")
   }
+
+  deinit { requestEvents.finish() }
 
   func append(type: String, run: String = ActivityScenario.run) {
     state.rows.withLock { values in

@@ -31,7 +31,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     conversation.rememberReadingPosition(position)
     store.selectChat(SearchUnreadFixture.id(1))
     store.search.updateQuery("needle")
-    try await eventually { !store.search.isLoading }
+    try await waitForBusinessResult { !store.search.isLoading }
     XCTAssertEqual(store.search.messages.first?.matchedMessage.seqId, 5)
     let opened = await store.openSearchResult(id)
     XCTAssertTrue(opened)
@@ -146,10 +146,20 @@ final class ChatSearchUnreadTests: XCTestCase {
     store.selectChat(SearchUnreadFixture.id(1))
     let conversation = try XCTUnwrap(store.selectedConversation)
     let refresh = Task { await conversation.refresh() }
+    addTeardownBlock {
+      refresh.cancel()
+      gate.open()
+      await refresh.value
+    }
     await fulfillment(of: [started], timeout: 3)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
     let manual = Task { await store.setRead(thread, read: false) }
-    try await eventually { store.list.updatingThreads.contains(thread.id) }
+    addTeardownBlock {
+      manual.cancel()
+      gate.open()
+      await manual.value
+    }
+    try await waitForBusinessResult { store.list.updatingThreads.contains(thread.id) }
     gate.open()
     await refresh.value
     await manual.value
@@ -339,7 +349,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     search.updateQuery("old")
     await fulfillment(of: [started], timeout: 2)
     search.updateQuery("new")
-    try await eventually { !search.isLoading }
+    try await waitForBusinessResult { !search.isLoading }
     XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
     gate.open()
     await fulfillment(of: [cancelled], timeout: 2)
@@ -451,18 +461,18 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { search.close() }
     search.present()
     search.updateQuery("empty")
-    try await eventually { !search.isLoading }
+    try await waitForBusinessResult { !search.isLoading }
     XCTAssertTrue(search.messages.isEmpty)
     XCTAssertNil(search.error)
     search.updateQuery("denied")
-    try await eventually { !search.isLoading }
+    try await waitForBusinessResult { !search.isLoading }
     XCTAssertNotNil(search.error)
     XCTAssertTrue(search.messages.isEmpty)
     search.updateQuery("retry")
-    try await eventually { !search.isLoading }
+    try await waitForBusinessResult { !search.isLoading }
     XCTAssertNotNil(search.error)
     search.retry()
-    try await eventually { !search.isLoading }
+    try await waitForBusinessResult { !search.isLoading }
     XCTAssertNil(search.error)
     XCTAssertEqual(search.messages.first?.matchedMessage.content, "Recovered")
   }
