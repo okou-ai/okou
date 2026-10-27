@@ -76,13 +76,16 @@ export const CHAT_THREAD_NAME_LINE_ASSISTANT_MESSAGE_ROW_CLASS =
   "flex flex-col gap-1";
 
 export const CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS =
-  "flex h-7 w-fit max-w-full min-w-0 items-center gap-2 text-sm font-medium text-foreground";
+  "flex h-8 w-fit max-w-full min-w-0 items-center gap-2 text-sm font-medium text-foreground";
 
 // Agent artwork is a half figure cut at its canvas bottom. The hairline frame
 // is the visible edge that cut rests on; without it the collar floats on an
-// invisible clip line and reads as a rendering fault.
+// invisible clip line and reads as a rendering fault. At 28px — the size the
+// chat avatar already uses on narrow screens — the face reads as a person
+// beside the 14px name; at 20px it read as an icon. The 32px line leaves the
+// hover surface 2px above and below the frame.
 export const CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS =
-  "size-5 shrink-0 overflow-hidden rounded-md border border-surface-border";
+  "size-7 shrink-0 overflow-hidden rounded-lg border border-surface-border";
 
 export const CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS =
   "size-full object-cover object-top";

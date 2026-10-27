@@ -4307,7 +4307,7 @@ function ChatEventSkeletonPair({ compact = false }: { compact?: boolean }) {
       >
         {nameLine ? (
           <div className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>
-            <Skeleton className="size-5 shrink-0 rounded-md" />
+            <Skeleton className="size-7 shrink-0 rounded-lg" />
             <Skeleton className="h-3 w-16 rounded-lg" />
           </div>
         ) : (
@@ -6464,7 +6464,7 @@ function ShareGroupSelectionColumn({
         className={cn(
           "sticky top-2 flex items-center",
           role === "assistant"
-            ? "h-7"
+            ? "h-8"
             : "h-[calc(1lh+1.5rem)] text-[0.9375rem] leading-[1.7]",
         )}
       >
