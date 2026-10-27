@@ -1,4 +1,5 @@
 import {
+  dataRouterRequest,
   dataRouterToolsPageSchema,
   type DataRouterFamily,
 } from "@okouai/api-contracts/contracts/data-router-tools";
@@ -24,16 +25,10 @@ async function readDataRouterFamilies(
       resolveDataRouterUrl(),
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: cursors.size + 1,
-          method: "tools/list",
-          params: cursor ? { cursor } : {},
-        }),
+        ...dataRouterRequest(
+          { method: "tools/list", params: cursor ? { cursor } : {} },
+          cursors.size + 1,
+        ),
         redirect: "error",
       },
       signal,

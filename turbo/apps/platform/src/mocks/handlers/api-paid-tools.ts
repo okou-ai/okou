@@ -1,3 +1,4 @@
+import { DATA_ROUTER_PROTOCOL_VERSION } from "@okouai/api-contracts/contracts/data-router-tools";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { http, HttpResponse } from "msw";
 import { mockApi } from "../msw-contract.ts";
@@ -81,6 +82,13 @@ export const apiPaidToolsHandlers = [
   }),
   ...DATA_ROUTER_URLS.map((url) => {
     return http.post(url, async ({ request }) => {
+      // Like Router, reject requests that are not stateless 2026-07-28 MCP.
+      if (
+        request.headers.get("MCP-Protocol-Version") !==
+        DATA_ROUTER_PROTOCOL_VERSION
+      ) {
+        return new HttpResponse(null, { status: 400 });
+      }
       const message: unknown = await request.json();
       const id =
         typeof message === "object" && message !== null && "id" in message
