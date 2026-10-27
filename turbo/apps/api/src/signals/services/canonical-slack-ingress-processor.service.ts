@@ -363,6 +363,7 @@ function ingressFailureWritePlan(args: {
 
 interface PersistedCanonicalSlackIngress {
   readonly client: SlackClient;
+  readonly workspaceId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
@@ -381,6 +382,7 @@ function persistedCanonicalSlackIngress(
 ): PersistedCanonicalSlackIngress {
   return {
     client,
+    workspaceId: ingress.workspaceId,
     orgId,
     userId: ingress.userId,
     chatThreadId,
@@ -474,6 +476,7 @@ const settleCanonicalSlackStatusAfterPick$ = command(
       set(
         clearCanonicalSlackThreadStatusIfIdle$,
         {
+          workspaceId: args.ingress.workspaceId,
           chatThreadId: args.ingress.chatThreadId,
           channelId: args.ingress.channelId,
           threadTs: args.ingress.threadTs,
