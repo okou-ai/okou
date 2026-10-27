@@ -156,8 +156,9 @@ function CustomTemplateGallery({
  *
  * A document template renders no pages, so the source file is the only thing
  * there is to look at — and the browser cannot draw a Word document at all.
- * Word documents open in a separate viewer to isolate their zoom gestures;
- * PDF sources use the browser's own embedded viewer.
+ * Both branches therefore hand the file to a renderer that can: the Office web
+ * viewer for the formats it covers, and the browser's own PDF viewer for the
+ * rest.
  */
 function CustomTemplateSourcePreview({
   detail,

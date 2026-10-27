@@ -22,7 +22,6 @@ import {
   warmMermaidParser,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
-import { expectDocumentPreviewGestures } from "./document-preview-gesture-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   artifactSummary,
@@ -57,17 +56,6 @@ const UNAVAILABLE_CSV_URL = "https://files.example.test/unavailable.csv";
 const MARKDOWN_URL = "https://files.example.test/architecture.md";
 const HOSTED_SITE_URL = "https://launch-site.example.test/";
 const IMAGE_URL = "https://files.example.test/launch-graphic.png";
-
-function expectWordViewerLink(link: HTMLElement, sourceUrl: string): void {
-  const viewer = new URL(link.getAttribute("href") ?? "");
-  expect(`${viewer.origin}${viewer.pathname}`).toBe(
-    "https://view.officeapps.live.com/op/embed.aspx",
-  );
-  expect(viewer.searchParams.get("src")).toBe(sourceUrl);
-  expect(link.tagName).toBe("A");
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
-}
 
 function useWideScreen(): void {
   context.mocks.browser.matchMedia((query) => {
@@ -283,21 +271,23 @@ test.each([
   ],
   ["legacy-report.doc", "application/msword"],
 ])(
-  "Open Word attachment %s separately from the dialog and split view",
+  "Preview Word attachment %s in the dialog and split view",
   async (filename, contentType) => {
     const url = await setupGeneratedFilePreview(filename, contentType);
     click(await screen.findByLabelText(`Preview ${filename}`));
     const dialog = await screen.findByTestId("attachment-lightbox");
-    const link = await within(dialog).findByText("Open in new tab");
-    expectWordViewerLink(link, url);
-    expectDocumentPreviewGestures(link);
-    expect(dialog.querySelector("iframe")).toBeNull();
+    const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
+    expect(dialogFrame).toBeVisible();
+    expectOfficeViewerUrl(dialogFrame, url);
+    expectOfficeViewerFocusable(dialogFrame);
     click(buttonNamed("Open in split view", dialog));
     const splitView = await screen.findByTestId("artifact-sidebar");
-    const splitLink = await within(splitView).findByText("Open in new tab");
-    expectWordViewerLink(splitLink, url);
-    expectDocumentPreviewGestures(splitLink);
-    expect(splitView.querySelector("iframe")).toBeNull();
+    const splitFrame = await within(splitView).findByTitle(
+      `${filename} preview`,
+    );
+    expect(splitFrame).toBeVisible();
+    expectOfficeViewerUrl(splitFrame, url);
+    expectOfficeViewerFocusable(splitFrame);
   },
 );
 
@@ -345,7 +335,7 @@ test("Preview an XLSX attachment in the dialog and split view", async () => {
   expectOfficeViewerUrl(splitFrame, url);
 });
 
-test("Use a public URL when opening a private Word attachment separately", async () => {
+test("Use a public URL for a private Office document preview", async () => {
   const fileId = "office-private-file";
   const filename = "private-plan.docx";
   const contentType =
@@ -374,9 +364,9 @@ test("Use a public URL when opening a private Word attachment separately", async
   click(await screen.findByLabelText(`Preview ${filename}`));
 
   const dialog = await screen.findByTestId("attachment-lightbox");
-  const link = await within(dialog).findByText("Open in new tab");
-  expectWordViewerLink(link, publicUrl);
-  expect(link.getAttribute("href")).not.toContain(privateUrl);
+  const frame = await within(dialog).findByTitle(`${filename} preview`);
+  expectOfficeViewerUrl(frame, publicUrl);
+  expect(frame.getAttribute("src")).not.toContain(privateUrl);
 });
 
 test("Render a generated private image and offer sharing by default", async () => {

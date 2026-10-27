@@ -671,7 +671,7 @@ test("A document template with a cover is tiled by its first page over a stack",
   expect(within(custom).getAllByTestId("document-cover-sheet")).toHaveLength(2);
 });
 
-test("Opening a Word template offers a separate Office viewer", async () => {
+test("Opening a Word template hands the source file to the Office viewer", async () => {
   mockCustomTemplateStore([documentTemplate()]);
 
   const { dialog } = await openCustomPanel("Document");
@@ -679,19 +679,18 @@ test("Opening a Word template offers a separate Office viewer", async () => {
   await within(dialog).findByText("Brand report");
   click(buttonByName("Preview Brand report", dialog)!);
 
-  const content = await screen.findByTestId("custom-template-source-preview");
-  const link = within(content).getByText("Open in new tab");
-  const viewerUrl = new URL(link.getAttribute("href") ?? "");
+  // The browser cannot draw a Word document, so the file goes to the viewer
+  // that can — the same one an attached document already opens in.
+  const frame = await screen.findByTitle("brand-report.docx preview");
+  const viewerUrl = new URL(frame.getAttribute("src") ?? "");
   expect(`${viewerUrl.origin}${viewerUrl.pathname}`).toBe(
     "https://view.officeapps.live.com/op/embed.aspx",
   );
   expect(viewerUrl.searchParams.get("src")).toBe(DOCUMENT_SOURCE_URL);
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
 
   // The dialog carries the management column a deck shows, so what a member
   // can do to a template does not depend on its kind.
-  const preview = previewDialogAround(content);
+  const preview = previewDialogAround(frame);
   expect(within(preview).getByLabelText("Rename template")).toBeVisible();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by
