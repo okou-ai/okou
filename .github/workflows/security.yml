@@ -405,8 +405,8 @@ jobs:
           # sh default used by container jobs.
           .github/scripts/checks/check-workflow-shell-compatibility.sh
 
-      - name: Test local Node.js version requirements
-        run: node --test scripts/prepare.node-test.mjs
+      - name: Test local setup and cloudflared provisioning scripts
+        run: node --test scripts/prepare.node-test.mjs scripts/cloudflared-ssh.node-test.mjs
 
       - name: Test owned Runner memory calibration collector
         run: python3 .github/scripts/tests/runner-memory-calibrate-test.py
