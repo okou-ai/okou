@@ -1,6 +1,6 @@
 [package]
 name = "process-control-ipc"
-version = "0.5.36"
+version = "0.5.37"
 edition.workspace = true
 
 [dependencies]

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.10...guest-agent-v0.109.11) (2026-10-27)
+
+
+### Bug Fixes
+
+* classify all-endpoint model guardrail refusals ([#43337](https://github.com/okou-ai/okou/issues/43337)) ([c2a90f0](https://github.com/okou-ai/okou/commit/c2a90f0c2bf594775579b7b00c27e3cad6d87a19))
+
 ## [0.109.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.9...guest-agent-v0.109.10) (2026-10-27)
 
 

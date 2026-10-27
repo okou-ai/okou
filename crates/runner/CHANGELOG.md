@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.237.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.14...runner-rs-v0.237.15) (2026-10-27)
+
+
+### Refactoring
+
+* **runner:** share terminal startup runtime retirement ([#43334](https://github.com/okou-ai/okou/issues/43334)) ([d66c619](https://github.com/okou-ai/okou/commit/d66c6193255f0dbc3f2aa848e2678e2a932f621c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.13...runner-rs-v0.237.14) (2026-10-27)
 
 ### Release Dependencies
