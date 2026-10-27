@@ -195,8 +195,8 @@ importers:
         specifier: ^8.0.0
         version: 8.0.0
       ccstate:
-        specifier: ^6.0.0
-        version: 6.0.0
+        specifier: ^6.1.0
+        version: 6.1.0
       cfb:
         specifier: ^1.2.2
         version: 1.2.2
@@ -791,14 +791,14 @@ importers:
         specifier: 6.0.0
         version: 6.0.0
       ccstate:
-        specifier: ^6.0.0
-        version: 6.0.0
+        specifier: ^6.1.0
+        version: 6.1.0
       ccstate-react:
-        specifier: ^6.0.0
-        version: 6.0.0(@types/react@19.2.14)(react@19.2.6)
+        specifier: ^6.1.0
+        version: 6.1.0(@types/react@19.2.14)(react@19.2.6)
       cdp-viewer:
-        specifier: github:okou-ai/cdp-viewer#e979d5e3d025b50f8b9b77af7b6b10085680a851
-        version: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/e979d5e3d025b50f8b9b77af7b6b10085680a851(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: github:okou-ai/cdp-viewer#dc7b6b5d472041518ebd53f330581c08635afd94
+        version: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/dc7b6b5d472041518ebd53f330581c08635afd94(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -5984,8 +5984,8 @@ packages:
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
 
-  ccstate-react@6.0.0:
-    resolution: {integrity: sha512-ItZMChWGsKxNHkHAvLm63kBJXx5j8SAPMS4BRfUPwdiIIjSgQnhbj1bcTcpaJJwyvY4/Zv/x3WrcB9VpQOa88Q==}
+  ccstate-react@6.1.0:
+    resolution: {integrity: sha512-arfqNiXDJGDcZlwKiDK2ECxo7dmZ2Ff0TAe01ew1mhknF6mSM+4Kq+rReapLDN/ypixW4tEvGAz4mJw1Q6z4Wg==}
     peerDependencies:
       '@types/react': '>=17.0.0'
       react: '>=17.0.0'
@@ -5995,11 +5995,11 @@ packages:
       react:
         optional: true
 
-  ccstate@6.0.0:
-    resolution: {integrity: sha512-BVjo1I5GMsCuSzsFftSVMrXAYxzJrNoRy+kQuzymlOM42N4YqKLy+1/0hlGcp6OSFstkJY3ZUACnEegxJMdGCg==}
+  ccstate@6.1.0:
+    resolution: {integrity: sha512-p7FFf8dJDsLFORC/xwOnJ70RO0M8ix9JI95utUJBPo4lIAlZ/XIkGLDztY6ciCrH92jrln1uKk2OSUzemLcHiA==}
 
-  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/e979d5e3d025b50f8b9b77af7b6b10085680a851:
-    resolution: {gitHosted: true, integrity: sha512-ZKAYVJKhH91R/q/KFyJE00JgiLs2D2Njnzqr4AeCZ6/UAkFaFzzLzlTpWwPo2OYEaF8DTTRvmKYyQo3eo4+rPw==, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/e979d5e3d025b50f8b9b77af7b6b10085680a851}
+  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/dc7b6b5d472041518ebd53f330581c08635afd94:
+    resolution: {gitHosted: true, integrity: sha512-x1vgwtqR7ZNE8JHUpXrWKfWBPK82tsXvy8MDsZM9Z/A+lrH/lg+b6xy6bZwu8RR7DqvxMTqEr7YxTqLBcxvFyw==, tarball: https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/dc7b6b5d472041518ebd53f330581c08635afd94}
     version: 0.0.0
     engines: {node: '>=22.12.0'}
     peerDependencies:
@@ -14238,19 +14238,19 @@ snapshots:
 
   ccount@2.0.1: {}
 
-  ccstate-react@6.0.0(@types/react@19.2.14)(react@19.2.6):
+  ccstate-react@6.1.0(@types/react@19.2.14)(react@19.2.6):
     dependencies:
-      ccstate: 6.0.0
+      ccstate: 6.1.0
     optionalDependencies:
       '@types/react': 19.2.14
       react: 19.2.6
 
-  ccstate@6.0.0: {}
+  ccstate@6.1.0: {}
 
-  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/e979d5e3d025b50f8b9b77af7b6b10085680a851(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  cdp-viewer@https://codeload.github.com/okou-ai/cdp-viewer/tar.gz/dc7b6b5d472041518ebd53f330581c08635afd94(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       '@base-ui/react': 1.9.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      ccstate: 6.0.0
+      ccstate: 6.1.0
       devtools-protocol: 0.0.1721602
       lucide-react: 1.59.0(@types/react@19.2.14)(react@19.2.6)
       react: 19.2.6
