@@ -11,18 +11,12 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
-export const halloweenPhaseSchema = zEnum([
-  "upcoming",
-  "open",
-  "ended",
-  "unavailable",
-]);
+export const halloweenPhaseSchema = zEnum(["open", "unavailable"]);
 export const halloweenOutcomeSchema = zEnum([
   "playing",
   "success",
   "wrong",
   "left",
-  "interrupted",
 ]);
 export const halloweenQuestionSchema = object({
   id: string(),
@@ -66,10 +60,7 @@ export const halloweenContract = c.router({
     path: "/api/halloween",
     headers: authHeadersSchema,
     responses: {
-      200: object({
-        phase: halloweenPhaseSchema,
-        changesInMs: number().int().min(0).nullable(),
-      }),
+      200: object({ phase: halloweenPhaseSchema }),
       ...errors,
     },
   },
@@ -107,7 +98,7 @@ export const halloweenContract = c.router({
     method: "POST",
     path: "/api/halloween/leave",
     headers: authHeadersSchema,
-    body: roundReference.extend({ reason: zEnum(["left", "interrupted"]) }),
+    body: roundReference,
     responses: { 200: halloweenRoundSchema, ...errors },
   },
 });
@@ -115,7 +106,7 @@ export const halloweenContract = c.router({
 export const halloweenParticipantSchema = object({
   userId: string(),
   email: string().nullable(),
-  orgId: string().nullable(),
+  orgId: string(),
   firstPlayedAt: string(),
   lastPlayedAt: string(),
   rounds: array(

@@ -4107,8 +4107,6 @@
       "campaign": "Halloween espeluznante",
       "climb": "la subida",
       "correct": "Correcto",
-      "ended": "Este cuestionario de Halloween ha terminado.",
-      "endedSub": "Gracias por jugar.",
       "error": "No pudimos cargar el cuestionario. Por favor inténtalo de nuevo.",
       "footerAfter": "para conocer los detalles de elegibilidad y recompensas.",
       "footerBefore": "Ver actividad",
@@ -4144,8 +4142,6 @@
       "title": "Un regalo de Okou.",
       "unavailable": "Un poco de magia está en camino.",
       "unavailableSub": "El cuestionario de Halloween aún no está disponible. Vuelve pronto.",
-      "upcoming": "Un poco de magia está en camino.",
-      "upcomingSub": "El cuestionario de Halloween aún no está disponible. Vuelve pronto.",
       "won": "¡Pasaste el cuestionario!",
       "wonSub": "Ella sabía que lo tenías dentro de ti."
     },

@@ -4053,8 +4053,6 @@
       "campaign": "Gruseliges Halloween",
       "climb": "Der Aufstieg",
       "correct": "Richtig",
-      "ended": "Dieses Halloween-Quiz ist beendet.",
-      "endedSub": "Danke fürs Spielen.",
       "error": "Wir konnten das Quiz nicht laden. Bitte versuchen Sie es erneut.",
       "footerAfter": "für Details zur Teilnahmeberechtigung und Prämie.",
       "footerBefore": "Siehe Aktivität",
@@ -4090,8 +4088,6 @@
       "title": "Ein Leckerbissen von Okou.",
       "unavailable": "Ein wenig Magie ist auf dem Weg.",
       "unavailableSub": "Das Halloween-Quiz ist noch nicht verfügbar. Komm bald wieder.",
-      "upcoming": "Ein wenig Magie ist auf dem Weg.",
-      "upcomingSub": "Das Halloween-Quiz ist noch nicht verfügbar. Komm bald wieder.",
       "won": "Du hast das Quiz bestanden!",
       "wonSub": "Sie wusste, dass du es in dir hast."
     },

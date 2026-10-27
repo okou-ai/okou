@@ -36,7 +36,7 @@ interface OwnedRound {
 }
 interface NewRound {
   readonly userId: string;
-  readonly orgId: string | null;
+  readonly orgId: string;
   readonly email: string | null;
   readonly restart: boolean;
 }
@@ -130,7 +130,7 @@ export const currentHalloweenRound$ = computed(async (get) => {
     .where(eq(halloweenRounds.userId, userId))
     .orderBy(desc(halloweenRounds.startedAt), desc(halloweenRounds.id))
     .limit(1);
-  return row && row.outcome !== "left" && row.outcome !== "interrupted"
+  return row && row.outcome !== "left"
     ? receipt(row)
     : notFound("Game result not found");
 });
@@ -288,16 +288,12 @@ export const advanceHalloweenRound$ = command(
 );
 
 export const leaveHalloweenRound$ = command(
-  async (
-    { set },
-    input: OwnedRound & { readonly reason: "left" | "interrupted" },
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, input: OwnedRound, signal: AbortSignal) => {
     const db = set(writeDb$);
     const at = nowDate();
     await db
       .update(halloweenRounds)
-      .set({ outcome: input.reason, completedAt: at, updatedAt: at })
+      .set({ outcome: "left", completedAt: at, updatedAt: at })
       .where(
         and(ownedRoundWhere(input), eq(halloweenRounds.outcome, "playing")),
       );

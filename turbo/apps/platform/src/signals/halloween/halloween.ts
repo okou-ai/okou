@@ -8,7 +8,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { detach, Reason, setLoop, resetSignal } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
 
 const soundStorage = localStorageSignals("halloween_2026_sound");
 const homeAnimationStorage = localStorageSignals(
@@ -16,7 +16,7 @@ const homeAnimationStorage = localStorageSignals(
 );
 
 const roundState$ = state<HalloweenRound | null>(null);
-const phaseState$ = state<HalloweenPhase>("upcoming");
+const phaseState$ = state<HalloweenPhase>("unavailable");
 const screenState$ = state<"start" | "question" | "result">("start");
 const rulesState$ = state(false);
 const homeAnimationVisibleState$ = state(false);
@@ -150,34 +150,11 @@ const refreshHalloweenPhase$ = command(
     );
     signal.throwIfAborted();
     set(phaseState$, result.body.phase);
-    return result.body.changesInMs;
-  },
-);
-
-const watchHalloweenBoundary$ = command(
-  ({ get, set }, remaining: number | null, signal: AbortSignal) => {
-    setLoop(
-      async () => {
-        if (remaining === null) {
-          return true;
-        }
-        await delay(Math.max(1, remaining), { signal });
-        signal.throwIfAborted();
-        if (get(phaseState$) === "open") {
-          set(phaseState$, "ended");
-        }
-        remaining = await set(refreshHalloweenPhase$, signal);
-        return remaining === null;
-      },
-      0,
-      signal,
-    );
   },
 );
 
 const watchHalloweenPhase$ = command(async ({ set }, signal: AbortSignal) => {
-  const remaining = await set(refreshHalloweenPhase$, signal);
-  set(watchHalloweenBoundary$, remaining, signal);
+  await set(refreshHalloweenPhase$, signal);
   window.addEventListener(
     "focus",
     () => {
@@ -292,7 +269,6 @@ export const leaveHalloween$ = command(
         get(apiClient$)(halloweenContract).leave({
           body: {
             id: round.id,
-            reason: "left",
           },
           fetchOptions: { signal },
         }),

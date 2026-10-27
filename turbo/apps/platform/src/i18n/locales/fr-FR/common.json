@@ -4107,8 +4107,6 @@
       "campaign": "Halloween effrayant",
       "climb": "La montée",
       "correct": "Correct",
-      "ended": "Ce quiz d'Halloween est terminé.",
-      "endedSub": "Merci d'avoir joué.",
       "error": "Nous n'avons pas pu charger le quiz. Veuillez réessayer.",
       "footerAfter": "pour plus de détails sur l’éligibilité et les récompenses.",
       "footerBefore": "Voir l'activité",
@@ -4144,8 +4142,6 @@
       "title": "Un régal de la part de Okou.",
       "unavailable": "Un peu de magie est en route.",
       "unavailableSub": "Le quiz d’Halloween n’est pas encore disponible. Revenez bientôt.",
-      "upcoming": "Un peu de magie est en route.",
-      "upcomingSub": "Le quiz d’Halloween n’est pas encore disponible. Revenez bientôt.",
       "won": "Vous avez réussi le quiz !",
       "wonSub": "Elle savait que tu l'avais en toi."
     },

@@ -4038,8 +4038,6 @@
       "campaign": "Halloween yang menyeramkan",
       "climb": "Pendakian",
       "correct": "Benar",
-      "ended": "Kuis Halloween ini telah berakhir.",
-      "endedSub": "Terima kasih sudah bermain.",
       "error": "Kami tidak dapat memuat kuis. Silakan coba lagi.",
       "footerAfter": "untuk rincian kelayakan dan hadiah.",
       "footerBefore": "Lihat aktivitas",
@@ -4075,8 +4073,6 @@
       "title": "Hadiah dari Okou.",
       "unavailable": "Sedikit keajaiban sedang terjadi.",
       "unavailableSub": "Kuis Halloween belum tersedia. Segera kembali.",
-      "upcoming": "Sedikit keajaiban sedang terjadi.",
-      "upcomingSub": "Kuis Halloween belum tersedia. Segera kembali.",
       "won": "Anda lulus kuis!",
       "wonSub": "Dia tahu kamu memilikinya di dalam dirimu."
     },

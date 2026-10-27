@@ -27,18 +27,6 @@ function StartScreen() {
   const signal = useGet(pageSignal$);
   const [operation, start] = useLoadableSet(startHalloween$);
   const open = phase === "open";
-  const title =
-    phase === "ended"
-      ? copy.ended
-      : phase === "upcoming"
-        ? copy.upcoming
-        : copy.unavailable;
-  const subtitle =
-    phase === "ended"
-      ? copy.endedSub
-      : phase === "upcoming"
-        ? copy.upcomingSub
-        : copy.unavailableSub;
   return (
     <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-14 pb-20 text-center md:py-20 md:pb-24">
       <h1
@@ -54,7 +42,7 @@ function StartScreen() {
             <span className="mt-2 block text-[#e8c68d]">{copy.subtitle}</span>
           </>
         ) : (
-          title
+          copy.unavailable
         )}
       </h1>
       {open ? (
@@ -73,7 +61,7 @@ function StartScreen() {
             typography.bodyClassName,
           )}
         >
-          {subtitle}
+          {copy.unavailableSub}
         </p>
       )}
       {open ? (

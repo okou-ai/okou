@@ -4051,8 +4051,6 @@
       "campaign": "Spooky Halloween",
       "climb": "The climb",
       "correct": "Correct",
-      "ended": "This Halloween quiz has ended.",
-      "endedSub": "Thanks for playing.",
       "error": "We couldn’t load the quiz. Please try again.",
       "footerAfter": " for eligibility and reward details.",
       "footerBefore": "See activity ",
@@ -4088,8 +4086,6 @@
       "title": "A treat from Okou.",
       "unavailable": "A little magic is on its way.",
       "unavailableSub": "The Halloween quiz isn’t available yet. Come back soon.",
-      "upcoming": "A little magic is on its way.",
-      "upcomingSub": "The Halloween quiz isn’t available yet. Come back soon.",
       "won": "You passed the quiz!",
       "wonSub": "She knew you had it in you."
     },

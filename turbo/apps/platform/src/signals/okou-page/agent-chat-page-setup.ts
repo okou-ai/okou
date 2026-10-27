@@ -84,7 +84,7 @@ export const setupAgentChatPage$ = command(
     detach(
       set(initializeHalloweenHome$, signal),
       Reason.Daemon,
-      "Halloween home entry and result association",
+      "Halloween home activity",
     );
 
     const agents = await get(agents$);

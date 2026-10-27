@@ -4038,8 +4038,6 @@
       "campaign": "奇趣萬聖節",
       "climb": "闖關進度",
       "correct": "正確",
-      "ended": "本次萬聖節問答活動已經結束。",
-      "endedSub": "感謝您的參與。",
       "error": "暫時無法載入答題，請重試。",
       "footerAfter": "，瞭解參與資格和獎勵詳情。",
       "footerBefore": "查看活動",
@@ -4075,8 +4073,6 @@
       "title": "Okou 為你準備了一份小禮物。",
       "unavailable": "一點小驚喜即將到來。",
       "unavailableSub": "萬聖節問答尚未開放，稍後再來看看。",
-      "upcoming": "一點小驚喜即將到來。",
-      "upcomingSub": "萬聖節問答尚未開放，稍後再來看看。",
       "won": "你通過測驗了！",
       "wonSub": "就知道你能做到。"
     },

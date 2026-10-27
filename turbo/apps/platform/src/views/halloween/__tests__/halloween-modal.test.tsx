@@ -73,7 +73,7 @@ beforeEach(() => {
   context.store.set(currentRound$, null);
   context.store.set(startedRounds$, 0);
   context.mocks.api(halloweenContract.status, ({ respond }) => {
-    return respond(200, { phase: "open", changesInMs: null });
+    return respond(200, { phase: "open" });
   });
   context.mocks.api(halloweenContract.current, ({ respond }) => {
     const currentRound = context.store.get(currentRound$);

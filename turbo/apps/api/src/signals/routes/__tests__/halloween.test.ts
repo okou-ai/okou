@@ -129,10 +129,7 @@ describe("Halloween quiz", () => {
         questionNumber: 1,
       });
       expect(replayed.body.id).not.toBe(success.id);
-      const left = await accept(
-        game.leave({ headers, body: { ...body, reason: "interrupted" } }),
-        [200],
-      );
+      const left = await accept(game.leave({ headers, body }), [200]);
       expect(left.body).toStrictEqual(success);
     },
   );
@@ -190,7 +187,7 @@ describe("Halloween quiz", () => {
     await accept(
       game.leave({
         headers,
-        body: { ...roundReference(restarted.body), reason: "left" },
+        body: roundReference(restarted.body),
       }),
       [404],
     );
@@ -258,14 +255,13 @@ describe("Halloween quiz", () => {
       mockNow(new Date(now));
       expect(
         (await accept(game.status({ headers }), [200])).body,
-      ).toStrictEqual({ phase: "open", changesInMs: null });
+      ).toStrictEqual({ phase: "open" });
       await accept(game.start({ headers, body: { restart: true } }), [200]);
     }
 
     actor(false);
     expect((await accept(game.status({ headers }), [200])).body).toStrictEqual({
       phase: "unavailable",
-      changesInMs: null,
     });
     await accept(game.current({ headers }), [409]);
     await accept(game.start({ headers, body: { restart: false } }), [409]);
@@ -298,10 +294,7 @@ describe("Halloween quiz", () => {
       }),
       [401],
     );
-    await accept(
-      game.leave({ headers: {}, body: { ...body, reason: "interrupted" } }),
-      [401],
-    );
+    await accept(game.leave({ headers: {}, body }), [401]);
   });
 
   it("exports immutable deduplicated staff batches without losing prior round history", async () => {
@@ -318,13 +311,11 @@ describe("Halloween quiz", () => {
         game.start({ headers, body: { restart: true } }),
         [200],
       );
-      await accept(
-        game.leave({
-          headers,
-          body: { ...roundReference(started.body), reason: "interrupted" },
-        }),
+      const left = await accept(
+        game.leave({ headers, body: roundReference(started.body) }),
         [200],
       );
+      expect(left.body.outcome).toBe("left");
     }
     const batchId = randomUUID();
     const first = await accept(
@@ -348,7 +339,7 @@ describe("Halloween quiz", () => {
     await accept(
       game.leave({
         headers,
-        body: { ...roundReference(later.body), reason: "interrupted" },
+        body: roundReference(later.body),
       }),
       [200],
     );

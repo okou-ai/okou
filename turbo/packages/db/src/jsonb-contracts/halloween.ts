@@ -24,13 +24,13 @@ export const halloweenSnapshotSchema = array(
   object({
     userId: string(),
     email: string().nullable(),
-    orgId: string().nullable(),
+    orgId: string(),
     firstPlayedAt: string(),
     lastPlayedAt: string(),
     rounds: array(
       object({
         id: string(),
-        outcome: zEnum(["playing", "success", "wrong", "left", "interrupted"]),
+        outcome: zEnum(["playing", "success", "wrong", "left"]),
         startedAt: string(),
         completedAt: string().nullable(),
       }),

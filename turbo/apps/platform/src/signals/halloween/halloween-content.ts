@@ -142,18 +142,6 @@ function useHalloweenResultCopy() {
     footerAfter: t(($) => {
       return $.halloween.copy.footerAfter;
     }),
-    ended: t(($) => {
-      return $.halloween.copy.ended;
-    }),
-    endedSub: t(($) => {
-      return $.halloween.copy.endedSub;
-    }),
-    upcoming: t(($) => {
-      return $.halloween.copy.upcoming;
-    }),
-    upcomingSub: t(($) => {
-      return $.halloween.copy.upcomingSub;
-    }),
     unavailable: t(($) => {
       return $.halloween.copy.unavailable;
     }),

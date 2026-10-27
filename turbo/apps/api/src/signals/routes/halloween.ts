@@ -35,10 +35,7 @@ const status$ = command(async ({ set }, signal: AbortSignal) => {
   const phase = await set(phase$, signal);
   return {
     status: 200 as const,
-    body: {
-      phase,
-      changesInMs: null,
-    },
+    body: { phase },
   };
 });
 const current$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -59,6 +56,9 @@ const start$ = command(async ({ get, set }, signal: AbortSignal) => {
     return conflict("This Halloween quiz is not open");
   }
   const auth = get(authContext$);
+  if (!auth.orgId) {
+    throw new Error("An open Halloween quiz requires an organization");
+  }
   const email = await set(getUserEmail$, auth.userId, signal);
   signal.throwIfAborted();
   return await set(
@@ -66,7 +66,7 @@ const start$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       ...body.data,
       userId: auth.userId,
-      orgId: auth.orgId ?? null,
+      orgId: auth.orgId,
       email,
     },
     signal,

@@ -4038,8 +4038,6 @@
       "campaign": "奇趣万圣节",
       "climb": "闯关进度",
       "correct": "正确",
-      "ended": "本次万圣节问答活动已经结束。",
-      "endedSub": "感谢您的参与。",
       "error": "暂时无法加载答题，请重试。",
       "footerAfter": "，了解参与资格和奖励详情。",
       "footerBefore": "查看活动",
@@ -4075,8 +4073,6 @@
       "title": "Okou 为你准备了一份小礼物。",
       "unavailable": "一点小惊喜即将到来。",
       "unavailableSub": "万圣节问答尚未开放，稍后再来看看。",
-      "upcoming": "一点小惊喜即将到来。",
-      "upcomingSub": "万圣节问答尚未开放，稍后再来看看。",
       "won": "你通过了测验！",
       "wonSub": "就知道你能做到。"
     },

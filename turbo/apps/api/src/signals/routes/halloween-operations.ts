@@ -10,7 +10,7 @@ import {
 } from "@okouai/db/schema/halloween";
 import { halloweenSnapshotSchema } from "@okouai/db/jsonb-contracts/halloween";
 import { command } from "ccstate";
-import { and, asc, eq, isNotNull, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, isNull, lte } from "drizzle-orm";
 import { conflict, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -83,17 +83,12 @@ const capture$ = command(async ({ get, set }, signal: AbortSignal) => {
       halloweenReviews,
       eq(halloweenReviews.userId, halloweenRounds.userId),
     )
-    .where(
-      and(
-        isNotNull(halloweenRounds.userId),
-        lte(halloweenRounds.startedAt, at),
-      ),
-    )
+    .where(lte(halloweenRounds.startedAt, at))
     .orderBy(asc(halloweenRounds.startedAt));
   signal.throwIfAborted();
   const participants = new Map<string, HalloweenParticipant>();
   for (const row of rows) {
-    if (!row.userId || row.outcome === "playing") {
+    if (row.outcome === "playing") {
       continue;
     }
     let participant = participants.get(row.userId);

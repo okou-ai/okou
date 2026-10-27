@@ -4107,8 +4107,6 @@
       "campaign": "Halloween spettrale",
       "climb": "La salita",
       "correct": "Corretto",
-      "ended": "Questo quiz di Halloween è terminato.",
-      "endedSub": "Grazie per aver giocato.",
       "error": "Non è stato possibile caricare il quiz. Per favore riprova.",
       "footerAfter": "per l'idoneità e i dettagli del premio.",
       "footerBefore": "Vedi l'attività",
@@ -4144,8 +4142,6 @@
       "title": "Una sorpresa da Okou.",
       "unavailable": "Una piccola magia è in arrivo.",
       "unavailableSub": "Il quiz di Halloween non è ancora disponibile. Torna presto.",
-      "upcoming": "Una piccola magia è in arrivo.",
-      "upcomingSub": "Il quiz di Halloween non è ancora disponibile. Torna presto.",
       "won": "Hai superato il quiz!",
       "wonSub": "Sapeva che ce l'avevi in te."
     },
