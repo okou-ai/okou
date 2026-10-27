@@ -21,6 +21,8 @@
         "src/worker.ts",
         "src/worker-unsupported-pg-native.ts",
         "src/worker-unsupported-react-email.ts",
+        "src/worker-unsupported-vercel-functions.ts",
+        "src/worker-unsupported-vercel-oidc.ts",
         "src/signals/context/hono.ts",
         "src/signals/context/wait-until.ts",
         "src/signals/external/clerk.ts",
