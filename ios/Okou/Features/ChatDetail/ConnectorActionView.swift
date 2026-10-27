@@ -28,7 +28,7 @@ struct ConnectorActionCard: View {
           case .loading:
             ProgressView("Loading connector…").font(.caption).frame(minHeight: 44)
           case .unavailable:
-            EmptyView()
+            Color.clear.frame(height: 44).accessibilityHidden(true).allowsHitTesting(false)
           case .failed:
             Button("Retry") { Task { await store.refresh(action) } }
           case .ready(let status):
