@@ -95,7 +95,7 @@ final class ConversationScrollCoordinator {
     let composer = conversation.composer
     let canAnimateText =
       conversation.attachmentDraft.items.isEmpty
-      && composer.value.draftUserMessage.parts.allSatisfy { $0.type == "text" }
+      && composer.document.parts.allSatisfy { $0["type"]?.string == "text" }
       && composer.editor.view?.markedTextRange == nil
     sendTransition.begin(
       messageID: messageID, reduceMotion: reduceMotion,
