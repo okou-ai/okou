@@ -846,6 +846,59 @@ pub(super) struct PreparedSandboxRun {
     pub(super) prepared_guest_runtime: Option<PreparedGuestRuntime>,
 }
 
+pub(super) struct PreparationRetirement {
+    unregister_completed: bool,
+    pub(super) destroy_completed: bool,
+}
+
+impl PreparationRetirement {
+    pub(super) fn is_completed(&self) -> bool {
+        self.unregister_completed && self.destroy_completed
+    }
+}
+
+impl PreparedSandboxRun {
+    pub(super) async fn retire_after_preparation_failure(
+        self,
+        factory: &dyn SandboxFactory,
+        context: &ExecutionContext,
+        config: &ExecutorConfig,
+        telemetry: &mut JobTelemetry,
+        require_backing: bool,
+        report_unregister_failure: impl FnOnce(RunnerError),
+    ) -> PreparationRetirement {
+        let Self {
+            sandbox,
+            source_ip,
+            network_log_session,
+            prepared_guest_runtime,
+        } = self;
+        if let Some(runtime) = prepared_guest_runtime {
+            runtime.finish(sandbox.as_ref(), telemetry).await;
+        }
+        let unregister_completed =
+            match unregister_proxy_registry(config, &source_ip, context.run_id).await {
+                Ok(()) => true,
+                Err(error) => {
+                    report_unregister_failure(error);
+                    false
+                }
+            };
+        network_log_session
+            .close_for_upload(context.run_id, &config.network_log_drain)
+            .await;
+        let has_required_backing = !require_backing || sandbox.backing_process().is_some();
+        let destroy_completed = destroy_sandbox_panic_safe(factory, sandbox)
+            .await
+            .is_completed()
+            && has_required_backing;
+        PreparationRetirement {
+            unregister_completed,
+            destroy_completed,
+        }
+    }
+}
+
 pub(super) struct SandboxPrepareError {
     error: RunnerError,
     retry: SandboxPrepareRetry,
@@ -1241,8 +1294,8 @@ async fn create_started_sandbox(
     );
     telemetry.record("sandbox_create", t.elapsed(), true, None);
 
-    let (mut error, unregister_warning) = 'prepare: {
-        let mut prepared_guest_runtime = if codex_model_catalog_prefetch {
+    let (mut error, unregister_warning, prepared_guest_runtime) = 'prepare: {
+        let prepared_guest_runtime = if codex_model_catalog_prefetch {
             PreparedGuestRuntime::prepare_for_codex_model_catalog_prefetch(
                 sandbox.as_ref(),
                 context,
@@ -1264,11 +1317,12 @@ async fn create_started_sandbox(
                 .await,
             )
         };
-        prepared_guest_runtime = match prepared_guest_runtime {
+        let prepared_guest_runtime = match prepared_guest_runtime {
             Some(PreparedGuestRuntime::SandboxUnusable(error)) => {
                 break 'prepare (
                     SandboxPrepareError::without_codex_model_catalog_prefetch(error, false),
                     "failed to unregister sandbox from proxy after unsafe Codex prefetch start failure",
+                    None,
                 );
             }
             prepared_guest_runtime => prepared_guest_runtime,
@@ -1287,14 +1341,10 @@ async fn create_started_sandbox(
                     Some(&e.error.to_string()),
                 );
                 record_home_drive_mount_guest_exec(telemetry, e.guest_duration, false);
-                if let Some(prepared_guest_runtime) = prepared_guest_runtime.take() {
-                    prepared_guest_runtime
-                        .finish(sandbox.as_ref(), telemetry)
-                        .await;
-                }
                 break 'prepare (
                     SandboxPrepareError::retry_without_home_image(e.error.into(), false),
                     "failed to unregister sandbox from proxy after home mount failure",
+                    prepared_guest_runtime,
                 );
             }
         };
@@ -1303,14 +1353,10 @@ async fn create_started_sandbox(
         if let Some(notifier) = sandbox_prepared
             && let Err(error) = notifier.notify(context.run_id, sandbox_id).await
         {
-            if let Some(prepared_guest_runtime) = prepared_guest_runtime.take() {
-                prepared_guest_runtime
-                    .finish(sandbox.as_ref(), telemetry)
-                    .await;
-            }
             break 'prepare (
                 SandboxPrepareError::fatal_after_cleanup(error, false),
                 "failed to unregister sandbox from proxy after ownership publication failure",
+                prepared_guest_runtime,
             );
         }
 
@@ -1322,25 +1368,28 @@ async fn create_started_sandbox(
         });
     };
 
-    let unregister_completed =
-        match unregister_proxy_registry(config, &source_ip, context.run_id).await {
-            Ok(()) => true,
-            Err(unregister_error) => {
-                warn!(
-                    run_id = %context.run_id,
-                    error = %unregister_error,
-                    "{unregister_warning}"
-                );
-                false
-            }
-        };
-    network_log_session
-        .close_for_upload(context.run_id, &config.network_log_drain)
-        .await;
-    let destroy_completed = destroy_sandbox_panic_safe(factory, sandbox)
-        .await
-        .is_completed();
-    error.cleanup_completed = unregister_completed && destroy_completed;
+    error.cleanup_completed = PreparedSandboxRun {
+        sandbox,
+        source_ip,
+        network_log_session,
+        prepared_guest_runtime,
+    }
+    .retire_after_preparation_failure(
+        factory,
+        context,
+        config,
+        telemetry,
+        false,
+        |unregister_error| {
+            warn!(
+                run_id = %context.run_id,
+                error = %unregister_error,
+                "{unregister_warning}"
+            );
+        },
+    )
+    .await
+    .is_completed();
     Err(error)
 }
 

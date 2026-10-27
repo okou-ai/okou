@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use super::agent_run::{PreparedGuestRuntime, PreparedRunInputs, RunStart};
 use super::sandbox_run::{
     DiskReplacement, FreshPreparation, NewSandboxHooks, PreparedSandboxRun,
-    SANDBOX_PROXY_REGISTER_FAILED, cancel_prepared_storage, destroy_sandbox_panic_safe,
+    SANDBOX_PROXY_REGISTER_FAILED, cancel_prepared_storage,
     execute_new_sandbox_with_prepared_notifier, execute_prepared_sandbox_attempt, prepare_storage,
     register_proxy, replace_disk_full_sandbox, unregister_proxy_registry,
 };
@@ -217,27 +217,21 @@ async fn replace_unusable_blank(
     info!(run_id = %context.run_id, %sandbox_id, %error,
         "retiring unusable blank before Agent start; skipping guest cleanup");
     cancel_prepared_storage(&mut inputs.controls, telemetry).await;
-    let unregister_completed =
-        match unregister_proxy_registry(config, &prepared.source_ip, context.run_id).await {
-            Ok(()) => true,
-            Err(cleanup_error) => {
+    let retirement = prepared
+        .retire_after_preparation_failure(
+            factory,
+            context,
+            config,
+            telemetry,
+            inputs.controls.disk_recovery,
+            |cleanup_error| {
                 warn!(run_id = %context.run_id, %sandbox_id, error = %cleanup_error,
                 "failed to unregister proxy for unusable blank");
-                false
-            }
-        };
-    prepared
-        .network_log_session
-        .close_for_upload(context.run_id, &config.network_log_drain)
+            },
+        )
         .await;
-    let has_required_backing =
-        !inputs.controls.disk_recovery || prepared.sandbox.backing_process().is_some();
-    let destroy_completed = destroy_sandbox_panic_safe(factory, prepared.sandbox)
-        .await
-        .is_completed()
-        && has_required_backing;
-    if !unregister_completed || !destroy_completed {
-        if !destroy_completed
+    if !retirement.is_completed() {
+        if !retirement.destroy_completed
             && inputs.controls.disk_recovery
             && let Some(source) = inputs.controls.sandbox_recovery.as_ref()
         {
