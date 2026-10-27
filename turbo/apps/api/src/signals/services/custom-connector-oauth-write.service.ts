@@ -1,3 +1,10 @@
+import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
+import { variables } from "@okouai/db/schema/variable";
+import {
+  connectorConnectionMetadataWritePlan,
+  connectorConnectionMetadataWriteResult,
+  type ConnectorConnectionWriteArgs,
+} from "./connector-connection-write.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
@@ -5,8 +12,17 @@ import { boolean, object, string } from "zod";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
-import { and, eq, exists, notExists, sql } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  and,
+  eq,
+  exists,
+  getTableColumns,
+  notExists,
+  SQL,
+  sql,
+  type Column,
+} from "drizzle-orm";
+import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 
 export function customConnectorOAuthBindingDeletionPlan(connectionId: string) {
   return {
@@ -240,4 +256,162 @@ export function customConnectorRefreshReconnectCondition(
           refreshTokenSecretName,
         ),
   );
+}
+
+function automaticNoAuthAccountFields(
+  values: Readonly<Record<string, unknown>>,
+) {
+  const columns: Readonly<Record<string, Column>> = getTableColumns(connectors);
+  return Object.entries(values).flatMap(([key, value]) => {
+    if (value === undefined) {
+      return [];
+    }
+    const column = columns[key];
+    if (!column) {
+      throw new Error("Automatic no-auth write contains an unknown column");
+    }
+    return [
+      {
+        key,
+        column,
+        value: value instanceof SQL ? value : sql.param(value, column),
+      },
+    ];
+  });
+}
+
+/** Conditional partial INSERT retains database defaults and column encoders. */
+function insertAutomaticNoAuthAccount(
+  values: typeof connectors.$inferInsert,
+  condition: SQL,
+  conflict: SQL,
+): SQL {
+  const fields = automaticNoAuthAccountFields(values);
+  return sql`INSERT INTO ${connectors} (${sql.join(
+    fields.map(({ column }) => {
+      return sql.identifier(column.name);
+    }),
+    sql`, `,
+  )}) SELECT ${sql.join(
+    fields.map(({ value }) => {
+      return value;
+    }),
+    sql`, `,
+  )} WHERE ${condition} ${conflict} RETURNING id`;
+}
+
+/** The existing definition lock gates both account arbitration and cleanup. */
+export function automaticNoAuthPublicationSql(
+  args: ConnectorConnectionWriteArgs,
+): SQL {
+  if (args.target.kind !== "custom" || args.authMethod !== "none") {
+    throw new Error("Automatic no-auth publication requires a custom target");
+  }
+  const query = new QueryBuilder();
+  const definition = query
+    .select({
+      authMode: orgCustomConnectors.authMode,
+      storageVersion: orgCustomConnectors.storageVersion,
+    })
+    .from(orgCustomConnectors)
+    .where(
+      and(
+        eq(orgCustomConnectors.id, args.target.customConnectorId),
+        eq(orgCustomConnectors.orgId, args.orgId),
+      ),
+    )
+    .for("update")
+    .limit(1)
+    .getSQL();
+  const admitted = sql`EXISTS (SELECT 1 FROM no_auth_definition
+    WHERE auth_mode = 'automatic' AND storage_version = ${args.storageVersion})`;
+  const write = connectorConnectionMetadataWritePlan(args);
+  const clauses: SQL[] = [];
+  if (write.kind === "update") {
+    const snapshot = query
+      .select({
+        id: connectors.id,
+        version: sql`${connectors}.xmin::text`.as("row_version"),
+      })
+      .from(connectors)
+      .where(write.where)
+      .limit(1)
+      .getSQL();
+    const update = new PgDialect().buildUpdateQuery({
+      table: connectors,
+      set: Object.fromEntries(
+        automaticNoAuthAccountFields(write.values).map(({ key, value }) => {
+          return [key, value];
+        }),
+      ),
+      joins: [],
+      where: and(
+        write.where,
+        admitted,
+        sql`${connectors.id} IN (SELECT id FROM no_auth_account_snapshot)`,
+        sql`${connectors}.xmin::text = (SELECT row_version FROM no_auth_account_snapshot)`,
+      ),
+      returning: [{ path: ["id"], field: connectors.id }],
+    });
+    clauses.push(
+      sql`no_auth_account_snapshot AS MATERIALIZED (${snapshot})`,
+      sql`no_auth_connection AS (${update})`,
+    );
+  } else {
+    const sibling = connectorConnectionMetadataWriteResult(write, undefined);
+    if (
+      !write.conflict ||
+      sibling.kind !== "write" ||
+      sibling.write.kind !== "insert" ||
+      sibling.write.phase !== "sibling"
+    ) {
+      throw new Error("Automatic no-auth add requires default-first siblings");
+    }
+    const conflict = sql`ON CONFLICT (${sql.join(
+      write.conflict.target.map((column) => {
+        return sql.identifier(column.name);
+      }),
+      sql`, `,
+    )}) WHERE ${write.conflict.where} DO NOTHING`;
+    clauses.push(
+      sql`no_auth_default AS (${insertAutomaticNoAuthAccount(write.values, admitted, conflict)})`,
+      sql`no_auth_sibling AS (${insertAutomaticNoAuthAccount(
+        sibling.write.values,
+        sql`${admitted} AND NOT EXISTS (SELECT 1 FROM no_auth_default)`,
+        sql.empty(),
+      )})`,
+      sql`no_auth_connection AS (
+        SELECT id FROM no_auth_default UNION ALL SELECT id FROM no_auth_sibling
+      )`,
+    );
+  }
+  const deletions = [
+    { table: secrets, parent: secrets.connectorId },
+    { table: variables, parent: variables.connectorId },
+    {
+      table: builtinConnectorAccountOauthBindings,
+      parent: builtinConnectorAccountOauthBindings.connectorAccountId,
+    },
+    {
+      table: customConnectorAccountOauthBindings,
+      parent: customConnectorAccountOauthBindings.connectorAccountId,
+    },
+  ];
+  let previous: string | undefined;
+  for (const [index, deletion] of deletions.entries()) {
+    const name = "no_auth_removed_" + index;
+    const after = previous
+      ? sql`AND (SELECT count(*) FROM ${sql.identifier(previous)}) >= 0`
+      : sql.empty();
+    clauses.push(sql`${sql.identifier(name)} AS (
+      DELETE FROM ${deletion.table}
+      WHERE ${deletion.parent} IN (SELECT id FROM no_auth_connection) ${after}
+      RETURNING 1
+    )`);
+    previous = name;
+  }
+  return sql`WITH no_auth_definition AS (${definition}),
+    ${sql.join(clauses, sql`,\n`)}
+    SELECT ${admitted} AS contract_current,
+      (SELECT id FROM no_auth_connection) AS connection_id`;
 }
