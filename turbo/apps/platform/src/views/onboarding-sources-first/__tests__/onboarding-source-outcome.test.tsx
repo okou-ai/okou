@@ -1,4 +1,4 @@
-import { FeatureSwitchKey } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {

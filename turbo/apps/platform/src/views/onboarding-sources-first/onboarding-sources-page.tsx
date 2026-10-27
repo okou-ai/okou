@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
-import { FeatureSwitchKey } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   captureSourceOnboardingConnected$,

@@ -47,7 +47,7 @@ export interface FeatureSwitchContext {
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OnboardingSourceOutcomes]: {
-    maintainer: "ming@vm0.ai",
+    maintainer: "ming@okou.ai",
     displayName: "Onboarding source outcomes",
     description:
       "Show industry-specific examples of work prepared from connected tools.",
