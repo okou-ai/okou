@@ -49,7 +49,7 @@ pub(super) async fn gc_orphaned_locks(home: &HomePaths, dry_run: bool) -> Runner
         let lock_path = entry.path();
         match probe_lock(&lock_path) {
             LockProbe::Free(lock) => {
-                if remove_unused_lock_after_probe(&lock_path, &lock, name, dry_run).await {
+                if remove_unused_lock_after_probe(&lock_path, lock, name, dry_run).await {
                     removed += 1;
                 }
             }

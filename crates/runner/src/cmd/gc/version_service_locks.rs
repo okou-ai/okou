@@ -92,7 +92,7 @@ async fn gc_orphaned_version_service_locks_with_observer(
                     }
                 }
 
-                if remove_unused_lock_after_probe(&lock_path, &lock, name, dry_run).await {
+                if remove_unused_lock_after_probe(&lock_path, lock, name, dry_run).await {
                     removed += 1;
                 }
             }
