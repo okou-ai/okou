@@ -1,5 +1,7 @@
 //! Best-effort collection of the host storage archive and decoded-cache entries.
 
+mod removal;
+
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -13,6 +15,8 @@ use runner_host::gc::{
     next_entry_warn_or_stop, probe_lock, read_dir_or_missing, remove_unused_lock_after_probe,
 };
 use runner_host::paths::HomePaths;
+
+use removal::remove_dir_all_with_lock;
 
 /// Caller-owned best-effort targets, not unconditional post-collection caps.
 #[derive(Clone, Copy, Debug)]
@@ -373,7 +377,8 @@ async fn evict_storage_candidate_with_age(
         return StorageEvictionOutcome::Evicted { freed_bytes: size };
     }
 
-    match tokio::fs::remove_dir_all(&candidate.path).await {
+    let (lock, result) = remove_dir_all_with_lock(&candidate.path, lock).await;
+    match result {
         Ok(()) => {
             let lock_name = lock_path.to_string_lossy();
             remove_unused_lock_after_probe(&lock_path, lock, &lock_name, false).await;
@@ -424,7 +429,7 @@ async fn gc_storage_staging_dir(
     min_age: Duration,
 ) -> Option<u64> {
     let lock_path = home.storage_lock_for_cache_key(name_hash, version_hash);
-    let _lock = match probe_lock(&lock_path) {
+    let lock = match probe_lock(&lock_path) {
         LockProbe::Free(l) => l,
         LockProbe::Held => {
             if dry_run {
@@ -464,11 +469,14 @@ async fn gc_storage_staging_dir(
             "[dry-run] would remove stale storage staging storages/{name_hash}/{version_hash}.tmp ({})",
             human_bytes(size)
         );
-    } else if let Err(e) = tokio::fs::remove_dir_all(path).await {
-        warn!(
-            "failed to remove stale storage staging storages/{name_hash}/{version_hash}.tmp: {e}"
-        );
-        return None;
+    } else {
+        let (_lock, result) = remove_dir_all_with_lock(path, lock).await;
+        if let Err(e) = result {
+            warn!(
+                "failed to remove stale storage staging storages/{name_hash}/{version_hash}.tmp: {e}"
+            );
+            return None;
+        }
     }
 
     Some(size)
