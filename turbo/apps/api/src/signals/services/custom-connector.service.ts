@@ -113,7 +113,6 @@ import {
   customConnectorAccountDeletionScope,
   type PreparedConnectorAccountDeletion as PreparedDeletion,
 } from "./connector-account-lifecycle.service";
-import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import {
   customConnectorCredentialValues as credentialValues,
   customConnectorValuesPublicationSql,
@@ -3727,7 +3726,6 @@ const deleteCustomConnectorAccount$ = command(
         return await (async (): Promise<CustomConnectorMemberConnectionDeletionResult> => {
           const db = memberDeletionDb;
           const scope = customConnectorAccountDeletionScope(memberDeletionArgs);
-          const abort = signal;
           const deletion = await (async (): Promise<PreparedDeletion> => {
             const { connectionId } = scope;
             const owner = connectorAccountOwnerCondition(scope);
@@ -3772,7 +3770,9 @@ const deleteCustomConnectorAccount$ = command(
                   )
               ).rowCount ?? 0;
 
-            await reprojectWorkflowAutomationsForOwner(db, scope, abort);
+            // Custom targets have no built-in projection; keep its completion
+            // boundary before the caller's existing cancellation check.
+            await Promise.resolve();
 
             return connectorAccountDeletionResult(selectionCount, promotedId);
           })();

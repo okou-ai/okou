@@ -27,7 +27,7 @@ import {
 import { publishConnectorRuntimeSyncWakeups$ } from "../services/connector-runtime-wakeup.service";
 import {
   builtinConnectorScopeDiff,
-  deleteBuiltinConnectorLocalState$,
+  deleteBuiltinConnectorAccountAndPublish$,
 } from "../services/connector-data.service";
 import { deleteCustomConnectorAccountAndPublish$ } from "../services/custom-connector.service";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
@@ -444,7 +444,7 @@ const deleteInner$ = command(
       body.data.target.kind === "builtin"
         ? await settle(
             set(
-              deleteBuiltinConnectorLocalState$,
+              deleteBuiltinConnectorAccountAndPublish$,
               {
                 orgId: auth.orgId,
                 userId: auth.userId,
