@@ -3,7 +3,10 @@ import { Button, cn } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { ArrowRight, Check, Diamond } from "lucide-react";
-import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
+import {
+  useHalloweenCopy,
+  useLocalizedHalloweenRound,
+} from "../../signals/halloween/halloween-content.ts";
 import {
   focusHalloweenHeading$,
   playHalloweenClick$,
@@ -19,6 +22,7 @@ import { goldButton } from "./halloween-layout.tsx";
 import { halloweenTypography as typography } from "./halloween-typography.ts";
 
 function Progress({ round }: { readonly round: HalloweenRound }) {
+  const copy = useHalloweenCopy();
   return (
     <aside className="order-first flex items-center justify-between gap-5 rounded-2xl border border-[#a9c1df1c] bg-[linear-gradient(150deg,#ffffff05,#ffffff01)] px-4 py-3 md:order-last md:rounded-3xl md:flex-col md:items-stretch md:p-5">
       <h2 className={cn("text-[#b2bfd0] md:mb-1", typography.labelClassName)}>
@@ -132,7 +136,9 @@ function AnswerOptions({
 }
 
 export function HalloweenQuestionScreen() {
-  const round = useGet(halloweenRound$);
+  const copy = useHalloweenCopy();
+  const storedRound = useGet(halloweenRound$);
+  const round = useLocalizedHalloweenRound(storedRound);
   const signal = useGet(pageSignal$);
   const [answerOperation, answer] = useLoadableSet(answerHalloween$);
   const [nextOperation, next] = useLoadableSet(nextHalloween$);
@@ -143,11 +149,18 @@ export function HalloweenQuestionScreen() {
   const busy =
     answerOperation.state === "loading" || nextOperation.state === "loading";
   return (
-    <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14">
+    <main
+      className={cn(
+        "relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14",
+        "gap-6 py-6 pb-8 md:py-10",
+      )}
+    >
       <div className="min-w-0 text-center">
         <p className={cn("mb-5 text-[#b5a07e]", typography.labelClassName)}>
-          {copy.round} {String(round.questionNumber).padStart(2, "0")} ·{" "}
-          {copy.roundTitles[round.questionNumber - 1]}
+          {copy.roundProgress(
+            String(round.questionNumber).padStart(2, "0"),
+            copy.roundTitles[round.questionNumber - 1] ?? "",
+          )}
         </p>
         <h1
           key={round.question.id}
@@ -156,6 +169,7 @@ export function HalloweenQuestionScreen() {
           className={cn(
             "mx-auto mb-9 max-w-[640px] text-balance text-[#f4f1eb] outline-none",
             typography.titleClassName,
+            "mb-7 text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
           )}
         >
           {round.question.text}

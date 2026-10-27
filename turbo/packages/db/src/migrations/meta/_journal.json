@@ -2759,6 +2759,13 @@
       "when": 1793095360753,
       "tag": "1472_absurd_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 1473,
+      "version": "7",
+      "when": 1793095557976,
+      "tag": "1473_green_jubilee",
+      "breakpoints": true
     }
   ]
 }

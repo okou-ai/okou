@@ -1,4 +1,4 @@
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, DialogClose } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -9,12 +9,11 @@ import {
   Sparkle,
   Zap,
 } from "lucide-react";
-import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
+import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import { halloweenConfetti$ } from "../../signals/halloween/halloween-motion.ts";
 import {
   halloweenPhase$,
   halloweenRound$,
-  prepareHalloweenReturn$,
   replayHalloween$,
   setHalloweenRulesOpen$,
 } from "../../signals/halloween/halloween.ts";
@@ -54,7 +53,7 @@ function Confetti() {
 }
 
 function ResultTasks({ won }: { readonly won: boolean }) {
-  const prepareReturn = useSet(prepareHalloweenReturn$);
+  const copy = useHalloweenCopy();
   const icons = [Sparkle, Command, Zap];
   return (
     <section className="mt-8 w-full max-w-[820px] text-left">
@@ -78,18 +77,20 @@ function ResultTasks({ won }: { readonly won: boolean }) {
         {copy.tasks.map((task, index) => {
           const Icon = icons[index]!;
           return (
-            <Link
+            <DialogClose
               key={task.title}
-              pathname="/"
-              options={{
-                searchParams: task.prompt
-                  ? new URLSearchParams({ prompt: task.prompt })
-                  : undefined,
-              }}
-              onClick={() => {
-                prepareReturn();
-              }}
-              className="group relative flex items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[linear-gradient(145deg,#ffffff07,#ffffff02)] p-4 pr-9 text-left transition-all duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07] motion-safe:hover:-translate-y-0.5 md:flex-col md:items-start md:gap-4 md:rounded-3xl md:p-5"
+              nativeButton={false}
+              render={
+                <Link
+                  pathname="/"
+                  options={{
+                    searchParams: task.prompt
+                      ? new URLSearchParams({ prompt: task.prompt })
+                      : undefined,
+                  }}
+                  className="group relative flex items-center gap-4 rounded-2xl border border-[#b6cae21c] bg-[linear-gradient(145deg,#ffffff07,#ffffff02)] p-4 pr-9 text-left transition-all duration-200 hover:border-[#d8b77f66] hover:bg-[#ffffff07] motion-safe:hover:-translate-y-0.5 md:flex-col md:items-start md:gap-4 md:rounded-3xl md:p-5"
+                />
+              }
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#e8c68d1a] bg-[#e8c68d08] text-[#dbbc89]">
                 <Icon className="size-[18px]" />
@@ -108,7 +109,7 @@ function ResultTasks({ won }: { readonly won: boolean }) {
                 </p>
               </div>
               <ArrowUpRight className="absolute right-4 top-4 size-3.5 text-[#71849e] transition-colors group-hover:text-[#e8c68d] md:right-5 md:top-5" />
-            </Link>
+            </DialogClose>
           );
         })}
       </div>
@@ -117,11 +118,11 @@ function ResultTasks({ won }: { readonly won: boolean }) {
 }
 
 export function HalloweenResultScreen() {
+  const copy = useHalloweenCopy();
   const round = useGet(halloweenRound$);
   const phase = useGet(halloweenPhase$);
   const signal = useGet(pageSignal$);
   const [operation, replay] = useLoadableSet(replayHalloween$);
-  const prepareReturn = useSet(prepareHalloweenReturn$);
   const setRules = useSet(setHalloweenRulesOpen$);
   const won = round?.outcome === "success";
   return (
@@ -163,17 +164,10 @@ export function HalloweenResultScreen() {
         </p>
         <ResultTasks won={won} />
         <div className="mt-7 flex w-full max-w-[360px] flex-col items-stretch gap-3 md:w-auto md:max-w-none md:flex-row">
-          <Button
-            nativeButton={false}
-            render={<Link pathname="/" />}
-            className={goldButton}
-            onClick={() => {
-              prepareReturn();
-            }}
-          >
+          <DialogClose render={<Button className={goldButton} />}>
             {copy.magic}
             <ArrowRight className="size-4" />
-          </Button>
+          </DialogClose>
           {phase === "open" && (
             <Button
               variant="quiet"

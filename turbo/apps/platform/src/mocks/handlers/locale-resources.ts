@@ -1,4 +1,6 @@
 import { http, HttpResponse } from "msw";
+import enUSHalloween from "../../i18n/locales/en-US/halloween.json";
+import enUSHalloweenUrl from "../../i18n/locales/en-US/halloween.json?url";
 
 // Tests do not cover translated copy. Serve a placeholder resource for every
 // non-default locale so i18next falls back to en-US strings while locale
@@ -10,12 +12,17 @@ const localeResourceUrls = import.meta.glob<string>(
   { eager: true, import: "default", query: "?url" },
 );
 
-export const localeResourceHandlers = Object.entries(localeResourceUrls)
-  .filter(([path]) => {
-    return !path.includes("/en-US/");
-  })
-  .map(([, url]) => {
-    return http.get(url, () => {
-      return HttpResponse.json({ testPlaceholder: "" });
-    });
-  });
+export const localeResourceHandlers = [
+  http.get(enUSHalloweenUrl, () => {
+    return HttpResponse.json(enUSHalloween);
+  }),
+  ...Object.entries(localeResourceUrls)
+    .filter(([path]) => {
+      return !path.includes("/en-US/");
+    })
+    .map(([, url]) => {
+      return http.get(url, () => {
+        return HttpResponse.json({ testPlaceholder: "" });
+      });
+    }),
+];

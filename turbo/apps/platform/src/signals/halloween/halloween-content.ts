@@ -1,120 +1,167 @@
-// This campaign's approved customer-facing copy is English in every locale.
-export const HALLOWEEN_COPY = {
-  brand: "Okou",
-  campaign: "Spooky Halloween",
-  dates: "Oct 29 – Nov 4",
-  tagline: "Spooky Halloween · A little mischief. A lot of possibility.",
-  language: "English",
-  climb: "The climb",
-  rulesHeading: "Spooky Halloween — activity rules",
-  rulesSub: "A little mischief. A few simple rules.",
-  rulesBrand: "Okou · Halloween",
-  rewardPrefix: "Play for ",
-  rewardEmphasis: "7 days of Okou Pro.",
-  resultRewardEmphasis: "7 days of Okou Pro",
-  resultRewardRest: ", subject to review. No credits included.",
-  title: "A treat from Okou.",
-  subtitle: "But first, a little quiz.",
-  reward: "Play for 7 days of Okou Pro.",
-  review: "Subject to eligibility review.",
-  hint: "Four right answers. One sweet finale.",
-  start: "Let’s play",
-  back: "Back to Okou",
-  rules: "Activity rules",
-  leave: "Leave quiz",
-  next: "Next question",
-  result: "See my result",
-  again: "Play again",
-  correct: "Correct",
-  question: "Question",
-  of: "of",
-  round: "Round",
-  soundOn: "Sound on",
-  soundOff: "Sound off",
-  won: "You passed the quiz!",
-  wonSub: "She knew you had it in you.",
-  lost: "You got tricked!",
-  lostSub: "Okou got you this time.",
-  resultReward: "7 days of Okou Pro, subject to review. No credits included.",
-  taskTitle: "Now it’s Okou’s turn.",
-  taskSub: "Give her a task.",
-  optional: "Keep exploring with Okou. These activities are optional.",
-  magic: "Make magic with Okou",
-  footerBefore: "See activity ",
-  footerLink: "rules",
-  footerAfter: " for eligibility and reward details.",
-  ended: "This Halloween quiz has ended.",
-  endedSub:
-    "Thanks for playing. You can still sign in to link a previous game result.",
-  upcoming: "A little magic is on its way.",
-  upcomingSub: "Join us October 29–November 4, 2026 (Los Angeles time).",
-  unavailable: "A little magic is on its way.",
-  unavailableSub: "The Halloween quiz isn’t available yet. Come back soon.",
-  saved: "Game result saved.",
-  savedSub:
-    "Your game result is linked to your account. Reward eligibility is subject to review.",
-  saveError: "We couldn’t save your game result.",
-  saveErrorSub:
-    "Please try again. If it still doesn’t work, contact support@okou.ai.",
-  retry: "Try again",
-  loading: "Getting your quiz ready…",
-  error: "We couldn’t load the quiz. Please try again.",
-  backToGame: "Back to game",
-  nudgeLabel: "Play the Halloween quiz",
-  boo: "Boo!",
-  roundTitles: [
-    "Let’s see what you’ve got",
-    "You’re onto her tricks",
-    "She’s impressed",
-    "One last trick",
-    "Okou likes you",
-  ],
-  levels: [
-    "Rookie",
-    "Rising star",
-    "Trick master",
-    "Halloween legend",
-    "Okou likes you",
-  ],
-  nudges: [
-    "Take a little\nspooky break?",
-    "One more\nround?",
-    "A little quiz.\nA sweet treat?",
-  ],
-  tasks: [
-    {
-      title: "Create a Halloween image",
-      text: "Give her an idea. Watch it come to life.",
-      prompt:
-        "Create a Halloween image: a friendly ghost sharing candy under a glowing moon.",
+import type {
+  HalloweenQuestion,
+  HalloweenRound,
+} from "@okouai/api-contracts/contracts/halloween";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+import type enUSHalloween from "../../i18n/locales/en-US/halloween.json";
+
+export function useHalloweenCopy() {
+  const { t } = useTranslation("halloween");
+  const copy = t(
+    ($) => {
+      return $.copy;
     },
-    {
-      title: "Connect your tools",
-      text: "Bring your favorite work tools along.",
-      prompt: "Help me connect my tools to Okou.",
+    { returnObjects: true },
+  );
+  const roundTitles = t(
+    ($) => {
+      return $.roundTitles;
     },
-    {
-      title: "See what else she can do",
-      text: "Pick something from your to-do list.",
-      prompt: "",
+    { returnObjects: true },
+  );
+  const levels = t(
+    ($) => {
+      return $.levels;
     },
-  ],
-  ruleSections: [
-    {
-      title: "Event period",
-      text: "October 29–November 4, 2026, Los Angeles local time. The event begins at 12:00 AM on October 29 and ends at 11:59:59 PM on November 4. A round started before the event ends can still be completed afterward.",
+    { returnObjects: true },
+  );
+  const nudges = t(
+    ($) => {
+      return $.nudges;
     },
-    {
-      title: "How to play",
-      text: "Play anonymously, with no tasks required. Each round has four randomly selected questions, with no repeats in that round, followed by ‘Do you like Okou?’—every answer to the last question is correct. One wrong answer ends the round. Leaving, refreshing or closing the quiz ends an unfinished round; progress does not resume. You can play again while the event is open.",
+    { returnObjects: true },
+  );
+  const tasks = t(
+    ($) => {
+      return $.tasks;
     },
-    {
-      title: "Your Halloween reward",
-      text: "Selected participants receive seven calendar days of Okou Pro access. No credits are included. Existing credit balances and normal usage limits still apply. Winning the game, completing optional tasks or linking a result does not guarantee a reward. Both successful and unsuccessful rounds can be reviewed. Each account can receive at most one reward; existing Pro access is extended by seven days. A new trial starts when granted; that local date counts as day one, and access expires at 12:00 AM seven local dates later. For example, a reward granted October 30 expires November 6 at 12:00 AM in Los Angeles.",
+    { returnObjects: true },
+  );
+  const rules = t(
+    ($) => {
+      return $.rules;
     },
-    {
-      title: "Fair play & support",
-      text: "Return to Okou and sign in or sign up to link your result. Linking remains available after the event. Eligibility is reviewed by the Okou team using participant lists collected during and after the event. Linking does not guarantee inclusion in a previously collected list. Accounts included in a collected list and reviewed will receive an email, whether selected or not; an email is not promised to every linked account. No fixed review or delivery date is promised. Questions? Contact support@okou.ai. Okou reserves the right of final interpretation of these rules to the extent permitted by applicable law.",
+    { returnObjects: true },
+  );
+  return {
+    ...copy,
+    questionProgress: (current: number, total: number) => {
+      return t(
+        ($) => {
+          return $.copy.questionProgress;
+        },
+        { current, total },
+      );
     },
-  ],
-} as const;
+    roundProgress: (current: string, title: string) => {
+      return t(
+        ($) => {
+          return $.copy.roundProgress;
+        },
+        { current, title },
+      );
+    },
+    roundTitles: [
+      roundTitles.one,
+      roundTitles.two,
+      roundTitles.three,
+      roundTitles.four,
+      roundTitles.five,
+    ],
+    levels: [levels.one, levels.two, levels.three, levels.four, levels.five],
+    nudges: [nudges.one, nudges.two, nudges.three],
+    tasks: [
+      {
+        ...tasks.createImage,
+      },
+      {
+        ...tasks.connectTools,
+      },
+      {
+        ...tasks.explore,
+        prompt: "",
+      },
+    ],
+    ruleSections: [rules.availability, rules.play, rules.reward, rules.support],
+  } as const;
+}
+
+type HalloweenQuestionId = keyof typeof enUSHalloween.questions;
+type HalloweenOptionId = "A" | "B" | "C";
+const HALLOWEEN_QUESTION_ID = /^QUIZ-(?:0[1-9]|[1-4][0-9]|5[0-3])$/u;
+
+function isHalloweenQuestionId(value: string): value is HalloweenQuestionId {
+  return HALLOWEEN_QUESTION_ID.test(value);
+}
+
+function isHalloweenOptionId(value: string): value is HalloweenOptionId {
+  return value === "A" || value === "B" || value === "C";
+}
+
+function assertHalloweenQuestionId(
+  value: string,
+): asserts value is HalloweenQuestionId {
+  if (!isHalloweenQuestionId(value)) {
+    throw new Error(`Unsupported Halloween question: ${value}`);
+  }
+}
+
+function assertHalloweenOptionId(
+  value: string,
+): asserts value is HalloweenOptionId {
+  if (!isHalloweenOptionId(value)) {
+    throw new Error(`Unsupported Halloween answer option: ${value}`);
+  }
+}
+
+function localizeQuestion(
+  t: TFunction<"halloween">,
+  question: HalloweenQuestion,
+): HalloweenQuestion {
+  assertHalloweenQuestionId(question.id);
+  const questionId = question.id;
+  return {
+    ...question,
+    text: t(($) => {
+      return $.questions[questionId].text;
+    }),
+    options: question.options.map((option) => {
+      assertHalloweenOptionId(option.id);
+      const optionId = option.id;
+      return {
+        ...option,
+        text: t(($) => {
+          return $.questions[questionId].options[optionId];
+        }),
+      };
+    }),
+  };
+}
+
+export function useLocalizedHalloweenRound(
+  round: HalloweenRound | null,
+): HalloweenRound | null {
+  const { t } = useTranslation("halloween");
+  if (!round?.question) {
+    return round;
+  }
+  assertHalloweenQuestionId(round.question.id);
+  const questionId = round.question.id;
+  return {
+    ...round,
+    question: localizeQuestion(t, round.question),
+    feedback: round.feedback
+      ? {
+          ...round.feedback,
+          explanation: round.feedback.correct
+            ? t(($) => {
+                return $.questions[questionId].explanation;
+              })
+            : t(($) => {
+                return $.copy.lostSub;
+              }),
+        }
+      : null,
+  };
+}

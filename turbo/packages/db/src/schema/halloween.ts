@@ -18,19 +18,17 @@ export const halloweenRounds = pgTable(
   "halloween_2026_rounds",
   {
     id: uuid("id").primaryKey(),
-    tokenHash: text("token_hash").notNull(),
     questions: jsonb("questions").$type<HalloweenStoredQuestions>().notNull(),
     questionIndex: integer("question_index").notNull().default(0),
     correct: integer("correct").notNull().default(0),
     selectedId: text("selected_id"),
     outcome: text("outcome")
-      .$type<"playing" | "success" | "wrong" | "left" | "interrupted">()
+      .$type<"playing" | "success" | "wrong" | "left">()
       .notNull()
       .default("playing"),
-    userId: text("user_id"),
-    orgId: text("org_id"),
+    userId: text("user_id").notNull(),
+    orgId: text("org_id").notNull(),
     email: text("email"),
-    linkedAt: timestamp("linked_at"),
     startedAt: timestamp("started_at").notNull().defaultNow(),
     completedAt: timestamp("completed_at"),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -38,20 +36,18 @@ export const halloweenRounds = pgTable(
   (t) => {
     return [
       index("halloween_2026_rounds_user").on(t.userId, t.startedAt),
-      index("halloween_2026_rounds_interrupted").on(t.outcome, t.updatedAt),
       check("halloween_2026_rounds_correct", sql`${t.correct} between 0 and 5`),
       check(
         "halloween_2026_rounds_question_index",
         sql`${t.questionIndex} between 0 and 4`,
       ),
+      check(
+        "halloween_2026_rounds_outcome",
+        sql`${t.outcome} in ('playing', 'success', 'wrong', 'left')`,
+      ),
     ];
   },
 );
-
-export const halloweenExposures = pgTable("halloween_2026_exposures", {
-  userId: text("user_id").primaryKey(),
-  seenAt: timestamp("seen_at").notNull().defaultNow(),
-});
 
 export const halloweenBatches = pgTable("halloween_2026_batches", {
   id: uuid("id").primaryKey(),

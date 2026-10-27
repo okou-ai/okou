@@ -1,21 +1,44 @@
-import { createHash, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
 import type { HalloweenRound } from "@okouai/api-contracts/contracts/halloween";
 import { halloweenRounds } from "@okouai/db/schema/halloween";
 import {
   halloweenStoredQuestionsSchema,
   type HalloweenStoredQuestions,
 } from "@okouai/db/jsonb-contracts/halloween";
-import { command } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { command, computed } from "ccstate";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { v7 as uuidv7 } from "uuid";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { authContext$ } from "../auth/auth-context";
+import { db$, writeDb$ } from "../external/db";
 import { HALLOWEEN_QUESTION_BANK } from "./halloween-question-bank";
 
-type StoredRound = typeof halloweenRounds.$inferSelect;
-interface Credential {
+function roundSelection() {
+  return {
+    id: halloweenRounds.id,
+    questions: halloweenRounds.questions,
+    questionIndex: halloweenRounds.questionIndex,
+    correct: halloweenRounds.correct,
+    selectedId: halloweenRounds.selectedId,
+    outcome: halloweenRounds.outcome,
+    startedAt: halloweenRounds.startedAt,
+    completedAt: halloweenRounds.completedAt,
+  };
+}
+type StoredRound = Pick<
+  typeof halloweenRounds.$inferSelect,
+  keyof ReturnType<typeof roundSelection>
+>;
+interface OwnedRound {
   readonly id: string;
-  readonly token: string;
+  readonly userId: string;
+}
+interface NewRound {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly email: string | null;
+  readonly restart: boolean;
 }
 
 function shuffled<T>(items: readonly T[]): T[] {
@@ -45,13 +68,10 @@ function roundQuestions(): HalloweenStoredQuestions {
   });
 }
 
-function credentialWhere(credential: Credential) {
+function ownedRoundWhere(round: OwnedRound) {
   return and(
-    eq(halloweenRounds.id, credential.id),
-    eq(
-      halloweenRounds.tokenHash,
-      createHash("sha256").update(credential.token).digest("hex"),
-    ),
+    eq(halloweenRounds.id, round.id),
+    eq(halloweenRounds.userId, round.userId),
   );
 }
 
@@ -91,7 +111,6 @@ function present(row: StoredRound): HalloweenRound {
       : null,
     startedAt: row.startedAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
-    linked: row.userId !== null,
   };
 }
 
@@ -102,25 +121,49 @@ const receipt = (row: StoredRound) => {
   };
 };
 
+export const currentHalloweenRound$ = computed(async (get) => {
+  const db = get(db$);
+  const userId = get(authContext$).userId;
+  const [row] = await db
+    .select(roundSelection())
+    .from(halloweenRounds)
+    .where(eq(halloweenRounds.userId, userId))
+    .orderBy(desc(halloweenRounds.startedAt), desc(halloweenRounds.id))
+    .limit(1);
+  return row && row.outcome !== "left"
+    ? receipt(row)
+    : notFound("Game result not found");
+});
+
 export const startHalloweenRound$ = command(
-  async ({ set }, credential: Credential, signal: AbortSignal) => {
+  async ({ get, set }, input: NewRound, signal: AbortSignal) => {
+    if (!input.restart) {
+      const current = await get(currentHalloweenRound$);
+      signal.throwIfAborted();
+      if (current.status === 200) {
+        return current;
+      }
+    }
     const db = set(writeDb$);
     const at = nowDate();
+    const id = uuidv7();
     await db
       .insert(halloweenRounds)
       .values({
-        id: credential.id,
-        tokenHash: createHash("sha256").update(credential.token).digest("hex"),
+        id,
         questions: roundQuestions(),
+        userId: input.userId,
+        orgId: input.orgId,
+        email: input.email,
         startedAt: at,
         updatedAt: at,
       })
       .onConflictDoNothing();
     signal.throwIfAborted();
     const [row] = await db
-      .select()
+      .select(roundSelection())
       .from(halloweenRounds)
-      .where(credentialWhere(credential));
+      .where(ownedRoundWhere({ id, userId: input.userId }));
     signal.throwIfAborted();
     return row ? receipt(row) : notFound("Game result not found");
   },
@@ -129,7 +172,7 @@ export const startHalloweenRound$ = command(
 export const answerHalloweenRound$ = command(
   async (
     { set },
-    input: Credential & {
+    input: OwnedRound & {
       readonly questionId: string;
       readonly optionId: string;
     },
@@ -137,9 +180,9 @@ export const answerHalloweenRound$ = command(
   ) => {
     const db = set(writeDb$);
     const [row] = await db
-      .select()
+      .select(roundSelection())
       .from(halloweenRounds)
-      .where(credentialWhere(input));
+      .where(ownedRoundWhere(input));
     signal.throwIfAborted();
     if (!row) {
       return notFound("Game result not found");
@@ -174,7 +217,7 @@ export const answerHalloweenRound$ = command(
       })
       .where(
         and(
-          credentialWhere(input),
+          ownedRoundWhere(input),
           eq(halloweenRounds.outcome, "playing"),
           eq(halloweenRounds.questionIndex, row.questionIndex),
           isNull(halloweenRounds.selectedId),
@@ -182,9 +225,9 @@ export const answerHalloweenRound$ = command(
       );
     signal.throwIfAborted();
     const [saved] = await db
-      .select()
+      .select(roundSelection())
       .from(halloweenRounds)
-      .where(credentialWhere(input));
+      .where(ownedRoundWhere(input));
     signal.throwIfAborted();
     return saved ? receipt(saved) : notFound("Game result not found");
   },
@@ -193,14 +236,14 @@ export const answerHalloweenRound$ = command(
 export const advanceHalloweenRound$ = command(
   async (
     { set },
-    input: Credential & { readonly questionId: string },
+    input: OwnedRound & { readonly questionId: string },
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
     const [row] = await db
-      .select()
+      .select(roundSelection())
       .from(halloweenRounds)
-      .where(credentialWhere(input));
+      .where(ownedRoundWhere(input));
     signal.throwIfAborted();
     if (!row) {
       return notFound("Game result not found");
@@ -228,7 +271,7 @@ export const advanceHalloweenRound$ = command(
       )
       .where(
         and(
-          credentialWhere(input),
+          ownedRoundWhere(input),
           eq(halloweenRounds.outcome, "playing"),
           eq(halloweenRounds.questionIndex, row.questionIndex),
           eq(halloweenRounds.selectedId, row.selectedId),
@@ -236,83 +279,30 @@ export const advanceHalloweenRound$ = command(
       );
     signal.throwIfAborted();
     const [saved] = await db
-      .select()
+      .select(roundSelection())
       .from(halloweenRounds)
-      .where(credentialWhere(input));
+      .where(ownedRoundWhere(input));
     signal.throwIfAborted();
     return saved ? receipt(saved) : notFound("Game result not found");
   },
 );
 
 export const leaveHalloweenRound$ = command(
-  async (
-    { set },
-    input: Credential & { readonly reason: "left" | "interrupted" },
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, input: OwnedRound, signal: AbortSignal) => {
     const db = set(writeDb$);
     const at = nowDate();
     await db
       .update(halloweenRounds)
-      .set({ outcome: input.reason, completedAt: at, updatedAt: at })
+      .set({ outcome: "left", completedAt: at, updatedAt: at })
       .where(
-        and(credentialWhere(input), eq(halloweenRounds.outcome, "playing")),
+        and(ownedRoundWhere(input), eq(halloweenRounds.outcome, "playing")),
       );
     signal.throwIfAborted();
     const [row] = await db
-      .select()
+      .select(roundSelection())
       .from(halloweenRounds)
-      .where(credentialWhere(input));
+      .where(ownedRoundWhere(input));
     signal.throwIfAborted();
     return row ? receipt(row) : notFound("Game result not found");
-  },
-);
-
-export const linkHalloweenRound$ = command(
-  async (
-    { set },
-    input: Credential & {
-      readonly userId: string;
-      readonly orgId: string | null;
-      readonly email: string | null;
-      readonly interrupted?: boolean;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    if (input.interrupted) {
-      await set(
-        leaveHalloweenRound$,
-        { ...input, reason: "interrupted" },
-        signal,
-      );
-    }
-    const at = nowDate();
-    await db
-      .update(halloweenRounds)
-      .set({
-        userId: input.userId,
-        orgId: input.orgId,
-        email: input.email,
-        linkedAt: at,
-      })
-      .where(and(credentialWhere(input), isNull(halloweenRounds.userId)));
-    signal.throwIfAborted();
-    const [row] = await db
-      .select()
-      .from(halloweenRounds)
-      .where(
-        and(
-          credentialWhere(input),
-          or(
-            isNull(halloweenRounds.userId),
-            eq(halloweenRounds.userId, input.userId),
-          ),
-        ),
-      );
-    signal.throwIfAborted();
-    return row?.userId === input.userId
-      ? receipt(row)
-      : notFound("Game result not found");
   },
 );

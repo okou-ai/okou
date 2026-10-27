@@ -50,7 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     displayName: "Halloween quiz",
     description:
-      "Play the 2026 Halloween quiz and associate results with your account.",
+      "Open the 2026 Halloween quiz from the animated chat home dialog and associate results with your account.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -46,6 +46,9 @@ export default defineConfig({
       "onboarding.sourcesFirst.startingPrompt.*",
       // Paid tool rows select copy by the shared tool catalog at runtime.
       "settings.paidTools.tools.*",
+      // Halloween content is loaded as an on-demand feature namespace, and
+      // question copy is selected by the IDs supplied by the API.
+      "halloween:*",
     ],
     primaryLanguage: "en-US",
     useTranslationNames: ["useTranslation"],

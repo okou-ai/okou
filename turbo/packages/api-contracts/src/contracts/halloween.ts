@@ -11,18 +11,12 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
-export const halloweenPhaseSchema = zEnum([
-  "upcoming",
-  "open",
-  "ended",
-  "unavailable",
-]);
+export const halloweenPhaseSchema = zEnum(["open", "unavailable"]);
 export const halloweenOutcomeSchema = zEnum([
   "playing",
   "success",
   "wrong",
   "left",
-  "interrupted",
 ]);
 export const halloweenQuestionSchema = object({
   id: string(),
@@ -42,15 +36,13 @@ export const halloweenRoundSchema = object({
   }).nullable(),
   startedAt: string(),
   completedAt: string().nullable(),
-  linked: boolean(),
 });
 export type HalloweenRound = Infer<typeof halloweenRoundSchema>;
 export type HalloweenQuestion = Infer<typeof halloweenQuestionSchema>;
 export type HalloweenPhase = Infer<typeof halloweenPhaseSchema>;
 
-const credential = object({
+const roundReference = object({
   id: string().uuid(),
-  token: string().regex(/^[a-f0-9]{64}$/),
 });
 const errors = {
   400: apiErrorSchema,
@@ -68,61 +60,55 @@ export const halloweenContract = c.router({
     path: "/api/halloween",
     headers: authHeadersSchema,
     responses: {
-      200: object({
-        phase: halloweenPhaseSchema,
-        changesInMs: number().int().min(0).nullable(),
-      }),
+      200: object({ phase: halloweenPhaseSchema }),
       ...errors,
     },
+  },
+  current: {
+    method: "GET",
+    path: "/api/halloween/rounds/current",
+    headers: authHeadersSchema,
+    responses: { 200: halloweenRoundSchema, ...errors },
   },
   start: {
     method: "POST",
     path: "/api/halloween/rounds",
     headers: authHeadersSchema,
-    body: credential,
+    body: object({ restart: boolean() }),
     responses: { 200: halloweenRoundSchema, ...errors },
   },
   answer: {
     method: "POST",
     path: "/api/halloween/answer",
-    body: credential.extend({ questionId: string(), optionId: string() }),
+    headers: authHeadersSchema,
+    body: roundReference.extend({
+      questionId: string(),
+      optionId: string(),
+    }),
     responses: { 200: halloweenRoundSchema, ...errors },
   },
   next: {
     method: "POST",
     path: "/api/halloween/next",
-    body: credential.extend({ questionId: string() }),
+    headers: authHeadersSchema,
+    body: roundReference.extend({ questionId: string() }),
     responses: { 200: halloweenRoundSchema, ...errors },
   },
   leave: {
     method: "POST",
     path: "/api/halloween/leave",
-    body: credential.extend({ reason: zEnum(["left", "interrupted"]) }),
-    responses: { 200: halloweenRoundSchema, ...errors },
-  },
-  link: {
-    method: "POST",
-    path: "/api/halloween/link",
     headers: authHeadersSchema,
-    body: credential.extend({ interrupted: boolean().optional() }),
+    body: roundReference,
     responses: { 200: halloweenRoundSchema, ...errors },
-  },
-  exposure: {
-    method: "POST",
-    path: "/api/halloween/exposure",
-    headers: authHeadersSchema,
-    body: object({}),
-    responses: { 200: object({ first: boolean() }), ...errors },
   },
 });
 
 export const halloweenParticipantSchema = object({
   userId: string(),
   email: string().nullable(),
-  orgId: string().nullable(),
+  orgId: string(),
   firstPlayedAt: string(),
   lastPlayedAt: string(),
-  linkedAt: string(),
   rounds: array(
     object({
       id: string(),
