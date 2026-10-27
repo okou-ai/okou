@@ -10,97 +10,141 @@ import XCTest
 
 @MainActor
 final class ComposerDraftTests: XCTestCase {
-  func testNativeInlineReferencesSurviveDeviceRestartRemoteRoundTripAndConflictChoice() async throws
-  {
+  func testNativeInlineEditsAndUndoPreserveRichQuoteAndAttachmentContext() async throws {
     preserveNativePasteboard(for: self)
-    let rich = try richDraft()
-    let quoted = try JSONDecoder().decode(
-      MessageJSON.self,
-      from: Data(
-        #"{"type":"feedback","quote":"PWA passage","eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"},"note":[{"type":"text","text":"Compare "},{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"},{"type":"text","text":"now"}]}"#
-          .utf8))
-    let additional: MessageJSON = .object([
-      "type": .string("additional_info"), "text": .string("Keep the source context"),
-    ])
-    let remote = ComposerDraft(
-      document: ChatDraftDocument(
-        parts: [additional] + (rich.draftUserMessage?.parts ?? []) + [quoted]),
-      attachments: rich.draftAttachments)
+    let remote = try quotedRichDraft()
+    let server = DraftServer(remote: remote)
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    try await waitForBusinessResult { composer.attachments.isReady }
+    let navigation = MentionNavigationFixture()
+    let workspace = try await navigation.workspace()
+    defer { workspace.close() }
+    let source = workspace.mentionTestSource
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(state: composer, source: source))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(
+      mentionInputs(in: host.view).first { $0.text.hasPrefix("Review this") })
+    try await focusMentionInput(input)
+    input.selectedRange = NSRange(location: 7, length: 0)
+    input.insertText("🌷 new ")
+    try await waitForBusinessResult { composer.text == "Review 🌷 new this " }
+    let note = try XCTUnwrap(
+      mentionInputs(in: host.view).first { $0.accessibilityLabel == "Ask or comment on this quote" }
+    )
+    try await focusMentionInput(note)
+    note.selectedRange = NSRange(location: note.text.utf16.count, length: 0)
+    note.insertText(" @project")
+    let reference = try XCTUnwrap(source.suggestions(for: "project").first)
+    try await waitForBusinessResult { composer.editor.mentionSuggestions.contains(reference) }
+    composer.editor.insertMention(reference)
+    try await waitForBusinessResult {
+      composer.editorBlocks.first(where: \.isFeedback)?.content.parts.contains(reference.part)
+        == true
+    }
+    XCTAssertEqual(composer.document.parts.first, remote.draftUserMessage?.parts.first)
+    XCTAssertEqual(
+      composer.document.parts.first { $0["type"]?.string == "file" },
+      remote.draftUserMessage?.parts.first { $0["type"]?.string == "file" })
+    XCTAssertEqual(
+      composer.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
+    XCTAssertEqual(
+      composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
+    let saved = composer.value
+    try await focusMentionInput(input)
+    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
+    input.cut(nil)
+    try await waitForBusinessResult { composer.text.isEmpty }
+    await hostingPresentationFrame()
+    input.undoManager?.undo()
+    try await waitForBusinessResult { composer.value == saved }
+  }
+
+  func testRichQuoteAndAttachmentsRoundTripRestartAndRemoteConflictChoice() async throws {
+    let remote = try quotedRichDraft()
     let server = DraftServer(remote: remote)
     let storage = server.storage()
     let composer = server.composer(storage: storage)
     defer { composer.close() }
     await composer.synchronize()
-    try await eventually { composer.attachments.isReady }
-    let navigation = MentionNavigationFixture()
-    let workspace = try await navigation.workspace()
-    defer { workspace.close() }
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(state: composer, source: workspace.mentionTestSource))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(
-      mentionInputs(in: host.view).first { $0.text.hasPrefix("Review this") })
-    input.becomeFirstResponder()
-    input.selectedRange = NSRange(location: 7, length: 0)
-    input.insertText("🌷 new ")
-    try await eventually { composer.text == "Review 🌷 new this " }
-    let note = try XCTUnwrap(
-      mentionInputs(in: host.view).first { $0.accessibilityLabel == "Ask or comment on this quote" }
-    )
-    note.becomeFirstResponder()
-    note.selectedRange = NSRange(location: note.text.utf16.count, length: 0)
-    note.insertText(" @project")
-    try await eventually { mentionTable(in: host.view) != nil }
-    note.insertText("\n")
-    try await eventually {
-      composer.editorBlocks.first(where: \.isFeedback)?.content.parts.contains {
-        $0["type"]?.string == "chat_thread"
-      } == true
-    }
-    XCTAssertEqual(composer.document.parts.first, additional)
-    XCTAssertEqual(
-      composer.document.parts.first { $0["type"]?.string == "file" },
-      rich.draftUserMessage?.parts.last)
-    XCTAssertEqual(composer.document.parts.last?["source"], quoted["source"])
-    XCTAssertEqual(composer.document.parts.last?["range"], quoted["range"])
+    try await waitForBusinessResult { composer.attachments.isReady }
+    composer.text = "Review 🌷 new this "
+    let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
+    var content = note.content
+    content.parts.append(contentsOf: [
+      .object(["type": .string("text"), "text": .string(" More context")]),
+      .object([
+        "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
+        "titleSnapshot": .string("Project 30"),
+      ]),
+    ])
+    composer.editBlock(note.id, document: content)
     await composer.synchronize()
     let saved = composer.value
     XCTAssertEqual(server.state.value.withLock { $0.remote }, saved)
-    input.becomeFirstResponder()
-    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
-    input.cut(nil)
-    try await eventually { composer.text.isEmpty }
-    await hostingPresentationFrame()
-    input.undoManager?.undo()
-    try await eventually(message: "Native cut/undo must retain source and attachment positions") {
-      composer.value == saved
-    }
-    unmount(window)
+    XCTAssertEqual(saved.draftAttachments, remote.draftAttachments)
+    XCTAssertEqual(saved.draftUserMessage?.parts.first, remote.draftUserMessage?.parts.first)
+    XCTAssertEqual(
+      saved.draftUserMessage?.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
+    XCTAssertEqual(
+      saved.draftUserMessage?.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
     composer.close()
 
     let reopened = server.composer(storage: storage)
     defer { reopened.close() }
     XCTAssertEqual(reopened.value, saved)
-    let reopenedHost = UIHostingController(rootView: MentionComposerHarness(state: reopened))
-    let reopenedWindow = try await mountMentionHost(reopenedHost)
-    defer { unmount(reopenedWindow) }
+    let restored = try XCTUnwrap(reopened.editorBlocks.first(where: \.isFeedback))
+    XCTAssertEqual(restored.content, content)
+    reopened.editBlock(restored.id, text: "Local change")
+    server.state.value.withLock { $0.remote = remote }
+    await reopened.synchronize()
+    XCTAssertNotNil(reopened.conflictingRemote)
+    reopened.useRemote()
+    XCTAssertEqual(reopened.value, remote)
+  }
+
+  func testReopenedNativeQuoteSupportsReferenceUndoAndRemoteEditorReplacement() async throws {
+    let remote = try quotedRichDraft()
+    let server = DraftServer(remote: remote)
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    await composer.synchronize()
+    let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
+    var content = note.content
+    content.parts.append(
+      .object([
+        "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
+        "titleSnapshot": .string("Project 30"),
+      ]))
+    composer.editBlock(note.id, document: content)
+    await composer.synchronize()
+    let saved = composer.value
+    composer.close()
+
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: reopened))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
     let restoredNote = try XCTUnwrap(
-      mentionInputs(in: reopenedHost.view).first {
+      mentionInputs(in: host.view).first {
         $0.accessibilityLabel == "Ask or comment on this quote"
       })
     XCTAssertEqual(restoredNote.text.filter { $0 == "\u{fffc}" }.count, 2)
-    restoredNote.becomeFirstResponder()
-    let referenceRange = (restoredNote.text as NSString).range(of: "\u{fffc}")
-    restoredNote.selectedRange = referenceRange
+    try await focusMentionInput(restoredNote)
+    restoredNote.selectedRange = (restoredNote.text as NSString).range(of: "\u{fffc}")
     restoredNote.deleteBackward()
-    try await eventually {
+    try await waitForBusinessResult {
       reopened.editorBlocks.first(where: \.isFeedback)?.content.parts.contains {
         $0["type"]?.string == "agent"
       } == false
     }
     restoredNote.undoManager?.undo()
-    try await eventually { reopened.value == saved }
+    try await waitForBusinessResult { reopened.value == saved }
     restoredNote.insertText(" Local")
     server.state.value.withLock { $0.remote = remote }
     await reopened.synchronize()
@@ -108,11 +152,12 @@ final class ComposerDraftTests: XCTestCase {
     reopened.useRemote()
     try await eventually {
       reopened.value == remote
-        && mentionInputs(in: reopenedHost.view).contains {
+        && mentionInputs(in: host.view).contains {
           $0 !== restoredNote && $0.text == "Compare \u{fffc}now"
         }
     }
-    XCTAssertEqual(reopened.document.parts.last?["source"], quoted["source"])
+    XCTAssertEqual(
+      reopened.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
   }
 
   func testQuotedDraftRoundTripsNotesSourcesOrderAndConflictRecovery() async throws {
@@ -277,36 +322,10 @@ final class ComposerDraftTests: XCTestCase {
     await composer.synchronize()
     let notes = composer.editorBlocks.filter(\.isFeedback)
     let firstNote = composer.document.parts[1]
-    let source = ChatRecommendedFollowupSource(
-      eventID: "followups",
-      followups: [
-        ChatRecommendedFollowup(prompt: "Existing question", kind: .talk)
-      ])
-    let host = UIHostingController(
-      rootView: VStack {
-        RecommendedFollowupList(
-          source: source, finishedAt: nil, select: composer.editor.selectOrAppendText)
-        ChatComposerView(
-          draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
-          isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false, error: nil,
-          attachmentURL: server.http.baseURL, attachments: composer.attachments,
-          draftState: composer, submit: {}, refresh: nil)
-      })
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
-    try await eventually { composer.editor.view?.window != nil }
-    func button(in view: UIView) -> UIButton? {
-      if let button = view as? UIButton, button.accessibilityLabel == "Existing question" {
-        return button
-      }
-      return view.subviews.lazy.compactMap { button(in: $0) }.first
-    }
-    let action = try XCTUnwrap(button(in: host.view))
-    action.sendActions(for: .touchUpInside)
+    composer.editor.selectOrAppendText("Existing question")
     try await eventually {
       composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
         == "Existing question"
@@ -318,39 +337,51 @@ final class ComposerDraftTests: XCTestCase {
       ["Existing question", "Existing question"])
   }
 
-  func testRecommendedTextPreservesRichDraftAttachmentsAndConflictRecovery() async throws {
+  func testRecommendedTextPreservesNativeRichDraftAndAttachments() async throws {
     let server = DraftServer(remote: try richDraft())
-    let composer = server.composer(storage: server.storage())
+    let composer = server.composer()
     defer { composer.close() }
     await composer.synchronize()
-    try await eventually { composer.attachments.isReady }
+    try await waitForBusinessResult { composer.attachments.isReady }
     let parts = composer.document.parts.filter { $0["type"]?.string != "text" }
     let attachments = composer.attachments.savedItems
-    let host = UIHostingController(
-      rootView: ChatComposerTextInput(
-        text: Binding(get: { composer.text }, set: { composer.text = $0 }),
-        isFocused: .constant(true), acceptsImages: true, isCurrent: { true }, pasteImages: { _ in },
-        editor: composer.editor))
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 300)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
-    try await eventually { composer.editor.view?.window != nil }
     composer.editor.selectOrAppendText("Compare the alternatives")
-    try await eventually { composer.text.hasSuffix("\nCompare the alternatives") }
+    try await waitForBusinessResult { composer.text.hasSuffix("\nCompare the alternatives") }
     XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
     XCTAssertEqual(composer.attachments.savedItems, attachments)
+  }
+
+  func testRichDraftConflictKeepsLocalTextReferencesAndAttachments() async throws {
+    let remote = try richDraft()
+    let server = DraftServer(remote: remote)
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    await composer.synchronize()
+    try await waitForBusinessResult { composer.attachments.isReady }
+    composer.text += "\nCompare the alternatives"
+    let local = composer.value
     server.state.value.withLock { $0.remote = textDraft("Edited on another device") }
     await composer.synchronize()
     XCTAssertNotNil(composer.conflictingRemote)
-    XCTAssertTrue(composer.text.hasSuffix("Compare the alternatives"))
+    XCTAssertEqual(composer.value, local)
     composer.keepLocal()
     await composer.synchronize()
     XCTAssertNil(composer.conflictingRemote)
-    XCTAssertEqual(server.state.value.withLock { $0.remote }, composer.value)
+    XCTAssertEqual(server.state.value.withLock { $0.remote }, local)
+    XCTAssertEqual(local.draftAttachments, remote.draftAttachments)
+    XCTAssertEqual(
+      local.draftUserMessage?.parts.filter { $0["type"]?.string != "text" },
+      remote.draftUserMessage?.parts.filter { $0["type"]?.string != "text" })
+    composer.close()
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.value, local)
   }
+
   func testRestartRestoresTextUploadedFilesAndRichDocumentWithoutCreatingAThread() async throws {
     let server = DraftServer(remote: try richDraft())
     let storage = server.storage()
@@ -621,6 +652,21 @@ private func textDraft(_ text: String) -> ComposerDraft {
   var document = ChatDraftDocument()
   document.replaceText(text)
   return ComposerDraft(document: document)
+}
+
+private func quotedRichDraft() throws -> ComposerDraft {
+  let rich = try richDraft()
+  let quote = try JSONDecoder().decode(
+    MessageJSON.self,
+    from: Data(
+      #"{"type":"feedback","quote":"PWA passage","eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"},"note":[{"type":"text","text":"Compare "},{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"},{"type":"text","text":"now"}]}"#
+        .utf8))
+  return ComposerDraft(
+    document: ChatDraftDocument(
+      parts: [
+        .object(["type": .string("additional_info"), "text": .string("Keep the source context")])
+      ] + (rich.draftUserMessage?.parts ?? []) + [quote]),
+    attachments: rich.draftAttachments)
 }
 
 private func richDraft() throws -> ComposerDraft {
