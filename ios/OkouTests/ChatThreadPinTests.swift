@@ -9,7 +9,13 @@ import XCTest
 @MainActor
 final class ChatThreadPinTests: XCTestCase {
   func testPinQueuePreservesTheLatestChoiceAcrossDelayedWritesAndRefresh() async throws {
-    let fixture = PinFixture()
+    let writes = (1...3).map { expectation(description: "Pin write \($0) reached HTTP") }
+    let readStarted = expectation(description: "An older list read reached HTTP")
+    let fixture = PinFixture(
+      onWrite: { index in
+        guard writes.indices.contains(index) else { return XCTFail("Unexpected pin write") }
+        writes[index].fulfill()
+      }, onHeldRead: { readStarted.fulfill() })
     defer { fixture.releaseAll() }
     let store = fixture.workspace()
     defer { store.close() }
@@ -17,7 +23,8 @@ final class ChatThreadPinTests: XCTestCase {
     XCTAssertFalse(isPinned(store))
 
     queueToggle(in: store, fixture: fixture)
-    try await eventually { fixture.writes.count == 1 && isPinned(store) }
+    await fulfillment(of: [writes[0]], timeout: 3)
+    XCTAssertTrue(isPinned(store))
     XCTAssertTrue(store.list.canPin(PinFixture.target))
     // Other list actions retain their existing protection while Pin remains interactive.
     await store.list.rename(try XCTUnwrap(store.list.threads.first), title: "Blocked during pin")
@@ -34,9 +41,16 @@ final class ChatThreadPinTests: XCTestCase {
     let readGate = PinGate()
     fixture.state.value.withLock { $0.nextReadGate = readGate }
     let refreshing = Task { await store.refresh() }
-    try await eventually { fixture.state.value.withLock { $0.readStarted } }
+    addTeardownBlock { @MainActor in
+      store.close()
+      refreshing.cancel()
+      readGate.open()
+      fixture.releaseAll()
+      await refreshing.value
+    }
+    await fulfillment(of: [readStarted], timeout: 3)
     queueToggle(in: store, fixture: fixture)
-    try await eventually { !isPinned(store) }
+    try await waitForBusinessResult { !self.isPinned(store) }
     XCTAssertTrue(store.list.canPin(PinFixture.target))
     XCTAssertEqual(fixture.writes.count, 1)
     readGate.open()
@@ -45,78 +59,88 @@ final class ChatThreadPinTests: XCTestCase {
 
     fixture.confirm(0)
     fixture.gates[0].open()
-    try await eventually { fixture.writes.count == 2 }
+    await fulfillment(of: [writes[1]], timeout: 3)
     XCTAssertEqual(fixture.writes.map(\.action), ["pin", "unpin"])
     XCTAssertNil(fixture.writes.dropFirst().first?.rank)
     XCTAssertFalse(isPinned(store))
-    queueToggle(in: store, fixture: fixture)
-    try await eventually { isPinned(store) }
+    let latest = queueToggle(in: store, fixture: fixture)
+    try await waitForBusinessResult { self.isPinned(store) }
     XCTAssertEqual(fixture.writes.count, 2)
     fixture.confirm(1)
     fixture.gates[1].open()
-    try await eventually { fixture.writes.count == 3 }
+    await fulfillment(of: [writes[2]], timeout: 3)
     XCTAssertEqual(fixture.writes.map(\.action), ["pin", "unpin", "pin"])
     XCTAssertEqual(Set(fixture.writes.map(\.eventID)).count, 3)
     XCTAssertTrue(fixture.writes.allSatisfy { UUID(uuidString: $0.eventID) != nil })
     XCTAssertTrue(isPinned(store))
     fixture.confirm(2)
     fixture.gates[2].open()
-    await store.list.refresh(waitForCurrent: true)
-    try await eventually { !store.list.isLoading }
+    await latest.value
 
     // After matching IDs arrive, a subsequent remote event owns the display.
     fixture.remoteUnpin()
     await store.list.refresh(waitForCurrent: true)
-    try await eventually { !isPinned(store) }
+    XCTAssertFalse(isPinned(store))
     XCTAssertEqual(
       store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.peer)
   }
 
   func testFailedPinKeepsOptimisticDisplayAndNextSaveStillRuns() async throws {
-    let fixture = PinFixture(statuses: [503, 204, 204])
+    let writes = (1...2).map { expectation(description: "Pin write \($0) reached HTTP") }
+    let fixture = PinFixture(statuses: [503, 204, 204], onWrite: { index in
+        guard writes.indices.contains(index) else { return XCTFail("Unexpected pin write") }
+        writes[index].fulfill()
+      })
     defer { fixture.releaseAll() }
     let cacheDirectory = CacheTestDirectory(owner: self)
     var cache: ChatCache? = cacheDirectory.cache(
       scope: ChatCacheScope(
         apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace"))
     defer { cache = nil }
-    try await exerciseFailedPinRecovery(fixture, cache: XCTUnwrap(cache))
+    try await exerciseFailedPinRecovery(fixture, writes: writes, cache: XCTUnwrap(cache))
   }
 
   func testQueuedPinChangesContinueAfterEarlierRequestsFail() async throws {
-    let fixture = PinFixture(statuses: [503, 503, 204])
+    let writes = (1...3).map { expectation(description: "Pin write \($0) reached HTTP") }
+    let fixture = PinFixture(statuses: [503, 503, 204], onWrite: { index in
+        guard writes.indices.contains(index) else { return XCTFail("Unexpected pin write") }
+        writes[index].fulfill()
+      })
     defer { fixture.releaseAll() }
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
     queueToggle(in: store, fixture: fixture)
-    try await eventually { fixture.writes.count == 1 && isPinned(store) }
+    await fulfillment(of: [writes[0]], timeout: 3)
+    XCTAssertTrue(isPinned(store))
     queueToggle(in: store, fixture: fixture)
-    try await eventually { !isPinned(store) }
+    try await waitForBusinessResult { !self.isPinned(store) }
     XCTAssertEqual(fixture.writes.count, 1)
 
     fixture.gates[0].open()
-    try await eventually { fixture.writes.count == 2 && store.list.error != nil }
+    await fulfillment(of: [writes[1]], timeout: 3)
+    try await waitForBusinessResult { store.list.error != nil }
     XCTAssertEqual(store.list.error, "Pin save unavailable")
     XCTAssertFalse(isPinned(store))
     XCTAssertTrue(store.list.canPin(PinFixture.target))
-    queueToggle(in: store, fixture: fixture)
-    try await eventually { isPinned(store) }
+    let latest = queueToggle(in: store, fixture: fixture)
+    try await waitForBusinessResult { self.isPinned(store) }
     XCTAssertEqual(fixture.writes.count, 2)
     fixture.gates[1].open()
-    try await eventually { fixture.writes.count == 3 }
+    await fulfillment(of: [writes[2]], timeout: 3)
     XCTAssertEqual(fixture.writes.map(\.action), ["pin", "unpin", "pin"])
     XCTAssertTrue(store.list.canPin(PinFixture.target))
     XCTAssertTrue(isPinned(store))
     fixture.gates[2].open()
-    try await eventually { store.list.updatingThreads.isEmpty }
+    await latest.value
     XCTAssertTrue(isPinned(store))
     XCTAssertEqual(
       store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.target)
   }
 
   func testClosingWorkspaceCancelsActiveAndQueuedPinsWithoutLeakingOptimism() async throws {
-    let fixture = PinFixture()
+    let written = expectation(description: "The active pin reached HTTP")
+    let fixture = PinFixture(onWrite: { _ in written.fulfill() })
     defer { fixture.releaseAll() }
     let store = fixture.workspace()
     defer { store.close() }
@@ -128,7 +152,7 @@ final class ChatThreadPinTests: XCTestCase {
       fixture.releaseAll()
       await pin.value
     }
-    try await eventually { fixture.writes.count == 1 }
+    await fulfillment(of: [written], timeout: 3)
     let unpin = Task { await store.list.togglePinned(PinFixture.target) }
     addTeardownBlock { @MainActor in
       store.close()
@@ -136,7 +160,7 @@ final class ChatThreadPinTests: XCTestCase {
       fixture.releaseAll()
       await unpin.value
     }
-    try await eventually {
+    try await waitForBusinessResult {
       store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt == nil
     }
     store.close()
@@ -156,29 +180,32 @@ final class ChatThreadPinTests: XCTestCase {
   }
 
   func testUpgradeStopsQueuedPinWritesAndRejectsFurtherChanges() async throws {
-    let fixture = PinFixture(statuses: [426, 204, 204])
+    let written = expectation(description: "The active pin reached HTTP")
+    let fixture = PinFixture(statuses: [426, 204, 204], onWrite: { _ in written.fulfill() })
     defer { fixture.releaseAll() }
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
     queueToggle(in: store, fixture: fixture)
-    try await eventually { fixture.writes.count == 1 }
+    await fulfillment(of: [written], timeout: 3)
     queueToggle(in: store, fixture: fixture)
-    try await eventually { !isPinned(store) }
+    try await waitForBusinessResult { !self.isPinned(store) }
     fixture.gates[0].open()
-    try await eventually { store.needsUpgrade && !store.list.canPin(PinFixture.target) }
+    try await waitForBusinessResult { store.needsUpgrade && !store.list.canPin(PinFixture.target) }
     fixture.releaseAll()
     await store.list.togglePinned(PinFixture.target)
     XCTAssertEqual(fixture.writes.count, 1)
   }
-  private func exerciseFailedPinRecovery(_ fixture: PinFixture, cache: ChatCache) async throws {
+  private func exerciseFailedPinRecovery(
+    _ fixture: PinFixture, writes: [XCTestExpectation], cache: ChatCache
+  ) async throws {
     let store = fixture.workspace(cache: cache)
     defer { store.close() }
     try await withThrowingTaskGroup(of: Void.self) { group in
       defer { fixture.releaseAll() }
       await store.refresh()
       group.addTask { await store.list.togglePinned(PinFixture.target) }
-      try await eventually { fixture.writes.count == 1 }
+      await fulfillment(of: [writes[0]], timeout: 3)
       fixture.gates[0].open()
       try await group.waitForAll()
       XCTAssertEqual(store.list.error, "Pin save unavailable")
@@ -194,7 +221,7 @@ final class ChatThreadPinTests: XCTestCase {
       XCTAssertNil(reopened.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
 
       group.addTask { await store.list.togglePinned(PinFixture.target) }
-      try await eventually { fixture.writes.count == 2 }
+      await fulfillment(of: [writes[1]], timeout: 3)
       XCTAssertNil(store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt)
       fixture.gates[1].open()
       try await group.waitForAll()
@@ -203,12 +230,16 @@ final class ChatThreadPinTests: XCTestCase {
     }
   }
 
-  private func queueToggle(in store: WorkspaceStore, fixture: PinFixture) {
+  @discardableResult
+  private func queueToggle(in store: WorkspaceStore, fixture: PinFixture) -> Task<Void, Never> {
     let task = Task { await store.list.togglePinned(PinFixture.target) }
     addTeardownBlock { @MainActor in
+      store.close()
+      task.cancel()
       fixture.releaseAll()
       await task.value
     }
+    return task
   }
 
   private func isPinned(_ store: WorkspaceStore) -> Bool {
@@ -243,7 +274,6 @@ private final class PinFixture: Sendable {
     var writes: [Write] = []
     var events: [String] = []
     var nextReadGate: PinGate?
-    var readStarted = false
   }
   final class StateBox: Sendable { let value = Mutex(State()) }
   let state: StateBox
@@ -257,7 +287,11 @@ private final class PinFixture: Sendable {
     WorkspaceStore(client: http.client, webURL: http.baseURL, cache: cache)
   }
 
-  init(statuses: [Int] = [204, 204, 204]) {
+  init(
+    statuses: [Int] = [204, 204, 204],
+    onWrite: @escaping @Sendable (Int) -> Void = { _ in },
+    onHeldRead: @escaping @Sendable () -> Void = {}
+  ) {
     let state = StateBox()
     let gates = (0..<3).map { _ in PinGate() }
     self.state = state
@@ -269,9 +303,9 @@ private final class PinFixture: Sendable {
         let readGate = state.value.withLock { state in
           let gate = state.nextReadGate
           state.nextReadGate = nil
-          if gate != nil { state.readStarted = true }
           return gate
         }
+        if readGate != nil { onHeldRead() }
         await readGate?.wait()
         return ChatHTTPResponse(
           body: """
@@ -305,6 +339,7 @@ private final class PinFixture: Sendable {
           return state.writes.count - 1
         }
         guard index < gates.count else { throw URLError(.badServerResponse) }
+        onWrite(index)
         await gates[index].wait()
         return ChatHTTPResponse(
           status: statuses[index],

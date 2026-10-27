@@ -335,12 +335,18 @@ final class ChatSyncTests: XCTestCase {
     let scope = syncScope(fixture)
     let service = ChatSync(
       client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
-    let warming = Task { try await service.warmHistories(threadIDs: [syncThreadID]) }
-    await fulfillment(of: [warmingStarted], timeout: 2)
-    let opened = try await service.history(threadID: syncThreadID)
-    XCTAssertEqual(opened.executionState, .completed)
-    releaseWarming.open()
-    try await warming.value
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      defer {
+        group.cancelAll()
+        releaseWarming.open()
+      }
+      group.addTask { try await service.warmHistories(threadIDs: [syncThreadID]) }
+      await fulfillment(of: [warmingStarted], timeout: 2)
+      let opened = try await service.history(threadID: syncThreadID)
+      XCTAssertEqual(opened.executionState, .completed)
+      releaseWarming.open()
+      try await group.waitForAll()
+    }
     let restarted = ChatSync(
       client: fixture.client, cache: ChatCache(scope: scope, directory: directory))
     let restored = await restarted.cachedHistory(threadID: syncThreadID)

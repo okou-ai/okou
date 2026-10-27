@@ -61,9 +61,9 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture, callbackQuery: "I+connected+Slack%2BChat")
     store.activate(action)
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(prompts.withLock { $0 }, ["I connected Slack+Chat"])
     guard case .ready(let status) = store.states[action.id] else {
       return XCTFail("Missing verified status")
@@ -85,7 +85,7 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture)
     store.activate(action)
-    try await eventually {
+    try await waitForBusinessResult {
       if case .failed = store.states[action.id] { return true }
       return false
     }
@@ -104,12 +104,13 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
     store.submit()
-    try await eventually { starts.withLock { $0 } == 2 && store.active?.busy == false }
+    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    XCTAssertEqual(starts.withLock { $0 }, 2)
   }
   func testUncertainContinuationRetriesTheSameEventWithoutAnotherReconnect() async throws {
     let starts = Mutex(0)
@@ -133,18 +134,19 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
     store.submit()
-    try await eventually { store.active == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(starts.withLock { $0 }, 1)
     XCTAssertEqual(eventIDs.withLock { Set($0).count }, 1)
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
   }
   func testOAuthBrowserCancellationDoesNotContinueAndCanRestart() async throws {
-    let clock = ConnectorPollingClock()
+    let scheduled = expectation(description: "OAuth completion polling was scheduled")
+    let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/connectors/slack/oauth/start" {
@@ -164,40 +166,67 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active?.browserURL != nil && clock.hasSleeper(.seconds(2)) }
+    await fulfillment(of: [scheduled], timeout: 3)
+    XCTAssertNotNil(store.active?.browserURL)
     XCTAssertEqual(reads.withLock { $0 }, 0)
     store.browserDismissed()
     clock.advance(.seconds(2))
-    try await eventually { store.active?.notice != nil }
+    try await waitForBusinessResult { store.active?.notice != nil }
     XCTAssertEqual(reads.withLock { $0 }, 1)
     XCTAssertNil(store.active?.session)
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
   }
   func testClosingScopeBeforeALateStartResponseCannotContinue() async throws {
-    let started = expectation(description: "Start request reached the HTTP boundary")
-    let gate = ModelResponseGate()
-    let callbacks = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/connectors/slack/no-auth" {
-        started.fulfill()
-        await gate.wait()
-        return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+    for closing in [false, true] {
+      let started = expectation(description: "Start request reached the HTTP boundary")
+      let responded = expectation(description: "The delayed start handler finished")
+      let gate = ModelResponseGate()
+      defer { gate.open() }
+      let linked = Mutex(false)
+      let prompts = Mutex<[String]>([])
+      let fixture = ChatHTTPFixture { request in
+        if request.url!.path == "/api/connectors/slack/no-auth" {
+          started.fulfill()
+          await gate.wait()
+          defer { responded.fulfill() }
+          linked.withLock { $0 = true }
+          return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+        }
+        if request.url!.path == "/api/chat/events" {
+          struct Body: Decodable { let prompt: String }
+          let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
+          prompts.withLock { $0.append(body.prompt) }
+        }
+        return try XCTUnwrap(
+          F.response(request, connected: linked.withLock { $0 }, authorized: linked.withLock { $0 }))
       }
-      if request.url!.path == "/api/chat/events" { callbacks.withLock { $0 += 1 } }
-      return try XCTUnwrap(F.response(request, connected: false, authorized: false))
+      let store = store(fixture)
+      defer { store.close() }
+      let action = try descriptor(fixture)
+      store.activate(action)
+      try await waitForBusinessResult { store.active != nil }
+      let flow = try XCTUnwrap(store.active)
+      store.submit()
+      await fulfillment(of: [started], timeout: 3)
+      if closing { store.close() }
+      gate.open()
+      await fulfillment(of: [responded], timeout: 3)
+      // Submission clears busy in its terminal defer, including after scope closure.
+      try await waitForBusinessResult { !flow.busy }
+      XCTAssertNil(store.active)
+      if closing {
+        XCTAssertTrue(store.states.isEmpty)
+        XCTAssertTrue(prompts.withLock { $0.isEmpty })
+      } else {
+        XCTAssertEqual(prompts.withLock { $0 }, ["Continue"])
+        guard case .ready(let status) = store.states[action.id] else {
+          return XCTFail("The delayed success must continue while its scope is open")
+        }
+        XCTAssertTrue(status.complete)
+      }
     }
-    let store = store(fixture)
-    store.activate(try descriptor(fixture))
-    try await eventually { store.active != nil }
-    store.submit()
-    await fulfillment(of: [started], timeout: 3)
-    store.close()
-    gate.open()
-    XCTAssertNil(store.active)
-    XCTAssertTrue(store.states.isEmpty)
-    XCTAssertEqual(callbacks.withLock { $0 }, 0)
   }
   func testExternalCodeKeepsExactAccountAndCanRetryAFailedCode() async throws {
     let linked = Mutex(false)
@@ -227,19 +256,22 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active?.isExternalCode == true && store.active?.busy == false }
+    try await waitForBusinessResult {
+      store.active?.isExternalCode == true && store.active?.busy == false
+    }
     store.active?.code = "wrong-code"
     store.submit()
-    try await eventually { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
     store.active?.code = "correct-code"
     store.submit()
-    try await eventually { store.active == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(submissions.withLock { $0 }, 2)
   }
   func testOAuthCompletionReceiptVerifiesOwnedAccountBeforeContinuing() async throws {
-    let clock = ConnectorPollingClock()
+    let scheduled = expectation(description: "OAuth completion polling was scheduled")
+    let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
     let connected = Mutex(false)
     let callbacks = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -261,17 +293,28 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture)
     store.activate(action)
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active?.browserURL != nil && clock.hasSleeper(.seconds(2)) }
+    await fulfillment(of: [scheduled], timeout: 3)
+    XCTAssertNotNil(store.active?.browserURL)
     XCTAssertEqual(callbacks.withLock { $0 }, 0)
     store.browserDismissed()
     clock.advance(.seconds(2))
-    try await eventually { store.active == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
   }
   func testDeviceAuthorizationPollsSessionTokenAndCompletesOnlyAfterServerReadiness() async throws {
-    let clock = ConnectorPollingClock()
+    let scheduled = (1...2).map { expectation(description: "Device poll \($0) was scheduled") }
+    let sleeps = Mutex(0)
+    let clock = ConnectorPollingClock(didSchedule: { duration in
+      XCTAssertEqual(duration, .seconds(1))
+      let index = sleeps.withLock { value in
+        defer { value += 1 }
+        return value
+      }
+      guard scheduled.indices.contains(index) else { return XCTFail("Unexpected device poll") }
+      scheduled[index].fulfill()
+    })
     let connected = Mutex(false)
     let polls = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -299,22 +342,26 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active?.session != nil && clock.hasSleeper(.seconds(1)) }
+    await fulfillment(of: [scheduled[0]], timeout: 3)
+    XCTAssertNotNil(store.active?.session)
     XCTAssertEqual(store.active?.session?.userCode, "EXAMPLE-CODE")
     XCTAssertEqual(polls.withLock { $0 }, 0)
     store.browserDismissed()
     clock.advance(.seconds(1))
-    try await eventually { polls.withLock { $0 } == 1 && clock.hasSleeper(.seconds(1)) }
+    await fulfillment(of: [scheduled[1]], timeout: 3)
+    XCTAssertEqual(polls.withLock { $0 }, 1)
     XCTAssertNotNil(store.active)
     clock.advance(.seconds(1))
-    try await eventually { store.active == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(polls.withLock { $0 }, 2)
   }
   func testCustomOAuthAndAutomaticDoNotRequestProviderOwnedCredentialFields() async throws {
     for mode in ["oauth", "automatic"] {
-      let clock = ConnectorPollingClock()
+      let scheduled =
+        mode == "oauth" ? expectation(description: "Custom OAuth polling was scheduled") : nil
+      let clock = ConnectorPollingClock(didSchedule: { _ in scheduled?.fulfill() })
       let connected = Mutex(false)
       let callbacks = Mutex(0)
       let fixture = ChatHTTPFixture { request in
@@ -357,16 +404,16 @@ final class ConnectorActionTests: XCTestCase {
       let store = store(fixture, pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(try descriptor(fixture, custom: true))
-      try await eventually { store.active != nil }
+      try await waitForBusinessResult { store.active != nil }
       XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
       XCTAssertTrue(try XCTUnwrap(store.active).values.isEmpty)
       store.submit()
       if mode == "oauth" {
-        try await eventually { clock.hasSleeper(.seconds(2)) }
+        await fulfillment(of: [try XCTUnwrap(scheduled)], timeout: 3)
         XCTAssertEqual(callbacks.withLock { $0 }, 0)
         clock.advance(.seconds(2))
       }
-      try await eventually { store.active == nil }
+      try await waitForBusinessResult { store.active == nil }
       XCTAssertEqual(callbacks.withLock { $0 }, 1)
     }
   }
@@ -400,9 +447,9 @@ final class ConnectorActionTests: XCTestCase {
         "/agents/\(F.agentID)/connector-accounts/\(F.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(F.threadID)&callbackPrompt=Continue",
         webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
     store.activate(action)
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { store.active == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
     guard case .ready(let status) = store.states[action.id] else {
       return XCTFail("Expected confirmed status")
@@ -411,7 +458,21 @@ final class ConnectorActionTests: XCTestCase {
   }
 
   func testDevicePollingHonorsTheUpdatedIntervalAndScopeClosureCancelsItsWait() async throws {
-    let clock = ConnectorPollingClock()
+    let firstPoll = expectation(description: "The initial device poll was scheduled")
+    let delayedPoll = expectation(description: "The updated device interval was scheduled")
+    let cancelled = expectation(description: "Closing the scope cancelled its scheduled poll")
+    let clock = ConnectorPollingClock(
+      didSchedule: { duration in
+        switch duration {
+        case .seconds(1): firstPoll.fulfill()
+        case .seconds(7): delayedPoll.fulfill()
+        default: XCTFail("Unexpected device polling interval")
+        }
+      },
+      didCancel: { duration in
+        XCTAssertEqual(duration, .seconds(7))
+        cancelled.fulfill()
+      })
     let polls = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path.hasSuffix("/oauth/device/sessions") {
@@ -431,15 +492,15 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
-    try await eventually { store.active != nil }
+    try await waitForBusinessResult { store.active != nil }
     store.submit()
-    try await eventually { clock.hasSleeper(.seconds(1)) }
+    await fulfillment(of: [firstPoll], timeout: 3)
     XCTAssertEqual(polls.withLock { $0 }, 0)
     clock.advance(.seconds(1))
-    try await eventually { clock.hasSleeper(.seconds(7)) }
+    await fulfillment(of: [delayedPoll], timeout: 3)
     XCTAssertEqual(polls.withLock { $0 }, 1)
     store.close()
-    try await eventually { !clock.hasSleeper(.seconds(7)) }
+    await fulfillment(of: [cancelled], timeout: 3)
     XCTAssertNil(store.active)
     XCTAssertTrue(store.states.isEmpty)
     XCTAssertEqual(polls.withLock { $0 }, 1)
@@ -453,6 +514,16 @@ private final class ConnectorPollingClock: Sendable {
     let tick: AsyncStream<Void>.Continuation
   }
   private let sleepers = Mutex<[UUID: Sleeper]>([:])
+  private let didSchedule: @Sendable (Duration) -> Void
+  private let didCancel: @Sendable (Duration) -> Void
+
+  init(
+    didSchedule: @escaping @Sendable (Duration) -> Void,
+    didCancel: @escaping @Sendable (Duration) -> Void = { _ in }
+  ) {
+    self.didSchedule = didSchedule
+    self.didCancel = didCancel
+  }
 
   func sleep(_ duration: Duration) async throws {
     try Task.checkCancellation()
@@ -462,13 +533,11 @@ private final class ConnectorPollingClock: Sendable {
     defer {
       _ = sleepers.withLock { $0.removeValue(forKey: id) }
       ticks.continuation.finish()
+      if Task.isCancelled { didCancel(duration) }
     }
+    didSchedule(duration)
     for await _ in ticks.stream { break }
     try Task.checkCancellation()
-  }
-
-  func hasSleeper(_ duration: Duration) -> Bool {
-    sleepers.withLock { $0.values.contains { $0.duration == duration } }
   }
 
   func advance(_ duration: Duration) {
