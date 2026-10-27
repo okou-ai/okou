@@ -48,7 +48,7 @@ export function HalloweenHomeSound({
       size="sm"
       aria-label={sound ? copy.soundOn : copy.soundOff}
       aria-pressed={sound}
-      className={cn("h-8 gap-2 rounded-full px-3", typography.label)}
+      className={cn("h-8 gap-2 rounded-full px-3", typography.labelClassName)}
       onClick={() => {
         toggle();
         detach(play(signal), Reason.DomCallback);
@@ -78,10 +78,12 @@ export function HalloweenResultNotice() {
       className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4"
     >
       <div className="min-w-0">
-        <p className={typography.label}>
+        <p className={typography.labelClassName}>
           {status === "saved" ? copy.saved : copy.saveError}
         </p>
-        <p className={cn("mt-1 text-muted-foreground", typography.body)}>
+        <p
+          className={cn("mt-1 text-muted-foreground", typography.bodyClassName)}
+        >
           {status === "saved" ? copy.savedSub : copy.saveErrorSub}
         </p>
       </div>
@@ -89,7 +91,7 @@ export function HalloweenResultNotice() {
         <Button
           variant="neutral"
           size="sm"
-          className={typography.label}
+          className={typography.labelClassName}
           pending={operation.state === "loading"}
           onClick={() => {
             detach(retry(signal), Reason.DomCallback);
@@ -137,15 +139,6 @@ export function HalloweenEntry() {
           collapse(true);
         }
       }}
-      onClick={(event) => {
-        if (!shouldHandleLinkClick(event)) {
-          return;
-        }
-        if (window.matchMedia("(hover: none)").matches && !expanded) {
-          event.preventDefault();
-          expand();
-        }
-      }}
       className={cn(
         "pointer-events-auto absolute bottom-[76px] right-0 z-20 block h-[136px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
         expanded ? "w-[330px]" : "w-12",
@@ -154,7 +147,7 @@ export function HalloweenEntry() {
       <span
         className={cn(
           "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-[#716456] transition-all duration-300 motion-reduce:transition-none",
-          typography.label,
+          typography.labelClassName,
           expanded ? "translate-x-0 opacity-100" : "translate-x-3 opacity-0",
         )}
       >
@@ -164,7 +157,7 @@ export function HalloweenEntry() {
         aria-hidden="true"
         className={cn(
           "pointer-events-none absolute right-3 top-0 text-[#e9bb65] transition-opacity motion-reduce:transition-none",
-          typography.title,
+          typography.titleClassName,
           expanded ? "opacity-100" : "opacity-0",
         )}
       >

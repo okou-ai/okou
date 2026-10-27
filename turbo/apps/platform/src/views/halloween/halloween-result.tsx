@@ -61,15 +61,15 @@ function ResultTasks({ won }: { readonly won: boolean }) {
       <div className="mb-5 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1.5 text-center">
         {won ? (
           <>
-            <h2 className={cn("text-[#e9e8e5]", typography.label)}>
+            <h2 className={cn("text-[#e9e8e5]", typography.labelClassName)}>
               {copy.taskTitle}
             </h2>
-            <p className={cn("text-[#8e9fb6]", typography.label)}>
+            <p className={cn("text-[#8e9fb6]", typography.labelClassName)}>
               {copy.taskSub}
             </p>
           </>
         ) : (
-          <p className={cn("text-[#8e9fb6]", typography.label)}>
+          <p className={cn("text-[#8e9fb6]", typography.labelClassName)}>
             {copy.optional}
           </p>
         )}
@@ -98,12 +98,12 @@ function ResultTasks({ won }: { readonly won: boolean }) {
                 <h3
                   className={cn(
                     "mb-1.5 text-[#e4e8ef] transition-colors group-hover:text-[#e8c68d]",
-                    typography.label,
+                    typography.labelClassName,
                   )}
                 >
                   {task.title}
                 </h3>
-                <p className={cn("text-[#92a3bb]", typography.body)}>
+                <p className={cn("text-[#92a3bb]", typography.bodyClassName)}>
                   {task.text}
                 </p>
               </div>
@@ -139,21 +139,24 @@ export function HalloweenResultScreen() {
           )}
         </div>
         <h1
-          className={cn("mb-3 text-balance text-[#f4f1eb]", typography.title)}
+          className={cn(
+            "mb-3 text-balance text-[#f4f1eb]",
+            typography.titleClassName,
+          )}
         >
           {won ? copy.won : copy.lost}
         </h1>
-        <p className={cn("text-[#95a6be]", typography.body)}>
+        <p className={cn("text-[#95a6be]", typography.bodyClassName)}>
           {won ? copy.wonSub : copy.lostSub}
         </p>
         <p
           className={cn(
             "text-[#95a6be]",
-            typography.body,
+            typography.bodyClassName,
             won ? "mt-5" : "mt-6",
           )}
         >
-          <strong className={cn("text-[#e8c68d]", typography.body)}>
+          <strong className={cn("text-[#e8c68d]", typography.bodyClassName)}>
             {copy.resultRewardEmphasis}
           </strong>
           {copy.resultRewardRest}
@@ -176,7 +179,7 @@ export function HalloweenResultScreen() {
               variant="quiet"
               className={cn(
                 "h-auto min-h-12 gap-3 rounded-xl border border-[#b4c5dc26] bg-[#ffffff03] px-7 py-3.5 text-[#b9c5d6] transition-all duration-200 hover:border-[#e8c68d66] hover:bg-[#ffffff07] hover:text-[#e8c68d]",
-                typography.label,
+                typography.labelClassName,
               )}
               pending={operation.state === "loading"}
               onClick={() => {
@@ -188,14 +191,14 @@ export function HalloweenResultScreen() {
             </Button>
           )}
         </div>
-        <p className={cn("mt-5 text-[#7b8da5]", typography.label)}>
+        <p className={cn("mt-5 text-[#7b8da5]", typography.labelClassName)}>
           {copy.footerBefore}
           <Button
             variant="quiet"
             size="sm"
             className={cn(
               "h-auto rounded-none p-0 text-inherit underline decoration-[#7b8da560] underline-offset-4 hover:bg-transparent hover:text-[#e8c68d]",
-              typography.label,
+              typography.labelClassName,
             )}
             onClick={() => {
               setRules(true);

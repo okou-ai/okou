@@ -21,7 +21,7 @@ import { halloweenTypography as typography } from "./halloween-typography.ts";
 function Progress({ round }: { readonly round: HalloweenRound }) {
   return (
     <aside className="order-first flex items-center justify-between gap-5 rounded-2xl border border-[#a9c1df1c] bg-[linear-gradient(150deg,#ffffff05,#ffffff01)] px-4 py-3 md:order-last md:rounded-3xl md:flex-col md:items-stretch md:p-5">
-      <h2 className={cn("text-[#b2bfd0] md:mb-1", typography.label)}>
+      <h2 className={cn("text-[#b2bfd0] md:mb-1", typography.labelClassName)}>
         {copy.climb}
       </h2>
       <ol className="hidden flex-col-reverse gap-1.5 md:flex">
@@ -41,12 +41,12 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
               <span
                 className={cn(
                   "min-w-[17px] tabular-nums opacity-70",
-                  typography.label,
+                  typography.labelClassName,
                 )}
               >
                 {String(index + 1).padStart(2, "0")}
               </span>
-              <span className={typography.label}>{level}</span>
+              <span className={typography.labelClassName}>{level}</span>
               {done && <Check className="ml-auto size-[11px] shrink-0" />}
               {current && (
                 <Diamond className="ml-auto size-2 shrink-0 fill-current" />
@@ -58,12 +58,15 @@ function Progress({ round }: { readonly round: HalloweenRound }) {
       <p
         className={cn(
           "text-[#8fa0b7] md:border-t md:border-[#a9c1df14] md:pt-4",
-          typography.label,
+          typography.labelClassName,
         )}
       >
         {copy.correct}{" "}
         <strong
-          className={cn("ml-1 tabular-nums text-[#ead0a7]", typography.label)}
+          className={cn(
+            "ml-1 tabular-nums text-[#ead0a7]",
+            typography.labelClassName,
+          )}
         >
           {round.correct}
         </strong>{" "}
@@ -96,7 +99,7 @@ function AnswerOptions({
             aria-pressed={selected}
             className={cn(
               "relative isolate h-auto min-h-14 w-full whitespace-normal rounded-none border-0 bg-[#8ba6c34d] px-16 py-3.5 text-center text-[#dce4ef] transition-all duration-200 [clip-path:polygon(16px_0,calc(100%-16px)_0,100%_50%,calc(100%-16px)_100%,16px_100%,0_50%)] before:absolute before:inset-px before:-z-10 before:bg-[linear-gradient(110deg,#10243b,#142b45_50%,#10243b)] before:[clip-path:polygon(15px_0,calc(100%-15px)_0,100%_50%,calc(100%-15px)_100%,15px_100%,0_50%)] hover:bg-[#d8b77f] hover:text-[#f3eadb] hover:before:bg-[linear-gradient(110deg,#1d3147,#263e58,#1d3147)] focus-visible:brightness-125 disabled:opacity-100",
-              typography.body,
+              typography.bodyClassName,
               selected &&
                 round.feedback?.correct &&
                 "bg-[#dfc089] text-[#f7e5c5] before:bg-[linear-gradient(110deg,#343225,#4b4130,#343225)]",
@@ -112,7 +115,7 @@ function AnswerOptions({
             <span
               className={cn(
                 "absolute left-6 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-[#ffffff06] text-[#dbc39d]",
-                typography.label,
+                typography.labelClassName,
               )}
             >
               {String.fromCharCode(65 + index)}
@@ -142,7 +145,7 @@ export function HalloweenQuestionScreen() {
   return (
     <main className="relative z-10 mx-auto grid w-[calc(100%-40px)] max-w-[1064px] flex-1 content-center items-center gap-8 py-8 pb-12 md:w-[calc(100%-96px)] md:grid-cols-[minmax(0,1fr)_224px] md:gap-14 md:py-14">
       <div className="min-w-0 text-center">
-        <p className={cn("mb-5 text-[#b5a07e]", typography.label)}>
+        <p className={cn("mb-5 text-[#b5a07e]", typography.labelClassName)}>
           {copy.round} {String(round.questionNumber).padStart(2, "0")} ·{" "}
           {copy.roundTitles[round.questionNumber - 1]}
         </p>
@@ -152,7 +155,7 @@ export function HalloweenQuestionScreen() {
           tabIndex={-1}
           className={cn(
             "mx-auto mb-9 max-w-[640px] text-balance text-[#f4f1eb] outline-none",
-            typography.title,
+            typography.titleClassName,
           )}
         >
           {round.question.text}
@@ -172,13 +175,13 @@ export function HalloweenQuestionScreen() {
             <p
               className={cn(
                 "mb-1.5",
-                typography.label,
+                typography.labelClassName,
                 round.feedback.correct ? "text-[#e8c68d]" : "text-[#e8afc5]",
               )}
             >
               {round.feedback.correct ? copy.correct : copy.lost}
             </p>
-            <p className={cn("mb-5 text-[#9aabc1]", typography.body)}>
+            <p className={cn("mb-5 text-[#9aabc1]", typography.bodyClassName)}>
               {round.feedback.explanation}
             </p>
             {round.feedback.correct && (
@@ -202,7 +205,7 @@ export function HalloweenQuestionScreen() {
           nextOperation.state === "hasError") && (
           <p
             role="alert"
-            className={cn("mt-4 text-[#ffccde]", typography.body)}
+            className={cn("mt-4 text-[#ffccde]", typography.bodyClassName)}
           >
             {copy.error}
           </p>

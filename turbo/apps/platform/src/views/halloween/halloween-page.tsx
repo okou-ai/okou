@@ -44,7 +44,7 @@ function StartScreen() {
       <h1
         className={cn(
           "mb-9 max-w-[900px] text-balance text-[#f6f3ed]",
-          typography.title,
+          typography.titleClassName,
         )}
       >
         {open ? (
@@ -57,16 +57,21 @@ function StartScreen() {
         )}
       </h1>
       {open ? (
-        <p className={cn("mb-8 text-[#96a5b9]", typography.body)}>
+        <p className={cn("mb-8 text-[#96a5b9]", typography.bodyClassName)}>
           {copy.rewardPrefix}
-          <strong className={cn("text-[#e8cfaa]", typography.body)}>
+          <strong className={cn("text-[#e8cfaa]", typography.bodyClassName)}>
             {copy.rewardEmphasis}
           </strong>
           <br />
           {copy.review}
         </p>
       ) : (
-        <p className={cn("mb-8 max-w-[560px] text-[#a9b8ca]", typography.body)}>
+        <p
+          className={cn(
+            "mb-8 max-w-[560px] text-[#a9b8ca]",
+            typography.bodyClassName,
+          )}
+        >
           {subtitle}
         </p>
       )}
@@ -93,13 +98,19 @@ function StartScreen() {
       )}
       {open && (
         <p
-          className={cn("mt-6 max-w-[420px] text-[#8292a9]", typography.label)}
+          className={cn(
+            "mt-6 max-w-[420px] text-[#8292a9]",
+            typography.labelClassName,
+          )}
         >
           {copy.hint}
         </p>
       )}
       {operation.state === "hasError" && (
-        <p role="alert" className={cn("mt-4 text-[#ffccde]", typography.body)}>
+        <p
+          role="alert"
+          className={cn("mt-4 text-[#ffccde]", typography.bodyClassName)}
+        >
           {copy.error}
         </p>
       )}
@@ -113,7 +124,7 @@ export function HalloweenPage() {
     <div
       className={cn(
         "relative isolate flex min-h-full w-full flex-col overflow-hidden text-[#f6f3ed] antialiased",
-        typography.body,
+        typography.bodyClassName,
         screen === "result"
           ? "bg-[radial-gradient(ellipse_at_50%_25%,#172c48,#091426_58%,#060d19)]"
           : "bg-[radial-gradient(ellipse_at_50%_42%,#183452_0,#0c1d34_42%,#060d19_85%)]",

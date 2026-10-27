@@ -31,7 +31,7 @@ import { halloweenTypography as typography } from "./halloween-typography.ts";
 
 export const goldButton = cn(
   "relative h-auto min-h-12 gap-3 rounded-xl border border-[#fbe7c1b3] bg-[linear-gradient(180deg,#f0d6a5,#dfb879)] px-7 py-3.5 text-[#302519] shadow-[inset_0_1px_0_#fff5,0_4px_20px_#0003] transition-all duration-200 hover:border-[#ffebc8] hover:bg-[linear-gradient(180deg,#f7e3bf,#eac88e)] hover:shadow-[inset_0_1px_0_#fff5,0_6px_28px_#e2bc7620] active:translate-y-px motion-safe:hover:-translate-y-0.5",
-  typography.label,
+  typography.labelClassName,
 );
 
 export function HalloweenHeader() {
@@ -63,7 +63,7 @@ export function HalloweenHeader() {
       <div
         className={cn(
           "ml-auto flex max-w-[74%] flex-wrap items-center justify-end gap-x-3 gap-y-2 md:max-w-none md:gap-5",
-          typography.label,
+          typography.labelClassName,
         )}
       >
         <span className="hidden text-[#c5cfdd] md:inline">
@@ -81,7 +81,7 @@ export function HalloweenHeader() {
             pending={operation.state === "loading"}
             className={cn(
               "h-8 gap-1 p-0 text-[#aebcd0] hover:bg-transparent hover:text-[#e8c68d]",
-              typography.label,
+              typography.labelClassName,
             )}
             onClick={() => {
               detach(leave(signal), Reason.DomCallback);
@@ -95,7 +95,7 @@ export function HalloweenHeader() {
             pathname="/"
             className={cn(
               "flex h-8 items-center gap-1 text-[#aebcd0] transition-colors hover:text-[#e8c68d]",
-              typography.label,
+              typography.labelClassName,
             )}
           >
             {copy.back}
@@ -109,7 +109,7 @@ export function HalloweenHeader() {
             aria-label={copy.rules}
             className={cn(
               "h-8 gap-2 rounded-full border border-[#b4c5dc24] bg-[#ffffff04] px-2.5 text-[#bcc8d9] hover:border-[#e8c68d66] hover:bg-[#ffffff09] hover:text-[#e8c68d] sm:px-3",
-              typography.label,
+              typography.labelClassName,
             )}
             onClick={() => {
               setRules(true);
@@ -124,7 +124,7 @@ export function HalloweenHeader() {
           size="sm"
           className={cn(
             "h-8 gap-2 rounded-full border border-[#b4c5dc24] bg-[#ffffff04] px-2.5 text-[#bcc8d9] hover:border-[#e8c68d66] hover:bg-[#ffffff09] hover:text-[#e8c68d] md:px-3",
-            typography.label,
+            typography.labelClassName,
           )}
           aria-pressed={sound}
           aria-label={sound ? copy.soundOn : copy.soundOff}
@@ -153,7 +153,7 @@ export function HalloweenFooter() {
     <footer
       className={cn(
         "relative z-10 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[#c0d1e512] px-5 py-4 text-[#7c8ba1] md:px-12",
-        typography.label,
+        typography.labelClassName,
       )}
     >
       <span>{copy.tagline}</span>
@@ -164,7 +164,7 @@ export function HalloweenFooter() {
           size="sm"
           className={cn(
             "h-auto gap-1 rounded-none p-0 text-[#7c8ba1] underline decoration-[#7c8ba160] underline-offset-4 hover:bg-transparent hover:text-[#e8c68d]",
-            typography.label,
+            typography.labelClassName,
           )}
           onClick={() => {
             setRules(true);
@@ -192,7 +192,7 @@ export function HalloweenRules() {
         <div
           className={cn(
             "mb-9 flex items-center justify-between gap-4",
-            typography.label,
+            typography.labelClassName,
           )}
         >
           <Button
@@ -200,7 +200,7 @@ export function HalloweenRules() {
             size="sm"
             className={cn(
               "h-auto gap-1.5 rounded-none p-0 text-[#656b73] hover:bg-transparent hover:text-[#262c34]",
-              typography.label,
+              typography.labelClassName,
             )}
             aria-label={copy.backToGame}
             onClick={() => {
@@ -218,18 +218,18 @@ export function HalloweenRules() {
             className="h-5 w-[76px]"
           />
         </div>
-        <DialogTitle className={cn("mb-3", typography.title)}>
+        <DialogTitle className={cn("mb-3", typography.titleClassName)}>
           {copy.rulesHeading}
         </DialogTitle>
         <DialogDescription
-          className={cn("mb-9 text-[#7c7e83]", typography.body)}
+          className={cn("mb-9 text-[#7c7e83]", typography.bodyClassName)}
         >
           {copy.rulesSub}
         </DialogDescription>
         <div
           className={cn(
             "divide-y divide-[#dcd7cf] text-[#646970]",
-            typography.body,
+            typography.bodyClassName,
           )}
         >
           {copy.ruleSections.map((section, index) => {
@@ -241,13 +241,13 @@ export function HalloweenRules() {
                 <h2
                   className={cn(
                     "mb-3 flex items-center gap-3 text-[#30363e]",
-                    typography.label,
+                    typography.labelClassName,
                   )}
                 >
                   <span
                     className={cn(
                       "flex size-6 shrink-0 items-center justify-center rounded-md bg-[#ede7db] text-[#8b7652]",
-                      typography.label,
+                      typography.labelClassName,
                     )}
                   >
                     {String(index + 1).padStart(2, "0")}
