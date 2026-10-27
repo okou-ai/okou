@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   clearAllDetached,
@@ -108,11 +108,54 @@ describe("collectAllDetachedErrorsForTest", () => {
 });
 
 describe("settleIncludingAbort", () => {
+  it("infers resolved values from promises and callbacks", async () => {
+    const value = { id: "winner" };
+    const promised = await settleIncludingAbort(Promise.resolve(value));
+    const synchronous = await settleIncludingAbort(() => {
+      return value;
+    });
+    const asynchronous = await settleIncludingAbort(async () => {
+      return await Promise.resolve(value);
+    });
+
+    for (const result of [promised, synchronous, asynchronous]) {
+      if (!result.ok) {
+        throw result.error;
+      }
+      expectTypeOf(result.value).toEqualTypeOf<{ id: string }>();
+      expect(result.value.id).toBe("winner");
+    }
+  });
+
+  it("unwraps explicit promise-valued callback types", async () => {
+    const result = await settleIncludingAbort<Promise<{ id: string }>>(() => {
+      return Promise.resolve({ id: "winner" });
+    });
+
+    if (!result.ok) {
+      throw result.error;
+    }
+    expectTypeOf(result.value).toEqualTypeOf<{ id: string }>();
+    expect(result.value.id).toBe("winner");
+  });
+
   it("owns synchronous cancellation errors after irreversible work", async () => {
     const error = new DOMException("observation failed", "AbortError");
     await expect(
       settleIncludingAbort(() => {
         throw error;
+      }),
+    ).resolves.toStrictEqual({ ok: false, error });
+  });
+
+  it("owns asynchronous cancellation from promises and callbacks", async () => {
+    const error = new DOMException("observation failed", "AbortError");
+    await expect(
+      settleIncludingAbort(Promise.reject(error)),
+    ).resolves.toStrictEqual({ ok: false, error });
+    await expect(
+      settleIncludingAbort(async () => {
+        return await Promise.reject(error);
       }),
     ).resolves.toStrictEqual({ ok: false, error });
   });

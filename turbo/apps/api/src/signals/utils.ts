@@ -260,13 +260,14 @@ type Settled<T> =
   | { readonly ok: false; readonly error: unknown };
 
 /**
- * Settle `p` without propagating AbortError. Use when cancellation is an
- * explicitly owned outcome: observing and releasing a prepared resource, or
- * persisting an ambiguous result after an irreversible provider operation.
+ * Settle a Promise or callback to its fully awaited value without propagating
+ * AbortError. Use when cancellation is an explicitly owned outcome: observing
+ * and releasing a prepared resource, or persisting an ambiguous result after an
+ * irreversible provider operation.
  */
 export async function settleIncludingAbort<T>(
   p: Promise<T> | (() => T),
-): Promise<Settled<T>> {
+): Promise<Settled<Awaited<T>>> {
   // eslint-disable-next-line no-restricted-syntax -- centralized rejection capture for irreversible provider operations
   try {
     return { ok: true, value: await (typeof p === "function" ? p() : p) };
