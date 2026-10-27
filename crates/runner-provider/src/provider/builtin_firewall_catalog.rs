@@ -52,12 +52,14 @@
 //! rules in executable validation and tests rather than duplicating them here.
 
 use std::collections::BTreeMap;
+use std::fs::File;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{SecondsFormat, Utc};
+use nix::fcntl::Flock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -571,7 +573,7 @@ async fn write_catalog_cache(
         )));
     }
 
-    let _guard = match lock::try_acquire_or_busy(lock_path.to_path_buf()).await? {
+    let guard = match lock::try_acquire_or_busy(lock_path.to_path_buf()).await? {
         lock::TryLock::Acquired(guard) => guard,
         lock::TryLock::Busy => {
             return Err(ProviderError::Internal(format!(
@@ -585,8 +587,28 @@ async fn write_catalog_cache(
     {
         return Ok(());
     }
-    runner_host::state_file::write_private_atomic(cache_path, &content).await?;
+    publish_catalog_cache(cache_path.to_path_buf(), content, guard).await?;
     info!(cache_path = %cache_path.display(), "builtin firewall catalog cache refreshed");
+    Ok(())
+}
+
+async fn publish_catalog_cache(
+    cache_path: PathBuf,
+    content: Vec<u8>,
+    guard: Flock<File>,
+) -> ProviderResult<()> {
+    // Accepted filesystem work can outlive its async observer. Keep write
+    // authority with the physical operation, including its staging cleanup.
+    tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        runner_host::state_file::write_private_atomic_blocking(&cache_path, &content)
+    })
+    .await
+    .map_err(|error| {
+        ProviderError::Internal(format!(
+            "builtin firewall catalog cache publication task failed: {error}"
+        ))
+    })??;
     Ok(())
 }
 
@@ -660,6 +682,7 @@ fn validate_catalog_digest(value: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     mod download_timeout;
+    mod publication;
     mod send_transport;
     mod shutdown;
 
