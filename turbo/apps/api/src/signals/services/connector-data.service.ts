@@ -47,7 +47,10 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { array, object, string } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { contextProjectionSchema } from "./context-rowset";
-import { builtinManualGrantPublicationSql } from "./builtin-manual-grant-publication";
+import {
+  builtinManualGrantPublicationSql,
+  builtinNoAuthPublicationSql,
+} from "./builtin-manual-grant-publication";
 import {
   completedGetStartedQuestSql,
   memberRewardWalletQuery,
@@ -1856,6 +1859,153 @@ function noAuthFinalizationArgs(
   };
 }
 
+interface PreparedNoAuthPublication {
+  readonly kind: "ready";
+  readonly metadata: ConnectorConnectionWriteArgs;
+  readonly accountId: string;
+  readonly accountRevision: string | null;
+  readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+}
+
+const prepareNoAuthPublication$ = command(
+  async (
+    { set },
+    args: ConnectNoAuthBuiltinConnectorArgs & {
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const mutationReadArgs = builtinConnectorLocalMutationValues(args);
+    const observedRevisions = new Map<string, string>();
+    const resolution = await (async () => {
+      let read = connectionMutationReadPlan(mutationReadArgs);
+      for (;;) {
+        const rows = await db
+          .select({
+            ...read.columns,
+            publicationRevision: sql`${connectors}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(read.from)
+          .where(read.where)
+          .orderBy(...read.orderBy)
+          .limit(read.limit);
+        for (const row of rows) {
+          observedRevisions.set(row.id, row.publicationRevision);
+        }
+        const result = connectionMutationReadResult(
+          mutationReadArgs,
+          read,
+          rows,
+        );
+        if (result.kind === "resolved") {
+          return result.resolution;
+        }
+        read = result.read;
+      }
+    })();
+    signal.throwIfAborted();
+    if (resolution.kind !== "ready") {
+      return {
+        kind: "rejected" as const,
+        result: connectorConnectionMutationFailure(resolution),
+      };
+    }
+
+    const revokeReadArgs = localTokenRevokeValues(
+      args,
+      resolution.mutation,
+      args.featureSwitchContext,
+    );
+    const pendingTokenRevoke = await (async () => {
+      const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
+      if (!preparation) {
+        return null;
+      }
+      return await (async () => {
+        const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
+        if (read.kind !== "read") {
+          return builtinTokenRevokeFromRows(preparation, read, []);
+        }
+        const secretRows = await db
+          .select(read.columns)
+          .from(read.from)
+          .where(read.where);
+        signal.throwIfAborted();
+        return builtinTokenRevokeFromRows(preparation, read, secretRows);
+      })();
+    })();
+
+    signal.throwIfAborted();
+    const accountId =
+      resolution.mutation.kind === "update"
+        ? resolution.mutation.existing.id
+        : randomUUID();
+    const accountRevision =
+      resolution.mutation.kind === "update"
+        ? observedRevisions.get(accountId)
+        : null;
+    if (accountRevision === undefined) {
+      throw new Error("No-auth reconnect has no observed publication revision");
+    }
+    return {
+      kind: "ready" as const,
+      metadata: {
+        ...noAuthWriteArgs(args, resolution),
+        insertConnectionId: accountId,
+      },
+      accountId,
+      accountRevision,
+      pendingTokenRevoke,
+    };
+  },
+);
+
+const publishNoAuthConnection$ = command(
+  async (
+    { set },
+    prepared: PreparedNoAuthPublication,
+  ): Promise<ManualGrantConnectorCommitResult> => {
+    const db = set(writeDb$);
+    const rows = parseRawRows(
+      manualGrantPublicationRow,
+      await db.execute(builtinNoAuthPublicationSql(prepared)),
+    );
+    const [row] = rows;
+    if (rows.length !== 1 || !row) {
+      throw new Error(
+        "No-auth connector publication returned an invalid result",
+      );
+    }
+    if (row.connector === null) {
+      const write = connectionMetadataWritePlan(prepared.metadata);
+      if (write.kind !== "update") {
+        throw new Error(
+          "No-auth connector publication did not create an account",
+        );
+      }
+      const [existing] = await db
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(write.where)
+        .limit(1);
+      if (!existing) {
+        return connectorConnectionMutationFailure({ kind: "missing" });
+      }
+      throw new Error(
+        "Connector account changed while connecting; submit the connection again",
+      );
+    }
+    return {
+      status: "connected",
+      connectorRow: row.connector,
+      pendingTokenRevoke: prepared.pendingTokenRevoke,
+    };
+  },
+);
+
 export const connectNoAuthBuiltinConnector$ = command(
   async (
     { get, set },
@@ -1866,133 +2016,37 @@ export const connectNoAuthBuiltinConnector$ = command(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-
-    const writeDb = set(writeDb$);
-    let pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null = null;
-    let connectorRow: StoredConnectorRow | null = null;
-    let mutationFailure: ConnectorConnectionMutationFailure | null = null;
-    let postCommitAbort: unknown = null;
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0118; new non-billing transactions are prohibited.
-    await writeDb.transaction(async (tx) => {
-      const mutationReadArgs = builtinConnectorLocalMutationValues(args);
-      const resolution = await (async () => {
-        let read = connectionMutationReadPlan(mutationReadArgs);
-        for (;;) {
-          const rows = await tx
-            .select(read.columns)
-            .from(read.from)
-            .where(read.where)
-            .orderBy(...read.orderBy)
-            .limit(read.limit);
-          const result = connectionMutationReadResult(
-            mutationReadArgs,
-            read,
-            rows,
-          );
-          if (result.kind === "resolved") {
-            return result.resolution;
-          }
-          read = result.read;
-        }
-      })();
-      signal.throwIfAborted();
-      if (resolution.kind !== "ready") {
-        mutationFailure = connectorConnectionMutationFailure(resolution);
-        return;
-      }
-
-      const revokeReadArgs = localTokenRevokeValues(
-        args,
-        resolution.mutation,
-        featureSwitchContext,
-      );
-      pendingTokenRevoke = await (async () => {
-        const preparation = prepareBuiltinTokenRevoke(revokeReadArgs);
-        if (!preparation) {
-          return null;
-        }
-        return await (async () => {
-          const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
-          if (read.kind !== "read") {
-            return builtinTokenRevokeFromRows(preparation, read, []);
-          }
-          const secretRows = await tx
-            .select(read.columns)
-            .from(read.from)
-            .where(read.where);
-          signal.throwIfAborted();
-          return builtinTokenRevokeFromRows(preparation, read, secretRows);
-        })();
-      })();
-      const writeArgs = noAuthWriteArgs(args, resolution);
-      const written = await (async () => {
-        const outcome = await (async () => {
-          let write = connectionMetadataWritePlan(writeArgs);
-          for (;;) {
-            const query: ConnectorConnectionMetadataQuery =
-              write.kind === "update"
-                ? tx.update(connectors).set(write.values).where(write.where)
-                : write.conflict
-                  ? tx
-                      .insert(connectors)
-                      .values(write.values)
-                      .onConflictDoNothing(write.conflict)
-                  : tx.insert(connectors).values(write.values);
-            const [row] = await query.returning(connectionSelection());
-            const result = connectionMetadataWriteResult(write, row);
-            if (result.kind === "resolved") {
-              return write.phase === "existing"
-                ? result.outcome
-                : await Promise.resolve(result.outcome);
-            }
-            write = result.write;
-          }
-        })();
-        signal.throwIfAborted();
-        if (outcome.kind !== "written") {
-          return outcome;
-        }
-
-        for (const kind of connectorCredentialDeletionKinds) {
-          const deletion = connectorCredentialDeletion(kind, outcome.row);
-          await tx.delete(deletion.from).where(deletion.where);
-          if (kind !== "builtin-oauth") {
-            signal.throwIfAborted();
-          }
-        }
-
-        await (() => {
-          return Promise.resolve();
-        })();
-        signal.throwIfAborted();
-        return outcome;
-      })();
-      if (written.kind !== "written") {
-        mutationFailure = connectorConnectionMutationFailure(written);
-        return;
-      }
-      connectorRow = written.row;
-    });
-    if (signal.aborted) {
-      postCommitAbort ??= signal.reason;
-    }
-
-    if (mutationFailure) {
-      return mutationFailure;
-    }
-
-    if (!connectorRow) {
-      throw new Error("Expected no-auth connector write to return a row");
-    }
-
-    await finalizeConnectorStateChangeAfterCommit(
-      noAuthFinalizationArgs(args, pendingTokenRevoke, postCommitAbort),
+    const publication = await set(
+      prepareNoAuthPublication$,
+      { ...args, featureSwitchContext },
       signal,
     );
     signal.throwIfAborted();
-
-    return noAuthConnected(connectorRow, args.runtimeMethod, nowDate());
+    const committed =
+      publication.kind === "rejected"
+        ? publication.result
+        : await set(publishNoAuthConnection$, publication);
+    let postCommitAbort: unknown = null;
+    if (signal.aborted) {
+      postCommitAbort = signal.reason;
+    }
+    if (committed.status !== "connected") {
+      return committed;
+    }
+    await finalizeConnectorStateChangeAfterCommit(
+      noAuthFinalizationArgs(
+        args,
+        committed.pendingTokenRevoke,
+        postCommitAbort,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    return noAuthConnected(
+      committed.connectorRow,
+      args.runtimeMethod,
+      nowDate(),
+    );
   },
 );
 

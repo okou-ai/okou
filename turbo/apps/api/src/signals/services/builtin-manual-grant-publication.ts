@@ -23,10 +23,13 @@ import {
 } from "./connector-credential-storage-write.service";
 import { contextJsonProjection } from "./context-rowset";
 
-interface ManualGrantPublicationArgs {
+interface LocalConnectionPublicationArgs {
   readonly metadata: ConnectorConnectionWriteArgs;
   readonly accountId: string;
   readonly accountRevision: string | null;
+}
+
+interface ManualGrantPublicationArgs extends LocalConnectionPublicationArgs {
   readonly credentials: ReturnType<typeof manualGrantCredentialArgs>;
   readonly secretCleanup: {
     readonly orgId: string;
@@ -84,9 +87,8 @@ function conditionalInsert(
     ${conflict} RETURNING ${returning}`;
 }
 
-function manualCredentialClauses(args: ManualGrantPublicationArgs): SQL[] {
+function localCredentialRemovalClauses(accountId: string) {
   const clauses: SQL[] = [];
-  const dialect = new PgDialect();
   const admitted = sql`EXISTS (SELECT 1 FROM manual_connection)`;
   let previous: string | undefined;
   const after = () => {
@@ -95,12 +97,26 @@ function manualCredentialClauses(args: ManualGrantPublicationArgs): SQL[] {
       : sql.empty();
   };
   for (const [index, kind] of connectorCredentialDeletionKinds.entries()) {
-    const deletion = connectorCredentialDeletion(kind, { id: args.accountId });
+    const deletion = connectorCredentialDeletion(kind, { id: accountId });
     const name = "manual_removed_" + index;
     clauses.push(sql`${sql.identifier(name)} AS (DELETE FROM ${deletion.from}
       WHERE ${deletion.where} AND ${admitted} ${after()} RETURNING 1)`);
     previous = name;
   }
+  return { clauses, lastName: previous };
+}
+
+function manualCredentialClauses(args: ManualGrantPublicationArgs): SQL[] {
+  const removed = localCredentialRemovalClauses(args.accountId);
+  const clauses = removed.clauses;
+  const dialect = new PgDialect();
+  const admitted = sql`EXISTS (SELECT 1 FROM manual_connection)`;
+  let previous = removed.lastName;
+  const after = () => {
+    return previous
+      ? sql`AND (SELECT count(*) FROM ${sql.identifier(previous)}) >= 0`
+      : sql.empty();
+  };
   for (const [index, entry] of [
     ...manualGrantCredentialFields(args.credentials),
   ].entries()) {
@@ -152,10 +168,10 @@ function manualCredentialClauses(args: ManualGrantPublicationArgs): SQL[] {
   return clauses;
 }
 
-/** Publish the prepared manual account, credentials and legacy-key cleanup together. */
-export function builtinManualGrantPublicationSql(
-  args: ManualGrantPublicationArgs,
-): SQL {
+/** Canonical default-first insertion or exact owned reconnect, shared by local grants. */
+function localConnectionPublicationClauses(
+  args: LocalConnectionPublicationArgs,
+): SQL[] {
   if (
     args.metadata.target.kind !== "builtin" ||
     args.metadata.target.identity.kind !== "local"
@@ -218,6 +234,23 @@ export function builtinManualGrantPublicationSql(
       sql`manual_connection AS (SELECT id,payload FROM manual_default UNION ALL SELECT id,payload FROM manual_sibling)`,
     );
   }
+  return clauses;
+}
+
+/** Publish the prepared manual account, credentials and legacy-key cleanup together. */
+export function builtinManualGrantPublicationSql(
+  args: ManualGrantPublicationArgs,
+): SQL {
+  const clauses = localConnectionPublicationClauses(args);
   clauses.push(...manualCredentialClauses(args));
+  return sql`WITH ${sql.join(clauses, sql`,\n`)} SELECT (SELECT payload FROM manual_connection) AS connector`;
+}
+
+/** A no-auth account owns no credential output or legacy user-key cleanup. */
+export function builtinNoAuthPublicationSql(
+  args: LocalConnectionPublicationArgs,
+): SQL {
+  const clauses = localConnectionPublicationClauses(args);
+  clauses.push(...localCredentialRemovalClauses(args.accountId).clauses);
   return sql`WITH ${sql.join(clauses, sql`,\n`)} SELECT (SELECT payload FROM manual_connection) AS connector`;
 }
