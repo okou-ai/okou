@@ -16,7 +16,6 @@ import {
 import { runInNewContext } from "node:vm";
 
 import {
-  BROWSER_SHARED_OWNER_ENV_VAR,
   browserAuthorizationRequestsContract,
   browserContract,
 } from "@okouai/api-contracts/contracts/browser";
@@ -7681,9 +7680,6 @@ describe("okou browser route", () => {
     expect(claim.appendSystemPrompt ?? "").not.toContain(
       "Browser chat window:",
     );
-    expect(claim.platformEnvironment).not.toHaveProperty(
-      BROWSER_SHARED_OWNER_ENV_VAR,
-    );
     const browserToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!browserToken) {
       throw new Error("Expected a claimed agent token");
@@ -7723,9 +7719,6 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).toContain("`okou browser tab list`");
     expect(appendSystemPrompt).not.toContain("Browser chat window:");
-    expect(claim.platformEnvironment).not.toHaveProperty(
-      BROWSER_SHARED_OWNER_ENV_VAR,
-    );
     expect(appendSystemPrompt).toContain(
       "Keep the selected tab only if non-sensitive page evidence confirms it",
     );
@@ -7745,7 +7738,7 @@ describe("okou browser route", () => {
     );
   });
 
-  it("captures shared Browser mode in both instructions and the Run environment only when enabled", async () => {
+  it("guides enabled chats to their shared Browser window", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserSharedOwner]: true,
@@ -7761,7 +7754,10 @@ describe("okou browser route", () => {
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain("this chat's managed Browser");
     expect(appendSystemPrompt).toContain(
-      "confirm the selected tab still belongs to the reported chat window",
+      "initially selects a page in the reported chat window",
+    );
+    expect(appendSystemPrompt).toContain(
+      "shows the driver's safe tab inventory",
     );
     expect(appendSystemPrompt).toContain("Every CDP API remains callable");
     expect(appendSystemPrompt).toContain(
@@ -7769,9 +7765,6 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).toContain(
       "login, logout and account switching affect sibling chats",
-    );
-    expect(claim.platformEnvironment[BROWSER_SHARED_OWNER_ENV_VAR]).toBe(
-      "true",
     );
   });
 

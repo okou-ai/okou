@@ -1,12 +1,7 @@
-import { mkdtempSync, rmSync, statSync, unlinkSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
-import { join } from "node:path";
-
 import type {
   BrowserSession,
   BrowserWindowContext,
 } from "@okouai/api-contracts/contracts/browser";
-import { BROWSER_SHARED_OWNER_ENV_VAR } from "@okouai/api-contracts/contracts/browser";
 import { HttpResponse, http, ws } from "msw";
 import {
   afterAll,
@@ -49,22 +44,19 @@ describe("chat-window Browser commands", () => {
   const exit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);
-  let temporary: string;
   let window: BrowserWindowContext | undefined;
-  let status: BrowserSession["status"];
   let tabs: DriverTab[];
   let selected: string;
-  let endpoint: string;
   let nativeWindows: Map<string, number>;
   let selections: string[];
-  let afterSelection: () => void;
   let protocolFailure: string | undefined;
+  let lookupErrors: Map<string, string>;
 
   function browser(): BrowserSession {
     return {
       threadId: THREAD_ID,
       name: "browser",
-      status,
+      status: "active",
       viewerUrl: `https://app.okou.ai/browsers/${THREAD_ID}`,
       liveUrl: "https://live.example.test/?token=private-viewer-token",
       screenshotUrl: null,
@@ -111,23 +103,11 @@ describe("chat-window Browser commands", () => {
     };
   }
 
-  function attachmentFile(): string {
-    return join(
-      temporary,
-      `okou-browser-attachments-${userInfo().uid}`,
-      `${SESSION}.json`,
-    );
-  }
-
   beforeEach(() => {
-    temporary = mkdtempSync(join(tmpdir(), "okou-window-test-"));
-    vi.stubEnv("TMPDIR", temporary);
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
-    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, "true");
     window = { instanceId: INSTANCE_ID, primaryWindowId: 0 };
-    status = "active";
     tabs = [
       {
         tabId: "t1",
@@ -146,15 +126,14 @@ describe("chat-window Browser commands", () => {
       },
     ];
     selected = SIBLING;
-    endpoint = CDP_URL;
     nativeWindows = new Map([
       [SIBLING, 99],
       [OWNER, 0],
       [OWNER_TWO, 0],
     ]);
     selections = [];
-    afterSelection = () => {};
     protocolFailure = undefined;
+    lookupErrors = new Map();
     spawnSyncMock.mockImplementation(
       (_command: string, args: readonly string[]) => {
         const connect = args.indexOf("connect");
@@ -163,12 +142,7 @@ describe("chat-window Browser commands", () => {
           if (requestedEndpoint === undefined) {
             throw new Error("Expected a driver connection endpoint");
           }
-          endpoint = requestedEndpoint;
           return result({});
-        }
-        const get = args.indexOf("get");
-        if (get !== -1 && args[get + 1] === "cdp-url") {
-          return result({ cdpUrl: endpoint });
         }
         const tab = args.indexOf("tab");
         if (tab !== -1 && args[tab + 1] === "list") {
@@ -190,7 +164,6 @@ describe("chat-window Browser commands", () => {
           if (target && reference !== undefined) {
             selections.push(reference);
             selected = target.targetId;
-            afterSelection();
             return result({ url: target.url, title: "private-page-title" });
           }
         }
@@ -204,9 +177,6 @@ describe("chat-window Browser commands", () => {
     server.use(
       http.post("http://localhost:3000/api/browsers/use", () => {
         return HttpResponse.json({ browser: browser(), cdpUrl: CDP_URL });
-      }),
-      http.get("http://localhost:3000/api/browsers/current", () => {
-        return HttpResponse.json({ browser: browser() });
       }),
       cdp.addEventListener("connection", ({ client }) => {
         client.addEventListener("message", (event) => {
@@ -235,9 +205,11 @@ describe("chat-window Browser commands", () => {
             throw new Error("Unexpected CDP request");
           }
           const native = nativeWindows.get(command.params.targetId);
+          const failureMessage =
+            lookupErrors.get(command.params.targetId) ?? protocolFailure;
           const failure =
-            protocolFailure !== undefined
-              ? { code: -32601, message: protocolFailure }
+            failureMessage !== undefined
+              ? { code: -32601, message: failureMessage }
               : native === undefined
                 ? {
                     code: -32000,
@@ -261,7 +233,6 @@ describe("chat-window Browser commands", () => {
     exit.mockClear();
     spawnSyncMock.mockReset();
     vi.unstubAllEnvs();
-    rmSync(temporary, { recursive: true, force: true });
   });
 
   afterAll(() => {
@@ -270,7 +241,7 @@ describe("chat-window Browser commands", () => {
     exit.mockRestore();
   });
 
-  it("attaches to window zero despite a selected sibling and protects connection output", async () => {
+  it("attaches to the assigned window despite a selected sibling and protects connection output", async () => {
     await run("use");
     expect(selected).toBe(OWNER);
     expect(selections).toStrictEqual([OWNER]);
@@ -285,122 +256,74 @@ describe("chat-window Browser commands", () => {
       "connect",
       CDP_URL,
     ]);
-    expect(statSync(attachmentFile()).mode & 0o777).toBe(0o600);
-    expect(spawnSyncMock.mock.calls.at(0)?.[2]).toStrictEqual({
-      stdio: "ignore",
-      timeout: 30_000,
+    expect(output()).not.toContain("private-");
+    expect(output()).not.toContain("user:password");
+  });
+
+  it("keeps a selected page already in the assigned window", async () => {
+    selected = OWNER_TWO;
+    await run("use");
+    expect(selected).toBe(OWNER_TWO);
+    expect(selections).toStrictEqual([OWNER_TWO]);
+  });
+
+  it.each([SIBLING, OWNER_TWO])(
+    "attaches through a healthy window witness despite an unrelated lookup error: %s",
+    async (targetId) => {
+      lookupErrors.set(targetId, "private-provider-error");
+      await run("use");
+      expect(selected).toBe(OWNER);
+      expect(selections).toStrictEqual([OWNER]);
+      expect(output()).not.toContain("private-");
+    },
+  );
+
+  it("skips a target that disappeared before initial window selection", async () => {
+    nativeWindows.delete(OWNER);
+    await run("use");
+    expect(selected).toBe(OWNER_TWO);
+    expect(selections).toStrictEqual([OWNER_TWO]);
+  });
+
+  it("lists the driver's safe inventory after attachment", async () => {
+    await run("use");
+    vi.stubEnv("OKOU_TOKEN", undefined);
+    clearOutput();
+    await run("tab", "list");
+    expect(JSON.parse(output())).toStrictEqual({
+      tabs: [
+        { id: "t1", origin: "https://sibling.example.test", active: false },
+        { id: "t2", origin: "https://account.example.test", active: true },
+        { id: "t3", origin: "https://account.example.test", active: false },
+      ],
     });
     expect(output()).not.toContain("private-");
     expect(output()).not.toContain("user:password");
   });
 
-  it("rejects shared attachment when this Run has no captured shared-mode flag", async () => {
-    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, undefined);
-
-    await expect(run("use")).rejects.toThrow("process.exit called");
-
-    expect(selections).toStrictEqual([]);
-    expect(spawnSyncMock).not.toHaveBeenCalled();
-    expect(output()).toBe("");
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "not enabled for this Run",
-    );
-  });
-
-  it("rejects a known shared attachment after the captured mode is disabled", async () => {
+  it("allows explicit selection of a tab in another native window", async () => {
     await run("use");
-    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, undefined);
+    vi.stubEnv("OKOU_TOKEN", undefined);
     clearOutput();
-
-    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
-
-    expect(output()).toBe("");
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "does not match this chat's current window",
-    );
-  });
-
-  it("lists current native membership after intentional moves and omits a disappeared target", async () => {
-    await run("use");
-    nativeWindows.set(SIBLING, 0);
-    nativeWindows.set(OWNER_TWO, 99);
-    nativeWindows.delete(OWNER);
-    clearOutput();
-
-    await run("tab", "list");
-
+    await run("tab", "select", "t1");
+    expect(selected).toBe(SIBLING);
     expect(JSON.parse(output())).toStrictEqual({
-      window,
-      tabs: [
-        { id: "t1", origin: "https://sibling.example.test", active: false },
-      ],
-    });
-    expect(selected).toBe(OWNER);
-    expect(output()).not.toContain("private-");
-  });
-
-  it("selects a current-window tab using its stable native target ID", async () => {
-    await run("use");
-    clearOutput();
-
-    await run("tab", "select", "t3");
-
-    expect(selected).toBe(OWNER_TWO);
-    expect(selections).toStrictEqual([OWNER, OWNER_TWO]);
-    expect(JSON.parse(output())).toStrictEqual({
-      tab: {
-        id: "t3",
-        origin: "https://account.example.test",
-        active: true,
-      },
+      tab: { id: "t1", origin: "https://sibling.example.test", active: true },
     });
     expect(output()).not.toContain("private-");
   });
 
-  it("rejects explicit sibling selection without changing the selected page", async () => {
-    await run("use");
-    clearOutput();
-
-    await expect(run("tab", "select", "t1")).rejects.toThrow(
-      "process.exit called",
-    );
-
-    expect(selected).toBe(OWNER);
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "not in this chat's current Browser window",
-    );
-    expect(output()).toBe("");
-  });
-
-  it("does not report success or replay a switch when the page moves during selection", async () => {
-    await run("use");
-    afterSelection = () => {
-      nativeWindows.set(OWNER_TWO, 99);
-    };
-    clearOutput();
-
-    await expect(run("tab", "select", "t3")).rejects.toThrow(
-      "process.exit called",
-    );
-
-    expect(selections).toStrictEqual([OWNER, OWNER_TWO]);
-    expect(output()).toBe("");
-    expect(error.mock.calls.flat().join("\n")).toContain("selection changed");
-  });
-
-  it("requires explicit recovery when the pinned page closes", async () => {
+  it("shows page loss and reattaches only on explicit use", async () => {
     await run("use");
     tabs = tabs.filter((tab) => {
       return tab.targetId !== OWNER;
     });
     nativeWindows.delete(OWNER);
     clearOutput();
-
     await run("tab", "list");
-
     expect(JSON.parse(output())).toStrictEqual({
-      window,
       tabs: [
+        { id: "t1", origin: "https://sibling.example.test", active: false },
         { id: "t3", origin: "https://account.example.test", active: false },
       ],
     });
@@ -410,96 +333,22 @@ describe("chat-window Browser commands", () => {
     expect(selected).toBe(OWNER_TWO);
   });
 
-  it("rejects a replaced instance even when its native window number is unchanged", async () => {
-    await run("use");
-    window = {
-      instanceId: "e0000000-0000-4000-a000-000000000010",
-      primaryWindowId: 0,
-    };
-    clearOutput();
-
-    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
-
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "does not match this chat's current window",
-    );
-    expect(output()).toBe("");
-  });
-
-  it("rejects an inactive chat lifetime while the shared Browser can still exist", async () => {
-    await run("use");
-    status = "suspended";
-    clearOutput();
-
-    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
-
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "does not match this chat's current window",
-    );
-    expect(output()).toBe("");
-  });
-
-  it("rejects a different physical connection without exposing either endpoint", async () => {
-    await run("use");
-    endpoint = "wss://another-browser.test/?token=private-other-connection";
-    clearOutput();
-
-    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
-
-    const failure = error.mock.calls.flat().join("\n");
-    expect(failure).toContain("does not match this chat's current window");
-    expect(failure).not.toContain("private-");
-    expect(output()).toBe("");
-  });
-
-  it("requires reattachment if its temporary shared context is missing", async () => {
-    await run("use");
-    unlinkSync(attachmentFile());
-    clearOutput();
-
-    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
-
-    expect(output()).toBe("");
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "run `okou browser use`",
-    );
-  });
-
-  it("does not attach to a sibling when the assigned window has disappeared", async () => {
+  it("does not initially attach to a sibling when the assigned window has disappeared", async () => {
     nativeWindows.set(OWNER, 99);
     nativeWindows.set(OWNER_TWO, 99);
-
     await expect(run("use")).rejects.toThrow("process.exit called");
-
     expect(selected).toBe(SIBLING);
     expect(selections).toStrictEqual([]);
     expect(output()).toBe("");
     expect(error.mock.calls.flat().join("\n")).toContain("no available tab");
   });
 
-  it("surfaces provider lookup failure instead of treating every tab as missing", async () => {
-    await run("use");
+  it("surfaces initial provider lookup failure without exposing its diagnostics", async () => {
     protocolFailure = "private-provider-error";
-    clearOutput();
-
-    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
-
+    await expect(run("use")).rejects.toThrow("process.exit called");
     const failure = error.mock.calls.flat().join("\n");
     expect(failure).toContain("Could not resolve");
     expect(failure).not.toContain("private-");
-    expect(output()).toBe("");
-  });
-
-  it("does not turn an existing shared attachment into an unscoped one", async () => {
-    await run("use");
-    window = undefined;
-    clearOutput();
-
-    await expect(run("tab", "list")).rejects.toThrow("process.exit called");
-
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "does not match this chat's current window",
-    );
     expect(output()).toBe("");
   });
 });

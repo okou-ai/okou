@@ -18,10 +18,6 @@ export function getOkouChatThreadId(): string | undefined {
   return okouEnvironmentValue("CHAT_THREAD_ID");
 }
 
-export function isOkouBrowserSharedOwnerEnabled(): boolean {
-  return okouEnvironmentValue("BROWSER_SHARED_OWNER_ENABLED") === "true";
-}
-
 export function getOkouAppUrl(): string | undefined {
   return okouEnvironmentValue("APP_URL");
 }

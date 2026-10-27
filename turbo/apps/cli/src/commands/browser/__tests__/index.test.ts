@@ -1,8 +1,3 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { BROWSER_SHARED_OWNER_ENV_VAR } from "@okouai/api-contracts/contracts/browser";
 import { HttpResponse, http } from "msw";
 import {
   afterAll,
@@ -48,7 +43,6 @@ function browser(status: "active" | "suspended" = "active") {
 }
 
 describe("okou browser command", () => {
-  let temporary: string;
   const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   const processExit = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -56,9 +50,6 @@ describe("okou browser command", () => {
   }) as never);
 
   beforeEach(() => {
-    temporary = mkdtempSync(join(tmpdir(), "okou-browser-legacy-test-"));
-    vi.stubEnv("TMPDIR", temporary);
-    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, undefined);
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
@@ -71,7 +62,6 @@ describe("okou browser command", () => {
     processExit.mockClear();
     spawnSyncMock.mockReset();
     vi.unstubAllEnvs();
-    rmSync(temporary, { recursive: true, force: true });
   });
 
   afterAll(() => {
@@ -132,32 +122,13 @@ describe("okou browser command", () => {
     expect(help).toContain(
       "An explicit user request to view the Browser is not a takeover",
     );
-    expect(help).toContain("Each thread keeps an isolated login profile");
-    expect(help).not.toContain("Shared-owner chats");
-  });
-
-  it("shows shared window guidance in help only for an enabled Run", () => {
-    vi.stubEnv(BROWSER_SHARED_OWNER_ENV_VAR, "true");
-    let help = "";
-    browserCommand.configureOutput({
-      writeOut: (text: string) => {
-        help += text;
-      },
-    });
-    try {
-      browserCommand.outputHelp();
-    } finally {
-      browserCommand.configureOutput({
-        writeOut: (text: string) => {
-          process.stdout.write(text);
-        },
-      });
-    }
     expect(help).toContain(
-      "Shared-owner chats use the same cookies and localStorage",
+      "Chats sharing a Browser profile share cookies and localStorage",
     );
     expect(help).toContain("When use reports a chat Browser window");
-    expect(help).not.toContain("Each thread keeps an isolated login profile");
+    expect(help).toContain(
+      "explicit tab selection and every CDP API remain available",
+    );
   });
 
   it("prints the existing Browser viewer URL for a user takeover", async () => {
@@ -525,15 +496,8 @@ describe("okou browser command", () => {
     expect(output).not.toContain(secret);
   });
 
-  it("keeps per-thread tab listing and selection local when shared mode is disabled", async () => {
+  it("uses an attached driver for tab commands without API credentials", async () => {
     vi.stubEnv("OKOU_TOKEN", undefined);
-    let currentRequests = 0;
-    server.use(
-      http.get("http://localhost:3000/api/browsers/current", () => {
-        currentRequests += 1;
-        return HttpResponse.json({ error: "API unavailable" }, { status: 503 });
-      }),
-    );
     const list = {
       status: 0,
       stdout: JSON.stringify({
@@ -567,7 +531,6 @@ describe("okou browser command", () => {
     expect(JSON.parse(consoleLog.mock.calls.flat().join("\n"))).toStrictEqual({
       tab: { id: "t1", origin: "https://example.test", active: true },
     });
-    expect(currentRequests).toBe(0);
     expect(
       spawnSyncMock.mock.calls.map((call) => {
         return call[1];
