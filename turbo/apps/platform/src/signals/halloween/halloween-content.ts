@@ -4,87 +4,52 @@ import type {
 } from "@okouai/api-contracts/contracts/halloween";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import enUSCommon from "../../i18n/locales/en-US/common.json";
+import type enUSHalloween from "../../i18n/locales/en-US/halloween.json";
 
-function useHalloweenMainCopy() {
-  const { t } = useTranslation();
+export function useHalloweenCopy() {
+  const { t } = useTranslation("halloween");
+  const copy = t(
+    ($) => {
+      return $.copy;
+    },
+    { returnObjects: true },
+  );
+  const roundTitles = t(
+    ($) => {
+      return $.roundTitles;
+    },
+    { returnObjects: true },
+  );
+  const levels = t(
+    ($) => {
+      return $.levels;
+    },
+    { returnObjects: true },
+  );
+  const nudges = t(
+    ($) => {
+      return $.nudges;
+    },
+    { returnObjects: true },
+  );
+  const tasks = t(
+    ($) => {
+      return $.tasks;
+    },
+    { returnObjects: true },
+  );
+  const rules = t(
+    ($) => {
+      return $.rules;
+    },
+    { returnObjects: true },
+  );
   return {
-    brand: t(($) => {
-      return $.halloween.copy.brand;
-    }),
-    campaign: t(($) => {
-      return $.halloween.copy.campaign;
-    }),
-    tagline: t(($) => {
-      return $.halloween.copy.tagline;
-    }),
-    language: t(($) => {
-      return $.halloween.copy.language;
-    }),
-    climb: t(($) => {
-      return $.halloween.copy.climb;
-    }),
-    rulesHeading: t(($) => {
-      return $.halloween.copy.rulesHeading;
-    }),
-    rulesSub: t(($) => {
-      return $.halloween.copy.rulesSub;
-    }),
-    rulesBrand: t(($) => {
-      return $.halloween.copy.rulesBrand;
-    }),
-    rewardPrefix: t(($) => {
-      return $.halloween.copy.rewardPrefix;
-    }),
-    rewardEmphasis: t(($) => {
-      return $.halloween.copy.rewardEmphasis;
-    }),
-    resultRewardEmphasis: t(($) => {
-      return $.halloween.copy.resultRewardEmphasis;
-    }),
-    resultRewardRest: t(($) => {
-      return $.halloween.copy.resultRewardRest;
-    }),
-    title: t(($) => {
-      return $.halloween.copy.title;
-    }),
-    subtitle: t(($) => {
-      return $.halloween.copy.subtitle;
-    }),
-    review: t(($) => {
-      return $.halloween.copy.review;
-    }),
-    hint: t(($) => {
-      return $.halloween.copy.hint;
-    }),
-    start: t(($) => {
-      return $.halloween.copy.start;
-    }),
-    back: t(($) => {
-      return $.halloween.copy.back;
-    }),
-    rules: t(($) => {
-      return $.halloween.copy.rules;
-    }),
-    leave: t(($) => {
-      return $.halloween.copy.leave;
-    }),
-    next: t(($) => {
-      return $.halloween.copy.next;
-    }),
-    result: t(($) => {
-      return $.halloween.copy.result;
-    }),
-    again: t(($) => {
-      return $.halloween.copy.again;
-    }),
-    correct: t(($) => {
-      return $.halloween.copy.correct;
-    }),
+    ...copy,
     questionProgress: (current: number, total: number) => {
       return t(
         ($) => {
-          return $.halloween.copy.questionProgress;
+          return $.copy.questionProgress;
         },
         { current, total },
       );
@@ -92,208 +57,42 @@ function useHalloweenMainCopy() {
     roundProgress: (current: string, title: string) => {
       return t(
         ($) => {
-          return $.halloween.copy.roundProgress;
+          return $.copy.roundProgress;
         },
         { current, title },
       );
     },
-  } as const;
-}
-
-function useHalloweenResultCopy() {
-  const { t } = useTranslation();
-  return {
-    soundOn: t(($) => {
-      return $.halloween.copy.soundOn;
-    }),
-    soundOff: t(($) => {
-      return $.halloween.copy.soundOff;
-    }),
-    won: t(($) => {
-      return $.halloween.copy.won;
-    }),
-    wonSub: t(($) => {
-      return $.halloween.copy.wonSub;
-    }),
-    lost: t(($) => {
-      return $.halloween.copy.lost;
-    }),
-    lostSub: t(($) => {
-      return $.halloween.copy.lostSub;
-    }),
-    taskTitle: t(($) => {
-      return $.halloween.copy.taskTitle;
-    }),
-    taskSub: t(($) => {
-      return $.halloween.copy.taskSub;
-    }),
-    optional: t(($) => {
-      return $.halloween.copy.optional;
-    }),
-    magic: t(($) => {
-      return $.halloween.copy.magic;
-    }),
-    footerBefore: t(($) => {
-      return $.halloween.copy.footerBefore;
-    }),
-    footerLink: t(($) => {
-      return $.halloween.copy.footerLink;
-    }),
-    footerAfter: t(($) => {
-      return $.halloween.copy.footerAfter;
-    }),
-    unavailable: t(($) => {
-      return $.halloween.copy.unavailable;
-    }),
-    unavailableSub: t(($) => {
-      return $.halloween.copy.unavailableSub;
-    }),
-    error: t(($) => {
-      return $.halloween.copy.error;
-    }),
-    backToGame: t(($) => {
-      return $.halloween.copy.backToGame;
-    }),
-    nudgeLabel: t(($) => {
-      return $.halloween.copy.nudgeLabel;
-    }),
-    boo: t(($) => {
-      return $.halloween.copy.boo;
-    }),
-  } as const;
-}
-
-function useHalloweenCollections() {
-  const { t } = useTranslation();
-  return {
     roundTitles: [
-      t(($) => {
-        return $.halloween.roundTitles.one;
-      }),
-      t(($) => {
-        return $.halloween.roundTitles.two;
-      }),
-      t(($) => {
-        return $.halloween.roundTitles.three;
-      }),
-      t(($) => {
-        return $.halloween.roundTitles.four;
-      }),
-      t(($) => {
-        return $.halloween.roundTitles.five;
-      }),
+      roundTitles.one,
+      roundTitles.two,
+      roundTitles.three,
+      roundTitles.four,
+      roundTitles.five,
     ],
-    levels: [
-      t(($) => {
-        return $.halloween.levels.one;
-      }),
-      t(($) => {
-        return $.halloween.levels.two;
-      }),
-      t(($) => {
-        return $.halloween.levels.three;
-      }),
-      t(($) => {
-        return $.halloween.levels.four;
-      }),
-      t(($) => {
-        return $.halloween.levels.five;
-      }),
-    ],
-    nudges: [
-      t(($) => {
-        return $.halloween.nudges.one;
-      }),
-      t(($) => {
-        return $.halloween.nudges.two;
-      }),
-      t(($) => {
-        return $.halloween.nudges.three;
-      }),
-    ],
+    levels: [levels.one, levels.two, levels.three, levels.four, levels.five],
+    nudges: [nudges.one, nudges.two, nudges.three],
     tasks: [
       {
-        title: t(($) => {
-          return $.halloween.tasks.createImage.title;
-        }),
-        text: t(($) => {
-          return $.halloween.tasks.createImage.text;
-        }),
-        prompt: t(($) => {
-          return $.halloween.tasks.createImage.prompt;
-        }),
+        ...tasks.createImage,
       },
       {
-        title: t(($) => {
-          return $.halloween.tasks.connectTools.title;
-        }),
-        text: t(($) => {
-          return $.halloween.tasks.connectTools.text;
-        }),
-        prompt: t(($) => {
-          return $.halloween.tasks.connectTools.prompt;
-        }),
+        ...tasks.connectTools,
       },
       {
-        title: t(($) => {
-          return $.halloween.tasks.explore.title;
-        }),
-        text: t(($) => {
-          return $.halloween.tasks.explore.text;
-        }),
+        ...tasks.explore,
         prompt: "",
       },
     ],
-    ruleSections: [
-      {
-        title: t(($) => {
-          return $.halloween.rules.availability.title;
-        }),
-        text: t(($) => {
-          return $.halloween.rules.availability.text;
-        }),
-      },
-      {
-        title: t(($) => {
-          return $.halloween.rules.play.title;
-        }),
-        text: t(($) => {
-          return $.halloween.rules.play.text;
-        }),
-      },
-      {
-        title: t(($) => {
-          return $.halloween.rules.reward.title;
-        }),
-        text: t(($) => {
-          return $.halloween.rules.reward.text;
-        }),
-      },
-      {
-        title: t(($) => {
-          return $.halloween.rules.support.title;
-        }),
-        text: t(($) => {
-          return $.halloween.rules.support.text;
-        }),
-      },
-    ],
+    ruleSections: [rules.availability, rules.play, rules.reward, rules.support],
   } as const;
 }
 
-export function useHalloweenCopy() {
-  return {
-    ...useHalloweenMainCopy(),
-    ...useHalloweenResultCopy(),
-    ...useHalloweenCollections(),
-  } as const;
-}
-
-type HalloweenQuestionId = keyof typeof enUSCommon.halloween.questions;
+type HalloweenQuestionId = keyof typeof enUSHalloween.questions;
 type HalloweenOptionId = "A" | "B" | "C";
+const HALLOWEEN_QUESTION_ID = /^QUIZ-(?:0[1-9]|[1-4][0-9]|5[0-3])$/u;
 
 function isHalloweenQuestionId(value: string): value is HalloweenQuestionId {
-  return Object.hasOwn(enUSCommon.halloween.questions, value);
+  return HALLOWEEN_QUESTION_ID.test(value);
 }
 
 function isHalloweenOptionId(value: string): value is HalloweenOptionId {
@@ -317,7 +116,7 @@ function assertHalloweenOptionId(
 }
 
 function localizeQuestion(
-  t: TFunction<"common">,
+  t: TFunction<"halloween">,
   question: HalloweenQuestion,
 ): HalloweenQuestion {
   assertHalloweenQuestionId(question.id);
@@ -325,7 +124,7 @@ function localizeQuestion(
   return {
     ...question,
     text: t(($) => {
-      return $.halloween.questions[questionId].text;
+      return $.questions[questionId].text;
     }),
     options: question.options.map((option) => {
       assertHalloweenOptionId(option.id);
@@ -333,7 +132,7 @@ function localizeQuestion(
       return {
         ...option,
         text: t(($) => {
-          return $.halloween.questions[questionId].options[optionId];
+          return $.questions[questionId].options[optionId];
         }),
       };
     }),
@@ -343,7 +142,7 @@ function localizeQuestion(
 export function useLocalizedHalloweenRound(
   round: HalloweenRound | null,
 ): HalloweenRound | null {
-  const { t } = useTranslation();
+  const { t } = useTranslation("halloween");
   if (!round?.question) {
     return round;
   }
@@ -357,10 +156,10 @@ export function useLocalizedHalloweenRound(
           ...round.feedback,
           explanation: round.feedback.correct
             ? t(($) => {
-                return $.halloween.questions[questionId].explanation;
+                return $.questions[questionId].explanation;
               })
             : t(($) => {
-                return $.halloween.copy.lostSub;
+                return $.copy.lostSub;
               }),
         }
       : null,

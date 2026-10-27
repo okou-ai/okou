@@ -6,8 +6,10 @@ import {
   type HalloweenPhase,
 } from "@okouai/api-contracts/contracts/halloween";
 import { accept } from "../../lib/accept.ts";
+import { ensureHalloweenI18nResources } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
+import { locale$ } from "../locale.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
 
 const soundStorage = localStorageSignals("halloween_2026_sound");
@@ -149,6 +151,10 @@ const refreshHalloweenPhase$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (result.body.phase === "open") {
+      await ensureHalloweenI18nResources(get(locale$), signal);
+      signal.throwIfAborted();
+    }
     set(phaseState$, result.body.phase);
   },
 );

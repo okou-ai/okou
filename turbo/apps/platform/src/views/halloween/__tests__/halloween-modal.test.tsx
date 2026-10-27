@@ -251,6 +251,12 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
     name: "Spooky Halloween — activity rules",
   });
   expect(within(rules).getByText("Your Halloween reward")).toBeInTheDocument();
+  expect(
+    within(rules).getByText(
+      "If the activity becomes unavailable, your saved round stays intact and can be resumed when it appears again.",
+      { exact: false },
+    ),
+  ).toBeInTheDocument();
   click(button("Back to game", rules));
   await waitFor(() => {
     expect(
