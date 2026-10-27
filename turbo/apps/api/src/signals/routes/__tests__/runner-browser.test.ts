@@ -785,7 +785,7 @@ describe("owner provider profiles", () => {
           return a.request({ kind: "allocate" });
         }),
       );
-      const transition = await settleIncludingAbort(async () => {
+      async function transitionWinner() {
         await prepared.promise;
         const winner = await allocate(b);
         accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
@@ -803,7 +803,8 @@ describe("owner provider profiles", () => {
           ).status,
         ).toBe(204);
         return winner;
-      });
+      }
+      const transition = await settleIncludingAbort(transitionWinner());
       if (!release.settled()) {
         release.resolve();
       }
@@ -878,7 +879,7 @@ describe("owner provider profiles", () => {
           return a.request({ kind: "allocate" });
         }),
       );
-      const transition = await settleIncludingAbort(async () => {
+      async function transitionWinner() {
         await prepared.promise;
         const winner = await allocate(b);
         accepted(await b.request({ kind: "beginStop", instanceId: winner.id }));
@@ -886,7 +887,8 @@ describe("owner provider profiles", () => {
           await b.request({ kind: "completeStop", instanceId: winner.id }),
         );
         return winner;
-      });
+      }
+      const transition = await settleIncludingAbort(transitionWinner());
       if (!release.settled()) {
         release.resolve();
       }
