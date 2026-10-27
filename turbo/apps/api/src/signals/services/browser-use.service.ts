@@ -673,6 +673,7 @@ export async function browserUseWindowExists(
     return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
       const sequence = { next: 1 };
       const targets = await browserWindowTargets(socket, sequence, deadline);
+      let lookupFailure: BrowserUseCdpCommandError | undefined;
       for (
         let offset = 0;
         offset < targets.length;
@@ -705,9 +706,16 @@ export async function browserUseWindowExists(
         }
         for (const window of windows) {
           if (!window.ok) {
-            throw window.error;
+            if (!(window.error instanceof BrowserUseCdpCommandError)) {
+              throw window.error;
+            }
+            // One page's command failure cannot rule out a later witness.
+            lookupFailure ??= window.error;
           }
         }
+      }
+      if (lookupFailure) {
+        throw lookupFailure;
       }
       return false;
     });

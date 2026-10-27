@@ -195,6 +195,41 @@ describe("native owner Browser window admission", () => {
     });
   });
 
+  it("reuses a registered window after earlier sibling lookup failures", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const instance = await allocate(chat);
+      const first = accepted(
+        await chat.request({ kind: "admit", instanceId: instance.id }),
+      );
+      const owned = f.provider.native.created[0];
+      if (!owned) {
+        throw new Error("Expected the native admission candidate");
+      }
+      f.provider.native.targets.clear();
+      for (let index = 0; index < 8; index += 1) {
+        const targetId = randomUUID().replaceAll("-", "");
+        f.provider.native.targets.set(targetId, {
+          targetId,
+          windowId: owned.windowId + index + 1,
+        });
+        if (index === 0) {
+          f.provider.native.windowErrors.set(
+            targetId,
+            "Provider lookup denied",
+          );
+        }
+      }
+      f.provider.native.targets.set(owned.targetId, owned);
+      const repeated = accepted(
+        await chat.request({ kind: "admit", instanceId: instance.id }),
+      );
+      expect(repeated.window).toStrictEqual(first.window);
+      expect(f.provider.native.created).toHaveLength(1);
+    });
+  });
+
   it.each([true, false])(
     "uses a confirmed native window witness and preserves unresolved lookup failures: %s",
     async (hasWitness) => {
