@@ -20,11 +20,10 @@ final class ConversationWindowStoreTests: XCTestCase {
   }
   func testRecreatedStoreHydratesFullHistoryWithAnInitialWindow() async throws {
     let fixture = ConversationHistoryFixture()
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
-    let original = fixture.conversation(cache: ChatCache(scope: scope, directory: directory))
+    let original = fixture.conversation(cache: cacheDirectory.cache(scope: scope))
     await original.refresh()
     await original.loadEarlierMessages()
     original.rememberReadingPosition(
@@ -32,7 +31,7 @@ final class ConversationWindowStoreTests: XCTestCase {
     XCTAssertEqual(original.visibleMessages.count, 20)
     original.close()
 
-    let restored = fixture.conversation(cache: ChatCache(scope: scope, directory: directory))
+    let restored = fixture.conversation(cache: cacheDirectory.cache(scope: scope))
     defer { restored.close() }
     await restored.refresh()
     XCTAssertEqual(restored.messages, original.messages)

@@ -152,18 +152,17 @@ final class ChatLinkNavigationTests: XCTestCase {
         await gate.wait()
       }
     })
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
-    let previous = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    let previous = fixture.workspace(cache: cacheDirectory.cache(scope: scope))
     await previous.refresh()
     previous.selectChat(ChatLinkFixture.sourceID)
     await previous.selectedConversation?.refresh()
     previous.close()
 
     holdNetwork.withLock { $0 = true }
-    let store = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    let store = fixture.workspace(cache: cacheDirectory.cache(scope: scope))
     defer { store.close() }
     await store.list.restoreCached()
     store.selectChat(ChatLinkFixture.sourceID)
@@ -195,11 +194,10 @@ final class ChatLinkNavigationTests: XCTestCase {
           await gate.wait()
         }
       }, eventCount: { eventCount.withLock { $0 } })
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
-    let previous = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    let previous = fixture.workspace(cache: cacheDirectory.cache(scope: scope))
     await previous.refresh()
     let seeded = await previous.openChatLink(
       .thread(id: ChatLinkFixture.sourceID, runID: ChatLinkFixture.runID(1)))
@@ -208,7 +206,7 @@ final class ChatLinkNavigationTests: XCTestCase {
 
     eventCount.withLock { $0 = 90 }
     holdNetwork.withLock { $0 = true }
-    let store = fixture.workspace(cache: ChatCache(scope: scope, directory: directory))
+    let store = fixture.workspace(cache: cacheDirectory.cache(scope: scope))
     defer { store.close() }
     await store.list.restoreCached()
     store.selectChat(ChatLinkFixture.homeID)

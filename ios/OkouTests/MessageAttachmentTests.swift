@@ -15,11 +15,10 @@ final class MessageAttachmentTests: XCTestCase {
     let fixture = ConversationHistoryFixture(rows: [
       try attachmentRow(1, text: ""), try attachmentRow(2, text: "Review these files"),
     ])
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheDirectory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.http.baseURL, userID: "reader", workspaceID: "workspace")
-    let conversation = fixture.conversation(cache: ChatCache(scope: scope, directory: directory))
+    let conversation = fixture.conversation(cache: cacheDirectory.cache(scope: scope))
     await conversation.refresh()
     XCTAssertNil(conversation.error)
     XCTAssertEqual(conversation.messages.map(\.text), ["", "Review these files"])
@@ -28,7 +27,7 @@ final class MessageAttachmentTests: XCTestCase {
     let expected = conversation.messages
     conversation.close()
     let sync = ChatSync(
-      client: fixture.http.client, cache: ChatCache(scope: scope, directory: directory))
+      client: fixture.http.client, cache: cacheDirectory.cache(scope: scope))
     let reopened = await sync.cachedHistory(threadID: ConversationHistoryFixture.threadID)
     XCTAssertEqual(reopened?.messages, expected)
   }
