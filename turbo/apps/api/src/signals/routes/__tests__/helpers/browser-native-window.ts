@@ -18,6 +18,7 @@ export function createNativeWindowProvider(context: TestContext) {
     readonly created: NativeTarget[];
     readonly closed: string[];
     readonly windowIds: number[];
+    readonly windowErrors: Map<string, string>;
     beforeCreateReply?: (target: NativeTarget) => Promise<void> | void;
     beforeWindowReply?: (targetId: string) => Promise<void> | void;
     windowError?: string;
@@ -29,6 +30,7 @@ export function createNativeWindowProvider(context: TestContext) {
     created: [],
     closed: [],
     windowIds: [],
+    windowErrors: new Map(),
     closeSucceeds: true,
     createReply: "reply",
   };
@@ -65,11 +67,12 @@ export function createNativeWindowProvider(context: TestContext) {
         await state.beforeWindowReply?.(targetId);
         context.signal.throwIfAborted();
         const target = state.targets.get(targetId);
-        if (!target || state.windowError) {
+        const error = state.windowErrors.get(targetId) ?? state.windowError;
+        if (!target || error) {
           client.send(
             JSON.stringify({
               id: command.id,
-              error: { message: state.windowError ?? "No target with this ID" },
+              error: { message: error ?? "No target with this ID" },
             }),
           );
           return;

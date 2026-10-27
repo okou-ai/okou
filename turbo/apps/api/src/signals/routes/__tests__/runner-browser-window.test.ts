@@ -38,6 +38,70 @@ describe("native owner Browser window admission", () => {
     });
   });
 
+  it("reuses a registered window beyond a large sibling target inventory", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const instance = await allocate(chat);
+      const first = accepted(
+        await chat.request({ kind: "admit", instanceId: instance.id }),
+      );
+      const owned = f.provider.native.created[0];
+      if (!owned) {
+        throw new Error("Expected the native admission candidate");
+      }
+      f.provider.native.targets.clear();
+      for (let index = 0; index < 602; index += 1) {
+        const targetId = randomUUID().replaceAll("-", "");
+        f.provider.native.targets.set(targetId, {
+          targetId,
+          windowId: owned.windowId + index + 1,
+        });
+      }
+      f.provider.native.targets.set(owned.targetId, owned);
+      const repeated = accepted(
+        await chat.request({ kind: "admit", instanceId: instance.id }),
+      );
+      expect(repeated.window).toStrictEqual(first.window);
+      expect(f.provider.native.created).toHaveLength(1);
+      expect(f.provider.native.targets.size).toBe(603);
+    });
+  });
+
+  it.each([true, false])(
+    "uses a confirmed native window witness and preserves unresolved lookup failures: %s",
+    async (hasWitness) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        const chat = await f.start();
+        const instance = await allocate(chat);
+        const first = accepted(
+          await chat.request({ kind: "admit", instanceId: instance.id }),
+        );
+        if (!hasWitness) {
+          f.provider.native.targets.clear();
+        }
+        const targetId = randomUUID().replaceAll("-", "");
+        f.provider.native.targets.set(targetId, { targetId, windowId: 100 });
+        f.provider.native.windowErrors.set(targetId, "Provider lookup denied");
+        const repeated = await chat.control({
+          kind: "admit",
+          instanceId: instance.id,
+        });
+        if (hasWitness) {
+          expect(repeated.status).toBe(200);
+          expect(repeated.body).toMatchObject({
+            outcome: "accepted",
+            instance: { window: first.window },
+          });
+        } else {
+          expect(repeated.status).toBe(502);
+        }
+        expect(f.provider.native.created).toHaveLength(1);
+      });
+    },
+  );
+
   it.each(["closed", "moved", "already-gone", "close-failed"] as const)(
     "arbitrates native candidates with %s loser cleanup",
     async (cleanup) => {

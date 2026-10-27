@@ -37,6 +37,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
   readBoundedResponseText,
+  joinAll,
   safeJsonParse,
   safeSync,
   settle,
@@ -52,6 +53,7 @@ const MAX_BROWSER_USE_SCREENSHOT_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_BROWSER_USE_ERROR_MESSAGE_CHARS = 2048;
 const MAX_BROWSER_USE_TAB_URLS = 50;
 const MAX_BROWSER_USE_TAB_URL_CHARS = 8192;
+const BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY = 4;
 const BROWSER_USE_SCREENSHOT_WIDTH = 640;
 const BROWSER_USE_SCREENSHOT_QUALITY = 80;
 const browserUseLiveUrlSchema = zUrl().refine((value) => {
@@ -665,17 +667,40 @@ export async function browserUseWindowExists(
     return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
       const sequence = { next: 1 };
       const targets = await browserWindowTargets(socket, sequence, deadline);
-      for (const target of targets) {
+      for (
+        let offset = 0;
+        offset < targets.length;
+        offset += BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY
+      ) {
+        const windows = await joinAll(
+          targets
+            .slice(offset, offset + BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY)
+            .filter((target) => {
+              return target.type === "page";
+            })
+            .map((target) => {
+              return settle(
+                nativeWindowForTarget(
+                  socket,
+                  target.targetId,
+                  sequence,
+                  deadline,
+                ),
+              );
+            }),
+        );
+        deadline.throwIfAborted();
         if (
-          target.type === "page" &&
-          (await nativeWindowForTarget(
-            socket,
-            target.targetId,
-            sequence,
-            deadline,
-          )) === primaryWindowId
+          windows.some((window) => {
+            return window.ok && window.value === primaryWindowId;
+          })
         ) {
           return true;
+        }
+        for (const window of windows) {
+          if (!window.ok) {
+            throw window.error;
+          }
         }
       }
       return false;
