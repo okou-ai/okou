@@ -630,7 +630,7 @@ impl SubmitPlan {
         self.queue.abandon_cancelled();
     }
 
-    fn finish_completed(&self, buf: &[u8]) -> RunnerResult<ExitCode> {
+    fn finish_completed(&self, buf: &[u8], output: &mut impl Write) -> RunnerResult<ExitCode> {
         let response: JobResponse = serde_json::from_slice(buf)
             .map_err(|e| RunnerError::Internal(format!("parse result: {e}")))?;
         if response.run_id != self.queue.job_id {
@@ -640,10 +640,18 @@ impl SubmitPlan {
             )));
         }
 
-        self.queue.cleanup_completed();
+        output
+            .write_all(buf)
+            .and_then(|()| output.write_all(b"\n"))
+            .and_then(|()| output.flush())
+            .map_err(|error| {
+                RunnerError::Internal(format!(
+                    "deliver local result to stdout: {error}; completed result retained at {}",
+                    self.queue.result.display()
+                ))
+            })?;
 
-        std::io::stdout().write_all(buf).ok();
-        std::io::stdout().write_all(b"\n").ok();
+        self.queue.cleanup_completed();
 
         if response.exit_code == 0 {
             Ok(ExitCode::SUCCESS)
@@ -680,7 +688,7 @@ async fn run_submit_with_home(args: SubmitArgs, home: HomePaths) -> RunnerResult
         plan.queue.cleanup_abandoned(None);
     }
     match outcome? {
-        SubmitOutcome::Completed(buf) => plan.finish_completed(&buf),
+        SubmitOutcome::Completed(buf) => plan.finish_completed(&buf, &mut std::io::stdout().lock()),
         SubmitOutcome::Cancelled => Ok(ExitCode::FAILURE),
     }
 }

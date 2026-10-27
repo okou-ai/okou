@@ -5,6 +5,7 @@ mod interrupt;
 mod queue_publication;
 mod request;
 mod result_markers;
+mod result_output;
 mod support;
 mod timezone;
 mod validation;

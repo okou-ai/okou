@@ -227,6 +227,18 @@ Saturated or unusually slow local clients can therefore receive connection error
 These limits apply per socket. The payload budget does not include parsed commands,
 responses, allocator overhead, or kernel socket buffers, and does not bound host-wide RSS.
 
+### Local submit result delivery
+
+`runner local submit` writes the completed job's JSON result and a newline to
+stdout, then flushes it before cleaning up the queue files. After successful
+delivery, a zero job exit code returns success; any nonzero job exit code returns
+failure.
+
+If writing or flushing stdout fails, the command returns an error and reports
+the retained completed-result file path. Recover the JSON from that file after
+fixing the output destination. Do not resubmit the job to recover its output:
+the job has already completed, and the retained result prevents re-execution.
+
 ### Local active input
 
 `runner local input` requires a claimed local job with active-input forwarding
