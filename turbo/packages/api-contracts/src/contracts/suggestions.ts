@@ -15,6 +15,7 @@ import { composerDraftSchema } from "./chat-threads";
 import { apiErrorSchema } from "./errors";
 
 const SUGGESTION_LIMIT = 10;
+export const SUGGESTION_RETENTION_MS = 24 * 60 * 60 * 1000;
 // UUID aliases must share one terminal identity in the JSONB collection.
 const suggestionIdSchema = uuid().toLowerCase();
 const suggestionOptionIdSchema = string().trim().min(1).max(64);
@@ -107,6 +108,10 @@ export const suggestionSchema = suggestionContentSchema.extend({
   selectedOptionId: suggestionOptionIdSchema.nullable(),
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
+  expiresAt: iso.datetime().optional(),
+  consumeToken: string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .optional(),
 });
 export const suggestionReceiptSchema = suggestionSchema
   .pick({
@@ -121,18 +126,37 @@ export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
 export const suggestionCreateSchema = suggestionContentSchema.extend({
   id: suggestionIdSchema,
   priority: suggestionContentSchema.shape.priority.default(0),
+  expiresAt: iso.datetime().optional(),
 });
-export const suggestionUpdateSchema = suggestionContentSchema.partial().refine(
-  (body) => {
-    return Object.keys(body).length > 0;
-  },
-  {
-    message: "Provide at least one suggestion field to update",
-  },
-);
+export const suggestionUpdateSchema = suggestionContentSchema
+  .extend({ expiresAt: iso.datetime().optional() })
+  .partial()
+  .refine(
+    (body) => {
+      return Object.keys(body).length > 0;
+    },
+    {
+      message: "Provide at least one suggestion field to update",
+    },
+  );
 export type Suggestion = zInfer<typeof suggestionSchema>;
 export type SuggestionCreate = zInfer<typeof suggestionCreateSchema>;
 export type SuggestionUpdate = zInfer<typeof suggestionUpdateSchema>;
+const suggestionConsumeSchema = object({
+  optionId: suggestionOptionIdSchema.nullable(),
+  snapshot: suggestionSchema.optional(),
+});
+export type SuggestionConsume = zInfer<typeof suggestionConsumeSchema>;
+
+/** An explicit deadline can shorten the 24-hour window after the last update. */
+export function getSuggestionExpiresAt(
+  suggestion: Pick<Suggestion, "updatedAt" | "expiresAt">,
+): number {
+  const maximum = Date.parse(suggestion.updatedAt) + SUGGESTION_RETENTION_MS;
+  return suggestion.expiresAt === undefined
+    ? maximum
+    : Math.min(maximum, Date.parse(suggestion.expiresAt));
+}
 
 const c = initContract();
 const errors = {
@@ -187,7 +211,7 @@ export const suggestionsContract = c.router({
     path: "/api/suggestions/:id/consume",
     headers: authHeadersSchema,
     pathParams: params,
-    body: object({ optionId: suggestionOptionIdSchema.nullable() }),
+    body: suggestionConsumeSchema,
     responses: { 200: suggestionSchema, ...errors },
     summary: "Choose a suggestion option, or dismiss it with a null option ID",
   },

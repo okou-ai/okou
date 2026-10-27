@@ -6,7 +6,8 @@ import type { AgentSuggestionEntries } from "../jsonb-contracts/agent-suggestion
  * A member's actionable suggestion collection, updated as one business value.
  * Priorities belong to items; array positions have no presentation meaning.
  * Terminal identities remain receipts so late create/update requests cannot
- * resurrect a consumed action. Later writes discard their draft contents.
+ * resurrect a consumed action within the 24-hour feedback window. Later writes
+ * discard their draft contents; scheduled cleanup removes expired entries.
  */
 export const agentSuggestions = pgTable(
   "agent_suggestions",

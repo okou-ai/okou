@@ -69,7 +69,7 @@ const consume$ = command(async ({ get, set }, signal: AbortSignal) => {
         consumeSuggestion$,
         owner,
         get(pathParamsOf(suggestionsContract.consume)).id,
-        body.data.optionId,
+        body.data,
         signal,
       )
     : body.response;

@@ -9,6 +9,7 @@ import {
   cronCleanupXResourceReadsContract,
   cronConnectorCatalogContract,
   cronConnectorOauthStateCleanupContract,
+  cronCleanupSuggestionsContract,
   cronComputerUseScreenshotCleanupContract,
   cronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract,
@@ -124,6 +125,10 @@ const expectedVercelCrons = [
   {
     path: cronConnectorOauthStateCleanupContract.cleanup.path,
     schedule: "15 * * * *",
+  },
+  {
+    path: cronCleanupSuggestionsContract.cleanup.path,
+    schedule: "0 * * * *",
   },
   {
     path: cronDrainEmailOutboxContract.drain.path,

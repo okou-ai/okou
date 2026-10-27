@@ -216,6 +216,11 @@ const cronConnectorOauthStateCleanupResponseSchema = object({
   deleted: number().int().nonnegative(),
 });
 
+const cronCleanupSuggestionsResponseSchema = object({
+  cleaned: number().int().nonnegative(),
+  deleted: number().int().nonnegative(),
+});
+
 const cronComputerUseScreenshotCleanupResponseSchema = object({
   cleaned: number(),
 });
@@ -453,6 +458,19 @@ export const cronConnectorOauthStateCleanupContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Delete expired connector OAuth states",
+  },
+});
+
+export const cronCleanupSuggestionsContract = c.router({
+  cleanup: {
+    method: "GET",
+    path: "/api/cron/cleanup-suggestions",
+    headers: authHeadersSchema,
+    responses: {
+      200: cronCleanupSuggestionsResponseSchema,
+      401: apiErrorSchema,
+    },
+    summary: "Prune expired suggestions and feedback after 24 hours",
   },
 });
 

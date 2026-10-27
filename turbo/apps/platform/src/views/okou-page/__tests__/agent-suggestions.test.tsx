@@ -35,11 +35,13 @@ import {
   draftAttachment,
   mockPrivateUrlSequence,
 } from "./chat-attachment-test-helpers.ts";
+import { mockNow, nowDate } from "../../../lib/time.ts";
 
 const context = testContext();
 const agentId = "c0000000-0000-4000-a000-000000000001";
 const threadId = "b0000000-0000-4000-a000-000000000811";
 function makeSuggestion(): Suggestion {
+  const timestamp = nowDate().toISOString();
   return {
     id: "a0000000-0000-4000-a000-000000000001",
     title: "Review the pending decision",
@@ -47,8 +49,8 @@ function makeSuggestion(): Suggestion {
     priority: 20,
     status: "active",
     selectedOptionId: null,
-    createdAt: "2026-10-13T00:00:00.000Z",
-    updatedAt: "2026-10-13T00:00:00.000Z",
+    createdAt: timestamp,
+    updatedAt: timestamp,
     customOption: {
       id: "custom",
       threadId: null,
@@ -187,6 +189,57 @@ const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
   [FeatureSwitchKey.ProactiveAgent]: false,
 } as const;
+
+test("A cached suggestion expires without a realtime event and preserves the draft", async () => {
+  const start = Date.parse("2026-10-27T00:00:00.000Z");
+  mockNow(start, context.signal);
+  mockPool();
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(makeSuggestion().title);
+  await fill(composer(), "Keep my draft");
+
+  mockNow(start + 24 * 60 * 60 * 1000, context.signal);
+  await waitFor(() => {
+    expect(queryTab("Image")).toBeInTheDocument();
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  });
+  expect(composer()).toHaveTextContent("Keep my draft");
+});
+
+test("Selecting a cached card restores its draft after server cleanup", async () => {
+  const suggestion = { ...makeSuggestion(), consumeToken: "a".repeat(64) };
+  const pool = mockPool([suggestion]);
+  context.mocks.api(suggestionsContract.consume, ({ body, respond }) => {
+    if (body.snapshot?.consumeToken !== suggestion.consumeToken) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Unavailable" },
+      });
+    }
+    return respond(200, {
+      ...suggestion,
+      status: "consumed",
+      selectedOptionId: body.optionId,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(suggestion.title);
+  await fill(composer(), "My original draft");
+  pool.withdrawAll();
+  click(button(makeOption().label));
+  await waitFor(() => {
+    expect(composer()).toHaveTextContent("Referenced decision");
+    expect(composer()).toHaveTextContent("My original draft");
+  });
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+});
 
 test("Selecting a task hides the categories, focuses the composer, and restores Suggestions when cleared", async () => {
   const user = userEvent.setup();
