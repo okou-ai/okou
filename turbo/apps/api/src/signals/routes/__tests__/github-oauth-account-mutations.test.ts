@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -10,11 +13,33 @@ import {
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createGithubBddApi } from "./helpers/api-bdd-github";
+import { createRouteMocks } from "./helpers/route-test";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { getStartedRoutes } from "../get-started";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const github = createGithubBddApi(context);
+const mocks = createRouteMocks(context);
+
+async function readConnectorReward(actor: ApiTestUser) {
+  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const headers = { authorization: "Bearer clerk-session" };
+  const status = await accept(
+    setupApp({ context, routes: getStartedRoutes })(getStartedContract).status({
+      headers,
+    }),
+    [200],
+  );
+  const credits = await accept(
+    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+      billingUsagePackCreditsContract,
+    ).get({ headers }),
+    [200],
+  );
+  return { status: status.body, credits: credits.body };
+}
 
 function oauthState(authorizationUrl: string): string {
   const state = new URL(authorizationUrl).searchParams.get("state");
@@ -209,7 +234,7 @@ describe("GitHub OAuth account mutation selection", () => {
     });
   });
 
-  it("serializes concurrent callbacks for the same new identity", async () => {
+  it("deduplicates concurrent callbacks and their connector reward", async () => {
     const actor = bdd.user();
     await connectors.updateFeatureSwitches(actor, {});
     mockGitHubConnectorOAuth({ userId: 303, login: "github-concurrent" });
@@ -244,6 +269,53 @@ describe("GitHub OAuth account mutation selection", () => {
         isDefault: true,
       },
     ]);
+    const firstReward = await readConnectorReward(actor);
+    expect(firstReward.status.quests).toContainEqual(
+      expect.objectContaining({
+        key: "connector",
+        claimedCount: 1,
+        earnedCredits: 100,
+        pendingCount: 0,
+      }),
+    );
+    expect(firstReward.credits.bonusCredits).toBe(100);
+    expect(firstReward.credits.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 100,
+        remaining: 100,
+      }),
+    ]);
+    const grant = firstReward.status.recentGrants.find((claim) => {
+      return claim.questKey === "connector";
+    });
+    expect(grant).toMatchObject({
+      status: "granted",
+      rewardAmount: 100,
+      rewardTarget: "user",
+      reason: null,
+    });
+    if (!grant?.grantedAt || !grant.expiresAt) {
+      throw new Error("Expected the connector reward's grant and expiry");
+    }
+    expect(
+      new Date(grant.expiresAt).getTime() - new Date(grant.grantedAt).getTime(),
+    ).toBe(168 * 60 * 60 * 1000);
+
+    await connectGithubAdd(actor, {
+      code: "github-concurrent-refresh",
+      displayName: "Existing identity",
+      userId: 303,
+      login: "github-concurrent-refreshed",
+    });
+    const refreshed = await readConnectorReward(actor);
+    expect(refreshed.status.recentGrants).toStrictEqual(
+      firstReward.status.recentGrants,
+    );
+    expect(refreshed.credits.creditGrants).toStrictEqual(
+      firstReward.credits.creditGrants,
+    );
+    expect(refreshed.credits.bonusCredits).toBe(100);
   });
 
   it("does not match a provider identity owned by another organization", async () => {

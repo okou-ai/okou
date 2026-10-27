@@ -52,11 +52,6 @@
       "owner": "deleteBuiltinConnectorLocalState$"
     },
     {
-      "id": "TX-0119",
-      "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
-      "owner": "upsertBuiltinConnectorTokenConnection$"
-    },
-    {
       "id": "TX-0130",
       "file": "turbo/apps/api/src/signals/services/cron-project-chat-event-search.service.ts",
       "owner": "projectThread"

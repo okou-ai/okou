@@ -50,28 +50,21 @@ import {
   getAllFeatureStates,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { array, object, string } from "zod";
+import { array, literal, object, string } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { contextProjectionSchema } from "./context-rowset";
 import {
   builtinManualGrantPublicationSql,
   builtinNoAuthPublicationSql,
 } from "./builtin-manual-grant-publication";
-import {
-  completedGetStartedQuestSql,
-  memberRewardWalletQuery,
-} from "./get-started-member-reward";
-import { slackRewardWalletEntitlement } from "./slack-installation-reward";
+import { completedGetStartedQuestSql } from "./get-started-member-reward";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
@@ -189,6 +182,7 @@ import {
   workflowAutomationReprojectionColumns as ownerAutomationColumns,
   workflowAutomationReprojectionCondition as ownerAutomationCondition,
   workflowAutomationProjectionValues,
+  workflowAutomationOwnerProjectionReadPlan,
   type ProjectedAutomation,
 } from "./workflow-automation-account-projection.service";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -198,6 +192,12 @@ import {
   workflowAutomationDefaultAccountReadPlan,
 } from "./workflow-automation-account.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
+import {
+  builtinTokenConnectionPublicationSql,
+  tokenConnectionWalletClauses,
+} from "./builtin-token-connection-publication";
+import type { TokenAutomationProjection } from "./builtin-token-connection-projection";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 
 const log = logger("api:connector-data");
 const oauthScopesSchema = array(string());
@@ -2792,70 +2792,255 @@ export const finalizeBuiltinConnectorTokenConnection$ = command(
     };
   },
 );
+interface PreparedTokenPublication {
+  readonly kind: "ready";
+  readonly publication: Parameters<
+    typeof builtinTokenConnectionPublicationSql
+  >[0];
+  readonly existing: StoredConnectorRow | null;
+  readonly cleanup: ReturnType<typeof tokenCleanupResult>;
+}
+
+const prepareTokenAutomationProjections$ = command(
+  async (
+    { get },
+    args: PreparedBuiltinConnectorTokenConnection,
+    signal: AbortSignal,
+  ): Promise<readonly TokenAutomationProjection[]> => {
+    const plan = workflowAutomationOwnerProjectionReadPlan({
+      orgId: args.orgId,
+      userId: args.userId,
+      target: {
+        kind: "builtin",
+        connectorSlug: args.runtimeMethod.connectorSlug,
+      },
+    });
+    if (plan === null) {
+      return [];
+    }
+    const db = get(db$);
+    const automations = await db
+      .select({
+        ...plan.columns,
+        publicationRevision: sql`${workflowAutomations}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
+      .from(workflowAutomations)
+      .where(plan.where);
+    signal.throwIfAborted();
+    return automations.map((automation) => {
+      return {
+        automation,
+        revision: automation.publicationRevision,
+      };
+    });
+  },
+);
+
+const prepareTokenPublication$ = command(
+  async (
+    { set },
+    args: PreparedBuiltinConnectorTokenConnection,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const mutation = builtinConnectorTokenMutationValues(args);
+    const revisions = new Map<string, string>();
+    const resolution = await (async () => {
+      let read = connectionMutationReadPlan(mutation);
+      for (;;) {
+        const rows = await db
+          .select({
+            ...read.columns,
+            publicationRevision: sql`${connectors}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(read.from)
+          .where(read.where)
+          .orderBy(...read.orderBy)
+          .limit(read.limit);
+        signal.throwIfAborted();
+        for (const row of rows) {
+          revisions.set(row.id, row.publicationRevision);
+        }
+        const result = connectionMutationReadResult(mutation, read, rows);
+        if (result.kind === "resolved") {
+          return result.resolution;
+        }
+        read = result.read;
+      }
+    })();
+    signal.throwIfAborted();
+    if (resolution.kind !== "ready") {
+      return {
+        kind: "rejected" as const,
+        result: connectorConnectionMutationFailure(resolution),
+      };
+    }
+    const existing =
+      resolution.mutation.kind === "update"
+        ? resolution.mutation.existing
+        : null;
+    if (
+      isExplicitReconnectIdentityMismatch(
+        args.account,
+        existing,
+        args.userInfo.id,
+      )
+    ) {
+      return {
+        kind: "rejected" as const,
+        result: { status: "identityMismatch" as const },
+      };
+    }
+    const preparation = prepareBuiltinTokenRevoke(
+      tokenRevokeValues(args, existing),
+    );
+    const pendingTokenRevoke = await (async () => {
+      if (!preparation) {
+        return null;
+      }
+      const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
+      if (read.kind !== "read") {
+        return builtinTokenRevokeFromRows(preparation, read, []);
+      }
+      const rows = await db
+        .select(read.columns)
+        .from(read.from)
+        .where(read.where);
+      signal.throwIfAborted();
+      return builtinTokenRevokeFromRows(preparation, read, rows);
+    })();
+    signal.throwIfAborted();
+    const accountRevision =
+      existing === null ? null : revisions.get(existing.id);
+    if (accountRevision === undefined) {
+      throw new Error("Token reconnect has no observed account revision");
+    }
+    const projections = await set(
+      prepareTokenAutomationProjections$,
+      args,
+      signal,
+    );
+    const values = builtinConnectorTokenConnectionValues(args);
+    const ready: PreparedTokenPublication = {
+      kind: "ready",
+      existing,
+      cleanup: tokenCleanupResult(args, existing, pendingTokenRevoke),
+      publication: {
+        orgId: args.orgId,
+        metadata: tokenWriteArgs(
+          values,
+          resolution,
+          args.insertConnectionId ?? randomUUID(),
+        ),
+        accountRevision,
+        credentials: values.credentials,
+        reconciliation:
+          existing === null
+            ? null
+            : connectionIdentity(existing, args.userInfo),
+        projection: {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: args.runtimeMethod.connectorSlug,
+          previousId: existing?.id ?? null,
+          principalChanged:
+            existing !== null && existing.externalId !== args.userInfo.id,
+          projections,
+        },
+        quest: isOneClickConnectorGrantKind(
+          args.runtimeMethod.method.grant.kind,
+        )
+          ? values.quest
+          : null,
+      },
+    };
+    return ready;
+  },
+);
+
+const tokenPublicationRow = object({
+  connector: contextProjectionSchema(connectionSelection()).nullable(),
+  complete: literal(1),
+}).strict();
+
+/** Finish the finite publication before recording the caller's post-commit abort. */
+const publishTokenConnection$ = command(
+  async (
+    { set },
+    prepared: PreparedTokenPublication,
+  ): Promise<BuiltinConnectorTokenConnectionCommitResult> => {
+    const db = set(writeDb$);
+    const query = builtinTokenConnectionPublicationSql(prepared.publication);
+    const result = await settle(
+      (async () => {
+        return parseRawRows(tokenPublicationRow, await db.execute(query));
+      })(),
+    );
+    if (!result.ok) {
+      if (safeSqlStateCode(result.error) === "22012") {
+        throw new Error(
+          "Connector account or automation changed while connecting; submit the connection again",
+          { cause: result.error },
+        );
+      }
+      throw result.error;
+    }
+    const [row] = result.value;
+    if (result.value.length !== 1 || !row) {
+      throw new Error("Token connector publication returned an invalid result");
+    }
+    if (row.connector === null) {
+      const write = connectionMetadataWritePlan(prepared.publication.metadata);
+      if (write.kind !== "update") {
+        throw new Error(
+          "Token connector publication did not create an account",
+        );
+      }
+      const [existing] = await db
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(write.where)
+        .limit(1);
+      if (!existing) {
+        return connectorConnectionMutationFailure({ kind: "missing" });
+      }
+      throw new Error(
+        "Connector account changed while connecting; submit the connection again",
+      );
+    }
+    return tokenConnected(row.connector, prepared.existing, prepared.cleanup);
+  },
+);
+
 export const upsertBuiltinConnectorTokenConnection$ = command(
   async (
     { set },
     args: BuiltinConnectorTokenConnectionArgs,
     signal: AbortSignal,
   ) => {
-    const writeDb = set(writeDb$);
     const prepared = await set(
       prepareBuiltinConnectorTokenConnection$,
       args,
       signal,
     );
+    const publication = await set(prepareTokenPublication$, prepared, signal);
+    signal.throwIfAborted();
     let postCommitAbort: unknown = null;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0119; new non-billing transactions are prohibited.
-    const connectionResult = await writeDb.transaction(async (tx) => {
-      const [insertedWallet] = await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({ orgId: prepared.orgId })
-        .onConflictDoNothing()
-        .returning({ orgId: orgMetadata.orgId });
-      await tx.select().from(memberRewardWalletQuery(prepared.orgId));
-      if (insertedWallet) {
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(slackRewardWalletEntitlement(prepared.orgId))
-          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-      }
-      const write = { ...prepared, db: tx };
-      const mutationInput = write;
-      const mutationSignal = signal;
-      const resolution = await (async () => {
-        const { db, ...connection } = mutationInput;
-        const mutationReadDb = db;
-        const mutationReadArgs: ConnectorConnectionMutationArgs =
-          builtinConnectorTokenMutationValues(connection);
-        const resolution = await (async () => {
-          let read = connectionMutationReadPlan(mutationReadArgs);
-          for (;;) {
-            const rows = await mutationReadDb
-              .select(read.columns)
-              .from(read.from)
-              .where(read.where)
-              .orderBy(...read.orderBy)
-              .limit(read.limit);
-            const result = connectionMutationReadResult(
-              mutationReadArgs,
-              read,
-              rows,
-            );
-            if (result.kind === "resolved") {
-              return result.resolution;
-            }
-            read = result.read;
-          }
-        })();
-        mutationSignal.throwIfAborted();
-        return resolution;
-      })();
-      const connected = await commitBuiltinConnectorTokenConnection(
-        { ...write, resolution },
-        signal,
+    if (publication.kind === "rejected") {
+      const clauses = tokenConnectionWalletClauses(prepared.orgId);
+      signal.throwIfAborted();
+      await set(writeDb$).execute(
+        sql`WITH ${sql.join(clauses, sql`, `)} SELECT org_id FROM token_wallet_entitlement`,
       );
-      return connected;
-    });
+    }
+    const connectionResult =
+      publication.kind === "rejected"
+        ? publication.result
+        : await set(publishTokenConnection$, publication);
     if (signal.aborted) {
       postCommitAbort = signal.reason;
     }
