@@ -156,6 +156,7 @@ final class QuotedFollowupTests: XCTestCase {
   }
   private func passageInput(in view: UIView) -> (UIView & UITextInput)? {
     nativeViews(in: view).compactMap { $0 as? (UIView & UITextInput) }.first { input in
+      guard enclosingCell(input) is MessageSelectionCell else { return false }
       guard let range = input.textRange(from: input.beginningOfDocument, to: input.endOfDocument)
       else { return false }
       return input.text(in: range)?.contains("Selected 🌷 é passage.") == true
