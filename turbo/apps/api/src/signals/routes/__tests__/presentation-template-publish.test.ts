@@ -105,6 +105,7 @@ beforeEach(() => {
 
 describe("presentation template publish", () => {
   it("publishes an analysed deck as a ready template", async () => {
+    mockNow(new Date("2026-10-27T17:00:00.000Z"));
     const actor = bdd.user();
     const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
@@ -178,6 +179,41 @@ describe("presentation template publish", () => {
     expect(secondPreviewUrls.body.assets).toStrictEqual(
       firstPreviewUrls.body.assets,
     );
+    const firstAsset = firstPreviewUrls.body.assets[0];
+    if (!firstAsset) {
+      throw new Error("Expected a published preview asset");
+    }
+    mockNow(new Date(firstAsset.expiresAt));
+    const refreshed = await accept(
+      templateClient().resolvePreviewUrls({
+        headers: webHeaders(),
+        body: { previewAssetIds },
+      }),
+      [200],
+    );
+    expect(
+      refreshed.body.assets.map((asset) => {
+        return asset.previewAssetId;
+      }),
+    ).toStrictEqual(previewAssetIds);
+    for (const [index, asset] of refreshed.body.assets.entries()) {
+      const previous = firstPreviewUrls.body.assets[index];
+      if (!previous) {
+        throw new Error("Expected the original preview asset");
+      }
+      expect(asset.url).not.toBe(previous.url);
+      expect(Date.parse(asset.expiresAt)).toBeGreaterThan(
+        Date.parse(previous.expiresAt),
+      );
+    }
+    const reused = await accept(
+      templateClient().resolvePreviewUrls({
+        headers: webHeaders(),
+        body: { previewAssetIds },
+      }),
+      [200],
+    );
+    expect(reused.body).toStrictEqual(refreshed.body);
 
     // The guidance package is stored under a name derived from the row id.
     const storageName = getPresentationTemplateStorageName(published.body.id);
