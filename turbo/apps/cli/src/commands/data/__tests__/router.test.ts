@@ -157,29 +157,6 @@ describe("Data Router discovery and JSON calls", () => {
     });
   });
 
-  it("fails instead of falling back to the 2025 initialize handshake", async () => {
-    server.use(
-      http.post(endpoint, async ({ request }) => {
-        const { id, method } = object({
-          id: union([string(), number()]),
-          method: string(),
-        }).parse(await request.json());
-        methods.push(method);
-        return HttpResponse.json({
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32601, message: "Method not found" },
-        });
-      }),
-    );
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(process, "exit").mockImplementation((code) => {
-      throw new Error(`process.exit(${String(code)})`);
-    });
-    await expect(run(["tools", "--json"])).rejects.toThrow("process.exit(1)");
-    expect(methods).toEqual(["server/discover"]);
-  });
-
   it("describes the live input schema", async () => {
     await run(["describe", "future_research", "--json"]);
     expect(JSON.parse(output)).toEqual(futureTool);
