@@ -3318,29 +3318,50 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
 
     // Shortening the trial clamps the paid-through date and credit expiry.
     const trialEnd3 = epochSeconds(10);
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: subscriptionId,
-          status: "trialing",
-          trial_end: trialEnd3,
-          cancel_at_period_end: false,
-          metadata: {},
-          items: {
-            data: [
-              { price: { id: "price_bdd_pro" }, current_period_end: trialEnd3 },
-            ],
-          },
+    const shorteningEvent = stripeEvent({
+      type: "customer.subscription.updated",
+      object: {
+        id: subscriptionId,
+        status: "trialing",
+        trial_end: trialEnd3,
+        cancel_at_period_end: false,
+        metadata: {},
+        items: {
+          data: [
+            { price: { id: "price_bdd_pro" }, current_period_end: trialEnd3 },
+          ],
         },
-        previousAttributes: { trial_end: trialEnd2 },
-      }),
-      [200],
-    );
+      },
+      previousAttributes: { trial_end: trialEnd2 },
+    });
+    await api.postStripeEvent(shorteningEvent, [200]);
     const clamped = await billing.readBillingStatus(actor);
     expect(clamped.credits).toBe(20_000);
     expect(clamped.currentPeriodEnd).toBe(isoOf(trialEnd3));
     expect(clamped.creditExpiry.nextExpiryDate).toBe(isoOf(trialEnd3));
+
+    // Overlapping Stripe redeliveries may reject a stale publication. A
+    // subsequent delivery converges without duplicating the existing grant.
+    const redeliveries = await Promise.all([
+      api.postStripeEvent(shorteningEvent, [200, 500]),
+      api.postStripeEvent(shorteningEvent, [200, 500]),
+    ]);
+    expect(
+      redeliveries.some((response) => {
+        return response.status === 200;
+      }),
+    ).toBe(true);
+    for (const response of redeliveries) {
+      if (response.status === 500) {
+        await api.postStripeEvent(shorteningEvent, [200]);
+      }
+    }
+    const replayed = await billing.readBillingStatus(actor);
+    expect(replayed.credits).toBe(20_000);
+    expect(replayed.creditGrants).toHaveLength(1);
+    expect(replayed.subscriptionStatus).toBe("trialing");
+    expect(replayed.currentPeriodEnd).toBe(isoOf(trialEnd3));
+    expect(replayed.creditExpiry.nextExpiryDate).toBe(isoOf(trialEnd3));
 
     // A trialing checkout completion binds the customer without re-granting.
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
