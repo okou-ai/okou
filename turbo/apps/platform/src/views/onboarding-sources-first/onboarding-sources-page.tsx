@@ -34,9 +34,9 @@ import {
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 import { OnboardingSecurityLink } from "./onboarding-industry-parts.tsx";
 
-// Brand assets / Illustration, Figma group 102:1590: Reachable across every channel.
+// Brand assets / Playground, Figma group 461:1724 beside the Connector label.
 const connectToolsIllustrationImg = platformStaticAssetUrl(
-  "views/okou-page/assets/get-started-slack-12b969d9d2a7.png",
+  "views/onboarding/assets/connectors-brand-b34bbcee04f0.png",
 );
 
 /** The field answered on the step before decides which sources appear. */
