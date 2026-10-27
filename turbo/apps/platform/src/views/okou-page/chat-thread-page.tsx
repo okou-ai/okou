@@ -3485,7 +3485,7 @@ function formatCompactDuration(totalSeconds: number): string {
       },
     );
   }
-  const totalMinutes = Math.round(totalSeconds / 60);
+  const totalMinutes = Math.floor(totalSeconds / 60);
   if (totalMinutes < 60) {
     return i18n.t(
       ($) => {
@@ -3640,7 +3640,7 @@ function RunWorkSectionRow({
         <ElapsedTime startTime={startTime} endTime={endTime}>
           {(elapsedTime) => {
             const duration = formatCompactDuration(
-              Math.max(1, Math.round(elapsedTime / 1000)),
+              Math.max(1, Math.floor(elapsedTime / 1000)),
             );
             return endTime === undefined
               ? t(

@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../__tests__/time.ts";
 import { now } from "../../../lib/time.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { AGENT_ID, setupPage } from "./chat-lifecycle-test-helpers.ts";
@@ -330,6 +331,16 @@ test.each([
   },
   {
     active: false,
+    durationMs: 60 * 60_000 - 1,
+    expected: "Worked for 59 min",
+  },
+  {
+    active: false,
+    durationMs: 71 * 60_000 + 35_000,
+    expected: "Worked for 1 hr 11 min",
+  },
+  {
+    active: false,
     durationMs: 89 * 60_000,
     expected: "Worked for 1 hr 29 min",
   },
@@ -393,6 +404,114 @@ test.each([
     expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
       "1 step",
     );
+  },
+);
+
+test.each(["input.prompt", "input.automation"] as const)(
+  "Exclude initial queue wait from active and completed work for %s",
+  async (eventType) => {
+    const durationMs = 71 * 60_000 + 35_000;
+    const startedAt = now() - durationMs;
+    const at = (offsetMs: number) => {
+      return new Date(startedAt + offsetMs).toISOString();
+    };
+    mockNow(new Date(at(durationMs)), context.signal);
+    const queuedInput: MockChatEventInput = {
+      id: "queued-report",
+      role: "user",
+      eventType,
+      content: "Prepare the report",
+      createdAt: at(-(60 * 60_000 + 40_000)),
+      seqId: 3,
+      ...(eventType === "input.automation"
+        ? {
+            userMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "automation",
+                  workflowName: "Report preparation",
+                  automationBrief: "Prepare the report",
+                },
+              ],
+            },
+          }
+        : {}),
+    };
+    const chat = installRunChat({
+      activeRunIds: [RUN_B],
+      chatEvents: [
+        promptEvent({
+          id: "previous-request",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Complete the previous delivery",
+          createdAt: at(-(84 * 60_000 + 30_000)),
+        }),
+        assistantEvent({
+          id: "previous-work",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Checking the previous delivery",
+          createdAt: at(-(84 * 60_000 + 25_000)),
+        }),
+        queuedInput,
+        assistantEvent({
+          id: "previous-result",
+          runId: RUN_A,
+          seqId: 4,
+          text: "Previous delivery complete",
+          createdAt: at(-2000),
+        }),
+        completedEvent({
+          id: "previous-completed",
+          runId: RUN_A,
+          seqId: 5,
+          createdAt: at(-1000),
+        }),
+        {
+          ...queuedInput,
+          id: "delivered-report",
+          eventType: "input.prompt",
+          runId: RUN_B,
+          revokesEventId: queuedInput.id,
+          seqId: 6,
+          createdAt: at(0),
+        },
+        assistantEvent({
+          id: "report-work",
+          runId: RUN_B,
+          seqId: 7,
+          text: "Collecting report data",
+          createdAt: at(5000),
+        }),
+        assistantEvent({
+          id: "report-result",
+          runId: RUN_B,
+          seqId: 8,
+          text: "Prepared report",
+          createdAt: at(durationMs - 5000),
+        }),
+      ],
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText("Prepared report");
+    expect(
+      assistantGroupFor(screen.getByText("Prepared report")),
+    ).toHaveTextContent("Working for 1 hr 11 min");
+    expect(
+      assistantGroupFor(screen.getByText("Previous delivery complete")),
+    ).toHaveTextContent("Worked for 1 hr 24 min");
+
+    chat.completeRun();
+
+    await expect(
+      screen.findByText("Worked for 1 hr 11 min"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      assistantGroupFor(screen.getByText("Previous delivery complete")),
+    ).toHaveTextContent("Worked for 1 hr 24 min");
   },
 );
 
