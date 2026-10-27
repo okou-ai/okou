@@ -84,7 +84,8 @@ Notes:
   - Inside a run, --agent must match the current Agent; omit it to use OKOU_AGENT_ID.
     Outside a run, --agent is required.
   - To restore access, re-enable the connector in Connectors > agent access.
-  - To delete a saved account for every Agent, use connector account delete instead.`,
+  - To disconnect a saved account for every Agent, use connector account disconnect
+    --connection-id <uuid> instead. Reconnecting may require signing in again.`,
   )
   .action(
     withErrorHandler(
