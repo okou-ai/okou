@@ -32,16 +32,16 @@ runs:
     - name: Install cloudflared
       shell: bash
       run: |
-        CLOUDFLARED_VERSION=2026.6.0
+        CLOUDFLARED_VERSION=2026.10.4
         deb_arch="$(dpkg --print-architecture)"
         case "$deb_arch" in
           amd64)
             cloudflared_arch=amd64
-            cloudflared_sha256=0f8d62a84cdf9474409a486d62c9269d9a4b28665d2c4e675cb87c062395d3f7
+            cloudflared_sha256=3d73cd9f085de5a947fce8a72d0acc34a6a18cb23f369549b1cd0efc51121e98
             ;;
           arm64)
             cloudflared_arch=arm64
-            cloudflared_sha256=b0bcc293670cafd150380efebea85073424e332f136003ae9fdf99b2c83a0231
+            cloudflared_sha256=d0d08a43521e52ba0707900ebe67314e7ca6f610b88024fe6562a408ab6a0f4d
             ;;
           *) echo "Unsupported cloudflared architecture: ${deb_arch}" >&2; exit 1 ;;
         esac
