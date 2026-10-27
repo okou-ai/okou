@@ -371,7 +371,7 @@ async fn gc_workspace_orphans_with_candidates_and_remove(
         let Some(base_dir) = lease.base_dir.as_deref() else {
             if remove_unused_lock_after_probe(
                 &lease.lock_path,
-                &lease.lock_guard,
+                lease.lock_guard,
                 &lease.lock_name,
                 pass.dry_run,
             )
@@ -398,7 +398,7 @@ async fn gc_workspace_orphans_with_candidates_and_remove(
         if lock_decision == BaseDirLockDecision::RemoveIfStillFree
             && remove_unused_lock_after_probe(
                 &lease.lock_path,
-                &lease.lock_guard,
+                lease.lock_guard,
                 &lease.lock_name,
                 pass.dry_run,
             )

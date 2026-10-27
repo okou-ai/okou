@@ -376,7 +376,7 @@ async fn evict_storage_candidate_with_age(
     match tokio::fs::remove_dir_all(&candidate.path).await {
         Ok(()) => {
             let lock_name = lock_path.to_string_lossy();
-            remove_unused_lock_after_probe(&lock_path, &lock, &lock_name, false).await;
+            remove_unused_lock_after_probe(&lock_path, lock, &lock_name, false).await;
             remove_empty_storage_name_dir_after_eviction(&candidate.path, &candidate.name).await;
             StorageEvictionOutcome::Evicted { freed_bytes: size }
         }

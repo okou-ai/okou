@@ -54,7 +54,12 @@ type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
   { kind: K }
 >;
 type BrowserOwnerMutation =
-  | Exclude<RunnerBrowserAction, { kind: "inspect" | "allocate" }>
+  | Exclude<RunnerBrowserAction, { kind: "inspect" | "allocate" | "admit" }>
+  | {
+      readonly kind: "admit";
+      readonly instanceId: string;
+      readonly primaryWindowId: number;
+    }
   | {
       readonly kind: "allocate";
       readonly providerProfileId: string;
@@ -479,7 +484,7 @@ const admitOwnerBrowserWindow$ = command(
   async (
     { set },
     owner: BrowserOwnerAuthority,
-    action: BrowserAction<"admit">,
+    action: Extract<BrowserOwnerMutation, { kind: "admit" }>,
     now: Date,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {

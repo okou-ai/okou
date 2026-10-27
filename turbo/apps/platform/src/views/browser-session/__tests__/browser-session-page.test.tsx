@@ -67,6 +67,58 @@ async function openViewerSizingMenu(): Promise<HTMLElement> {
   return screen.findByRole("menu", { name: "Fit to this viewer" });
 }
 
+async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
+  const activeSession = browserSession();
+  const cdpUrl = "wss://cdp.browser-use.com/test";
+  mockBrowserSession(activeSession);
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: activeSession });
+  });
+
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
+  });
+
+  await expect(
+    screen.findByRole("region", { name: "Remote browser viewer" }),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByDisplayValue("https://example.com"),
+  ).resolves.toBeEnabled();
+  expect(screen.getByLabelText("New tab")).toBeInTheDocument();
+  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
+  const sizingMenu = await openViewerSizingMenu();
+  expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  return sizingMenu;
+}
+
+async function selectViewerSizingOption(
+  sizingMenu: HTMLElement,
+  label: string,
+): Promise<HTMLElement> {
+  const option = within(sizingMenu).getByText(label);
+  expect(option).not.toHaveAttribute("aria-disabled", "true");
+  click(option);
+  await waitFor(() => {
+    expect(sizingMenu).not.toBeInTheDocument();
+  });
+  const updatedMenu = await openViewerSizingMenu();
+  expect(within(updatedMenu).getByText(label)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  return updatedMenu;
+}
+
 test("An accessible conversation without a browser can start one", async () => {
   mockBrowserSession(null);
 
@@ -108,53 +160,35 @@ test("An active browser shows a private live viewer", async () => {
 });
 
 test("The viewer switch replaces the provider iframe with the interactive Okou viewer", async () => {
-  const activeSession = browserSession();
-  const cdpUrl = "wss://cdp.browser-use.com/test";
-  mockBrowserSession(activeSession);
-  mockBrowserCdp(context, cdpUrl);
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { cdpUrl });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-    return respond(200, { browser: activeSession });
-  });
+  const sizingMenu = await setupInteractiveViewerSizingMenu();
+  expect(
+    within(sizingMenu).getByText("Do not sync automatically"),
+  ).toHaveAttribute("aria-checked", "false");
+  await selectViewerSizingOption(sizingMenu, "Do not sync automatically");
+});
 
-  await setupPage({
-    context,
-    path: `/browsers/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
-  });
-
-  await expect(
-    screen.findByRole("region", { name: "Remote browser viewer" }),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    screen.findByDisplayValue("https://example.com"),
-  ).resolves.toBeEnabled();
-  expect(screen.getByLabelText("New tab")).toBeInTheDocument();
-  expect(screen.queryByTitle("Live browser: booking")).not.toBeInTheDocument();
-  let sizingMenu = await openViewerSizingMenu();
-  expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  for (const label of [
+test("The browser viewer keeps one-time sizing after automatic sizing is disabled", async () => {
+  const sizingMenu = await setupInteractiveViewerSizingMenu();
+  const disabledSizingMenu = await selectViewerSizingOption(
+    sizingMenu,
     "Do not sync automatically",
+  );
+  expect(
+    within(disabledSizingMenu).getByText("Sync once on opening"),
+  ).toHaveAttribute("aria-checked", "false");
+  await selectViewerSizingOption(disabledSizingMenu, "Sync once on opening");
+});
+
+test("The browser viewer resumes continuous sizing after one-time sizing", async () => {
+  const sizingMenu = await setupInteractiveViewerSizingMenu();
+  const oneTimeSizingMenu = await selectViewerSizingOption(
+    sizingMenu,
     "Sync once on opening",
-    "Sync continuously",
-  ]) {
-    const option = within(sizingMenu).getByText(label);
-    expect(option).not.toHaveAttribute("aria-disabled", "true");
-    click(option);
-    await waitFor(() => {
-      expect(sizingMenu).not.toBeInTheDocument();
-    });
-    sizingMenu = await openViewerSizingMenu();
-    expect(within(sizingMenu).getByText(label)).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-  }
+  );
+  expect(
+    within(oneTimeSizingMenu).getByText("Sync continuously"),
+  ).toHaveAttribute("aria-checked", "false");
+  await selectViewerSizingOption(oneTimeSizingMenu, "Sync continuously");
 });
 
 test("A reclaimed connection shows an unavailable state without opening the provider iframe", async () => {

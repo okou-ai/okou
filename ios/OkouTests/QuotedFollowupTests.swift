@@ -10,29 +10,33 @@ import XCTest
 @MainActor
 final class QuotedFollowupTests: XCTestCase {
   func testNativeQuoteActionFocusesANoteWithUndoAndMarkedText() async throws {
-    let fixture = AttachmentFlowFixture()
+    let text = "👋 **First paragraph.**\n\nSelected 🌷 é passage.\n\nLast paragraph."
+    let payload = String(decoding: try JSONEncoder().encode(["content": text]), as: UTF8.self)
+    let fixture = ConversationHistoryFixture(rows: [
+      """
+      {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","seqId":1,"eventType":"output.message","createdAt":"2026-10-20T10:00:00Z","payload":\(payload)}
+      """
+    ])
     let conversation = fixture.conversation()
     defer { conversation.close() }
     conversation.draft = "Keep the ordinary draft."
-    let message = output("👋 First paragraph.\n\n  Selected 🌷 é passage.  \n\nLast paragraph.")
-    let host = UIHostingController(
-      rootView: QuoteHarness(conversation: conversation, message: message))
-    let window = try await mount(host)
+    await conversation.refresh()
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let window = try await mountNativeHost(host) { _ in self.passageInput(in: host.view) != nil }
     defer { unmount(window) }
-    try await eventually {
-      self.textViews(in: window).contains { $0.accessibilityIdentifier == "message-selection-text" }
-    }
-    let selection = try XCTUnwrap(
-      textViews(in: window).first { $0.accessibilityIdentifier == "message-selection-text" })
+    let selection = try XCTUnwrap(passageInput(in: host.view))
     selection.becomeFirstResponder()
-    let range = (message.text as NSString).range(of: "  Selected 🌷 é passage.  ")
-    selection.selectedRange = range
+    let document = try XCTUnwrap(
+      selection.textRange(from: selection.beginningOfDocument, to: selection.endOfDocument))
+    let visible = try XCTUnwrap(selection.text(in: document))
+    let range = (visible as NSString).range(of: "Selected 🌷 é passage.")
+    let start = try XCTUnwrap(
+      selection.position(from: selection.beginningOfDocument, offset: range.location))
+    let end = try XCTUnwrap(selection.position(from: start, offset: range.length))
+    selection.selectedTextRange = selection.textRange(from: start, to: end)
     await hostingPresentationFrame()
-    let menu = try XCTUnwrap(
-      selection.delegate?.textView?(
-        selection, editMenuForTextIn: range, suggestedActions: []))
-    let quote = try XCTUnwrap(
-      menu.children.compactMap { $0 as? UIAction }.first { $0.title == "Quote" })
+    let cell = try XCTUnwrap(enclosingCell(selection) as? MessageSelectionCell)
+    let quote = try XCTUnwrap(cell.quoteAction())
     let control = UIControl()
     control.addAction(quote, for: .primaryActionTriggered)
     control.sendActions(for: .primaryActionTriggered)
@@ -58,6 +62,15 @@ final class QuotedFollowupTests: XCTestCase {
       })
     XCTAssertEqual(ordinary.text, "Keep the ordinary draft.")
     XCTAssertNil(host.presentedViewController)
+    await conversation.send()
+    let data = try XCTUnwrap(fixture.requests.sentMessages.withLock { $0.first })
+    let sent = try JSONDecoder().decode(QuotedSend.self, from: data)
+    let read = try JSONDecoder().decode(
+      ChatUserMessage.self, from: JSONEncoder().encode(sent.userMessage))
+    let feedback = try XCTUnwrap(read.parts.first { $0.type == "feedback" })
+    XCTAssertEqual(feedback.quote, "Selected 🌷 é passage.")
+    XCTAssertEqual(feedback.eventId, ConversationHistoryFixture.id(1))
+    XCTAssertEqual(feedback.note?.map(\.displayText).joined(), "拼音")
   }
 
   func testQuotedOnlyRetryKeepsItsCanonicalSourceAndTheNextDraft() async throws {
@@ -141,40 +154,16 @@ final class QuotedFollowupTests: XCTestCase {
       id: "assistant-event", role: .assistant, text: text, createdAt: Date(), isQueued: false,
       isError: false)
   }
-  private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-    let window = try await mountNativeHost(host) { _ in !self.textViews(in: host.view).isEmpty }
-    return window
+  private func passageInput(in view: UIView) -> (UIView & UITextInput)? {
+    nativeViews(in: view).compactMap { $0 as? (UIView & UITextInput) }.first { input in
+      guard enclosingCell(input) is MessageSelectionCell else { return false }
+      guard let range = input.textRange(from: input.beginningOfDocument, to: input.endOfDocument)
+      else { return false }
+      return input.text(in: range)?.contains("Selected 🌷 é passage.") == true
+    }
   }
   private func textViews(in view: UIView) -> [UITextView] {
     if let input = view as? UITextView { return [input] }
     return view.subviews.flatMap { textViews(in: $0) }
-  }
-}
-
-private struct QuoteHarness: View {
-  let conversation: ConversationStore
-  let message: ChatMessage
-  @State private var selecting = true
-  @State private var pendingQuote: ChatFeedbackSelection?
-  var body: some View {
-    ChatComposerView(
-      draft: Binding(get: { conversation.draft }, set: { conversation.draft = $0 }),
-      isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
-      error: nil, attachmentURL: URL(string: "https://app.example.invalid")!,
-      attachments: conversation.attachmentDraft, draftState: conversation.composer,
-      submit: { await conversation.send() }, refresh: nil
-    )
-    .sheet(
-      isPresented: $selecting,
-      onDismiss: {
-        if let pendingQuote { conversation.composer.addFeedback(pendingQuote) }
-        pendingQuote = nil
-      },
-      content: {
-        MessageTextSelectionSheet(text: message.text, message: message) {
-          pendingQuote = $0
-          selecting = false
-        }
-      })
   }
 }

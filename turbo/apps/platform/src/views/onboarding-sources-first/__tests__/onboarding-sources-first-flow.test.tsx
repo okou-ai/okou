@@ -228,8 +228,9 @@ test("/onboarding opens the field question and continues to the sources step", a
     screen.findByRole("heading", { name: SOURCES_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSources);
-  // Nothing is connected yet, so the one requirement of this step holds it.
+  // Continue follows a connection; Skip lets the user connect later.
   expect(getButtonByName("Continue")).toBeDisabled();
+  expect(getButtonByName("Skip")).toBeEnabled();
 
   click(getButtonByName("Back"));
 
@@ -358,7 +359,61 @@ test.each([
   },
 );
 
-test("A later step returns to the entry until a source is connected", async () => {
+test.each([false, true])(
+  "An owner can skip sources and return to connect later (mobile=%s)",
+  async (mobile) => {
+    context.mocks.browser.matchMedia((query) => {
+      return mobile && query === "(width < 640px)";
+    });
+    mockOnboardingNeeded();
+    mockCatalog();
+
+    await setupPage({
+      context,
+      locale: "en-US",
+      host: "app.okou.ai",
+      path: `${ROUTES.onboardingSources}?redeemCode=LAUNCH50`,
+    });
+
+    expect(getButtonByName("Continue")).toBeDisabled();
+    click(getButtonByName("Skip"));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Okou works better with your tools",
+    });
+    expect(pathname()).toBe(ROUTES.onboardingSources);
+    click(getButtonByName("Connect a tool", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(pathname()).toBe(ROUTES.onboardingSources);
+    expect(getButtonByName("Connect Gmail")).toBeEnabled();
+
+    click(getButtonByName("Skip"));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Okou works better with your tools",
+    });
+    click(getButtonByName("Skip for now", confirmation));
+
+    await screen.findByRole("heading", {
+      name: mobile
+        ? "Invite a teammate"
+        : "Make Okou useful to your whole team",
+    });
+    expect(pathname()).toBe(ROUTES.onboardingTeam);
+    expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
+
+    click(getButtonByName("Back"));
+
+    await screen.findByRole("heading", { name: SOURCES_QUESTION });
+    expect(pathname()).toBe(ROUTES.onboardingSources);
+    expect(getButtonByName("Connect Gmail")).toBeEnabled();
+    expect(getButtonByName("Continue")).toBeDisabled();
+    expect(getButtonByName("Skip")).toBeEnabled();
+  },
+);
+
+test("A later step opens without a connected source", async () => {
   mockOnboardingNeeded();
   mockCatalog();
 
@@ -369,9 +424,10 @@ test("A later step returns to the entry until a source is connected", async () =
   });
 
   await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+    screen.findByRole("heading", { name: READY_TITLE }),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboarding);
+  expect(pathname()).toBe(ROUTES.onboardingReady);
+  expect(getButtonByName(START_ACTION)).toBeEnabled();
 });
 
 const RECOMMENDATION_TOPIC = "onboardingRecommendationChanged";
@@ -706,9 +762,9 @@ test("The ready step keeps the request on screen until the first chat opens", as
   });
 });
 
-test("A member runs every step but the invite, then completes their own onboarding and enters chat", async () => {
+test("A member skips sources, completes their own onboarding and enters chat", async () => {
   mockMemberOnboardingNeeded();
-  mockCatalog({ connected: true });
+  mockCatalog();
   let runPrompt: string | undefined;
   mockChatLifecycle(context, {
     onRunCreate: (body) => {
@@ -738,9 +794,13 @@ test("A member runs every step but the invite, then completes their own onboardi
   });
   click(getButtonByName("Continue"));
   await screen.findByRole("heading", { name: SOURCES_QUESTION });
-  click(getButtonByName("Continue"));
+  click(getButtonByName("Skip"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Okou works better with your tools",
+  });
+  click(getButtonByName("Skip for now", confirmation));
 
-  // Straight from the sources to the AI question: no invite step.
+  // Confirming the skip goes to the AI question: no invite step.
   await screen.findByRole("heading", {
     name: "How would you like to start with Okou?",
   });
@@ -754,6 +814,9 @@ test("A member runs every step but the invite, then completes their own onboardi
   await leaveSlackStepWithNotNow();
 
   await screen.findByRole("heading", { name: READY_TITLE });
+  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+    "Compare the public content of three competitors and suggest three angles for my brand. Ask me which brand and audience to focus on.",
+  );
   await fill(
     screen.getByLabelText("Your starting prompt"),
     "Draft my meeting agenda",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.57](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.56...guest-control-client-v0.23.57) (2026-10-27)
+
+
+### Performance Improvements
+
+* **runner:** batch workflow document publication and application ([#43510](https://github.com/okou-ai/okou/issues/43510)) ([74cce31](https://github.com/okou-ai/okou/commit/74cce31a39c11dbfd04c263d7386216e99485011))
+
 ## [0.23.56](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.55...guest-control-client-v0.23.56) (2026-10-27)
 
 ## [0.23.55](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.54...guest-control-client-v0.23.55) (2026-10-27)

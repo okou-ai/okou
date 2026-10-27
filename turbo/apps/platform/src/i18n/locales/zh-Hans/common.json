@@ -4405,6 +4405,12 @@
         "copy": "Okou 越了解你的工作，就越聪明。连接一个你每天在用的工具，从一项基于真实工作的任务开始。",
         "permissions": "Okou 会参考少量信息为你定制第一项任务；Agent 能做什么、授权多久，都由你决定。",
         "securityLink": "了解 Okou 如何保护你的数据",
+        "skipDialog": {
+          "connect": "继续连接",
+          "description": "建议先连接常用工具，让 Okou 更了解你的工作，提供更贴合需求的帮助。你也可以稍后再连接。",
+          "skip": "仍然跳过",
+          "title": "连接工具，让 Okou 更懂你的工作"
+        },
         "title": "连接一个工作工具"
       },
       "startingPrompt": {

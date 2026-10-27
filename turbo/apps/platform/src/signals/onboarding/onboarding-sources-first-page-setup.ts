@@ -14,10 +14,7 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import {
-  builtinConnectors$,
-  subscribeBuiltinConnectorChanges$,
-} from "../external/connectors.ts";
+import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 import {
   setAgentPhoneConnectDialogOpen$,
@@ -158,18 +155,6 @@ function createSourcesFirstPageSetup(
     }
 
     const draft = get(sourcesFirstDraft$);
-    if (config.step !== "industry" && config.step !== "sources") {
-      // The user's own connections, invalidated by server notifications,
-      // decide whether any source is there; the catalog is not needed.
-      const { connectors } = await get(builtinConnectors$);
-      signal.throwIfAborted();
-      const hasSource = connectors.length > 0;
-      if (!hasSource) {
-        set(redirectTo$, ROUTES.onboarding);
-        return;
-      }
-    }
-
     if (!sourcesFirstSteps(flow, draft.provider).includes(config.step)) {
       // The step is not part of this run's branch, for example a member
       // opening the invite step or a new user opening the skills step.

@@ -4419,6 +4419,12 @@
         "copy": "The more Okou knows about your work, the smarter it gets. Connect a tool you use every day to start with a task built on your real work.",
         "permissions": "Okou uses a small sample to tailor your first task. You decide what Agents can do and for how long.",
         "securityLink": "How Okou protects your data",
+        "skipDialog": {
+          "connect": "Connect a tool",
+          "description": "We recommend connecting your tools so Okou can understand your work and give you more relevant help. You can always connect them later.",
+          "skip": "Skip for now",
+          "title": "Okou works better with your tools"
+        },
         "title": "Connect a work tool"
       },
       "startingPrompt": {
