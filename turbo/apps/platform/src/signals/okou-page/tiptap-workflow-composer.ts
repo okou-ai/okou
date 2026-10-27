@@ -1,4 +1,8 @@
 import {
+  suggestionContextSchema,
+  type SuggestionContext,
+} from "@okouai/api-contracts/contracts/suggestion-context";
+import {
   command,
   computed,
   state,
@@ -518,6 +522,7 @@ interface FeedbackItemNodeAttributes {
   readonly sourceId: string | null;
   readonly sourceStatus: "draft" | "sent" | null;
   readonly sourceSentId: string | null;
+  readonly suggestionContext: SuggestionContext | null;
 }
 
 interface FeedbackItemLocationAttributes {
@@ -589,6 +594,9 @@ function feedbackItemNodeAttributes(
     sourceId,
     sourceStatus,
     sourceSentId,
+    suggestionContext: suggestionContextSchema
+      .nullable()
+      .parse(node.attrs.suggestionContext ?? null),
   };
 }
 
@@ -750,21 +758,25 @@ function buildFeedbackChromeDecorations(
     if (child.type.name !== FEEDBACK_ITEM_NODE_NAME) {
       continue;
     }
-    const { feedbackId, quote } = feedbackItemNodeAttributes(child);
+    const { feedbackId, quote, suggestionContext } =
+      feedbackItemNodeAttributes(child);
     decorations.push(
       Decoration.widget(
         childPosition + 1,
         () => {
-          return buildFeedbackItemChrome(quote, () => {
-            runtime.removeFeedback(feedbackId);
-          });
+          return buildFeedbackItemChrome(
+            suggestionContext?.titleSnapshot ?? quote,
+            () => {
+              runtime.removeFeedback(feedbackId);
+            },
+          );
         },
         {
           // The key must stay stable while the user types: recreating the
           // widget replaces a contenteditable=false element right next to the
           // caret, and WebKit loses the caret when that happens at an IME
           // composition boundary (typing or backspacing the first character).
-          key: `feedback-chrome-${feedbackId}-${i18n.language}`,
+          key: `feedback-chrome-${feedbackId}-${suggestionContext?.contextVersion ?? ""}-${i18n.language}`,
           side: -2,
           ignoreSelection: true,
           stopEvent: () => {
@@ -1214,6 +1226,9 @@ function feedbackItemFromNode(node: ProseMirrorNode): FeedbackItem {
     id: attributes.feedbackId,
     quote: attributes.quote,
     note: feedbackNoteFromNode(node),
+    ...(attributes.suggestionContext
+      ? { suggestionContext: attributes.suggestionContext }
+      : {}),
     ...(attributes.eventId !== null &&
     attributes.rangeStart !== null &&
     attributes.rangeEnd !== null
@@ -1257,6 +1272,7 @@ function feedbackItemNode(editor: Editor, item: FeedbackItem): ProseMirrorNode {
       sourceId: item.source?.id ?? null,
       sourceStatus: item.source?.status ?? null,
       sourceSentId: item.source?.sentId ?? null,
+      suggestionContext: item.suggestionContext ?? null,
     },
     content: feedbackNoteContent(item.note),
   });
@@ -1312,6 +1328,7 @@ function insertFeedbackItem(editor: Editor, item: FeedbackItem): void {
 function removeFeedbackItem(editor: Editor, id: number): void {
   let itemPosition: number | null = null;
   let itemSize = 0;
+  let preservedNote: ProseMirrorNode | null = null;
   let position = 0;
   for (let index = 0; index < editor.state.doc.childCount; index++) {
     const node = editor.state.doc.child(index);
@@ -1321,6 +1338,9 @@ function removeFeedbackItem(editor: Editor, id: number): void {
     ) {
       itemPosition = position;
       itemSize = node.nodeSize;
+      preservedNote = feedbackItemNodeAttributes(node).suggestionContext
+        ? node
+        : null;
       break;
     }
     position += node.nodeSize;
@@ -1328,10 +1348,13 @@ function removeFeedbackItem(editor: Editor, id: number): void {
   if (itemPosition === null) {
     return;
   }
-  const transaction = editor.state.tr.delete(
-    itemPosition,
-    itemPosition + itemSize,
-  );
+  const transaction = preservedNote
+    ? editor.state.tr.replaceWith(
+        itemPosition,
+        itemPosition + itemSize,
+        preservedNote.content,
+      )
+    : editor.state.tr.delete(itemPosition, itemPosition + itemSize);
   if (transaction.doc.childCount === 0) {
     transaction.insert(0, editor.schema.node("paragraph"));
   }
@@ -1773,6 +1796,7 @@ function createFeedbackItemNode(
         sourceId: { default: null },
         sourceStatus: { default: null },
         sourceSentId: { default: null },
+        suggestionContext: { default: null, rendered: false },
       };
     },
     parseHTML() {
@@ -2371,6 +2395,28 @@ function createMountedDraftInputSyncTarget({
   };
 }
 
+function createRemoveFeedbackCommand(
+  editor: Editor,
+  draft: DraftSignals,
+  feedback: ComposerFeedbackModel,
+) {
+  return command(({ get, set }, id: number) => {
+    const context = get(feedback.items$).find((item) => {
+      return item.id === id;
+    })?.suggestionContext;
+    if (context) {
+      for (const attachment of get(draft.attachments$)) {
+        if (context.attachmentIds.includes(attachment.restoredFileId ?? "")) {
+          set(draft.removeAttachment$, attachment);
+        }
+      }
+    }
+    set(feedback.signals.remove$, id);
+    // The native button held focus and was removed with the quote.
+    editor.view.focus();
+  });
+}
+
 function createMountEditorCommand({
   editor,
   draft,
@@ -2390,6 +2436,7 @@ function createMountEditorCommand({
   syncAgentMentionAvatars$,
   autoFocus,
 }: MountEditorOptions) {
+  const removeFeedback$ = createRemoveFeedbackCommand(editor, draft, feedback);
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
       runtime.update = (updatedEditor) => {
@@ -2433,9 +2480,7 @@ function createMountEditorCommand({
         set(feedback.replaceFromEditor$, items);
       };
       runtime.removeFeedback = (id) => {
-        set(feedback.signals.remove$, id);
-        // The native button held focus and was removed with the quote.
-        editor.view.focus();
+        set(removeFeedback$, id);
       };
       runtime.openTemplate = (intent) => {
         set(openTemplatePicker$, intent);

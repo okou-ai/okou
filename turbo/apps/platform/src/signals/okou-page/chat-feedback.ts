@@ -1,4 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import type { SuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 
 export interface FeedbackSource {
   readonly type: "mail";
@@ -19,6 +20,7 @@ export interface FeedbackInput {
   readonly eventId?: string;
   readonly range?: FeedbackRange;
   readonly source?: FeedbackSource;
+  readonly suggestionContext?: SuggestionContext;
 }
 
 // A quoted passage together with the note the user is writing about it. Every
@@ -31,6 +33,7 @@ export interface FeedbackItem {
   readonly eventId?: string;
   readonly range?: FeedbackRange;
   readonly source?: FeedbackSource;
+  readonly suggestionContext?: SuggestionContext;
 }
 
 export interface ComposerFeedbackSignals {
@@ -89,6 +92,9 @@ export function createComposerFeedbackModel(): ComposerFeedbackModel {
         ? { eventId: input.eventId, range: input.range }
         : {}),
       ...(input.source ? { source: input.source } : {}),
+      ...(input.suggestionContext
+        ? { suggestionContext: input.suggestionContext }
+        : {}),
     };
     set(nextIdState$, id + 1);
     set(itemsState$, (items) => {

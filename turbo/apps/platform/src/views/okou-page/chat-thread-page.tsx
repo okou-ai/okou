@@ -7366,7 +7366,13 @@ function UserMessageFeedbackGroup({
   let firstPart = true;
   return (
     <div data-structured-feedback-group="" className="space-y-3">
-      <div>{userMessageFeedbackHeading(parts, agentRunSourceTitle)}</div>
+      <div>
+        {parts[0]?.suggestionContext
+          ? i18n.t(($) => {
+              return $.chat.agentSuggestions.label;
+            })
+          : userMessageFeedbackHeading(parts, agentRunSourceTitle)}
+      </div>
       {parts.map((renderPart) => {
         const identity = JSON.stringify(renderPart.part);
         const occurrence = (partOccurrences.get(identity) ?? 0) + 1;
@@ -7385,7 +7391,9 @@ function UserMessageFeedbackGroup({
               data-structured-feedback-quote=""
               className="border-l-2 border-border-on-fill pl-3 text-muted-foreground"
             >
-              {renderPart.part.quote}
+              {renderPart.suggestionContext
+                ? `${renderPart.suggestionContext.titleSnapshot}\n${renderPart.suggestionContext.rationaleSnapshot}`
+                : renderPart.part.quote}
             </blockquote>
             <UserMessageFeedbackNote note={renderPart.note} />
           </div>

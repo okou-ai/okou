@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestion-context";
+import { chatEventsRoutes } from "../chat-events";
 import { describe, expect, it } from "vitest";
 import {
   suggestionsContract,
@@ -8,6 +10,8 @@ import {
 import {
   chatThreadsContract,
   chatThreadByIdContract,
+  chatEventsContract,
+  type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -31,6 +35,24 @@ function input(priority = 0): SuggestionCreate {
     title: "Review the project update",
     rationale: "A decision needs your input",
     priority,
+    customOption: {
+      id: "custom",
+      threadId: null,
+      draft: {
+        draftUserMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "feedback",
+              quote:
+                "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
+              note: [],
+            },
+          ],
+        },
+        draftAttachments: null,
+      },
+    },
     options: [makeOption()],
   };
 }
@@ -726,5 +748,365 @@ describe("Agent suggestions", () => {
     });
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(pool.body.suggestions).toStrictEqual([]);
+  });
+});
+
+describe("Suggestion custom follow-ups", () => {
+  it("rejects executable custom drafts and reserves the custom option identity", async () => {
+    const fixture = await primaryRun();
+    const value = input();
+    for (const draft of [
+      makeOption().draft,
+      {
+        draftUserMessage: {
+          version: 1 as const,
+          parts: [
+            {
+              type: "feedback" as const,
+              quote: "Complete facts",
+              note: [
+                { type: "text" as const, text: "Execute the preset action" },
+              ],
+            },
+          ],
+        },
+        draftAttachments: null,
+      },
+    ]) {
+      await accept(
+        client().create({
+          headers: fixture.headers,
+          body: { ...value, customOption: { ...value.customOption, draft } },
+        }),
+        [400],
+      );
+    }
+    await accept(
+      client().create({
+        headers: fixture.headers,
+        body: { ...value, options: [makeOption({ id: "custom" })] },
+      }),
+      [400],
+    );
+    expect(
+      (await accept(client().list({ headers: humanHeaders }), [200])).body
+        .suggestions,
+    ).toStrictEqual([]);
+  });
+
+  it("keeps the card until a complete follow-up is accepted and repairs the receipt on replay", async () => {
+    const fixture = await primaryRun();
+    const value = input();
+    await accept(
+      client().create({ headers: fixture.headers, body: value }),
+      [200],
+    );
+    await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: value.id },
+        body: { optionId: "custom" },
+      }),
+      [409],
+    );
+    const threads = setupApp({ context, routes: chatThreadCreateRoutes })(
+      chatThreadsContract,
+    );
+    const thread = await accept(
+      threads.create({
+        headers: humanHeaders,
+        body: { agentId: fixture.agentId },
+      }),
+      [201],
+    );
+    const events = setupApp({ context, routes: chatEventsRoutes })(
+      chatEventsContract,
+    );
+    const contextPart = suggestionContextPart({
+      suggestionId: value.id,
+      draftId: randomUUID(),
+      optionId: "custom",
+      titleSnapshot: value.title,
+      rationaleSnapshot: value.rationale,
+      contextVersion: createHash("sha256")
+        .update(JSON.stringify(value.customOption.draft))
+        .digest("hex"),
+      attachmentIds: [],
+    });
+    const background = value.customOption.draft.draftUserMessage?.parts[0];
+    if (background?.type !== "feedback") {
+      throw new Error("Expected complete background");
+    }
+    const document: UserMessageDocument = {
+      version: 1,
+      parts: [contextPart, background],
+    };
+    const body = {
+      agentId: fixture.agentId,
+      threadId: thread.body.id,
+      clientEventId: randomUUID(),
+      prompt: "Evaluate the unresolved budget",
+      hasTextContent: true,
+      model: "claude-fable-5-1",
+      userMessage: document,
+    };
+    await accept(events.send({ headers: humanHeaders, body }), [400]);
+    expect(
+      (await accept(client().list({ headers: humanHeaders }), [200])).body
+        .suggestions,
+    ).toHaveLength(1);
+    const complete = {
+      ...body,
+      userMessage: {
+        ...document,
+        parts: [
+          contextPart,
+          {
+            ...background,
+            note: [
+              {
+                type: "text" as const,
+                text: "Assess the risks before choosing what to do",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await accept(
+      events.send({
+        headers: humanHeaders,
+        body: {
+          ...complete,
+          userMessage: {
+            ...complete.userMessage,
+            parts: [
+              contextPart,
+              {
+                ...background,
+                quote: "A truncated summary",
+                note: [{ type: "text" as const, text: "Assess the risks" }],
+              },
+            ],
+          },
+        },
+      }),
+      [409],
+    );
+    await accept(events.send({ headers: humanHeaders, body: complete }), [201]);
+    await accept(events.send({ headers: humanHeaders, body: complete }), [201]);
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.receipts).toContainEqual(
+      expect.objectContaining({
+        id: value.id,
+        selectedOptionId: "custom",
+        status: "consumed",
+      }),
+    );
+  });
+
+  it("rejects stale custom context without consuming the updated suggestion", async () => {
+    const fixture = await primaryRun();
+    const value = input();
+    await accept(
+      client().create({ headers: fixture.headers, body: value }),
+      [200],
+    );
+    const thread = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      [201],
+    );
+    const contextPart = suggestionContextPart({
+      suggestionId: value.id,
+      draftId: randomUUID(),
+      optionId: "custom",
+      titleSnapshot: value.title,
+      rationaleSnapshot: value.rationale,
+      contextVersion: "outdated-version",
+      attachmentIds: [],
+    });
+    await accept(
+      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
+        headers: humanHeaders,
+        body: {
+          agentId: fixture.agentId,
+          threadId: thread.body.id,
+          clientEventId: randomUUID(),
+          prompt: "My own direction",
+          hasTextContent: true,
+          userMessage: {
+            version: 1,
+            parts: [
+              contextPart,
+              {
+                type: "feedback",
+                quote: "Previous background",
+                note: [{ type: "text", text: "Assess this matter" }],
+              },
+            ],
+          },
+        },
+      }),
+      [409],
+    );
+    expect(
+      (await accept(client().list({ headers: humanHeaders }), [200])).body
+        .suggestions,
+    ).toHaveLength(1);
+  });
+  it("can send a saved complete quote after its disposable card has been dismissed and compacted", async () => {
+    const fixture = await primaryRun();
+    const value = input();
+    await accept(
+      client().create({ headers: fixture.headers, body: value }),
+      [200],
+    );
+    const contextPart = suggestionContextPart({
+      suggestionId: value.id,
+      draftId: randomUUID(),
+      optionId: "custom",
+      titleSnapshot: value.title,
+      rationaleSnapshot: value.rationale,
+      contextVersion: createHash("sha256")
+        .update(JSON.stringify(value.customOption.draft))
+        .digest("hex"),
+      attachmentIds: [],
+    });
+    const quote = value.customOption.draft.draftUserMessage?.parts[0];
+    if (quote?.type !== "feedback") {
+      throw new Error("Expected background");
+    }
+    await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: value.id },
+        body: { optionId: null },
+      }),
+      [200],
+    );
+    await accept(
+      client().create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    const thread = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      [201],
+    );
+    await accept(
+      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
+        headers: humanHeaders,
+        body: {
+          agentId: fixture.agentId,
+          threadId: thread.body.id,
+          clientEventId: randomUUID(),
+          prompt: "What should I consider about this earlier decision?",
+          hasTextContent: true,
+          model: "claude-fable-5-1",
+          userMessage: {
+            version: 1,
+            parts: [
+              contextPart,
+              {
+                ...quote,
+                note: [
+                  {
+                    type: "text",
+                    text: "What should I consider about this earlier decision?",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      [201],
+    );
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(pool.body.receipts).toContainEqual(
+      expect.objectContaining({
+        id: value.id,
+        status: "consumed",
+        selectedOptionId: null,
+      }),
+    );
+  });
+  it("keeps selection receipts restricted to an enabled member session", async () => {
+    const fixture = await primaryRun();
+    const value = input();
+    await accept(
+      client().create({ headers: fixture.headers, body: value }),
+      [200],
+    );
+    const quote = value.customOption.draft.draftUserMessage?.parts[0];
+    if (quote?.type !== "feedback") {
+      throw new Error("Expected complete background");
+    }
+    const document: UserMessageDocument = {
+      version: 1,
+      parts: [
+        suggestionContextPart({
+          suggestionId: value.id,
+          draftId: randomUUID(),
+          optionId: "custom",
+          titleSnapshot: value.title,
+          rationaleSnapshot: value.rationale,
+          contextVersion: createHash("sha256")
+            .update(JSON.stringify(value.customOption.draft))
+            .digest("hex"),
+          attachmentIds: [],
+        }),
+        { ...quote, note: [{ type: "text", text: "Review the risks" }] },
+      ],
+    };
+    const thread = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      [201],
+    );
+    const events = setupApp({ context, routes: chatEventsRoutes })(
+      chatEventsContract,
+    );
+    const body = {
+      agentId: fixture.agentId,
+      threadId: thread.body.id,
+      prompt: "Review the risks",
+      userMessage: document,
+      hasTextContent: true,
+      model: "claude-fable-5-1",
+    };
+    await accept(
+      events.send({
+        headers: fixture.headers,
+        body: { ...body, clientEventId: randomUUID() },
+      }),
+      [201],
+    );
+    expect(
+      (await accept(client().list({ headers: humanHeaders }), [200])).body
+        .suggestions,
+    ).toHaveLength(1);
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
+    await accept(
+      events.send({
+        headers: humanHeaders,
+        body: { ...body, clientEventId: randomUUID() },
+      }),
+      [201],
+    );
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    });
+    expect(
+      (await accept(client().list({ headers: humanHeaders }), [200])).body
+        .suggestions,
+    ).toHaveLength(1);
   });
 });

@@ -22,6 +22,10 @@ export const agentSuggestions = pgTable(
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),
       check(
+        "agent_suggestions_custom_context",
+        sql`NOT jsonb_path_exists(${table.entries}, '$[*] ? (@.status == "active" && !exists(@.customOption))')`,
+      ),
+      check(
         "agent_suggestions_entries_bound",
         sql`jsonb_typeof(${table.entries}) = 'array' AND jsonb_array_length(jsonb_path_query_array(${table.entries}, '$[*] ? (@.status == "active")')) <= 10`,
       ),

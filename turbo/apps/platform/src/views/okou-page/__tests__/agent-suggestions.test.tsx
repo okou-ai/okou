@@ -1,3 +1,5 @@
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -7,6 +9,7 @@ import {
   type SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
 import {
+  chatEventsContract,
   chatThreadDraftContract,
   chatThreadMetadataContract,
   chatThreadByIdContract,
@@ -46,6 +49,24 @@ function makeSuggestion(): Suggestion {
     selectedOptionId: null,
     createdAt: "2026-10-13T00:00:00.000Z",
     updatedAt: "2026-10-13T00:00:00.000Z",
+    customOption: {
+      id: "custom",
+      threadId: null,
+      draft: {
+        draftUserMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "feedback",
+              quote:
+                "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
+              note: [],
+            },
+          ],
+        },
+        draftAttachments: null,
+      },
+    },
     options: [makeOption()],
   };
 }
@@ -724,4 +745,267 @@ test("An enabled secondary Agent does not display the user's suggestions", async
     }),
   ).toBeFalsy();
   expect(screen.queryByText(makeSuggestion().title)).not.toBeInTheDocument();
+});
+
+test("Custom direction is a full row before Dismiss and only prepares the saved composer", async () => {
+  const pool = mockPool();
+  const saved: UserMessageDocument[] = [];
+  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+    if (body.draftUserMessage) {
+      saved.push(body.draftUserMessage);
+    }
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(makeSuggestion().title);
+  const custom = button("Choose your own direction");
+  expect(custom).toHaveTextContent(
+    "Bring the full context to ask a follow-up or add your requirements",
+  );
+  expect(
+    custom.compareDocumentPosition(button("Dismiss")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await fill(composer(), "Keep my original draft");
+  await userEvent.setup().click(custom);
+  await waitFor(() => {
+    return expect(button("Added to your message")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  expect(composer()).toHaveTextContent("Keep my original draft");
+  expect(composer()).toHaveTextContent(makeSuggestion().title);
+  expect(composer()).not.toHaveTextContent("launch-plan-v2");
+  expect(button("Send")).toBeDisabled();
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+  expect(pool.consumed).toStrictEqual([]);
+  await waitFor(() => {
+    return expect(saved.length).toBeGreaterThan(0);
+  });
+  const quote = suggestionFeedbacks(
+    saved.at(-1) ?? { version: 1, parts: [] },
+  )[0];
+  expect(quote.part.quote).toContain("source launch-plan-v2");
+  expect(quote.part.note).toStrictEqual([]);
+  await userEvent.setup().keyboard("What decision should I make first?");
+  await waitFor(() => {
+    return expect(button("Send")).not.toBeDisabled();
+  });
+  await userEvent.setup().click(button("Remove feedback"));
+  expect(composer()).toHaveTextContent("What decision should I make first?");
+  expect(composer()).toHaveTextContent("Keep my original draft");
+  expect(composer()).not.toHaveTextContent(makeSuggestion().title);
+  expect(pool.consumed).toStrictEqual([]);
+});
+
+test("Browsing preserves prepared context; explicitly choosing another card replaces it and keeps the note", async () => {
+  const first = makeSuggestion();
+  const second: Suggestion = {
+    ...makeSuggestion(),
+    id: "a0000000-0000-4000-a000-000000000002",
+    title: "Review the budget",
+    customOption: {
+      ...first.customOption,
+      draft: {
+        draftUserMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "feedback",
+              quote: "Budget background: source BUDGET-42",
+              note: [],
+            },
+          ],
+        },
+        draftAttachments: null,
+      },
+    },
+  };
+  mockPool([first, second]);
+  const saved: UserMessageDocument[] = [];
+  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+    if (body.draftUserMessage) {
+      saved.push(body.draftUserMessage);
+    }
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(first.title);
+  await userEvent.setup().click(button("Choose your own direction"));
+  await waitFor(() => {
+    return expect(button("Added to your message")).not.toBeDisabled();
+  });
+  await userEvent.setup().keyboard("Assess the risks first");
+  await userEvent.setup().click(button("Next suggestion"));
+  expect(composer()).toHaveTextContent(first.title);
+  expect(composer()).not.toHaveTextContent(second.title);
+  await userEvent.setup().click(button("Choose your own direction"));
+  await waitFor(() => {
+    return expect(composer()).toHaveTextContent(second.title);
+  });
+  expect(composer()).toHaveTextContent("Assess the risks first");
+  await waitFor(() => {
+    return expect(
+      suggestionFeedbacks(saved.at(-1) ?? { version: 1, parts: [] })[0]?.part
+        .quote,
+    ).toContain("BUDGET-42");
+  });
+  expect(
+    suggestionFeedbacks(saved.at(-1) ?? { version: 1, parts: [] }),
+  ).toHaveLength(1);
+  expect(
+    suggestionFeedbacks(saved.at(-1) ?? { version: 1, parts: [] })[0].part
+      .quote,
+  ).not.toContain("launch-plan-v2");
+});
+
+test("A custom follow-up retains its draft on failure and reuses its identities until acceptance", async () => {
+  const pool = mockPool();
+  mockChatLifecycle(context);
+  const attempts: {
+    threadId?: string;
+    clientEventId?: string;
+    userMessage?: UserMessageDocument;
+  }[] = [];
+  const retryRequested = context.mocks.deferred<void>();
+  const acceptRetry = context.mocks.deferred<void>();
+  let failing = true;
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
+    attempts.push({
+      threadId: body.threadId,
+      clientEventId: body.clientEventId,
+      userMessage: body.userMessage,
+    });
+    if (failing) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Follow-up temporarily unavailable",
+        },
+      });
+    }
+    retryRequested.resolve();
+    await acceptRetry.promise;
+    return respond(201, {
+      threadId: body.threadId ?? threadId,
+      createdAt: "2026-10-27T00:00:00Z",
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(makeSuggestion().title);
+  await userEvent.setup().click(button("Choose your own direction"));
+  await waitFor(() => {
+    return expect(button("Added to your message")).not.toBeDisabled();
+  });
+  await userEvent.setup().keyboard("Assess the budget risk first");
+  await waitFor(() => {
+    return expect(button("Send")).not.toBeDisabled();
+  });
+  await userEvent.setup().click(button("Send"));
+  await screen.findByText("Follow-up temporarily unavailable");
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+  expect(composer()).toHaveTextContent("Assess the budget risk first");
+  expect(composer()).toHaveTextContent(makeSuggestion().title);
+  expect(pool.consumed).toStrictEqual([]);
+  failing = false;
+  await userEvent.setup().click(button("Send"));
+  await retryRequested.promise;
+  expect(composer()).toHaveTextContent("Assess the budget risk first");
+  expect(attempts[1]).toStrictEqual(attempts[0]);
+  expect(
+    suggestionFeedbacks(attempts[1].userMessage ?? { version: 1, parts: [] })[0]
+      .part.quote,
+  ).toContain("launch-plan-v2");
+  acceptRetry.resolve();
+  await waitFor(() => {
+    return expect(pathname()).toBe(`/chats/${attempts[1].threadId}`);
+  });
+  await expect(
+    screen.findByText("Assess the budget risk first"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByText(
+      "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
+    ),
+  ).not.toBeInTheDocument();
+});
+
+test("Removing custom context preserves the member's original draft and files", async () => {
+  const incoming = draftAttachment("suggestion-background.txt", {
+    id: "a0000000-0000-4000-a000-000000000091",
+    contentType: "text/plain",
+  });
+  const original = draftAttachment("my-original.txt", {
+    id: "a0000000-0000-4000-a000-000000000092",
+    contentType: "text/plain",
+  });
+  const suggestion = makeSuggestion();
+  mockPool([
+    {
+      ...suggestion,
+      customOption: {
+        ...suggestion.customOption,
+        draft: {
+          ...suggestion.customOption.draft,
+          draftAttachments: [incoming],
+        },
+      },
+    },
+  ]);
+  mockPrivateUrlSequence(context, {
+    [incoming.id]: [incoming.url],
+    [original.id]: [original.url],
+  });
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "My saved draft" },
+          {
+            type: "file",
+            fileId: original.id,
+            filenameSnapshot: original.filename,
+            contentType: original.contentType,
+          },
+        ],
+      },
+      draftAttachments: [original],
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(suggestion.title);
+  await screen.findByText("my-original.txt");
+  await userEvent.setup().click(button("Choose your own direction"));
+  await screen.findByText("suggestion-background.txt");
+  await waitFor(() => {
+    return expect(button("Added to your message")).not.toBeDisabled();
+  });
+  await userEvent.setup().keyboard("Keep my own requirements");
+  await userEvent.setup().click(button("Remove feedback"));
+  await waitFor(() => {
+    return expect(
+      screen.queryByText("suggestion-background.txt"),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("my-original.txt")).toBeInTheDocument();
+  expect(composer()).toHaveTextContent("My saved draft");
+  expect(composer()).toHaveTextContent("Keep my own requirements");
 });

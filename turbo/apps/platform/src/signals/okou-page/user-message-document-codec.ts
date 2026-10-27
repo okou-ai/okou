@@ -1,3 +1,9 @@
+import {
+  readSuggestionContext,
+  suggestionContextPart,
+  suggestionContextSchema,
+  suggestionFeedbacks,
+} from "@okouai/api-contracts/contracts/suggestion-context";
 import type { JSONContent } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import {
@@ -399,6 +405,12 @@ function appendFeedbackGroup(
     if (!part || part.type !== "feedback") {
       return null;
     }
+    const context = suggestionContextSchema
+      .nullable()
+      .parse(node.attrs.suggestionContext ?? null);
+    if (context) {
+      feedbackParts.push(suggestionContextPart(context));
+    }
     feedbackParts.push(part);
     index += 1;
   }
@@ -747,7 +759,7 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
     return part.type === "feedback";
   }).length;
 
-  for (const part of parts) {
+  for (const [partIndex, part] of parts.entries()) {
     if (part.type === "text") {
       appendRestoredText(state, part.text);
       continue;
@@ -775,6 +787,7 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
         attrs: {
           feedbackId: feedbackIndex + 1,
           quote: part.quote,
+          suggestionContext: readSuggestionContext(parts[partIndex - 1]),
           showDivider: feedbackIndex > 0,
           fill: feedbackIndex === feedbackCount - 1,
           ...(part.eventId !== undefined && part.range !== undefined
@@ -908,6 +921,11 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
     return null;
   }
 
+  const suggestionContexts = new Map(
+    suggestionFeedbacks(parsed.data).map(({ part, context }) => {
+      return [part, context];
+    }),
+  );
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
@@ -928,7 +946,15 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   for (const part of parsed.data.parts) {
     if (part.type === "feedback") {
       flushInlineText();
-      feedbackParts.push(part);
+      const context = suggestionContexts.get(part);
+      feedbackParts.push(
+        context
+          ? {
+              ...part,
+              quote: `${context.titleSnapshot}\n${context.rationaleSnapshot}`,
+            }
+          : part,
+      );
       continue;
     }
     flushFeedback();

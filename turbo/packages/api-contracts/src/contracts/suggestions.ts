@@ -1,6 +1,7 @@
 import {
   array,
   iso,
+  literal,
   number,
   object,
   string,
@@ -32,7 +33,9 @@ const suggestionDraftSchema = composerDraftSchema.refine(
   },
 );
 export const suggestionOptionSchema = object({
-  id: suggestionOptionIdSchema,
+  id: suggestionOptionIdSchema.refine((id) => {
+    return id !== "custom";
+  }, "custom is reserved"),
   label: string().trim().min(1).max(80),
   description: string().trim().max(160),
   threadId: uuid().toLowerCase().nullable(),
@@ -65,6 +68,38 @@ const suggestionContentSchema = object({
   rationale: string().trim().max(200),
   priority: number().int().min(-2147483648).max(2147483647),
   options: suggestionOptionsSchema,
+  customOption: object({
+    id: literal("custom"),
+    threadId: literal(null),
+    draft: suggestionDraftSchema
+      .refine((draft) => {
+        return JSON.stringify(draft).length <= 65536;
+      }, "Custom direction draft exceeds 65536 characters")
+      .refine((draft) => {
+        const parts = draft.draftUserMessage?.parts ?? [];
+        const feedback = parts.filter((part) => {
+          return part.type === "feedback";
+        });
+        const [quote] = feedback;
+        return (
+          feedback.length === 1 &&
+          quote !== undefined &&
+          quote.quote.trim().length > 0 &&
+          quote.note.length === 0 &&
+          quote.source === undefined &&
+          quote.eventId === undefined &&
+          parts.every((part) => {
+            return (
+              part.type === "feedback" ||
+              (part.type === "file" &&
+                (draft.draftAttachments ?? []).some((file) => {
+                  return file.id === part.fileId;
+                }))
+            );
+          })
+        );
+      }, "Custom direction requires one complete neutral quote with an empty note and optional files"),
+  }),
 });
 export const suggestionSchema = suggestionContentSchema.extend({
   id: suggestionIdSchema,

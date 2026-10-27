@@ -1557,6 +1557,10 @@
       "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
+      "customDirection": "Choose your own direction",
+      "customDirectionDescription": "Bring the full context to ask a follow-up or add your requirements",
+      "customPrepared": "Added to your message",
+      "customPreparedDescription": "Add your requirements above, then send to start a new chat",
       "dismiss": "Dismiss",
       "label": "Suggestions",
       "next": "Next suggestion",
