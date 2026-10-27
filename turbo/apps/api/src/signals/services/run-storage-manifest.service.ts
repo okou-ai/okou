@@ -15,7 +15,6 @@ import {
   type SkillVolume,
 } from "./run-prompt-and-skills";
 import { now } from "../../lib/time";
-import type { ReadonlyDb } from "../external/db";
 import { safeSync } from "../utils";
 import type { PreparedExecutionStorageMount } from "./execution-storage.service";
 import type {
@@ -66,7 +65,6 @@ interface AdditionalVolume {
 }
 
 interface PrepareAgentRunStorageManifestArgs {
-  readonly db: ReadonlyDb;
   readonly agentOrgId: string;
   readonly runtimeOrgId: string;
   readonly userId: string;
@@ -1298,7 +1296,6 @@ export function prepareRequestStorageResolution(
 }
 
 interface CapturedAgentRunStorageArgs {
-  readonly db: ReadonlyDb;
   readonly mounts: readonly PersistedStorageMount[];
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
