@@ -1,19 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import {
-  runnerBrowserContract,
-  type RunnerBrowserAction,
-  type RunnerBrowserResponse,
-} from "@okouai/api-contracts/contracts/runner-browser";
-import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
+import type { RunnerBrowserAction } from "@okouai/api-contracts/contracts/runner-browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
-import { strictObject, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
   createDeferredPromise,
@@ -25,155 +19,31 @@ import {
   withMockNowForTest,
   withNowScopeForTest,
 } from "../../../lib/time";
-import { runnerBrowserRoutes } from "../runner-browser";
 import { browserRoutes } from "../browser";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  okouTokenFromClaim,
-  requireOrgId,
-} from "./helpers/chat-events-fixture";
+import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { publicChatActor } from "./helpers/public-chat-actor";
+import {
+  createRunnerBrowserFixtures,
+  MINUTE,
+  PROVIDER_URL,
+  START,
+} from "./helpers/runner-browser-fixture";
 
 const context = testContext();
-const START = Date.parse("2026-10-25T14:00:00.000Z");
-const MINUTE = 60_000;
+const {
+  fixture,
+  profileProvider,
+  client,
+  officialHeaders,
+  accepted,
+  allocate,
+  admit,
+} = createRunnerBrowserFixtures(context);
 const runs = createRunsApi(context);
-const PROVIDER_URL = "https://api.browser-use.com/api/v3";
-
-function profileProvider(beforeResponse?: () => Promise<void>) {
-  const profiles = new Map<
-    string,
-    { readonly id: string; readonly name: string }
-  >();
-  const createdIds: string[] = [];
-  function profile(id: string, name = "owned-provider-profile") {
-    return {
-      id,
-      name,
-      createdAt: new Date(START).toISOString(),
-      updatedAt: new Date(START).toISOString(),
-    };
-  }
-  const handlers = [
-    http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {
-      const { name } = strictObject({ name: string() }).parse(
-        await request.json(),
-      );
-      const id = randomUUID();
-      profiles.set(id, { id, name });
-      createdIds.push(id);
-      await beforeResponse?.();
-      return HttpResponse.json(profile(id, name), { status: 201 });
-    }),
-    http.get(`${PROVIDER_URL}/profiles/:id`, ({ params }) => {
-      const stored = profiles.get(String(params.id));
-      return stored
-        ? HttpResponse.json(profile(stored.id, stored.name))
-        : HttpResponse.json({ detail: "Profile missing" }, { status: 404 });
-    }),
-    http.delete(`${PROVIDER_URL}/profiles/:id`, ({ params }) => {
-      profiles.delete(String(params.id));
-      return new HttpResponse(null, { status: 204 });
-    }),
-  ];
-  return { handlers, createdIds, profile };
-}
-
-function client() {
-  return setupApp({ context, routes: runnerBrowserRoutes })(
-    runnerBrowserContract,
-  );
-}
-
-function officialHeaders() {
-  return {
-    authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
-  };
-}
-
-function accepted(result: RunnerBrowserResponse) {
-  expect(result.outcome).toBe("accepted");
-  if (result.outcome !== "accepted") {
-    throw new Error("Expected an accepted Browser lifecycle operation");
-  }
-  return result.instance;
-}
-
-async function fixture(enabled = true, provider = profileProvider()) {
-  mockEnv("OKOU_BROWSER_USE_API_KEY", "owner-profile-test-key");
-  server.use(...provider.handlers);
-  const owned = await publicChatActor(context, {
-    clockTime: START,
-    optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
-  });
-  const featureActor = { ...owned.actor, orgId: requireOrgId(owned.actor) };
-  const chat = createChatFilesBddApi(context);
-  if (enabled) {
-    owned.ownsFeatureSwitches();
-    await owned.run(() => {
-      return updateFeatureSwitchesForUser(context, featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
-    });
-  }
-  async function start(browserEnabled = true) {
-    return await owned.run(async () => {
-      const sent = await chat.sendAndLaunch(owned.actor, {
-        agentId: owned.agentId,
-        prompt: "Prepare my chat-owned Browser lifetime",
-        cloudBrowserEnabled: browserEnabled,
-      });
-      const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 7 };
-      await withNowScopeForTest(() => {
-        return runs.requestHeartbeatRunner(true, [200], {
-          group: owned.runnerGroup,
-          runnerId: runnerIdentity.runnerId,
-          snapshotGeneration: runnerIdentity.heartbeatGeneration,
-        });
-      });
-      const claim = await owned.claimRunnerRun(sent.runId, { runnerIdentity });
-      function control(action: RunnerBrowserAction) {
-        return client().control({
-          headers: officialHeaders(),
-          params: { runId: sent.runId },
-          body: { runnerIdentity, action },
-        });
-      }
-      async function request(action: RunnerBrowserAction) {
-        const result = await accept(control(action), [200]);
-        return result.body;
-      }
-      return { ...sent, runnerIdentity, claim, request, control };
-    });
-  }
-  return { owned, start, featureActor, provider };
-}
-
-type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
-
-async function allocate(chat: Chat) {
-  const instance = accepted(await chat.request({ kind: "allocate" }));
-  return accepted(
-    await chat.request({
-      kind: "publish",
-      instanceId: instance.id,
-      providerSessionId: randomUUID(),
-      timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
-    }),
-  );
-}
-
-async function admit(chat: Chat, instanceId: string, primaryWindowId: number) {
-  const instance = accepted(
-    await chat.request({ kind: "admit", instanceId, primaryWindowId }),
-  );
-  expect(instance.window).toMatchObject({ primaryWindowId, state: "active" });
-  return { instanceId, primaryWindowId };
-}
 
 describe("official Runner Browser lifecycle", () => {
   it("does not expose or mutate another owner's Browser generation", async () => {
@@ -192,7 +62,6 @@ describe("official Runner Browser lifecycle", () => {
           b.request({
             kind: "admit",
             instanceId: instance.id,
-            primaryWindowId: 0,
           }),
         ).resolves.toStrictEqual({ outcome: "unavailable" });
         await expect(
@@ -401,15 +270,24 @@ describe("official Runner Browser lifecycle", () => {
           timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
         }),
       );
+      const nativeReady = createDeferredPromise<void>(context.signal);
+      let nativeArrivals = 0;
+      f.provider.native.windowIds.push(0, 101);
+      f.provider.native.beforeCreateReply = async () => {
+        if (++nativeArrivals === 2) {
+          nativeReady.resolve();
+        }
+        await nativeReady.promise;
+      };
       const candidates = await Promise.all(
-        [0, 101].map((primaryWindowId) => {
-          return a.request({
+        [a, a].map((chat) => {
+          return chat.request({
             kind: "admit",
             instanceId: initial.id,
-            primaryWindowId,
           });
         }),
       );
+      f.provider.native.beforeCreateReply = undefined;
       expect(
         candidates
           .map((r) => {
@@ -421,13 +299,6 @@ describe("official Runner Browser lifecycle", () => {
       if (!winner) {
         throw new Error("Missing registered chat window");
       }
-      await expect(
-        b.request({
-          kind: "admit",
-          instanceId: initial.id,
-          primaryWindowId: winner.primaryWindowId,
-        }),
-      ).resolves.toStrictEqual({ outcome: "unavailable" });
       const wb = await admit(b, initial.id, 102);
       const viewA = accepted(await a.request({ kind: "inspect" }));
       const viewB = accepted(await b.request({ kind: "inspect" }));
@@ -462,7 +333,6 @@ describe("official Runner Browser lifecycle", () => {
         a.request({
           kind: "admit",
           instanceId: instance.id,
-          primaryWindowId: 1,
         }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
       accepted(await a.request({ kind: "completeWindowClose", ...wa }));
@@ -567,9 +437,10 @@ describe("official Runner Browser lifecycle", () => {
         outcome: "unavailable",
       });
       const wb = { instanceId: instance.id, primaryWindowId: 102 };
+      f.provider.native.windowIds.push(102);
       const competing = await Promise.all([
         a.request({ kind: "beginStop", instanceId: instance.id }),
-        b.request({ kind: "admit", ...wb }),
+        b.request({ kind: "admit", instanceId: instance.id }),
       ]);
       expect(
         competing
@@ -611,7 +482,7 @@ describe("official Runner Browser lifecycle", () => {
         { kind: "renew", ...wa },
         { kind: "retire", ...wa, reason: "closed" },
         { kind: "completeWindowClose", ...wa },
-        { kind: "admit", ...wa },
+        { kind: "admit", instanceId: wa.instanceId },
       ] as const) {
         await expect(a.request(action)).resolves.toStrictEqual({
           outcome: "unavailable",

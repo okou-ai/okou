@@ -37,6 +37,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
   readBoundedResponseText,
+  joinAll,
   safeJsonParse,
   safeSync,
   settle,
@@ -52,6 +53,7 @@ const MAX_BROWSER_USE_SCREENSHOT_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_BROWSER_USE_ERROR_MESSAGE_CHARS = 2048;
 const MAX_BROWSER_USE_TAB_URLS = 50;
 const MAX_BROWSER_USE_TAB_URL_CHARS = 8192;
+const BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY = 4;
 const BROWSER_USE_SCREENSHOT_WIDTH = 640;
 const BROWSER_USE_SCREENSHOT_QUALITY = 80;
 const browserUseLiveUrlSchema = zUrl().refine((value) => {
@@ -86,7 +88,7 @@ const browserUseCdpTargetsSchema = object({
   ),
 });
 const browserUseCdpWindowSchema = object({
-  windowId: number().int().nonnegative(),
+  windowId: number().int().nonnegative().safe(),
 });
 const browserUseCdpAttachedTargetSchema = object({
   sessionId: string().min(1),
@@ -246,17 +248,23 @@ function browserUseCdpVersionUrl(cdpUrl: string): URL {
 
 async function browserUseCdpWebSocketUrl(
   cdpUrl: string,
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<string> {
+  signal.throwIfAborted();
   const endpoint = browserUseCdpUrlSchema.parse(cdpUrl);
   if (new URL(endpoint).protocol === "wss:") {
     return endpoint;
   }
-  const response = await accept(fetch(browserUseCdpVersionUrl(cdpUrl)), [200]);
+  const response = await accept(
+    fetch(browserUseCdpVersionUrl(cdpUrl), { signal }),
+    [200],
+  );
+  signal.throwIfAborted();
   const text = await readBoundedResponseText(
     response,
     MAX_BROWSER_USE_CDP_RESPONSE_BYTES,
   );
+  signal.throwIfAborted();
   if (text.kind === "too_large") {
     throw new Error("Browser Use CDP discovery failed");
   }
@@ -549,6 +557,206 @@ function restorableBrowserUseTabUrl(url: string): boolean {
   }
   const protocol = new URL(url).protocol;
   return protocol === "http:" || protocol === "https:";
+}
+
+export interface BrowserUseWindowCandidate {
+  readonly targetId: string;
+  readonly primaryWindowId: number;
+}
+
+async function nativeWindowForTarget(
+  socket: WebSocket,
+  targetId: string,
+  sequence: { next: number },
+  signal: AbortSignal,
+): Promise<number | null> {
+  const result = await settle(
+    sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: sequence.next++,
+        method: "Browser.getWindowForTarget",
+        params: { targetId },
+      },
+      signal,
+    ),
+  );
+  signal.throwIfAborted();
+  if (result.ok) {
+    return browserUseCdpWindowSchema.parse(result.value).windowId;
+  }
+  if (result.error instanceof BrowserUseCdpCommandError) {
+    const targets = await browserWindowTargets(socket, sequence, signal);
+    signal.throwIfAborted();
+    if (
+      !targets.some((target) => {
+        return target.targetId === targetId;
+      })
+    ) {
+      return null;
+    }
+  }
+  throw result.error;
+}
+
+async function browserWindowTargets(
+  socket: WebSocket,
+  sequence: { next: number },
+  signal: AbortSignal,
+) {
+  return browserUseCdpTargetsSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: sequence.next++,
+        method: "Target.getTargets",
+        params: {},
+        maxResponseBytes: MAX_BROWSER_USE_RESPONSE_BYTES,
+      },
+      signal,
+    ),
+  ).targetInfos;
+}
+
+/** Creation is never retried: an unknown response may already have a window. */
+export async function createBrowserUseWindow(
+  cdpUrl: string,
+  signal: AbortSignal,
+): Promise<BrowserUseWindowCandidate> {
+  const created = await settleIncludingAbort(
+    withBrowserUseCdpDeadline(signal, async (deadline) => {
+      return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+        const target = object({ targetId: string().min(1) }).parse(
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: 1,
+              method: "Target.createTarget",
+              params: { url: "about:blank", newWindow: true },
+            },
+            deadline,
+          ),
+        );
+        const primaryWindowId = await nativeWindowForTarget(
+          socket,
+          target.targetId,
+          { next: 2 },
+          deadline,
+        );
+        if (primaryWindowId === null) {
+          throw new Error("The created Browser window is no longer available");
+        }
+        return { targetId: target.targetId, primaryWindowId };
+      });
+    }),
+  );
+  signal.throwIfAborted();
+  if (!created.ok) {
+    if (created.error instanceof BrowserUseProviderError) {
+      throw created.error;
+    }
+    throw new BrowserUseProviderError(
+      502,
+      "BROWSER_USE_WINDOW_CREATION_UNCERTAIN",
+      "Managed Browser window creation could not be confirmed",
+    );
+  }
+  return created.value;
+}
+
+export async function browserUseWindowExists(
+  cdpUrl: string,
+  primaryWindowId: number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    return await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+      const sequence = { next: 1 };
+      const targets = await browserWindowTargets(socket, sequence, deadline);
+      let lookupFailure: BrowserUseCdpCommandError | undefined;
+      for (
+        let offset = 0;
+        offset < targets.length;
+        offset += BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY
+      ) {
+        const windows = await joinAll(
+          targets
+            .slice(offset, offset + BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY)
+            .filter((target) => {
+              return target.type === "page";
+            })
+            .map((target) => {
+              return settle(
+                nativeWindowForTarget(
+                  socket,
+                  target.targetId,
+                  sequence,
+                  deadline,
+                ),
+              );
+            }),
+        );
+        deadline.throwIfAborted();
+        if (
+          windows.some((window) => {
+            return window.ok && window.value === primaryWindowId;
+          })
+        ) {
+          return true;
+        }
+        for (const window of windows) {
+          if (!window.ok) {
+            if (!(window.error instanceof BrowserUseCdpCommandError)) {
+              throw window.error;
+            }
+            // One page's command failure cannot rule out a later witness.
+            lookupFailure ??= window.error;
+          }
+        }
+      }
+      if (lookupFailure) {
+        throw lookupFailure;
+      }
+      return false;
+    });
+  });
+}
+
+/** A moved page belongs to its current window; never close it as a loser. */
+export async function closeBrowserUseWindowCandidate(
+  cdpUrl: string,
+  candidate: BrowserUseWindowCandidate,
+  signal: AbortSignal,
+): Promise<void> {
+  await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
+      const sequence = { next: 1 };
+      if (
+        (await nativeWindowForTarget(
+          socket,
+          candidate.targetId,
+          sequence,
+          deadline,
+        )) !== candidate.primaryWindowId
+      ) {
+        return;
+      }
+      const closed = object({ success: boolean() }).parse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: sequence.next++,
+            method: "Target.closeTarget",
+            params: { targetId: candidate.targetId },
+          },
+          deadline,
+        ),
+      );
+      if (!closed.success) {
+        throw new Error("The Browser window candidate could not be closed");
+      }
+    });
+  });
 }
 
 function boundedRestorableBrowserUseTabUrls(
@@ -3361,6 +3569,33 @@ export async function createBrowserUseSession(
     signal,
   );
   return parseBrowserUseSession(body);
+}
+
+export async function findBrowserUseSession(
+  providerSessionId: string,
+  signal: AbortSignal,
+): Promise<BrowserUseSession | null> {
+  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    const result = await browserUseResponse(
+      `/browsers/${encodeURIComponent(providerSessionId)}`,
+      { method: "GET", signal: deadline },
+      deadline,
+      [404],
+    );
+    deadline.throwIfAborted();
+    if (result.response.status === 404) {
+      return null;
+    }
+    const session = parseBrowserUseSession(result.body);
+    if (session.id !== providerSessionId) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_INVALID_RESPONSE",
+        "Managed browser provider returned a different session",
+      );
+    }
+    return session;
+  });
 }
 
 export async function getBrowserUseSession(
