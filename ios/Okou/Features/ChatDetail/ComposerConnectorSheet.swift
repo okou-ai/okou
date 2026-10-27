@@ -179,7 +179,7 @@ struct ComposerConnectorSheet: View {
     } else {
       ContentUnavailableView(
         "Connector unavailable", systemImage: "powerplug",
-        description: Text("Return to Connectors and refresh to choose an available service."))
+        description: Text("Return to Connectors to choose an available service."))
     }
   }
 
@@ -299,8 +299,7 @@ private struct ComposerRemoteControls: View {
     .sheet(isPresented: $showsDesktopSetup) {
       NavigationStack {
         Form {
-          Text(
-            "Install Okou Desktop on your Mac, connect your account, then return here and refresh.")
+          Text("Install Okou Desktop on your Mac, connect your account, then reopen Connectors.")
           ShareLink("Share Desktop download link", item: store.service.desktopDownloadURL)
           Link("Download for Mac", destination: store.service.desktopDownloadURL)
         }
