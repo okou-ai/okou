@@ -4,7 +4,6 @@ import SwiftUI
 struct PermissionActionCard: View {
   @Bindable var store: PermissionActionStore
   let loadsState: Bool
-  @ScaledMetric(relativeTo: .body) private var height: CGFloat = 220
   @State private var showsDetails = false
 
   private var permission: String {
@@ -16,17 +15,17 @@ struct PermissionActionCard: View {
     if store.isLoading || (store.snapshot == nil && store.error == nil) {
       return String(localized: "Checking permission…")
     }
-    if store.error != nil { return String(localized: "Unable to complete. Open details to retry.") }
+    if store.error != nil { return String(localized: "Open details to retry") }
     if store.snapshot != nil && !store.hasPermission {
       return String(localized: "Permission unavailable")
     }
     if store.needsContinuation {
-      return String(localized: "Permission saved. Continue the conversation.")
+      return String(localized: "Permission saved · Continuation needed")
     }
     if store.applied {
       if let expiry = store.grant?.expiresAt, expiry > .now {
-        return String(
-          localized: "Expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
+        let date = expiry.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        return String(localized: "Expires \(date)")
       }
       return store.action.action == .allow
         ? String(localized: "Allowed · No expiration") : String(localized: "Denied")
@@ -38,30 +37,57 @@ struct PermissionActionCard: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Label(store.metadata?.label ?? store.action.connectorSlug, systemImage: "lock.shield")
-        .font(.headline).lineLimit(1)
-      Group {
+    let connectorLabel = store.metadata?.label ?? store.action.connectorSlug
+    ChatActionCard {
+      ChatCardHeader(
+        title: String(localized: "\(connectorLabel) permissions"),
+        systemImage: "lock.shield", titleLineLimit: 1
+      ) {
         if store.action.action == .allow {
           Text("Allow \(permission)")
         } else {
           Text("Deny \(permission)")
         }
+        Text(
+          "For \(store.snapshot?.agentName ?? String(localized: "this Agent")) · \(status)"
+        )
+        .font(.caption)
+        .lineLimit(1, reservesSpace: true)
+        .foregroundStyle(store.error == nil ? Color.secondary : Color.red)
       }
-      .font(.subheadline).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-      Text("Your permissions for \(store.snapshot?.agentName ?? String(localized: "this Agent"))")
-        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-      Text(status).font(.caption).foregroundStyle(store.error == nil ? Color.secondary : Color.red)
-        .lineLimit(2).frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-      Spacer(minLength: 0)
-      Button("Review permission") { showsDetails = true }
-        .buttonStyle(.bordered)
+    } actions: {
+      if store.applied && !store.needsContinuation && store.error == nil && !store.isLoading
+        && !store.isSaving
+      {
+        HStack(spacing: 8) {
+          Label(
+            store.action.action == .allow
+              ? String(localized: "Allowed") : String(localized: "Denied"),
+            systemImage: store.action.action == .allow ? "checkmark.circle" : "minus.circle"
+          )
+          .font(.subheadline)
+          .foregroundStyle(store.action.action == .allow ? Color.green : Color.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+          Spacer(minLength: 0)
+          Button("View details") { showsDetails = true }
+            .buttonStyle(ChatCardButtonStyle(emphasis: .detail))
+            .accessibilityIdentifier("permission-review")
+        }
+      } else {
+        Button {
+          showsDetails = true
+        } label: {
+          if store.needsContinuation {
+            Text("Review continuation")
+          } else if store.error != nil {
+            Text("View details")
+          } else {
+            Text("Review permission")
+          }
+        }
         .accessibilityIdentifier("permission-review")
+      }
     }
-    .padding(14)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .frame(height: height, alignment: .topLeading)
-    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     .accessibilityIdentifier("permission-action-card")
     .sheet(isPresented: $showsDetails) { PermissionActionDetails(store: store) }
     .task { if loadsState { await store.refresh() } }

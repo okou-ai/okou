@@ -10,19 +10,21 @@ struct AssistantFailureCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Label(copy.title, systemImage: state.recovery.continues ? "clock" : "exclamationmark.circle")
-        .font(.subheadline.weight(.semibold))
-      if !copy.description.isEmpty {
-        Text(copy.description).font(.subheadline).foregroundStyle(.secondary).textSelection(
-          .enabled)
+      ChatCardHeader(
+        title: copy.title,
+        systemImage: state.recovery.continues ? "clock" : "exclamationmark.circle"
+      ) {
+        if !copy.description.isEmpty {
+          Text(copy.description).textSelection(.enabled)
+        }
+        if let account = state.accountLabel {
+          Text("Personal subscription \(account)").font(.caption).textSelection(.enabled)
+        }
+        if state.disconnected {
+          Text("Personal subscription disconnected").font(.caption)
+        }
+        ForEach(state.resetDetails, id: \.self) { Text($0).font(.caption) }
       }
-      if let account = state.accountLabel {
-        Text("Personal subscription \(account)").font(.caption).textSelection(.enabled)
-      }
-      if state.disconnected {
-        Text("Personal subscription disconnected").font(.caption)
-      }
-      ForEach(state.resetDetails, id: \.self) { Text($0).font(.caption) }
       if state.isCurrent {
         actions
         if let error = state.accountError ?? state.billingError {
@@ -50,9 +52,11 @@ struct AssistantFailureCard: View {
         }.font(.caption)
       }
     }
-    .padding(14)
+    .buttonStyle(ChatCardButtonStyle())
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+    .modifier(ChatCardSurface())
     .accessibilityIdentifier("assistant-failure-\(state.failure.id)")
     .sheet(isPresented: $showsModels) {
       if let selection = conversation.modelSelection {
@@ -82,7 +86,7 @@ struct AssistantFailureCard: View {
               URLQueryItem(name: "billingView", value: billing.canBuyCredits ? "credits" : "plans"),
             ])
           )
-          .buttonStyle(.bordered).controlSize(.regular)
+          .buttonStyle(ChatCardButtonStyle())
           .accessibilityIdentifier("failure-billing")
         }
         Button("Check credits") { Task { await conversation.refreshFailureAccounts() } }
@@ -95,7 +99,7 @@ struct AssistantFailureCard: View {
         HStack(spacing: 12) { recoveryButtons }
         VStack(alignment: .leading, spacing: 8) { recoveryButtons }
       }
-      .buttonStyle(.bordered)
+      .buttonStyle(ChatCardButtonStyle())
       .disabled(state.isBusy)
     }
   }
