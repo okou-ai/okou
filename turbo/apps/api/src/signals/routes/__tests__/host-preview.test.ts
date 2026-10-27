@@ -193,9 +193,14 @@ describe("sandbox hosted previews", () => {
     });
     const api = app(hostContract);
     const owner = createBddApi(context).user();
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.HostedSiteVisibility]: false,
-    });
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...owner, orgId: owner.orgId },
+      { [FeatureSwitchKey.HostedSiteVisibility]: false },
+    );
     previewStorage();
     const prepared = await host.prepareHostedSite(owner, {
       site: "sproutpop-launch-deck-p9jk",
