@@ -1,7 +1,4 @@
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
-import { BROWSER_SHARED_OWNER_ENV_VAR } from "@okouai/api-contracts/contracts/browser";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
@@ -125,10 +122,9 @@ export function createPlatformEnvironmentSignals(
   threadContext: ThreadContext,
 ) {
   return computed(async (get): Promise<Environment | EnvironmentError> => {
-    const [event, selection, featureSwitchContext] = await Promise.all([
+    const [event, selection] = await Promise.all([
       get(pickedEvent$),
       get(threadContext.subscriptionSelection$),
-      get(bootstrap.featureSwitches$),
     ]);
     if (!event) {
       throw new Error("Platform environment requires a picked event");
@@ -154,13 +150,6 @@ export function createPlatformEnvironmentSignals(
           : {}),
         // The in-sandbox CLI binds a newly created automation to this thread.
         OKOU_CHAT_THREAD_ID: event.chatThreadId,
-        ...(event.thread?.cloudBrowserEnabled === true &&
-        isFeatureEnabled(
-          FeatureSwitchKey.BrowserSharedOwner,
-          featureSwitchContext,
-        )
-          ? { [BROWSER_SHARED_OWNER_ENV_VAR]: "true" }
-          : {}),
         ...(selection.codexServiceTier
           ? { OKOU_CODEX_SERVICE_TIER: selection.codexServiceTier }
           : {}),

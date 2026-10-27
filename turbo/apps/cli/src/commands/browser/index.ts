@@ -38,8 +38,6 @@ import {
   DEFAULT_AGENT_BROWSER_SESSION,
   parseAgentSession,
 } from "./browser-tab";
-import { clearBrowserAttachment } from "./browser-attachment";
-import { isOkouBrowserSharedOwnerEnabled } from "../../lib/okou-env";
 const BROWSER_INPUT_TARGET_MAX_LENGTH = 2048;
 const BROWSER_ACTION_NEXT_STEP =
   "Return this exact action URL in your final response, then stop using the Browser in this turn.";
@@ -395,12 +393,6 @@ async function connectResponse(
   options: ConnectionOptions,
 ): Promise<void> {
   const sessionName = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
-  if (response.browser.window && !isOkouBrowserSharedOwnerEnabled()) {
-    throw new Error(
-      "Shared Browser is not enabled for this Run; start a new Run",
-    );
-  }
-  await clearBrowserAttachment(sessionName);
   connectAgentBrowser(
     response.cdpUrl,
     sessionName,
@@ -658,15 +650,11 @@ Notes:
   - Okou reclaims it after ${BROWSER_IDLE_LEASE_MINUTES} idle minutes
   - \`okou browser use\` restores a reclaimed browser's login profile and reopens saved tab URLs when possible
   - Browser Use credentials and connection URLs are never printed
-${
-  isOkouBrowserSharedOwnerEnabled()
-    ? `  - When use reports a chat Browser window, operate only on that window's pages; confirm the selected page with safe tab list before actions or screenshots
+  - When use reports a chat Browser window, it initially selects that window's page; operate on the assigned chat pages
   - A missing selected page requires explicit selection or reconnect; never adopt another chat's page or infer the intended page from global focus
-  - Shared-owner chats use the same cookies and localStorage, including login/logout changes; separate windows do not provide separate website accounts
-  - Every CDP API remains available. Return source-less pages created by Target.createTarget to the reported chat window using native Browser/tab operations; known-source popups are consolidated by the extension`
-    : `  - Each thread keeps an isolated login profile
-  - Threads can run their browsers in parallel`
-}
+  - Tab list shows the driver's tabs with safe origins; explicit tab selection and every CDP API remain available
+  - Chats sharing a Browser profile share cookies and localStorage, including login/logout changes; separate windows do not provide separate website accounts
+  - Return source-less pages created by Target.createTarget to the reported chat window using native Browser/tab operations; known-source popups are consolidated by the extension
   - Input selectors and refs are resolved locally and are never sent to the API
   - Resolving an @eN ref focuses it but never types, clicks, or submits the website form
   - input-request failures identify a safe error code, affected --field position when known, and next action
