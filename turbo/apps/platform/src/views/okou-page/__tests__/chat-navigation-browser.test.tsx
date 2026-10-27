@@ -230,11 +230,24 @@ function liveBrowserSidebar(): HTMLElement {
 async function openViewerSizingMenu(viewer: HTMLElement): Promise<HTMLElement> {
   const viewerQueries = within(viewer);
   click(buttonByName("Browser menu", viewer));
-  const menu = await viewerQueries.findByRole("menu", {
-    name: "Browser menu",
+  const menu = await viewerQueries.findByLabelText("Browser menu", {
+    selector: '[role="menu"]',
+  });
+  await waitFor(() => {
+    expect(menu).toBeVisible();
+    expect(menu.closest('[aria-hidden="true"], [hidden], [inert]')).toBeNull();
   });
   click(within(menu).getByText("Fit to this viewer"));
-  return viewerQueries.findByRole("menu", { name: "Fit to this viewer" });
+  const sizingMenu = await viewerQueries.findByLabelText("Fit to this viewer", {
+    selector: '[role="menu"]',
+  });
+  await waitFor(() => {
+    expect(sizingMenu).toBeVisible();
+    expect(
+      sizingMenu.closest('[aria-hidden="true"], [hidden], [inert]'),
+    ).toBeNull();
+  });
+  return sizingMenu;
 }
 
 interface ViewportGeometry {
@@ -303,7 +316,7 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, { cdpUrl });
   });
-  await openConversation(completedConversationEvents(), true);
+  await openConversation([], true);
   await expectConversationReady();
   click(buttonByName("Open browser"));
   const address = await screen.findByDisplayValue("https://example.com");
