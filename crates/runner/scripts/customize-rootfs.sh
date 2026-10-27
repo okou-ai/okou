@@ -404,6 +404,7 @@ printf '%s\n' \
   "RUSTUP_HOME=/usr/local/rustup" \
   "NPM_CONFIG_UPDATE_NOTIFIER=false" \
   "NODE_EXTRA_CA_CERTS=/${CA_ROOTFS_DEST}" \
+  "AGENT_BROWSER_USE_SYSTEM_CA=1" \
   "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" \
   "REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt" \
   "CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt" \

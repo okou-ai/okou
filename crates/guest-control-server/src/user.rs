@@ -16,7 +16,7 @@ const AGENT_SHELL: &str = "/bin/bash";
 // [sync:etc-environment] Keep in sync with:
 // - crates/runner/scripts/customize-rootfs.sh
 // - crates/runner/tests/behavior/exec/inventory.sh
-const TRUSTED_ROOTFS_ENVIRONMENT: [(&str, &str); 7] = [
+const TRUSTED_ROOTFS_ENVIRONMENT: [(&str, &str); 8] = [
     ("LANG", "C.UTF-8"),
     ("RUSTUP_HOME", "/usr/local/rustup"),
     ("NPM_CONFIG_UPDATE_NOTIFIER", "false"),
@@ -24,6 +24,7 @@ const TRUSTED_ROOTFS_ENVIRONMENT: [(&str, &str); 7] = [
         "NODE_EXTRA_CA_CERTS",
         "/usr/local/share/ca-certificates/vm0-proxy-ca.crt",
     ),
+    ("AGENT_BROWSER_USE_SYSTEM_CA", "1"),
     ("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"),
     ("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt"),
     ("CARGO_HTTP_CAINFO", "/etc/ssl/certs/ca-certificates.crt"),
