@@ -87,11 +87,6 @@
       "owner": "storeCustomConnectorOAuth2Connection"
     },
     {
-      "id": "TX-0147",
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "owner": "setCustomConnectorValues$"
-    },
-    {
       "id": "TX-0148",
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "owner": "deleteCustomConnectorAccount$"

@@ -1,8 +1,4 @@
-import {
-  connectorCredentialDeletion,
-  connectorCredentialDeletionKinds,
-  type ConnectorConnectionMetadataArgs,
-} from "./connector-account-mutation.service";
+import type { ConnectorConnectionMetadataArgs } from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
@@ -42,6 +38,9 @@ import {
   type OrgCustomConnectorOAuthTokenEndpointAuthMethod,
 } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { command, computed, type Computed } from "ccstate";
+import { boolean, object, string } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   and,
   asc,
@@ -59,7 +58,6 @@ import type { WithSubquery } from "drizzle-orm/subquery";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
-import type { Tx } from "../../lib/db-types";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -76,16 +74,11 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import {
-  connectorConnectionWrittenRow,
-  awaitConnectorConnectionRow,
   connectorConnectionMutationReadPlan as connectionMutationReadPlan,
   connectorConnectionMutationReadResult as connectionMutationReadResult,
   type ConnectorConnectionMutationArgs,
-  connectorConnectionMetadataWritePlan as connectionMetadataWritePlan,
-  connectorConnectionMetadataWriteResult as connectionMetadataWriteResult,
-  connectorConnectionSelection as connectionSelection,
-  type ConnectorConnectionMetadataQuery,
   type ReadyConnectorConnectionMutation,
+  type ConnectorConnectionMutationResolution,
 } from "./connector-connection-write.service";
 import {
   connectorRuntimeWakeupRunColumns,
@@ -108,7 +101,6 @@ import {
   type CustomConnectorStoredValue,
 } from "./custom-connector-credential-access.service";
 import {
-  requireManualGrantWrite,
   connectorCredentialStorageConnectionDeletionPlan as connectionDeletionPlan,
   connectorCredentialStorageSelectionDeletionPlan as selectionDeletionPlan,
   connectorCredentialStorageCursorDeletionPlan as cursorDeletionPlan,
@@ -124,7 +116,7 @@ import {
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import {
   customConnectorCredentialValues as credentialValues,
-  customConnectorCredentialWrites as credentialWrites,
+  customConnectorValuesPublicationSql,
   type CustomConnectorMemberConnectionDeletionResult,
   type PreparedCustomConnectorValue,
 } from "./custom-connector-credential-storage.service";
@@ -3271,31 +3263,13 @@ interface CustomConnectorValueWriteState {
   readonly resolution: ReadyConnectorConnectionMutation;
 }
 
-async function prepareCustomConnectorValueWrite(args: {
-  readonly tx: Tx;
+function prepareCustomConnectorValueWrite(args: {
   readonly request: SetCustomConnectorValuesArgs;
   readonly expectedConnector: CustomConnectorRow;
   readonly expectedValues: readonly CustomConnectorValueInput[];
-}): Promise<
-  | CustomConnectorValueWriteState
-  | BadRequestResponse
-  | NotFoundResponse
-  | ConflictResponse
-> {
-  const [lockedDefinition] = await args.tx
-    .select(customConnectorDefinitionSelection())
-    .from(orgCustomConnectors)
-    .where(
-      and(
-        eq(orgCustomConnectors.id, args.request.connectorId),
-        eq(orgCustomConnectors.orgId, args.request.orgId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!lockedDefinition) {
-    return notFound("Custom connector not found");
-  }
+  readonly definition: CustomConnectorDefinitionRow;
+}) {
+  const lockedDefinition = args.definition;
   const connector = normaliseCustomConnectorRow(lockedDefinition);
   if (connector.authMode === "oauth" || connector.authMode === "automatic") {
     return badRequestMessage(
@@ -3318,33 +3292,18 @@ async function prepareCustomConnectorValueWrite(args: {
     );
   }
 
-  const mutationReadDb = args.tx;
-  const mutationReadArgs: ConnectorConnectionMutationArgs = {
-    orgId: args.request.orgId,
-    userId: args.request.userId,
-    target: {
-      kind: "custom",
-      customConnectorId: args.request.connectorId,
-    },
-    mutation: args.request.account,
-    allowSiblings: true,
-  };
-  const resolution = await (async () => {
-    let read = connectionMutationReadPlan(mutationReadArgs);
-    for (;;) {
-      const rows = await mutationReadDb
-        .select(read.columns)
-        .from(read.from)
-        .where(read.where)
-        .orderBy(...read.orderBy)
-        .limit(read.limit);
-      const result = connectionMutationReadResult(mutationReadArgs, read, rows);
-      if (result.kind === "resolved") {
-        return result.resolution;
-      }
-      read = result.read;
-    }
-  })();
+  return { connector, currentValues };
+}
+
+function customConnectorValueWriteState(
+  connector: CustomConnectorRow,
+  currentValues: readonly CustomConnectorValueInput[],
+  resolution: ConnectorConnectionMutationResolution,
+):
+  | CustomConnectorValueWriteState
+  | BadRequestResponse
+  | NotFoundResponse
+  | ConflictResponse {
   if (resolution.kind !== "ready") {
     return resolution.kind === "missing"
       ? notFound("Connector account not found")
@@ -3400,14 +3359,6 @@ type CustomConnectorValueWriteResult =
   | NotFoundResponse
   | ConflictResponse;
 
-interface CustomConnectorValuePersistenceArgs {
-  readonly tx: Tx;
-  readonly request: SetCustomConnectorValuesArgs;
-  readonly expectedConnector: CustomConnectorRow;
-  readonly expectedValues: readonly CustomConnectorValueInput[];
-  readonly preparedValues: readonly PreparedCustomConnectorValue[];
-}
-
 function customConnectorValueConnectionMetadata(
   request: Pick<
     SetCustomConnectorValuesArgs,
@@ -3434,129 +3385,10 @@ function customConnectorValueConnectionMetadata(
   };
 }
 
-async function persistCustomConnectorValues(
-  args: CustomConnectorValuePersistenceArgs,
-  signal: AbortSignal,
-): Promise<CustomConnectorValueWriteResult> {
-  const state = await prepareCustomConnectorValueWrite(args);
-  if ("status" in state) {
-    return state;
-  }
-  const credentials = credentialValues(
-    args.request,
-    state.connector.fields,
-    args.preparedValues,
-  );
-  const connectionArgs = customConnectorValueConnectionMetadata(
-    args.request,
-    state,
-  );
-  let connectedAccountId: string;
-  if (state.preservesStoredValues) {
-    const db = args.tx;
-    const connection = await (async () => {
-      return connectorConnectionWrittenRow(
-        await (async () => {
-          let write = connectionMetadataWritePlan(connectionArgs);
-          for (;;) {
-            const query: ConnectorConnectionMetadataQuery =
-              write.kind === "update"
-                ? db.update(connectors).set(write.values).where(write.where)
-                : write.conflict
-                  ? db
-                      .insert(connectors)
-                      .values(write.values)
-                      .onConflictDoNothing(write.conflict)
-                  : db.insert(connectors).values(write.values);
-            const [row] = await query.returning(connectionSelection());
-            const result = connectionMetadataWriteResult(write, row);
-            if (result.kind === "resolved") {
-              return write.phase === "existing"
-                ? result.outcome
-                : await Promise.resolve(result.outcome);
-            }
-            write = result.write;
-          }
-        })(),
-      );
-    })();
-    connectedAccountId = connection.id;
-    signal.throwIfAborted();
-    await (async () => {
-      for (const write of credentialWrites(credentials, connection.id)) {
-        const [row] = await db
-          .insert(write.table)
-          .values(write.values)
-          .onConflictDoUpdate(write.conflict)
-          .returning({ id: write.table.id });
-        requireManualGrantWrite(row, write.field.kind, write.field.key);
-        signal.throwIfAborted();
-      }
-    })();
-  } else {
-    const tx = args.tx;
-
-    const connection = await awaitConnectorConnectionRow(
-      (async () => {
-        const outcome = await (async () => {
-          let write = connectionMetadataWritePlan(connectionArgs);
-          for (;;) {
-            const query: ConnectorConnectionMetadataQuery =
-              write.kind === "update"
-                ? tx.update(connectors).set(write.values).where(write.where)
-                : write.conflict
-                  ? tx
-                      .insert(connectors)
-                      .values(write.values)
-                      .onConflictDoNothing(write.conflict)
-                  : tx.insert(connectors).values(write.values);
-            const [row] = await query.returning(connectionSelection());
-            const result = connectionMetadataWriteResult(write, row);
-            if (result.kind === "resolved") {
-              return write.phase === "existing"
-                ? result.outcome
-                : await Promise.resolve(result.outcome);
-            }
-            write = result.write;
-          }
-        })();
-        signal.throwIfAborted();
-        if (outcome.kind !== "written") {
-          return outcome;
-        }
-        const connection = outcome.row;
-
-        for (const kind of connectorCredentialDeletionKinds) {
-          const deletion = connectorCredentialDeletion(kind, connection);
-          await tx.delete(deletion.from).where(deletion.where);
-          if (kind !== "builtin-oauth") {
-            signal.throwIfAborted();
-          }
-        }
-        const connectorId = connection.id;
-        await (async () => {
-          for (const write of credentialWrites(credentials, connectorId)) {
-            const [row] = await tx
-              .insert(write.table)
-              .values(write.values)
-              .onConflictDoUpdate(write.conflict)
-              .returning({ id: write.table.id });
-            requireManualGrantWrite(row, write.field.kind, write.field.key);
-            signal.throwIfAborted();
-          }
-        })();
-        signal.throwIfAborted();
-        return outcome;
-      })(),
-    );
-    connectedAccountId = connection.id;
-  }
-  return {
-    connector: state.connector,
-    runtimeRecovered: state.runtimeRecovered,
-    connectedAccountId,
-  };
-}
+const customConnectorValuesPublicationRow = object({
+  definition_current: boolean(),
+  connection_id: string().uuid().nullable(),
+});
 
 type SetCustomConnectorValuesResponse =
   | (CustomConnectorResponse & { readonly connectionId: string })
@@ -3564,6 +3396,169 @@ type SetCustomConnectorValuesResponse =
   | NotFoundResponse
   | ForbiddenResponse
   | ConflictResponse;
+
+interface CustomConnectorValuePublicationContext {
+  readonly request: SetCustomConnectorValuesArgs;
+  readonly expectedConnector: CustomConnectorRow;
+  readonly expectedValues: readonly CustomConnectorValueInput[];
+  readonly preparedValues: readonly PreparedCustomConnectorValue[];
+}
+
+const prepareCustomConnectorValuePublication$ = command(
+  async ({ set }, context: CustomConnectorValuePublicationContext) => {
+    const writeDb = set(writeDb$);
+    const [observedDefinition] = await writeDb
+      .select({
+        definition: customConnectorDefinitionSelection(),
+        revision: sql`${orgCustomConnectors}.xmin::text`.mapWith(pgTextDecoder),
+      })
+      .from(orgCustomConnectors)
+      .where(
+        and(
+          eq(orgCustomConnectors.id, context.request.connectorId),
+          eq(orgCustomConnectors.orgId, context.request.orgId),
+        ),
+      )
+      .limit(1);
+    if (!observedDefinition) {
+      return notFound("Custom connector not found");
+    }
+    const current = prepareCustomConnectorValueWrite({
+      request: context.request,
+      expectedConnector: context.expectedConnector,
+      expectedValues: context.expectedValues,
+      definition: observedDefinition.definition,
+    });
+    if ("status" in current) {
+      return current;
+    }
+    const mutationReadArgs: ConnectorConnectionMutationArgs = {
+      orgId: context.request.orgId,
+      userId: context.request.userId,
+      target: {
+        kind: "custom",
+        customConnectorId: context.request.connectorId,
+      },
+      mutation: context.request.account,
+      allowSiblings: true,
+    };
+    const mutation = await (async () => {
+      let read = connectionMutationReadPlan(mutationReadArgs);
+      for (;;) {
+        const rows = await writeDb
+          .select({
+            ...read.columns,
+            publicationRevision: sql`${connectors}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(read.from)
+          .where(read.where)
+          .orderBy(...read.orderBy)
+          .limit(read.limit);
+        const result = connectionMutationReadResult(
+          mutationReadArgs,
+          read,
+          rows,
+        );
+        if (result.kind === "resolved") {
+          if (
+            result.resolution.kind === "ready" &&
+            result.resolution.mutation.kind === "update"
+          ) {
+            const existingId = result.resolution.mutation.existing.id;
+            const observed = rows.find((row) => {
+              return row.id === existingId;
+            });
+            if (!observed) {
+              throw new Error(
+                "Prepared connector account has no observed row version",
+              );
+            }
+            return {
+              resolution: result.resolution,
+              accountRevision: observed.publicationRevision,
+            };
+          }
+          return { resolution: result.resolution, accountRevision: null };
+        }
+        read = result.read;
+      }
+    })();
+    const state = customConnectorValueWriteState(
+      current.connector,
+      current.currentValues,
+      mutation.resolution,
+    );
+    if ("status" in state) {
+      return state;
+    }
+    return {
+      state,
+      definitionRevision: observedDefinition.revision,
+      accountRevision: mutation.accountRevision,
+    };
+  },
+);
+
+const publishCustomConnectorValues$ = command(
+  async (
+    { set },
+    context: CustomConnectorValuePublicationContext,
+    signal: AbortSignal,
+  ): Promise<CustomConnectorValueWriteResult> => {
+    const prepared = await set(
+      prepareCustomConnectorValuePublication$,
+      context,
+    );
+    signal.throwIfAborted();
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const { state } = prepared;
+    const writeDb = set(writeDb$);
+    const accountId =
+      state.resolution.kind === "update"
+        ? state.resolution.existing.id
+        : randomUUID();
+    const metadata = {
+      ...customConnectorValueConnectionMetadata(context.request, state),
+      ...(state.resolution.kind === "insert"
+        ? { insertConnectionId: accountId }
+        : {}),
+    };
+    const statement = customConnectorValuesPublicationSql({
+      metadata,
+      accountId,
+      definitionRevision: prepared.definitionRevision,
+      accountRevision: prepared.accountRevision,
+      preservesStoredValues: state.preservesStoredValues,
+      credentials: credentialValues(
+        context.request,
+        state.connector.fields,
+        context.preparedValues,
+      ),
+    });
+    signal.throwIfAborted();
+    const [published] = parseRawRows(
+      customConnectorValuesPublicationRow,
+      await writeDb.execute(statement),
+    );
+    if (!published) {
+      throw new Error("Custom connector value publication returned no row");
+    }
+    if (!published.definition_current || published.connection_id === null) {
+      return badRequestMessage(
+        "Custom connector changed while values were being saved; retry",
+      );
+    }
+    return {
+      connector: state.connector,
+      runtimeRecovered: state.runtimeRecovered,
+      connectedAccountId: published.connection_id,
+    };
+  },
+);
 
 export const setCustomConnectorValues$ = command(
   async (
@@ -3603,19 +3598,16 @@ export const setCustomConnectorValues$ = command(
       preparationInput,
       signal,
     );
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0147; new non-billing transactions are prohibited.
-    const valueWrite = writeDb.transaction(async (tx) => {
-      return await persistCustomConnectorValues(
-        {
-          tx,
-          request: args,
-          expectedConnector: connector,
-          expectedValues: values,
-          preparedValues,
-        },
-        signal,
-      );
-    });
+    const valueWrite = set(
+      publishCustomConnectorValues$,
+      {
+        request: args,
+        expectedConnector: connector,
+        expectedValues: values,
+        preparedValues,
+      },
+      signal,
+    );
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
     const writeResult = await (async () => {
       const result = await valueWrite;
