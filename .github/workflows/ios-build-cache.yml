@@ -92,6 +92,10 @@ jobs:
         uses: ./.github/actions/setup-ios-build-cache
         with:
           skip-restore-on-hit: "true"
+      - name: Reset oversized inherited compiler history
+        id: limit-compilation
+        if: steps.cache.outputs.compilation-hit != 'true'
+        run: python3 ios/scripts/reset-oversized-compilation-cache.py
       - name: Prepare locked dependencies
         id: prepare
         if: steps.cache.outputs.dependencies-hit != 'true' || steps.cache.outputs.compilation-hit != 'true'
