@@ -480,7 +480,16 @@ function createChatAttachment(file: File): ChatAttachment {
 // DraftSignals — encapsulates per-thread composer state
 // ---------------------------------------------------------------------------
 
+export interface PendingThreadIdentity {
+  readonly intent: string;
+  readonly threadId: string;
+  readonly clientEventId: string;
+  readonly chatThreadEventId: string;
+}
+
 export interface DraftSignals {
+  reserveThreadIdentity$: Command<PendingThreadIdentity, [string]>;
+  confirmThreadIdentity$: Command<void, [string]>;
   hasLocalInput$: Computed<boolean>;
   input$: Computed<string>;
   hasInput$: Computed<boolean>;
@@ -1107,7 +1116,32 @@ function createComposerDraftHandoffSignals({
   };
 }
 
+function createDraftThreadIdentitySignals() {
+  const pendingIdentity$ = state<PendingThreadIdentity | null>(null);
+  const reserveThreadIdentity$ = command(({ get, set }, intent: string) => {
+    const pending = get(pendingIdentity$);
+    if (pending?.intent === intent) {
+      return pending;
+    }
+    const identity = {
+      intent,
+      threadId: crypto.randomUUID(),
+      clientEventId: crypto.randomUUID(),
+      chatThreadEventId: crypto.randomUUID(),
+    };
+    set(pendingIdentity$, identity);
+    return identity;
+  });
+  const confirmThreadIdentity$ = command(({ get, set }, threadId: string) => {
+    if (get(pendingIdentity$)?.threadId === threadId) {
+      set(pendingIdentity$, null);
+    }
+  });
+  return { reserveThreadIdentity$, confirmThreadIdentity$ };
+}
+
 export function createDraftSignals(): DraftSignals {
+  const threadIdentity = createDraftThreadIdentitySignals();
   const draftDocument = createDraftDocumentSignals();
   const draftInput = createDraftInputSignals(draftDocument);
   const internalGenerationTemplate$ = state<
@@ -1221,6 +1255,7 @@ export function createDraftSignals(): DraftSignals {
   });
 
   return {
+    ...threadIdentity,
     ...draftInput,
     reconcileComposerDraft$,
     prependComposerDraft$,

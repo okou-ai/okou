@@ -12,7 +12,7 @@ import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reason
 import type { UserModelPreferenceResponse } from "@okouai/api-contracts/contracts/user-model-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
@@ -25,7 +25,11 @@ import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { logger } from "../log.ts";
 import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
-import { talkDraft$, type DraftSignals } from "../okou-page/chat-draft.ts";
+import {
+  talkDraft$,
+  type DraftSignals,
+  type PendingThreadIdentity,
+} from "../okou-page/chat-draft.ts";
 import { chatPageModelSelection$ } from "../okou-page/chat-page.ts";
 import {
   rememberComposerTaskForThread$,
@@ -97,47 +101,6 @@ interface PreparedNewThreadPayload {
   attachments: ResolvedAttachFile[] | undefined;
   hasTextContent: boolean;
 }
-
-interface PendingThreadIdentity {
-  readonly intent: string;
-  readonly threadId: string;
-  readonly clientEventId: string;
-  readonly chatThreadEventId: string;
-}
-
-const pendingThreadIdentities$ = state<
-  ReadonlyMap<DraftSignals, PendingThreadIdentity>
->(new Map());
-
-const reserveThreadIdentity$ = command(
-  ({ get, set }, draft: DraftSignals, intent: string) => {
-    const pending = get(pendingThreadIdentities$);
-    const existing = pending.get(draft);
-    if (existing?.intent === intent) {
-      return existing;
-    }
-    const identity = {
-      intent,
-      threadId: crypto.randomUUID(),
-      clientEventId: crypto.randomUUID(),
-      chatThreadEventId: crypto.randomUUID(),
-    };
-    set(pendingThreadIdentities$, new Map(pending).set(draft, identity));
-    return identity;
-  },
-);
-
-const confirmThreadIdentity$ = command(
-  ({ get, set }, draft: DraftSignals, threadId: string) => {
-    const pending = get(pendingThreadIdentities$);
-    if (pending.get(draft)?.threadId !== threadId) {
-      return;
-    }
-    const next = new Map(pending);
-    next.delete(draft);
-    set(pendingThreadIdentities$, next);
-  },
-);
 
 function userMessageForNewThread(
   request: SendNewThreadMessageRequest,
@@ -652,8 +615,7 @@ const sendNewThreadMessage$ = command(
     // An unknown create outcome retains the identity for an explicit resend of
     // the same submission. A changed draft or account choice is a new intent.
     const { threadId, clientEventId, chatThreadEventId } = set(
-      reserveThreadIdentity$,
-      draft,
+      draft.reserveThreadIdentity$,
       JSON.stringify({
         agentId,
         userMessage: annotatedUserMessage,
@@ -734,7 +696,7 @@ const sendNewThreadMessage$ = command(
         createResult ?? createNewThreadRecord(creation, signal),
       ]);
       signal.throwIfAborted();
-      set(confirmThreadIdentity$, draft, threadId);
+      set(draft.confirmThreadIdentity$, threadId);
       await sendChatEvent(createClient, sendBody, signal);
       signal.throwIfAborted();
       L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });
