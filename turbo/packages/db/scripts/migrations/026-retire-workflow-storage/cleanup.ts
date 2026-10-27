@@ -194,17 +194,14 @@ async function configuration(args: NonNullable<ReturnType<typeof options>>) {
   if (
     !["postgres:", "postgresql:"].includes(address.protocol) ||
     !address.hostname ||
-    address.pathname.length < 2
+    address.pathname.length < 2 ||
+    address.searchParams.has("host") ||
+    address.searchParams.has("port") ||
+    address.searchParams.getAll("options").length > 1
   )
     throw new RetirementError("ExplicitDatabaseEndpointRequired");
-  const databaseScope = checksum(
-    JSON.stringify([
-      address.hostname,
-      address.port || "5432",
-      address.pathname,
-      address.searchParams.get("options"),
-    ]),
-  );
+  const databaseOptions =
+    address.searchParams.get("options") || process.env.PGOPTIONS || null;
   let plan: Plan | undefined;
   if (args.reviewed) {
     const bytes = await privateFile(
@@ -215,12 +212,22 @@ async function configuration(args: NonNullable<ReturnType<typeof options>>) {
       throw new RetirementError("ReviewedPlanChecksumMismatch");
     plan = planSchema.parse(JSON.parse(bytes));
     validatePlan(plan);
-    if (plan.bucket !== bucket)
-      throw new RetirementError("ReviewedBucketMismatch");
-    if (plan.endpoint !== endpoint || plan.databaseScope !== databaseScope)
-      throw new RetirementError("ReviewedDatabaseOrR2AccountMismatch");
   }
-  return { bucket, endpoint, connection, databaseScope, plan };
+  return { bucket, endpoint, connection, databaseOptions, plan };
+}
+
+function verifyScope(
+  plan: Plan | undefined,
+  scope: Pick<Plan, "bucket" | "endpoint" | "databaseScope">,
+): void {
+  if (!plan) return;
+  if (plan.bucket !== scope.bucket)
+    throw new RetirementError("ReviewedBucketMismatch");
+  if (
+    plan.endpoint !== scope.endpoint ||
+    plan.databaseScope !== scope.databaseScope
+  )
+    throw new RetirementError("ReviewedDatabaseOrR2AccountMismatch");
 }
 
 type Remaining = ReturnType<typeof remainingSchema.parse>[number];
@@ -236,7 +243,7 @@ Default: database-only, read-only review plan. See the adjacent README before an
     return;
   }
   const args = parsed;
-  const { bucket, endpoint, connection, databaseScope, plan } =
+  const { bucket, endpoint, connection, databaseOptions, plan } =
     await configuration(args);
   const client = new Client({
     connectionString: connection,
@@ -245,6 +252,17 @@ Default: database-only, read-only review plan. See the adjacent README before an
     statement_timeout: 10000,
     query_timeout: 12000,
   });
+  // pg resolves defaults (including PGPORT) before connecting. Bind the actual
+  // destination, decoded database name and effective routing options, not URL labels.
+  const databaseScope = checksum(
+    JSON.stringify([
+      client.host,
+      String(client.port),
+      string().parse(client.database),
+      databaseOptions,
+    ]),
+  );
+  verifyScope(plan, { bucket, endpoint, databaseScope });
   // Refuse a reused receipt path before opening any production write boundary.
   const receiptFile = await open(args.output, "wx", 0o600);
   let s3: S3Client | undefined;

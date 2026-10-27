@@ -7,6 +7,8 @@
     "SHELL",
     "DATABASE_URL",
     "DATABASE_URL_FILE",
+    "PGPORT",
+    "PGOPTIONS",
     "API_ENV_JSON_PARTS",
     "API_ENV_JSON_*",
     "DB_POOL_MAX",

@@ -9,8 +9,10 @@ The default is a database-only, read-only dry-run. It never reads instruction
 bodies into the process, downloads archives, or calls R2. It writes a private
 review plan containing source identities, exact version directories, row
 fingerprints, predetermined cleanup job IDs, and a hash-only Workflow census.
-Plans bind to the bucket, R2 account endpoint and a hash of the database endpoint
-and database name, excluding credentials. Do not edit a reviewed plan to bypass
+Plans bind to the bucket, R2 account endpoint and a hash of pg's effective database
+host, port, decoded database name and routing options, excluding credentials. This
+includes PGPORT/PGOPTIONS defaults. Host/port query overrides and repeated options
+are rejected before connecting. Do not edit a reviewed plan to bypass
 a protection or widen a target.
 
 ## Deployment and consumer gates

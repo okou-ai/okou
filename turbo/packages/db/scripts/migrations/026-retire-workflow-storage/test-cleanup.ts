@@ -25,6 +25,14 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("A disposable DATABASE_URL is required");
 const databaseAddress = new URL(databaseUrl);
 if (
+  databaseAddress.searchParams.has("host") ||
+  databaseAddress.searchParams.has("port") ||
+  databaseAddress.searchParams.getAll("options").length > 1
+)
+  throw new Error(
+    "A canonical disposable database URL without endpoint query overrides is required",
+  );
+if (
   !["localhost", "127.0.0.1"].includes(databaseAddress.hostname) &&
   !(
     databaseAddress.hostname === "postgres" &&
@@ -145,6 +153,7 @@ try {
   ) {
     const output = join(root, `${++sequence}.json`);
     let stdout: string;
+    let classification: string | undefined;
     try {
       const result = await promisify(execFile)(
         process.execPath,
@@ -176,8 +185,14 @@ try {
         code,
         `${failure.data.stderr}\n${failure.data.stdout}`,
       );
-      if (code === 1)
-        assert.equal(JSON.parse(failure.data.stderr.trim()).status, "failed");
+      if (code === 1) {
+        const rejected = object({
+          status: string(),
+          classification: string(),
+        }).parse(JSON.parse(failure.data.stderr.trim()));
+        assert.equal(rejected.status, "failed");
+        classification = rejected.classification;
+      }
       stdout = failure.data.stdout;
     }
     const records =
@@ -189,7 +204,7 @@ try {
             .map((line) => {
               return summarySchema.parse(JSON.parse(line));
             });
-    return { output, records, last: records.at(-1) };
+    return { output, records, last: records.at(-1), classification };
   }
   async function review(id: string, code = 0): Promise<Review> {
     const result = await invoke(["--storage-id", id], code);
@@ -299,6 +314,80 @@ try {
   objects.add(sibling);
   objects.add(newAttachment);
   const reviewed = await review(main.id);
+  for (const [key, value] of [
+    ["host", databaseAddress.hostname],
+    ["port", String(db.port)],
+  ] as const) {
+    const overridden = new URL(databaseUrl);
+    overridden.searchParams.set(key, value);
+    const file = join(root, `override-${key}`);
+    await writeFile(file, overridden.href, { mode: 0o600 });
+    const rejected = await invoke(
+      ["--migrate", "--ack-consumer-retirement", ...reviewedArgs(reviewed)],
+      1,
+      { DATABASE_URL_FILE: file },
+    );
+    assert.equal(rejected.classification, "ExplicitDatabaseEndpointRequired");
+  }
+  const duplicateOptions = new URL(databaseUrl);
+  duplicateOptions.searchParams.append("options", "-c application_name=first");
+  duplicateOptions.searchParams.append("options", "-c application_name=second");
+  const duplicateFile = join(root, "duplicate-options");
+  await writeFile(duplicateFile, duplicateOptions.href, { mode: 0o600 });
+  assert.equal(
+    (
+      await invoke(["--storage-id", main.id], 1, {
+        DATABASE_URL_FILE: duplicateFile,
+      })
+    ).classification,
+    "ExplicitDatabaseEndpointRequired",
+  );
+  const unportedAddress = new URL(databaseUrl);
+  unportedAddress.port = "";
+  const unportedFile = join(root, "unported-database-url");
+  await writeFile(unportedFile, unportedAddress.href, { mode: 0o600 });
+  await invoke(["--audit", ...reviewedArgs(reviewed)], 2, {
+    DATABASE_URL_FILE: unportedFile,
+    PGPORT: String(db.port),
+  });
+  const changedPort = await invoke(
+    ["--migrate", "--ack-consumer-retirement", ...reviewedArgs(reviewed)],
+    1,
+    {
+      DATABASE_URL_FILE: unportedFile,
+      PGPORT: String(db.port === 6543 ? 6544 : 6543),
+    },
+  );
+  assert.equal(
+    changedPort.classification,
+    "ReviewedDatabaseOrR2AccountMismatch",
+  );
+  const optionsAddress = new URL(databaseUrl);
+  optionsAddress.searchParams.delete("options");
+  const optionsFile = join(root, "environment-options-database-url");
+  await writeFile(optionsFile, optionsAddress.href, { mode: 0o600 });
+  const optionsReview = await invoke(["--storage-id", main.id], 0, {
+    DATABASE_URL_FILE: optionsFile,
+  });
+  const changedOptions = await invoke(
+    [
+      "--migrate",
+      "--ack-consumer-retirement",
+      "--plan-file",
+      optionsReview.output,
+      "--expect-plan-sha256",
+      string().parse(optionsReview.last?.planSha256),
+    ],
+    1,
+    {
+      DATABASE_URL_FILE: optionsFile,
+      PGOPTIONS: `-c application_name=retirement_${randomUUID()}`,
+    },
+  );
+  assert.equal(
+    changedOptions.classification,
+    "ReviewedDatabaseOrR2AccountMismatch",
+  );
   const scopedCredential = join(root, "scoped-database-url");
   const scopedAddress = new URL(databaseUrl);
   scopedAddress.searchParams.set("options", "-c search_path=pg_catalog");
