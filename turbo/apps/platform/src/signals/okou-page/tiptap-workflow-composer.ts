@@ -10,13 +10,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import {
-  Editor,
-  Extension,
-  Node,
-  extensions as coreExtensions,
-  type JSONContent,
-} from "@tiptap/core";
+import { Editor, Extension, Node, type JSONContent } from "@tiptap/core";
 import { Document } from "@tiptap/extension-document";
 import { HardBreak } from "@tiptap/extension-hard-break";
 import { Paragraph } from "@tiptap/extension-paragraph";
@@ -1637,25 +1631,8 @@ const WorkflowHighlight = Extension.create<
   },
 });
 
-const WorkflowComposerKeymap = coreExtensions.Keymap.extend({
-  addKeyboardShortcuts() {
-    const shortcuts = this.parent?.() ?? {};
-    for (const [key, shortcut] of Object.entries(shortcuts)) {
-      shortcuts[key] = (context) => {
-        // ProseMirror can synthesize Backspace while reading an IME deletion.
-        // Even an unhandled Tiptap command dispatches an empty transaction,
-        // restoring the old DOM/selection and cancelling the native composition.
-        // Let ProseMirror apply the composing DOM change without running keymaps.
-        return !this.editor.view.composing && shortcut(context);
-      };
-    }
-    return shortcuts;
-  },
-});
-
 function createWorkflowComposerBaseExtensions() {
   return [
-    WorkflowComposerKeymap,
     Document,
     Dropcursor,
     Gapcursor,
@@ -1848,7 +1825,6 @@ function createWorkflowEditor(
 ): Editor {
   const editor = new Editor({
     element: null,
-    enableCoreExtensions: { keymap: false },
     extensions: [
       ...createWorkflowComposerBaseExtensions(),
       createTemplateAttachmentNode(runtime),
