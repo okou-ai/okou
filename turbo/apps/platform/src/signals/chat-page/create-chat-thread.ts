@@ -3473,6 +3473,8 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
+    retryAssistantError$: events.retryAssistantError$,
+    resetCodexSubscriptionAndRetry$: events.resetCodexSubscriptionAndRetry$,
     eventImageGroups$: events.eventImageGroups$,
     browserSessionSignals: events.browserSessionSignals,
     hasEvents$: events.hasEvents$,
