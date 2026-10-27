@@ -1,5 +1,4 @@
 import { Badge } from "@okouai/ui";
-import { cn } from "@okouai/ui/lib/utils";
 import {
   Globe,
   HeartPulse,
@@ -104,9 +103,8 @@ export function SecurityDetailsLink({ className }: { className: string }) {
  * The five frameworks as status badges. Onboarding and the chat home show the
  * same list, so the claims cannot drift apart between the two surfaces.
  *
- * `quiet` is for a surface where the badges are ambient rather than the
- * content: the icon and the status drop to the muted ramp, and the status
- * keeps only a one-step contrast over the name.
+ * `quiet` renders compact, unboxed footer text with subdued icons and the
+ * same tone for each framework and its status.
  */
 export function ComplianceBadges({
   className,
@@ -116,33 +114,31 @@ export function ComplianceBadges({
   quiet?: boolean;
 }) {
   const items = useComplianceItems();
+  const Item = quiet ? "span" : Badge;
 
   return (
     <ul className={className}>
       {items.map((item) => {
         return (
           <li key={item.name}>
-            <Badge
-              className={cn(
-                "text-xs",
-                quiet ? "text-gray-700" : "text-muted-foreground",
-              )}
+            <Item
+              className={
+                quiet
+                  ? "inline-flex items-center gap-1 text-[11px] leading-4 text-gray-600"
+                  : "text-xs text-muted-foreground"
+              }
             >
               <item.icon
-                className={quiet ? undefined : "text-foreground"}
+                className={quiet ? "size-2.5 text-gray-500" : "text-foreground"}
                 aria-hidden="true"
               />
               <span>{item.name}</span>
               <span
-                className={
-                  quiet
-                    ? "text-muted-foreground"
-                    : "font-medium text-foreground"
-                }
+                className={quiet ? undefined : "font-medium text-foreground"}
               >
                 {item.status}
               </span>
-            </Badge>
+            </Item>
           </li>
         );
       })}
