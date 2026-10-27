@@ -14,10 +14,7 @@ import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reas
 import { v5 as uuidv5 } from "uuid";
 import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 
-import {
-  serializeChatFollowupsContent,
-  type ChatRecommendedFollowup,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -59,10 +56,7 @@ import {
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
-import {
-  followupsEventIdForRun,
-  integrationCompletionFallbackEventIdForRun,
-} from "./assistant-event-id";
+import { integrationCompletionFallbackEventIdForRun } from "./assistant-event-id";
 import { releaseThreadBrowsersForRun$ } from "./browser.service";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
@@ -76,6 +70,7 @@ import {
 } from "./canonical-slack-thread-status.service";
 import {
   insertAssistantEvents$,
+  insertRecommendedFollowupsEvent$,
   touchChatThreadLastMessageAtIndependently$,
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
@@ -1479,66 +1474,6 @@ const insertRunLifecycleMarker$ = command(
   },
 );
 
-const insertRecommendedFollowupsEvent$ = command(
-  async (
-    { set },
-    args: {
-      readonly db: Db;
-      readonly runId: string;
-      readonly threadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly followups: readonly ChatRecommendedFollowup[];
-      readonly markRead: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    signal.throwIfAborted();
-    const inserted =
-      parseRawRows(
-        chatEventCommandResultSchema,
-        await args.db.execute(
-          chatEventInsertSql(
-            {
-              id: followupsEventIdForRun(args.runId),
-              chatThreadId: args.threadId,
-              eventType: "output.followups",
-              content: serializeChatFollowupsContent(args.followups),
-              runId: args.runId,
-            },
-            "id",
-          ),
-        ),
-      )[0] ?? null;
-
-    signal.throwIfAborted();
-    if (!inserted) {
-      return false;
-    }
-
-    if (args.markRead) {
-      await set(
-        touchChatThreadLastMessageAtIndependently$,
-        args.threadId,
-        {
-          touchedAt: inserted.createdAt,
-          orgId: args.orgId,
-          markRead: true,
-        },
-        signal,
-      );
-    }
-    await publishChatThreadMessageCreatedSafely({
-      userId: args.userId,
-      orgId: args.orgId,
-      threadId: args.threadId,
-      syncThroughSeqId: inserted.seqId,
-    });
-    signal.throwIfAborted();
-    return true;
-  },
-);
-
 async function generateRecommendedFollowupsForCompletedRun(
   args: {
     readonly followupContext: readonly ChatCompletionContextMessage[];
@@ -1786,7 +1721,6 @@ const runCompletedChatCallbackSideEffects$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
@@ -1822,7 +1756,6 @@ const runCompletedChatCallbackSideEffects$ = command(
         await set(
           insertRecommendedFollowupsEvent$,
           {
-            db: args.db,
             runId: args.runId,
             threadId: args.chatThread.chatThreadId,
             userId: args.chatThread.userId,
@@ -3194,7 +3127,6 @@ const finishTerminalChatCallbackAfterProjection$ = command(
               ? set(
                   runCompletedChatCallbackSideEffects$,
                   {
-                    db: args.callback.db,
                     runId: args.runId,
                     chatThread: args.chatThread,
                     run: deferredSideEffects.run,
