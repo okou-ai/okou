@@ -117,11 +117,6 @@
       "owner": "deleteHostedSite$"
     },
     {
-      "id": "TX-0189",
-      "file": "turbo/apps/api/src/signals/services/morning-brief-schedule-claim.service.ts",
-      "owner": "commitMorningBriefScheduleSettlement$"
-    },
-    {
       "id": "TX-0218",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
