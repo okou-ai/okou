@@ -5,10 +5,19 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
+  DialogClose,
+  IconButton,
 } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ArrowLeft, ArrowUpRight, Info, Volume2, VolumeX } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  Info,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import {
   platformOkouWordmarkDarkImg,
   platformOkouWordmarkLightImg,
@@ -34,7 +43,11 @@ export const goldButton = cn(
   typography.labelClassName,
 );
 
-export function HalloweenHeader() {
+export function HalloweenHeader({
+  embedded = false,
+}: {
+  readonly embedded?: boolean;
+}) {
   const screen = useGet(halloweenScreen$);
   const round = useGet(halloweenRound$);
   const sound = useGet(halloweenSound$);
@@ -90,7 +103,7 @@ export function HalloweenHeader() {
             {copy.leave}
             <ArrowUpRight className="size-3" />
           </Button>
-        ) : (
+        ) : !embedded ? (
           <Link
             pathname="/"
             className={cn(
@@ -101,7 +114,7 @@ export function HalloweenHeader() {
             {copy.back}
             <ArrowUpRight className="size-3" />
           </Link>
-        )}
+        ) : null}
         {screen !== "result" && (
           <Button
             variant="quiet"
@@ -142,6 +155,18 @@ export function HalloweenHeader() {
             {sound ? copy.soundOn : copy.soundOff}
           </span>
         </Button>
+        {embedded && (
+          <DialogClose
+            render={
+              <IconButton
+                aria-label={copy.back}
+                className="text-[#bcc8d9] hover:bg-[#ffffff09] hover:text-[#e8c68d]"
+              />
+            }
+          >
+            <X className="size-5" />
+          </DialogClose>
+        )}
       </div>
     </header>
   );

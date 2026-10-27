@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { onRef, settle, detach, Reason } from "../utils.ts";
-import { halloweenSound$ } from "./halloween.ts";
+import { halloweenModalAnchor$, halloweenSound$ } from "./halloween.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 
 export const focusHalloweenHeading$ = onRef<HTMLElement>(
@@ -23,6 +23,42 @@ function ownAnimations(animations: readonly Animation[], signal: AbortSignal) {
     cancel();
   }
 }
+
+export const halloweenModalEntrance$ = command(
+  ({ get }, element: HTMLElement, signal: AbortSignal) => {
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !element.animate
+    ) {
+      return;
+    }
+    const anchor = get(halloweenModalAnchor$);
+    const bounds = element.getBoundingClientRect();
+    const x = anchor
+      ? anchor.left + anchor.width / 2 - bounds.left - bounds.width / 2
+      : bounds.width * 0.35;
+    const y = anchor
+      ? anchor.top + anchor.height / 2 - bounds.top - bounds.height / 2
+      : bounds.height * 0.35;
+    const animation = element.animate(
+      [
+        {
+          transform: `translate(${x}px, ${y}px) scale(0.08)`,
+          opacity: 0,
+          borderRadius: "48px",
+        },
+        { opacity: 1, offset: 0.3 },
+        {
+          transform: "translate(0, 0) scale(1)",
+          opacity: 1,
+          borderRadius: "16px",
+        },
+      ],
+      { duration: 540, easing: "cubic-bezier(.16,1,.3,1)" },
+    );
+    ownAnimations([animation], signal);
+  },
+);
 
 export const halloweenStageMotion$ = onRef(
   command((_store, element: HTMLElement, signal: AbortSignal) => {

@@ -1,9 +1,8 @@
 import {
-  HalloweenEntry,
-  HalloweenBubbles,
   HalloweenHomeSound,
   HalloweenResultNotice,
 } from "../halloween/halloween-home.tsx";
+import { HalloweenHomeActivity } from "../halloween/halloween-modal.tsx";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { TFunction } from "i18next";
@@ -574,8 +573,7 @@ function AgentComposerPage() {
           </div>
         </div>
       </main>
-      <HalloweenEntry />
-      <HalloweenBubbles />
+      <HalloweenHomeActivity />
       <ChatHomeCompliance />
     </div>
   );

@@ -118,7 +118,11 @@ function StartScreen() {
   );
 }
 
-export function HalloweenPage() {
+export function HalloweenPage({
+  embedded = false,
+}: {
+  readonly embedded?: boolean;
+}) {
   const screen = useGet(halloweenScreen$);
   return (
     <div
@@ -131,7 +135,7 @@ export function HalloweenPage() {
       )}
     >
       {screen !== "result" && <HalloweenStage />}
-      <HalloweenHeader />
+      <HalloweenHeader embedded={embedded} />
       {screen === "question" ? (
         <HalloweenQuestionScreen />
       ) : screen === "result" ? (

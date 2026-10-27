@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.HalloweenQuizModal]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Halloween quiz dialog",
+    description:
+      "Open the Halloween quiz in an animated dialog on the chat home. Requires Halloween quiz.",
+    enabled: false,
+  },
   [FeatureSwitchKey.HalloweenQuiz]: {
     maintainer: "ming@okou.ai",
     displayName: "Halloween quiz",

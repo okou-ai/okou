@@ -1,4 +1,5 @@
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, DialogTrigger } from "@okouai/ui";
+import type { KeyboardEvent } from "react";
 import { Candy, Volume2, VolumeX } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -21,6 +22,7 @@ import {
   enterHalloweenFromBubble$,
   halloweenSound$,
   toggleHalloweenSound$,
+  setHalloweenModalAnchor$,
 } from "../../signals/halloween/halloween.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -104,46 +106,51 @@ export function HalloweenResultNotice() {
   );
 }
 
-export function HalloweenEntry() {
+export function HalloweenEntry({
+  modal = false,
+}: {
+  readonly modal?: boolean;
+}) {
   const phase = useGet(halloweenPhase$);
   const expanded = useGet(halloweenGhostExpanded$);
   const greeting = useGet(halloweenGhostGreetingIndex$);
   const expand = useSet(expandHalloweenGhost$);
   const collapse = useSet(collapseHalloweenGhost$);
+  const setAnchor = useSet(setHalloweenModalAnchor$);
   if (phase !== "open") {
     return null;
   }
-  return (
-    <Link
-      pathname="/halloween"
-      aria-label={copy.nudgeLabel}
-      onMouseEnter={() => {
-        if (window.matchMedia("(hover: hover)").matches) {
-          expand();
-        }
-      }}
-      onMouseLeave={() => {
-        collapse();
-      }}
-      onFocus={() => {
-        if (window.matchMedia("(hover: hover)").matches) {
-          expand();
-        }
-      }}
-      onBlur={() => {
-        collapse();
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          collapse(true);
-        }
-      }}
-      className={cn(
-        "pointer-events-auto absolute bottom-[76px] right-0 z-20 block h-[136px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
-        expanded ? "w-[330px]" : "w-12",
-      )}
-    >
+  const props = {
+    "aria-label": copy.nudgeLabel,
+    onMouseEnter: () => {
+      if (window.matchMedia("(hover: hover)").matches) {
+        expand();
+      }
+    },
+    onMouseLeave: () => {
+      collapse();
+    },
+    onFocus: () => {
+      if (window.matchMedia("(hover: hover)").matches) {
+        expand();
+      }
+    },
+    onBlur: () => {
+      collapse();
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        collapse(true);
+      }
+    },
+    className: cn(
+      "pointer-events-auto absolute bottom-[76px] right-0 z-20 block h-[136px] max-w-[calc(100%-16px)] overflow-hidden rounded-none bg-transparent p-0 transition-[width] duration-500 hover:bg-transparent motion-reduce:transition-none",
+      expanded ? "w-[330px]" : "w-12",
+    ),
+  };
+  const content = (
+    <>
       <span
         className={cn(
           "pointer-events-none absolute right-[90px] top-[70px] w-[220px] max-w-[calc(100vw-130px)] whitespace-pre-line text-right text-[#716456] transition-all duration-300 motion-reduce:transition-none",
@@ -171,11 +178,25 @@ export function HalloweenEntry() {
       >
         <HalloweenGhost />
       </span>
+    </>
+  );
+  return modal ? (
+    <DialogTrigger
+      {...props}
+      onClick={(event) => {
+        setAnchor(event.currentTarget.getBoundingClientRect());
+      }}
+    >
+      {content}
+    </DialogTrigger>
+  ) : (
+    <Link pathname="/halloween" {...props}>
+      {content}
     </Link>
   );
 }
 
-function HalloweenBubble({ index }: { index: number }) {
+function HalloweenBubble({ index, modal }: { index: number; modal: boolean }) {
   const bubble = HALLOWEEN_BUBBLES[index]!;
   const ref = useSet(bubble.ref$);
   const transition = useGet(halloweenBubbleTransition$);
@@ -183,58 +204,83 @@ function HalloweenBubble({ index }: { index: number }) {
   const [, enter] = useLoadableSet(enterHalloweenFromBubble$);
   const playSound = useSet(playHalloweenClick$);
   const burst = useSet(halloweenCandyBurst$);
+  const className = cn(
+    "relative pointer-events-auto flex items-center justify-center rounded-full bg-transparent transition-transform hover:scale-105 hover:shadow-[inset_0_0_0_2px_#b697ea]",
+    bubble.size,
+  );
+  const play = () => {
+    detach(playSound(signal), Reason.DomCallback);
+    detach(enter(index, signal), Reason.DomCallback);
+  };
+  const content = (
+    <>
+      <img
+        src={bubble.image}
+        alt=""
+        draggable={false}
+        className="h-full w-full object-contain"
+      />
+      {transition === index && (
+        <span
+          ref={burst}
+          className="pointer-events-none absolute inset-0"
+          aria-hidden="true"
+        >
+          {Array.from({ length: 8 }, (_, particle) => {
+            return (
+              <Candy
+                key={particle}
+                className="absolute left-4 top-4 h-4 w-4 text-brand-text"
+              />
+            );
+          })}
+        </span>
+      )}
+    </>
+  );
   return (
     <div
       ref={ref}
       className={`pointer-events-none absolute bottom-0 ${bubble.left}`}
     >
       <div>
-        <Link
-          pathname="/halloween"
-          aria-label={copy.nudgeLabel}
-          tabIndex={-1}
-          className={cn(
-            "relative pointer-events-auto flex items-center justify-center rounded-full bg-transparent transition-transform hover:scale-105 hover:shadow-[inset_0_0_0_2px_#b697ea]",
-            bubble.size,
-          )}
-          onClick={(event) => {
-            if (!shouldHandleLinkClick(event)) {
-              return;
-            }
-            event.preventDefault();
-            detach(playSound(signal), Reason.DomCallback);
-            detach(enter(index, signal), Reason.DomCallback);
-          }}
-        >
-          <img
-            src={bubble.image}
-            alt=""
-            draggable={false}
-            className="h-full w-full object-contain"
-          />
-          {transition === index && (
-            <span
-              ref={burst}
-              className="pointer-events-none absolute inset-0"
-              aria-hidden="true"
-            >
-              {Array.from({ length: 8 }, (_, particle) => {
-                return (
-                  <Candy
-                    key={particle}
-                    className="absolute left-4 top-4 h-4 w-4 text-brand-text"
-                  />
-                );
-              })}
-            </span>
-          )}
-        </Link>
+        {modal ? (
+          <button
+            type="button"
+            aria-label={copy.nudgeLabel}
+            tabIndex={-1}
+            className={className}
+            onClick={play}
+          >
+            {content}
+          </button>
+        ) : (
+          <Link
+            pathname="/halloween"
+            aria-label={copy.nudgeLabel}
+            tabIndex={-1}
+            className={className}
+            onClick={(event) => {
+              if (!shouldHandleLinkClick(event)) {
+                return;
+              }
+              event.preventDefault();
+              play();
+            }}
+          >
+            {content}
+          </Link>
+        )}
       </div>
     </div>
   );
 }
 
-export function HalloweenBubbles() {
+export function HalloweenBubbles({
+  modal = false,
+}: {
+  readonly modal?: boolean;
+}) {
   const phase = useGet(halloweenPhase$);
   const first = useGet(halloweenFirstExposure$);
   if (phase !== "open" || !first) {
@@ -247,7 +293,9 @@ export function HalloweenBubbles() {
     >
       <div className="absolute inset-y-0 inset-x-14">
         {HALLOWEEN_BUBBLES.map((bubble, index) => {
-          return <HalloweenBubble key={bubble.left} index={index} />;
+          return (
+            <HalloweenBubble key={bubble.left} index={index} modal={modal} />
+          );
         })}
       </div>
     </div>

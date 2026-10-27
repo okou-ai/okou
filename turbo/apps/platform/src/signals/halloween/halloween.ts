@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { array, boolean, object, string } from "zod";
 import { delay } from "signal-timers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   halloweenContract,
   type HalloweenRound,
@@ -13,7 +14,15 @@ import { localStorageSignals } from "../external/local-storage.ts";
 import { apiClientRuntime$ } from "../api-client-runtime.ts";
 import { navigateTo$ } from "../route.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { detach, Reason, settle, jsonParseOr, setLoop } from "../utils.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import {
+  detach,
+  Reason,
+  settle,
+  jsonParseOr,
+  setLoop,
+  resetSignal,
+} from "../utils.ts";
 
 const pendingStorage = localStorageSignals("halloween_2026_pending");
 const soundStorage = localStorageSignals("halloween_2026_sound");
@@ -45,6 +54,41 @@ const ghostExpandedState$ = state(false);
 const ghostGreetingIndex$ = state(-1);
 const ghostGreetingLocked$ = state(false);
 const bubbleTransitionState$ = state<number | null>(null);
+const modalOpenState$ = state(false);
+const modalAnchorState$ = state<DOMRect | null>(null);
+const resetHalloweenAction$ = resetSignal();
+
+export const halloweenModalOpen$ = computed((get) => {
+  return get(modalOpenState$);
+});
+export const halloweenModalAnchor$ = computed((get) => {
+  return get(modalAnchorState$);
+});
+export const setHalloweenModalAnchor$ = command(
+  ({ set }, anchor: DOMRect | null) => {
+    set(modalAnchorState$, anchor);
+  },
+);
+export const openHalloweenModal$ = command(({ set }) => {
+  set(roundState$, null);
+  set(screenState$, "start");
+  set(rulesState$, false);
+  set(modalOpenState$, true);
+});
+
+export const closeHalloweenModal$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    set(prepareHalloweenReturn$);
+    // Leave clears the active credential synchronously, before unmount aborts
+    // the dialog's requests. Association belongs to the surviving home page.
+    const leaving = set(leaveHalloween$, signal);
+    set(modalOpenState$, false);
+    set(rulesState$, false);
+    await leaving;
+    signal.throwIfAborted();
+    await set(linkHalloweenResults$, signal);
+  },
+);
 export const halloweenBubbleTransition$ = computed((get) => {
   return get(bubbleTransitionState$);
 });
@@ -56,7 +100,13 @@ export const enterHalloweenFromBubble$ = command(
     set(bubbleTransitionState$, index);
     await delay(750, { signal });
     signal.throwIfAborted();
-    await set(navigateTo$, "/halloween", undefined, get(rootSignal$));
+    if (get(featureSwitch$)[FeatureSwitchKey.HalloweenQuizModal]) {
+      set(modalAnchorState$, null);
+      set(openHalloweenModal$);
+    } else {
+      await set(navigateTo$, "/halloween", undefined, get(rootSignal$));
+    }
+    set(bubbleTransitionState$, null);
   },
 );
 
@@ -298,7 +348,8 @@ export const initializeHalloween$ = command(
 );
 
 export const startHalloween$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, parentSignal: AbortSignal) => {
+    const signal = set(resetHalloweenAction$, parentSignal);
     await set(refreshHalloweenPhase$, signal);
     if (get(phaseState$) !== "open") {
       return;
@@ -338,7 +389,8 @@ export const startHalloween$ = command(
 );
 
 export const answerHalloween$ = command(
-  async ({ get, set }, optionId: string, signal: AbortSignal) => {
+  async ({ get, set }, optionId: string, parentSignal: AbortSignal) => {
+    const signal = set(resetHalloweenAction$, parentSignal);
     const round = get(roundState$);
     if (!round?.question || round.feedback) {
       return;
@@ -381,7 +433,8 @@ export const answerHalloween$ = command(
 );
 
 export const nextHalloween$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, parentSignal: AbortSignal) => {
+    const signal = set(resetHalloweenAction$, parentSignal);
     const round = get(roundState$);
     if (!round?.question || !round.feedback?.correct) {
       return;
@@ -413,6 +466,7 @@ export const nextHalloween$ = command(
 
 export const leaveHalloween$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(resetHalloweenAction$);
     const round = get(roundState$);
     if (round?.outcome === "playing") {
       const credential = get(currentCredential$);
@@ -458,6 +512,7 @@ export const leaveHalloween$ = command(
 
 export const replayHalloween$ = command(
   async ({ set }, signal: AbortSignal) => {
+    set(resetHalloweenAction$);
     set(roundState$, null);
     set(screenState$, "start");
     await set(refreshHalloweenPhase$, signal);
@@ -522,6 +577,7 @@ export const linkHalloweenResults$ = command(
 
 export const initializeHalloweenHome$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(modalOpenState$, false);
     set(linkState$, "idle");
     set(firstExposureState$, false);
     set(bubbleTransitionState$, null);
