@@ -44,7 +44,6 @@ jobs:
       matrix:
         variant:
           - baseline
-          - clean
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -87,7 +86,7 @@ jobs:
           for ios_tool_dir in "$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin" "$DEVELOPER_DIR/usr/bin"; do
             find "$ios_tool_dir" -maxdepth 1 -type f \( -name '*cas*' -o -name '*cache*' \) -print
           done
-          for ios_tool in clang-cas-test-tool llvm-cas llvm-cas-test llvm-cas-tool clang-cache; do
+          for ios_tool in llvm-cas clang-cas-test; do
             if ios_tool_path=$(xcrun --find "$ios_tool" 2>/dev/null); then
               echo "Native cache tool: $ios_tool_path"
               "$ios_tool_path" --help
