@@ -22,8 +22,7 @@ const copy = {
   capture: "Capture new batch",
   csv: "Export CSV",
   json: "Export full JSON",
-  empty:
-    "Capture a batch to load linked participants. Anonymous rounds become contactable only after account association.",
+  empty: "Capture a batch to load participants with completed rounds.",
   snapshot:
     "This is the original batch snapshot. Capture a new batch to include later results and current review decisions.",
   paused:
@@ -39,7 +38,7 @@ const copy = {
     "This operation couldn’t be completed. Check staff access and try again.",
   noEmail: "No account email available",
   final: "Final result",
-  noParticipants: "No linked participants in this batch.",
+  noParticipants: "No participants with completed rounds in this batch.",
 } as const;
 function Participant({
   participant: p,

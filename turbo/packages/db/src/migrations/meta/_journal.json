@@ -2766,6 +2766,13 @@
       "when": 1793086007378,
       "tag": "1469_retire_halloween_home_exposure",
       "breakpoints": true
+    },
+    {
+      "idx": 1470,
+      "version": "7",
+      "when": 1793088722850,
+      "tag": "1470_halloween_account_rounds",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   halloweenContract,
@@ -22,8 +22,8 @@ function correctOption(round: HalloweenRound) {
   const question = round.question!;
   return answers[Number(question.id.slice(-2)) - 1]!;
 }
-function credential() {
-  return { id: randomUUID(), token: randomBytes(32).toString("hex") };
+function roundReference(round: HalloweenRound) {
+  return { id: round.id };
 }
 function clients(app: Awaited<ReturnType<typeof setupApp>>) {
   return {
@@ -51,11 +51,11 @@ beforeEach(() => {
   actor();
 });
 
-async function getFinale(
-  game: Awaited<ReturnType<typeof clients>>["game"],
-  body: ReturnType<typeof credential>,
-) {
-  let round = (await accept(game.start({ headers, body }), [200])).body;
+async function getFinale(game: Awaited<ReturnType<typeof clients>>["game"]) {
+  let round = (
+    await accept(game.start({ headers, body: { restart: false } }), [200])
+  ).body;
+  const body = roundReference(round);
   const questions = new Set<string>();
   for (let i = 0; i < 4; i++) {
     expect(round.questionNumber).toBe(i + 1);
@@ -66,6 +66,7 @@ async function getFinale(
     round = (
       await accept(
         game.answer({
+          headers,
           body: { ...body, questionId, optionId: correctOption(round) },
         }),
         [200],
@@ -74,12 +75,13 @@ async function getFinale(
     expect(round.correct).toBe(i + 1);
     expect(round.feedback?.correct).toBeTruthy();
     expect(round.question!.id).toBe(questionId);
-    round = (await accept(game.next({ body: { ...body, questionId } }), [200]))
-      .body;
+    round = (
+      await accept(game.next({ headers, body: { ...body, questionId } }), [200])
+    ).body;
   }
   expect(questions.size).toBe(4);
   expect(round.question?.id).toBe("QUIZ-53");
-  return round;
+  return { body, round };
 }
 
 describe("Halloween quiz", () => {
@@ -93,12 +95,11 @@ describe("Halloween quiz", () => {
           routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
         }),
       );
-      const body = credential();
-      await getFinale(game, body);
+      const { body } = await getFinale(game);
       const answerBody = { ...body, questionId: "QUIZ-53", optionId };
       const responses = await Promise.all([
-        game.answer({ body: answerBody }),
-        game.answer({ body: answerBody }),
+        game.answer({ headers, body: answerBody }),
+        game.answer({ headers, body: answerBody }),
       ]);
       for (const response of responses) {
         expect(response).toMatchObject({
@@ -107,20 +108,36 @@ describe("Halloween quiz", () => {
         });
       }
       const { body: success } = await accept(
-        game.next({ body: { ...body, questionId: "QUIZ-53" } }),
+        game.next({ headers, body: { ...body, questionId: "QUIZ-53" } }),
         [200],
       );
       expect(success.outcome).toBe("success");
       expect(success.completedAt).toBeTruthy();
+      expect(
+        (await accept(game.current({ headers }), [200])).body,
+      ).toStrictEqual(success);
+      expect(
+        (await accept(game.start({ headers, body: { restart: false } }), [200]))
+          .body,
+      ).toStrictEqual(success);
+      const replayed = await accept(
+        game.start({ headers, body: { restart: true } }),
+        [200],
+      );
+      expect(replayed.body).toMatchObject({
+        outcome: "playing",
+        questionNumber: 1,
+      });
+      expect(replayed.body.id).not.toBe(success.id);
       const left = await accept(
-        game.leave({ body: { ...body, reason: "interrupted" } }),
+        game.leave({ headers, body: { ...body, reason: "interrupted" } }),
         [200],
       );
       expect(left.body).toStrictEqual(success);
     },
   );
 
-  it("keeps the original draw on start retries and does not allow credential theft", async () => {
+  it("restores account progress until an explicit restart", async () => {
     const { game } = clients(
       await setupApp({
         context,
@@ -128,22 +145,52 @@ describe("Halloween quiz", () => {
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
-    const body = credential();
-    const original = await accept(game.start({ headers, body }), [200]);
-    expect(
-      (await accept(game.start({ headers, body }), [200])).body,
-    ).toStrictEqual(original.body);
-    await accept(
-      game.next({ body: { ...body, questionId: original.body.question!.id } }),
-      [409],
+    const original = await accept(
+      game.start({ headers, body: { restart: false } }),
+      [200],
     );
-    await accept(
-      game.leave({
+    const body = roundReference(original.body);
+    expect((await accept(game.current({ headers }), [200])).body).toStrictEqual(
+      original.body,
+    );
+    const answered = await accept(
+      game.answer({
+        headers,
         body: {
           ...body,
-          token: randomBytes(32).toString("hex"),
-          reason: "left",
+          questionId: original.body.question!.id,
+          optionId: correctOption(original.body),
         },
+      }),
+      [200],
+    );
+    const advanced = await accept(
+      game.next({
+        headers,
+        body: { ...body, questionId: answered.body.question!.id },
+      }),
+      [200],
+    );
+    expect(advanced.body.questionNumber).toBe(2);
+    expect(
+      (await accept(game.start({ headers, body: { restart: false } }), [200]))
+        .body,
+    ).toStrictEqual(advanced.body);
+    const restarted = await accept(
+      game.start({ headers, body: { restart: true } }),
+      [200],
+    );
+    expect(restarted.body).toMatchObject({
+      outcome: "playing",
+      questionNumber: 1,
+    });
+    expect(restarted.body.id).not.toBe(original.body.id);
+    actor();
+    await accept(game.current({ headers }), [404]);
+    await accept(
+      game.leave({
+        headers,
+        body: { ...roundReference(restarted.body), reason: "left" },
       }),
       [404],
     );
@@ -157,14 +204,20 @@ describe("Halloween quiz", () => {
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
-    const body = credential();
-    const { body: round } = await accept(game.start({ headers, body }), [200]);
+    const { body: round } = await accept(
+      game.start({ headers, body: { restart: false } }),
+      [200],
+    );
+    const body = roundReference(round);
     const questionId = round.question!.id;
     const wrong = round.question!.options.find((o) => {
       return o.id !== correctOption(round);
     })!;
     const { body: failed } = await accept(
-      game.answer({ body: { ...body, questionId, optionId: wrong.id } }),
+      game.answer({
+        headers,
+        body: { ...body, questionId, optionId: wrong.id },
+      }),
       [200],
     );
     expect(failed).toMatchObject({
@@ -176,6 +229,7 @@ describe("Halloween quiz", () => {
       (
         await accept(
           game.answer({
+            headers,
             body: { ...body, questionId, optionId: correctOption(round) },
           }),
           [200],
@@ -183,11 +237,16 @@ describe("Halloween quiz", () => {
       ).body,
     ).toStrictEqual(failed);
     expect(
-      (await accept(game.next({ body: { ...body, questionId } }), [200])).body,
+      (
+        await accept(
+          game.next({ headers, body: { ...body, questionId } }),
+          [200],
+        )
+      ).body,
     ).toStrictEqual(failed);
   });
 
-  it("uses the feature switch as the only quiz availability gate", async () => {
+  it("uses the feature switch as the only availability gate for signed-in users", async () => {
     const { game } = clients(
       await setupApp({
         context,
@@ -200,7 +259,7 @@ describe("Halloween quiz", () => {
       expect(
         (await accept(game.status({ headers }), [200])).body,
       ).toStrictEqual({ phase: "open", changesInMs: null });
-      await accept(game.start({ headers, body: credential() }), [200]);
+      await accept(game.start({ headers, body: { restart: true } }), [200]);
     }
 
     actor(false);
@@ -208,10 +267,11 @@ describe("Halloween quiz", () => {
       phase: "unavailable",
       changesInMs: null,
     });
-    await accept(game.start({ headers, body: credential() }), [409]);
+    await accept(game.current({ headers }), [409]);
+    await accept(game.start({ headers, body: { restart: false } }), [409]);
   });
 
-  it("associates an interrupted round once and rejects another account", async () => {
+  it("requires authentication for every gameplay endpoint", async () => {
     const { game } = clients(
       await setupApp({
         context,
@@ -219,23 +279,29 @@ describe("Halloween quiz", () => {
         routes: [...halloweenRoutes, ...halloweenOperationsRoutes],
       }),
     );
-    const body = credential();
-    await accept(game.start({ headers, body }), [200]);
-    const first = await accept(
-      game.link({ headers, body: { ...body, interrupted: true } }),
-      [200],
+    const body = { id: randomUUID() };
+    const status = await accept(game.status({ headers: {} }), [401]);
+    expect(status.status).toBe(401);
+    await accept(game.current({ headers: {} }), [401]);
+    await accept(game.start({ headers: {}, body: { restart: false } }), [401]);
+    await accept(
+      game.answer({
+        headers: {},
+        body: { ...body, questionId: "QUIZ-01", optionId: "A" },
+      }),
+      [401],
     );
-    expect(first.body).toMatchObject({ linked: true, outcome: "interrupted" });
-    expect(
-      (
-        await accept(
-          game.link({ headers, body: { ...body, interrupted: true } }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(first.body);
-    actor();
-    await accept(game.link({ headers, body }), [404]);
+    await accept(
+      game.next({
+        headers: {},
+        body: { ...body, questionId: "QUIZ-01" },
+      }),
+      [401],
+    );
+    await accept(
+      game.leave({ headers: {}, body: { ...body, reason: "interrupted" } }),
+      [401],
+    );
   });
 
   it("exports immutable deduplicated staff batches without losing prior round history", async () => {
@@ -247,11 +313,16 @@ describe("Halloween quiz", () => {
       }),
     );
     mockNow(new Date("2026-01-01T00:00:00Z"));
-    const bodies = [credential(), credential()];
-    for (const body of bodies) {
-      await accept(game.start({ headers, body }), [200]);
+    for (let index = 0; index < 2; index++) {
+      const started = await accept(
+        game.start({ headers, body: { restart: true } }),
+        [200],
+      );
       await accept(
-        game.link({ headers, body: { ...body, interrupted: true } }),
+        game.leave({
+          headers,
+          body: { ...roundReference(started.body), reason: "interrupted" },
+        }),
         [200],
       );
     }
@@ -270,10 +341,15 @@ describe("Halloween quiz", () => {
       }),
       [200],
     );
-    const later = credential();
-    await accept(game.start({ headers, body: later }), [200]);
+    const later = await accept(
+      game.start({ headers, body: { restart: true } }),
+      [200],
+    );
     await accept(
-      game.link({ headers, body: { ...later, interrupted: true } }),
+      game.leave({
+        headers,
+        body: { ...roundReference(later.body), reason: "interrupted" },
+      }),
       [200],
     );
     expect(

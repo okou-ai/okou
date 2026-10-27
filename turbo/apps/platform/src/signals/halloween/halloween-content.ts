@@ -1,119 +1,369 @@
-// This campaign's approved customer-facing copy is English in every locale.
-export const HALLOWEEN_COPY = {
-  brand: "Okou",
-  campaign: "Spooky Halloween",
-  tagline: "Spooky Halloween · A little mischief. A lot of possibility.",
-  language: "English",
-  climb: "The climb",
-  rulesHeading: "Spooky Halloween — activity rules",
-  rulesSub: "A little mischief. A few simple rules.",
-  rulesBrand: "Okou · Halloween",
-  rewardPrefix: "Play for ",
-  rewardEmphasis: "7 days of Okou Pro.",
-  resultRewardEmphasis: "7 days of Okou Pro",
-  resultRewardRest: ", subject to review. No credits included.",
-  title: "A treat from Okou.",
-  subtitle: "But first, a little quiz.",
-  reward: "Play for 7 days of Okou Pro.",
-  review: "Subject to eligibility review.",
-  hint: "Four right answers. One sweet finale.",
-  start: "Let’s play",
-  back: "Back to Okou",
-  rules: "Activity rules",
-  leave: "Leave quiz",
-  next: "Next question",
-  result: "See my result",
-  again: "Play again",
-  correct: "Correct",
-  question: "Question",
-  of: "of",
-  round: "Round",
-  soundOn: "Sound on",
-  soundOff: "Sound off",
-  won: "You passed the quiz!",
-  wonSub: "She knew you had it in you.",
-  lost: "You got tricked!",
-  lostSub: "Okou got you this time.",
-  resultReward: "7 days of Okou Pro, subject to review. No credits included.",
-  taskTitle: "Now it’s Okou’s turn.",
-  taskSub: "Give her a task.",
-  optional: "Keep exploring with Okou. These activities are optional.",
-  magic: "Make magic with Okou",
-  footerBefore: "See activity ",
-  footerLink: "rules",
-  footerAfter: " for eligibility and reward details.",
-  ended: "This Halloween quiz has ended.",
-  endedSub:
-    "Thanks for playing. You can still sign in to link a previous game result.",
-  upcoming: "A little magic is on its way.",
-  upcomingSub: "The Halloween quiz isn’t available yet. Come back soon.",
-  unavailable: "A little magic is on its way.",
-  unavailableSub: "The Halloween quiz isn’t available yet. Come back soon.",
-  saved: "Game result saved.",
-  savedSub:
-    "Your game result is linked to your account. Reward eligibility is subject to review.",
-  saveError: "We couldn’t save your game result.",
-  saveErrorSub:
-    "Please try again. If it still doesn’t work, contact support@okou.ai.",
-  retry: "Try again",
-  loading: "Getting your quiz ready…",
-  error: "We couldn’t load the quiz. Please try again.",
-  backToGame: "Back to game",
-  nudgeLabel: "Play the Halloween quiz",
-  boo: "Boo!",
-  roundTitles: [
-    "Let’s see what you’ve got",
-    "You’re onto her tricks",
-    "She’s impressed",
-    "One last trick",
-    "Okou likes you",
-  ],
-  levels: [
-    "Rookie",
-    "Rising star",
-    "Trick master",
-    "Halloween legend",
-    "Okou likes you",
-  ],
-  nudges: [
-    "Take a little\nspooky break?",
-    "One more\nround?",
-    "A little quiz.\nA sweet treat?",
-  ],
-  tasks: [
-    {
-      title: "Create a Halloween image",
-      text: "Give her an idea. Watch it come to life.",
-      prompt:
-        "Create a Halloween image: a friendly ghost sharing candy under a glowing moon.",
+import type {
+  HalloweenQuestion,
+  HalloweenRound,
+} from "@okouai/api-contracts/contracts/halloween";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+import enUSCommon from "../../i18n/locales/en-US/common.json";
+
+function useHalloweenMainCopy() {
+  const { t } = useTranslation();
+  return {
+    brand: t(($) => {
+      return $.halloween.copy.brand;
+    }),
+    campaign: t(($) => {
+      return $.halloween.copy.campaign;
+    }),
+    tagline: t(($) => {
+      return $.halloween.copy.tagline;
+    }),
+    language: t(($) => {
+      return $.halloween.copy.language;
+    }),
+    climb: t(($) => {
+      return $.halloween.copy.climb;
+    }),
+    rulesHeading: t(($) => {
+      return $.halloween.copy.rulesHeading;
+    }),
+    rulesSub: t(($) => {
+      return $.halloween.copy.rulesSub;
+    }),
+    rulesBrand: t(($) => {
+      return $.halloween.copy.rulesBrand;
+    }),
+    rewardPrefix: t(($) => {
+      return $.halloween.copy.rewardPrefix;
+    }),
+    rewardEmphasis: t(($) => {
+      return $.halloween.copy.rewardEmphasis;
+    }),
+    resultRewardEmphasis: t(($) => {
+      return $.halloween.copy.resultRewardEmphasis;
+    }),
+    resultRewardRest: t(($) => {
+      return $.halloween.copy.resultRewardRest;
+    }),
+    title: t(($) => {
+      return $.halloween.copy.title;
+    }),
+    subtitle: t(($) => {
+      return $.halloween.copy.subtitle;
+    }),
+    review: t(($) => {
+      return $.halloween.copy.review;
+    }),
+    hint: t(($) => {
+      return $.halloween.copy.hint;
+    }),
+    start: t(($) => {
+      return $.halloween.copy.start;
+    }),
+    back: t(($) => {
+      return $.halloween.copy.back;
+    }),
+    rules: t(($) => {
+      return $.halloween.copy.rules;
+    }),
+    leave: t(($) => {
+      return $.halloween.copy.leave;
+    }),
+    next: t(($) => {
+      return $.halloween.copy.next;
+    }),
+    result: t(($) => {
+      return $.halloween.copy.result;
+    }),
+    again: t(($) => {
+      return $.halloween.copy.again;
+    }),
+    correct: t(($) => {
+      return $.halloween.copy.correct;
+    }),
+    questionProgress: (current: number, total: number) => {
+      return t(
+        ($) => {
+          return $.halloween.copy.questionProgress;
+        },
+        { current, total },
+      );
     },
-    {
-      title: "Connect your tools",
-      text: "Bring your favorite work tools along.",
-      prompt: "Help me connect my tools to Okou.",
+    roundProgress: (current: string, title: string) => {
+      return t(
+        ($) => {
+          return $.halloween.copy.roundProgress;
+        },
+        { current, title },
+      );
     },
-    {
-      title: "See what else she can do",
-      text: "Pick something from your to-do list.",
-      prompt: "",
-    },
-  ],
-  ruleSections: [
-    {
-      title: "Activity availability",
-      text: "The Halloween quiz is available whenever it appears in Okou. A round started while it is available can still be completed if the activity later becomes unavailable.",
-    },
-    {
-      title: "How to play",
-      text: "Play anonymously, with no tasks required. Each round has four randomly selected questions, with no repeats in that round, followed by ‘Do you like Okou?’—every answer to the last question is correct. One wrong answer ends the round. Leaving, refreshing or closing the quiz ends an unfinished round; progress does not resume. You can play again while the event is open.",
-    },
-    {
-      title: "Your Halloween reward",
-      text: "Selected participants receive seven calendar days of Okou Pro access. No credits are included. Existing credit balances and normal usage limits still apply. Winning the game, completing optional tasks or linking a result does not guarantee a reward. Both successful and unsuccessful rounds can be reviewed. Each account can receive at most one reward; existing Pro access is extended by seven days. A new trial starts when granted; that local date counts as day one, and access expires at 12:00 AM seven local dates later. For example, a reward granted October 30 expires November 6 at 12:00 AM in Los Angeles.",
-    },
-    {
-      title: "Fair play & support",
-      text: "Return to Okou and sign in or sign up to link your result. Linking remains available after the event. Eligibility is reviewed by the Okou team using participant lists collected during and after the event. Linking does not guarantee inclusion in a previously collected list. Accounts included in a collected list and reviewed will receive an email, whether selected or not; an email is not promised to every linked account. No fixed review or delivery date is promised. Questions? Contact support@okou.ai. Okou reserves the right of final interpretation of these rules to the extent permitted by applicable law.",
-    },
-  ],
-} as const;
+  } as const;
+}
+
+function useHalloweenResultCopy() {
+  const { t } = useTranslation();
+  return {
+    soundOn: t(($) => {
+      return $.halloween.copy.soundOn;
+    }),
+    soundOff: t(($) => {
+      return $.halloween.copy.soundOff;
+    }),
+    won: t(($) => {
+      return $.halloween.copy.won;
+    }),
+    wonSub: t(($) => {
+      return $.halloween.copy.wonSub;
+    }),
+    lost: t(($) => {
+      return $.halloween.copy.lost;
+    }),
+    lostSub: t(($) => {
+      return $.halloween.copy.lostSub;
+    }),
+    taskTitle: t(($) => {
+      return $.halloween.copy.taskTitle;
+    }),
+    taskSub: t(($) => {
+      return $.halloween.copy.taskSub;
+    }),
+    optional: t(($) => {
+      return $.halloween.copy.optional;
+    }),
+    magic: t(($) => {
+      return $.halloween.copy.magic;
+    }),
+    footerBefore: t(($) => {
+      return $.halloween.copy.footerBefore;
+    }),
+    footerLink: t(($) => {
+      return $.halloween.copy.footerLink;
+    }),
+    footerAfter: t(($) => {
+      return $.halloween.copy.footerAfter;
+    }),
+    ended: t(($) => {
+      return $.halloween.copy.ended;
+    }),
+    endedSub: t(($) => {
+      return $.halloween.copy.endedSub;
+    }),
+    upcoming: t(($) => {
+      return $.halloween.copy.upcoming;
+    }),
+    upcomingSub: t(($) => {
+      return $.halloween.copy.upcomingSub;
+    }),
+    unavailable: t(($) => {
+      return $.halloween.copy.unavailable;
+    }),
+    unavailableSub: t(($) => {
+      return $.halloween.copy.unavailableSub;
+    }),
+    error: t(($) => {
+      return $.halloween.copy.error;
+    }),
+    backToGame: t(($) => {
+      return $.halloween.copy.backToGame;
+    }),
+    nudgeLabel: t(($) => {
+      return $.halloween.copy.nudgeLabel;
+    }),
+    boo: t(($) => {
+      return $.halloween.copy.boo;
+    }),
+  } as const;
+}
+
+function useHalloweenCollections() {
+  const { t } = useTranslation();
+  return {
+    roundTitles: [
+      t(($) => {
+        return $.halloween.roundTitles.one;
+      }),
+      t(($) => {
+        return $.halloween.roundTitles.two;
+      }),
+      t(($) => {
+        return $.halloween.roundTitles.three;
+      }),
+      t(($) => {
+        return $.halloween.roundTitles.four;
+      }),
+      t(($) => {
+        return $.halloween.roundTitles.five;
+      }),
+    ],
+    levels: [
+      t(($) => {
+        return $.halloween.levels.one;
+      }),
+      t(($) => {
+        return $.halloween.levels.two;
+      }),
+      t(($) => {
+        return $.halloween.levels.three;
+      }),
+      t(($) => {
+        return $.halloween.levels.four;
+      }),
+      t(($) => {
+        return $.halloween.levels.five;
+      }),
+    ],
+    nudges: [
+      t(($) => {
+        return $.halloween.nudges.one;
+      }),
+      t(($) => {
+        return $.halloween.nudges.two;
+      }),
+      t(($) => {
+        return $.halloween.nudges.three;
+      }),
+    ],
+    tasks: [
+      {
+        title: t(($) => {
+          return $.halloween.tasks.createImage.title;
+        }),
+        text: t(($) => {
+          return $.halloween.tasks.createImage.text;
+        }),
+        prompt: t(($) => {
+          return $.halloween.tasks.createImage.prompt;
+        }),
+      },
+      {
+        title: t(($) => {
+          return $.halloween.tasks.connectTools.title;
+        }),
+        text: t(($) => {
+          return $.halloween.tasks.connectTools.text;
+        }),
+        prompt: t(($) => {
+          return $.halloween.tasks.connectTools.prompt;
+        }),
+      },
+      {
+        title: t(($) => {
+          return $.halloween.tasks.explore.title;
+        }),
+        text: t(($) => {
+          return $.halloween.tasks.explore.text;
+        }),
+        prompt: "",
+      },
+    ],
+    ruleSections: [
+      {
+        title: t(($) => {
+          return $.halloween.rules.availability.title;
+        }),
+        text: t(($) => {
+          return $.halloween.rules.availability.text;
+        }),
+      },
+      {
+        title: t(($) => {
+          return $.halloween.rules.play.title;
+        }),
+        text: t(($) => {
+          return $.halloween.rules.play.text;
+        }),
+      },
+      {
+        title: t(($) => {
+          return $.halloween.rules.reward.title;
+        }),
+        text: t(($) => {
+          return $.halloween.rules.reward.text;
+        }),
+      },
+      {
+        title: t(($) => {
+          return $.halloween.rules.support.title;
+        }),
+        text: t(($) => {
+          return $.halloween.rules.support.text;
+        }),
+      },
+    ],
+  } as const;
+}
+
+export function useHalloweenCopy() {
+  return {
+    ...useHalloweenMainCopy(),
+    ...useHalloweenResultCopy(),
+    ...useHalloweenCollections(),
+  } as const;
+}
+
+type HalloweenQuestionId = keyof typeof enUSCommon.halloween.questions;
+type HalloweenOptionId = "A" | "B" | "C";
+
+function isHalloweenQuestionId(value: string): value is HalloweenQuestionId {
+  return Object.hasOwn(enUSCommon.halloween.questions, value);
+}
+
+function isHalloweenOptionId(value: string): value is HalloweenOptionId {
+  return value === "A" || value === "B" || value === "C";
+}
+
+function localizeQuestion(
+  t: TFunction<"common">,
+  question: HalloweenQuestion,
+): HalloweenQuestion {
+  if (!isHalloweenQuestionId(question.id)) {
+    // API and App deploy independently. Preserve server copy if a newer API
+    // introduces a question before this App knows its translation key.
+    return question;
+  }
+  const questionId = question.id;
+  return {
+    ...question,
+    text: t(($) => {
+      return $.halloween.questions[questionId].text;
+    }),
+    options: question.options.map((option) => {
+      if (!isHalloweenOptionId(option.id)) {
+        return option;
+      }
+      const optionId = option.id;
+      return {
+        ...option,
+        text: t(($) => {
+          return $.halloween.questions[questionId].options[optionId];
+        }),
+      };
+    }),
+  };
+}
+
+export function useLocalizedHalloweenRound(
+  round: HalloweenRound | null,
+): HalloweenRound | null {
+  const { t } = useTranslation();
+  if (!round?.question || !isHalloweenQuestionId(round.question.id)) {
+    return round;
+  }
+  const questionId = round.question.id;
+  return {
+    ...round,
+    question: localizeQuestion(t, round.question),
+    feedback: round.feedback
+      ? {
+          ...round.feedback,
+          explanation: round.feedback.correct
+            ? t(($) => {
+                return $.halloween.questions[questionId].explanation;
+              })
+            : t(($) => {
+                return $.halloween.copy.lostSub;
+              }),
+        }
+      : null,
+  };
+}

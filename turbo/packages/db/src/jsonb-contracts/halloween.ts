@@ -27,7 +27,6 @@ export const halloweenSnapshotSchema = array(
     orgId: string().nullable(),
     firstPlayedAt: string(),
     lastPlayedAt: string(),
-    linkedAt: string(),
     rounds: array(
       object({
         id: string(),

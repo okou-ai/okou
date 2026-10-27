@@ -1,9 +1,9 @@
-import { Button, cn, DialogTrigger } from "@okouai/ui";
+import { cn, DialogTrigger } from "@okouai/ui";
 import type { KeyboardEvent } from "react";
 import { Candy } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
+import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import {
   HALLOWEEN_BUBBLES,
   playHalloweenClick$,
@@ -11,8 +11,6 @@ import {
 } from "../../signals/halloween/halloween-motion.ts";
 import {
   halloweenPhase$,
-  halloweenLinkState$,
-  linkHalloweenResults$,
   halloweenHomeAnimationVisible$,
   halloweenGhostExpanded$,
   halloweenGhostGreetingIndex$,
@@ -27,46 +25,8 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { HalloweenGhost } from "./halloween-art.tsx";
 import { halloweenTypography as typography } from "./halloween-typography.ts";
 
-export function HalloweenResultNotice() {
-  const status = useGet(halloweenLinkState$);
-  const signal = useGet(pageSignal$);
-  const [operation, retry] = useLoadableSet(linkHalloweenResults$);
-  if (status === "idle") {
-    return null;
-  }
-  return (
-    <div
-      role={status === "error" ? "alert" : "status"}
-      className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4"
-    >
-      <div className="min-w-0">
-        <p className={typography.labelClassName}>
-          {status === "saved" ? copy.saved : copy.saveError}
-        </p>
-        <p
-          className={cn("mt-1 text-muted-foreground", typography.bodyClassName)}
-        >
-          {status === "saved" ? copy.savedSub : copy.saveErrorSub}
-        </p>
-      </div>
-      {status === "error" && (
-        <Button
-          variant="neutral"
-          size="sm"
-          className={typography.labelClassName}
-          pending={operation.state === "loading"}
-          onClick={() => {
-            detach(retry(signal), Reason.DomCallback);
-          }}
-        >
-          {copy.retry}
-        </Button>
-      )}
-    </div>
-  );
-}
-
 export function HalloweenEntry() {
+  const copy = useHalloweenCopy();
   const phase = useGet(halloweenPhase$);
   const expanded = useGet(halloweenGhostExpanded$);
   const greeting = useGet(halloweenGhostGreetingIndex$);
@@ -149,6 +109,7 @@ export function HalloweenEntry() {
 }
 
 function HalloweenBubble({ index }: { index: number }) {
+  const copy = useHalloweenCopy();
   const bubble = HALLOWEEN_BUBBLES[index]!;
   const ref = useSet(bubble.ref$);
   const transition = useGet(halloweenBubbleTransition$);

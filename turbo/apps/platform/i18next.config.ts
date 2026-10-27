@@ -46,6 +46,8 @@ export default defineConfig({
       "onboarding.sourcesFirst.startingPrompt.*",
       // Paid tool rows select copy by the shared tool catalog at runtime.
       "settings.paidTools.tools.*",
+      // Halloween questions are keyed by the IDs supplied by the API.
+      "halloween.questions.*",
     ],
     primaryLanguage: "en-US",
     useTranslationNames: ["useTranslation"],

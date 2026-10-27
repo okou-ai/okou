@@ -1,8 +1,8 @@
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, DialogClose } from "@okouai/ui";
 import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { ArrowRight } from "lucide-react";
-import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
+import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import {
   halloweenPhase$,
   halloweenScreen$,
@@ -10,7 +10,6 @@ import {
 } from "../../signals/halloween/halloween.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
 import { HalloweenStage } from "./halloween-art.tsx";
 import { HalloweenQuestionScreen } from "./halloween-game.tsx";
 import {
@@ -22,7 +21,8 @@ import {
 import { HalloweenResultScreen } from "./halloween-result.tsx";
 import { halloweenTypography as typography } from "./halloween-typography.ts";
 
-function StartScreen({ embedded }: { readonly embedded: boolean }) {
+function StartScreen() {
+  const copy = useHalloweenCopy();
   const phase = useGet(halloweenPhase$);
   const signal = useGet(pageSignal$);
   const [operation, start] = useLoadableSet(startHalloween$);
@@ -45,7 +45,7 @@ function StartScreen({ embedded }: { readonly embedded: boolean }) {
         className={cn(
           "mb-9 max-w-[900px] text-balance text-[#f6f3ed]",
           typography.titleClassName,
-          embedded && "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
+          "text-[32px] leading-10 md:text-[40px] md:leading-[48px]",
         )}
       >
         {open ? (
@@ -88,14 +88,10 @@ function StartScreen({ embedded }: { readonly embedded: boolean }) {
           <ArrowRight className="size-4" />
         </Button>
       ) : (
-        <Button
-          nativeButton={false}
-          render={<Link pathname="/" />}
-          className={goldButton}
-        >
+        <DialogClose render={<Button className={goldButton} />}>
           {copy.back}
           <ArrowRight className="size-4" />
-        </Button>
+        </DialogClose>
       )}
       {open && (
         <p
@@ -119,11 +115,7 @@ function StartScreen({ embedded }: { readonly embedded: boolean }) {
   );
 }
 
-export function HalloweenPage({
-  embedded = false,
-}: {
-  readonly embedded?: boolean;
-}) {
+export function HalloweenPage() {
   const screen = useGet(halloweenScreen$);
   return (
     <div
@@ -136,13 +128,13 @@ export function HalloweenPage({
       )}
     >
       {screen !== "result" && <HalloweenStage />}
-      <HalloweenHeader embedded={embedded} />
+      <HalloweenHeader />
       {screen === "question" ? (
-        <HalloweenQuestionScreen embedded={embedded} />
+        <HalloweenQuestionScreen />
       ) : screen === "result" ? (
         <HalloweenResultScreen />
       ) : (
-        <StartScreen embedded={embedded} />
+        <StartScreen />
       )}
       <HalloweenFooter />
       <HalloweenRules />

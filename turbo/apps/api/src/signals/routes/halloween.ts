@@ -3,31 +3,25 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { conflict } from "../../lib/error";
-import { authContext$, requiredAuthContext$ } from "../auth/auth-context";
+import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { authorization$, cookie$, setResHeader$ } from "../context/hono";
+import { setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { getUserEmail$ } from "../services/email-common.service";
 import {
-  startHalloweenRound$,
   answerHalloweenRound$,
   advanceHalloweenRound$,
+  getCurrentHalloweenRound$,
   leaveHalloweenRound$,
-  linkHalloweenRound$,
+  startHalloweenRound$,
 } from "../services/halloween.service";
 
 const phase$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  if (isFeatureEnabled(FeatureSwitchKey.HalloweenQuiz, {})) {
-    return "open" as const;
-  }
-  if (!get(authorization$) && !get(cookie$)) {
-    return "unavailable" as const;
-  }
-  const auth = await set(requiredAuthContext$, {}, signal);
-  if ("status" in auth || !auth.orgId) {
+  const auth = get(authContext$);
+  if (!auth.orgId) {
     return "unavailable" as const;
   }
   const context = await get(userFeatureSwitchContext(auth.orgId, auth.userId));
@@ -47,6 +41,12 @@ const status$ = command(async ({ set }, signal: AbortSignal) => {
     },
   };
 });
+const current$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if ((await set(phase$, signal)) !== "open") {
+    return conflict("This Halloween quiz is not open");
+  }
+  return await set(getCurrentHalloweenRound$, get(authContext$).userId, signal);
+});
 const start$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(bodyResultOf(halloweenContract.start));
   signal.throwIfAborted();
@@ -56,7 +56,19 @@ const start$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ((await set(phase$, signal)) !== "open") {
     return conflict("This Halloween quiz is not open");
   }
-  return await set(startHalloweenRound$, body.data, signal);
+  const auth = get(authContext$);
+  const email = await set(getUserEmail$, auth.userId, signal);
+  signal.throwIfAborted();
+  return await set(
+    startHalloweenRound$,
+    {
+      ...body.data,
+      userId: auth.userId,
+      orgId: auth.orgId ?? null,
+      email,
+    },
+    signal,
+  );
 });
 const answer$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(bodyResultOf(halloweenContract.answer));
@@ -64,7 +76,11 @@ const answer$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  return await set(answerHalloweenRound$, body.data, signal);
+  return await set(
+    answerHalloweenRound$,
+    { ...body.data, userId: get(authContext$).userId },
+    signal,
+  );
 });
 const next$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(bodyResultOf(halloweenContract.next));
@@ -72,7 +88,11 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  return await set(advanceHalloweenRound$, body.data, signal);
+  return await set(
+    advanceHalloweenRound$,
+    { ...body.data, userId: get(authContext$).userId },
+    signal,
+  );
 });
 const leave$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(bodyResultOf(halloweenContract.leave));
@@ -80,29 +100,36 @@ const leave$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  return await set(leaveHalloweenRound$, body.data, signal);
-});
-const link$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const body = await get(bodyResultOf(halloweenContract.link));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const auth = get(authContext$);
-  const email = await set(getUserEmail$, auth.userId, signal);
-  signal.throwIfAborted();
   return await set(
-    linkHalloweenRound$,
-    { ...body.data, userId: auth.userId, orgId: auth.orgId ?? null, email },
+    leaveHalloweenRound$,
+    { ...body.data, userId: get(authContext$).userId },
     signal,
   );
 });
 const accountAuth = { accept: ["session", "pat"] } as const;
 export const halloweenRoutes: readonly RouteEntry[] = [
-  { route: halloweenContract.status, handler: status$ },
-  { route: halloweenContract.start, handler: start$ },
-  { route: halloweenContract.answer, handler: answer$ },
-  { route: halloweenContract.next, handler: next$ },
-  { route: halloweenContract.leave, handler: leave$ },
-  { route: halloweenContract.link, handler: authRoute(accountAuth, link$) },
+  {
+    route: halloweenContract.status,
+    handler: authRoute(accountAuth, status$),
+  },
+  {
+    route: halloweenContract.current,
+    handler: authRoute(accountAuth, current$),
+  },
+  {
+    route: halloweenContract.start,
+    handler: authRoute(accountAuth, start$),
+  },
+  {
+    route: halloweenContract.answer,
+    handler: authRoute(accountAuth, answer$),
+  },
+  {
+    route: halloweenContract.next,
+    handler: authRoute(accountAuth, next$),
+  },
+  {
+    route: halloweenContract.leave,
+    handler: authRoute(accountAuth, leave$),
+  },
 ];

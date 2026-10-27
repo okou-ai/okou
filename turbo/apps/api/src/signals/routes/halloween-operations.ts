@@ -74,7 +74,6 @@ const capture$ = command(async ({ get, set }, signal: AbortSignal) => {
       outcome: halloweenRounds.outcome,
       startedAt: halloweenRounds.startedAt,
       completedAt: halloweenRounds.completedAt,
-      linkedAt: halloweenRounds.linkedAt,
       decision: halloweenReviews.decision,
       notifiedAt: halloweenReviews.notifiedAt,
       rewardedAt: halloweenReviews.rewardedAt,
@@ -85,13 +84,16 @@ const capture$ = command(async ({ get, set }, signal: AbortSignal) => {
       eq(halloweenReviews.userId, halloweenRounds.userId),
     )
     .where(
-      and(isNotNull(halloweenRounds.userId), lte(halloweenRounds.linkedAt, at)),
+      and(
+        isNotNull(halloweenRounds.userId),
+        lte(halloweenRounds.startedAt, at),
+      ),
     )
     .orderBy(asc(halloweenRounds.startedAt));
   signal.throwIfAborted();
   const participants = new Map<string, HalloweenParticipant>();
   for (const row of rows) {
-    if (!row.userId || !row.linkedAt || row.outcome === "playing") {
+    if (!row.userId || row.outcome === "playing") {
       continue;
     }
     let participant = participants.get(row.userId);
@@ -102,7 +104,6 @@ const capture$ = command(async ({ get, set }, signal: AbortSignal) => {
         email: row.email,
         firstPlayedAt: row.startedAt.toISOString(),
         lastPlayedAt: row.startedAt.toISOString(),
-        linkedAt: row.linkedAt.toISOString(),
         rounds: [],
         decision: row.decision ?? "pending",
         notifiedAt: row.notifiedAt?.toISOString() ?? null,

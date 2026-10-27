@@ -22,7 +22,7 @@ import {
   platformOkouWordmarkDarkImg,
   platformOkouWordmarkLightImg,
 } from "../../lib/static-assets.ts";
-import { HALLOWEEN_COPY as copy } from "../../signals/halloween/halloween-content.ts";
+import { useHalloweenCopy } from "../../signals/halloween/halloween-content.ts";
 import { playHalloweenClick$ } from "../../signals/halloween/halloween-motion.ts";
 import {
   halloweenRound$,
@@ -35,7 +35,6 @@ import {
 } from "../../signals/halloween/halloween.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
 import { halloweenTypography as typography } from "./halloween-typography.ts";
 
 export const goldButton = cn(
@@ -44,9 +43,9 @@ export const goldButton = cn(
 );
 
 function HalloweenBrand() {
+  const copy = useHalloweenCopy();
   return (
-    <Link
-      pathname="/"
+    <DialogClose
       aria-label={copy.brand}
       className="flex h-8 shrink-0 items-center transition-opacity hover:opacity-75"
     >
@@ -58,15 +57,12 @@ function HalloweenBrand() {
         height={24}
         className="h-6 w-[91px]"
       />
-    </Link>
+    </DialogClose>
   );
 }
 
-export function HalloweenHeader({
-  embedded = false,
-}: {
-  readonly embedded?: boolean;
-}) {
+export function HalloweenHeader() {
+  const copy = useHalloweenCopy();
   const screen = useGet(halloweenScreen$);
   const round = useGet(halloweenRound$);
   const sound = useGet(halloweenSound$);
@@ -79,21 +75,19 @@ export function HalloweenHeader({
   return (
     <header
       className={cn(
-        "relative z-20 flex min-h-[76px] shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-5 py-4 text-[#eef1f5] md:px-12",
-        embedded && "px-4 md:px-8",
+        "relative z-20 flex min-h-[76px] shrink-0 items-center gap-3 border-b border-[#c0d1e512] bg-[#07111f40] px-4 py-4 text-[#eef1f5] md:px-8",
       )}
     >
       <HalloweenBrand />
       <div
         className={cn(
-          "ml-auto flex max-w-[74%] flex-wrap items-center justify-end gap-x-3 gap-y-2 md:max-w-none md:gap-5",
+          "ml-auto flex max-w-none flex-nowrap items-center justify-end gap-x-2 gap-y-2 md:gap-4",
           typography.labelClassName,
-          embedded && "max-w-none flex-nowrap gap-x-2 md:gap-4",
         )}
       >
         <span className="hidden text-[#c5cfdd] md:inline">
           {playing
-            ? `${copy.question} ${round?.questionNumber ?? 1} ${copy.of} 5`
+            ? copy.questionProgress(round?.questionNumber ?? 1, 5)
             : copy.campaign}
         </span>
         {playing ? (
@@ -104,7 +98,7 @@ export function HalloweenHeader({
             className={cn(
               "h-8 gap-1 p-0 text-[#aebcd0] hover:bg-transparent hover:text-[#e8c68d]",
               typography.labelClassName,
-              embedded && "hidden md:inline-flex",
+              "hidden md:inline-flex",
             )}
             onClick={() => {
               detach(leave(signal), Reason.DomCallback);
@@ -113,17 +107,6 @@ export function HalloweenHeader({
             {copy.leave}
             <ArrowUpRight className="size-3" />
           </Button>
-        ) : !embedded ? (
-          <Link
-            pathname="/"
-            className={cn(
-              "flex h-8 items-center gap-1 text-[#aebcd0] transition-colors hover:text-[#e8c68d]",
-              typography.labelClassName,
-            )}
-          >
-            {copy.back}
-            <ArrowUpRight className="size-3" />
-          </Link>
         ) : null}
         {screen !== "result" && (
           <Button
@@ -165,24 +148,23 @@ export function HalloweenHeader({
             {sound ? copy.soundOn : copy.soundOff}
           </span>
         </Button>
-        {embedded && (
-          <DialogClose
-            render={
-              <IconButton
-                aria-label={copy.back}
-                className="text-[#bcc8d9] hover:bg-[#ffffff09] hover:text-[#e8c68d]"
-              />
-            }
-          >
-            <X className="size-5" />
-          </DialogClose>
-        )}
+        <DialogClose
+          render={
+            <IconButton
+              aria-label={copy.back}
+              className="text-[#bcc8d9] hover:bg-[#ffffff09] hover:text-[#e8c68d]"
+            />
+          }
+        >
+          <X className="size-5" />
+        </DialogClose>
       </div>
     </header>
   );
 }
 
 export function HalloweenFooter() {
+  const copy = useHalloweenCopy();
   const setRules = useSet(setHalloweenRulesOpen$);
   return (
     <footer
@@ -214,6 +196,7 @@ export function HalloweenFooter() {
 }
 
 export function HalloweenRules() {
+  const copy = useHalloweenCopy();
   const open = useGet(halloweenRulesOpen$);
   const setOpen = useSet(setHalloweenRulesOpen$);
   return (
