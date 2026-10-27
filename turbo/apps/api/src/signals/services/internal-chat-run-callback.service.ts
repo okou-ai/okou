@@ -2778,6 +2778,7 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
         runId: args.runId,
         sourceCallbackId: args.sourceCallbackId,
         runStatus: "completed",
+        failureReason: null,
         lastResultText: completed.lastResultText,
         sourceAgentId: args.chatThread.agentId,
         sourceThreadTitle: args.chatThread.title,
@@ -2794,7 +2795,7 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
 
 const prepareFailedTerminalChatCallbackWork$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly runId: string;
       readonly run: ChatRunInfo;
@@ -2838,6 +2839,29 @@ const prepareFailedTerminalChatCallbackWork$ = command(
       return failed;
     }
 
+    const runStatus =
+      args.errorMessage.trim().toLowerCase() === "run cancelled"
+        ? "cancelled"
+        : "failed";
+    const [terminalEvent] = await get(db$)
+      .select({ failureReason: chatEvents.failureReason })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.runId, args.runId),
+          eq(chatEvents.chatThreadId, args.chatThread.chatThreadId),
+          eq(
+            chatEvents.eventType,
+            runStatus === "failed" ? "run.failed" : "run.cancelled",
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!terminalEvent) {
+      throw new Error("Failed chat callback is missing its terminal event");
+    }
+
     return {
       outcome: failed.outcome,
       slackDeliveryCallbackId: failed.slackDeliveryCallbackId,
@@ -2851,10 +2875,9 @@ const prepareFailedTerminalChatCallbackWork$ = command(
         chatThreadId: args.chatThread.chatThreadId,
         runId: args.runId,
         sourceCallbackId: args.sourceCallbackId,
-        runStatus:
-          args.errorMessage.trim().toLowerCase() === "run cancelled"
-            ? "cancelled"
-            : "failed",
+        runStatus,
+        failureReason:
+          runStatus === "failed" ? terminalEvent.failureReason : null,
         // Failed runs surface their error separately; patterns only ever
         // match assistant output, so terminal errors carry no matchable text.
         lastResultText: null,
