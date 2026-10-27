@@ -73,10 +73,15 @@ struct MessageBodyView: View, Equatable {
               PermissionActionCard(store: permissionActions.card(action), loadsState: loadsActions)
             }
           case .unavailablePermission:
-            Label("Permission request unavailable", systemImage: "exclamationmark.shield")
-              .font(.subheadline).foregroundStyle(.secondary)
-              .padding(14).frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
-              .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            ChatCardHeader(
+              title: String(localized: "Permission request unavailable"),
+              systemImage: "exclamationmark.shield"
+            ) {
+              EmptyView()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+            .modifier(ChatCardSurface())
           }
         }
       }

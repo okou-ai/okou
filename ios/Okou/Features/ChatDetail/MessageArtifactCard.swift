@@ -46,7 +46,7 @@ struct MessageArtifactCard: View {
           viewer.open(artifact, images: images, imageSources: imageSources)
         }
       } label: {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
           if isMedia {
             ZStack {
               Rectangle().fill(Color(.tertiarySystemFill))
@@ -64,22 +64,16 @@ struct MessageArtifactCard: View {
             }
             .frame(height: 180).clipped().clipShape(RoundedRectangle(cornerRadius: 10))
           }
-          HStack(spacing: 12) {
-            if !isMedia {
-              Image(systemName: artifact.symbol).font(.title2).foregroundStyle(.secondary).frame(
-                width: 32)
+          HStack(spacing: 8) {
+            ChatCardHeader(title: title, systemImage: artifact.symbol, titleLineLimit: 2) {
+              Text(error ?? artifact.subtitle).font(.caption).lineLimit(1, reservesSpace: true)
             }
-            VStack(alignment: .leading, spacing: 3) {
-              Text(title).font(.subheadline.weight(.medium)).lineLimit(2)
-              Text(error ?? artifact.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(
-                1)
-            }
-            Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(
               .tertiary)
           }
         }
-        .padding(12).contentShape(Rectangle())
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Preview \(title)")
@@ -89,8 +83,8 @@ struct MessageArtifactCard: View {
       }
 
     }
-    .frame(maxWidth: 400, alignment: .leading)
-    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .modifier(ChatCardSurface())
     .accessibilityIdentifier("generated-result-card")
     .task(id: loadKey) {
       guard loadsContent else { return }
