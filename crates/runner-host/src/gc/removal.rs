@@ -3,7 +3,7 @@ use std::path::Path;
 
 use nix::fcntl::Flock;
 
-/// Retain the acquired version lock through directory removal and return it for
+/// Retain the acquired resource lock through directory removal and return it for
 /// the caller's remaining cleanup, together with the native filesystem result.
 /// Once submitted, physical work owns the lock even if its async observer drops.
 pub async fn remove_dir_all_with_lock(

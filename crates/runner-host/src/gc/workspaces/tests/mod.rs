@@ -8,6 +8,8 @@ use nix::fcntl::FlockArg;
 use super::*;
 use crate::gc::test_support::{assert_is_symlink, old_gc_time, test_home};
 
+mod custody;
+
 fn test_policy() -> WorkspaceGcPolicy {
     WorkspaceGcPolicy {
         min_age: Duration::from_secs(600),
@@ -91,8 +93,13 @@ fn write_base_dir_lock(home: &HomePaths, base_dir: &Path) -> PathBuf {
     lock_path
 }
 
-fn failing_remove_dir_all(_path: &Path) -> RemoveDirAllFuture<'_> {
-    Box::pin(async { Err(std::io::Error::other("injected workspace removal failure")) })
+fn failing_remove_dir_all(_path: &Path, lock: Flock<File>) -> RemoveDirAllFuture<'_> {
+    Box::pin(async move {
+        (
+            lock,
+            Err(std::io::Error::other("injected workspace removal failure")),
+        )
+    })
 }
 
 fn firecracker_with_base_dir(
