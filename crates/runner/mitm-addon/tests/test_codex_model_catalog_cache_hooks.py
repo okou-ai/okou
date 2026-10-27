@@ -53,7 +53,7 @@ class _UninspectedRequestBypassValue(bytes):
         raise AssertionError("request bypass presence must not decode values")
 
     def __bytes__(self) -> bytes:
-        raise AssertionError("request bypass presence must not copy values")
+        raise TypeError("request bypass presence must not copy values")
 
     def __bool__(self) -> bool:
         raise AssertionError("request bypass presence must not test value truthiness")
