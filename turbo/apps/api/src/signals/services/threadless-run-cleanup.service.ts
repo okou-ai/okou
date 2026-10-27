@@ -1,5 +1,10 @@
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  deleteRunHistoriesSql,
+  deletedRunHistorySchema,
+} from "@okouai/db/operations/run-history-deletion";
+import { blobs } from "@okouai/db/schema/blob";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -21,6 +26,7 @@ import {
 } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent-run-callback.service";
@@ -29,9 +35,12 @@ import { cancelRun$ } from "./agent-run-terminal-transition.service";
 import { dispatchCancelSideEffects$ } from "./run-cancel.service";
 
 import {
-  deleteLockedRunHistories,
+  deletedRunHistoryReferences,
+  conversationReferenceBatches,
+  conversationBlobLockCondition,
+  conversationBlobReleaseValues,
+  conversationDeletionDatabaseError,
   logCommittedConversationDeletion,
-  releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
 
 const L = logger("ThreadlessRunCleanup");
@@ -243,8 +252,65 @@ async function deleteIfStillEligible(
       return null;
     }
 
-    const removed = await deleteLockedRunHistories(tx, [candidate.runId]);
-    return await releaseDeletedConversationReferences(tx, removed);
+    const runIds = [candidate.runId];
+    const historyDeletionQuery = deleteRunHistoriesSql(runIds);
+    const historyDeletionSchema = deletedRunHistorySchema;
+    const deletion = await settle(
+      (async () => {
+        return parseRawRows(
+          historyDeletionSchema,
+          await tx.execute(historyDeletionQuery),
+        );
+      })(),
+    );
+    if (!deletion.ok) {
+      throw conversationDeletionDatabaseError(deletion.error);
+    }
+    const rows = deletion.value;
+    if (rows.length !== runIds.length) {
+      throw new Error("Conversation deletion lost a locked run");
+    }
+    const removed = deletedRunHistoryReferences(rows);
+
+    // Release references LAST in the same transaction, after all parent work.
+    const release = conversationReferenceBatches(removed);
+    for (const batch of release.batches) {
+      // Keep the existing global hash order and nonblocking acquisition.
+      const locked = await settle(
+        tx
+          .select({ hash: blobs.hash })
+          .from(blobs)
+          .where(conversationBlobLockCondition(batch))
+          .orderBy(asc(blobs.hash))
+          .for("update", { noWait: true }),
+      );
+      if (!locked.ok) {
+        throw conversationDeletionDatabaseError(locked.error);
+      }
+      // Do not let a concurrent INSERT replace a missing old retain.
+      if (locked.value.length !== batch.length) {
+        throw new Error(
+          "Conversation history reference accounting failed: missing blob references",
+        );
+      }
+      const releaseValues = conversationBlobReleaseValues(batch);
+      const released = await settle(
+        tx
+          .update(blobs)
+          .set(releaseValues.values)
+          .from(releaseValues.from)
+          .where(releaseValues.where),
+      );
+      if (!released.ok) {
+        throw conversationDeletionDatabaseError(released.error);
+      }
+      if (released.value.rowCount !== batch.length) {
+        throw new Error(
+          "Conversation history reference accounting failed: missing or insufficient blob references",
+        );
+      }
+    }
+    return release.receipt;
   });
   if (receipt === null) {
     return false;
