@@ -4,6 +4,7 @@ import {
   count,
   eq,
   getTableColumns,
+  notExists,
   SQL,
   sql,
   type Column,
@@ -112,18 +113,20 @@ export function tokenConnectionMetadataClauses(
     const earlier =
       names.length === 0
         ? sql`(SELECT ${count()} FROM token_wallet_entitlement) >= 0`
-        : sql`NOT EXISTS (${sql.join(
-            names.map((entry) => {
-              return sql`SELECT id FROM ${sql.identifier(entry)}`;
-            }),
-            sql` UNION ALL `,
-          )})`;
+        : notExists(
+            sql`(${sql.join(
+              names.map((entry) => {
+                return sql`SELECT id FROM ${sql.identifier(entry)}`;
+              }),
+              sql` UNION ALL `,
+            )})`,
+          );
     // A changed observed account is a conflict, never permission to overwrite
     // it or to manufacture a sibling. An already absent matched account can
     // still take the original insertion path.
     const fallback =
       original.kind === "update" && write.phase !== "existing"
-        ? sql`NOT EXISTS (SELECT 1 FROM ${connectors} WHERE ${original.where})`
+        ? notExists(sql`(SELECT 1 FROM ${connectors} WHERE ${original.where})`)
         : sql`true`;
     const eligible = sql`${earlier} AND ${fallback}`;
     const statement =
@@ -144,7 +147,7 @@ export function tokenConnectionMetadataClauses(
               write.where,
               eligible,
               write.phase === "existing" && args.accountRevision !== null
-                ? sql`${connectors}.xmin::text = ${args.accountRevision}`
+                ? eq(sql`${connectors}.xmin::text`, args.accountRevision)
                 : undefined,
             ),
             returning: [

@@ -1,7 +1,18 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
-import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  notExists,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import {
@@ -38,7 +49,7 @@ export interface TokenProjectionPublication {
   readonly projections: readonly TokenAutomationProjection[];
 }
 
-const accepted = sql`EXISTS (SELECT 1 FROM token_connection)`;
+const accepted = exists(sql`(SELECT 1 FROM token_connection)`);
 
 function tokenDefaultAccount(args: TokenProjectionPublication): SQL {
   return sql`COALESCE(
@@ -86,7 +97,7 @@ function tokenProjectionConfig(
   args: TokenProjectionPublication,
 ): SQL | undefined {
   if (args.connectorSlug === "notion") {
-    return sql`CASE WHEN desired.connector_id IS NOT NULL AND desired.config IS NOT NULL
+    return sql`CASE WHEN ${isNotNull(sql`desired.connector_id`)} AND ${isNotNull(sql`desired.config`)}
       THEN jsonb_set(desired.config, '{connectorId}', to_jsonb(desired.connector_id::text))
       ELSE ${workflowAutomations.eventConfig} END`;
   }
@@ -116,26 +127,26 @@ function tokenProjectionPublication(args: TokenProjectionPublication): SQL[] {
     where: and(
       eq(workflowAutomations.id, sql`desired.id`),
       accepted,
-      sql`${workflowAutomations}.xmin::text = desired.revision`,
+      eq(sql`${workflowAutomations}.xmin::text`, sql`desired.revision`),
     ),
     returning: [{ path: ["id"], field: workflowAutomations.id }],
   });
   return [
     sql`token_projection_default AS MATERIALIZED (SELECT ${tokenDefaultAccount(args)} AS id)`,
     sql`token_projection_input AS MATERIALIZED (
-      SELECT source.*, CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
+      SELECT source.*, CASE WHEN ${isNotNull(chatThreadConnectorSelections.connectorSlug)}
         THEN ${chatThreadConnectorSelections.connectorId} ELSE fallback.id END AS connector_id
       FROM jsonb_to_recordset(${input}::jsonb) AS source(id uuid, workflow_id uuid, revision text, previous_connector_id uuid,
         config jsonb, configured_connector_id uuid, invalidate_gmail boolean)
       CROSS JOIN token_projection_default AS fallback
-      LEFT JOIN ${workflowUserAutomationThreads} ON ${workflowUserAutomationThreads.orgId} = ${args.orgId}
-        AND ${workflowUserAutomationThreads.userId} = ${args.userId}
-        AND ${workflowUserAutomationThreads.workflowId} = source.workflow_id
-      LEFT JOIN ${chatThreadConnectorSelections} ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
-        AND ${chatThreadConnectorSelections.connectorSlug} = ${args.connectorSlug})`,
+      LEFT JOIN ${workflowUserAutomationThreads} ON ${eq(workflowUserAutomationThreads.orgId, args.orgId)}
+        AND ${eq(workflowUserAutomationThreads.userId, args.userId)}
+        AND ${eq(workflowUserAutomationThreads.workflowId, sql`source.workflow_id`)}
+      LEFT JOIN ${chatThreadConnectorSelections} ON ${eq(chatThreadConnectorSelections.chatThreadId, workflowUserAutomationThreads.chatThreadId)}
+        AND ${eq(chatThreadConnectorSelections.connectorSlug, args.connectorSlug)})`,
     sql`token_projection_changes AS MATERIALIZED (SELECT * FROM token_projection_input
       WHERE previous_connector_id IS DISTINCT FROM connector_id OR invalidate_gmail
-        OR (${args.connectorSlug === "notion"} AND connector_id IS NOT NULL AND configured_connector_id IS DISTINCT FROM connector_id))`,
+        OR (${args.connectorSlug === "notion"} AND ${isNotNull(sql`connector_id`)} AND configured_connector_id IS DISTINCT FROM connector_id))`,
     sql`token_projected_automations AS (${statement})`,
   ];
 }
@@ -149,11 +160,11 @@ function tokenProjectionCohortChecks(args: TokenProjectionPublication): SQL[] {
     return [];
   }
   return [
-    sql`NOT EXISTS (SELECT 1 FROM ${workflowAutomations} WHERE ${plan.where}
-      AND NOT EXISTS (SELECT 1 FROM token_projection_input WHERE ${eq(workflowAutomations.id, sql`token_projection_input.id`)}))`,
-    sql`NOT EXISTS (SELECT 1 FROM token_projection_input AS expected
+    notExists(sql`(SELECT 1 FROM ${workflowAutomations} WHERE ${plan.where}
+      AND ${notExists(sql`(SELECT 1 FROM token_projection_input WHERE ${eq(workflowAutomations.id, sql`token_projection_input.id`)})`)})`),
+    notExists(sql`(SELECT 1 FROM token_projection_input AS expected
       LEFT JOIN ${workflowAutomations} ON ${eq(workflowAutomations.id, sql`expected.id`)}
-      WHERE ${isNull(workflowAutomations.id)} OR ${workflowAutomations}.xmin::text IS DISTINCT FROM expected.revision)`,
+      WHERE ${isNull(workflowAutomations.id)} OR ${workflowAutomations}.xmin::text IS DISTINCT FROM expected.revision)`),
   ];
 }
 
@@ -169,7 +180,9 @@ function principalGmailCleanup(args: TokenProjectionPublication): SQL[] {
     where: and(
       write.where,
       accepted,
-      sql`NOT EXISTS (SELECT 1 FROM token_projection_input WHERE ${eq(workflowAutomations.id, sql`token_projection_input.id`)})`,
+      notExists(
+        sql`(SELECT 1 FROM token_projection_input WHERE ${eq(workflowAutomations.id, sql`token_projection_input.id`)})`,
+      ),
     ),
   });
   return [sql`token_other_gmail_cleanup AS (${statement} RETURNING id)`];
@@ -186,7 +199,10 @@ function tokenNotionCleanup(args: TokenProjectionPublication): SQL {
     reconnection === null ? sql`false` : reconnection.condition;
   const projected =
     args.connectorSlug === "notion"
-      ? sql`${notionWorkflowPendingEvents.automationId} IN (SELECT id FROM token_projected_automations)`
+      ? inArray(
+          notionWorkflowPendingEvents.automationId,
+          sql`(SELECT id FROM token_projected_automations)`,
+        )
       : sql`false`;
   const reason =
     reconnection === null

@@ -3,7 +3,15 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, count, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  exists,
+  getTableColumns,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import {
@@ -34,7 +42,7 @@ interface TokenConnectionPublication extends TokenConnectionMetadataPublication 
     Parameters<typeof completedGetStartedQuestPublication>[0] | null;
 }
 
-const admitted = sql`EXISTS (SELECT 1 FROM token_connection)`;
+const admitted = exists(sql`(SELECT 1 FROM token_connection)`);
 const accountId = sql`(SELECT id FROM token_connection)`;
 
 /** The original missing/denied outcome still publishes initial wallet metadata. */
