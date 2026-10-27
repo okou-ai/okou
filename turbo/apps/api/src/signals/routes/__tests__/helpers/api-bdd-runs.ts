@@ -1437,12 +1437,10 @@ export function createRunsApi(context: TestContext) {
       );
     },
 
-    async requestClaimRunnerJob<
-      TStatus extends 200 | 400 | 401 | 403 | 404 | 409 | 500,
-    >(
+    async requestClaimRunnerJob(
       validAuth: boolean,
       runId: string,
-      statuses: readonly TStatus[],
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
       body: RunnerJobClaimRequest = {},
       extraHeaders?: Readonly<Record<string, string>>,
     ) {

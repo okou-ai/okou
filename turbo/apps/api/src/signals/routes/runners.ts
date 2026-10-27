@@ -2,10 +2,8 @@ import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-he
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
   claimCompatibleStoredExecutionContextSchema,
-  CLAIM_RESPONSE_BUDGET_EXCEEDED_ERROR_CODE,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
-  executionContextSchema,
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
@@ -1974,27 +1972,6 @@ const claimAuthorizedJob$ = command(
         ...responseBody,
         agentInstructions: instructions.instructions,
       };
-    }
-
-    // Refuse before accepting the Run or consuming its native-session binding.
-    const maxClaimResponseBytes = args.capabilities.maxClaimResponseBytes;
-    if (maxClaimResponseBytes !== undefined) {
-      responseBody = executionContextSchema.parse(responseBody);
-      const requiredClaimResponseBytes = Buffer.byteLength(
-        JSON.stringify(responseBody),
-      );
-      if (requiredClaimResponseBytes > maxClaimResponseBytes) {
-        return {
-          status: 409 as const,
-          body: {
-            error: {
-              code: CLAIM_RESPONSE_BUDGET_EXCEEDED_ERROR_CODE,
-              message: "Claim response exceeds the caller's reserved capacity",
-            },
-            requiredClaimResponseBytes,
-          },
-        };
-      }
     }
 
     claimRouteTiming.recordElapsed(

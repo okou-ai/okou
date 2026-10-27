@@ -178,17 +178,6 @@ export const runnerClaimCapabilitiesSchema = object({
     .refine((generations) => {
       return new Set(generations).size === generations.length;
     }, "Pi model-config generations must be unique"),
-  /**
-   * Caller capacity for the complete uncompressed UTF-8 successful claim JSON.
-   * Keep this in strict capabilities so preceding APIs reject unsupported budgets.
-   * Omission supports preceding Runners during API-first rollout; #38309 owns
-   * mandatory adoption and removal after old/rollback producers stop omitting it.
-   */
-  maxClaimResponseBytes: number()
-    .int()
-    .positive()
-    .max(Number.MAX_SAFE_INTEGER)
-    .optional(),
 })
   .strict()
   .readonly();
@@ -1165,9 +1154,6 @@ export const executionContextSchema = executionContextObjectSchema.superRefine(
   },
 );
 
-export const CLAIM_RESPONSE_BUDGET_EXCEEDED_ERROR_CODE =
-  "CLAIM_RESPONSE_BUDGET_EXCEEDED";
-
 /**
  * Runners job claim contract - POST /api/runners/jobs/:id/claim
  * Claim a pending job for execution
@@ -1194,15 +1180,6 @@ export const runnersJobClaimContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema, // Job does not belong to user
       404: apiErrorSchema,
-      409: apiErrorSchema.extend({
-        error: apiErrorSchema.shape.error.extend({
-          code: literal(CLAIM_RESPONSE_BUDGET_EXCEEDED_ERROR_CODE),
-        }),
-        requiredClaimResponseBytes: number()
-          .int()
-          .positive()
-          .max(Number.MAX_SAFE_INTEGER),
-      }),
       500: apiErrorSchema,
     },
     summary: "Claim a pending job for execution",
