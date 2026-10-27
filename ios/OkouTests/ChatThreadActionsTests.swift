@@ -198,7 +198,7 @@ final class ChatThreadActionsTests: XCTestCase {
     await store.refreshNavigation()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
-    let conversation = try XCTUnwrap(store.selectedConversation)
+    try XCTUnwrap(store.selectedConversation).draft = "Keep my reply after undo"
     let gate = ThreadActionGate()
     defer { gate.open() }
     let requested = expectation(description: "Write reached the HTTP boundary")
@@ -231,7 +231,7 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
     await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
-    XCTAssertTrue(store.selectedConversation === conversation)
+    XCTAssertEqual(store.selectedConversation?.draft, "Keep my reply after undo")
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }

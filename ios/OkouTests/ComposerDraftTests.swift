@@ -197,7 +197,7 @@ final class ComposerDraftTests: XCTestCase {
     let composer = server.composer()
     defer { composer.close() }
     await composer.synchronize()
-    try await eventually {
+    try await waitForBusinessResult {
       composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
     }
     XCTAssertFalse(composer.canSend)
@@ -241,8 +241,9 @@ final class ComposerDraftTests: XCTestCase {
     let source = server.directory.appendingPathComponent("local.txt")
     try Data("local".utf8).write(to: source)
     let composer = server.composer(storage: storage)
+    defer { composer.close() }
     composer.attachments.importFiles([source])
-    try await eventually {
+    try await waitForBusinessResult {
       composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
     }
     let copied = try XCTUnwrap(composer.attachments.items.first?.file.url)
@@ -258,7 +259,7 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertFalse(reopened.attachments.isReady)
     let item = try XCTUnwrap(reopened.attachments.items.first)
     reopened.attachments.retry(item.id)
-    try await eventually {
+    try await waitForBusinessResult {
       reopened.attachments.items.contains { if case .failed = $0.state { true } else { false } }
     }
     XCTAssertTrue(reopened.attachments.uploaded.isEmpty)
@@ -354,8 +355,9 @@ final class ComposerDraftTests: XCTestCase {
     let server = DraftServer(remote: try richDraft())
     let storage = server.storage()
     let first = server.composer(storage: storage)
+    defer { first.close() }
     await first.synchronize()
-    try await eventually { first.attachments.isReady }
+    try await waitForBusinessResult { first.attachments.isReady }
     XCTAssertEqual(first.text, "Review this ")
     XCTAssertEqual(first.contextLabels, ["Plan"])
     first.text = "Review this carefully"
@@ -368,7 +370,7 @@ final class ComposerDraftTests: XCTestCase {
     let reopened = server.composer(storage: storage)
     defer { reopened.close() }
     XCTAssertEqual(reopened.text, "Review this carefully")
-    try await eventually { reopened.attachments.isReady }
+    try await waitForBusinessResult { reopened.attachments.isReady }
     XCTAssertEqual(reopened.attachments.uploaded.first?.id, "file")
     XCTAssertEqual(reopened.value, saved)
     XCTAssertTrue(server.state.value.withLock { $0.paths.allSatisfy { !$0.contains("POST") } })

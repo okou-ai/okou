@@ -29,8 +29,8 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.insertText(" /rel after")
     let slash = (input.text as NSString).range(of: "/rel")
     input.selectedRange = NSRange(location: NSMaxRange(slash), length: 0)
-    let workflows = try await table(in: host.view, rows: 4)
-    workflows.delegate?.tableView?(workflows, didSelectRowAt: IndexPath(row: 1, section: 0))
+    let workflow = try await workflowCell("release", in: host.view)
+    XCTAssertTrue(workflow.accessibilityActivate())
     try await eventually { input.text.contains("/release after") }
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
@@ -56,7 +56,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
   }
 
-  func testSearchRankingAndInsertionUseOnlyTheActiveUTF16TokenAndKeepFocusAndUndo() async throws {
+  func testWorkflowInsertionUsesOnlyTheActiveUTF16TokenAndKeepsFocusAndUndo() async throws {
     let fixture = workflowFixture()
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
@@ -72,10 +72,8 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await focusMentionInput(input)
     input.insertText("🌷 Keep /rel tail")
     input.selectedRange = NSRange(location: "🌷 Keep /rel".utf16.count, length: 0)
-    let table = try await table(in: host.view, rows: 4)
-    XCTAssertEqual(titles(table), ["/rel", "/release", "/pre-release", "/research-notes"])
-    let selected = IndexPath(row: 1, section: 0)
-    table.delegate?.tableView?(table, didSelectRowAt: selected)
+    let workflow = try await workflowCell("release", in: host.view)
+    XCTAssertTrue(workflow.accessibilityActivate())
     try await eventually { conversation.draft == "🌷 Keep /release tail" }
     XCTAssertEqual(input.selectedRange, NSRange(location: "🌷 Keep /release".utf16.count, length: 0))
     XCTAssertTrue(input.isFirstResponder)
@@ -111,21 +109,22 @@ final class ChatComposerWorkflowTests: XCTestCase {
       XCTAssertNil(workflowTable(in: host.view), value)
     }
     try await type("First paragraph\n/release", in: input, conversation: conversation)
-    _ = try await table(in: host.view, rows: 4)
+    _ = try await workflowCell("release", in: host.view)
     input.selectedRange = NSRange(location: 0, length: 5)
     try await eventually { self.workflowTable(in: host.view) == nil }
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
-    _ = try await table(in: host.view, rows: 4)
+    _ = try await workflowCell("release", in: host.view)
     XCTAssertTrue(
       conversation.composer.editor.workflows.handleKey(UIKeyCommand.inputEscape, in: input))
     try await eventually { self.workflowTable(in: host.view) == nil }
     XCTAssertEqual(conversation.draft, "First paragraph\n/release")
     XCTAssertTrue(input.isFirstResponder)
     try await type("/r12", in: input, conversation: conversation)
-    let numeric = try await table(in: host.view, rows: 1)
-    XCTAssertEqual(titles(numeric), ["/report-12"])
+    let numeric = try await workflowCell("12", in: host.view)
+    XCTAssertTrue(numeric.accessibilityActivate())
+    try await eventually { conversation.draft == "/report-12 " }
     try await type("/r14", in: input, conversation: conversation)
-    try await eventually {
+    try await waitForBusinessResult {
       conversation.composer.editor.workflows.matches.isEmpty
         && !conversation.composer.editor.workflows.isLoading
     }
@@ -148,8 +147,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("/")
-    let overview = try await table(in: host.view, rows: 7)
-    let savedRow = try XCTUnwrap(overview.cellForRow(at: IndexPath(row: 0, section: 0)))
+    let savedRow = try await workflowCell("morning", in: host.view)
     input.setMarkedText("rel", selectedRange: NSRange(location: 3, length: 0))
     XCTAssertNotNil(input.markedTextRange)
     XCTAssertTrue(savedRow.accessibilityActivate())
@@ -159,7 +157,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertEqual(input.text, "/rel\n")
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     try await type("/rel", in: input, conversation: conversation)
-    _ = try await table(in: host.view, rows: 4)
+    _ = try await workflowCell("release", in: host.view)
     let down = try XCTUnwrap(input.keyCommands?.first { $0.input == UIKeyCommand.inputDownArrow })
     _ = input.perform(down.action, with: down)
     let confirm = try XCTUnwrap(input.keyCommands?.first { $0.input == "\r" })
@@ -170,7 +168,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
   }
 
-  func testLoadingFailureRetryAndAgentReplacementRejectOldRowsAndLateResults() async throws {
+  func testWorkflowHTTPFailureCanBeRetriedAndClosedWorkspaceRejectsLateResults() async throws {
     let gate = WorkflowGate()
     let started = expectation(description: "Old Agent Workflow request")
     let attempts = WorkflowCounter()
@@ -195,10 +193,44 @@ final class ChatComposerWorkflowTests: XCTestCase {
         )
     })
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
-    defer {
+    defer { workspace.close() }
+    await workspace.refreshNavigation()
+    let source = workspace.composerWorkflows
+    let old = Task { try await source.load(agentID: AttachmentFlowFixture.agentID) }
+    addTeardownBlock {
+      old.cancel()
       gate.open()
-      workspace.close()
+      _ = try? await old.value
     }
+    await fulfillment(of: [started], timeout: 3)
+    workspace.startNewChat(agentID: "other-agent")
+    do {
+      _ = try await source.load(agentID: "other-agent")
+      XCTFail("The HTTP failure must remain visible to the caller")
+    } catch {
+      XCTAssertEqual(error.localizedDescription, "Workflows temporarily unavailable")
+    }
+    let current = try await source.load(agentID: "other-agent")
+    XCTAssertEqual(current.map(\.name), ["fresh"])
+    workspace.close()
+    gate.open()
+    do {
+      _ = try await old.value
+      XCTFail("A closed workspace must not accept a late Workflow response")
+    } catch is CancellationError {}
+  }
+
+  func testRetiredWorkflowRowsCannotChangeReplacementInputOrClosedWorkspaceDraft() async throws {
+    let fixture = AttachmentFlowFixture(workflows: { request in
+      let agent = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+        .first { $0.name == "agentId" }?.value
+      return agent == AttachmentFlowFixture.agentID
+        ? ChatHTTPResponse(body: workflowResponse)
+        : ChatHTTPResponse(
+          body: #"[{"id":"fresh","name":"fresh","displayName":null,"description":null}]"#)
+    })
+    let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { workspace.close() }
     await workspace.refreshNavigation()
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
     let window = try await mountMentionHost(host)
@@ -206,23 +238,18 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let old = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(old)
     old.insertText("/rel")
-    await fulfillment(of: [started], timeout: 3)
-    XCTAssertTrue(workspace.newComposer.editor.workflows.isLoading)
+    let retired = try await workflowCell("release", in: host.view)
     workspace.startNewChat(agentID: "other-agent")
     try await eventually { self.inputs(in: host.view).first !== old }
     let current = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(current)
     current.insertText("/")
-    try await eventually { workspace.newComposer.editor.workflows.error != nil }
-    gate.open()
-    try await eventually { !workspace.newComposer.editor.workflows.isLoading }
-    XCTAssertNil(workflowTable(in: host.view))
-    workspace.newComposer.editor.workflows.reload()
-    let fresh = try await table(in: host.view, rows: 1)
-    XCTAssertEqual(titles(fresh), ["/fresh"])
-    let staleCell = try XCTUnwrap(fresh.cellForRow(at: IndexPath(row: 0, section: 0)))
+    let fresh = try await workflowCell("fresh", in: host.view)
+    XCTAssertTrue(retired.accessibilityActivate())
+    XCTAssertEqual(current.text, "/")
+    XCTAssertEqual(workspace.newComposer.text, "/")
     workspace.close()
-    XCTAssertTrue(staleCell.accessibilityActivate())
+    XCTAssertTrue(fresh.accessibilityActivate())
     XCTAssertEqual(current.text, "/")
     XCTAssertEqual(workspace.newComposer.text, "/")
   }
@@ -283,7 +310,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     conversation.composer.editBlock(note, text: "Please /release ")
     XCTAssertEqual(conversation.composer.document.parts.first?["quote"]?.string, "Quoted /rel")
     conversation.attachmentDraft.importFiles([try attachmentFile()])
-    try await eventually {
+    try await waitForBusinessResult {
       conversation.attachmentDraft.isReady && conversation.attachmentDraft.hasAttachments
     }
     await conversation.send()
@@ -365,15 +392,14 @@ final class ChatComposerWorkflowTests: XCTestCase {
     }
     return view.subviews.compactMap { workflowTable(in: $0) }.first
   }
-  private func table(in view: UIView, rows: Int) async throws -> UITableView {
-    try await eventually { self.workflowTable(in: view)?.numberOfRows(inSection: 0) == rows }
-    return try XCTUnwrap(workflowTable(in: view))
-  }
-  private func titles(_ table: UITableView) -> [String] {
-    (0..<table.numberOfRows(inSection: 0)).compactMap {
-      (table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: $0, section: 0))
-        .contentConfiguration as? UIListContentConfiguration)?.text
+  private func workflowCell(_ id: String, in view: UIView) async throws -> UITableViewCell {
+    func cell() -> UITableViewCell? {
+      nativeViews(in: view).compactMap { $0 as? UITableViewCell }.first {
+        $0.accessibilityIdentifier == "workflow-" + id
+      }
     }
+    try await eventually { cell() != nil }
+    return try XCTUnwrap(cell())
   }
   private func type(_ text: String, in input: ComposerTextView, conversation: ConversationStore)
     async throws
