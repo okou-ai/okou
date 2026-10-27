@@ -56,7 +56,6 @@ async function publish() {
 
 test("renames only the active address while immutable versions and the CLI site identity survive", async () => {
   const { owner, api, name, prepared } = await publish();
-  await enable(owner);
   const http = client(owner);
   const next = `${name}-new`;
   const response = await accept(

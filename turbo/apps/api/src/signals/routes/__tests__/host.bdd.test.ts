@@ -459,6 +459,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         site,
         artifactKind: "hosted-site" as const,
         spaFallback: true,
+        visibility: "public" as const,
         files,
       };
 

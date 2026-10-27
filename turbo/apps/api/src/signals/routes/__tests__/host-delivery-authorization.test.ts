@@ -129,6 +129,7 @@ test("waits for SQL readiness when the public pointer already exists", async () 
     site,
     artifactKind: "hosted-site",
     spaFallback: false,
+    visibility: "public",
     files: [hostedTextFile("/index.html", "<p>old</p>")],
   });
   const send = context.mocks.s3.send.getMockImplementation();
@@ -187,6 +188,7 @@ test("authorizes ready owned identities, keeps immutable history and denies dele
     site,
     artifactKind: "hosted-site" as const,
     spaFallback: false,
+    visibility: "public" as const,
     files: [hostedTextFile("/index.html", "<p>site</p>")],
   };
   const first = await api.prepareHostedSite(owner, body);

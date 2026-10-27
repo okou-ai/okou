@@ -37,6 +37,7 @@ import {
   okouTokenFromClaim,
 } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const host = createHostBddApi(context);
@@ -192,6 +193,9 @@ describe("sandbox hosted previews", () => {
     });
     const api = app(hostContract);
     const owner = createBddApi(context).user();
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.HostedSiteVisibility]: false,
+    });
     previewStorage();
     const prepared = await host.prepareHostedSite(owner, {
       site: "sproutpop-launch-deck-p9jk",
@@ -427,6 +431,7 @@ describe("sandbox hosted previews", () => {
       site: `og-html-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site",
       spaFallback: false,
+      visibility: "public",
       files: [hostedTextFile("/index.html", html)],
     });
     await host.completeHostedSite(actor, prepared.deploymentId);
@@ -493,6 +498,7 @@ describe("sandbox hosted previews", () => {
       site,
       artifactKind: "hosted-site",
       spaFallback: false,
+      visibility: "public",
       files: [hostedTextFile("/index.html", html)],
       preview: preview(bytes),
     });

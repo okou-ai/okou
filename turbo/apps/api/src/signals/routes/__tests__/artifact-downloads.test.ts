@@ -233,6 +233,7 @@ async function fixture() {
       site,
       artifactKind: "hosted-site",
       spaFallback: false,
+      visibility: "public",
       files: [...siteFiles],
     });
     await host.completeHostedSite(actor, prepared.deploymentId);
