@@ -16,15 +16,13 @@ final class TaskCleanupProbe: Sendable {
     completed.withLock { $0 = true }
   }
 
-  func exit() throws { throw ExpectedExit(id: id) }
+  func exit() throws {
+    print("A01_PROBE_EXIT_REACHED:\(id)")
+    _ = try XCTUnwrap(Optional<Bool>.none, "A01_EXPECTED_EXIT:\(id)")
+  }
 
   func reportJoin(_ joined: Bool, file: StaticString = #filePath, line: UInt = #line) {
     XCTAssertTrue(joined, "A01_PROBE_TASK_NOT_JOINED:\(id)", file: file, line: line)
     if joined { print("A01_PROBE_TASK_JOINED:\(id)") }
-  }
-
-  private struct ExpectedExit: Error, CustomStringConvertible {
-    let id: String
-    var description: String { "A01_EXPECTED_EXIT:\(id)" }
   }
 }
