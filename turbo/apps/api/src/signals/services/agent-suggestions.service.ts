@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { array, union } from "zod";
 import { command } from "ccstate";
-import { and, eq, not, sql } from "drizzle-orm";
+import { and, eq, exists, not, sql } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
@@ -11,13 +11,20 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   suggestionSchema,
   suggestionReceiptSchema,
+  getSuggestionExpiresAt,
+  SUGGESTION_RETENTION_MS,
   type Suggestion,
   type SuggestionCreate,
   type SuggestionUpdate,
 } from "@okouai/api-contracts/contracts/suggestions";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
-import { conflict, notFound, resourceUnavailable } from "../../lib/error";
+import {
+  badRequestMessage,
+  conflict,
+  notFound,
+  resourceUnavailable,
+} from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
@@ -26,6 +33,7 @@ import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import { retainedSuggestionEntry } from "./agent-suggestions-lifecycle";
 import {
   PROACTIVE_LEARNING_DEFINITION_NAME,
   PROACTIVE_PLANNING_DEFINITION_NAME,
@@ -43,16 +51,18 @@ function scope(owner: Owner) {
     eq(agentSuggestions.userId, owner.userId),
   );
 }
-function contains(id: string, active: boolean) {
-  const identity = active ? { id, status: "active" } : { id };
-  return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([identity]))}::jsonb`;
+function contains(id: string, active: boolean, at: Date) {
+  const status = active ? sql`AND item->>'status' = 'active'` : sql.empty();
+  return exists(
+    sql`(SELECT 1 FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${eq(sql`item->>'id'`, id)} AND ${retainedSuggestionEntry(at)} ${status})`,
+  );
 }
 function containsOption(id: string, optionId: string) {
   return sql`${agentSuggestions.entries} @> ${sql.param(JSON.stringify([{ id, options: [{ id: optionId }] }]))}::jsonb`;
 }
-/** Compact terminal business receipts without changing the active suggestions. */
-function compactEntries() {
-  return sql`COALESCE((SELECT jsonb_agg(CASE WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item), '[]'::jsonb)`;
+/** Compact terminal receipts and prune entries outside their lifetime. */
+function compactEntries(at: Date) {
+  return sql`COALESCE((SELECT jsonb_agg(CASE WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${retainedSuggestionEntry(at)}), '[]'::jsonb)`;
 }
 function capacityViolation(error: unknown): boolean {
   return (
@@ -195,9 +205,16 @@ const storedEntries$ = command(
 export const readSuggestions$ = command(
   async ({ set }, owner: Owner, signal: AbortSignal) => {
     const entries = await set(storedEntries$, owner, signal);
+    const at = nowDate().getTime();
     const suggestions = entries
       .filter((item): item is Suggestion => {
-        return item.status === "active";
+        return item.status === "active" && getSuggestionExpiresAt(item) > at;
+      })
+      .map((item) => {
+        return {
+          ...item,
+          expiresAt: new Date(getSuggestionExpiresAt(item)).toISOString(),
+        };
       })
       .sort((a, b) => {
         return (
@@ -208,7 +225,10 @@ export const readSuggestions$ = command(
       });
     const receipts = entries
       .filter((item) => {
-        return item.status !== "active";
+        return (
+          item.status !== "active" &&
+          Date.parse(item.updatedAt) + SUGGESTION_RETENTION_MS > at
+        );
       })
       .sort((a, b) => {
         return b.updatedAt.localeCompare(a.updatedAt);
@@ -239,9 +259,20 @@ export const createSuggestion$ = command(
         return invalid;
       }
     }
-    const timestamp = nowDate().toISOString();
+    const at = nowDate();
+    const timestamp = at.toISOString();
+    const expiresAt = new Date(
+      getSuggestionExpiresAt({
+        createdAt: timestamp,
+        expiresAt: input.expiresAt,
+      }),
+    ).toISOString();
+    if (Date.parse(expiresAt) <= at.getTime()) {
+      return badRequestMessage("Suggestion expiry must be in the future.");
+    }
     const item = suggestionSchema.parse({
       ...input,
+      expiresAt,
       status: "active",
       selectedOptionId: null,
       createdAt: timestamp,
@@ -254,9 +285,9 @@ export const createSuggestion$ = command(
         .onConflictDoUpdate({
           target: [agentSuggestions.orgId, agentSuggestions.userId],
           set: {
-            entries: sql`${compactEntries()} || ${sql.param(JSON.stringify([item]))}::jsonb`,
+            entries: sql`${compactEntries(at)} || ${sql.param(JSON.stringify([item]))}::jsonb`,
           },
-          setWhere: not(contains(input.id, false)),
+          setWhere: not(contains(input.id, false, at)),
         })
         .returning({ entries: agentSuggestions.entries }),
       signal,
@@ -306,16 +337,17 @@ const changeSuggestion$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const data = { ...patch, updatedAt: nowDate().toISOString() };
+    const at = nowDate();
+    const data = { ...patch, updatedAt: at.toISOString() };
     const [row] = await set(writeDb$)
       .update(agentSuggestions)
       .set({
-        entries: sql`(SELECT jsonb_agg(CASE WHEN item->>'id' = ${id} THEN item || ${sql.param(JSON.stringify(data))}::jsonb WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item)`,
+        entries: sql`(SELECT jsonb_agg(CASE WHEN item->>'id' = ${id} THEN item || ${sql.param(JSON.stringify(data))}::jsonb WHEN item->>'status' = 'active' THEN item ELSE jsonb_build_object('id', item->>'id', 'status', item->>'status', 'selectedOptionId', item->'selectedOptionId', 'createdAt', item->>'createdAt', 'updatedAt', item->>'updatedAt') END) FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${retainedSuggestionEntry(at)})`,
       })
       .where(
         and(
           scope(owner),
-          contains(id, true),
+          contains(id, true, at),
           typeof patch.selectedOptionId === "string"
             ? containsOption(id, patch.selectedOptionId)
             : undefined,

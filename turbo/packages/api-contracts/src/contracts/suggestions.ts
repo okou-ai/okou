@@ -14,6 +14,7 @@ import { composerDraftSchema } from "./chat-threads";
 import { apiErrorSchema } from "./errors";
 
 const SUGGESTION_LIMIT = 10;
+export const SUGGESTION_RETENTION_MS = 24 * 60 * 60 * 1000;
 // UUID aliases must share one terminal identity in the JSONB collection.
 const suggestionIdSchema = uuid().toLowerCase();
 const suggestionOptionIdSchema = string().trim().min(1).max(64);
@@ -72,6 +73,7 @@ export const suggestionSchema = suggestionContentSchema.extend({
   selectedOptionId: suggestionOptionIdSchema.nullable(),
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
+  expiresAt: iso.datetime().optional(),
 });
 export const suggestionReceiptSchema = suggestionSchema
   .pick({
@@ -86,6 +88,7 @@ export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
 export const suggestionCreateSchema = suggestionContentSchema.extend({
   id: suggestionIdSchema,
   priority: suggestionContentSchema.shape.priority.default(0),
+  expiresAt: iso.datetime().optional(),
 });
 export const suggestionUpdateSchema = suggestionContentSchema.partial().refine(
   (body) => {
@@ -98,6 +101,16 @@ export const suggestionUpdateSchema = suggestionContentSchema.partial().refine(
 export type Suggestion = zInfer<typeof suggestionSchema>;
 export type SuggestionCreate = zInfer<typeof suggestionCreateSchema>;
 export type SuggestionUpdate = zInfer<typeof suggestionUpdateSchema>;
+
+/** An explicit deadline can shorten, but never extend, a card's lifetime. */
+export function getSuggestionExpiresAt(
+  suggestion: Pick<Suggestion, "createdAt" | "expiresAt">,
+): number {
+  const maximum = Date.parse(suggestion.createdAt) + SUGGESTION_RETENTION_MS;
+  return suggestion.expiresAt === undefined
+    ? maximum
+    : Math.min(maximum, Date.parse(suggestion.expiresAt));
+}
 
 const c = initContract();
 const errors = {

@@ -2,6 +2,7 @@ import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   suggestionsContract,
+  getSuggestionExpiresAt,
   type Suggestion,
   type SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
@@ -19,6 +20,8 @@ import {
   resumeThreadDraftHandoff$,
 } from "../chat-page/create-chat-thread.ts";
 import { ensureAgentDraft$ } from "./agent-draft.ts";
+import { now } from "../../lib/time.ts";
+import { setLoop } from "../utils.ts";
 
 export const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
@@ -31,6 +34,7 @@ export const agentSuggestionsEnabled$ = computed(async (get) => {
   return primary !== null && current === primary;
 });
 const revision$ = state(0);
+const expiryRevision$ = state(0);
 const consumedIds$ = state<readonly string[]>([]);
 // The panel shows one suggestion at a time. A position rather than an id, so
 // consuming the card on screen brings up the one after it, and consuming the
@@ -58,9 +62,10 @@ const agentSuggestions$ = computed(async (get) => {
   return result.status === 200 ? result.body.suggestions : [];
 });
 export const visibleAgentSuggestions$ = computed(async (get) => {
+  get(expiryRevision$);
   const consumed = get(consumedIds$);
   return (await get(agentSuggestions$)).filter((item) => {
-    return !consumed.includes(item.id);
+    return !consumed.includes(item.id) && getSuggestionExpiresAt(item) > now();
   });
 });
 const reload$ = command(({ set }) => {
@@ -87,6 +92,19 @@ export const subscribeAgentSuggestions$ = command(
         options: { runOnSubscribe: true },
       },
       signal,
+    );
+    // Expire already-loaded cards even if no curation or cleanup event arrives.
+    // This only re-derives the cached collection; it does not poll the API.
+    setLoop(
+      () => {
+        set(expiryRevision$, (value) => {
+          return value + 1;
+        });
+        return false;
+      },
+      1000,
+      signal,
+      { testIntervalMs: 100 },
     );
   },
 );

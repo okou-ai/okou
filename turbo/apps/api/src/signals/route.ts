@@ -66,6 +66,7 @@ import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events
 import { cronComputerUseScreenshotCleanupRoutes } from "./routes/cron-computer-use-screenshot-cleanup";
 import { cronConnectorCatalogRoutes } from "./routes/cron-connector-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
+import { cronCleanupSuggestionsRoutes } from "./routes/cron-cleanup-suggestions";
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
 import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
@@ -288,6 +289,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronConnectorCatalogRoutes,
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
+  ...cronCleanupSuggestionsRoutes,
   ...cronDrainEmailOutboxRoutes,
   ...cronExecuteWorkflowAutomationsRoutes,
   ...cronMonitorChatEventQueueRoutes,

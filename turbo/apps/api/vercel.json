@@ -77,6 +77,10 @@
       "schedule": "15 * * * *"
     },
     {
+      "path": "/api/cron/cleanup-suggestions",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/cron/drain-email-outbox",
       "schedule": "* * * * *"
     },
