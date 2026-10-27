@@ -82,11 +82,6 @@
       "owner": "projectThread"
     },
     {
-      "id": "TX-0139",
-      "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
-      "owner": "persistAutomaticNoAuthConnection"
-    },
-    {
       "id": "TX-0141",
       "file": "turbo/apps/api/src/signals/services/custom-connector-oauth2.service.ts",
       "owner": "storeCustomConnectorOAuth2Connection"
