@@ -228,6 +228,8 @@ fn build_mock_run_config_with_runtime(
         }
     };
     let temp_dir = tempfile::tempdir().unwrap();
+    let meminfo = temp_dir.path().join("meminfo");
+    std::fs::write(&meminfo, "MemAvailable: 1073741824 kB\n").unwrap();
     let cancel = CancellationToken::new();
     let (provider, handle) = make_provider(cancel.clone());
     let provider_ref = Arc::clone(&provider);
@@ -368,6 +370,8 @@ fn build_mock_run_config_with_runtime(
             manual_routine_heartbeat_rx: None,
             manual_home_cache_gc_rx: None,
             manual_home_cache_pressure_rx: None,
+            manual_idle_memory_rx: None,
+            host_memory_source: Some(Arc::new(super::FileMemorySource(meminfo))),
         },
     };
 
