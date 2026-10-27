@@ -127,11 +127,6 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0329",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishLegacyPlanSubscription$"
-    },
-    {
       "id": "TX-0333",
       "file": "turbo/apps/api/src/signals/services/workflow-automation-run.service.ts",
       "owner": "commitWorkflowInput$"
