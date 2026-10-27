@@ -129,6 +129,7 @@ async function setupGeneratedFilePreview(
   filename: string,
   contentType: string,
   url = `https://cdn.vm7.io/artifacts/tests/office/${filename}`,
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
 ): Promise<string> {
   mockArtifactConversation(context, {
     catalog: [],
@@ -166,6 +167,7 @@ async function setupGeneratedFilePreview(
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches,
   });
   return url;
 }
@@ -274,6 +276,8 @@ test("Preview a DOCX attachment in the dialog and split view", async () => {
   const url = await setupGeneratedFilePreview(
     filename,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    undefined,
+    { [FeatureSwitchKey.DocxPinchIsolation]: true },
   );
   context.mocks.http.get(url, () => {
     return new Response(wordDocumentFixture());
@@ -322,6 +326,8 @@ test.each(["invalid package", "HTML-import package"])(
     const url = await setupGeneratedFilePreview(
       filename,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      undefined,
+      { [FeatureSwitchKey.DocxPinchIsolation]: true },
     );
     context.mocks.http.get(url, () => {
       return new Response(
@@ -340,22 +346,32 @@ test.each(["invalid package", "HTML-import package"])(
   },
 );
 
-test("Preview a legacy Word attachment in the dialog and split view", async () => {
-  const filename = "legacy-report.doc";
-  const url = await setupGeneratedFilePreview(filename, "application/msword");
-  click(await screen.findByLabelText(`Preview ${filename}`));
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expectOfficeViewerUrl(dialogFrame, url);
-  expectOfficeViewerFocusable(dialogFrame);
-  click(buttonNamed("Open in split view", dialog));
-  const splitView = await screen.findByTestId("artifact-sidebar");
-  const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
-  expect(splitFrame).toBeVisible();
-  expectOfficeViewerUrl(splitFrame, url);
-  expectOfficeViewerFocusable(splitFrame);
-});
+test.each([
+  [
+    "release-plan.docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ],
+  ["legacy-report.doc", "application/msword"],
+])(
+  "Preview Word attachment %s in Office when DOCX isolation is off",
+  async (filename, contentType) => {
+    const url = await setupGeneratedFilePreview(filename, contentType);
+    click(await screen.findByLabelText(`Preview ${filename}`));
+    const dialog = await screen.findByTestId("attachment-lightbox");
+    const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
+    expect(dialogFrame).toBeVisible();
+    expectOfficeViewerUrl(dialogFrame, url);
+    expectOfficeViewerFocusable(dialogFrame);
+    click(buttonNamed("Open in split view", dialog));
+    const splitView = await screen.findByTestId("artifact-sidebar");
+    const splitFrame = await within(splitView).findByTitle(
+      `${filename} preview`,
+    );
+    expect(splitFrame).toBeVisible();
+    expectOfficeViewerUrl(splitFrame, url);
+    expectOfficeViewerFocusable(splitFrame);
+  },
+);
 
 test("Preview a PPTX attachment in the dialog and split view", async () => {
   const filename = "quarterly-review.pptx";
@@ -401,46 +417,54 @@ test("Preview an XLSX attachment in the dialog and split view", async () => {
   expectOfficeViewerUrl(splitFrame, url);
 });
 
-test("Render a private Word document from its authorized resource URL", async () => {
-  installWordPreviewRuntime(context.signal);
-  const fileId = "office-private-file";
-  const filename = "private-plan.docx";
-  const contentType =
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  const privateUrl = `https://storage.example.test/${filename}?signature=test`;
-  const publicUrl = `https://cdn.vm7.io/artifacts/tests/office/${filename}`;
-  context.mocks.http.get(privateUrl, () => {
-    return new Response(wordDocumentFixture());
-  });
-  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
-    expect(query.file_id).toBe(fileId);
-    return respond(200, {
-      downloadUrl: new URL("?download=1", privateUrl).href,
-      url: privateUrl,
-      publicUrl,
-      expiresAt: "2099-01-01T00:00:00.000Z",
+test.each([false, true])(
+  "Preview a private Word document with DOCX isolation %s",
+  async (isolated) => {
+    installWordPreviewRuntime(context.signal);
+    const fileId = "office-private-file";
+    const filename = "private-plan.docx";
+    const contentType =
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const privateUrl = `https://storage.example.test/${filename}?signature=test`;
+    const publicUrl = `https://cdn.vm7.io/artifacts/tests/office/${filename}`;
+    context.mocks.http.get(privateUrl, () => {
+      return new Response(wordDocumentFixture());
     });
-  });
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents: officeFileEvents(fileId, filename, contentType),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
+    context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+      expect(query.file_id).toBe(fileId);
+      return respond(200, {
+        downloadUrl: new URL("?download=1", privateUrl).href,
+        url: privateUrl,
+        publicUrl,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+    });
+    mockArtifactConversation(context, {
+      catalog: [],
+      chatEvents: officeFileEvents(fileId, filename, contentType),
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.DocxPinchIsolation]: isolated },
+    });
 
-  click(await screen.findByLabelText(`Preview ${filename}`));
+    click(await screen.findByLabelText(`Preview ${filename}`));
 
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const frame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(frame).toHaveAttribute(
-    "srcdoc",
-    expect.stringContaining("Word preview keeps document gestures local."),
-  );
-  expect(frame).not.toHaveAttribute("src");
-});
+    const dialog = await screen.findByTestId("attachment-lightbox");
+    const frame = await within(dialog).findByTitle(`${filename} preview`);
+    const expectedDocument = expect.stringContaining(
+      "Word preview keeps document gestures local.",
+    );
+    const viewer = new URL("https://view.officeapps.live.com/op/embed.aspx");
+    viewer.searchParams.set("src", publicUrl);
+    expect(frame.getAttribute("srcdoc")).toStrictEqual(
+      isolated ? expectedDocument : null,
+    );
+    expect(frame.getAttribute("src")).toBe(isolated ? null : viewer.href);
+  },
+);
 
 test("Render a generated private image and offer sharing by default", async () => {
   const filename = "private-image.png";

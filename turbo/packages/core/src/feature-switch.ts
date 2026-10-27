@@ -125,6 +125,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
+  [FeatureSwitchKey.DocxPinchIsolation]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "DOCX pinch isolation",
+    description:
+      "Keep pinch gestures from zooming the surrounding app in DOCX previews. Document layout may differ from Microsoft Office.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",

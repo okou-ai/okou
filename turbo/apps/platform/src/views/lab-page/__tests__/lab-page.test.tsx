@@ -169,6 +169,7 @@ test("Maintainer filters narrow the feature list", async () => {
 test.each([
   FeatureSwitchKey.TestOauthConnector,
   FeatureSwitchKey.RemoteControlGuidedSetup,
+  FeatureSwitchKey.DocxPinchIsolation,
 ])("Toggle and reset a Lab override: %s", async (featureKey) => {
   const user = userEvent.setup();
   const updatedSwitches: Record<string, boolean>[] = [];

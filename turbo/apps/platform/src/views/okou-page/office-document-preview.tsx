@@ -1,7 +1,9 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Loader2 } from "lucide-react";
-import { useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import type { Computed } from "ccstate";
 import { useTranslation } from "react-i18next";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { resolveOfficeDocumentViewerBaseUrl } from "../../lib/platform-host.ts";
 import {
   documentPreviewRef$,
@@ -33,7 +35,11 @@ export function OfficeDocumentPreview({
 }) {
   const { t } = useTranslation();
 
-  if (isOpenXmlWordPreview(filename)) {
+  const features = useGet(featureSwitch$);
+  if (
+    features[FeatureSwitchKey.DocxPinchIsolation] &&
+    isOpenXmlWordPreview(filename)
+  ) {
     return (
       <OwnedWordDocument
         key={resourceUrl}

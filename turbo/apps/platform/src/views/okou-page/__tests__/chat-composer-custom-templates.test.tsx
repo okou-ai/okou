@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   installWordPreviewRuntime,
   wordDocumentFixture,
@@ -206,12 +207,14 @@ function menuItemByName(name: string): HTMLElement {
 
 async function openCustomPanel(
   category: "Presentation" | "Document" | "Image" = "Presentation",
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
 ) {
   const user = userEvent.setup({ delay: null });
   const capture = mockTemplateChat();
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches,
   });
   const dialog = await openTemplatePicker(user);
   if (category !== "Presentation") {
@@ -675,33 +678,43 @@ test("A document template with a cover is tiled by its first page over a stack",
   expect(within(custom).getAllByTestId("document-cover-sheet")).toHaveLength(2);
 });
 
-test("Opening a Word template renders an isolated document preview", async () => {
-  installWordPreviewRuntime(context.signal);
-  mockCustomTemplateStore([documentTemplate()]);
-  context.mocks.http.get(DOCUMENT_SOURCE_URL, () => {
-    return new Response(wordDocumentFixture());
-  });
+test.each([false, true])(
+  "Opening a Word template respects DOCX isolation %s",
+  async (isolated) => {
+    installWordPreviewRuntime(context.signal);
+    mockCustomTemplateStore([documentTemplate()]);
+    context.mocks.http.get(DOCUMENT_SOURCE_URL, () => {
+      return new Response(wordDocumentFixture());
+    });
 
-  const { dialog } = await openCustomPanel("Document");
-  click(tabByText("Document"));
-  await within(dialog).findByText("Brand report");
-  click(buttonByName("Preview Brand report", dialog)!);
+    const { dialog } = await openCustomPanel("Document", {
+      [FeatureSwitchKey.DocxPinchIsolation]: isolated,
+    });
+    click(tabByText("Document"));
+    await within(dialog).findByText("Brand report");
+    click(buttonByName("Preview Brand report", dialog)!);
 
-  const frame = await screen.findByTitle("brand-report.docx preview");
-  expect(frame).toHaveAttribute(
-    "srcdoc",
-    expect.stringContaining("Word preview keeps document gestures local."),
-  );
+    const frame = await screen.findByTitle("brand-report.docx preview");
+    const expectedDocument = expect.stringContaining(
+      "Word preview keeps document gestures local.",
+    );
+    const viewer = new URL("https://view.officeapps.live.com/op/embed.aspx");
+    viewer.searchParams.set("src", DOCUMENT_SOURCE_URL);
+    expect(frame.getAttribute("srcdoc")).toStrictEqual(
+      isolated ? expectedDocument : null,
+    );
+    expect(frame.getAttribute("src")).toBe(isolated ? null : viewer.href);
 
-  // The dialog carries the management column a deck shows, so what a member
-  // can do to a template does not depend on its kind.
-  const preview = previewDialogAround(frame);
-  expect(within(preview).getByLabelText("Rename template")).toBeVisible();
-  expect(buttonByName("Use this template", preview)).toBeTruthy();
-  // The catalog stays mounted behind the dialog instead of being replaced by
-  // it, which is what separates opening a document from opening a deck.
-  expect(within(dialog).getByText("Brand report")).toBeInTheDocument();
-});
+    // The dialog carries the management column a deck shows, so what a member
+    // can do to a template does not depend on its kind.
+    const preview = previewDialogAround(frame);
+    expect(within(preview).getByLabelText("Rename template")).toBeVisible();
+    expect(buttonByName("Use this template", preview)).toBeTruthy();
+    // The catalog stays mounted behind the dialog instead of being replaced by
+    // it, which is what separates opening a document from opening a deck.
+    expect(within(dialog).getByText("Brand report")).toBeInTheDocument();
+  },
+);
 
 test("A PDF template opens in the browser's own viewer", async () => {
   mockCustomTemplateStore([
