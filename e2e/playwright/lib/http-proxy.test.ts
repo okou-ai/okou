@@ -239,14 +239,17 @@ test(
         testDir: fileURLToPath(new URL("./fixtures", import.meta.url)),
         testMatch: "http-proxy.spec.ts",
         outputDir: join(directory, "results"),
-        reporter: [["blob", { outputDir: join(directory, "blob") }]],
+        reporter: [
+          ["blob", { outputDir: join(directory, "blob") }],
+          ["json", { outputFile: join(directory, "report.json") }],
+        ],
         workers: 1,
         retries: 0,
         timeout: 10_000,
         use: {
           baseURL: "https://proxy-fixture.invalid",
           ignoreHTTPSErrors: true,
-          trace: "on",
+          trace: "retain-on-failure",
         },
       })};`,
     );
@@ -262,12 +265,19 @@ test(
     );
     assert.equal(
       playwright.code,
-      0,
+      1,
       `${playwright.stdout}${playwright.stderr}`,
     );
     const inspectArchives = `
-import io, pathlib, sys, zipfile
+import io, json, pathlib, sys, zipfile
+root = pathlib.Path(sys.argv[1])
 secrets = sys.argv[2:]
+report = json.loads((root / 'report.json').read_text())
+assert report['stats']['expected'] == 1, 'Proxy page/API requests must pass'
+assert report['stats']['unexpected'] == 1, 'Expected the deliberate diagnostic failure only'
+assert 'INTENTIONAL_PROXY_REPORT_FAILURE' in json.dumps(report)
+assert list((root / 'blob').glob('*.zip')), 'Expected a blob report to inspect'
+assert list((root / 'results').rglob('trace.zip')), 'Expected a retained failure trace to inspect'
 def inspect(data):
     if data.startswith(b'PK'):
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -276,8 +286,9 @@ def inspect(data):
     else:
         for secret in secrets:
             assert secret.encode() not in data, 'Proxy credential found in report or trace'
-for path in pathlib.Path(sys.argv[1]).rglob('*.zip'):
-    inspect(path.read_bytes())
+for path in root.rglob('*'):
+    if path.is_file() and path.suffix in {'.zip', '.json', '.md'}:
+        inspect(path.read_bytes())
 `;
     await exec("python3", [
       "-c",
