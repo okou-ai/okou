@@ -178,7 +178,9 @@ function siteAddress(container: HTMLElement, address: string) {
 
 async function copyFromResources() {
   click(resourceButton());
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   const title = await within(resources).findByText(siteTitle);
   const row = title.closest("li")!;
   click(buttonNamed("Copy link", row));

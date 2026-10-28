@@ -2176,12 +2176,12 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "emptyDescription": "Dateien und Chats aus diesem Chat werden hier angezeigt.",
-      "emptyTitle": "Noch keine Ressourcen",
-      "loadFailed": "Ressourcen konnten nicht geladen werden",
-      "loading": "Ressourcen werden geladen",
+      "emptyDescription": "Dateien, Websites und andere Artefakte aus diesem Chat werden hier angezeigt.",
+      "emptyTitle": "Noch keine Artefakte",
+      "loadFailed": "Artefakte konnten nicht geladen werden",
+      "loading": "Artefakte werden geladen",
       "showMore": "Mehr anzeigen",
-      "title": "Chat-Ressourcen"
+      "title": "Artefakte und Chats"
     },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",

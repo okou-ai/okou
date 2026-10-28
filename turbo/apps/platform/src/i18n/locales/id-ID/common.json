@@ -2168,12 +2168,12 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "emptyDescription": "File dan obrolan dari chat ini akan muncul di sini.",
-      "emptyTitle": "Belum ada sumber daya",
-      "loadFailed": "Tidak dapat memuat sumber daya",
-      "loading": "Memuat sumber daya",
+      "emptyDescription": "File, situs web, dan artefak lain yang dibuat di chat ini akan muncul di sini.",
+      "emptyTitle": "Belum ada artefak",
+      "loadFailed": "Tidak dapat memuat artefak",
+      "loading": "Memuat artefak",
       "showMore": "Tampilkan lebih banyak",
-      "title": "Sumber daya chat"
+      "title": "Artefak dan obrolan"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",

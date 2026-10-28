@@ -74,7 +74,7 @@ function artifactPreview(): HTMLElement {
 }
 
 function resourcesControl(): HTMLElement {
-  return buttonNamed("Resources");
+  return buttonNamed("Artifacts and chats");
 }
 
 function menuItemNamed(name: string): HTMLElement {
@@ -837,7 +837,9 @@ test("Show artifacts that belong to the current thread", async () => {
   });
   click(resourcesControl());
 
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await waitFor(() => {
     expect(resources).toBeVisible();
     expect(

@@ -66,7 +66,7 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
   expect(resourceButton()).toHaveAttribute(
     "aria-description",
-    "Loading resources",
+    "Loading artifacts",
   );
   // Taken, this press would be an explicit open that shows the empty hint.
   click(resourceButton());
@@ -79,13 +79,15 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   // The saved preference is already on, so opening the empty hint must not
   // wait for another preference save.
   click(resourceButton());
-  const panel = await screen.findByRole("region", { name: "Resources" });
+  const panel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await expect(
-    within(panel).findByText("No resources yet"),
+    within(panel).findByText("No artifacts yet"),
   ).resolves.toBeInTheDocument();
   expect(
     within(panel).getByText(
-      "Files and chats from this chat will show up here.",
+      "Files, websites, and other artifacts made in this chat will show up here.",
     ),
   ).toBeInTheDocument();
   expect(resourceButton()).toHaveAttribute("aria-busy", "false");
@@ -151,7 +153,9 @@ test("Draw a pressed panel only once its artifacts and related chats have answer
   expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
   expect(resourcePanel()).not.toBeInTheDocument();
   response.resolve();
-  const panel = await screen.findByRole("region", { name: "Resources" });
+  const panel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   expect(within(panel).getByText("report.pdf")).toBeInTheDocument();
   expect(within(panel).getByText("Research child")).toBeInTheDocument();
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
@@ -216,9 +220,11 @@ test("Display a resource loading error without showing an empty state", async ()
 
   click(resourceButton());
 
-  const panel = await screen.findByRole("region", { name: "Resources" });
+  const panel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await expect(
-    within(panel).findByText("Could not load resources"),
+    within(panel).findByText("Could not load artifacts"),
   ).resolves.toBeInTheDocument();
 });
 
@@ -229,7 +235,7 @@ test("Name the closed resource trigger in a tooltip until the panel opens", asyn
   });
   const user = userEvent.setup();
   await user.hover(resourceButton());
-  const tooltip = await screen.findByText("Resources");
+  const tooltip = await screen.findByText("Artifacts and chats");
   await user.click(resourceButton());
   await waitFor(() => {
     expect(tooltip).not.toBeInTheDocument();
@@ -297,7 +303,7 @@ test("Show artifacts in the floating panel while links remain in the transcript"
   expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   expect(
     queryAllByRoleFast("button").filter((button) => {
-      return button.getAttribute("aria-label") === "Resources";
+      return button.getAttribute("aria-label") === "Artifacts and chats";
     }),
   ).toHaveLength(1);
   expect(
@@ -346,8 +352,10 @@ test.each([0, 20])(
     expect(resourceButton()).toBeEnabled();
     expect(resourcePanel()).not.toBeInTheDocument();
     click(resourceButton());
-    const panel = await screen.findByRole("region", { name: "Resources" });
-    await within(panel).findByText("No resources yet");
+    const panel = await screen.findByRole("region", {
+      name: "Artifacts and chats",
+    });
+    await within(panel).findByText("No artifacts yet");
     expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   },
 );
