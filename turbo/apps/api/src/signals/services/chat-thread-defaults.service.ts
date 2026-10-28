@@ -2,7 +2,7 @@ import {
   modelSettingsSchema,
   type ModelSettings,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { and, eq } from "drizzle-orm";
 
 import { command } from "ccstate";
