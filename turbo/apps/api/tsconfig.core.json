@@ -437,6 +437,7 @@
     "src/signals/autonomy-budget-limit.ts",
     "src/signals/services/autonomy-budget.service.ts",
     "src/signals/services/auxiliary-generation.service.ts",
+    "src/signals/services/browser-capture-publication.ts",
     "src/signals/services/browser.service.ts",
     "src/signals/services/canonical-slack-thread-status.service.ts",
     "src/signals/services/chat-incomplete-context.service.ts",
