@@ -93,6 +93,7 @@ import {
   integrationCompletionFallbackReadPlan,
   loadTerminalChatCallback$,
   loadTerminalChatCallbackLocator$,
+  requiredSourceChatCallback,
   requireSourceChatCallback$,
   runLifecycleMarkerReadPlan,
   sourceChatCallbackReadPlan,
@@ -719,28 +720,6 @@ type ChatDeliveryKind =
   | "telegram:chat"
   | "agentphone:chat";
 
-async function requireSourceChatCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId?: string;
-}) {
-  const plan = sourceChatCallbackReadPlan({
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-  });
-  const [source] = await args.db
-    .select(plan.columns)
-    .from(agentRunCallbacks)
-    .where(plan.condition)
-    .orderBy(plan.order)
-    .limit(plan.limit);
-  if (!source) {
-    throw new Error("Canonical delivery run is missing its chat callback");
-  }
-
-  return source;
-}
-
 async function insertChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
@@ -751,7 +730,19 @@ async function insertChatDeliveryCallback(args: {
     (typeof agentRunCallbacks.$inferInsert)["payload"]
   >;
 }): Promise<string> {
-  const source = await requireSourceChatCallback(args);
+  const source = await (async () => {
+    const plan = sourceChatCallbackReadPlan({
+      runId: args.runId,
+      sourceCallbackId: args.sourceCallbackId,
+    });
+    const [source] = await args.db
+      .select(plan.columns)
+      .from(agentRunCallbacks)
+      .where(plan.condition)
+      .orderBy(plan.order)
+      .limit(plan.limit);
+    return requiredSourceChatCallback(source);
+  })();
 
   const id = uuidv5(
     `${source.id}:${args.internalKind}:${args.chatEventId}`,

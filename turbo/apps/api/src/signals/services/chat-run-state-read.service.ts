@@ -109,6 +109,18 @@ export function sourceChatCallbackReadPlan(args: {
   };
 }
 
+export function requiredSourceChatCallback(
+  source:
+    | Pick<typeof agentRunCallbacks.$inferSelect, "id" | "encryptedSecret">
+    | undefined,
+) {
+  if (!source) {
+    throw new Error("Canonical delivery run is missing its chat callback");
+  }
+
+  return source;
+}
+
 export const requireSourceChatCallback$ = command(
   async (
     { get },
@@ -125,11 +137,7 @@ export const requireSourceChatCallback$ = command(
       .where(plan.condition)
       .orderBy(plan.order)
       .limit(plan.limit);
-    if (!source) {
-      throw new Error("Canonical delivery run is missing its chat callback");
-    }
-
-    return source;
+    return requiredSourceChatCallback(source);
   },
 );
 
