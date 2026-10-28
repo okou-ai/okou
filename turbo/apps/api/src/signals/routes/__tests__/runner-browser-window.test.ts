@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createRunnerBrowserFixtures,
@@ -61,22 +61,36 @@ describe("native owner Browser window admission", () => {
         context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
           return milliseconds === 15_000 ? deadline.signal : undefined;
         });
-        const admission = chat.control({
-          kind: "admit",
-          instanceId: instance.id,
-        });
-        await reached.promise;
-        deadline.abort(
-          new DOMException("Owned provider deadline", "TimeoutError"),
+        const admission = settleIncludingAbort(
+          f.owned.run(() => {
+            return chat.control({
+              kind: "admit",
+              instanceId: instance.id,
+            });
+          }),
         );
-        await expect(admission).resolves.toMatchObject({
-          status: 503,
-          body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+        const checks = await settleIncludingAbort(async () => {
+          await reached.promise;
+          deadline.abort(
+            new DOMException("Owned provider deadline", "TimeoutError"),
+          );
+          await expect(admission).resolves.toMatchObject({
+            ok: true,
+            value: {
+              status: 503,
+              body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+            },
+          });
+          expect(
+            accepted(await chat.request({ kind: "inspect" })).window,
+          ).toBeNull();
+          expect(f.provider.native.created).toHaveLength(0);
         });
-        expect(
-          accepted(await chat.request({ kind: "inspect" })).window,
-        ).toBeNull();
-        expect(f.provider.native.created).toHaveLength(0);
+        deadline.abort();
+        await admission;
+        if (!checks.ok) {
+          throw checks.error;
+        }
       });
     },
   );
