@@ -7,6 +7,15 @@ use crate::test_fixtures_http_body::byte_stream_with_error_after;
 
 pub(super) const TEST_TEMPLATE_DISK_BYTES: u64 = 128 * 1024 * 1024;
 
+pub(super) fn template_cleanup_owner(root: &Path) -> TemplateCleanup {
+    let guard = Flock::lock(
+        lock::open_lock_file(&root.join("template-cleanup.lock")).unwrap(),
+        nix::fcntl::FlockArg::LockExclusive,
+    )
+    .unwrap();
+    TemplateCleanup::new(Arc::new(guard))
+}
+
 #[derive(clap::Parser)]
 pub(super) struct TestBuildCli {
     #[command(flatten)]
