@@ -539,9 +539,9 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       className={cn(
         "box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0",
         // The unified workspace's ground is the whole rail, not a thin frame,
-        // so it takes the rail's chrome: one clear step below the white sheet
-        // in light themes, and the deepest chrome under a lifted sheet in dark.
-        unified ? "md:bg-nav-rail" : "md:bg-sidebar",
+        // so it sits one stop deeper than the sidebar fill: gray-100 is a
+        // visible step below the white sheet without weighing it down.
+        unified ? "md:bg-gray-100" : "md:bg-sidebar",
       )}
       data-gradient-color-themes={
         paletteColorTheme === undefined ? undefined : true
