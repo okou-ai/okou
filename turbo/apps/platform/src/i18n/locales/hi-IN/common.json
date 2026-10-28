@@ -1688,7 +1688,7 @@
       "customDollarAmount": "कस्टम डॉलर राशि",
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
       "proCard": {
-        "bonusCreditsToday": "बोनस क्रेडिट आज",
+        "bonusCreditsNow": "बोनस क्रेडिट · अभी",
         "description": "Pro के साथ आगे बढ़ें: एक साथ 3 टास्क चलाएँ और दोहराए जाने वाले काम अपने आप करवाएँ।",
         "noTasksLeft": "आपके मुफ़्त टास्क खत्म हो गए हैं",
         "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",

@@ -90,7 +90,7 @@ export function ProUpgradeCard({
                 })}
               </strong>{" "}
               {t(($) => {
-                return $.chat.billing.proCard.bonusCreditsToday;
+                return $.chat.billing.proCard.bonusCreditsNow;
               })}
             </p>
           )}
@@ -98,9 +98,10 @@ export function ProUpgradeCard({
 
         <Button
           type="button"
-          size="lg"
+          variant="default"
+          size="default"
           onClick={onUpgrade}
-          className="mt-5 w-full bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
+          className="mt-5 self-start"
         >
           {t(($) => {
             return $.chat.billing.proCard.upgradeNow;

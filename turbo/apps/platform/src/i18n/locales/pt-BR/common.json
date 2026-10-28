@@ -1716,7 +1716,7 @@
       "customDollarAmount": "Valor personalizado em dólares",
       "outOfCredits": "Seus créditos acabaram",
       "proCard": {
-        "bonusCreditsToday": "créditos extras hoje",
+        "bonusCreditsNow": "créditos extras · Agora mesmo",
         "description": "Continue com o Pro: execute 3 tarefas ao mesmo tempo e automatize o trabalho repetitivo.",
         "noTasksLeft": "Suas tarefas gratuitas acabaram",
         "priceUnavailable": "Veja os preços atuais dos planos",

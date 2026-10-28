@@ -1684,7 +1684,7 @@
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
       "proCard": {
-        "bonusCreditsToday": "kredit bonus hari ini",
+        "bonusCreditsNow": "kredit bonus · Sekarang juga",
         "description": "Lanjutkan dengan Pro: jalankan 3 tugas sekaligus dan otomatisasi pekerjaan berulang.",
         "noTasksLeft": "Tugas gratis Anda sudah habis",
         "priceUnavailable": "Lihat paket untuk harga terbaru",

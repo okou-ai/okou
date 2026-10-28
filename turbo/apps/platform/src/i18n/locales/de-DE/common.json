@@ -1688,7 +1688,7 @@
       "customDollarAmount": "Benutzerdefinierter Dollarbetrag",
       "outOfCredits": "Ihre Credits sind aufgebraucht",
       "proCard": {
-        "bonusCreditsToday": "Bonus-Credits heute",
+        "bonusCreditsNow": "Bonus-Credits · Jetzt gleich",
         "description": "Mit Pro geht es weiter: 3 Aufgaben gleichzeitig erledigen und Routinearbeit automatisieren.",
         "noTasksLeft": "Keine kostenlosen Aufgaben mehr übrig",
         "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",

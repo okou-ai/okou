@@ -1688,7 +1688,7 @@
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
       "proCard": {
-        "bonusCreditsToday": "bonus credits today",
+        "bonusCreditsNow": "bonus credits · Just now",
         "description": "Keep going with Pro: run 3 tasks at once and automate repeat work.",
         "noTasksLeft": "You have no free tasks left",
         "priceUnavailable": "See plans for current pricing",

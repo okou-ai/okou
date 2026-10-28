@@ -1716,7 +1716,7 @@
       "customDollarAmount": "Importo in dollari personalizzato",
       "outOfCredits": "Hai esaurito i crediti",
       "proCard": {
-        "bonusCreditsToday": "crediti bonus oggi",
+        "bonusCreditsNow": "crediti bonus · Proprio ora",
         "description": "Continua con Pro: esegui 3 attività alla volta e automatizza il lavoro ripetitivo.",
         "noTasksLeft": "Hai esaurito le attività gratuite",
         "priceUnavailable": "Consulta i piani per i prezzi attuali",

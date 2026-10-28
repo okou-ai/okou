@@ -1684,7 +1684,7 @@
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
       "proCard": {
-        "bonusCreditsToday": "奖励积分，今天升级即赠",
+        "bonusCreditsNow": "奖励积分 · 就现在",
         "description": "用 Pro 继续完成更多：3 个任务并行，重复工作自动处理。",
         "noTasksLeft": "免费任务次数已用完",
         "priceUnavailable": "查看套餐及最新价格",

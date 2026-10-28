@@ -1716,7 +1716,7 @@
       "customDollarAmount": "Montant personnalisé en dollars",
       "outOfCredits": "Vous êtes à court de crédits",
       "proCard": {
-        "bonusCreditsToday": "crédits bonus aujourd’hui",
+        "bonusCreditsNow": "crédits bonus · Maintenant",
         "description": "Continuez avec Pro : lancez 3 tâches à la fois et automatisez le travail répétitif.",
         "noTasksLeft": "Vous avez utilisé toutes vos tâches gratuites",
         "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
