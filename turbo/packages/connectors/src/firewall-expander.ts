@@ -16,6 +16,8 @@ const VALID_RULE_METHODS = new Set([
   "DELETE",
   "HEAD",
   "OPTIONS",
+  "PROPFIND",
+  "REPORT",
   "ANY",
 ]);
 const AWS_RULE_SEPARATOR = " AWS ";
