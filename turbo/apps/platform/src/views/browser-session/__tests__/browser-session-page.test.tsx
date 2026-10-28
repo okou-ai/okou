@@ -3,7 +3,6 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -82,7 +81,6 @@ async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/browsers/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
   });
 
   await expect(
@@ -92,7 +90,6 @@ async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
     screen.findByDisplayValue("https://example.com"),
   ).resolves.toBeEnabled();
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
-  expect(screen.queryByTitle("Cloud browser: booking")).not.toBeInTheDocument();
   const sizingMenu = await openViewerSizingMenu();
   expect(within(sizingMenu).getByText("Sync continuously")).toHaveAttribute(
     "aria-checked",
@@ -129,37 +126,7 @@ test("An accessible conversation without a browser can start one", async () => {
   expect(screen.queryByText("Browser not found")).toBeNull();
 });
 
-test("An active browser shows a private live viewer", async () => {
-  const activeSession = browserSession();
-  let leaseCount = 0;
-  let connectionCount = 0;
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    connectionCount += 1;
-    return respond(200, { cdpUrl: "wss://cdp.browser-use.com/test" });
-  });
-  mockBrowserSession(activeSession);
-  context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
-    if (params.threadId === THREAD_ID) {
-      leaseCount += 1;
-    }
-    return respond(200, { browser: activeSession });
-  });
-
-  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
-
-  const viewer = await screen.findByTitle("Cloud browser: booking");
-  expect(viewer).toHaveAttribute(
-    "src",
-    "https://viewer.example/live?token=private",
-  );
-  expect(viewer).toHaveAttribute("referrerpolicy", "no-referrer");
-  await waitFor(() => {
-    expect(leaseCount).toBeGreaterThan(0);
-  });
-  expect(connectionCount).toBe(0);
-});
-
-test("The viewer switch replaces the provider iframe with the interactive Okou viewer", async () => {
+test("The interactive Okou viewer lets the owner change automatic sizing", async () => {
   const sizingMenu = await setupInteractiveViewerSizingMenu();
   expect(
     within(sizingMenu).getByText("Do not sync automatically"),
@@ -191,7 +158,7 @@ test("The browser viewer resumes continuous sizing after one-time sizing", async
   await selectViewerSizingOption(oneTimeSizingMenu, "Sync continuously");
 });
 
-test("A reclaimed connection shows an unavailable state without opening the provider iframe", async () => {
+test("A reclaimed connection shows an unavailable state", async () => {
   mockBrowserSession(browserSession());
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(409, {
@@ -201,12 +168,10 @@ test("A reclaimed connection shows an unavailable state without opening the prov
   await setupPage({
     context,
     path: `/browsers/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
   });
   await expect(
     screen.findByText("Browser unavailable"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByTitle("Cloud browser: booking")).not.toBeInTheDocument();
 });
 
 test("A replacement browser detaches the previous viewer while its connection loads", async () => {
@@ -235,7 +200,6 @@ test("A replacement browser detaches the previous viewer while its connection lo
   await setupPage({
     context,
     path: `/browsers/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
   });
   await expect(
     screen.findByDisplayValue("https://example.com"),
@@ -256,7 +220,6 @@ test("A replacement browser detaches the previous viewer while its connection lo
   await waitFor(() => {
     expect(previousViewer).not.toBeInTheDocument();
   });
-  expect(screen.queryByTitle("Cloud browser: booking")).not.toBeInTheDocument();
   releaseConnection.resolve();
   await expect(
     screen.findByText("Browser unavailable"),
@@ -279,6 +242,11 @@ test("An inaccessible conversation has no browser page", async () => {
 
 test("A user can restart a reclaimed browser", async () => {
   const activeSession = browserSession();
+  const cdpUrl = "wss://cdp.browser-use.com/restarted";
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
   let startCount = 0;
   mockBrowserSession(
     browserSession({
@@ -306,8 +274,8 @@ test("A user can restart a reclaimed browser", async () => {
   click(getButton("Start browser"));
 
   await expect(
-    screen.findByTitle("Cloud browser: booking"),
-  ).resolves.toBeVisible();
+    screen.findByDisplayValue("https://example.com"),
+  ).resolves.toBeEnabled();
   expect(startCount).toBe(1);
   expect(screen.queryByText("Browser not live")).toBeNull();
 });

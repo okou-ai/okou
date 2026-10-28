@@ -2,18 +2,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import { CdpViewer, type CdpViewerStyle } from "cdp-viewer";
 import { browserUse } from "cdp-viewer/extensions/browser-use";
-import {
-  RectangleHorizontal,
-  AppWindow,
-  AppWindowMac,
-  Globe,
-  Loader2,
-  Play,
-} from "lucide-react";
-import {
-  BROWSER_INITIAL_SCREEN_HEIGHT,
-  BROWSER_SCREEN_WIDTH,
-} from "@okouai/api-contracts/contracts/browser";
+import { AppWindow, AppWindowMac, Globe, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
@@ -23,8 +12,8 @@ import {
   browserSessionReclaimHint,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import { theme$ } from "../../signals/theme.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -32,7 +21,7 @@ import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
-  readonly containLiveFrame?: boolean;
+  readonly showPausedScreenshot?: boolean;
   /**
    * Panel actions for a host without its own header. The live viewer places
    * them at the end of its tab row; other states give them a row of their own.
@@ -284,110 +273,10 @@ function BrowserCdpViewer({
   );
 }
 
-function LiveBrowserFrame({
-  liveUrl,
-  title,
-  contain,
-  aspectRatio,
-}: {
-  readonly liveUrl: string;
-  readonly title: string;
-  readonly contain: boolean;
-  readonly aspectRatio: number;
-}) {
-  return (
-    <iframe
-      src={liveUrl}
-      title={title}
-      referrerPolicy="no-referrer"
-      allow="autoplay; clipboard-read; clipboard-write; fullscreen"
-      style={
-        contain
-          ? {
-              aspectRatio: String(aspectRatio),
-              width: `min(100cqw, calc(100cqh * ${String(aspectRatio)}))`,
-            }
-          : undefined
-      }
-      className={cn(
-        "border-0 bg-background",
-        contain
-          ? "block h-auto max-h-full max-w-full shrink-0"
-          : "w-full min-h-0 flex-1",
-      )}
-    />
-  );
-}
-
-function ContainedLiveBrowserViewport({
-  signals,
-  browserAspectRatio,
-  canFitWindow,
-  children,
-}: {
-  readonly signals: BrowserSessionSignals;
-  readonly browserAspectRatio: number;
-  readonly canFitWindow: boolean;
-  readonly children: ReactNode;
-}) {
-  const { t } = useTranslation();
-  const [fitWindowOperation, fitViewport] = useLoadableSet(
-    signals.fitViewport$,
-  );
-  const fitViewportRef = useSet(signals.fitViewportRef$);
-  const fittingWindow = fitWindowOperation.state === "loading";
-  const pageSignal = useGet(pageSignal$);
-
-  return (
-    <div
-      ref={fitViewportRef}
-      data-browser-session-viewport
-      data-browser-aspect-ratio={browserAspectRatio}
-      data-can-fit-window={canFitWindow}
-      className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-muted/20 [container-type:size]"
-    >
-      {children}
-      <div
-        data-browser-session-fit-action
-        hidden
-        className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-3"
-      >
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          data-browser-session-fit
-          disabled={fittingWindow}
-          onClick={() => {
-            detach(
-              fitViewport(pageSignal),
-              Reason.DomCallback,
-              "fit browser to sidebar window",
-            );
-          }}
-          aria-label={t(($) => {
-            return $.browserSession.fitWindow;
-          })}
-          className="pointer-events-auto rounded-full border-border/70 bg-background/90 px-3 text-xs text-foreground backdrop-blur-sm hover:bg-state-hover"
-        >
-          {fittingWindow ? (
-            <Loader2 className="animate-spin" size={14} />
-          ) : (
-            <RectangleHorizontal size={14} />
-          )}
-          {t(($) => {
-            return $.browserSession.fitAction;
-          })}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function PausedBrowserSession({
   screenshotUrl,
   screenshotLoad,
-  containLiveFrame,
+  showPausedScreenshot,
   starting,
   onStart,
   refined,
@@ -395,14 +284,14 @@ function PausedBrowserSession({
 }: {
   readonly screenshotUrl?: string | null;
   readonly screenshotLoad: ImageLoadSignals;
-  readonly containLiveFrame: boolean;
+  readonly showPausedScreenshot: boolean;
   readonly starting: boolean;
   readonly onStart: () => void;
   readonly refined: boolean;
   readonly actions: ReactNode;
 }) {
   const { t } = useTranslation();
-  const showScreenshot = containLiveFrame && screenshotUrl;
+  const showScreenshot = showPausedScreenshot && screenshotUrl;
   const startContent = (
     <>
       {starting ? (
@@ -491,16 +380,12 @@ function PausedBrowserSession({
 
 export function BrowserSessionPanel({
   signals,
-  containLiveFrame = false,
+  showPausedScreenshot = false,
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
-  const { t } = useTranslation();
   const sessionLoadable = useLastLoadable(signals.panelSession$);
-  const switches = useGet(featureSwitch$);
-  const cdpViewerEnabled = switches[FeatureSwitchKey.BrowserCdpViewer];
-  const refined =
-    cdpViewerEnabled && switches[FeatureSwitchKey.CloudBrowserPanel];
+  const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
   const starting = startOperation.state === "loading";
@@ -531,7 +416,7 @@ export function BrowserSessionPanel({
       <PausedBrowserSession
         screenshotUrl={session?.screenshotUrl}
         screenshotLoad={signals.screenshotImageLoad}
-        containLiveFrame={containLiveFrame}
+        showPausedScreenshot={showPausedScreenshot}
         starting={starting}
         onStart={() => {
           detach(start(pageSignal), Reason.DomCallback);
@@ -545,44 +430,15 @@ export function BrowserSessionPanel({
   if (!session) {
     throw new Error("Live managed browser session is unavailable");
   }
-  const browserAspectRatio = session.screen
-    ? session.screen.width / session.screen.height
-    : BROWSER_SCREEN_WIDTH / BROWSER_INITIAL_SCREEN_HEIGHT;
-  const liveFrame = (
-    <LiveBrowserFrame
-      liveUrl={liveUrl}
-      title={t(
-        ($) => {
-          return $.browserSession.iframeTitle;
-        },
-        { name: session.name },
-      )}
-      contain={containLiveFrame}
-      aspectRatio={browserAspectRatio}
-    />
-  );
-
   return (
     <PanelFrame panelRef={keepAliveRef}>
-      {cdpViewerEnabled ? (
-        <BrowserCdpViewer
-          signals={signals}
-          liveUrl={liveUrl}
-          refined={refined}
-          actions={actions}
-          overlay={overlay}
-        />
-      ) : containLiveFrame ? (
-        <ContainedLiveBrowserViewport
-          signals={signals}
-          browserAspectRatio={browserAspectRatio}
-          canFitWindow={session.screen?.resizable === true}
-        >
-          {liveFrame}
-        </ContainedLiveBrowserViewport>
-      ) : (
-        liveFrame
-      )}
+      <BrowserCdpViewer
+        signals={signals}
+        liveUrl={liveUrl}
+        refined={refined}
+        actions={actions}
+        overlay={overlay}
+      />
       {refined ? null : (
         <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
           {browserSessionReclaimHint(session)}

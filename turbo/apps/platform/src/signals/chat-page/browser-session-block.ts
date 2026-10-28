@@ -4,7 +4,6 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { WindowSizeSync } from "cdp-viewer";
 import {
   command,
@@ -19,7 +18,6 @@ import { formatAppNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { onRef, setLoop, withCleanup } from "../utils.ts";
 import {
@@ -54,13 +52,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly close$: Command<Promise<void>, [AbortSignal]>;
-  readonly fitViewport$: Command<Promise<void>, [AbortSignal]>;
-  readonly syncFitActionVisibility$: Command<void, []>;
   readonly subscribe$: Command<void, [AbortSignal]>;
-  readonly fitViewportRef$: Command<
-    (() => void) | undefined,
-    [HTMLDivElement | null]
-  >;
   // Attach to the visible panel container: the lease heartbeat lives exactly as
   // long as that element is mounted.
   readonly keepAliveRef$: Command<
@@ -89,135 +81,6 @@ export function parseBrowserSessionUrl(
   };
 }
 
-const BROWSER_FIT_GAP_TOLERANCE_PX = 2;
-
-interface ViewportSize {
-  readonly width: number;
-  readonly height: number;
-}
-
-interface BrowserFitDomSignals extends Pick<
-  BrowserSessionSignals,
-  "fitViewportRef$" | "syncFitActionVisibility$"
-> {
-  readonly syncFitActionForScreen$: Command<void, [BrowserSession["screen"]]>;
-  readonly viewportAspectRatio$: Command<number | null, []>;
-}
-
-function measuredViewport(element: HTMLElement | null): ViewportSize | null {
-  if (!element) {
-    return null;
-  }
-  const { width, height } = element.getBoundingClientRect();
-  if (
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width <= 0 ||
-    height <= 0
-  ) {
-    return null;
-  }
-  return { width, height };
-}
-
-function browserFrameNeedsFit(
-  viewport: ViewportSize | null,
-  browserAspectRatio: number,
-): boolean {
-  if (
-    !viewport ||
-    !Number.isFinite(browserAspectRatio) ||
-    browserAspectRatio <= 0
-  ) {
-    return false;
-  }
-  const fittedWidth = Math.min(
-    viewport.width,
-    viewport.height * browserAspectRatio,
-  );
-  const fittedHeight = Math.min(
-    viewport.height,
-    viewport.width / browserAspectRatio,
-  );
-  return (
-    viewport.width - fittedWidth > BROWSER_FIT_GAP_TOLERANCE_PX ||
-    viewport.height - fittedHeight > BROWSER_FIT_GAP_TOLERANCE_PX
-  );
-}
-
-function createBrowserFitDomSignals(): BrowserFitDomSignals {
-  const runtime: { viewport: HTMLDivElement | null } = { viewport: null };
-  const fitAction = (): HTMLElement | null => {
-    return (
-      runtime.viewport?.querySelector("[data-browser-session-fit-action]") ??
-      null
-    );
-  };
-  const updateFitActionVisibility = (
-    browserAspectRatio: number,
-    canFitWindow: boolean,
-  ): void => {
-    const action = fitAction();
-    if (!action) {
-      return;
-    }
-    action.hidden = !(
-      canFitWindow &&
-      browserFrameNeedsFit(
-        measuredViewport(runtime.viewport),
-        browserAspectRatio,
-      )
-    );
-  };
-  const syncFitActionVisibility$ = command(() => {
-    const viewport = runtime.viewport;
-    const browserAspectRatio = Number(
-      viewport?.dataset.browserAspectRatio ?? "",
-    );
-    const canFitWindow = viewport?.dataset.canFitWindow === "true";
-    updateFitActionVisibility(browserAspectRatio, canFitWindow);
-  });
-  const syncFitActionForScreen$ = command(
-    (_, screen: BrowserSession["screen"]): void => {
-      updateFitActionVisibility(
-        screen ? screen.width / screen.height : Number.NaN,
-        screen?.resizable === true,
-      );
-    },
-  );
-  const viewportAspectRatio$ = command((): number | null => {
-    const size = measuredViewport(runtime.viewport);
-    return size ? size.width / size.height : null;
-  });
-  const fitViewportRef$ = onRef(
-    command(({ set }, viewport: HTMLDivElement, signal: AbortSignal): void => {
-      runtime.viewport = viewport;
-      const syncFitActionVisibility = () => {
-        set(syncFitActionVisibility$);
-      };
-      const win = viewport.ownerDocument.defaultView;
-      win?.addEventListener("resize", syncFitActionVisibility);
-      signal.addEventListener(
-        "abort",
-        () => {
-          win?.removeEventListener("resize", syncFitActionVisibility);
-          if (runtime.viewport === viewport) {
-            runtime.viewport = null;
-          }
-        },
-        { once: true },
-      );
-      set(syncFitActionVisibility$);
-    }),
-  );
-  return {
-    fitViewportRef$,
-    syncFitActionForScreen$,
-    syncFitActionVisibility$,
-    viewportAspectRatio$,
-  };
-}
-
 async function fetchBrowserSession(
   createClient: ApiClientFactory,
   threadId: string,
@@ -229,43 +92,6 @@ async function fetchBrowserSession(
     [200, 404],
   );
   return response.status === 200 ? response.body.browser : null;
-}
-
-function createFitWindowSignals(
-  descriptor: BrowserSessionDescriptor,
-  sessionOverride$: State<BrowserSession | null | undefined>,
-  browserFitDom: BrowserFitDomSignals,
-): Pick<BrowserSessionSignals, "fitViewport$"> {
-  const resize$ = command(
-    async (
-      { get, set },
-      aspectRatio: number,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const fitted = await accept(
-        get(apiClient$)(browserContract).resizeByThread({
-          params: { threadId: descriptor.threadId },
-          body: { aspectRatio },
-          fetchOptions: { signal },
-        }),
-        [200, 404],
-        signal,
-      );
-      signal.throwIfAborted();
-      if (fitted.status === 200) {
-        set(sessionOverride$, fitted.body.browser);
-        set(browserFitDom.syncFitActionForScreen$, fitted.body.browser.screen);
-      }
-    },
-  );
-  const fitViewport$ = command(async ({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const aspectRatio = set(browserFitDom.viewportAspectRatio$);
-    if (aspectRatio !== null) {
-      await set(resize$, aspectRatio, signal);
-    }
-  });
-  return { fitViewport$ };
 }
 
 interface BrowserMutationSignalContext {
@@ -330,14 +156,12 @@ function createBrowserSessionSubscriptionSignals(
   descriptor: BrowserSessionDescriptor,
   session$: BrowserSessionSignals["session$"],
   reload$: BrowserSessionSignals["reload$"],
-  browserFitDom: BrowserFitDomSignals,
 ): Pick<BrowserSessionSignals, "subscribe$"> {
   const reloadBrowserSession$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       set(reload$);
-      const session = await get(session$);
+      await get(session$);
       signal.throwIfAborted();
-      set(browserFitDom.syncFitActionForScreen$, session?.screen);
       return false;
     },
   );
@@ -401,9 +225,6 @@ export function createBrowserSessionSignals(
   });
 
   const viewerConnection$ = computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.BrowserCdpViewer]) {
-      return null;
-    }
     const session = await get(session$);
     if (session?.status !== "active" || !session.liveUrl) {
       return null;
@@ -419,12 +240,6 @@ export function createBrowserSessionSignals(
       : null;
   });
 
-  const browserFitDom = createBrowserFitDomSignals();
-  const { fitViewport$ } = createFitWindowSignals(
-    descriptor,
-    sessionOverride$,
-    browserFitDom,
-  );
   const mutationContext: BrowserMutationSignalContext = {
     descriptor,
     sessionOverride$,
@@ -436,7 +251,6 @@ export function createBrowserSessionSignals(
     descriptor,
     session$,
     reload$,
-    browserFitDom,
   );
 
   const keepAliveRef$ = onRef(
@@ -490,9 +304,6 @@ export function createBrowserSessionSignals(
     ...closeSignals,
     reload$,
     reloadPanel$: reload$,
-    fitViewport$,
-    fitViewportRef$: browserFitDom.fitViewportRef$,
-    syncFitActionVisibility$: browserFitDom.syncFitActionVisibility$,
     ...subscriptionSignals,
     keepAliveRef$,
   };

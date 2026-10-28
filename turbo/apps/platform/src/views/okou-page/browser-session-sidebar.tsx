@@ -70,10 +70,7 @@ export function BrowserSessionSidebar({
   overlay,
 }: BrowserSessionSidebarProps) {
   const { t } = useTranslation();
-  const switches = useGet(featureSwitch$);
-  const refined =
-    switches[FeatureSwitchKey.BrowserCdpViewer] &&
-    switches[FeatureSwitchKey.CloudBrowserPanel];
+  const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const actions = <BrowserSessionActions signals={signals} onClose={onClose} />;
   return (
     <aside
@@ -96,7 +93,7 @@ export function BrowserSessionSidebar({
       <div className="flex min-h-0 flex-1 flex-col">
         <BrowserSessionPanel
           signals={signals}
-          containLiveFrame
+          showPausedScreenshot
           actions={refined ? actions : undefined}
           overlay={refined ? overlay : undefined}
         />

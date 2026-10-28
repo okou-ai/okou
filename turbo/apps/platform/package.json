@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.1072.0",
+  "version": "0.1072.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -64,7 +64,7 @@
     "bs58": "6.0.0",
     "ccstate": "^6.1.0",
     "ccstate-react": "^6.1.0",
-    "cdp-viewer": "github:okou-ai/cdp-viewer#a2f054e1c690b6c2df4c5ca71d311162b0594ed3",
+    "cdp-viewer": "github:okou-ai/cdp-viewer#192aa5427e33aefd7a32e802604b3133af921c3c",
     "fflate": "^0.8.3",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "i18next": "^26.4.2",

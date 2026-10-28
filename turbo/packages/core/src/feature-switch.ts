@@ -136,7 +136,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     displayName: "Cloud browser panel",
     description:
-      "With Okou browser viewer on, theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
+      "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
     enabled: false,
   },
   [FeatureSwitchKey.ChatThreadTimeline]: {
@@ -205,14 +205,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description:
       "Create native web forms that apply user-provided values to exact managed Browser controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.BrowserCdpViewer]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Okou browser viewer",
-    description:
-      "Use Okou's interactive browser viewer in conversations and standalone browser pages",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

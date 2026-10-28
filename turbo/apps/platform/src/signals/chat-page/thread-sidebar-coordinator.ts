@@ -68,14 +68,6 @@ export const activeThreadSidebarFullscreen$ = computed((get) => {
   return active ? get(active.thread.sidebar.fullscreen$) : false;
 });
 
-export const syncActiveBrowserFitAction$ = command(({ get, set }) => {
-  const active = get(activeThreadSidebar$);
-  if (active?.target.type !== "browser") {
-    return;
-  }
-  set(active.thread.browserSessionSignals.syncFitActionVisibility$);
-});
-
 /** The sidebar shell acknowledges its committed image viewport layout. */
 export const syncActiveImageLayout$ = command(({ get, set }) => {
   const active = get(activeThreadSidebar$);
