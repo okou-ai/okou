@@ -69,7 +69,7 @@ test("Show the lowest paid catalog price and open the existing plans dialog", as
   expect(within(card).queryByText("$0")).toBeNull();
   expect(within(card).queryByText(/tasks? left/u)).toBeNull();
   expect(within(card).queryByText(/400/u)).toBeNull();
-  click(await findEnabledButton("Upgrade to Pro", card));
+  click(await findEnabledButton("Upgrade now", card));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeVisible();
@@ -87,9 +87,7 @@ test("Keep the upgrade action usable when the price catalog is unavailable", asy
     within(card).findByText("See plans for current pricing"),
   ).resolves.toBeVisible();
   expect(within(card).queryByText(/\$/u)).toBeNull();
-  await expect(
-    findEnabledButton("Upgrade to Pro", card),
-  ).resolves.toBeEnabled();
+  await expect(findEnabledButton("Upgrade now", card)).resolves.toBeEnabled();
 });
 
 test("Keep the general plans action for an existing paid workspace", async () => {

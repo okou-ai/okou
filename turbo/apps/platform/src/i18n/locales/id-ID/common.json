@@ -1684,12 +1684,16 @@
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
       "proCard": {
-        "description": "Jalankan 3 tugas sekaligus, otomatisasi pekerjaan berulang, dan lakukan riset lebih mendalam.",
+        "automations": "Otomatiskan tugas berulang",
+        "bonusCreditsLabel": "kredit bonus",
         "noTasksLeft": "Tugas gratis Anda sudah habis",
+        "parallelTasks": "3 tugas sekaligus",
         "priceUnavailable": "Lihat paket untuk harga terbaru",
+        "research": "Riset lebih mendalam",
         "tasksLeft_other": "Hingga {{count}} tugas tersisa",
         "title": "Lakukan lebih banyak dengan Pro",
-        "upgradeBonus": "Upgrade hari ini untuk {{credits}} kredit ekstra."
+        "upgradeNow": "Upgrade sekarang",
+        "upgradeToday": "Upgrade hari ini"
       },
       "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
