@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   featureGuidesContract,
@@ -62,7 +63,7 @@ function button(name: string, container: ParentNode = document.body) {
   return found;
 }
 
-test("shows an enabled edition, records its display, and dismisses it", async () => {
+test("shows an enabled edition, records its display, and dismisses it with Escape", async () => {
   let seen = false;
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
     return respond(200, { edition });
@@ -86,7 +87,7 @@ test("shows an enabled edition, records its display, and dismisses it", async ()
   await waitFor(() => {
     expect(seen).toBeTruthy();
   });
-  click(button("Got it", dialog));
+  await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     return expect(
       screen.queryByRole("dialog", { name: edition.content.title }),
@@ -120,6 +121,7 @@ test("supports click-through media and pre-fills a task without running it", asy
     throw new Error("Walkthrough card not found");
   }
   click(walkthrough);
+  expect(walkthrough).toHaveAttribute("aria-pressed", "true");
   await expect(
     within(dialog).findByText("Start with a goal"),
   ).resolves.toBeInTheDocument();
@@ -199,4 +201,77 @@ test("replays a preview without acknowledging a real impression", async () => {
     ).not.toBeInTheDocument();
   });
   expect(seen).toBeFalsy();
+});
+
+test("starts a newly loaded edition at its first card and walkthrough step", async () => {
+  const nextEdition: FeatureGuideEdition = {
+    id: "next-monthly-update",
+    revisionId: "22222222-2222-4222-8222-222222222222",
+    content: {
+      schemaVersion: 1,
+      title: "A new edition",
+      description: "A fresh walkthrough",
+      items: [
+        {
+          featureId: "new-walkthrough",
+          title: "A new guide",
+          description: "Start a different task",
+          media: {
+            type: "walkthrough",
+            steps: [
+              {
+                title: "New edition start",
+                description: "Only one step in this guide",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  context.mocks.api(featureGuidesContract.current, ({ query, respond }) => {
+    return query?.preview === "1"
+      ? respond(200, { edition, preview: true })
+      : respond(200, { edition: nextEdition });
+  });
+  await setupPage({
+    context,
+    path: `${path}?featureGuidePreview=1`,
+    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: edition.content.title,
+  });
+  const walkthrough = queryAllByRoleFast("button", dialog).find((candidate) => {
+    return candidate.textContent?.includes("See how it works");
+  });
+  if (!walkthrough) {
+    throw new Error("Walkthrough card not found");
+  }
+  click(walkthrough);
+  await expect(
+    within(dialog).findByText("Start with a goal"),
+  ).resolves.toBeInTheDocument();
+  click(button("Next", dialog));
+  await expect(within(dialog).findByText("2 / 2")).resolves.toBeInTheDocument();
+  click(button("Got it", dialog));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: edition.content.title }),
+    ).not.toBeInTheDocument();
+  });
+  const chatLink = queryAllByRoleFast("link").find((candidate) => {
+    return candidate.textContent?.trim() === "Chat";
+  });
+  if (!chatLink) {
+    throw new Error("Chat navigation link not found");
+  }
+  click(chatLink);
+  const nextDialog = await screen.findByRole("dialog", {
+    name: nextEdition.content.title,
+  });
+  expect(within(nextDialog).getByText("New edition start")).toBeInTheDocument();
+  expect(within(nextDialog).getByText("1 / 1")).toBeInTheDocument();
+  expect(button("Previous", nextDialog)).toBeDisabled();
+  expect(button("Next", nextDialog)).toBeDisabled();
 });

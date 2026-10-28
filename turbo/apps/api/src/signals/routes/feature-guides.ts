@@ -10,7 +10,7 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   acknowledgeableFeatureGuideRevision,
   currentFeatureGuide$,
@@ -21,17 +21,30 @@ import {
   publishFeatureGuide$,
 } from "../services/feature-guides.service";
 
+const switchContext$ = createUserFeatureSwitchContext(
+  computed((get) => {
+    return Promise.resolve(get(organizationAuthContext$));
+  }),
+);
 const enabled$ = computed(async (get) => {
-  const { orgId, userId } = get(organizationAuthContext$);
   return isFeatureEnabled(
     FeatureSwitchKey.FeatureGuides,
-    await get(userFeatureSwitchContext(orgId, userId)),
+    await get(switchContext$),
   );
 });
+const receipt$ = featureGuideReceipt(
+  computed(async (get) => {
+    const { userId } = get(organizationAuthContext$);
+    const edition = await get(currentFeatureGuide$);
+    return edition ? { userId, editionId: edition.id } : null;
+  }),
+);
 const currentQuery$ = queryOf(featureGuidesContract.current);
 const current$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (!(await get(enabled$))) {
+  const enabled = await get(enabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return { status: 200 as const, body: { edition: null } };
   }
   const preview = get(currentQuery$)?.preview === "1";
@@ -48,14 +61,24 @@ const current$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (preview) {
     return { status: 200 as const, body: { edition, preview: true } };
   }
-  const { userId } = get(organizationAuthContext$);
-  const receipt = await get(featureGuideReceipt(userId, edition.id));
+  const receipt = await get(receipt$);
   signal.throwIfAborted();
   return { status: 200 as const, body: { edition: receipt ? null : edition } };
 });
 const seenBody$ = bodyResultOf(featureGuidesContract.seen);
+const seenParams$ = pathParamsOf(featureGuidesContract.seen);
+const seenRevision$ = acknowledgeableFeatureGuideRevision(
+  computed(async (get) => {
+    const body = await get(seenBody$);
+    return body.ok
+      ? { ...get(seenParams$), revisionId: body.data.revisionId }
+      : null;
+  }),
+);
 const seen$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(enabled$))) {
+  const enabled = await get(enabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return resourceUnavailable("Feature guides are not enabled");
   }
   const body = await get(seenBody$);
@@ -63,12 +86,10 @@ const seen$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const { editionId } = get(pathParamsOf(featureGuidesContract.seen));
+  const { editionId } = get(seenParams$);
   // A visible edition can be acknowledged even when another edition or a
   // corrected revision was published while the user was reading it.
-  const revision = await get(
-    acknowledgeableFeatureGuideRevision(editionId, body.data.revisionId),
-  );
+  const revision = await get(seenRevision$);
   signal.throwIfAborted();
   if (!revision) {
     return notFound("Published feature guide not found");
@@ -99,6 +120,15 @@ const import$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 const publishBody$ = bodyResultOf(featureGuidesContract.publish);
+const publishParams$ = pathParamsOf(featureGuidesContract.publish);
+const publishRevision$ = featureGuideRevision(
+  computed(async (get) => {
+    const body = await get(publishBody$);
+    return body.ok && body.data.revisionId
+      ? { ...get(publishParams$), revisionId: body.data.revisionId }
+      : null;
+  }),
+);
 const publish$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { orgId, userId } = get(organizationAuthContext$);
   if (!isStaffOrg(orgId)) {
@@ -109,12 +139,13 @@ const publish$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const { editionId } = get(pathParamsOf(featureGuidesContract.publish));
-  if (
-    body.data.revisionId &&
-    !(await get(featureGuideRevision(editionId, body.data.revisionId)))
-  ) {
-    return notFound("Feature guide revision not found");
+  const { editionId } = get(publishParams$);
+  if (body.data.revisionId) {
+    const revision = await get(publishRevision$);
+    signal.throwIfAborted();
+    if (!revision) {
+      return notFound("Feature guide revision not found");
+    }
   }
   const updated = await set(
     publishFeatureGuide$,

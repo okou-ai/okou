@@ -2,6 +2,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@okouai/ui/components/ui/button";
+import { ToggleButton } from "@okouai/ui/components/ui/toggle-button";
 import {
   Dialog,
   DialogContent,
@@ -15,23 +16,26 @@ import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   closeFeatureGuide$,
+  dismissFeatureGuide$,
   dismissedFeatureGuide$,
   featureGuide$,
   featureGuideReady$,
   type FeatureGuideSnapshot,
-  featureGuideItemIndex$,
-  featureGuideStepIndex$,
   persistFeatureGuideSeen$,
-  selectFeatureGuideItem$,
-  selectFeatureGuideStep$,
   tryFeatureGuidePrompt$,
 } from "../../signals/feature-guides.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-function GuideMedia({ media }: { readonly media: FeatureGuideMedia }) {
+function GuideMedia({
+  media,
+  selection,
+}: {
+  readonly media: FeatureGuideMedia;
+  readonly selection: FeatureGuideSnapshot["selection"];
+}) {
   const { t } = useTranslation();
-  const stepIndex = useGet(featureGuideStepIndex$);
-  const selectStep = useSet(selectFeatureGuideStep$);
+  const stepIndex = useGet(selection.stepIndex$);
+  const selectStep = useSet(selection.selectStep$);
   if (media.type === "image") {
     return (
       <img
@@ -56,9 +60,9 @@ function GuideMedia({ media }: { readonly media: FeatureGuideMedia }) {
       </video>
     );
   }
-  const step = media.steps[stepIndex] ?? media.steps[0];
+  const step = media.steps[stepIndex];
   if (!step) {
-    return null;
+    throw new Error("Feature guide step is outside the current walkthrough");
   }
   return (
     <div className="flex flex-col gap-3 rounded-xl bg-gray-50 p-4">
@@ -117,12 +121,14 @@ function GuideContents({
   readonly onTry: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
-  const itemIndex = useGet(featureGuideItemIndex$);
-  const selectItem = useSet(selectFeatureGuideItem$);
+  const itemIndex = useGet(snapshot.selection.itemIndex$);
+  const selectItem = useSet(snapshot.selection.selectItem$);
   const { edition } = snapshot;
-  const activeIndex = edition.content.items[itemIndex] ? itemIndex : 0;
-  const activeItem = edition.content.items[activeIndex];
-  const prompt = activeItem?.prompt;
+  const activeItem = edition.content.items[itemIndex];
+  if (!activeItem) {
+    throw new Error("Feature guide item is outside the current edition");
+  }
+  const prompt = activeItem.prompt;
   return (
     <>
       <div className="flex items-center gap-2 text-xs font-medium text-brand-text">
@@ -147,11 +153,11 @@ function GuideContents({
       <div className="grid gap-2 sm:grid-cols-3">
         {edition.content.items.map((item, index) => {
           return (
-            <Button
+            <ToggleButton
               key={item.featureId}
-              variant="neutral"
-              className="h-auto min-h-20 flex-col items-start justify-start gap-1 whitespace-normal rounded-xl p-3 text-left"
-              aria-pressed={index === activeIndex}
+              layout="tile"
+              className="flex h-auto min-h-20 flex-col items-start justify-start gap-1 whitespace-normal rounded-xl p-3 text-left"
+              selected={index === itemIndex}
               onClick={() => {
                 return selectItem(index);
               }}
@@ -160,12 +166,16 @@ function GuideContents({
               <span className="text-xs font-normal text-muted-foreground">
                 {item.description}
               </span>
-            </Button>
+            </ToggleButton>
           );
         })}
       </div>
-      {activeItem?.media && (
-        <GuideMedia key={activeItem.featureId} media={activeItem.media} />
+      {activeItem.media && (
+        <GuideMedia
+          key={activeItem.featureId}
+          media={activeItem.media}
+          selection={snapshot.selection}
+        />
       )}
       <DialogFooter>
         <Button variant="quiet" onClick={onClose}>
@@ -198,6 +208,7 @@ export function FeatureGuideDialog() {
   const ready = useGet(featureGuideReady$);
   const signal = useGet(rootSignal$);
   const closeGuide = useSet(closeFeatureGuide$);
+  const dismissGuide = useSet(dismissFeatureGuide$);
   const persistSeen = useSet(persistFeatureGuideSeen$);
   const tryPrompt = useSet(tryFeatureGuidePrompt$);
   const snapshot =
@@ -214,16 +225,13 @@ export function FeatureGuideDialog() {
     if (!snapshot) {
       return;
     }
-    closeGuide(snapshot);
-    // The App owns acknowledgements so quick dismissal does not abort them.
-    detach(persistSeen(snapshot, signal), Reason.DomCallback);
+    detach(dismissGuide(snapshot, signal), Reason.DomCallback);
   };
   const onTry = (prompt: string) => {
     if (!snapshot) {
       return;
     }
-    tryPrompt(snapshot, prompt);
-    detach(persistSeen(snapshot, signal), Reason.DomCallback);
+    detach(tryPrompt(snapshot, prompt, signal), Reason.DomCallback);
   };
   return (
     <Dialog

@@ -14,10 +14,31 @@ import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { talkDraft$ } from "./okou-page/chat-draft.ts";
 
+function createFeatureGuideSelection() {
+  const item$ = state(0);
+  const step$ = state(0);
+  return {
+    itemIndex$: computed((get) => {
+      return get(item$);
+    }),
+    stepIndex$: computed((get) => {
+      return get(step$);
+    }),
+    selectItem$: command(({ set }, index: number) => {
+      set(item$, index);
+      set(step$, 0);
+    }),
+    selectStep$: command(({ set }, index: number) => {
+      set(step$, index);
+    }),
+  };
+}
+
 export interface FeatureGuideSnapshot {
   readonly owner: string;
   readonly edition: FeatureGuideEdition;
   readonly preview: boolean;
+  readonly selection: ReturnType<typeof createFeatureGuideSelection>;
 }
 
 const dismissed$ = state<{
@@ -25,15 +46,6 @@ const dismissed$ = state<{
   readonly editionId: string;
   readonly preview: boolean;
 } | null>(null);
-const selectedItem$ = state(0);
-const selectedStep$ = state(0);
-export const featureGuideItemIndex$ = computed((get) => {
-  return get(selectedItem$);
-});
-export const featureGuideStepIndex$ = computed((get) => {
-  return get(selectedStep$);
-});
-
 export const featureGuide$ = computed(
   async (get): Promise<FeatureGuideSnapshot | null> => {
     const owner = get(authenticatedSessionKey$);
@@ -46,16 +58,16 @@ export const featureGuide$ = computed(
       get(apiClient$)(featureGuidesContract).current({
         query: preview ? { preview: "1" } : undefined,
       }),
-      [200, 403, 404],
+      [200],
     );
-    // A newer App can briefly reach the preceding API during propagation or rollback.
-    if (response.status !== 200 || !response.body.edition) {
+    if (!response.body.edition) {
       return null;
     }
     return {
       owner,
       edition: response.body.edition,
       preview: response.body.preview === true,
+      selection: createFeatureGuideSelection(),
     };
   },
 );
@@ -89,14 +101,6 @@ export const closeFeatureGuide$ = command(
     });
   },
 );
-export const selectFeatureGuideItem$ = command(({ set }, index: number) => {
-  set(selectedItem$, index);
-  set(selectedStep$, 0);
-});
-export const selectFeatureGuideStep$ = command(({ set }, index: number) => {
-  set(selectedStep$, index);
-});
-
 export const persistFeatureGuideSeen$ = command(
   async ({ get }, snapshot: FeatureGuideSnapshot, signal: AbortSignal) => {
     if (snapshot.preview || get(authenticatedSessionKey$) !== snapshot.owner) {
@@ -114,8 +118,23 @@ export const persistFeatureGuideSeen$ = command(
   },
 );
 
+// The App owns acknowledgements so quick dismissal does not abort them.
+export const dismissFeatureGuide$ = command(
+  async ({ set }, snapshot: FeatureGuideSnapshot, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(closeFeatureGuide$, snapshot);
+    await set(persistFeatureGuideSeen$, snapshot, signal);
+  },
+);
+
 export const tryFeatureGuidePrompt$ = command(
-  ({ get, set }, snapshot: FeatureGuideSnapshot, prompt: string) => {
+  async (
+    { get, set },
+    snapshot: FeatureGuideSnapshot,
+    prompt: string,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
     if (get(authenticatedSessionKey$) !== snapshot.owner) {
       return;
     }
@@ -125,6 +144,6 @@ export const tryFeatureGuidePrompt$ = command(
       return;
     }
     set(draft.setInput$, prompt);
-    set(closeFeatureGuide$, snapshot);
+    await set(dismissFeatureGuide$, snapshot, signal);
   },
 );

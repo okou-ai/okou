@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import {
   and,
   desc,
@@ -57,15 +57,31 @@ export const currentFeatureGuide$ = computed(async (get) => {
     : null;
 });
 
-export function featureGuideReceipt(userId: string, editionId: string) {
+interface FeatureGuideReceiptIdentity {
+  readonly userId: string;
+  readonly editionId: string;
+}
+
+interface FeatureGuideRevisionIdentity {
+  readonly editionId: string;
+  readonly revisionId: string;
+}
+
+export function featureGuideReceipt(
+  identity$: Computed<Promise<FeatureGuideReceiptIdentity | null>>,
+) {
   return computed(async (get) => {
+    const identity = await get(identity$);
+    if (!identity) {
+      return null;
+    }
     const rows = await get(db$)
       .select({ seenAt: featureGuideReceipts.seenAt })
       .from(featureGuideReceipts)
       .where(
         and(
-          eq(featureGuideReceipts.userId, userId),
-          eq(featureGuideReceipts.editionId, editionId),
+          eq(featureGuideReceipts.userId, identity.userId),
+          eq(featureGuideReceipts.editionId, identity.editionId),
         ),
       )
       .limit(1);
@@ -73,15 +89,21 @@ export function featureGuideReceipt(userId: string, editionId: string) {
   });
 }
 
-export function featureGuideRevision(editionId: string, revisionId: string) {
+export function featureGuideRevision(
+  identity$: Computed<Promise<FeatureGuideRevisionIdentity | null>>,
+) {
   return computed(async (get) => {
+    const identity = await get(identity$);
+    if (!identity) {
+      return null;
+    }
     const rows = await get(db$)
       .select({ id: featureGuideRevisions.id })
       .from(featureGuideRevisions)
       .where(
         and(
-          eq(featureGuideRevisions.editionId, editionId),
-          eq(featureGuideRevisions.id, revisionId),
+          eq(featureGuideRevisions.editionId, identity.editionId),
+          eq(featureGuideRevisions.id, identity.revisionId),
         ),
       )
       .limit(1);
@@ -90,10 +112,13 @@ export function featureGuideRevision(editionId: string, revisionId: string) {
 }
 
 export function acknowledgeableFeatureGuideRevision(
-  editionId: string,
-  revisionId: string,
+  identity$: Computed<Promise<FeatureGuideRevisionIdentity | null>>,
 ) {
   return computed(async (get) => {
+    const identity = await get(identity$);
+    if (!identity) {
+      return null;
+    }
     const rows = await get(db$)
       .select({ id: featureGuideRevisions.id })
       .from(featureGuideRevisions)
@@ -103,8 +128,8 @@ export function acknowledgeableFeatureGuideRevision(
       )
       .where(
         and(
-          eq(featureGuideRevisions.editionId, editionId),
-          eq(featureGuideRevisions.id, revisionId),
+          eq(featureGuideRevisions.editionId, identity.editionId),
+          eq(featureGuideRevisions.id, identity.revisionId),
           isNotNull(featureGuideEditions.publishedRevisionId),
         ),
       )
@@ -128,6 +153,7 @@ export const markFeatureGuideSeen$ = command(
       .onConflictDoNothing({
         target: [featureGuideReceipts.userId, featureGuideReceipts.editionId],
       });
+    signal.throwIfAborted();
   },
 );
 
