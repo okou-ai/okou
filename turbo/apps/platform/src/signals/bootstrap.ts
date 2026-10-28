@@ -1,3 +1,4 @@
+import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
 import { clerk$, setupClerkUser$, watchOrgSwitch$ } from "./auth.ts";
@@ -183,6 +184,10 @@ const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const ROUTE_CONFIG = [
+  {
+    path: ROUTES.halloweenOperations,
+    setup: setupAuthPageWrapper(setupHalloweenOperationsPage$),
+  },
   {
     path: ROUTES.sharedArtifact,
     setup: setupPageWrapper(setupSharedArtifact$),

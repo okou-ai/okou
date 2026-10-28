@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",

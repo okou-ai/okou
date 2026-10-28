@@ -6,6 +6,7 @@ import {
 
 export const ROUTES = {
   home: "/",
+  halloweenOperations: "/halloween/operations",
   agents: "/agents",
   agentDetail: "/agents/:agentId",
   agentChat: "/agents/:agentId/chat",

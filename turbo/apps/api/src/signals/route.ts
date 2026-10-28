@@ -1,3 +1,5 @@
+import { halloweenOperationsRoutes } from "./routes/halloween-operations";
+import { halloweenRoutes } from "./routes/halloween";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
 import type { RouteEntry } from "./route-entry";
@@ -417,6 +419,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...proactiveJobsRoutes,
   ...proactiveLearningRoutes,
   ...emailSubscriptionRoutes,
+  ...halloweenRoutes,
+  ...halloweenOperationsRoutes,
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,
   ...workflowsRoutes,
