@@ -51,6 +51,7 @@ test("Join an invited workspace from the workspace switcher", async () => {
         id: "org_invited",
         name: "Invited Org",
         imageUrl: "https://cdn.okou.test/orgs/invited.png",
+        hasImage: true,
       },
       accept: async () => {
         await acceptDeferred.promise;
@@ -93,6 +94,7 @@ test("Join an invited workspace from the workspace switcher", async () => {
               id: "org_design",
               name: "Design Org",
               imageUrl: "https://cdn.okou.test/orgs/design.png",
+              hasImage: true,
             },
           },
         ],
@@ -145,6 +147,82 @@ test("Join an invited workspace from the workspace switcher", async () => {
   await waitFor(() => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
+});
+
+test("Show the brand default for workspaces that never uploaded a logo", async () => {
+  // Clerk fills `imageUrl` with a generated placeholder for every organization,
+  // so only `hasImage` says whether a logo was uploaded.
+  const clerkPlaceholder = "https://img.clerk.test/default-organization.png";
+
+  context.mocks.data.org({
+    id: "org_current",
+    name: "workspace-3e46915f",
+    role: "admin",
+  });
+
+  await setupPage({
+    context,
+    path: "/",
+    auth: {
+      user: { id: "test-user-123", fullName: "Test User" },
+      organization: {
+        activeOrg: {
+          id: "org_current",
+          name: "workspace-3e46915f",
+          imageUrl: clerkPlaceholder,
+          hasImage: false,
+        },
+        memberships: [
+          {
+            id: "membership_current",
+            organization: {
+              id: "org_current",
+              name: "workspace-3e46915f",
+              imageUrl: clerkPlaceholder,
+              hasImage: false,
+            },
+          },
+          {
+            id: "membership_design",
+            organization: {
+              id: "org_design",
+              name: "Design Org",
+              imageUrl: clerkPlaceholder,
+              hasImage: false,
+            },
+          },
+        ],
+        pendingInvitations: [
+          {
+            id: "invitation_1",
+            publicOrganizationData: {
+              id: "org_invited",
+              name: "Invited Org",
+              imageUrl: clerkPlaceholder,
+              hasImage: false,
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  const orgSwitcher = await waitFor(() => {
+    return buttonByLabel("Switch workspace");
+  });
+
+  click(orgSwitcher);
+
+  const menu = await screen.findByRole("menu");
+  await waitFor(() => {
+    expect(within(menu).getByText("Invited Org")).toBeInTheDocument();
+  });
+  for (const name of ["workspace-3e46915f", "Design Org", "Invited Org"]) {
+    expect(within(menu).getByRole("img", { name })).not.toHaveAttribute("src");
+  }
+  expect(
+    within(orgSwitcher).getByRole("img", { name: "workspace-3e46915f" }),
+  ).not.toHaveAttribute("src");
 });
 
 test("Creating a workspace opens onboarding after activating its organization", async () => {
