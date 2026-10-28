@@ -68,9 +68,11 @@ export function SharedThreadAudiencePicker({
 export function SharedThreadShareMenu({
   session,
   defaultOpen = false,
+  showLabel = false,
 }: {
   readonly session: SharedThreadVisibilitySignals;
   readonly defaultOpen?: boolean;
+  readonly showLabel?: boolean;
 }) {
   const { t } = useTranslation();
   const status = useLoadable(session.status$);
@@ -86,15 +88,20 @@ export function SharedThreadShareMenu({
       <PopoverTrigger
         render={
           <Button
-            variant="quiet"
-            size="icon-sm"
+            variant={showLabel ? "default" : "quiet"}
+            size={showLabel ? "default" : "icon-sm"}
             aria-label={t(($) => {
               return $.sharedThread.share;
             })}
           />
         }
       >
-        <Share2 size={18} />
+        <Share2 size={showLabel ? 16 : 18} />
+        {showLabel
+          ? t(($) => {
+              return $.sharedThread.share;
+            })
+          : null}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-2">
         {status.state === "loading" ? (

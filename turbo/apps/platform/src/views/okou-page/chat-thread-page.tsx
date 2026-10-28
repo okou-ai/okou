@@ -3965,37 +3965,39 @@ function SharedThreadCreatedLink({
           <SharedThreadShareMenu
             session={visibility}
             defaultOpen={phase === "idle"}
+            showLabel
           />
-        ) : null}
-        <Button
-          onClick={() => {
-            detach(
-              (async () => {
-                const copied = await writeToClipboard(shareUrl);
-                if (copied) {
-                  toast.success(
+        ) : (
+          <Button
+            onClick={() => {
+              detach(
+                (async () => {
+                  const copied = await writeToClipboard(shareUrl);
+                  if (copied) {
+                    toast.success(
+                      t(($) => {
+                        return $.chat.sharing.linkCopied;
+                      }),
+                    );
+                    return;
+                  }
+                  toast.error(
                     t(($) => {
-                      return $.chat.sharing.linkCopied;
+                      return $.chat.sharing.copyFailed;
                     }),
                   );
-                  return;
-                }
-                toast.error(
-                  t(($) => {
-                    return $.chat.sharing.copyFailed;
-                  }),
-                );
-              })(),
-              Reason.DomCallback,
-              "copy shared thread link",
-            );
-          }}
-        >
-          <Copy size={16} />
-          {t(($) => {
-            return $.chat.sharing.copyLink;
-          })}
-        </Button>
+                })(),
+                Reason.DomCallback,
+                "copy shared thread link",
+              );
+            }}
+          >
+            <Copy size={16} />
+            {t(($) => {
+              return $.chat.sharing.copyLink;
+            })}
+          </Button>
+        )}
         <Button
           variant="outline"
           onClick={() => {
