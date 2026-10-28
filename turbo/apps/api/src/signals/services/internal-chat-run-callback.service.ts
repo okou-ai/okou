@@ -89,6 +89,7 @@ import {
   loadTerminalChatCallback$,
   loadTerminalChatCallbackLocator$,
   requireSourceChatCallback$,
+  runLifecycleMarkerReadPlan,
   sourceChatCallbackReadPlan,
   type ChatRunInfo,
   type ChatThreadForRunRow,
@@ -938,11 +939,15 @@ async function insertAssistantErrorEventTransaction(
     )[0] ?? null;
   const event =
     insertedEvent ??
-    (await loadRunLifecycleMarker(
-      tx,
-      input.runId,
-      input.lifecycleEvent === "failed" ? "run.failed" : "run.cancelled",
-    ));
+    (await (async () => {
+      const runId = input.runId;
+      const eventType =
+        input.lifecycleEvent === "failed" ? "run.failed" : "run.cancelled";
+      const plan = runLifecycleMarkerReadPlan(runId, eventType);
+      const query = tx.select(plan.columns).from(chatEvents);
+      const [marker] = await query.where(plan.condition).limit(plan.limit);
+      return marker;
+    })());
   if (!event) {
     return null;
   }
@@ -1086,21 +1091,6 @@ type ChatCallbackTransaction = Db | Tx;
 
 interface CanonicalDeliveryEvent {
   readonly id: string;
-}
-
-async function loadRunLifecycleMarker(
-  db: Pick<Db, "select">,
-  runId: string,
-  eventType: "run.completed" | "run.cancelled" | "run.failed",
-) {
-  const [marker] = await db
-    .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
-    .from(chatEvents)
-    .where(
-      and(eq(chatEvents.runId, runId), eq(chatEvents.eventType, eventType)),
-    )
-    .limit(1);
-  return marker;
 }
 
 async function loadCanonicalDeliveryEvent(
@@ -1372,11 +1362,16 @@ export async function insertRunLifecycleMarkerProjection(args: {
     )[0] ?? null;
   if (
     !marker &&
-    !(await loadRunLifecycleMarker(
-      args.tx,
-      input.runId,
-      input.event === "completed" ? "run.completed" : "run.cancelled",
-    ))
+    !(await (async () => {
+      const database = args.tx;
+      const runId = input.runId;
+      const eventType =
+        input.event === "completed" ? "run.completed" : "run.cancelled";
+      const plan = runLifecycleMarkerReadPlan(runId, eventType);
+      const query = database.select(plan.columns).from(chatEvents);
+      const [marker] = await query.where(plan.condition).limit(plan.limit);
+      return marker;
+    })())
   ) {
     return null;
   }
