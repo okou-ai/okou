@@ -2160,8 +2160,14 @@ const applyClaimedBrowserUserAction$ = command(
     // restored pending state, each conditional on the claim still applying.
     // Provider work is cancellable; the guarded compensation writes below
     // must settle at their existing exits before cancellation propagates.
-    const leased = await set(touchExactProvider$, claimed, providerSignal);
-    if (!leased) {
+    const leased = await settleIncludingAbort(
+      set(touchExactProvider$, claimed, providerSignal),
+    );
+    if (!leased.ok) {
+      await set(restorePending$, claimed.requestTokenHash);
+      throw leased.error;
+    }
+    if (!leased.value) {
       const terminal = await set(finalize$, claimed.requestTokenHash, "stale");
       return terminal
         ? { kind: "ok", value: terminal }
@@ -2303,13 +2309,10 @@ export const applyBrowserUserAction$ = command(
       fileContents = materialized.value;
     }
 
-    if (!(await set(requestHasLiveBrowser$, located))) {
-      signal.throwIfAborted();
+    const live = await set(requestHasLiveBrowser$, located);
+    signal.throwIfAborted();
+    if (!live) {
       return await expiredAfterNotify(located);
-    }
-    if (located.status !== "pending") {
-      signal.throwIfAborted();
-      return conflict("Browser input has already been claimed");
     }
     const [claimed] = await db
       .update(browserUserActionRequests)
@@ -2327,7 +2330,13 @@ export const applyBrowserUserAction$ = command(
         ),
       )
       .returning();
-    signal.throwIfAborted();
+    // A committed claim must be settled before cancellation propagates.
+    if (signal.aborted) {
+      if (claimed) {
+        await set(restorePending$, claimed.requestTokenHash);
+      }
+      signal.throwIfAborted();
+    }
     if (!claimed) {
       return conflict("Browser input has already been claimed");
     }
@@ -2339,6 +2348,7 @@ export const applyBrowserUserAction$ = command(
       signal,
     );
     if (applied.kind === "error") {
+      signal.throwIfAborted();
       return applied;
     }
     if (
@@ -2358,6 +2368,7 @@ export const applyBrowserUserAction$ = command(
         L.warn("Temporary Browser file cleanup failed");
       }
     }
+    signal.throwIfAborted();
     return {
       kind: "ok",
       value: publicRequest(applied.value, args.requestToken, payload),

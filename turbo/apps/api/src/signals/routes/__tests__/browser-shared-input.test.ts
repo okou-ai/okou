@@ -456,6 +456,65 @@ describe("shared-window native Browser input", () => {
     });
   });
 
+  it.each(["provider read", "native write"] as const)(
+    "settles input before propagating application-lifetime cancellation during %s",
+    async (phase) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        const s = await scenario(f);
+        const params = await s.request();
+        const controller = new AbortController();
+        const cancellation = new DOMException(
+          "The input application lifetime ended",
+          "AbortError",
+        );
+        if (phase === "provider read") {
+          server.use(
+            http.get(
+              `${PROVIDER_URL}/browsers/${s.instance.providerSessionId}`,
+              () => {
+                controller.abort(cancellation);
+                return HttpResponse.json({
+                  id: s.instance.providerSessionId,
+                  status: "active",
+                  startedAt: new Date(START).toISOString(),
+                  timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+                  finishedAt: null,
+                  cdpUrl: f.provider.native.url,
+                  liveUrl: "https://live.browser-use.com/owned-fixture",
+                });
+              },
+            ),
+          );
+        } else {
+          s.state.afterWrite = () => {
+            controller.abort(cancellation);
+          };
+        }
+        const application = await settleIncludingAbort(
+          setupApp({
+            context,
+            routes: browserUserActionRoutes,
+            signal: AbortSignal.any([context.signal, controller.signal]),
+            rethrowErrors: true,
+          })(browserUserActionsContract).apply({
+            headers,
+            params,
+            body: {
+              values: [{ key: "entry", value: "private-cancelled-input" }],
+            },
+          }),
+        );
+        expect(application).toStrictEqual({ ok: false, error: cancellation });
+        const observed = await accept(client().get({ headers, params }), [200]);
+        expect(observed.body.state).toBe(
+          phase === "provider read" ? "pending" : "uncertain",
+        );
+        expect(s.state.writes).toBe(phase === "provider read" ? 0 : 1);
+      });
+    },
+  );
+
   it("keeps native lookup failures visible without invalidating or replaying the pending request", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
