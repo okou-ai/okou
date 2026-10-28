@@ -70,4 +70,5 @@ export enum FeatureSwitchKey {
   ChatReplyNameLine = "chatReplyNameLine",
   ChatThreadTimeline = "chatThreadTimeline",
   UnifiedChatWorkspace = "unifiedChatWorkspace",
+  CloudBrowserPanel = "cloudBrowserPanel",
 }

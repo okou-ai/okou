@@ -38,11 +38,52 @@ import {
   deleteOrg$,
   WORKSPACE_DELETE_CONFIRMATION,
 } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
+import { DefaultWorkspaceLogo } from "../../../components/avatar.tsx";
 import { readImageDimensions } from "./read-image-dimensions.ts";
 import { profileLogoUrl$ } from "../../../../signals/okou-page/settings/workspace-logo.ts";
 
 const MIN_LOGO_DIMENSION = 100;
 const MAX_LOGO_DIMENSION = 4096;
+
+/**
+ * What the logo control shows: the uploaded logo, the workspace's default
+ * mark once the read has confirmed there is none, or an empty face while the
+ * read is pending or has failed — a default shown then could be the wrong one.
+ */
+function ProfileLogoFace({
+  orgId,
+  name,
+  logoUrl,
+  loading,
+  failed,
+  loadingLabel,
+}: {
+  orgId: string;
+  name: string;
+  logoUrl: string | null;
+  loading: boolean;
+  failed: boolean;
+  loadingLabel: string;
+}) {
+  if (logoUrl) {
+    return (
+      <img src={logoUrl} alt={name} className="h-full w-full object-cover" />
+    );
+  }
+  if (!loading && !failed) {
+    return <DefaultWorkspaceLogo id={orgId} name={name} size="md+" />;
+  }
+  return (
+    <span
+      role={loading ? "status" : undefined}
+      aria-label={loading ? loadingLabel : undefined}
+      className={cn(
+        "block h-full w-full bg-muted/50",
+        loading && "animate-pulse",
+      )}
+    />
+  );
+}
 
 function ProfileSection({
   org,
@@ -185,22 +226,14 @@ function ProfileSection({
                   e.target.value = "";
                 }}
               />
-              {displayedLogoUrl ? (
-                <img
-                  src={displayedLogoUrl}
-                  alt={org.name || labels.logo.fallbackAlt}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <span
-                  role={logoLoading ? "status" : undefined}
-                  aria-label={logoLoading ? labels.logo.loading : undefined}
-                  className={cn(
-                    "block h-full w-full bg-muted/50",
-                    logoLoading && "animate-pulse",
-                  )}
-                />
-              )}
+              <ProfileLogoFace
+                orgId={org.id}
+                name={org.name || labels.logo.fallbackAlt}
+                logoUrl={displayedLogoUrl}
+                loading={logoLoading}
+                failed={logoFailed}
+                loadingLabel={labels.logo.loading}
+              />
               {isAdmin && (
                 <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
                   <Upload size={14} className="text-white" />

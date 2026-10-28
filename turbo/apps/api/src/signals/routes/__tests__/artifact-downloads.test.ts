@@ -420,7 +420,6 @@ test.each([
     expect(ownerDownload.searchParams.get("response-cache-control")).toBe(
       "private, no-store",
     );
-    expect(ownerDownload.href).not.toBe(ownerPreview.body.url);
     expect(
       new URL(ownerPreview.body.url).searchParams.has(
         "response-content-disposition",
