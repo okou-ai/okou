@@ -436,159 +436,72 @@ describe("v4 connector catalog reader", () => {
     "X-Datadog-MCP-Toolsets",
     "x-datadog-mcp-toolsets",
     "X-DATADOG-MCP-TOOLSETS",
-  ])(
-    "preserves supported static %s through catalog and runtime projection",
-    (name) => {
-      const headers = {
-        Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-        [name]: "all,cases,apm,live-debugger,future-toolset",
-      };
-      const artifact = configuredMcpArtifact(headers);
-      const connector = requiredConnector(decode(artifact), "plaud-mcp");
-      const firewall = connectorCatalogFirewallConfig(connector);
-      if (firewall === null) {
-        throw new Error("Expected the accepted MCP firewall");
-      }
-      expect(
-        JSON.parse(connectorCatalogEntryPayload(connector).toString("utf8")),
-      ).toEqual(connector);
-      const runtime = createRunnerRuntimeFirewallCatalog([
-        projectRunnerRuntimeFirewall(firewall),
-      ]);
-      expect(runtime.firewalls[connector.slug]?.apis[0]?.auth.headers).toEqual(
-        headers,
-      );
-
-      const changed = requiredConnector(
-        decode(configuredMcpArtifact({ ...headers, [name]: "all,cases" })),
-        "plaud-mcp",
-      );
-      const changedFirewall = connectorCatalogFirewallConfig(changed);
-      if (changedFirewall === null) {
-        throw new Error("Expected the changed MCP firewall");
-      }
-      expect(
-        createRunnerRuntimeFirewallCatalog([
-          projectRunnerRuntimeFirewall(changedFirewall),
-        ]).catalogDigest,
-      ).not.toBe(runtime.catalogDigest);
-    },
-  );
-
-  it.each([
-    "Authorization",
-    "authorization",
-    "Proxy-Authorization",
-    "Cookie",
-    "X-Api-Key",
-    "Host",
-    "Forwarded",
-    "X-Forwarded-Host",
-    "Connection",
-    "Content-Length",
-    "Transfer-Encoding",
-    "Content-Type",
-    "Accept",
-    "MCP-Protocol-Version",
-    "Mcp-Session-Id",
-    "Last-Event-ID",
-    "X-Okou-Connector-Intent",
-    "X-Unreviewed-Configuration",
-  ])("rejects an unsupported Automatic MCP header: %s", (name) => {
-    expect(() => {
-      return decode(
-        configuredMcpArtifact({
-          Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-          "X-Datadog-MCP-Toolsets": "all,cases",
-          [name]: "override",
-        }),
-      );
-    }).toThrow();
-  });
-
-  it("rejects folded duplicates and excessive header profiles", () => {
+  ])("preserves catalog-owned static %s and opaque headers", (name) => {
     const headers = {
       Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-      "X-Datadog-MCP-Toolsets": "all,cases",
+      [name]: "all,cases",
+      "X-Mcp-Options": "Mode=FULL; preview=v2",
+      Accept: "application/json, text/event-stream",
+      "X-Empty": "",
     };
-    expect(() => {
-      return decode(
-        configuredMcpArtifact({
-          ...headers,
-          "x-datadog-mcp-toolsets": "all",
-        }),
-      );
-    }).toThrow("relationship-mismatch");
-    expect(() => {
-      return decode(
-        configuredMcpArtifact({
-          ...headers,
-          ...Object.fromEntries(
-            Array.from({ length: 7 }, (_, index) => {
-              return [`X-Unreviewed-${index}`, "configuration"];
-            }),
-          ),
-        }),
-      );
-    }).toThrow("relationship-mismatch");
+    const artifact = configuredMcpArtifact(headers);
+    const connector = requiredConnector(decode(artifact), "plaud-mcp");
+    const firewall = connectorCatalogFirewallConfig(connector);
+    if (firewall === null) {
+      throw new Error("Expected the accepted MCP firewall");
+    }
+    expect(
+      JSON.parse(connectorCatalogEntryPayload(connector).toString("utf8")),
+    ).toEqual(connector);
+    const runtime = createRunnerRuntimeFirewallCatalog([
+      projectRunnerRuntimeFirewall(firewall),
+    ]);
+    expect(runtime.firewalls[connector.slug]?.apis[0]?.auth.headers).toEqual(
+      headers,
+    );
+    const changed = requiredConnector(
+      decode(
+        configuredMcpArtifact({ ...headers, "X-Mcp-Options": "Mode=Basic" }),
+      ),
+      "plaud-mcp",
+    );
+    const changedFirewall = connectorCatalogFirewallConfig(changed);
+    if (changedFirewall === null) {
+      throw new Error("Expected the changed MCP firewall");
+    }
+    expect(
+      createRunnerRuntimeFirewallCatalog([
+        projectRunnerRuntimeFirewall(changedFirewall),
+      ]).catalogDigest,
+    ).not.toBe(runtime.catalogDigest);
   });
 
-  it.each([
-    "",
-    "all,",
-    ",all",
-    "all,,cases",
-    "all, cases",
-    "ALL",
-    "0toolset",
-    "all\n",
-    "all\r",
-    "all\u0000",
-    "all\t",
-    "all\u2028",
-    "all\u0085",
-    "all;cases",
-    "all,cáses",
-    "${{ secrets.EXTRA_TOKEN }}",
-    "${{ vars.TOOLSETS }}",
-    "a".repeat(65),
-    Array.from({ length: 33 }, (_, index) => {
-      return `toolset-${index}`;
-    }).join(","),
-    Array.from({ length: 17 }, () => {
-      return "a".repeat(64);
-    }).join(","),
-  ])("rejects malformed or oversized toolset selection %j", (value) => {
-    expect(() => {
-      return decode(
-        configuredMcpArtifact({
-          Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-          "X-Datadog-MCP-Toolsets": value,
-        }),
-      );
-    }).toThrow("relationship-mismatch");
-  });
-
-  it.each([
-    "a".repeat(64),
-    Array.from({ length: 32 }, (_, index) => {
-      return `toolset-${index}`;
-    }).join(","),
-    [
-      "a".repeat(64),
-      ...Array.from({ length: 15 }, () => {
-        return "b".repeat(63);
-      }),
-    ].join(","),
-  ])("accepts bounded toolset identifier lists (%#)", (value) => {
+  it("accepts a catalog-owned profile with many opaque static values", () => {
     const artifact = configuredMcpArtifact({
       Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-      "X-Datadog-MCP-Toolsets": value,
+      ...Object.fromEntries(
+        Array.from({ length: 12 }, (_, index) => {
+          return [
+            `X-Mcp-Option-${index}`,
+            `Option_${index}; ${"x".repeat(2_048)}`,
+          ];
+        }),
+      ),
     });
     expect(decode(artifact)).toEqual(artifact);
   });
 
-  it("requires canonical OAuth authority without accepting extra auth modes", () => {
+  it("preserves canonical OAuth authority and existing auth modes", () => {
+    const rejectedProfiles: Record<string, string>[] = [
+      { Authorization: "Bearer caller-controlled" },
+      { authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
+      { "X-Mcp-Options": "Mode=FULL" },
+    ];
+    for (const headers of rejectedProfiles) {
+      expect(() => {
+        return decode(configuredMcpArtifact(headers));
+      }).toThrow("relationship-mismatch");
+    }
     for (const extra of [
       { query: { toolsets: "all" } },
       { base: "https://other.example.com/mcp" },
@@ -596,7 +509,7 @@ describe("v4 connector catalog reader", () => {
     ]) {
       const artifact = configuredMcpArtifact({
         Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-        "X-Datadog-MCP-Toolsets": "all,cases",
+        "X-Mcp-Options": "Mode=FULL",
       });
       const connector = requiredConnector(artifact, "plaud-mcp");
       if (connector.firewall.kind !== "generated") {
@@ -611,17 +524,9 @@ describe("v4 connector catalog reader", () => {
         return decode(artifact);
       }).toThrow();
     }
-    expect(() => {
-      return decode(
-        configuredMcpArtifact({
-          "X-Datadog-MCP-Toolsets": "all,cases",
-        }),
-      );
-    }).toThrow("relationship-mismatch");
-
     const artifact = configuredMcpArtifact({
       Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-      "X-Datadog-MCP-Toolsets": "all,cases",
+      "X-Mcp-Options": "Mode=FULL",
     });
     requiredConnector(artifact, "plaud-mcp").authMethods = [
       {

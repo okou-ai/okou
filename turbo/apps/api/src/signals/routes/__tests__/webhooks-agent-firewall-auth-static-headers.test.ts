@@ -143,6 +143,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       expect(initial.body.headers).toStrictEqual({
         Authorization: "Bearer automatic-initial-access-token",
         "X-Datadog-MCP-Toolsets": "all,cases",
+        "X-Mcp-Options": "Mode=FULL; preview=v2",
       });
       const refreshed = await accept(
         firewall.requestFirewallAuth(
@@ -158,6 +159,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       expect(refreshed.body.headers).toStrictEqual({
         Authorization: "Bearer automatic-refreshed-access-token",
         "X-Datadog-MCP-Toolsets": "all,cases",
+        "X-Mcp-Options": "Mode=FULL; preview=v2",
       });
 
       await connectors.deleteBuiltinConnectorAccount(
@@ -230,6 +232,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       expect(accepted.body.headers).toStrictEqual({
         Authorization: "Bearer automatic-initial-access-token",
         "X-Datadog-MCP-Toolsets": "all,cases",
+        "X-Mcp-Options": "Mode=FULL; preview=v2",
       });
     });
   });

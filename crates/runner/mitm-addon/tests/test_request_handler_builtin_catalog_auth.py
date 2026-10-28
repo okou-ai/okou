@@ -242,6 +242,7 @@ async def test_builtin_static_headers_follow_catalog_across_mcp_requests_and_pro
     configured_headers = {
         "Authorization": "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}",
         "X-Datadog-MCP-Toolsets": "all,cases",
+        "X-Mcp-Options": "Mode=FULL; preview=v2",
     }
     builtin = _firewall(_BUILTIN, oauth=True)
     builtin["apis"][0].pop("id")
@@ -275,6 +276,7 @@ async def test_builtin_static_headers_follow_catalog_across_mcp_requests_and_pro
                 {
                     "Authorization": "Bearer selected-account",
                     "X-Datadog-MCP-Toolsets": toolsets,
+                    "X-Mcp-Options": "Mode=FULL; preview=v2",
                 }
             )
         )
@@ -329,6 +331,7 @@ async def test_builtin_static_headers_follow_catalog_across_mcp_requests_and_pro
             flow.request.headers["Authorization"] = "Bearer caller-controlled"
             flow.request.headers.add("X-Datadog-MCP-Toolsets", "core")
             flow.request.headers.add("x-datadog-mcp-toolsets", "caller-controlled")
+            flow.request.headers["X-Mcp-Options"] = "caller-controlled"
             if index > 0:
                 flow.request.headers["Mcp-Session-Id"] = "provider-session"
                 flow.request.headers["MCP-Protocol-Version"] = "2025-06-18"
@@ -343,6 +346,7 @@ async def test_builtin_static_headers_follow_catalog_across_mcp_requests_and_pro
             assert flow.error is None
             assert flow.request.headers["Authorization"] == "Bearer selected-account"
             assert flow.request.headers.get_all("X-Datadog-MCP-Toolsets") == ["all,cases"]
+            assert flow.request.headers["X-Mcp-Options"] == "Mode=FULL; preview=v2"
             if index > 0:
                 assert flow.request.headers["Mcp-Session-Id"] == "provider-session"
                 assert flow.request.headers["MCP-Protocol-Version"] == "2025-06-18"
@@ -383,6 +387,7 @@ async def test_builtin_static_headers_follow_catalog_across_mcp_requests_and_pro
         assert resumed.response is None
         assert resumed.error is None
         assert resumed.request.headers["X-Datadog-MCP-Toolsets"] == "all,apm"
+        assert resumed.request.headers["X-Mcp-Options"] == "Mode=FULL; preview=v2"
         assert resumed.request.headers["Authorization"] == "Bearer selected-account"
         assert resumed.request.headers["Mcp-Session-Id"] == "provider-session"
         assert resumed.request.headers["Last-Event-ID"] == "resume-event"

@@ -2529,6 +2529,7 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     {
       ...automaticMcpConnector("oauth", "AUTOMATIC_STATIC", {
         "X-Datadog-MCP-Toolsets": "all,cases",
+        "X-Mcp-Options": "Mode=FULL; preview=v2",
       }),
       slug: "automatic-mcp-static-headers",
     },
