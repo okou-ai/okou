@@ -93,11 +93,12 @@ export function retireWorkflowAttachmentSql(
  */
 export function consumeWorkflowAttachmentCandidateSql(
   jobId: string | null,
+  publicationCondition?: SQL,
 ): SQL {
   return jobId === null
     ? sql`SELECT true AS consumed`
     : sql`DELETE FROM ${backgroundJobs}
-        WHERE ${and(eq(backgroundJobs.id, jobId), eq(backgroundJobs.kind, WORKFLOW_ATTACHMENT_CLEANUP_KIND), eq(backgroundJobs.handlerVersion, 1), eq(backgroundJobs.status, "pending"), eq(backgroundJobs.failureCount, 0), eq(backgroundJobs.checkpoint, {}))}
+        WHERE ${and(eq(backgroundJobs.id, jobId), eq(backgroundJobs.kind, WORKFLOW_ATTACHMENT_CLEANUP_KIND), eq(backgroundJobs.handlerVersion, 1), eq(backgroundJobs.status, "pending"), eq(backgroundJobs.failureCount, 0), eq(backgroundJobs.checkpoint, {}), publicationCondition)}
         RETURNING *`;
 }
 
