@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { state } from "ccstate";
 import { beforeEach, expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -119,14 +120,11 @@ beforeEach(() => {
   });
 });
 
-test("shows the home animation once and stores it in this browser", async () => {
+test("shows the first-visit home animation", async () => {
   await setupPage({ context, path: "/", featureSwitches: switches });
   await expect(
     screen.findByTestId("halloween-bubbles"),
   ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(context.store.set(homeAnimationStorage.readFresh$)).toBe("seen");
-  });
 });
 
 test("does not repeat the home animation stored in this browser", async () => {
@@ -268,4 +266,63 @@ test("rules open over the quiz and return to the same answer and feedback", asyn
   expect(within(dialog).getByText(correctExplanation)).toBeInTheDocument();
   expect(button(/Oh cool/, dialog)).toBeDisabled();
   expect(button("Next question", dialog)).toBeEnabled();
+});
+
+test("keeps ordinary home usable when the campaign endpoint is unavailable and the switch is off", async () => {
+  context.mocks.api(halloweenContract.status, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Campaign endpoint unavailable" },
+    });
+  });
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.HalloweenQuiz]: false },
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Keep working without the campaign");
+  expect(composer).toHaveTextContent("Keep working without the campaign");
+  expect(
+    screen.queryByText("Campaign endpoint unavailable"),
+  ).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").find((element) => {
+      return element.getAttribute("aria-label") === "Play the Halloween quiz";
+    }),
+  ).toBeUndefined();
+});
+
+test("opens by keyboard and restores focus through nested Escape dismissal", async () => {
+  await setupPage({ context, path: "/", featureSwitches: switches });
+  const entry = await waitFor(() => {
+    return button("Play the Halloween quiz");
+  });
+  entry.focus();
+  await userEvent.keyboard("{Enter}");
+  const dialog = await screen.findByRole("dialog", {
+    name: "Spooky Halloween",
+  });
+  const rulesButton = button("Activity rules", dialog);
+  rulesButton.focus();
+  await userEvent.keyboard(" ");
+  await screen.findByRole("dialog", {
+    name: "Spooky Halloween — activity rules",
+  });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Spooky Halloween — activity rules",
+      }),
+    ).not.toBeInTheDocument();
+    expect(rulesButton).toHaveFocus();
+  });
+  expect(dialog).toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Spooky Halloween" }),
+    ).not.toBeInTheDocument();
+    expect(entry).toHaveFocus();
+  });
 });

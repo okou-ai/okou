@@ -87,7 +87,7 @@ export function HalloweenHeader() {
       >
         <span className="hidden text-[#c5cfdd] md:inline">
           {playing
-            ? copy.questionProgress(round?.questionNumber ?? 1, 5)
+            ? copy.questionProgress(round!.questionNumber, 5)
             : copy.campaign}
         </span>
         {playing ? (

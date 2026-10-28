@@ -159,7 +159,7 @@ export function HalloweenQuestionScreen() {
         <p className={cn("mb-5 text-[#b5a07e]", typography.labelClassName)}>
           {copy.roundProgress(
             String(round.questionNumber).padStart(2, "0"),
-            copy.roundTitles[round.questionNumber - 1] ?? "",
+            copy.roundTitles[round.questionNumber - 1]!,
           )}
         </p>
         <h1
