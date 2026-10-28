@@ -105,6 +105,7 @@ export function chatThreadEventInsertPlan(
   source?: {
     readonly gate: SQL;
     readonly agentId: SQL;
+    readonly reservationSource?: SQL;
   },
 ) {
   const event = initialThreadEventPlan(
@@ -113,6 +114,8 @@ export function chatThreadEventInsertPlan(
     args.initiallyArchived,
   );
   const eventCount = event.count;
+  const reservationSource =
+    source?.reservationSource ?? sql.identifier("reserved");
   const chatThreadId: SQL = chatThreadIdentitySql(args.chatThreadId);
   let agentId: SQL;
   if (source) {
@@ -154,7 +157,7 @@ export function chatThreadEventInsertPlan(
       ${args.serviceTier ?? null}, ${args.computerUseHostId ?? null}::uuid,
       ${args.cloudBrowserEnabled ?? false},
       COALESCE(${args.createdAt ? args.createdAt.toISOString() : null}::timestamp, timezone('UTC', now()))
-    FROM reserved ${event.source}
+    FROM ${reservationSource} ${event.source}
     ON CONFLICT (id) DO NOTHING
     RETURNING id`;
   return { reservation, insertion };
