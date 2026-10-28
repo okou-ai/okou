@@ -307,8 +307,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "iCloud Calendar and Contacts",
     description:
       "Connect iCloud calendars and contacts with an app-specific password.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
