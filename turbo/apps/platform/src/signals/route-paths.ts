@@ -47,6 +47,7 @@ export const ROUTES = {
   directedReconnect: "/connectors/:connectorSlug/reconnect/:connectionId",
   directedAuthorize: "/connectors/:connectorSlug/authorize",
   settings: "/settings",
+  settingsAgentPhone: INTEGRATION_SETTINGS_PATHS.agentphone,
   settingsSlack: INTEGRATION_SETTINGS_PATHS.slack,
   settingsWechat: INTEGRATION_SETTINGS_PATHS.wechat,
   settingsDiscord: INTEGRATION_SETTINGS_PATHS.discord,
@@ -57,7 +58,6 @@ export const ROUTES = {
   settingsLark: "/settings/lark",
   githubConnect: "/github/connect",
   telegramConnect: "/telegram/connect",
-  agentphoneConnect: "/agentphone/connect",
   // Stable public handoff from vm0-marketing into App onboarding.
   onboarding: "/onboarding",
   // Source-first onboarding. `/onboarding` itself renders its first step.

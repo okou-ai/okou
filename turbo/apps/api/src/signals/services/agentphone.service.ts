@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
@@ -296,7 +297,7 @@ export function buildAgentPhoneConnectUrl(params: {
     }),
     channel: params.channel,
   });
-  return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
+  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.agentphone}?${query.toString()}`;
 }
 
 function inboundAgentPhoneMessageValues(

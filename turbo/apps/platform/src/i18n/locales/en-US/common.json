@@ -3481,7 +3481,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Back to {{brandName}}",
         "connectDescription": "Link this phone number to your {{brandName}} account so you can interact with {{assistantName}} from text messages.",
         "connectTitle": "Connect phone number",
         "documentTitle": "Connect Messages",
@@ -3491,9 +3490,16 @@
         "invalidSignature": "The signature on this link is not valid.",
         "invalidTimestamp": "The timestamp on this link is not valid.",
         "invalidTitle": "Connect link is invalid",
+        "keepPhone": "Keep {{phone}}",
+        "phoneInUseDescription": "This phone number is connected to another Okou account or organization. Disconnect it there before trying again.",
+        "phoneInUseTitle": "Phone number already connected",
+        "phoneMismatchDescription": "Your Okou account currently uses {{currentPhone}} in this organization. Switch to {{requestedPhone}}, the number that opened this link?",
+        "phoneMismatchTitle": "Switch phone number?",
         "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.",
         "successDescription": "{{phone}} is connected. Send a text message to start chatting with {{assistantName}}.",
-        "successTitle": "Phone number connected"
+        "successTitle": "Phone number connected",
+        "switchPhone": "Switch to {{phone}}",
+        "unavailable": "Phone connection is currently unavailable."
       },
       "common": {
         "backToSettings": "Back to settings",

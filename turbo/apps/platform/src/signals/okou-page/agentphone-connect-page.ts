@@ -5,9 +5,16 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { AgentPhoneConnectPage } from "../../views/okou-page/agentphone-connect-page.tsx";
+import { reloadAgentPhoneConnectStatus$ } from "./agentphone-connect-signals.ts";
+import {
+  reloadAgentPhoneLinkStatus$,
+  watchAgentPhoneConnection$,
+} from "./agentphone.ts";
 
 export const setupAgentPhoneConnectPage$ = command(
   async ({ set }, signal: AbortSignal) => {
+    set(reloadAgentPhoneConnectStatus$);
+    set(reloadAgentPhoneLinkStatus$);
     set(updatePage$, createElement(AgentPhoneConnectPage));
     set(
       updateDocumentTitle$,
@@ -15,6 +22,9 @@ export const setupAgentPhoneConnectPage$ = command(
         return $.connectors.providerConnect.agentphone.documentTitle;
       }),
     );
-    await set(hideAppSkeleton$, signal);
+    await Promise.all([
+      set(hideAppSkeleton$, signal),
+      set(watchAgentPhoneConnection$, signal),
+    ]);
   },
 );

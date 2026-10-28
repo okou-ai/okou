@@ -3468,7 +3468,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "返回 {{brandName}}",
         "connectDescription": "把這個電話號碼關聯到你的 {{brandName}} 帳號，就可以透過簡訊與 {{assistantName}} 交流。",
         "connectTitle": "連線電話號碼",
         "documentTitle": "連線 Messages",
@@ -3478,9 +3477,16 @@
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
         "invalidTitle": "連線連結無效",
+        "keepPhone": "保留 {{phone}}",
+        "phoneInUseDescription": "此號碼已連線至其他 Okou 帳號或組織。請先在該處中斷連線，再重試。",
+        "phoneInUseTitle": "號碼已連線",
+        "phoneMismatchDescription": "你的 Okou 帳號在此組織中目前使用 {{currentPhone}}。要切換至開啟此連結的號碼 {{requestedPhone}} 嗎？",
+        "phoneMismatchTitle": "切換號碼？",
         "risk": "簡訊和彩信回覆可能無法穩定送達。為獲得最可靠的體驗，請用 iMessage 與這個號碼通訊。",
         "successDescription": "{{phone}}已連線。傳送一條簡訊，即可開始與 {{assistantName}} 對話。",
-        "successTitle": "電話號碼已連線"
+        "successTitle": "電話號碼已連線",
+        "switchPhone": "切換至 {{phone}}",
+        "unavailable": "目前無法連線電話號碼。"
       },
       "common": {
         "backToSettings": "返回設定",
