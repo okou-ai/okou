@@ -130,9 +130,9 @@ test(
     const exited = once(child, "exit");
     const [line] = await once(lines, "line");
     assert.equal(line, "READY");
-    child.kill("SIGTERM");
+    child.kill("SIGHUP");
     const [code] = await exited;
-    assert.equal(code, 143);
+    assert.equal(code, 129);
   },
 );
 

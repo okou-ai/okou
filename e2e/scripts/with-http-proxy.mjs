@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { constants } from "node:os";
 import { anonymizeProxy, closeAnonymizedProxy } from "proxy-chain";
 
 const keys = [
@@ -83,8 +84,7 @@ async function main() {
         child.once("error", reject);
         child.once("exit", (code, signal) => resolve({ code, signal }));
       });
-      process.exitCode =
-        result.code ?? (result.signal === "SIGINT" ? 130 : 143);
+      process.exitCode = result.code ?? 128 + constants.signals[result.signal];
     } finally {
       signals.forEach((signal, index) => process.off(signal, handlers[index]));
     }
