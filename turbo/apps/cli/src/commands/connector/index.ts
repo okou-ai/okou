@@ -52,7 +52,9 @@ Connection and access:
 
 Run context:
   Inside a run, omit --agent to use the current Agent (OKOU_AGENT_ID).
-  An explicit --agent must match the current Agent.
+  Account inspection and permission-request require an explicit --agent to match
+  the current Agent. Unauthorize can target another visible Agent with --agent;
+  it only removes the current user's grant.
   Agent selection does not replace the accounts admitted to that run. Missing
   run account context means unavailable; it does not select another account.
   Outside a run, commands exposing --agent can inspect that Agent's authorization.

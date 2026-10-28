@@ -8,7 +8,7 @@ import {
   removeAgentUserBuiltinConnector,
 } from "../../lib/api/domains/agents";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { resolveConnectorAgentId } from "./agent-context";
+import { getOkouAgentId } from "../../lib/okou-env";
 import { resolveManagementConnector } from "./management";
 
 type UnauthorizeTarget =
@@ -61,7 +61,7 @@ export const unauthorizeCommand = new Command()
   .addOption(
     new Option(
       "--agent <id>",
-      "Agent ID to narrow (required outside a run; must match OKOU_AGENT_ID inside a run)",
+      "Target Agent ID (defaults to the current Agent; required outside a run)",
     ),
   )
   .option("--json", "Print the result as JSON")
@@ -81,7 +81,8 @@ Notes:
   - Runs that already started may keep their admitted access; new runs of the
     Agent no longer receive this connector.
   - A connector that is not authorized for the Agent is reported unchanged.
-  - Inside a run, --agent must match the current Agent; omit it to use OKOU_AGENT_ID.
+  - Use --agent <id> to revoke your grant from another visible Agent in the
+    current organization, including inside a run. Omit it to use OKOU_AGENT_ID.
     Outside a run, --agent is required.
   - To restore access, re-enable the connector in Connectors > agent access.
   - To disconnect a saved account for every Agent, use connector account disconnect
@@ -90,8 +91,8 @@ Notes:
   .action(
     withErrorHandler(
       async (selector: string, opts: { agent?: string; json?: boolean }) => {
-        const agentId = resolveConnectorAgentId(opts.agent);
-        if (agentId === undefined) {
+        const agentId = opts.agent ?? getOkouAgentId();
+        if (!agentId) {
           throw new Error(
             "Specify the Agent with --agent <id>. Run: okou agent list",
           );
@@ -113,7 +114,7 @@ Notes:
         const authorized = await isAuthorized(agentId, target);
         if (authorized && !(await removeAuthorization(agentId, target))) {
           throw new Error(
-            `${target.label} is still authorized for Agent ${agentId}. Inspect: okou connector list --json`,
+            `${target.label} is still authorized for Agent ${agentId}. Inspect its access in Connectors > agent access.`,
           );
         }
 
