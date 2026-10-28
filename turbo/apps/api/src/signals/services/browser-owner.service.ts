@@ -32,7 +32,6 @@ import {
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 
@@ -386,9 +385,6 @@ const allocateOwnerBrowser$ = command(
               providerSessionId: sql`NULL::uuid`
                 .mapWith(profiles.providerSessionId)
                 .as("provider_session_id"),
-              proxyCountryCode: sql`NULL::varchar`
-                .mapWith(nullableDriverValueDecoder(profiles.proxyCountryCode))
-                .as("proxy_country_code"),
               status: sql`'creating'`.mapWith(profiles.status).as("status"),
               creationExpiresAt:
                 sql`${sql.param(creationExpiresAt, profiles.creationExpiresAt)}::timestamp`
@@ -749,7 +745,6 @@ const beginOwnerBrowserStop$ = command(
           orgId: stopping.orgId,
           userId: stopping.userId,
           providerProfileId: stopping.providerProfileId,
-          proxyCountryCode: stopping.proxyCountryCode,
           instanceId: stopping.instanceId,
           providerSessionId: stopping.providerSessionId,
           status: stopping.status,

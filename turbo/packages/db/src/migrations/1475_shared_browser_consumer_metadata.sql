@@ -1,1 +1,0 @@
-ALTER TABLE "browser_owner_profiles" ADD COLUMN "proxy_country_code" varchar(2);

@@ -105,6 +105,28 @@ function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("shared Browser public consumers", () => {
+  it.each([true, false])(
+    "creates a Browser with the mode's egress when shared admission enabled=%s",
+    async (shared) => {
+      const f = await fixture(shared);
+      await f.owned.run(async () => {
+        nativeCommands(f);
+        const a = await f.start();
+        const result = await client().create({
+          headers: runHeaders(a),
+          body: { name: "Regional browser", proxyCountryCode: "us" },
+        });
+        expect(result.status).toBe(201);
+        expect(result.body).toMatchObject({
+          browser: { proxyCountryCode: shared ? null : "us" },
+        });
+        expect(f.provider.sessionRequests).toStrictEqual([
+          expect.objectContaining({ proxyCountryCode: shared ? null : "us" }),
+        ]);
+      });
+    },
+  );
+
   it("adopts legacy chat URLs after shared cutover", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const f = await fixture(false);
@@ -431,6 +453,7 @@ describe("shared Browser public consumers", () => {
       expect(f.provider.sessionRequests).toHaveLength(1);
       expect(f.provider.sessionRequests[0]).toMatchObject({
         profileId: f.provider.createdIds[0],
+        proxyCountryCode: null,
       });
       expect(
         external.sizes.get(Number(first.browser.window?.primaryWindowId)),
@@ -547,6 +570,7 @@ describe("shared Browser public consumers", () => {
       expect(f.provider.sessionRequests).toHaveLength(2);
       expect(f.provider.sessionRequests[1]).toMatchObject({
         profileId: f.provider.createdIds[0],
+        proxyCountryCode: null,
       });
       expect(
         [...f.provider.native.targets.values()].map((target) => {

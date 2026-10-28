@@ -81,7 +81,6 @@ interface SharedBrowserInput {
   readonly runId?: string;
   readonly chatThreadId?: string;
   readonly name?: string;
-  readonly proxyCountryCode?: string | null;
   readonly aspectRatio?: number;
 }
 type Result<T> =
@@ -238,7 +237,7 @@ function presentation(
     viewerUrl: `${env("APP_URL")}/browsers/${meta.chatThreadId}`,
     liveUrl: live ? session.liveUrl : null,
     screenshotUrl,
-    proxyCountryCode: profile.proxyCountryCode,
+    proxyCountryCode: null,
     timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
     ...(live
       ? {
@@ -341,7 +340,6 @@ type SharedBrowserInputNode = Computed<
 
 interface ProvisionSharedBrowser {
   readonly owner: BrowserPublicAuthority;
-  readonly input: SharedBrowserInput;
   readonly previous: Profile | null;
 }
 // Publication and exact losing-candidate cleanup finish even if the HTTP caller disconnects.
@@ -414,7 +412,7 @@ const publishSharedInstance$ = command(
       createBrowserUseSession(
         {
           profileId: profile.providerProfileId,
-          proxyCountryCode: profile.proxyCountryCode,
+          proxyCountryCode: null,
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
           extensionIds: env("OKOU_BROWSER_USE_EXTENSION_IDS"),
         },
@@ -447,27 +445,16 @@ const publishSharedInstance$ = command(
 
 const provisionSharedInstance$ = command(
   async (
-    { set },
+    { get, set },
     args: ProvisionSharedBrowser,
     signal: AbortSignal,
   ): Promise<
     Result<{ readonly profile: Profile; readonly created: boolean }>
   > => {
     if (args.previous && args.previous.status !== "stopped") {
-      if (
-        args.input.proxyCountryCode &&
-        args.input.proxyCountryCode !== args.previous.proxyCountryCode
-      ) {
-        return {
-          kind: "error",
-          status: 409,
-          code: "BROWSER_PROXY_CONFLICT",
-          message: "This owner Browser already uses a different proxy country",
-        };
-      }
       return { kind: "ok", value: { profile: args.previous, created: false } };
     }
-    const db = set(writeDb$);
+    const db = get(db$);
     const [old] = await db
       .select({ id: browserSessionInstances.providerSessionId })
       .from(browserSessionInstances)
@@ -510,28 +497,23 @@ const provisionSharedInstance$ = command(
     if (allocation.outcome !== "accepted") {
       return unavailable();
     }
-    const [claimed] = await db
-      .update(profiles)
-      .set({
-        proxyCountryCode:
-          args.input.proxyCountryCode ??
-          args.previous?.proxyCountryCode ??
-          null,
-      })
+    const [currentProfile] = await db
+      .select()
+      .from(profiles)
       .where(
         and(
           eq(profiles.instanceId, allocation.instance.id),
           eq(profiles.status, "creating"),
         ),
       )
-      .returning();
+      .limit(1);
     signal.throwIfAborted();
-    if (!claimed) {
+    if (!currentProfile) {
       return unavailable();
     }
     const published = await set(
       publishSharedInstance$,
-      { owner: args.owner, profile: claimed },
+      { owner: args.owner, profile: currentProfile },
       signal,
     );
     signal.throwIfAborted();
@@ -639,7 +621,7 @@ const publishSharedMetadata$ = command(
         runId: owner.runId,
         name: input.name ?? previous?.name ?? "browser",
         status: "active",
-        proxyCountryCode: profile.proxyCountryCode,
+        proxyCountryCode: null,
         timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
       })
       .onConflictDoUpdate({
@@ -651,7 +633,7 @@ const publishSharedMetadata$ = command(
           status: "active",
           browserThreadProfileId: null,
           browserProfileId: null,
-          proxyCountryCode: profile.proxyCountryCode,
+          proxyCountryCode: null,
           suspendedAt: null,
           suspensionReason: null,
           updatedAt: nowDate(),
@@ -971,7 +953,6 @@ function sharedBrowserOpen(
             provisionSharedInstance$,
             {
               owner: ctx.owner,
-              input: ctx.mode.input,
               previous: view?.profile ?? null,
             },
             signal,
