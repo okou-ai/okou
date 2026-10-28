@@ -9,6 +9,7 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { joinAll } from "../../utils";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -43,11 +44,13 @@ async function createRun(actor = bdd.user()): Promise<RunFixture> {
     throw new Error("X resource test requires an organization");
   }
   await runs.grantProEntitlement(actor);
-  await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "X resource accounting",
-    visibility: "private",
-  });
+  const [, agent] = await joinAll([
+    runs.ensurePersonalSubscriptionModel(actor),
+    bdd.createAgent(actor, {
+      displayName: "X resource accounting",
+      visibility: "private",
+    }),
+  ]);
   const runnerGroup = runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
