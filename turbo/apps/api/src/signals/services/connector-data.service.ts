@@ -16,10 +16,6 @@ import {
   type BuiltinConnectorDeletionContext,
 } from "./connector-account-deletion-queries";
 import { randomUUID } from "node:crypto";
-import {
-  connectorCredentialDeletion,
-  connectorCredentialDeletionKinds,
-} from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -64,16 +60,14 @@ import {
   builtinManualGrantPublicationSql,
   builtinNoAuthPublicationSql,
 } from "./builtin-manual-grant-publication";
-import { completedGetStartedQuestSql } from "./get-started-member-reward";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import type { Tx } from "../../lib/db-types";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
 import {
   builtinConnectorCredentialStorageIsCompatible,
@@ -97,10 +91,7 @@ import {
   builtinDeletionFromRows,
   builtinDeletionResult,
 } from "./connector-account-resolution.service";
-import {
-  connectorAccountReconciliationWrites as reconciliationWrites,
-  connectorAccountReconciliationIdentity as connectionIdentity,
-} from "./connector-account-state.service";
+import { connectorAccountReconciliationIdentity as connectionIdentity } from "./connector-account-state.service";
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
   connectorCatalogSearchFromSnapshot,
@@ -125,9 +116,7 @@ import {
   type ConnectorConnectionMutationResolution,
   type StoredConnectorConnectionRow as StoredConnectorRow,
   connectorConnectionMetadataWritePlan as connectionMetadataWritePlan,
-  connectorConnectionMetadataWriteResult as connectionMetadataWriteResult,
   connectorConnectionSelection as connectionSelection,
-  type ConnectorConnectionMetadataQuery,
   type ConnectorConnectionWriteArgs,
 } from "./connector-connection-write.service";
 import {
@@ -138,11 +127,9 @@ import {
   connectorCredentialStorageConnectionDeletionPlan,
   connectorCredentialStorageSelectionDeletionPlan,
   connectorCredentialStorageCursorDeletionPlan,
-  builtinTokenCredentialWrites as tokenWrites,
   type PreparedBuiltinConnectorTokenState,
   manualGrantConnectionMetadata,
   manualGrantCredentialArgs,
-  requireManualGrantWrite,
 } from "./connector-credential-storage-write.service";
 import {
   decryptStoredSecretValue,
@@ -153,10 +140,6 @@ import {
   userFeatureSwitchOverrides,
 } from "./feature-switches.service";
 import { reconcileGmailWatchesForUser$ } from "./gmail-automation-watch.service";
-import {
-  notionAutomationPendingEventsScope,
-  notionPendingEventsSkipWrite as pendingEventsSkipWrite,
-} from "./notion-automation-account.service";
 import {
   prepareGoogleCalendarWatchStopForConnector$,
   stopPreparedGoogleCalendarWatches,
@@ -178,19 +161,8 @@ import {
   type PendingGoogleMeetSubscriptionDelete,
 } from "./google-meet-automation-watch.service";
 
-import {
-  workflowAutomationReprojectionColumns as ownerAutomationColumns,
-  workflowAutomationReprojectionCondition as ownerAutomationCondition,
-  workflowAutomationProjectionValues,
-  workflowAutomationOwnerProjectionReadPlan,
-  type ProjectedAutomation,
-} from "./workflow-automation-account-projection.service";
+import { workflowAutomationOwnerProjectionReadPlan } from "./workflow-automation-account-projection.service";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
-import {
-  workflowAutomationSelectedAccountReadPlan,
-  workflowAutomationDefaultAccountReadPlan,
-} from "./workflow-automation-account.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { builtinTokenConnectionPublicationSql } from "./builtin-token-connection-publication";
 import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
@@ -2262,14 +2234,6 @@ export interface PreparedBuiltinConnectorTokenConnection {
   readonly insertConnectionId?: string;
 }
 
-interface CommitBuiltinConnectorTokenConnectionArgs extends PreparedBuiltinConnectorTokenConnection {
-  readonly db: Tx;
-}
-
-interface ResolvedBuiltinConnectorTokenConnectionArgs extends CommitBuiltinConnectorTokenConnectionArgs {
-  readonly resolution: ConnectorConnectionMutationResolution;
-}
-
 export interface CommittedBuiltinConnectorTokenConnection {
   readonly status: "connected";
   readonly connectorRow: StoredConnectorRow;
@@ -2337,120 +2301,6 @@ interface BuiltinConnectorTokenConnectionArgs {
   readonly insertConnectionId?: string;
 }
 
-async function reprojectConnectedWorkflowAutomations(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const reprojectionDb = args.db;
-  const reprojectionArgs = {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "builtin", connectorSlug: args.connectorSlug } as const,
-  };
-  const reprojectionSignal = signal;
-  await (async () => {
-    if (
-      reprojectionArgs.target.kind !== "builtin" ||
-      !isWorkflowAutomationAccountConnectorSlug(
-        reprojectionArgs.target.connectorSlug,
-      )
-    ) {
-      return;
-    }
-    const connectorSlug = reprojectionArgs.target.connectorSlug;
-    switch (connectorSlug) {
-      case "gmail":
-      case "google-calendar":
-      case "google-meet":
-      case "notion": {
-        const projectionDb = reprojectionDb;
-        const projectionArgs = reprojectionArgs;
-        await (async () => {
-          const automations: ProjectedAutomation[] = await projectionDb
-            .select(ownerAutomationColumns(connectorSlug))
-            .from(workflowAutomations)
-            .where(ownerAutomationCondition(projectionArgs, connectorSlug));
-
-          for (const automation of automations) {
-            const workflowScope = {
-              ...projectionArgs,
-              workflowId: automation.workflowId,
-            };
-            const eventConnectorId = await (async () => {
-              const accountScope = {
-                ...workflowScope,
-                connectorSlug,
-              };
-              return await (async () => {
-                const selected =
-                  workflowAutomationSelectedAccountReadPlan(accountScope);
-                const [selection] = await projectionDb
-                  .select(selected.columns)
-                  .from(selected.from)
-                  .innerJoin(selected.join.table, selected.join.on)
-                  .where(selected.where)
-                  .limit(selected.limit);
-                if (selection) {
-                  return selection.connectorId;
-                }
-                const fallback =
-                  workflowAutomationDefaultAccountReadPlan(accountScope);
-                const [defaultAccount] = await projectionDb
-                  .select(fallback.columns)
-                  .from(fallback.from)
-                  .where(fallback.where)
-                  .limit(fallback.limit);
-                return defaultAccount?.connectorId ?? null;
-              })();
-            })();
-            const values = workflowAutomationProjectionValues(
-              automation,
-              eventConnectorId,
-              connectorSlug,
-            );
-            if (values === null) {
-              continue;
-            }
-            await projectionDb
-              .update(workflowAutomations)
-              .set(values)
-              .where(eq(workflowAutomations.id, automation.id));
-            if (connectorSlug === "notion") {
-              const pendingEventDb = projectionDb;
-              const scope = notionAutomationPendingEventsScope(automation.id);
-              await (async () => {
-                const write = pendingEventsSkipWrite(
-                  scope.condition,
-                  scope.reason,
-                );
-                await pendingEventDb
-                  .update(write.table)
-                  .set(write.values)
-                  .where(write.where);
-              })();
-            }
-          }
-        })();
-        reprojectionSignal.throwIfAborted();
-        return;
-      }
-      case "google-forms": {
-        await reprojectionDb.execute(
-          googleFormsAccountProjectionStatement(reprojectionArgs),
-        );
-        reprojectionSignal.throwIfAborted();
-        return;
-      }
-    }
-    return connectorSlug satisfies never;
-  })();
-}
-
 function tokenRevokeValues(
   args: PreparedBuiltinConnectorTokenConnection,
   existing: StoredConnectorRow | null,
@@ -2512,135 +2362,6 @@ export function builtinConnectorTokenMutationValues(
       externalId: args.userInfo.id,
     }),
   };
-}
-export async function commitBuiltinConnectorTokenConnection(
-  args: ResolvedBuiltinConnectorTokenConnectionArgs,
-  signal: AbortSignal,
-): Promise<BuiltinConnectorTokenConnectionCommitResult> {
-  const resolution = args.resolution;
-  signal.throwIfAborted();
-  if (resolution.kind !== "ready") {
-    return connectorConnectionMutationFailure(resolution);
-  }
-  const existingConnector =
-    resolution.mutation.kind === "update" ? resolution.mutation.existing : null;
-  if (
-    isExplicitReconnectIdentityMismatch(
-      args.account,
-      existingConnector,
-      args.userInfo.id,
-    )
-  ) {
-    return { status: "identityMismatch" };
-  }
-  const { db, ...connection } = args;
-  const cleanup = await (async () => {
-    const preparation = prepareBuiltinTokenRevoke(
-      tokenRevokeValues(connection, existingConnector),
-    );
-    const pendingTokenRevoke = await (async () => {
-      if (!preparation) {
-        return null;
-      }
-      const read = builtinConnectorTokenRevokeReadPlan(preparation.access);
-      if (read.kind !== "read") {
-        return builtinTokenRevokeFromRows(preparation, read, []);
-      }
-      const secretRows = await db
-        .select(read.columns)
-        .from(read.from)
-        .where(read.where);
-      signal.throwIfAborted();
-      return builtinTokenRevokeFromRows(preparation, read, secretRows);
-    })();
-    return tokenCleanupResult(
-      connection,
-      existingConnector,
-      pendingTokenRevoke,
-    );
-  })();
-  if (existingConnector !== null) {
-    const ref = connectionIdentity(existingConnector, args.userInfo);
-    await (async () => {
-      for (const write of reconciliationWrites(ref)) {
-        if (write.kind === "delete") {
-          await db.delete(write.table).where(write.where);
-        } else if (write.kind === "email") {
-          await db.update(write.table).set(write.values).where(write.where);
-        } else if (write.kind === "rewatch") {
-          await db.update(write.table).set(write.values).where(write.where);
-        } else if (write.kind === "gmail") {
-          await db.update(write.table).set(write.values).where(write.where);
-        } else if (write.kind === "notion") {
-          await db.update(write.table).set(write.values).where(write.where);
-        } else {
-          await db.update(write.table).set(write.values).where(write.where);
-        }
-        signal.throwIfAborted();
-      }
-    })();
-  }
-  const values = builtinConnectorTokenConnectionValues(connection);
-  const writeArgs = tokenWriteArgs(values, resolution, args.insertConnectionId);
-  const written = await (async () => {
-    const outcome = await (async () => {
-      let write = connectionMetadataWritePlan(writeArgs);
-      for (;;) {
-        const query: ConnectorConnectionMetadataQuery =
-          write.kind === "update"
-            ? db.update(connectors).set(write.values).where(write.where)
-            : write.conflict
-              ? db
-                  .insert(connectors)
-                  .values(write.values)
-                  .onConflictDoNothing(write.conflict)
-              : db.insert(connectors).values(write.values);
-        const [row] = await query.returning(connectionSelection());
-        const result = connectionMetadataWriteResult(write, row);
-        if (result.kind === "resolved") {
-          return write.phase === "existing"
-            ? result.outcome
-            : await Promise.resolve(result.outcome);
-        }
-        write = result.write;
-      }
-    })();
-    signal.throwIfAborted();
-    if (outcome.kind !== "written") {
-      return outcome;
-    }
-    const connection = outcome.row;
-
-    for (const kind of connectorCredentialDeletionKinds) {
-      const deletion = connectorCredentialDeletion(kind, connection);
-      await db.delete(deletion.from).where(deletion.where);
-      if (kind !== "builtin-oauth") {
-        signal.throwIfAborted();
-      }
-    }
-    for (const write of tokenWrites(connection.id, values.credentials)) {
-      const [row] = await db
-        .insert(write.table)
-        .values(write.values)
-        .onConflictDoUpdate(write.conflict)
-        .returning({ id: write.table.id });
-      requireManualGrantWrite(row, write.kind, write.values.name);
-      signal.throwIfAborted();
-    }
-    signal.throwIfAborted();
-    return outcome;
-  })();
-  if (written.kind !== "written") {
-    return connectorConnectionMutationFailure(written);
-  }
-  if (isOneClickConnectorGrantKind(args.runtimeMethod.method.grant.kind)) {
-    await args.db.execute(completedGetStartedQuestSql(values.quest, nowDate()));
-  }
-  await reprojectConnectedWorkflowAutomations(
-    { ...args, connectorSlug: args.runtimeMethod.connectorSlug },
-    signal,
-  );
-  return tokenConnected(written.row, existingConnector, cleanup);
 }
 export const prepareBuiltinConnectorTokenConnection$ = command(
   async (
@@ -2790,7 +2511,7 @@ export const finalizeBuiltinConnectorTokenConnection$ = command(
     };
   },
 );
-interface PreparedTokenPublication {
+export interface PreparedBuiltinTokenPublication {
   readonly kind: "ready";
   readonly publication: Parameters<
     typeof builtinTokenConnectionPublicationSql
@@ -2836,7 +2557,7 @@ const prepareTokenAutomationProjections$ = command(
   },
 );
 
-const prepareTokenPublication$ = command(
+export const prepareBuiltinConnectorTokenPublication$ = command(
   async (
     { set },
     args: PreparedBuiltinConnectorTokenConnection,
@@ -2923,7 +2644,7 @@ const prepareTokenPublication$ = command(
       signal,
     );
     const values = builtinConnectorTokenConnectionValues(args);
-    const ready: PreparedTokenPublication = {
+    const ready: PreparedBuiltinTokenPublication = {
       kind: "ready",
       existing,
       cleanup: tokenCleanupResult(args, existing, pendingTokenRevoke),
@@ -2969,7 +2690,7 @@ const tokenPublicationRow = object({
 const publishTokenConnection$ = command(
   async (
     { set },
-    prepared: PreparedTokenPublication,
+    prepared: PreparedBuiltinTokenPublication,
   ): Promise<BuiltinConnectorTokenConnectionCommitResult> => {
     const db = set(writeDb$);
     const query = builtinTokenConnectionPublicationSql(prepared.publication);
@@ -3010,7 +2731,11 @@ const publishTokenConnection$ = command(
         "Connector account changed while connecting; submit the connection again",
       );
     }
-    return tokenConnected(row.connector, prepared.existing, prepared.cleanup);
+    return committedBuiltinTokenConnection(
+      row.connector,
+      prepared.existing,
+      prepared.cleanup,
+    );
   },
 );
 
@@ -3025,7 +2750,11 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
       args,
       signal,
     );
-    const publication = await set(prepareTokenPublication$, prepared, signal);
+    const publication = await set(
+      prepareBuiltinConnectorTokenPublication$,
+      prepared,
+      signal,
+    );
     signal.throwIfAborted();
     let postCommitAbort: unknown = null;
     if (publication.kind === "rejected") {
@@ -3213,7 +2942,7 @@ function noAuthConnected(
   };
 }
 
-function tokenConnected(
+export function committedBuiltinTokenConnection(
   connectorRow: StoredConnectorRow,
   existing: StoredConnectorRow | null,
   cleanup: ReturnType<typeof tokenCleanupResult>,

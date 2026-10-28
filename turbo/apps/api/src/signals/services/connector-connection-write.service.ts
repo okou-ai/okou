@@ -38,12 +38,6 @@ export interface StoredConnectorConnectionRow {
   readonly updatedAt: Date;
 }
 
-export interface ConnectorConnectionMetadataQuery {
-  returning(
-    fields: ReturnType<typeof connectorConnectionSelection>,
-  ): PromiseLike<StoredConnectorConnectionRow[]>;
-}
-
 interface ExistingConnectorConnectionRow extends StoredConnectorConnectionRow {
   readonly stateRevision: string;
   readonly connectorSlug: string | null;
