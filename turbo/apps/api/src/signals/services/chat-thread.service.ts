@@ -1065,25 +1065,7 @@ export const createChatThread$ = command(
           preparedConnectorSelections.selections,
         );
         for (const statement of initialWrites.connectors) {
-          if (args.connectorSelectionPolicy === "required") {
-            await tx.execute(statement);
-          } else {
-            // #42681: retain legacy isolation until supported Web/iOS clients
-            // preserve the draft on a rejected creation.
-            const inserted = await settle(
-              // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0096; new non-billing transactions are prohibited.
-              tx.transaction(async (sp) => {
-                await sp.execute(statement);
-                signal.throwIfAborted();
-              }),
-            );
-            if (
-              !inserted.ok &&
-              selectionParentMissing(inserted.error) !== "account"
-            ) {
-              throw inserted.error;
-            }
-          }
+          await tx.execute(statement);
           signal.throwIfAborted();
         }
         const remoteValues = initialWrites.remote;

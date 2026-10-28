@@ -27,11 +27,6 @@
       "owner": "createChatThread$"
     },
     {
-      "id": "TX-0096",
-      "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
-      "owner": "createChatThread$/thread"
-    },
-    {
       "id": "TX-0097",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "deleteChatThreadContent$"
