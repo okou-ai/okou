@@ -40,11 +40,10 @@ import { env } from "../../lib/env";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { OFFICIAL_SLACK_APP_NAME } from "../../lib/slack-official-app";
 import type { RouteEntry } from "../route-entry";
-import { bestEffort, settle } from "../utils";
+import { settle } from "../utils";
 import {
   removeSlackWorkspaceInstallation$,
   slackAccountConnection,
-  slackWorkspaceIdentityEnabled,
 } from "../services/slack-workspace-identity.service";
 
 const slackStatusInput$ = computed((get) => {
@@ -63,8 +62,6 @@ const slackAccountOwner$ = computed((get) => {
   return { orgId: auth.orgId, userId: auth.userId };
 });
 const accountConnection$ = slackAccountConnection(slackAccountOwner$);
-const accountConnectionEnabled$ =
-  slackWorkspaceIdentityEnabled(slackAccountOwner$);
 
 const getSlackStatusInner$ = computed(async (get) => {
   const status = await get(slackStatus$);
@@ -103,54 +100,6 @@ function contractErrorResponse(
   return {
     status,
     body: { error: { message, code } },
-  };
-}
-
-function buildConnectUrl(workspaceId: string, slackUserId: string): string {
-  const params = new URLSearchParams({ w: workspaceId, u: slackUserId });
-  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.slack}?${params.toString()}`;
-}
-
-function buildDisconnectedAppHomeView(args: {
-  readonly workspaceId: string;
-  readonly slackUserId: string;
-}): SlackView {
-  const { assistantName } = BRAND_PRESENTATION;
-  return {
-    type: "home",
-    blocks: [
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `Welcome to ${assistantName}! :wave:`,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "Connect your AI agents to Slack and interact with them through messages.",
-        },
-      },
-      { type: "divider" },
-      {
-        type: "section",
-        text: { type: "mrkdwn", text: ":x: *Account not connected*" },
-      },
-      {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: { type: "plain_text", text: "Connect" },
-            url: buildConnectUrl(args.workspaceId, args.slackUserId),
-            action_id: "home_login_prompt",
-            style: "primary",
-          },
-        ],
-      },
-    ],
   };
 }
 
@@ -303,105 +252,31 @@ const disconnectSlackIntegration$ = command(
   async (
     { get, set },
     args: {
-      readonly orgId: string;
       readonly userId: string;
     },
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    if (await get(accountConnectionEnabled$)) {
-      signal.throwIfAborted();
-      const account = await get(accountConnection$);
-      signal.throwIfAborted();
-      if (!account) {
-        return contractErrorResponse(
-          404,
-          "No Slack connection found",
-          "NOT_FOUND",
-        );
-      }
-      await db
-        .delete(slackOrgConnections)
-        .where(
-          and(
-            eq(slackOrgConnections.id, account.connection.id),
-            eq(slackOrgConnections.userId, args.userId),
-          ),
-        );
-      signal.throwIfAborted();
-      await publishUserSignal([args.userId], "slack:changed");
-      signal.throwIfAborted();
-      return { status: 200 as const, body: { ok: true } };
-    }
-    const [installation] = await db
-      .select()
-      .from(slackOrgInstallations)
-      .where(eq(slackOrgInstallations.orgId, args.orgId))
-      .limit(1);
+    const account = await get(accountConnection$);
     signal.throwIfAborted();
-
-    if (!installation) {
+    if (!account) {
       return contractErrorResponse(
         404,
         "No Slack connection found",
         "NOT_FOUND",
       );
     }
-
-    const [connection] = await db
-      .select({
-        id: slackOrgConnections.id,
-        slackUserId: slackOrgConnections.slackUserId,
-      })
-      .from(slackOrgConnections)
-      .where(
-        and(
-          eq(slackOrgConnections.userId, args.userId),
-          eq(
-            slackOrgConnections.slackWorkspaceId,
-            installation.slackWorkspaceId,
-          ),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!connection) {
-      return contractErrorResponse(
-        404,
-        "No Slack connection found",
-        "NOT_FOUND",
-      );
-    }
-
     await db
       .delete(slackOrgConnections)
-      .where(eq(slackOrgConnections.id, connection.id));
+      .where(
+        and(
+          eq(slackOrgConnections.id, account.connection.id),
+          eq(slackOrgConnections.userId, args.userId),
+        ),
+      );
     signal.throwIfAborted();
-
-    const client = createSlackClient(
-      await get(
-        decryptSlackInstallationToken({
-          orgId: args.orgId,
-          userId: args.userId,
-          encryptedBotToken: installation.encryptedBotToken,
-        }),
-      ),
-    );
-    await bestEffort(
-      client.publishAppHome(
-        connection.slackUserId,
-        buildDisconnectedAppHomeView({
-          workspaceId: installation.slackWorkspaceId,
-          slackUserId: connection.slackUserId,
-        }),
-      ),
-    );
-    signal.throwIfAborted();
-
     await publishUserSignal([args.userId], "slack:changed");
     signal.throwIfAborted();
-
     return { status: 200 as const, body: { ok: true } };
   },
 );
@@ -427,7 +302,7 @@ const deleteSlackIntegration$ = command(
 
     return await set(
       disconnectSlackIntegration$,
-      { orgId: auth.orgId, userId: auth.userId },
+      { userId: auth.userId },
       signal,
     );
   },
