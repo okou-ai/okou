@@ -23,6 +23,7 @@ import {
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -487,12 +488,38 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
   });
 
   it.each([
-    { registration: "cimd", offlineAccessRegistered: false },
-    { registration: "dcr", offlineAccessRegistered: true },
-    { registration: "dcr", offlineAccessRegistered: false },
+    {
+      registration: "cimd",
+      offlineAccessRegistered: false,
+      dcrTokenEndpointAuthMethod: "none",
+    },
+    {
+      registration: "dcr",
+      offlineAccessRegistered: true,
+      dcrTokenEndpointAuthMethod: "client_secret_basic",
+    },
+    {
+      registration: "dcr",
+      offlineAccessRegistered: true,
+      dcrTokenEndpointAuthMethod: "client_secret_post",
+    },
+    {
+      registration: "dcr",
+      offlineAccessRegistered: true,
+      dcrTokenEndpointAuthMethod: "none",
+    },
+    {
+      registration: "dcr",
+      offlineAccessRegistered: false,
+      dcrTokenEndpointAuthMethod: "client_secret_basic",
+    },
   ] as const)(
-    "reauthorizes the pinned $registration account with offline access registered=$offlineAccessRegistered",
-    async ({ registration, offlineAccessRegistered }) => {
+    "reauthorizes the pinned $registration account with $dcrTokenEndpointAuthMethod and offline access registered=$offlineAccessRegistered",
+    async ({
+      registration,
+      offlineAccessRegistered,
+      dcrTokenEndpointAuthMethod,
+    }) => {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
@@ -502,6 +529,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       mockEnv("APP_URL", "https://app.okou.ai");
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
+        dcrTokenEndpointAuthMethod,
         initialExpiresIn: 3600,
         authorizationCodeScopes: ["read", "read", "read admin offline_access"],
         authorizationServerScopes: offlineAccessRegistered
@@ -584,6 +612,34 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       if (!okouToken) {
         throw new Error("Expected the claimed run to include an Okou token");
       }
+      const firewall = createFirewallApi(context);
+      const connectorKey = connector.id.replaceAll("-", "");
+      const firewallName = `custom_connector_${connectorKey}`;
+      const useAccount = async () => {
+        const refreshed = await firewall.requestFirewallAuth(
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          {
+            encryptedSecrets: firewall.encryptedSecretsBody({}),
+            authHeaders: {
+              Authorization: `Bearer ${secretTemplate(`CUSTOM_${connectorKey}_S___OAUTH_ACCESS_TOKEN`)}`,
+            },
+            matchedFirewall: {
+              name: firewallName,
+              apiId: `${firewallName}:0`,
+              customConnectorId: connector.id,
+              sourceId: pinnedAccount.id,
+              routingVariables: {},
+            },
+            forceRefresh: true,
+          },
+          [200],
+        );
+        expect(refreshed.body).toMatchObject({
+          headers: {
+            Authorization: "Bearer automatic-refreshed-access-token",
+          },
+        });
+      };
       const registrationCount = provider.registrationBodies.length;
       provider.advertiseAuthorizationServers([
         provider.issuer,
@@ -659,10 +715,15 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
           return account.id === siblingAccount.id;
         })?.oauthScopes,
       ).toStrictEqual(["read"]);
+      await useAccount();
       const replacementProvider = mockAutomaticMcpOAuthProvider(context, {
         registration,
+        dcrTokenEndpointAuthMethod,
         endpoint: provider.endpoint,
         issuer: "https://alternate-issuer.example.test",
+        dcrClientId: "replacement-dcr-client",
+        dcrClientSecret: "replacement-dcr-secret",
+        initialExpiresIn: 3600,
       });
       const changedAuthority = await accept(
         client().reauthorizeOAuth({
@@ -672,22 +733,69 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
             scopes: ["owner"],
           },
         }),
-        [200],
+        [registration === "dcr" ? 409 : 200],
       );
-      expect(new URL(changedAuthority.body.authorizationUrl).origin).toBe(
+      let changedAuthorizationUrl: string;
+      if (changedAuthority.status === 409) {
+        expect(changedAuthority.body).toMatchObject({
+          error: {
+            code: "MCP_OAUTH_BINDING_CHANGED",
+            message: expect.stringContaining("Reconnect"),
+          },
+        });
+        expect(replacementProvider.tokenBodies).toHaveLength(0);
+        expect(replacementProvider.tokenAuthorizationHeaders).toHaveLength(0);
+        changedAuthorizationUrl = await connectors.startCustomConnectorOAuth2(
+          actor,
+          connector.id,
+          undefined,
+          { intent: "reconnect", connectionId: pinnedAccount.id },
+        );
+        expect(replacementProvider.registrationBodies).toHaveLength(1);
+        expect(
+          new URL(changedAuthorizationUrl).searchParams.get("client_id"),
+        ).toBe("replacement-dcr-client");
+      } else {
+        changedAuthorizationUrl = changedAuthority.body.authorizationUrl;
+      }
+      expect(new URL(changedAuthorizationUrl).origin).toBe(
         replacementProvider.issuer,
       );
       const changedCallback =
         await connectors.completeCustomConnectorOAuth2Callback({
           code: "changed-authority-code",
-          state: stateFromAuthorizationUrl(
-            changedAuthority.body.authorizationUrl,
-          ),
+          state: stateFromAuthorizationUrl(changedAuthorizationUrl),
           iss: replacementProvider.issuer,
         });
       expect(changedCallback.headers.get("location")).toBe(
         "https://app.okou.ai/connectors/custom/callback/success",
       );
+      await useAccount();
+      expect(replacementProvider.tokenBodies.at(-1)?.get("grant_type")).toBe(
+        "refresh_token",
+      );
+      expect(replacementProvider.tokenAuthorizationHeaders).not.toContain(
+        `Basic ${Buffer.from("automatic-dcr-client:automatic-dcr-secret").toString("base64")}`,
+      );
+      expect(
+        replacementProvider.tokenBodies.map((body) => {
+          return body.get("client_secret");
+        }),
+      ).not.toContain("automatic-dcr-secret");
+      const reconnectedAccounts = await connectors.listCustomConnectorAccounts(
+        actor,
+        connector.id,
+      );
+      expect(
+        reconnectedAccounts.find((account) => {
+          return account.id === pinnedAccount.id;
+        }),
+      ).toMatchObject({ connectionStatus: "connected", reconnectReason: null });
+      expect(
+        reconnectedAccounts.find((account) => {
+          return account.id === siblingAccount.id;
+        })?.oauthScopes,
+      ).toStrictEqual(["read"]);
       await runs.requestCancelRun(actor, run.runId, [200]);
     },
   );

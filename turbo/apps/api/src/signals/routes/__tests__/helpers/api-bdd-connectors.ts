@@ -389,6 +389,8 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly issuerParameterSupported?: boolean;
   readonly dcrTokenEndpointAuthMethod?:
     "none" | "client_secret_basic" | "client_secret_post";
+  readonly dcrClientId?: string;
+  readonly dcrClientSecret?: string;
   readonly synchronizeAuthorizationServerDiscovery?: boolean;
   readonly dcrFailureStatus?: number;
   readonly dcrFailureDescription?: string;
@@ -459,7 +461,7 @@ async function automaticOAuthIdToken(
     selectedIdentity,
     issuer,
     options.registration === "dcr"
-      ? "automatic-dcr-client"
+      ? (options.dcrClientId ?? "automatic-dcr-client")
       : "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
   );
 }
@@ -531,6 +533,8 @@ export function mockAutomaticMcpOAuthProvider(
   };
   const tokenEndpointAuthMethod =
     options.dcrTokenEndpointAuthMethod ?? "client_secret_basic";
+  const dcrClientId = options.dcrClientId ?? "automatic-dcr-client";
+  const dcrClientSecret = options.dcrClientSecret ?? "automatic-dcr-secret";
   const authorizationServerMetadata = {
     issuer: options.metadataIssuer ?? issuer,
     authorization_endpoint: options.authorizationEndpoint ?? authorizationUrl,
@@ -734,10 +738,10 @@ export function mockAutomaticMcpOAuthProvider(
       }
       return HttpResponse.json({
         ...body,
-        client_id: "automatic-dcr-client",
+        client_id: dcrClientId,
         ...(tokenEndpointAuthMethod === "none"
           ? {}
-          : { client_secret: "automatic-dcr-secret" }),
+          : { client_secret: dcrClientSecret }),
         ...(options.dcrClientIdIssuedAt === null
           ? {}
           : {
@@ -753,7 +757,23 @@ export function mockAutomaticMcpOAuthProvider(
     http.post(tokenUrl, async ({ request }) => {
       const body = new URLSearchParams(await request.text());
       tokenBodies.push(body);
-      tokenAuthorizationHeaders.push(request.headers.get("authorization"));
+      const authorization = request.headers.get("authorization");
+      tokenAuthorizationHeaders.push(authorization);
+      if (options.registration === "dcr") {
+        const validClient =
+          tokenEndpointAuthMethod === "client_secret_basic"
+            ? authorization ===
+              `Basic ${Buffer.from(`${dcrClientId}:${dcrClientSecret}`).toString("base64")}`
+            : body.get("client_id") === dcrClientId &&
+              (tokenEndpointAuthMethod === "none" ||
+                body.get("client_secret") === dcrClientSecret);
+        if (!validClient) {
+          return HttpResponse.json(
+            { error: "invalid_client" },
+            { status: 401 },
+          );
+        }
+      }
       const refresh = body.get("grant_type") === "refresh_token";
       if (refresh) {
         refreshAttempts += 1;

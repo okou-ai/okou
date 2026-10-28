@@ -867,6 +867,16 @@ export async function prepareMcpAutomaticOAuthReauthorization(
     args.endpoint,
     signal,
   );
+  // Fresh consent cannot transfer a DCR client's credentials to another issuer.
+  if (
+    args.binding.registrationMethod === "dcr" &&
+    args.binding.issuer !== authority.issuer
+  ) {
+    throw new McpAutomaticOAuthError(
+      { kind: "binding-drift", reason: "binding-drift" },
+      "MCP OAuth dynamic registration belongs to a different issuer",
+    );
+  }
   const clientInformation = await boundClientInformation({
     ...args,
     context: boundClientContext(args.binding),
@@ -1069,6 +1079,7 @@ async function boundClientInformation(args: {
   );
   if (
     !registration ||
+    registration.issuer !== args.context.issuer ||
     (registration.expiresAt !== null && registration.expiresAt <= nowDate())
   ) {
     throw new McpAutomaticOAuthError(
