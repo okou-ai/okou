@@ -1,5 +1,8 @@
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
+
+use tokio_util::task::AbortOnDrop;
 
 use super::super::{ActiveInputProducer, DelayedActiveInput, SubmitPlan, run_submit_with_home};
 use super::support::{submit_args_for_test, submit_queue_entry, write_queue_job_file};
@@ -236,6 +239,80 @@ async fn active_inputs_are_written_after_job_publication_and_cleaned_on_completi
         !local_queue::run_inputs_dir(&group_dir, request.job_id).exists(),
         "completed submit cleanup should remove local active-input files"
     );
+}
+
+async fn producer_after_first_input(root: &Path) -> (SubmitPlan, ActiveInputProducer, AbortOnDrop) {
+    let mut args = submit_args_for_test();
+    args.timeout = 120;
+    args.active_inputs = vec![
+        "after=1ms,text=first".into(),
+        "after=60s,text=second".into(),
+    ];
+    let mut plan = SubmitPlan::from_args(args, HomePaths::with_root(root.to_path_buf())).unwrap();
+    plan.write_job_file().unwrap();
+    let producer = plan.start_active_input_producer().unwrap();
+    // Keep independent failure cleanup without extending producer ownership.
+    let retirement = AbortOnDrop::new(producer.task.abort_handle());
+    let queue = local_queue::LocalQueue::new(plan.queue.group_dir.clone());
+    tokio::time::timeout(TEST_QUEUE_WATCH_TIMEOUT, async {
+        loop {
+            if let Some(input) = queue.read_active_input_entry_sync(plan.queue.job_id, 1) {
+                assert_eq!(input.text, "first");
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("producer did not publish its first real input");
+    (plan, producer, retirement)
+}
+
+fn assert_first_input_and_job_retained(plan: &SubmitPlan) {
+    let queue = local_queue::LocalQueue::new(plan.queue.group_dir.clone());
+    assert_eq!(
+        queue
+            .read_active_input_entry_sync(plan.queue.job_id, 1)
+            .unwrap()
+            .text,
+        "first"
+    );
+    assert!(
+        !local_queue::active_input_path(&plan.queue.group_dir, plan.queue.job_id, 2).exists(),
+        "retired producer published a later input"
+    );
+    let job: JobRequest = serde_json::from_slice(&std::fs::read(&plan.queue.job).unwrap()).unwrap();
+    assert_eq!(job.job_id, plan.queue.job_id);
+}
+
+#[tokio::test]
+async fn dropping_active_input_producer_retires_delayed_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plan, producer, retirement) = producer_after_first_input(dir.path()).await;
+    drop(producer);
+
+    // Observe task retirement before checking that it can publish no more
+    // inputs; a quiet interval alone cannot establish that guarantee.
+    tokio::time::timeout(TEST_QUEUE_WATCH_TIMEOUT, async {
+        while !retirement.is_finished() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("dropped submit producer kept its delayed worker alive");
+    assert_first_input_and_job_retained(&plan);
+}
+
+#[tokio::test]
+async fn stopping_active_input_producer_joins_without_publishing_later_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plan, producer, retirement) = producer_after_first_input(dir.path()).await;
+    tokio::time::timeout(TEST_QUEUE_WATCH_TIMEOUT, producer.stop())
+        .await
+        .expect("graceful stop did not join its input producer");
+
+    assert!(retirement.is_finished());
+    assert_first_input_and_job_retained(&plan);
 }
 
 #[tokio::test]
