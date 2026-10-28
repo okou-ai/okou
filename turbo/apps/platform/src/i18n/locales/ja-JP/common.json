@@ -3988,6 +3988,15 @@
     "title": "ドキュメント",
     "useNamed": "{{title}} を使用"
   },
+  "featureGuide": {
+    "close": "新機能ガイドを閉じる",
+    "dismiss": "わかりました",
+    "label": "新機能",
+    "next": "次へ",
+    "preview": "プレビュー",
+    "previous": "前へ",
+    "tryPrompt": "このタスクを試す"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",

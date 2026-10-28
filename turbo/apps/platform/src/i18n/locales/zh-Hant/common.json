@@ -3988,6 +3988,15 @@
     "title": "文件",
     "useNamed": "使用 {{title}}"
   },
+  "featureGuide": {
+    "close": "關閉新功能指南",
+    "dismiss": "知道了",
+    "label": "新功能",
+    "next": "下一步",
+    "preview": "預覽",
+    "previous": "上一步",
+    "tryPrompt": "試試這個任務"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
