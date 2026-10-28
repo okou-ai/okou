@@ -165,20 +165,14 @@ function resourceGutterWidth(viewport: HTMLElement, column: HTMLElement) {
   );
 }
 
-function createChatResourcePanelSignals() {
-  const gutterWidth$ = state(0);
-  const anchor = createResourceElementRef();
-  const popup = createResourceElementRef();
-  const boundary$ = state<HTMLElement | null>(null);
-  const collisionBoundary$ = state<HTMLElement | null>(null);
-  const messageColumn$ = state<HTMLElement | null>(null);
+function createResourcePanelChoice(
+  wide$: Computed<boolean>,
+  demand: ReturnType<typeof createResourceDemand>,
+) {
   // The user's choice in this chat. A close always holds; an open made with
   // room beside the transcript steps aside while that room is gone.
   const choice$ = state<ResourcePanelChoice | null>(null);
-  const demand = createResourceDemand();
-  const wide$ = computed((get) => {
-    return get(gutterWidth$) > RESOURCE_PANEL_MIN_GUTTER;
-  });
+  const instantOpening$ = state(false);
   const chosen$ = computed((get) => {
     const choice = get(choice$);
     return choice ? choice.open && (choice.narrow || get(wide$)) : null;
@@ -191,6 +185,7 @@ function createChatResourcePanelSignals() {
     );
   });
   const setOpen$ = command(({ get, set }, open: boolean) => {
+    set(instantOpening$, false);
     set(demand.recordPress$, open);
     set(choice$, { open, narrow: !get(wide$) });
   });
@@ -200,13 +195,50 @@ function createChatResourcePanelSignals() {
     async ({ get, set }, open: boolean, signal: AbortSignal) => {
       set(demand.recordPress$, open);
       if (!get(wide$)) {
+        set(instantOpening$, open);
         set(choice$, { open, narrow: true });
         return;
       }
       await set(saveChatResourcesPreference$, open, signal);
+      set(instantOpening$, open);
       // An explicit open also shows a chat that has nothing to list yet.
       set(choice$, open ? { open, narrow: false } : null);
     },
+  );
+  return {
+    requested$,
+    chosen$,
+    setOpen$,
+    press$,
+    instantOpening$: computed((get) => {
+      return get(instantOpening$);
+    }),
+    finishOpening$: command(({ set }) => {
+      // Base UI calls this after removing its starting style. A later automatic
+      // opening, including one caused by a wider gutter, keeps its animation.
+      set(instantOpening$, false);
+    }),
+    reset$: command(({ set }) => {
+      set(choice$, null);
+      set(instantOpening$, false);
+    }),
+  };
+}
+
+function createChatResourcePanelSignals() {
+  const gutterWidth$ = state(0);
+  const anchor = createResourceElementRef();
+  const popup = createResourceElementRef();
+  const boundary$ = state<HTMLElement | null>(null);
+  const collisionBoundary$ = state<HTMLElement | null>(null);
+  const messageColumn$ = state<HTMLElement | null>(null);
+  const demand = createResourceDemand();
+  const wide$ = computed((get) => {
+    return get(gutterWidth$) > RESOURCE_PANEL_MIN_GUTTER;
+  });
+  const { reset$: resetChoice$, ...choice } = createResourcePanelChoice(
+    wide$,
+    demand,
   );
   const measure$ = command(({ get, set }) => {
     const viewport = get(boundary$);
@@ -233,7 +265,7 @@ function createChatResourcePanelSignals() {
       // Use the whole pane so the composer does not shorten the resource list.
       set(collisionBoundary$, element);
       set(messageColumn$, column);
-      set(choice$, null);
+      set(resetChoice$);
       set(demand.reset$);
       const measure = () => {
         set(measure$);
@@ -249,7 +281,7 @@ function createChatResourcePanelSignals() {
           set(boundary$, null);
           set(collisionBoundary$, null);
           set(messageColumn$, null);
-          set(choice$, null);
+          set(resetChoice$);
           set(demand.reset$);
         },
         { once: true },
@@ -267,16 +299,13 @@ function createChatResourcePanelSignals() {
     ) {
       return;
     }
-    set(setOpen$, false);
+    set(choice.setOpen$, false);
   });
 
   return {
-    requested$,
+    ...choice,
     wanted$: demand.wanted$,
-    chosen$,
     wide$,
-    setOpen$,
-    press$,
     measure$,
     layoutOnRef$,
     anchorOnRef$: anchor.onRef$,

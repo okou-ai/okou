@@ -76,6 +76,8 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
+  const instantOpening = useGet(resources.instantOpening$);
+  const finishOpening = useSet(resources.finishOpening$);
   const [preference, press] = useLoadableSet(resources.press$);
   const requested = useLastResolved(resources.requested$) ?? false;
   const wanted = useLastResolved(resources.wanted$) ?? false;
@@ -111,6 +113,7 @@ function ChatResourcesButtonInner({
     <Popover
       open={visible}
       modal={false}
+      onOpenChangeComplete={finishOpening}
       onOpenChange={(nextOpen, details) => {
         if (details.reason === "trigger-press") {
           // The preference outlives the page.
@@ -161,7 +164,13 @@ function ChatResourcesButtonInner({
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
-        className="flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0"
+        className={cn(
+          "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
+          // A press needs no transparent starting frame; positioning still owns
+          // hiding the popup until its coordinates are ready.
+          instantOpening &&
+            "data-open:transition-none data-starting-style:opacity-100 data-starting-style:[transform:none]",
+        )}
       >
         {visible ? (
           <ChatResourcesBody
