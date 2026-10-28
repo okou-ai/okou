@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse, http } from "msw";
 import {
   afterAll,
@@ -21,6 +26,7 @@ vi.mock("node:child_process", () => {
 
 const THREAD_ID = "c0000000-0000-4000-a000-000000000010";
 const CDP_URL = "wss://connect.browser-use.com/?token=secret-cdp-token";
+const CONNECTION_ID = "10000000-0000-4000-a000-000000000001";
 
 function browser(status: "active" | "suspended" = "active") {
   return {
@@ -43,6 +49,7 @@ function browser(status: "active" | "suspended" = "active") {
 }
 
 describe("okou browser command", () => {
+  let directory = "";
   const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   const processExit = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -50,9 +57,11 @@ describe("okou browser command", () => {
   }) as never);
 
   beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "okou-browser-mail-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
+    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     spawnSyncMock.mockReturnValue({ status: 0 });
   });
 
@@ -62,6 +71,7 @@ describe("okou browser command", () => {
     processExit.mockClear();
     spawnSyncMock.mockReset();
     vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
   });
 
   afterAll(() => {
@@ -211,7 +221,102 @@ describe("okou browser command", () => {
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("2026-07-24T10:10:00.000Z");
     expect(output).not.toContain(CDP_URL);
+    expect(output).not.toContain("Connected-email login:");
   });
+
+  it.each([
+    { slug: "gmail", admitted: true, connected: true, json: false },
+    { slug: "microsoft-365", admitted: true, connected: true, json: true },
+    { slug: "outlook-mail", admitted: true, connected: true, json: false },
+    { slug: "gmail", admitted: false, connected: true, json: false },
+    { slug: "gmail", admitted: true, connected: false, json: true },
+    { slug: "github", admitted: true, connected: true, json: false },
+  ])(
+    "gates email login guidance for $slug (admitted=$admitted, connected=$connected, json=$json)",
+    async ({ slug, admitted, connected, json }) => {
+      const contextPath = join(directory, "context.json");
+      writeFileSync(
+        contextPath,
+        JSON.stringify({
+          schemaVersion: 1,
+          targets: [
+            {
+              kind: "builtin",
+              connectorSlug: slug,
+              connectionId: admitted ? CONNECTION_ID : null,
+            },
+          ],
+        }),
+      );
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
+      server.use(
+        http.post("http://localhost:3000/api/browsers/use", () => {
+          return HttpResponse.json({ browser: browser(), cdpUrl: CDP_URL });
+        }),
+        http.post(
+          "http://localhost:3000/api/connector-accounts/inspect",
+          async ({ request }) => {
+            const body = connectorAccountsContract.inspect.body.parse(
+              await request.json(),
+            );
+            expect(body.selections).toStrictEqual([
+              {
+                target: { kind: "builtin", connectorSlug: slug },
+                connectionId: CONNECTION_ID,
+              },
+            ]);
+            return HttpResponse.json({
+              results: body.selections.map((selection) => {
+                return {
+                  ...selection,
+                  kind: "available",
+                  authMethod: "oauth",
+                  displayName: null,
+                  externalId: "mail-account",
+                  externalUsername: null,
+                  externalEmail: "work@example.test",
+                  connectionStatus: connected
+                    ? "connected"
+                    : "reconnect-required",
+                  reconnectReason: connected
+                    ? null
+                    : "provider_session_expired",
+                  missingRequiredFields: [],
+                  configuredFieldKeys: [],
+                };
+              }),
+            });
+          },
+        ),
+      );
+
+      await browserCommand.parseAsync([
+        "node",
+        "cli",
+        "use",
+        "--agent-session",
+        "booking-browser",
+        ...(json ? ["--json"] : []),
+      ]);
+
+      const output = consoleLog.mock.calls.flat().join("\n");
+      expect(output).toContain(`https://app.okou.ai/browsers/${THREAD_ID}`);
+      if (admitted && connected && slug !== "github") {
+        const guidance = json
+          ? (JSON.parse(output) as { loginGuidance: string }).loginGuidance
+          : output;
+        expect(guidance).toContain("Connected-email login:");
+        expect(guidance).toContain(`${slug} ("work@example.test")`);
+        expect(guidance).toContain("Ask whether the user wants to sign in");
+        expect(guidance).toContain(
+          "agent-browser --session booking-browser eval --stdin",
+        );
+      } else {
+        expect(output).not.toContain("Connected-email login:");
+        expect(output).not.toContain("loginGuidance");
+      }
+    },
+  );
 
   it("extends the lease by a fixed window and reports the new reclaim time", async () => {
     let leaseRequests = 0;

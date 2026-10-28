@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse, http, ws } from "msw";
 import {
   afterAll,
@@ -273,6 +278,7 @@ function inputCommand() {
 }
 
 describe("okou browser user-action commands", () => {
+  let directory = "";
   const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   const processExit = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -280,9 +286,11 @@ describe("okou browser user-action commands", () => {
   }) as never);
 
   beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "okou-browser-input-mail-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-run-token");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
+    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     inputCommand().setOptionValue("field", []);
     inputCommand().setOptionValue("title", undefined);
     inputCommand().setOptionValue("reason", undefined);
@@ -296,6 +304,7 @@ describe("okou browser user-action commands", () => {
     processExit.mockClear();
     spawnSyncMock.mockReset();
     vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
   });
 
   afterAll(() => {
@@ -303,6 +312,83 @@ describe("okou browser user-action commands", () => {
     consoleError.mockRestore();
     processExit.mockRestore();
   });
+
+  it.each(["password", "one_time_code", "number"])(
+    "offers connected-email login only for login input (%s)",
+    async (fieldKind) => {
+      const connectionId = "10000000-0000-4000-a000-000000000002";
+      const contextPath = join(directory, "context.json");
+      writeFileSync(
+        contextPath,
+        JSON.stringify({
+          schemaVersion: 1,
+          targets: [{ kind: "builtin", connectorSlug: "gmail", connectionId }],
+        }),
+      );
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
+      server.use(
+        http.post(
+          "http://localhost:3000/api/connector-accounts/inspect",
+          async ({ request }) => {
+            const body = connectorAccountsContract.inspect.body.parse(
+              await request.json(),
+            );
+            return HttpResponse.json({
+              results: body.selections.map((selection) => {
+                return {
+                  ...selection,
+                  kind: "available",
+                  authMethod: "oauth",
+                  displayName: null,
+                  externalId: "mail-account",
+                  externalUsername: null,
+                  externalEmail: "work@example.test",
+                  connectionStatus: "connected",
+                  reconnectReason: null,
+                  missingRequiredFields: [],
+                  configuredFieldKeys: [],
+                };
+              }),
+            });
+          },
+        ),
+      );
+      installCdp();
+      installCreateRoute(() => {});
+
+      await browserCommand.parseAsync([
+        "node",
+        "okou",
+        "input-request",
+        "--title",
+        "Continue the website task",
+        "--reason",
+        "The website requires this input to continue.",
+        "--field",
+        JSON.stringify({
+          key: "value",
+          label: "Value",
+          fieldKind,
+          required: true,
+          target: "#input",
+        }),
+        "--callback-prompt",
+        "Continue after native input",
+        "--json",
+      ]);
+
+      const output = consoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(output)).toMatchObject({ actionUrl: ACTION_URL });
+      if (fieldKind === "number") {
+        expect(output).not.toContain("loginGuidance");
+      } else {
+        expect(JSON.parse(output)).toMatchObject({
+          loginGuidance: expect.stringContaining('gmail ("work@example.test")'),
+        });
+        expect(output).toContain("stop using the Browser in this turn");
+      }
+    },
+  );
 
   it("captures a unique selector and sends only exact target identities", async () => {
     const cdpCommands = installCdp();
