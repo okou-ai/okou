@@ -5503,6 +5503,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.providerServerErrorTitle;
     });
   },
+  provider_bad_request: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  },
   response_connection_lost: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.connectionLostTitle;
@@ -5631,6 +5636,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   provider_queue_timeout: FAILURE_DESCRIPTIONS.capacity,
   codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
+  provider_bad_request: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.transient;
+    });
+  },
   response_connection_lost: FAILURE_DESCRIPTIONS.capacity,
   safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
   reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
@@ -5672,6 +5682,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
+    reason === "provider_bad_request" ||
     reason === "session_history_limit"
   ) {
     return AlertCircle;
@@ -5683,6 +5694,7 @@ function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
   return (
     reason !== "insufficient_credits" &&
     reason !== "input_too_large" &&
+    reason !== "provider_bad_request" &&
     reason !== "provider_image_too_large"
   );
 }

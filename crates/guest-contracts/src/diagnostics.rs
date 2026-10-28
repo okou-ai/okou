@@ -761,6 +761,8 @@ pub enum FailureReason {
     ProviderQueueTimeout,
     /// The provider returned a server error.
     ProviderServerError,
+    /// Codex returned an opaque HTTP 400 with no more specific cause.
+    ProviderBadRequest,
     /// The response connection was lost.
     ResponseConnectionLost,
     /// The provider refused the request under a safety policy.
@@ -798,6 +800,7 @@ impl FailureReason {
             Self::ProviderStreamTimeout => "provider_stream_timeout",
             Self::ProviderQueueTimeout => "provider_queue_timeout",
             Self::ProviderServerError => "provider_server_error",
+            Self::ProviderBadRequest => "provider_bad_request",
             Self::ResponseConnectionLost => "response_connection_lost",
             Self::SafetyPolicyRefusal => "safety_policy_refusal",
             Self::ReconnectRequired => "reconnect_required",
@@ -830,6 +833,7 @@ impl From<FailureReason>
             FailureReason::ProviderStreamTimeout => Self::ProviderStreamTimeout,
             FailureReason::ProviderQueueTimeout => Self::ProviderQueueTimeout,
             FailureReason::ProviderServerError => Self::ProviderServerError,
+            FailureReason::ProviderBadRequest => Self::ProviderBadRequest,
             FailureReason::ResponseConnectionLost => Self::ResponseConnectionLost,
             FailureReason::SafetyPolicyRefusal => Self::SafetyPolicyRefusal,
             FailureReason::ReconnectRequired => Self::ReconnectRequired,
@@ -1572,6 +1576,7 @@ mod tests {
                 "provider_stream_timeout",
             ),
             (FailureReason::ProviderServerError, "provider_server_error"),
+            (FailureReason::ProviderBadRequest, "provider_bad_request"),
             (
                 FailureReason::ProviderQueueTimeout,
                 "provider_queue_timeout",
