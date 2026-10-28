@@ -2,6 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -495,7 +496,7 @@ test("Open a stopped browser card and offer a new session", async () => {
   expect(buttonByName("Start browser", sidebar)).toBeEnabled();
 });
 
-test("Take over the cloud browser from a working run and hand it back through the composer", async () => {
+async function openWorkingRunWithBrowser(): Promise<HTMLElement> {
   mockWideScreen();
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -535,10 +536,15 @@ test("Take over the cloud browser from a working run and hand it back through th
   click(buttonByName("Open browser"));
   const sidebar = liveBrowserSidebar();
   await within(sidebar).findByDisplayValue("https://example.com");
-
   await expect(
     within(sidebar).findByText(/is working$/u),
   ).resolves.toBeInTheDocument();
+  return sidebar;
+}
+
+test("Take over the cloud browser from a working run and hand it back through the composer", async () => {
+  const sidebar = await openWorkingRunWithBrowser();
+
   click(buttonByName("Take over", sidebar));
   await expect(
     within(sidebar).findByText("You're in control"),
@@ -551,4 +557,22 @@ test("Take over the cloud browser from a working run and hand it back through th
     );
   });
   expect(within(sidebar).queryByText("You're in control")).toBeNull();
+});
+
+test("A take over that cannot stop the run does not hand the browser to the member", async () => {
+  const sidebar = await openWorkingRunWithBrowser();
+  let stopRequests = 0;
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    stopRequests += 1;
+    return respond(400, {
+      error: { code: "BAD_REQUEST", message: "Run could not be stopped" },
+    });
+  });
+
+  click(buttonByName("Take over", sidebar));
+
+  await waitFor(() => {
+    expect(stopRequests).toBe(1);
+    expect(within(sidebar).queryByText("You're in control")).toBeNull();
+  });
 });

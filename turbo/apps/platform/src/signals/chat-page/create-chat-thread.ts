@@ -119,6 +119,7 @@ import {
 import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
 import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
 import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
+import { createBrowserPresenceSignals } from "./browser-presence.ts";
 import {
   messageDocumentToPrompt,
   textToMessageDocument,
@@ -3516,8 +3517,6 @@ function createThinkingIndicatorSignals() {
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
-    latestRunId$: events.latestRunId$,
-    liveRunId$: events.liveRunId$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
@@ -3915,6 +3914,11 @@ export function createChatPanelSignals(
       relations,
     ),
     relations,
+    browserPresence: createBrowserPresenceSignals({
+      latestRunId$: messages.latestRunId$,
+      liveRunId$: messages.liveRunId$,
+      composer,
+    }),
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

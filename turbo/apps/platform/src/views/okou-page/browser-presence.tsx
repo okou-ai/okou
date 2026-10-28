@@ -8,26 +8,6 @@ import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signal
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-/**
- * Who the cloud browser belongs to right now. Taking over stops the live Run,
- * so the member keeps control until a newer Run starts; handing back drafts
- * the message that starts it.
- */
-function browserController({
-  liveRunId,
-  latestRunId,
-  takeoverRunId,
-}: {
-  readonly liveRunId: string | null;
-  readonly latestRunId: string | null;
-  readonly takeoverRunId: string | null;
-}): "agent" | "member" | null {
-  if (takeoverRunId !== null && takeoverRunId === latestRunId) {
-    return "member";
-  }
-  return liveRunId === null ? null : "agent";
-}
-
 const PILL_CLASS_NAME =
   "pointer-events-auto absolute bottom-4 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-surface-border bg-card py-1 pr-1 pl-3.5 text-[13px] leading-5 text-foreground shadow-surface";
 
@@ -37,23 +17,11 @@ export function BrowserPresence({
   readonly thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  const liveRunId = useGet(thread.liveRunId$);
-  const latestRunId = useGet(thread.latestRunId$);
-  const browser = thread.browserSessionSignals;
-  const takeoverRunId = useGet(browser.takeoverRunId$);
-  const setTakeoverRunId = useSet(browser.setTakeoverRunId$);
-  const [stopOperation, activatePrimaryAction] = useLoadableSet(
-    thread.composer.submission.activatePrimaryAction$,
-  );
-  const appendComposerText = useSet(thread.composer.editor.selectOrAppendText$);
+  const presence = thread.browserPresence;
+  const controller = useGet(presence.controller$);
+  const [takeOverOperation, takeOver] = useLoadableSet(presence.takeOver$);
+  const handBack = useSet(presence.handBack$);
   const pageSignal = useGet(pageSignal$);
-
-  const controller = browserController({
-    liveRunId,
-    latestRunId,
-    // A stop that failed leaves the Run working, so control stays with it.
-    takeoverRunId: stopOperation.state === "hasError" ? null : takeoverRunId,
-  });
 
   if (controller === "agent") {
     return (
@@ -77,11 +45,10 @@ export function BrowserPresence({
             type="button"
             variant="outline"
             size="xs"
-            disabled={stopOperation.state === "loading"}
+            disabled={takeOverOperation.state === "loading"}
             onClick={() => {
-              setTakeoverRunId(liveRunId);
               detach(
-                activatePrimaryAction("stop", pageSignal),
+                takeOver(pageSignal),
                 Reason.DomCallback,
                 "take over the cloud browser",
               );
@@ -115,12 +82,11 @@ export function BrowserPresence({
           type="button"
           size="xs"
           onClick={() => {
-            appendComposerText(
+            handBack(
               t(($) => {
                 return $.browserSession.presence.handBackMessage;
               }),
             );
-            setTakeoverRunId(null);
           }}
           className="shrink-0 rounded-full text-[13px]"
         >

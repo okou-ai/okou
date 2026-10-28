@@ -50,12 +50,6 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   >;
   readonly viewerWindowSizeSync$: Computed<WindowSizeSync>;
   readonly setViewerWindowSizeSync$: Command<void, [WindowSizeSync]>;
-  /**
-   * The Run the member stopped to take over this browser. Control returns to
-   * the agent as soon as a newer Run starts.
-   */
-  readonly takeoverRunId$: Computed<string | null>;
-  readonly setTakeoverRunId$: Command<void, [string | null]>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -375,20 +369,6 @@ function createBrowserSessionSubscriptionSignals(
   return { subscribe$ };
 }
 
-function createTakeoverSignals(): Pick<
-  BrowserSessionSignals,
-  "takeoverRunId$" | "setTakeoverRunId$"
-> {
-  const internalTakeoverRunId$ = state<string | null>(null);
-  const takeoverRunId$ = computed((get) => {
-    return get(internalTakeoverRunId$);
-  });
-  const setTakeoverRunId$ = command(({ set }, runId: string | null) => {
-    set(internalTakeoverRunId$, runId);
-  });
-  return { takeoverRunId$, setTakeoverRunId$ };
-}
-
 export function createBrowserSessionSignals(
   threadId: string,
 ): BrowserSessionSignals {
@@ -506,7 +486,6 @@ export function createBrowserSessionSignals(
     viewerConnection$,
     viewerWindowSizeSync$,
     setViewerWindowSizeSync$,
-    ...createTakeoverSignals(),
     ...startSignals,
     ...closeSignals,
     reload$,
