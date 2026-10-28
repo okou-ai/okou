@@ -122,6 +122,8 @@ function workspaceFrameClassName(
     beside &&
       "min-w-0 flex-col md:m-2 md:rounded-2xl md:border md:border-border [anchor-name:--workspace-canvas]",
     beside === "chat-list" && "md:ml-0",
+    // The unified chat list supplies this sheet's left edge and corners.
+    beside === "chat-list" && unified && "md:rounded-l-none",
     // Positions the unified divider without a stacking context; fixed
     // surfaces inside still compete in #root.
     !beside && unified && "relative",

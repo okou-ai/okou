@@ -410,6 +410,8 @@ function ChatWorkspace({
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
   const syncImageLayout = useSet(syncActiveImageLayout$);
+  const joinedToChatList =
+    useGet(unifiedChatWorkspace$) && beside === "chat-list";
   return (
     <ChatThreadSidebarShell
       layout={chatLayout}
@@ -425,7 +427,15 @@ function ChatWorkspace({
       <WorkspaceInset
         beside={beside}
         framed={false}
-        className={active ? "md:rounded-l-2xl" : "md:rounded-2xl"}
+        className={
+          joinedToChatList
+            ? active
+              ? "md:rounded-none"
+              : "md:rounded-r-2xl"
+            : active
+              ? "md:rounded-l-2xl"
+              : "md:rounded-2xl"
+        }
       >
         {children}
       </WorkspaceInset>
@@ -446,6 +456,7 @@ function SidebarWorkspaceFrame({
 }) {
   const chatListHidden = useGet(sidebarOff$);
   const activeRoute = useGet(activeRoute$);
+  const unified = useGet(unifiedChatWorkspace$);
   const beside = chatListHidden ? "nav-rail" : "chat-list";
 
   return activeRoute === "chat" ? (
@@ -458,7 +469,7 @@ function SidebarWorkspaceFrame({
       {children}
     </ChatWorkspace>
   ) : (
-    <WorkspaceInset beside={beside}>
+    <WorkspaceInset beside={beside} joined={unified}>
       {header}
       {children}
       {footer}
@@ -527,9 +538,9 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       data-slot="app-shell"
       className={cn(
         "box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0",
-        // The unified workspace's ground carries the rail and the chat list,
-        // not a thin frame, so it sits one stop below the sheet in either
-        // theme rather than at the sidebar fill.
+        // The unified workspace's ground is the whole rail, not a thin frame,
+        // so it sits one stop below the sheet in either theme rather than at
+        // the sidebar fill.
         unified ? "md:bg-workspace-ground" : "md:bg-sidebar",
       )}
       data-gradient-color-themes={
