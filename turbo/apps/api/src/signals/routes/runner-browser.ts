@@ -13,7 +13,10 @@ import {
 } from "../services/browser-owner.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { createRunnerBrowserAllocation } from "../services/browser-owner-profile.service";
-import { createRunnerBrowserAdmission } from "../services/browser-owner-window.service";
+import {
+  createRunnerBrowserAdmission,
+  createRunnerBrowserRetirement,
+} from "../services/browser-owner-window.service";
 import { BrowserUseProviderError } from "../services/browser-use.service";
 import { settle } from "../utils";
 
@@ -43,6 +46,11 @@ const admissionAction$ = computed(async (get) => {
   return input?.action.kind === "admit" ? input.action : null;
 });
 const admission$ = createRunnerBrowserAdmission(owner$, admissionAction$);
+const retirementAction$ = computed(async (get) => {
+  const input = await get(controlInput$);
+  return input?.action.kind === "retire" ? input.action : null;
+});
+const retirement$ = createRunnerBrowserRetirement(owner$, retirementAction$);
 
 const officialRunnerError$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -113,12 +121,15 @@ const control$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (
     body.data.action.kind === "allocate" ||
-    body.data.action.kind === "admit"
+    body.data.action.kind === "admit" ||
+    body.data.action.kind === "retire"
   ) {
     const result = await settle(
       body.data.action.kind === "allocate"
         ? set(allocation$, signal)
-        : set(admission$, signal),
+        : body.data.action.kind === "admit"
+          ? set(admission$, signal)
+          : set(retirement$, signal),
     );
     signal.throwIfAborted();
     if (!result.ok) {

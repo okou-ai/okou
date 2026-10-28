@@ -398,6 +398,9 @@ describe("native owner Browser window admission", () => {
       }
       const primaryWindowId = current.window.primaryWindowId;
       f.provider.native.beforeWindowReply = async () => {
+        // One competing retirement; its own native capture is not another
+        // admission race and must not recursively start more retirements.
+        f.provider.native.beforeWindowReply = undefined;
         accepted(
           await chat.request({
             kind: "retire",

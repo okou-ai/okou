@@ -9,6 +9,7 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserUserActionRoutes } from "../browser-user-actions";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createRunnerBrowserFixtures,
@@ -114,11 +115,16 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
     }
     return { result: { value: true } };
   }
+  installBrowserWindowContentCommands(f.provider.native);
+  const content = f.provider.native.command;
+  if (!content) {
+    throw new Error("Expected external native content commands");
+  }
   f.provider.native.command = (command) => {
     const targetId =
-      command.sessionId?.replace(/^input-/u, "") ?? aPage.targetId;
+      command.sessionId?.replace(/^page-/u, "") ?? aPage.targetId;
     if (command.method === "Target.attachToTarget") {
-      return { sessionId: `input-${String(command.params.targetId)}` };
+      return content(command);
     }
     if (command.method === "Page.getFrameTree") {
       return {
@@ -141,6 +147,9 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
     }
     if (command.method === "Runtime.callFunctionOn") {
       return executeControl(command, targetId);
+    }
+    if (command.method === "Runtime.evaluate") {
+      return content(command);
     }
     return {};
   };
@@ -318,7 +327,9 @@ describe("shared-window native Browser input", () => {
       const replacement = accepted(
         await s.a.request({ kind: "admit", instanceId: s.instance.id }),
       );
-      const page = f.provider.native.created.at(-1);
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === replacement.window?.primaryWindowId;
+      });
       if (!page || !replacement.window) {
         throw new Error("Expected a replacement native window");
       }
@@ -396,10 +407,15 @@ describe("shared-window native Browser input", () => {
       const params = await s.request();
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
+      let hold = true;
       server.use(
         http.get(
           `${PROVIDER_URL}/browsers/${s.instance.providerSessionId}`,
           async () => {
+            if (!hold) {
+              return;
+            }
+            hold = false;
             entered.resolve();
             await release.promise;
             return HttpResponse.json({
@@ -569,7 +585,9 @@ describe("shared-window native Browser input", () => {
       expect(next.id).not.toBe(s.instance.id);
       expect(next.providerProfileId).toBe(s.instance.providerProfileId);
       await admit(s.a, next.id, 0);
-      const page = f.provider.native.created.at(-1);
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === 0;
+      });
       if (!page) {
         throw new Error("Expected the new instance's page");
       }

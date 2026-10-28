@@ -5,8 +5,8 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { browserSessionTabSnapshots } from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
-import { and, eq, exists, inArray, sql } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { and, eq, exists, inArray, sql, type Subquery } from "drizzle-orm";
+import { QueryBuilder, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
@@ -53,18 +53,24 @@ export function sharedBrowserLifetime(
     ),
   );
 }
-export const saveSharedSnapshot$ = command(
+export interface SharedSnapshotCapture {
+  readonly previousValue: string | null;
+  readonly encryptedTabUrls: string;
+  readonly capturedAt: Date;
+}
+
+/** Capture before retirement; the winning SQL claim owns publication. */
+export const captureSharedSnapshot$ = command(
   async (
-    { get, set },
+    { get },
     args: {
       readonly owner: SnapshotOwner;
-      readonly profile: Profile;
-      readonly window: Window;
+      readonly window: Pick<Window, "primaryWindowId">;
       readonly cdpUrl: string;
     },
     signal: AbortSignal,
-  ) => {
-    const { owner, profile, window, cdpUrl } = args;
+  ): Promise<SharedSnapshotCapture | null> => {
+    const { owner, window, cdpUrl } = args;
     const t = browserSessionTabSnapshots;
     const [previous] = await get(db$)
       .select({ encryptedTabUrls: t.encryptedTabUrls })
@@ -88,7 +94,7 @@ export const saveSharedSnapshot$ = command(
     // A closed native window cannot replace its last recoverable snapshot.
     // A live window containing only blank pages still deliberately saves [].
     if (!snapshot.windowExists) {
-      return false;
+      return null;
     }
     const capturedAt = nowDate();
     const encryptedTabUrls = await encryptPersistentSecretValue(
@@ -96,15 +102,80 @@ export const saveSharedSnapshot$ = command(
       { userId: owner.userId },
     );
     signal.throwIfAborted();
-    const db = set(writeDb$);
-    const publication = browserCapturePublication({
-      value: t.encryptedTabUrls,
-      updatedAt: t.updatedAt,
+    return {
       previousValue: previous?.encryptedTabUrls ?? null,
+      encryptedTabUrls,
       capturedAt,
-    });
+    };
+  },
+);
+
+/** The source selects only windows whose owning claim/read may publish. */
+export function sharedSnapshotPublication(
+  capture: SharedSnapshotCapture,
+  source: Subquery & { readonly chatThreadId: AnyPgColumn },
+) {
+  const t = browserSessionTabSnapshots;
+  const publication = browserCapturePublication({
+    value: t.encryptedTabUrls,
+    updatedAt: t.updatedAt,
+    previousValue: capture.previousValue,
+    capturedAt: capture.capturedAt,
+  });
+  return {
+    source: new QueryBuilder()
+      .select({
+        chatThreadId: source.chatThreadId,
+        encryptedTabUrls: sql`${capture.encryptedTabUrls}`
+          .mapWith(t.encryptedTabUrls)
+          .as("encrypted_tab_urls"),
+        createdAt: sql`${sql.param(capture.capturedAt, t.createdAt)}::timestamp`
+          .mapWith(t.createdAt)
+          .as("created_at"),
+        updatedAt: sql`${sql.param(capture.capturedAt, t.updatedAt)}::timestamp`
+          .mapWith(t.updatedAt)
+          .as("updated_at"),
+      })
+      .from(source)
+      .getSQL(),
+    conflict: {
+      target: t.chatThreadId,
+      set: {
+        encryptedTabUrls: capture.encryptedTabUrls,
+        updatedAt: publication.updatedAt,
+      },
+      setWhere: and(
+        exists(
+          new QueryBuilder().select({ id: source.chatThreadId }).from(source),
+        ),
+        publication.canReplace,
+      ),
+    },
+  };
+}
+
+export const saveSharedSnapshot$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: SnapshotOwner;
+      readonly profile: Profile;
+      readonly window: Window;
+      readonly cdpUrl: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const capture = await set(captureSharedSnapshot$, args, signal);
+    signal.throwIfAborted();
+    if (!capture) {
+      return false;
+    }
+    const { owner, profile, window } = args;
     const captureOwner = and(
       sharedBrowserLifetime(owner, profile, window),
+      // Once retirement starts, a later capture may see only partly closed
+      // pages. It must not overwrite the complete pre-retirement snapshot.
+      eq(windows.state, "active"),
       exists(
         new QueryBuilder()
           .select({ id: chatThreads.id })
@@ -118,40 +189,17 @@ export const saveSharedSnapshot$ = command(
       ),
     );
     const source = new QueryBuilder()
-      .select({
-        chatThreadId: windows.chatThreadId,
-        encryptedTabUrls: sql`${encryptedTabUrls}`
-          .mapWith(t.encryptedTabUrls)
-          .as("encrypted_tab_urls"),
-        createdAt: sql`${sql.param(capturedAt, t.createdAt)}::timestamp`
-          .mapWith(t.createdAt)
-          .as("created_at"),
-        updatedAt: sql`${sql.param(capturedAt, t.updatedAt)}::timestamp`
-          .mapWith(t.updatedAt)
-          .as("updated_at"),
-      })
+      .select({ chatThreadId: windows.chatThreadId })
       .from(windows)
-      .where(captureOwner);
-    await db
-      .insert(t)
-      .select(source)
-      .onConflictDoUpdate({
-        target: t.chatThreadId,
-        set: {
-          encryptedTabUrls,
-          updatedAt: publication.updatedAt,
-        },
-        setWhere: and(
-          exists(
-            new QueryBuilder()
-              .select({ id: windows.chatThreadId })
-              .from(windows)
-              .where(captureOwner),
-          ),
-          publication.canReplace,
-        ),
-      });
+      .where(captureOwner)
+      .as("captured_shared_window");
+    const publication = sharedSnapshotPublication(capture, source);
+    const saved = await set(writeDb$)
+      .insert(browserSessionTabSnapshots)
+      .select(publication.source)
+      .onConflictDoUpdate(publication.conflict)
+      .returning({ id: browserSessionTabSnapshots.chatThreadId });
     signal.throwIfAborted();
-    return true;
+    return saved.length === 1;
   },
 );

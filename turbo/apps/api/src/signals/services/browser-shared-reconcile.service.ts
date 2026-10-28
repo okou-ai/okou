@@ -3,6 +3,7 @@ import {
   browserOwnerWindows as windows,
 } from "@okouai/db/schema/browser-owner";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { browserSessionTabSnapshots } from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
 import {
   and,
@@ -31,8 +32,9 @@ import {
   stopBrowserUseSessionForCleanup,
 } from "./browser-use.service";
 import {
-  saveSharedSnapshot$,
+  captureSharedSnapshot$,
   sharedBrowserLifetime,
+  sharedSnapshotPublication,
 } from "./browser-shared-snapshot.service";
 
 const BATCH_SIZE = 20;
@@ -123,40 +125,10 @@ const retireSharedWindow$ = command(
       chatThreadId: target.window.chatThreadId,
     };
     const identity = sharedBrowserLifetime(owner, profile, target.window);
-    const db = set(writeDb$);
-    if (target.window.state === "active") {
-      const at = nowDate();
-      const [claimed] = await db
-        .update(windows)
-        .set({ state: "closing", updatedAt: at })
-        .where(
-          and(
-            identity,
-            eq(windows.state, "active"),
-            or(
-              lte(windows.expiresAt, at),
-              exists(
-                new QueryBuilder()
-                  .select({ id: profiles.id })
-                  .from(profiles)
-                  .where(
-                    and(exactProfile(profile), lte(profiles.timeoutAt, at)),
-                  ),
-              ),
-              orphanedWindow(),
-            ),
-          ),
-        )
-        .returning({ id: windows.chatThreadId });
-      signal.throwIfAborted();
-      if (!claimed) {
-        return null;
-      }
-    }
-    const [current] = await get(db$)
+    let [current] = await get(db$)
       .select()
       .from(windows)
-      .where(and(identity, eq(windows.state, "closing")))
+      .where(identity)
       .limit(1);
     signal.throwIfAborted();
     if (!current) {
@@ -169,33 +141,81 @@ const retireSharedWindow$ = command(
       profile.providerSessionId,
       signal,
     );
-    if (provider?.status === "active") {
-      if (!provider.cdpUrl) {
-        throw new BrowserUseProviderError(
-          502,
-          "BROWSER_USE_INVALID_RESPONSE",
-          "The active Browser has no native connection",
-        );
-      }
-      if (target.threadId !== null) {
-        await set(
-          saveSharedSnapshot$,
-          { owner, profile, window: current, cdpUrl: provider.cdpUrl },
-          signal,
-        );
-        signal.throwIfAborted();
-      }
-      await closeBrowserUseWindow(
-        provider.cdpUrl,
-        current.primaryWindowId,
-        signal,
+    const cdpUrl = provider?.status === "active" ? provider.cdpUrl : null;
+    if (provider?.status === "active" && !cdpUrl) {
+      throw new BrowserUseProviderError(
+        502,
+        "BROWSER_USE_INVALID_RESPONSE",
+        "The active Browser has no native connection",
       );
+    }
+    const db = set(writeDb$);
+    if (current.state === "active") {
+      const capture =
+        cdpUrl && target.threadId !== null
+          ? await set(
+              captureSharedSnapshot$,
+              { owner, window: current, cdpUrl },
+              signal,
+            )
+          : null;
+      signal.throwIfAborted();
+      const at = nowDate();
+      const claimed = db.$with("retired_shared_window").as(
+        db
+          .update(windows)
+          .set({ state: "closing", updatedAt: at })
+          .where(
+            and(
+              identity,
+              eq(windows.state, "active"),
+              or(
+                lte(windows.expiresAt, at),
+                exists(
+                  new QueryBuilder()
+                    .select({ id: profiles.id })
+                    .from(profiles)
+                    .where(
+                      and(exactProfile(profile), lte(profiles.timeoutAt, at)),
+                    ),
+                ),
+                orphanedWindow(),
+              ),
+            ),
+          )
+          .returning(),
+      );
+      // Enter closing and publish its complete snapshot in one statement.
+      // A concurrent loser cannot publish pages observed after partial close.
+      const publication = capture
+        ? sharedSnapshotPublication(capture, claimed)
+        : null;
+      const snapshot = publication
+        ? db
+            .$with("retired_shared_snapshot")
+            .as(
+              db
+                .insert(browserSessionTabSnapshots)
+                .select(publication.source)
+                .onConflictDoUpdate(publication.conflict)
+                .returning({ id: browserSessionTabSnapshots.chatThreadId }),
+            )
+        : null;
+      const [closing] = await (
+        snapshot ? db.with(claimed, snapshot) : db.with(claimed)
+      )
+        .select()
+        .from(claimed);
+      signal.throwIfAborted();
+      if (!closing) {
+        return null;
+      }
+      current = closing;
+    }
+    if (cdpUrl) {
+      await closeBrowserUseWindow(cdpUrl, current.primaryWindowId, signal);
       if (
-        await browserUseWindowExists(
-          provider.cdpUrl,
-          current.primaryWindowId,
-          signal,
-        )
+        await browserUseWindowExists(cdpUrl, current.primaryWindowId, signal)
       ) {
         throw new Error("Shared Browser window closure is not confirmed");
       }
@@ -340,7 +360,7 @@ export const reconcileSharedBrowsers$ = command(
                 row.profile,
                 row.window,
               ),
-              eq(windows.state, "closing"),
+              inArray(windows.state, ["active", "closing"]),
             ),
           );
         signal.throwIfAborted();

@@ -15,6 +15,7 @@ import {
 import {
   browserProfiles,
   browserSessionInstances,
+  browserSessionTabSnapshots,
   browserThreadProfiles,
 } from "@okouai/db/schema/browser-session";
 import { command, computed, type Computed } from "ccstate";
@@ -34,6 +35,10 @@ import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
+import {
+  sharedSnapshotPublication,
+  type SharedSnapshotCapture,
+} from "./browser-shared-snapshot.service";
 
 const SETUP_MS = 60_000;
 const IDLE_MS = 10 * 60_000;
@@ -54,7 +59,13 @@ type BrowserAction<K extends RunnerBrowserAction["kind"]> = Extract<
   { kind: K }
 >;
 type BrowserOwnerMutation =
-  | Exclude<RunnerBrowserAction, { kind: "inspect" | "allocate" | "admit" }>
+  | Exclude<
+      RunnerBrowserAction,
+      { kind: "inspect" | "allocate" | "admit" | "retire" }
+    >
+  | (BrowserAction<"retire"> & {
+      readonly snapshot: SharedSnapshotCapture | null;
+    })
   | {
       readonly kind: "admit";
       readonly instanceId: string;
@@ -632,7 +643,7 @@ const retireOwnerBrowserWindow$ = command(
   async (
     { set },
     owner: BrowserOwnerAuthority,
-    action: BrowserAction<"retire">,
+    action: Extract<BrowserOwnerMutation, { kind: "retire" }>,
     now: Date,
     signal: AbortSignal,
   ): Promise<BrowserView[]> => {
@@ -653,8 +664,23 @@ const retireOwnerBrowserWindow$ = command(
         )
         .returning(),
     );
-    const rows = await db
-      .with(changed)
+    const publication = action.snapshot
+      ? sharedSnapshotPublication(action.snapshot, changed)
+      : null;
+    const snapshot = publication
+      ? db
+          .$with("retired_browser_snapshot")
+          .as(
+            db
+              .insert(browserSessionTabSnapshots)
+              .select(publication.source)
+              .onConflictDoUpdate(publication.conflict)
+              .returning({ id: browserSessionTabSnapshots.chatThreadId }),
+          )
+      : null;
+    const rows = await (
+      snapshot ? db.with(changed, snapshot) : db.with(changed)
+    )
       .select({
         profile: getTableColumns(profiles),
         window: {

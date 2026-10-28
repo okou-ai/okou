@@ -18,6 +18,7 @@ import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
+import { captureSharedSnapshot$ } from "./browser-shared-snapshot.service";
 import {
   controlBrowserOwner$,
   createRunnerBrowserRead,
@@ -346,6 +347,78 @@ export function createRunnerBrowserAdmission(
         throw windowAdmissionFailure(result.error, false);
       }
       return result.value;
+    },
+  );
+}
+
+/** Publish captured recovery data atomically with a Runner retirement claim. */
+export function createRunnerBrowserRetirement(
+  owner$: Computed<Promise<BrowserOwnerAuthority | null>>,
+  action$: Computed<
+    Promise<Extract<RunnerBrowserAction, { kind: "retire" }> | null>
+  >,
+) {
+  const readAction$ = computed(async (get) => {
+    const action = await get(action$);
+    return action
+      ? { kind: "inspect" as const, instanceId: action.instanceId }
+      : null;
+  });
+  const current$ = createRunnerBrowserRead(owner$, readAction$);
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<RunnerBrowserResponse> => {
+      const owner = await get(owner$);
+      signal.throwIfAborted();
+      const action = await get(action$);
+      signal.throwIfAborted();
+      const current = await get(current$);
+      signal.throwIfAborted();
+      if (
+        !owner ||
+        !action ||
+        current.outcome !== "accepted" ||
+        current.instance.status !== "active" ||
+        !current.instance.providerSessionId ||
+        current.instance.window?.state !== "active" ||
+        current.instance.window.primaryWindowId !== action.primaryWindowId ||
+        (action.reason === "expired" &&
+          current.instance.window.expiresAt > nowDate().getTime())
+      ) {
+        return unavailable;
+      }
+      const provider = await findBrowserUseSession(
+        current.instance.providerSessionId,
+        signal,
+      );
+      if (provider?.status === "active" && !provider.cdpUrl) {
+        throw new BrowserUseProviderError(
+          502,
+          "BROWSER_USE_INVALID_RESPONSE",
+          "The active Browser has no native connection",
+        );
+      }
+      const snapshot =
+        provider?.status === "active" && provider.cdpUrl
+          ? await set(
+              captureSharedSnapshot$,
+              {
+                owner,
+                window: current.instance.window,
+                cdpUrl: provider.cdpUrl,
+              },
+              signal,
+            )
+          : null;
+      signal.throwIfAborted();
+      return await set(
+        controlBrowserOwner$,
+        owner,
+        { ...action, snapshot },
+        signal,
+      );
     },
   );
 }

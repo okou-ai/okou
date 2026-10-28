@@ -7,7 +7,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
@@ -281,6 +281,164 @@ describe("shared Browser expiry through public reopen", () => {
       });
     },
   );
+
+  it.each(["expiry", "runner"] as const)(
+    "retains the complete snapshot after a partial native close from %s retirement",
+    async (retirement) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        installBrowserWindowContentCommands(f.provider.native);
+        const a = await f.start();
+        const b = await f.start();
+        const first = await open(a);
+        const sibling = await open(b);
+        const page = navigate(
+          f,
+          first.window.primaryWindowId,
+          "https://a.example.test/first",
+        );
+        const second = {
+          targetId: "second-expired-page",
+          windowId: first.window.primaryWindowId,
+          url: "https://a.example.test/second",
+        };
+        f.provider.native.targets.set(second.targetId, second);
+        mockNow(START + 9 * MINUTE);
+        await renew(b);
+        mockNow(START + 11 * MINUTE);
+        if (retirement === "runner") {
+          await expect(
+            a.request({
+              kind: "retire",
+              instanceId: first.window.instanceId,
+              primaryWindowId: first.window.primaryWindowId,
+              reason: "expired",
+            }),
+          ).resolves.toMatchObject({
+            outcome: "accepted",
+            instance: { window: { state: "closing" } },
+          });
+        }
+        f.provider.native.beforeWindowReply = (targetId) => {
+          if (
+            targetId === second.targetId &&
+            !f.provider.native.targets.has(page.targetId)
+          ) {
+            f.provider.native.closeSucceeds = false;
+          }
+        };
+        expect((await use(a)).status).toBe(409);
+        expect(f.provider.native.targets.has(page.targetId)).toBeFalsy();
+        expect(f.provider.native.targets.get(second.targetId)).toStrictEqual(
+          second,
+        );
+        await accept(
+          client().close({
+            headers,
+            params: { threadId: a.threadId },
+            body: {},
+          }),
+          [200],
+        );
+        f.provider.native.beforeWindowReply = undefined;
+        f.provider.native.closeSucceeds = true;
+        const reopened = await open(a);
+        expect(reopened.window.instanceId).toBe(first.window.instanceId);
+        expect(
+          pages(f, reopened.window.primaryWindowId).map((target) => {
+            return target.url;
+          }),
+        ).toStrictEqual([
+          "https://a.example.test/first",
+          "https://a.example.test/second",
+        ]);
+        expect(pages(f, sibling.window.primaryWindowId)).toHaveLength(1);
+        expect(f.provider.sessionRequests).toHaveLength(1);
+      });
+    },
+  );
+
+  it("keeps the winning complete snapshot when an overlapping reclaim observes a partial close", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await open(a);
+      await open(b);
+      const page = navigate(
+        f,
+        first.window.primaryWindowId,
+        "https://a.example.test/first",
+      );
+      const second = {
+        targetId: "second-overlapping-page",
+        windowId: first.window.primaryWindowId,
+        url: "https://a.example.test/second",
+      };
+      f.provider.native.targets.set(second.targetId, second);
+      mockNow(START + 9 * MINUTE);
+      await renew(b);
+      mockNow(START + 11 * MINUTE);
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let hold = true;
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/:id`, async ({ params }) => {
+          if (hold && f.provider.sessionIds.has(String(params.id))) {
+            hold = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return;
+        }),
+      );
+      f.provider.native.beforeWindowReply = (targetId) => {
+        if (
+          targetId === second.targetId &&
+          !f.provider.native.targets.has(page.targetId)
+        ) {
+          f.provider.native.closeSucceeds = false;
+        }
+      };
+      const earlier = settleIncludingAbort(use(a));
+      const completed = await settleIncludingAbort(async () => {
+        await Promise.race([
+          entered.promise,
+          earlier.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("The earlier reclaim did not reach provider IO");
+          }),
+        ]);
+        expect((await use(a)).status).toBe(409);
+        expect(f.provider.native.targets.has(page.targetId)).toBeFalsy();
+        expect(f.provider.native.targets.has(second.targetId)).toBeTruthy();
+      });
+      release.resolve();
+      const loser = await earlier;
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      if (!loser.ok) {
+        throw loser.error;
+      }
+      expect(loser.value.status).toBe(409);
+      f.provider.native.beforeWindowReply = undefined;
+      f.provider.native.closeSucceeds = true;
+      const reopened = await open(a);
+      expect(
+        pages(f, reopened.window.primaryWindowId).map((target) => {
+          return target.url;
+        }),
+      ).toStrictEqual([
+        "https://a.example.test/first",
+        "https://a.example.test/second",
+      ]);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  });
 
   it("cancels an unacknowledged stop at the real provider deadline and retains it for reconciliation", async () => {
     const f = await fixture();
