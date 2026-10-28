@@ -920,7 +920,7 @@ function formatConnectPrompt(
   const { brandName } = BRAND_PRESENTATION;
   const nextStep =
     action === "reply"
-      ? `Reply to this message and I'll send you a private link to start using ${brandName}.`
+      ? `Reply here and I'll send you the link to connect your ${brandName} account.`
       : `Click the link below to start using ${brandName}.\n\n${buildAgentPhoneConnectUrl(
           {
             phoneHandle: event.fromNumber,
@@ -931,6 +931,7 @@ function formatConnectPrompt(
         )}`;
 
   return [
+    ...(action === "reply" ? [`Hi, I'm ${brandName}.`, ""] : []),
     "You can text me like a teammate and I'll actually do the work: research something, draft and send emails, summarize long documents, update spreadsheets, triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.",
     "",
     "I'm most useful once I'm connected to the tools you already use — GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, X, and 100+ others.",
