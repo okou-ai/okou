@@ -173,9 +173,54 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     ).toBeFalsy();
   });
 
-  it.each([false, true])(
-    "routes WhatsApp run replies and respects disconnects (disconnect before completion: %s)",
-    async (disconnectBeforeCompletion) => {
+  it.each(["disconnect", "switch"] as const)(
+    "%s only revokes the WhatsApp link when the same number also has a phone link",
+    async (command) => {
+      const setup = await configure();
+      const phone = await connect(setup);
+      const phoneCode =
+        await setup.integrations.requestCreateAgentPhoneLinkCode(
+          setup.actor,
+          [200],
+        );
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "sms",
+        from: phone,
+        body: phoneCode.body.code,
+      });
+      setup.sends.length = 0;
+      await setup.ap.postAgentPhoneInboundMessage({
+        channel: "whatsapp",
+        from: phone,
+        body: `/${command}`,
+      });
+      expect(
+        (
+          await accept(
+            client().getLinkStatus({ headers: headers(setup.actor) }),
+            [200],
+          )
+        ).body.linked,
+      ).toBeFalsy();
+      expect(
+        (await setup.integrations.getAgentPhoneLinkStatus(setup.actor)).linked,
+      ).toBeTruthy();
+      expect(setup.sends.at(-1)).toMatchObject({
+        channel: "whatsapp",
+        from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+        to_number: phone,
+      });
+      if (command === "switch") {
+        expect(setup.sends.at(-1)?.body).toContain("/works");
+        expect(setup.sends.at(-1)?.body).toContain("connect WhatsApp");
+        await connect(setup, phone);
+      }
+    },
+  );
+
+  it.each(["connected", "unlink", "switch"] as const)(
+    "routes WhatsApp run replies and respects connection changes (state before completion: %s)",
+    async (connectionState) => {
       const setup = await configure();
       const runs = createRunsApi(context);
       setup.ap.acceptAgentPhoneObjectStorage();
@@ -225,8 +270,15 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       );
       expect(run.appendSystemPrompt).toContain("/help");
       expect(run.appendSystemPrompt).not.toContain("Private SMS history");
-      if (disconnectBeforeCompletion) {
+      if (connectionState === "unlink") {
         await accept(client().unlink({ headers: headers(setup.actor) }), [204]);
+      } else if (connectionState === "switch") {
+        await setup.ap.postAgentPhoneInboundMessage({
+          channel: "whatsapp",
+          from: phone,
+          body: "/switch",
+        });
+        setup.sends.length = 0;
       }
       const webhooks = createWebhookCallbackApi(context);
       const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
@@ -259,7 +311,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      if (disconnectBeforeCompletion) {
+      if (connectionState !== "connected") {
         expect(setup.sends).toHaveLength(0);
       } else {
         expect(setup.sends.at(-1)).toMatchObject({

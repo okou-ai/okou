@@ -757,7 +757,6 @@ describe("okou workflow automations", () => {
     });
     expect(created.body.chatThreadId).toBeNull();
     expect(created.body.nextRunAt).toBeTruthy();
-    expect(created.body.kind).toBe("schedule");
     if (created.body.kind !== "schedule") {
       throw new Error("Expected a schedule automation");
     }

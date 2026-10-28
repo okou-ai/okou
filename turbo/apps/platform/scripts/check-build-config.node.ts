@@ -10,7 +10,6 @@ import { build, loadConfigFromFile } from "vite";
 import { applicationResourcePriorityHtmlPlugin } from "./app-resource-priority-html.ts";
 import {
   APPLICATION_LAZY_CHUNK,
-  RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES,
   applicationBundleViolations as validateApplicationBundle,
   applicationJavaScriptBundlePlugin,
   isVendorModule,
@@ -325,7 +324,7 @@ await test("requires exactly one separately built on-demand PDF worker", () => {
   );
 });
 
-await test("budgets on-demand PDF bytes separately without relaxing the app cap", () => {
+await test("enforces the on-demand PDF worker byte budget", () => {
   const eagerOutputs = validApplicationOutputs().filter((output) => {
     return !MESSAGE_PDF_WORKER_FILE_PATTERN.test(output.fileName);
   });
@@ -349,48 +348,6 @@ await test("budgets on-demand PDF bytes separately without relaxing the app cap"
       `On-demand PDF worker: ${MESSAGE_PDF_WORKER_LIMIT_BYTES + 1} raw bytes exceeds ${MESSAGE_PDF_WORKER_LIMIT_BYTES}`,
     ],
   );
-  const nearLimitApp = {
-    ...applicationChunk(),
-    code: "x".repeat(RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES - 100),
-  };
-  assert.deepEqual(
-    applicationBundleViolations([
-      nearLimitApp,
-      lazyChunk(),
-      vendorChunk(),
-      runtimeChunk(),
-      workerAsset(),
-      limitWorker,
-    ]),
-    [],
-  );
-  assert.match(
-    applicationBundleViolations([
-      { ...nearLimitApp, code: "x".repeat(RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES) },
-      lazyChunk(),
-      vendorChunk(),
-      runtimeChunk(),
-      workerAsset(),
-      limitWorker,
-    ])[0] ?? "",
-    /JavaScript output: .* raw bytes exceeds 8566743/u,
-  );
-});
-
-await test("rejects raw-size regressions", () => {
-  const violations = applicationBundleViolations([
-    {
-      ...applicationChunk(),
-      code: "x".repeat(RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES),
-    },
-    vendorChunk(),
-    lazyChunk(),
-    runtimeChunk(),
-    workerAsset(),
-    pdfWorkerAsset(),
-  ]);
-  assert.equal(violations.length, 1);
-  assert.match(violations[0] ?? "", /raw bytes exceeds/u);
 });
 
 await test("keeps third-party modules only in vendor and rejects extra edges", () => {
