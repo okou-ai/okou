@@ -831,7 +831,7 @@ describe("CHAT-02: run-level model overrides", () => {
         runId: third.runId,
         runnerPreference: {
           tier: "exactSandbox",
-          finalizingSourceRunId: second.runId,
+          predecessorRunId: second.runId,
           runnerIdentity: { runnerId: holders[1], heartbeatGeneration: 7 },
         },
       });

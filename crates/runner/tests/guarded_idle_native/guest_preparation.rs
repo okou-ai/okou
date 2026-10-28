@@ -14,9 +14,7 @@ use guest_control_proto::{
 };
 use runner_lifecycle::{
     guest_timezone::GuestTimezoneIntent,
-    home_image_cache::{
-        HomeCacheCheckoutResult, HomeImageLeaseIdentity, HomeImagePrepareLockPolicy,
-    },
+    home_image_cache::{HomeCacheCheckoutResult, HomeImageLeaseIdentity, HomeImagePreparePolicy},
     idle_pool::{
         ActivationCleanupOutcome, GuardedSpeculativeIdleOwner, SpeculativeActivationState,
     },
@@ -727,7 +725,7 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
     let attempt_sandbox = SandboxId::new_v4();
     let attempted = request
         .cache
-        .prepare_with_lock_policy(
+        .prepare_with_policy(
             runner_lifecycle::home_image_cache::HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
                     run_id: attempt_run,
@@ -741,7 +739,7 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
                 },
                 home_drive_required: true,
             },
-            HomeImagePrepareLockPolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     if attempted.result() != HomeCacheCheckoutResult::LockBusy {

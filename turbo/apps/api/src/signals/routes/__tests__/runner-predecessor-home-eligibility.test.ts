@@ -1,20 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { mockNow } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import {
-  peerContinuation,
-  peerFinalizingFixture,
-  peerHeartbeat,
-  peerPoll,
-} from "./helpers/peer-finalizing-fixture";
+  predecessorHomeContinuation,
+  predecessorHomeFixture,
+  predecessorHomeHeartbeat,
+  predecessorHomePoll,
+} from "./helpers/predecessor-home-fixture";
 
 const context = testContext();
 
-describe("peer finalizing eligibility", () => {
+describe("predecessor Home recipient eligibility", () => {
   it.each<
     readonly [
       string,
       "source" | "receiver",
-      NonNullable<Parameters<typeof peerHeartbeat>[2]>,
+      NonNullable<Parameters<typeof predecessorHomeHeartbeat>[2]>,
     ]
   >([
     [
@@ -44,17 +45,29 @@ describe("peer finalizing eligibility", () => {
     ],
     ["receiver starting", "receiver", { mode: "starting" }],
     ["receiver draining", "receiver", { mode: "draining" }],
-  ])("rejects %s", async (_label, role, changes) => {
-    const f = await peerFinalizingFixture(context);
-    await peerHeartbeat(
-      f,
-      role === "source" ? f.sourceId : f.receiverId,
-      changes,
-    );
-    const next = await peerContinuation(f);
-    await expect(peerPoll(f)).resolves.toMatchObject({
-      runId: next.runId,
-      runnerPreference: { kind: "noPreference" },
-    });
-  });
+  ])(
+    "does not infer finalizing ownership from %s",
+    async (_label, role, changes) => {
+      const f = await predecessorHomeFixture(context);
+      await predecessorHomeHeartbeat(
+        f,
+        role === "source" ? f.predecessorRunnerId : f.receiverRunnerId,
+        changes,
+      );
+      mockNow(f.clock + 2000);
+      const next = await predecessorHomeContinuation(f);
+      await expect(predecessorHomePoll(f)).resolves.toMatchObject({
+        runId: next.runId,
+        runnerPreference:
+          role === "source"
+            ? {
+                kind: "preference",
+                tier: "predecessorHome",
+                home: { evidence: "location" },
+                predecessorRunId: f.predecessorRun.runId,
+              }
+            : { kind: "noPreference" },
+      });
+    },
+  );
 });

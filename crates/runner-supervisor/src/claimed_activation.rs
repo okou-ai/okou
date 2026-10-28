@@ -40,7 +40,7 @@ pub struct ReadyClaimedResource {
 
 /// All owned inputs held across active-status publication and executor request construction.
 pub struct ClaimedJobSetup {
-    pub home_source_run_id: Option<RunId>,
+    pub required_home_source_run_id: Option<RunId>,
     pub claimed: ClaimedJob,
     pub rootfs_hash: String,
     pub cancellation: RunCancellationRegistration,
@@ -287,7 +287,7 @@ async fn recover_claimed_activation_failure(
     ctx: &ClaimedActivationResources,
 ) -> ClaimedActivationRecovery {
     let ClaimedJobSetup {
-        home_source_run_id: _,
+        required_home_source_run_id: _,
         claimed,
         cancellation,
         profile_name: _,

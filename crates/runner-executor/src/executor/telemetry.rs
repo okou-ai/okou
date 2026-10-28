@@ -97,22 +97,23 @@ pub enum RunnerPreSpawnPhase {
     SpawnJobSetup,
 }
 
-/// Terminal reason for a resource-backed peer Home readiness wait.
+/// Terminal reason for an owned Home readiness wait after claim.
 #[derive(Clone, Copy, Debug)]
-pub enum PeerHomeWaitOutcome {
+pub enum HomeWaitOutcome {
     SnapshotReady,
     RevalidatedReady,
-    PreferenceExpired,
+    WaitDeadlineExpired,
     Cancelled,
     Unavailable,
 }
 
-impl PeerHomeWaitOutcome {
+impl HomeWaitOutcome {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SnapshotReady => "snapshot_ready",
             Self::RevalidatedReady => "revalidated_ready",
-            Self::PreferenceExpired => "preference_expired",
+            // Preserve the established outcome label independently of routing expiry.
+            Self::WaitDeadlineExpired => "preference_expired",
             Self::Cancelled => "cancelled",
             Self::Unavailable => "unavailable",
         }
@@ -372,7 +373,7 @@ pub struct RunnerPreSpawnTiming {
     finalizing_handoff: Option<FinalizingHandoffTelemetry>,
     finalizing_exact_idle_lookup: Option<FinalizingExactIdleLookup>,
     blank_pool_selection: Option<BlankPoolSelection>,
-    peer_home_wait: Option<(Duration, PeerHomeWaitOutcome)>,
+    home_wait: Option<(Duration, HomeWaitOutcome)>,
 }
 
 #[derive(Clone, Copy)]
@@ -417,7 +418,7 @@ impl RunnerPreSpawnTiming {
             finalizing_handoff: None,
             finalizing_exact_idle_lookup: None,
             blank_pool_selection: None,
-            peer_home_wait: None,
+            home_wait: None,
         }
     }
 
@@ -458,10 +459,10 @@ impl RunnerPreSpawnTiming {
         self.blank_pool_selection = Some(selection);
     }
 
-    /// Retain the aggregate series and identify its peer Home subset separately.
-    pub fn record_peer_home_wait(&mut self, duration: Duration, outcome: PeerHomeWaitOutcome) {
+    /// Retain the aggregate series and identify its Home-wait subset separately.
+    pub fn record_home_wait(&mut self, duration: Duration, outcome: HomeWaitOutcome) {
         self.record_phase(RunnerPreSpawnPhase::FinalizingWait, duration);
-        self.peer_home_wait = Some((duration, outcome));
+        self.home_wait = Some((duration, outcome));
     }
 
     pub fn blank_pool_selection(&self) -> Option<BlankPoolSelection> {
@@ -547,7 +548,8 @@ impl RunnerPreSpawnTiming {
                 telemetry.record(phase.action_type(), duration, true, None);
             }
         }
-        if let Some((duration, outcome)) = self.peer_home_wait {
+        if let Some((duration, outcome)) = self.home_wait {
+            // Keep the emitted series stable while internal ownership names evolve.
             telemetry.record_with_outcome(
                 "runner_claim_peer_home_wait",
                 duration,

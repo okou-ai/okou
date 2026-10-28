@@ -207,14 +207,24 @@ export const runnerPreferenceSchema = union([
   object({
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
-    tier: zEnum([
-      "exactSandbox",
-      "finalizingPredecessor",
-      "peerFinalizingPredecessor",
-      "sourceHomeCache",
-    ]),
+    tier: zEnum(["exactSandbox", "finalizingPredecessor"]),
     expiresAt: string().datetime({ offset: true }),
-    finalizingSourceRunId: uuid(),
+    predecessorRunId: uuid(),
+  }).strict(),
+  object({
+    kind: literal("preference"),
+    runnerIdentity: runnerProcessIdentitySchema,
+    tier: literal("predecessorHome"),
+    predecessorRunId: uuid(),
+    expiresAt: string().datetime({ offset: true }),
+    home: discriminatedUnion("evidence", [
+      object({ evidence: literal("advertised") }).strict(),
+      object({
+        evidence: literal("expected"),
+        homeWaitUntil: string().datetime({ offset: true }),
+      }).strict(),
+      object({ evidence: literal("location") }).strict(),
+    ]),
   }).strict(),
   object({
     kind: literal("preference"),

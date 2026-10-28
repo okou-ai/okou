@@ -3261,15 +3261,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               heartbeatGeneration: 1,
             },
             tier: exactSource ? "exactSandbox" : "reusableSandbox",
-            ...(exactSource ? { finalizingSourceRunId: first.runId } : {}),
+            ...(exactSource ? { predecessorRunId: first.runId } : {}),
             expiresAt: expect.any(String),
           });
         },
       );
 
       it("prefers a recent same-generation predecessor before its producer heartbeat arrives", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3306,7 +3306,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 100;
+        const successorCreatedAt = predecessorCompletedAt + 100;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3318,8 +3318,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor" as const,
-          finalizingSourceRunId: first.runId,
-          expiresAt: new Date(sourceCompletedAt + 1500).toISOString(),
+          predecessorRunId: first.runId,
+          expiresAt: new Date(predecessorCompletedAt + 1500).toISOString(),
         };
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
           "job",
@@ -3347,7 +3347,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           finalizingPreference,
         );
 
-        mockNow(sourceCompletedAt + 1601);
+        mockNow(predecessorCompletedAt + 1601);
         const genericPoll = await api.requestPollRunner(
           true,
           {
@@ -3391,8 +3391,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("shares a fixed telemetry-close deadline between Ably and repeated producer polls", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3414,7 +3414,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           admittableProfiles: ["vm0/default"],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 2094;
+        const successorCreatedAt = predecessorCompletedAt + 2094;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3426,7 +3426,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor" as const,
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: new Date(
             successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
           ).toISOString(),
@@ -3548,8 +3548,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("requires a current exact producer tuple and process generation beyond the bridge", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3589,7 +3589,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 2100;
+        const successorCreatedAt = predecessorCompletedAt + 2100;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3631,7 +3631,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference",
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor",
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: new Date(
             successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
           ).toISOString(),
@@ -3688,8 +3688,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("prefers the previous Run's ready sandbox over its finalizing producer", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3728,7 +3728,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ],
         });
 
-        const successorCreatedAt = sourceCompletedAt + 100;
+        const successorCreatedAt = predecessorCompletedAt + 100;
         mockNow(successorCreatedAt);
         context.mocks.ably.publish.mockClear();
         const successor = await sendChatRunMessage(actor, {
@@ -3740,7 +3740,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: exactRunnerIdentity,
           tier: "exactSandbox" as const,
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: new Date(successorCreatedAt + 1000).toISOString(),
         };
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
@@ -3770,8 +3770,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("does not prefer a predecessor after its runner generation restarts", async () => {
-        const sourceCompletedAt = now();
-        mockNow(sourceCompletedAt);
+        const predecessorCompletedAt = now();
+        mockNow(predecessorCompletedAt);
         onTestFinished(() => {
           clearMockNow();
         });
@@ -3789,7 +3789,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           admittableProfiles: [],
         });
 
-        mockNow(sourceCompletedAt + 100);
+        mockNow(predecessorCompletedAt + 100);
         const successor = await sendChatRunMessage(actor, {
           agentId,
           threadId: first.threadId,
@@ -4205,7 +4205,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             heartbeatGeneration: 1,
           },
           tier: "exactSandbox",
-          finalizingSourceRunId: first.runId,
+          predecessorRunId: first.runId,
           expiresAt: expect.any(String),
         });
         await api.requestCancelRun(actor, protectedFollowUp.runId, [200]);

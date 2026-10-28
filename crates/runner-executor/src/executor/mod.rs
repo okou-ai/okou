@@ -59,7 +59,7 @@ use sandbox_run::{FreshPreparation, NewSandboxHooks, execute_new_sandbox_with_pr
 pub use telemetry::{
     BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
     FinalizingDiagnostics, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
-    FinalizingHandoffReason, PeerHomeWaitOutcome, RunnerPreSpawnConcurrency,
+    FinalizingHandoffReason, HomeWaitOutcome, RunnerPreSpawnConcurrency,
     RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
 use telemetry::{RunnerSpawnTiming, record_api_latency};
@@ -153,7 +153,7 @@ const AGENT_ABNORMAL_EXIT_DIAGNOSTIC_SCRIPT: &str = concat!(
 use crate::error::{RunnerError, RunnerResult};
 use crate::home_image_cache::{
     HomeImageCache, HomeImageLease, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
+    HomeImagePreparePolicy, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
     HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
 };
 use crate::home_promotion::abandon_unpublished_home_promotion;
@@ -210,8 +210,8 @@ pub struct ExecutorConfig {
 
 /// Per-job sandbox parameters resolved from the profile config.
 pub struct JobParams {
-    /// Required producer for a source-home preference; checked under the cache entry lock.
-    pub home_source_run_id: Option<RunId>,
+    /// Producer selected by evidenced Home admission; checked under the entry lock.
+    pub required_home_source_run_id: Option<RunId>,
     pub profile_name: String,
     pub vcpu: u32,
     pub memory_mb: u32,
@@ -219,7 +219,7 @@ pub struct JobParams {
     pub rootfs_hash: String,
     pub restore_guest_state: bool,
     pub device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub home_image_prepare_lock_policy: HomeImagePrepareLockPolicy,
+    pub home_image_prepare_policy: HomeImagePreparePolicy,
 }
 
 #[derive(Clone)]

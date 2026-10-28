@@ -336,7 +336,7 @@ impl Fixture {
         let work = permit.spawn(move |mut operation| {
           let execution = async move {
             let idle = custody.lock().map_err(|_| io::Error::other("native reused custody poisoned"))?.take();
-            let params = JobParams { home_source_run_id: None, profile_name: fixture::PROFILE.into(), vcpu: 2, memory_mb: 4096, home_disk_mb: fixture::HOME_DISK_MB, rootfs_hash: this.rootfs_hash.clone(), restore_guest_state: true, device_rate_limits: None, home_image_prepare_lock_policy: Default::default() };
+            let params = JobParams { required_home_source_run_id: None, profile_name: fixture::PROFILE.into(), vcpu: 2, memory_mb: 4096, home_disk_mb: fixture::HOME_DISK_MB, rootfs_hash: this.rootfs_hash.clone(), restore_guest_state: true, device_rate_limits: None, home_image_prepare_policy: Default::default() };
             let (mut outcome, _telemetry) = if let Some(idle) = idle {
                 executor::execute_job_reuse_with_hooks(
                     executor::ReusedSandboxDispatch {

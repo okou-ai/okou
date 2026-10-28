@@ -59,7 +59,7 @@ pub(super) type JobResult = Result<RunCancellationRegistration, ClaimedActivatio
 
 /// Per-job profile parameters resolved from the profile config.
 pub(super) struct JobProfile {
-    pub(super) home_source_run_id: Option<RunId>,
+    pub(super) required_home_source_run_id: Option<RunId>,
     pub(super) profile_name: String,
     pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
@@ -68,7 +68,7 @@ pub(super) struct JobProfile {
     pub(super) budget_lease: BudgetLease,
     pub(super) restore_guest_state: bool,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub(super) home_image_prepare_lock_policy: crate::home_image_cache::HomeImagePrepareLockPolicy,
+    pub(super) home_image_prepare_policy: crate::home_image_cache::HomeImagePreparePolicy,
     pub(super) factory: SharedFactory,
     pub(super) cancellation: RunCancellationRegistration,
 }
@@ -535,7 +535,7 @@ pub(super) async fn run_job(
     let vcpu = job_profile.vcpu;
     let memory_mb = job_profile.memory_mb;
     let home_disk_mb = job_profile.home_disk_mb;
-    let home_image_prepare_lock_policy = job_profile.home_image_prepare_lock_policy;
+    let home_image_prepare_policy = job_profile.home_image_prepare_policy;
     let active_lease = job_profile.budget_lease;
     let profile_name = job_profile.profile_name;
     let factory = job_profile.factory;
@@ -543,7 +543,7 @@ pub(super) async fn run_job(
     let job_cancel = cancellation.handle();
     let rootfs_hash = job_profile.rootfs_hash;
     let params = executor::JobParams {
-        home_source_run_id: job_profile.home_source_run_id,
+        required_home_source_run_id: job_profile.required_home_source_run_id,
         profile_name: profile_name.clone(),
         rootfs_hash: rootfs_hash.clone(),
         vcpu,
@@ -551,7 +551,7 @@ pub(super) async fn run_job(
         home_disk_mb,
         restore_guest_state: job_profile.restore_guest_state,
         device_rate_limits: job_profile.device_rate_limits.clone(),
-        home_image_prepare_lock_policy,
+        home_image_prepare_policy,
     };
     let job_device_rate_limits = params.device_rate_limits.clone();
 
