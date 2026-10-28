@@ -15,9 +15,21 @@ import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphon
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
-import { and, asc, eq, gt, gte, ilike, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  DrizzleQueryError,
+  eq,
+  gt,
+  gte,
+  ilike,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   iso,
+  literal,
   object,
   record,
   string,
@@ -29,6 +41,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
@@ -113,6 +126,54 @@ type VerificationSendCooldownScope = "phone" | "user_org";
 interface VerificationSendCooldownKey {
   readonly scope: VerificationSendCooldownScope;
   readonly scopeKey: string;
+}
+
+const COOLDOWN_RESERVATION_DENIED = "__TX0019_COOLDOWN_DENIED__";
+const cooldownReservationRowSchema = object({ guard: literal(0) });
+
+function verificationCooldownReservationSql(
+  keys: readonly VerificationSendCooldownKey[],
+  attemptedAt: Date,
+) {
+  const table = agentphoneVerificationSendCooldowns;
+  const input = keys.map((key, ordinal) => {
+    return { ...key, ordinal };
+  });
+  const cutoff = new Date(
+    attemptedAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS,
+  );
+  return sql`WITH keys AS MATERIALIZED (
+    SELECT DISTINCT ON (scope, "scopeKey") scope, "scopeKey", ordinal
+    FROM jsonb_to_recordset(${JSON.stringify(input)}::jsonb)
+      AS input(scope text, "scopeKey" text, ordinal integer)
+    ORDER BY scope, "scopeKey", ordinal
+  ), reserved AS (
+    INSERT INTO ${table} (scope, scope_key, last_sent_at, updated_at)
+    SELECT scope, "scopeKey", ${sql.param(attemptedAt, table.lastSentAt)},
+      ${sql.param(attemptedAt, table.updatedAt)}
+    FROM keys ORDER BY ordinal
+    ON CONFLICT (scope, scope_key) DO UPDATE
+      SET last_sent_at = EXCLUDED.last_sent_at,
+          updated_at = EXCLUDED.updated_at
+      WHERE ${table.lastSentAt} IS NULL
+        OR date_trunc('milliseconds', ${table.lastSentAt})
+          <= ${sql.param(cutoff, table.lastSentAt)}
+    RETURNING scope
+  ) SELECT (CASE
+    WHEN (SELECT count(*) FROM reserved) = (SELECT count(*) FROM keys)
+      THEN '0' ELSE ${COOLDOWN_RESERVATION_DENIED}
+    END)::integer AS guard`;
+}
+
+function isCooldownReservationDenied(error: unknown): boolean {
+  return (
+    error instanceof DrizzleQueryError &&
+    error.cause instanceof Error &&
+    "code" in error.cause &&
+    error.cause.code === "22P02" &&
+    error.cause.message ===
+      `invalid input syntax for type integer: "${COOLDOWN_RESERVATION_DENIED}"`
+  );
 }
 
 function notConfigured() {
@@ -412,74 +473,37 @@ const sendAgentPhoneVerificationText$ = command(
     },
     signal: AbortSignal,
   ) => {
-    // The post-insert reads need fresh snapshots and both cooldown scopes must
-    // reserve together; the provider send remains outside this rollback boundary.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0019; new non-billing transactions are prohibited.
-    const cooldownResult = await set(writeDb$).transaction(async (tx) => {
-      const attemptedAt = new Date(now());
-      const cooldownCutoff =
-        attemptedAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS;
-
-      for (const key of params.cooldownKeys) {
-        await tx
-          .insert(agentphoneVerificationSendCooldowns)
-          .values({
-            scope: key.scope,
-            scopeKey: key.scopeKey,
-          })
-          .onConflictDoNothing();
-
-        const [cooldown] = await tx
-          .select({
-            lastSentAt: agentphoneVerificationSendCooldowns.lastSentAt,
-          })
-          .from(agentphoneVerificationSendCooldowns)
-          .where(
-            and(
-              eq(agentphoneVerificationSendCooldowns.scope, key.scope),
-              eq(agentphoneVerificationSendCooldowns.scopeKey, key.scopeKey),
-            ),
-          )
-          .for("update")
-          .limit(1);
-        signal.throwIfAborted();
-
-        if (
-          cooldown?.lastSentAt &&
-          cooldown.lastSentAt.getTime() > cooldownCutoff
-        ) {
-          return { ok: false as const, response: tooManyVerificationTexts() };
-        }
-      }
-
-      // Both scopes are already locked in the existing sorted order. Reserve
-      // the same timestamp together, after every scope passed its cooldown.
-      if (params.cooldownKeys.length > 0) {
-        await tx
-          .update(agentphoneVerificationSendCooldowns)
-          .set({ lastSentAt: attemptedAt, updatedAt: attemptedAt })
-          .where(
-            or(
-              ...params.cooldownKeys.map((key) => {
-                return and(
-                  eq(agentphoneVerificationSendCooldowns.scope, key.scope),
-                  eq(
-                    agentphoneVerificationSendCooldowns.scopeKey,
-                    key.scopeKey,
-                  ),
-                );
-              }),
-            ),
-          );
-      }
-      signal.throwIfAborted();
-
-      return { ok: true as const };
-    });
+    const db = set(writeDb$);
+    const attemptedAt = new Date(now());
+    // ON CONFLICT checks the current row after waits. The guard rolls back
+    // every reservation if either scope is cooling down; key order is retained.
     signal.throwIfAborted();
-
-    if (!cooldownResult.ok) {
-      return cooldownResult;
+    const reservation = await settle(
+      (async () => {
+        const rows = parseRawRows(
+          cooldownReservationRowSchema,
+          await db.execute(
+            verificationCooldownReservationSql(
+              params.cooldownKeys,
+              attemptedAt,
+            ),
+          ),
+        );
+        signal.throwIfAborted();
+        if (rows.length !== 1) {
+          throw new Error(
+            "Verification cooldown reservation returned no guard",
+          );
+        }
+      })(),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!reservation.ok) {
+      if (isCooldownReservationDenied(reservation.error)) {
+        return { ok: false as const, response: tooManyVerificationTexts() };
+      }
+      throw reservation.error;
     }
 
     // Keep the committed cooldown even if delivery fails or is uncertain.
