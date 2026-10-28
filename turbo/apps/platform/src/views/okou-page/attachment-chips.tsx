@@ -1388,14 +1388,6 @@ function ArtifactPreviewDialogActions({
           <Pencil size={18} />
         </Button>
       )}
-      <ArtifactDeleteButton
-        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-        surface="dialog"
-        iconSize={18}
-        onDeleted={() => {
-          closeDeletedPreview(rootSignal);
-        }}
-      />
       {showShare && (
         <ArtifactShareButton
           artifactShareIdentity$={preview.artifactShareIdentity$}
@@ -1419,6 +1411,14 @@ function ArtifactPreviewDialogActions({
         iconSize={18}
         syncTarget={artifactDialogSyncTarget(artifact)}
         url={preview.url}
+      />
+      <ArtifactDeleteButton
+        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+        surface="dialog"
+        iconSize={18}
+        onDeleted={() => {
+          closeDeletedPreview(rootSignal);
+        }}
       />
       <ArtifactActionSeparator />
       {showSplitView && (

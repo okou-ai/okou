@@ -651,7 +651,6 @@ function ArtifactSidebarPreviewActions({
   return (
     <>
       {kind === "html" && <ArtifactOpenExternalAction url={url} />}
-      {deleteAction}
       {shareAvailable && (
         <ArtifactShareButton
           surface="sidebar"
@@ -672,6 +671,7 @@ function ArtifactSidebarPreviewActions({
         syncTarget={syncTarget}
         url={url}
       />
+      {deleteAction}
       <ArtifactActionSeparator />
     </>
   );
