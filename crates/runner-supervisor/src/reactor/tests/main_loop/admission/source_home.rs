@@ -129,9 +129,7 @@ enum HomeClaimTiming {
 }
 
 async fn advance_past_routing_expiry() {
-    tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(3)).await;
-    tokio::time::resume();
+    raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(3)).await;
 }
 
 async fn assert_busy_publication_rechecked(timing: HomeClaimTiming) {
