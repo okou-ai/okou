@@ -17,6 +17,25 @@ import {
   evaluateConnectorCatalogCompatibility,
 } from "../connector-catalog/compatibility";
 import { connectorCatalogEntryPayload } from "../connector-catalog/entry-payload";
+import { connectorCatalogFirewallConfig } from "../connector-catalog/artifacts/relationships";
+import {
+  createRunnerRuntimeFirewallCatalog,
+  projectRunnerRuntimeFirewall,
+} from "../firewall-metadata/runner-runtime-catalog";
+
+function configuredMcpArtifact(headers: Record<string, string>) {
+  const artifact = publishedCatalog();
+  const connector = requiredConnector(artifact, "plaud-mcp");
+  if (connector.firewall.kind !== "generated") {
+    throw new Error("Expected generated MCP firewall fixture");
+  }
+  const api = connector.firewall.config.apis[0];
+  if (!api) {
+    throw new Error("Expected MCP endpoint API fixture");
+  }
+  api.auth = { headers };
+  return artifact;
+}
 
 function publishedCatalog() {
   const value: unknown = JSON.parse(
@@ -411,5 +430,118 @@ describe("v4 connector catalog reader", () => {
         decode(artifact);
       }).toThrow("relationship-mismatch");
     }
+  });
+
+  it.each([
+    "X-Datadog-MCP-Toolsets",
+    "x-datadog-mcp-toolsets",
+    "X-DATADOG-MCP-TOOLSETS",
+  ])("preserves catalog-owned static %s and opaque headers", (name) => {
+    const headers = {
+      Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+      [name]: "all,cases",
+      "X-Mcp-Options": "Mode=FULL; preview=v2",
+      Accept: "application/json, text/event-stream",
+      "X-Empty": "",
+    };
+    const artifact = configuredMcpArtifact(headers);
+    const connector = requiredConnector(decode(artifact), "plaud-mcp");
+    const firewall = connectorCatalogFirewallConfig(connector);
+    if (firewall === null) {
+      throw new Error("Expected the accepted MCP firewall");
+    }
+    expect(
+      JSON.parse(connectorCatalogEntryPayload(connector).toString("utf8")),
+    ).toEqual(connector);
+    const runtime = createRunnerRuntimeFirewallCatalog([
+      projectRunnerRuntimeFirewall(firewall),
+    ]);
+    expect(runtime.firewalls[connector.slug]?.apis[0]?.auth.headers).toEqual(
+      headers,
+    );
+    const changed = requiredConnector(
+      decode(
+        configuredMcpArtifact({ ...headers, "X-Mcp-Options": "Mode=Basic" }),
+      ),
+      "plaud-mcp",
+    );
+    const changedFirewall = connectorCatalogFirewallConfig(changed);
+    if (changedFirewall === null) {
+      throw new Error("Expected the changed MCP firewall");
+    }
+    expect(
+      createRunnerRuntimeFirewallCatalog([
+        projectRunnerRuntimeFirewall(changedFirewall),
+      ]).catalogDigest,
+    ).not.toBe(runtime.catalogDigest);
+  });
+
+  it("accepts a catalog-owned profile with many opaque static values", () => {
+    const artifact = configuredMcpArtifact({
+      Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+      ...Object.fromEntries(
+        Array.from({ length: 12 }, (_, index) => {
+          return [
+            `X-Mcp-Option-${index}`,
+            `Option_${index}; ${"x".repeat(2_048)}`,
+          ];
+        }),
+      ),
+    });
+    expect(decode(artifact)).toEqual(artifact);
+  });
+
+  it("preserves canonical OAuth authority and existing auth modes", () => {
+    const rejectedProfiles: Record<string, string>[] = [
+      { Authorization: "Bearer caller-controlled" },
+      { authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
+      { "X-Mcp-Options": "Mode=FULL" },
+    ];
+    for (const headers of rejectedProfiles) {
+      expect(() => {
+        return decode(configuredMcpArtifact(headers));
+      }).toThrow("relationship-mismatch");
+    }
+    for (const extra of [
+      { query: { toolsets: "all" } },
+      { base: "https://other.example.com/mcp" },
+      { awsSigv4: { accessKeyId: "key", secretAccessKey: "secret" } },
+    ]) {
+      const artifact = configuredMcpArtifact({
+        Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+        "X-Mcp-Options": "Mode=FULL",
+      });
+      const connector = requiredConnector(artifact, "plaud-mcp");
+      if (connector.firewall.kind !== "generated") {
+        throw new Error("Expected generated MCP firewall fixture");
+      }
+      const api = connector.firewall.config.apis[0];
+      if (!api) {
+        throw new Error("Expected MCP endpoint API fixture");
+      }
+      Object.assign(api.auth, extra);
+      expect(() => {
+        return decode(artifact);
+      }).toThrow();
+    }
+    const artifact = configuredMcpArtifact({
+      Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+      "X-Mcp-Options": "Mode=FULL",
+    });
+    requiredConnector(artifact, "plaud-mcp").authMethods = [
+      {
+        id: "public",
+        label: "Connect",
+        description: null,
+        visible: true,
+        storage: { version: 1, secrets: [], variables: [] },
+        grant: { kind: "none" },
+        access: { kind: "none" },
+        revoke: { kind: "none" },
+      },
+    ];
+    expect(() => {
+      return decode(artifact);
+    }).toThrow("relationship-mismatch");
   });
 });

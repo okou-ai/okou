@@ -69,7 +69,7 @@ import {
 } from "@okouai/connectors/connector-auth-method";
 import {
   AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
-  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+  automaticMcpRuntimeFirewallAuthKind,
 } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import {
   parseBasicAuthTemplates,
@@ -5325,14 +5325,9 @@ function requestedAutomaticMcpCatalogAuth(args: {
     ?.apis.find((api) => {
       return api.base === matchedBase;
     });
-  const catalogAuth = isDeepStrictEqual(
+  const catalogAuth = automaticMcpRuntimeFirewallAuthKind(
     currentCatalogApi?.auth,
-    AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
-  )
-    ? "oauth"
-    : isDeepStrictEqual(currentCatalogApi?.auth, {})
-      ? "none"
-      : null;
+  );
   if (catalogAuth === null) {
     return null;
   }
