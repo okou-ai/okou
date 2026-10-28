@@ -1531,10 +1531,11 @@ test("Connect a manual grant and continue the originating chat", async () => {
   const axiomDialog = await screen.findByRole("dialog", {
     name: "Public Axiom",
   });
-  await fill(
-    within(axiomDialog).getByPlaceholderText("public-xaat"),
-    "xaat-directed-connect",
-  );
+  const tokenInput = within(axiomDialog).getByPlaceholderText("public-xaat");
+  expect(tokenInput).toHaveAttribute("type", "password");
+  expect(tokenInput).toHaveAttribute("autocomplete", "off");
+  expect(tokenInput.closest("form")).toHaveAttribute("autocomplete", "off");
+  await fill(tokenInput, "xaat-directed-connect");
   click(getButtonByText("Save"));
 
   await callbackStarted.promise;

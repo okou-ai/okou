@@ -1,4 +1,7 @@
+import { workspaceLogoColorway } from "@okouai/core/workspace-logo";
 import { cn } from "@okouai/ui";
+
+import { OkouLogomark } from "./okou-logomark.tsx";
 
 /**
  * Shared thumbnail scale for the two identity marks in the app chrome: the
@@ -122,33 +125,74 @@ export function ThumbnailPlaceholder({
  * A workspace: a rounded square, the shape brands are drawn for. Kept visually
  * distinct from `UserAvatar` on purpose — the shape is what tells the two
  * sidebar rows apart once they share a size.
+ *
+ * Clerk hands every organization an `imageUrl`, a generated placeholder
+ * included, so only `hasImage` says whether an admin uploaded a logo.
  */
 export function WorkspaceLogo({
+  id,
   name,
   imageUrl,
+  hasImage,
   size = "sm",
 }: {
+  id: string;
   name: string;
-  imageUrl?: string | null;
+  imageUrl: string;
+  hasImage: boolean;
   size?: ThumbnailSize;
 }) {
-  const base = cn(THUMBNAIL_BASE, THUMBNAIL_SIZE[size], THUMBNAIL_RADIUS[size]);
-
-  if (imageUrl) {
-    return (
-      <img src={imageUrl} alt={name} className={cn(base, "object-cover")} />
-    );
+  if (!hasImage) {
+    return <DefaultWorkspaceLogo id={id} name={name} size={size} />;
   }
 
   return (
-    <div
+    <img
+      src={imageUrl}
+      alt={name}
       className={cn(
-        base,
-        "flex items-center justify-center bg-[hsl(var(--gray-200))] font-bold text-brand-text",
-        THUMBNAIL_INITIAL_TEXT[size],
+        THUMBNAIL_BASE,
+        THUMBNAIL_SIZE[size],
+        THUMBNAIL_RADIUS[size],
+        "object-cover",
       )}
+    />
+  );
+}
+
+/**
+ * The mark a workspace wears until it has a logo: a tonal brand texture with
+ * the logomark on top, in a colourway chosen by the workspace id. It carries
+ * no hairline — the opaque texture already gives the square its edge, the way
+ * it does behind the chat home's agent avatar.
+ */
+export function DefaultWorkspaceLogo({
+  id,
+  name,
+  size = "sm",
+}: {
+  id: string;
+  name: string;
+  size?: ThumbnailSize;
+}) {
+  const colorway = workspaceLogoColorway(id);
+
+  return (
+    <span
+      role="img"
+      aria-label={name}
+      className={cn(
+        "grid shrink-0 place-items-center bg-[length:160%] bg-center",
+        THUMBNAIL_SIZE[size],
+        THUMBNAIL_RADIUS[size],
+      )}
+      style={{
+        backgroundColor: colorway.ground,
+        backgroundImage: `url(${colorway.textureUrl})`,
+        color: colorway.mark,
+      }}
     >
-      {name.charAt(0).toUpperCase()}
-    </div>
+      <OkouLogomark className="w-[58%]" />
+    </span>
   );
 }

@@ -264,25 +264,6 @@ function StateFromRequest({
   return null;
 }
 
-function fieldAutocomplete(
-  fieldKind: string,
-): "current-password" | "off" | "one-time-code" | "username" {
-  switch (fieldKind) {
-    case "username": {
-      return "username";
-    }
-    case "password": {
-      return "current-password";
-    }
-    case "one_time_code": {
-      return "one-time-code";
-    }
-    default: {
-      return "off";
-    }
-  }
-}
-
 type PendingBrowserInputAction = Extract<
   BrowserUserActionResponse,
   { readonly kind: "input" }
@@ -453,7 +434,9 @@ function BrowserInputControl({
       }
       multiple={field.control.multiple}
       inputMode={field.fieldKind === "one_time_code" ? "numeric" : undefined}
-      autoComplete={fieldAutocomplete(field.fieldKind)}
+      autoComplete={
+        field.fieldKind === "one_time_code" ? "one-time-code" : "off"
+      }
       aria-describedby={describedBy}
       required={required}
       minLength={field.control.minLength}
@@ -1671,6 +1654,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   return (
     <form
       ref={formRef}
+      autoComplete="off"
       className="flex flex-col gap-5"
       aria-label={
         activeAction.title ??

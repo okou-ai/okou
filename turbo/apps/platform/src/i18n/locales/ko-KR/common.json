@@ -1349,9 +1349,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "URL 입력",
+    "blankPage": {
+      "description": "{{assistantName}}이(가) 작업하는 동안 여기에서 페이지를 엽니다. 위에 URL을 입력해 직접 둘러볼 수도 있습니다.",
+      "title": "아직 열린 페이지가 없습니다"
+    },
+    "blankTabTitle": "새 탭",
     "cardTitle": "클라우드 브라우저",
-    "close": "라이브 브라우저 닫기",
-    "documentTitle": "라이브 브라우저",
+    "close": "클라우드 브라우저 닫기",
+    "documentTitle": "클라우드 브라우저",
     "notFound": "브라우저를 찾을 수 없습니다",
     "open": "{{name}} 브라우저 열기",
     "openAction": "열기",
@@ -1362,6 +1368,13 @@
       "startDescription": "시작하면 저장된 로그인 프로필과 저장소가 복원되고, 가능한 경우 저장된 탭이 다시 열립니다.",
       "starting": "시작 중…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} 작업 중",
+      "handBack": "다시 맡기기",
+      "handBackMessage": "브라우저 작업을 마쳤어요. 계속해 주세요.",
+      "memberInControl": "직접 조작 중",
+      "takeOver": "직접 조작"
+    },
     "reclaimHint_one": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
     "reclaimHint_other": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
     "status": {
@@ -1369,7 +1382,7 @@
       "starting": "시작 중",
       "stopped": "중지됨"
     },
-    "title": "라이브 브라우저",
+    "title": "클라우드 브라우저",
     "unavailable": {
       "description": "이 브라우저는 이 채팅에 속하지 않거나 제거되었습니다.",
       "title": "브라우저를 사용할 수 없습니다"
@@ -3987,6 +4000,15 @@
     "previousPage": "이전 샘플 페이지",
     "title": "문서",
     "useNamed": "{{title}} 사용"
+  },
+  "featureGuide": {
+    "close": "새 기능 가이드 닫기",
+    "dismiss": "확인",
+    "label": "새로운 기능",
+    "next": "다음",
+    "preview": "미리 보기",
+    "previous": "이전",
+    "tryPrompt": "이 작업 시작하기"
   },
   "global": {
     "errors": {

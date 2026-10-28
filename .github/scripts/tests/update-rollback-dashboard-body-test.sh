@@ -140,6 +140,8 @@ PATH="${fake_bin}:$PATH" \
   "$(release_tags_for_target "$target_commit")" >"$output_file"
 
 grep -Fqx -- "[Rollback Runner and API](${rollback_url})" "$output_file"
+grep -Fq -- 'exact release SHA-tagged Cloudflare Worker version at 100%' "$output_file"
+grep -Fq -- 'Vercel, Worker, and domain-verification results in this issue’s activity' "$output_file"
 grep -Fq -- "[App-only rollback](${rollback_url})" "$output_file"
 grep -Fq -- 'select `component=app`' "$output_file"
 grep -Fq -- 'signed Telegram readers (canonical and legacy)' "$output_file"

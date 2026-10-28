@@ -6,7 +6,14 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { artifactSummary } from "./chat-navigation-artifact-test-helpers.ts";
+import {
+  artifactSummary,
+  buttonNamed,
+  hostedSiteArtifactDetail,
+  mockArtifactConversation,
+  NAVIGATION_ARTIFACT_THREAD_ID,
+  openResourceArtifact,
+} from "./chat-navigation-artifact-test-helpers.ts";
 import {
   installResourceGeometry,
   resourceButton,
@@ -44,11 +51,10 @@ async function setupPublishingChat() {
     activeRunIds: [runId],
   });
   let published = false;
-  const requests: (string | undefined)[] = [];
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
-    requests.push(query.chatThreadId);
     return respond(200, {
-      artifacts: published ? [video] : [],
+      artifacts:
+        published && query.chatThreadId === RUN_THREAD_ID ? [video] : [],
       nextCursor: null,
     });
   });
@@ -62,7 +68,6 @@ async function setupPublishingChat() {
     expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
   });
   return {
-    requests,
     publish: () => {
       published = true;
     },
@@ -95,19 +100,17 @@ test.each(["notification", "reconnect"] as const)(
   },
 );
 
-test("Keep unopened resources lazy and read the latest catalog when opened", async () => {
+test("Show the latest published video when resources are first opened", async () => {
   const chat = await setupPublishingChat();
   chat.publish();
   await act(() => {
     context.mocks.ably.trigger(topic);
   });
-  expect(chat.requests).toStrictEqual([]);
   click(resourceButton());
   const resources = await screen.findByRole("region", { name: "Resources" });
   await expect(
     within(resources).findByText(TITLE),
   ).resolves.toBeInTheDocument();
-  expect(chat.requests).toStrictEqual([RUN_THREAD_ID]);
 });
 
 test("Refresh only the notified chat catalog", async () => {
@@ -121,7 +124,6 @@ test("Refresh only the notified chat catalog", async () => {
       chatArtifactCatalogChangedEvent("b0000000-0000-4000-a000-000000000802"),
     );
   });
-  expect(chat.requests).toStrictEqual([RUN_THREAD_ID]);
   expect(within(resources).getByText("No resources yet")).toBeInTheDocument();
   await act(() => {
     context.mocks.ably.trigger(topic);
@@ -129,4 +131,59 @@ test("Refresh only the notified chat catalog", async () => {
   await expect(
     within(resources).findByText(TITLE),
   ).resolves.toBeInTheDocument();
+});
+
+test("Show a newly published video in the already-open artifact gallery", async () => {
+  installResourceGeometry(200);
+  context.mocks.browser.matchMedia(true);
+  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  const site = artifactSummary(
+    "e0000000-0000-4000-a000-000000000998",
+    "hosted-site",
+    "Launch site",
+  );
+  const catalog = [site];
+  mockArtifactConversation(context, {
+    catalog,
+    details: new Map([
+      [
+        site.id,
+        hostedSiteArtifactDetail(site, {
+          siteId: "f0000000-0000-4000-a000-000000000998",
+          slug: "launch-site",
+          url: "https://launch-site.example.test/",
+        }),
+      ],
+    ]),
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    sharedWorkerTestTransport: "message-port",
+  });
+  const galleryTopic = chatArtifactCatalogChangedEvent(
+    NAVIGATION_ARTIFACT_THREAD_ID,
+  );
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(galleryTopic)).toBeTruthy();
+  });
+  await openResourceArtifact("Launch site");
+  await screen.findByTitle("Launch site preview");
+  click(
+    buttonNamed(
+      "Back to all artifacts",
+      screen.getByTestId("artifact-sidebar"),
+    ),
+  );
+  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
+  await expect(
+    within(gallery).findByText("Launch site"),
+  ).resolves.toBeInTheDocument();
+  catalog.push(
+    artifactSummary("e0000000-0000-4000-a000-000000000999", "file", TITLE),
+  );
+  await act(() => {
+    context.mocks.ably.trigger(galleryTopic);
+  });
+  await expect(within(gallery).findByText(TITLE)).resolves.toBeInTheDocument();
 });

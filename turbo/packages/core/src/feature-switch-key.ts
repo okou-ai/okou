@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  FeatureGuides = "featureGuides",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
@@ -68,4 +69,5 @@ export enum FeatureSwitchKey {
   ChatReplyNameLine = "chatReplyNameLine",
   ChatThreadTimeline = "chatThreadTimeline",
   UnifiedChatWorkspace = "unifiedChatWorkspace",
+  CloudBrowserPanel = "cloudBrowserPanel",
 }

@@ -91,6 +91,7 @@
 3 report-sccache-stats-test.sh
 3 resolve-pr-title-test.sh
 3 resolve-production-rollback-target-test.sh
+3 rollback-api-worker-production-test.sh
 3 rollback-app-production-test.sh
 3 crates/runner/tests/behavior/tests/runner-behavior-cancel-test.sh
 3 runner-binary-cache-test.sh

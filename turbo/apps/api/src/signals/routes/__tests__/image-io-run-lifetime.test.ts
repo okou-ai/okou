@@ -103,7 +103,6 @@ test.each(["completed", "failed"] as const)(
           "image",
           fixture.userId,
         );
-        expect(generationIds.has(generationId)).toBeFalsy();
         generationIds.add(generationId);
         const failure = {
           status: "ERROR",

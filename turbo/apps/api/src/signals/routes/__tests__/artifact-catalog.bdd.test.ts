@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -385,6 +387,112 @@ async function publishHostedSite(args: {
 }
 
 describe("GET /api/artifacts/catalog", () => {
+  it("publishes a readable private video catalog and preserves its original chat on reuse", async () => {
+    const owner = await catalogActor("Private video catalog owner");
+    const first = await sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Produce a private video",
+    });
+    const claimed = await claimChatRun(owner.runnerGroup, first.runId);
+    const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
+    installHostedUploadTransport(context, owner.storage);
+    const prepared = await accept(
+      setupApp({ context, routes: uploadsPrepareRoutes })(
+        uploadsContract,
+      ).prepare({
+        headers: { authorization: bearer },
+        body: {
+          filename: "private-video.mp4",
+          contentType: "video/mp4",
+          size: 11,
+          purpose: "artifact",
+        },
+      }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected a single-part video upload");
+    }
+    const uploaded = await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      headers: prepared.body.uploadHeaders,
+      body: "video bytes",
+    });
+    expect(uploaded.status).toBe(200);
+    await flushWaitUntilForTest();
+    const publications: {
+      channel: string | undefined;
+      payload: unknown;
+      catalog: Awaited<ReturnType<typeof chat.listArtifactCatalog>>;
+    }[] = [];
+    context.mocks.ably.publish.mockImplementation(async (topic, payload) => {
+      if (topic === chatArtifactCatalogChangedEvent(first.threadId)) {
+        const channel = context.mocks.ably.channelGet.mock.lastCall?.[0];
+        publications.push({
+          channel,
+          payload,
+          catalog: await chat.listArtifactCatalog(owner.actor, {
+            chatThreadId: first.threadId,
+          }),
+        });
+      }
+    });
+    await chat.completeUploadWithBearer(
+      bearer,
+      { id: prepared.body.id },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(publications.length).toBeGreaterThan(0);
+    for (const publication of publications) {
+      expect(publication).toMatchObject({
+        channel: `user:${owner.actor.userId}`,
+        payload: null,
+        catalog: {
+          artifacts: [
+            { title: "private-video.mp4", videoSourceUrl: prepared.body.url },
+          ],
+        },
+      });
+    }
+    const originalCatalog = await chat.listArtifactCatalog(owner.actor, {
+      chatThreadId: first.threadId,
+    });
+    await completeChatRunOk(first.runId, claimed.sandboxHeaders);
+    const second = await sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Reuse the private video",
+    });
+    const secondClaim = await claimChatRun(owner.runnerGroup, second.runId);
+    const secondBearer = `Bearer ${okouTokenFromClaim(secondClaim.claim)}`;
+    await chat.completeUploadWithBearer(
+      secondBearer,
+      { id: prepared.body.id },
+      [200],
+    );
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { chatThreadId: first.threadId }),
+    ).resolves.toMatchObject({
+      artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
+    });
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    await chat.deleteThread(owner.actor, first.threadId);
+    await chat.completeUploadWithBearer(
+      secondBearer,
+      { id: prepared.body.id },
+      [200],
+    );
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toMatchObject({
+      artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
+    });
+    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+  });
+
   it("shares the explicit site title across Chat and Artifacts and retains renames on redeploy", async () => {
     const owner = await catalogActor("Site title owner");
     const site = `title-${randomUUID().slice(0, 8)}`;

@@ -796,6 +796,16 @@ concentric: the inner arc turns too late, and the corner reads as a mistake
 rather than as a nested surface. A layer that meets the edge with no inset
 keeps the dialog's own radius.
 
+The shared `Drawer` is a modal, swipe-down bottom surface built on Base UI's
+Drawer. `DrawerContent` owns its portal, backdrop, dynamic viewport cap,
+horizontal/bottom safe areas, swipe motion, and translated close control.
+Keep a fixed `DrawerHeader` above a `min-h-0 flex-1` scrolling body, such as
+`DialogBody`. Responsive forms can use `Dialog` on wide screens and `Drawer`
+on narrow screens while sharing their content and ccstate owner. When a menu
+hands off to either modal, keep the modal outside the closing menu subtree,
+transfer resource ownership in one command, and restore focus to a surviving
+control rather than the menu item that unmounted.
+
 ### Chat transcript cards
 
 `ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`

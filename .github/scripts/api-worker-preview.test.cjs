@@ -503,6 +503,10 @@ test("production deployment publishes the released API with its own database bin
       assert.ok(args.includes("deploy"));
       generatedPath = args[args.indexOf("--config") + 1];
       const config = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
+      assert.equal(
+        args[args.indexOf("--tag") + 1],
+        releaseRuntime.GIT_COMMIT_SHA,
+      );
       assert.equal(config.name, "okou-api-production");
       assert.equal(config.workers_dev, true);
       assert.deepEqual(config.routes, []);
