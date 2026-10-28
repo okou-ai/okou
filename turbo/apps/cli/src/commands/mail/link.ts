@@ -10,7 +10,7 @@ import {
   finalizeActionUrl,
   printCallbackTurnInstruction,
 } from "../connector/action-url";
-import { currentAgentId } from "./shared";
+import { currentAgentId, parseMailProvider } from "./shared";
 
 function currentChatThreadId(): string {
   const threadId = getOkouChatThreadId()?.trim();
@@ -48,31 +48,40 @@ const callbackPromptNotes = callbackPromptAvailable
 
 export const linkCommand = new Command()
   .name("link")
-  .description("Link an existing Gmail draft to the current web chat")
-  .argument("<gmail-draft-id>", "Gmail draft ID")
+  .description(
+    "Link an existing Gmail or Outlook draft to the current web chat",
+  )
+  .argument("<draft-id>", "Gmail draft ID or Outlook message ID")
+  .option("--provider <provider>", "Mail provider: gmail or outlook", "gmail")
   .addOption(callbackPromptOption)
   .addHelpText(
     "after",
     `
 Examples:
   okou mail link r-test-draft
+  okou mail link <outlook-message-id> --provider outlook
 
 Notes:
-  - Links an existing Gmail draft; it does not create, update, or send email
+  - Links an existing provider draft; it does not create, update, or send email
   - Return the exact review URL, tell the user the draft remains editable, and end the turn so the user can review and send it
   - For the standard web email handoff, do not add a mail callback prompt
-${callbackPromptNotes}  - Revise the same Gmail draft in place and reuse its link instead of creating a second draft
-  - Never assume the user sent it; verify the Gmail thread has the SENT label before reporting a send`,
+${callbackPromptNotes}  - Revise the same provider draft in place and reuse its link instead of creating a second draft
+  - Never assume the user sent it; verify the provider reports the email as sent before reporting a send`,
   )
   .action(
     withErrorHandler(
-      async (gmailDraftId: string, opts: { callbackPrompt?: string }) => {
+      async (
+        draftId: string,
+        opts: { callbackPrompt?: string; provider: string },
+      ) => {
         const agentId = currentAgentId();
         const threadId = currentChatThreadId();
         const result = await linkMailDraft({
           threadId,
           agentId,
-          gmailDraftId,
+          ...(parseMailProvider(opts.provider) === "outlook"
+            ? { provider: "outlook" as const, outlookMessageId: draftId }
+            : { gmailDraftId: draftId }),
         });
         const reviewUrl = mailDraftReviewUrl({
           mailDraftUrl: result.mailDraftUrl,

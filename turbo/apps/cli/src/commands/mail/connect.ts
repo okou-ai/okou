@@ -101,7 +101,9 @@ async function printRunConnect(
   console.log(chalk.green(`✓ ${connector.connectorLabel} is ready`));
   console.log(chalk.dim(`  Sender: ${account.metadata.externalEmail ?? "-"}`));
   console.log(
-    chalk.dim("  After creating a Gmail draft: okou mail link <draft-id>"),
+    chalk.dim(
+      `  After creating a draft: okou mail link <draft-id>${provider === "outlook" ? " --provider outlook" : ""}`,
+    ),
   );
 }
 

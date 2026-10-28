@@ -2780,6 +2780,13 @@
       "when": 1793160498064,
       "tag": "1475_handy_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 1476,
+      "version": "7",
+      "when": 1793182013804,
+      "tag": "1476_outlook_chat_mail",
+      "breakpoints": true
     }
   ]
 }

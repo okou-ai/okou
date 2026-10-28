@@ -1,6 +1,8 @@
 import {
   array,
   boolean,
+  discriminatedUnion,
+  union,
   email,
   literal,
   number,
@@ -19,7 +21,12 @@ const c = initContract();
 
 export const mailProviderSchema = zEnum(["gmail", "outlook"]);
 
-export const mailDraftStatusSchema = zEnum(["draft", "sent", "deleted"]);
+export const mailDraftStatusSchema = zEnum([
+  "draft",
+  "sending",
+  "sent",
+  "deleted",
+]);
 
 export const mailAttachmentSchema = object({
   filename: string(),
@@ -35,7 +42,6 @@ export const mailInlineImageSchema = object({
 });
 
 const mailDraftBaseSchema = object({
-  provider: literal("gmail"),
   from: email(),
   fromName: string().optional(),
   to: array(email()),
@@ -52,19 +58,49 @@ const mailDraftBaseSchema = object({
   references: array(string()),
   status: mailDraftStatusSchema,
   detailAvailable: boolean(),
-  gmailDraftId: string(),
-  gmailThreadId: string(),
-  gmailMessageId: string(),
-  sentGmailMessageId: string().optional(),
   createdAt: string(),
   updatedAt: string(),
   sentAt: string().optional(),
 });
 
-export const mailDraftSchema = mailDraftBaseSchema.extend({
+const gmailMailDraftSchema = mailDraftBaseSchema.extend({
+  provider: literal("gmail"),
+  gmailDraftId: string(),
+  gmailThreadId: string(),
+  gmailMessageId: string(),
+  sentGmailMessageId: string().optional(),
   version: literal(3),
   attachments: array(mailAttachmentSchema),
 });
+
+const outlookMailDraftSchema = mailDraftBaseSchema.extend({
+  provider: literal("outlook"),
+  version: literal(3),
+  outlookMessageId: string().min(1),
+  outlookConversationId: string(),
+  outlookWebLink: url().optional(),
+  attachments: array(mailAttachmentSchema),
+});
+
+export const mailDraftSchema = discriminatedUnion("provider", [
+  gmailMailDraftSchema,
+  outlookMailDraftSchema,
+]);
+
+export const linkMailDraftInputSchema = union([
+  object({
+    threadId: uuid(),
+    agentId: uuid().optional(),
+    provider: literal("gmail").optional(),
+    gmailDraftId: string().min(1),
+  }),
+  object({
+    threadId: uuid(),
+    agentId: uuid().optional(),
+    provider: literal("outlook"),
+    outlookMessageId: string().min(1),
+  }),
+]);
 
 const mailDraftResponseSchema = object({
   mailDraftId: string().uuid(),
@@ -87,7 +123,7 @@ const mailDraftAttachmentPathParamsSchema = mailDraftPathParamsSchema.extend({
 
 export const threadMailSummarySchema = object({
   mailDraftId: uuid(),
-  status: zEnum(["draft", "sent"]),
+  status: zEnum(["draft", "sending", "sent"]),
   subject: string(),
   from: string(),
   createdAt: string(),
@@ -111,11 +147,7 @@ export const mailContract = c.router({
     method: "POST",
     path: "/api/mail/drafts/link",
     headers: authHeadersSchema,
-    body: object({
-      threadId: string().uuid(),
-      agentId: string().uuid().optional(),
-      gmailDraftId: string().min(1),
-    }),
+    body: linkMailDraftInputSchema,
     responses: {
       200: mailLinkResponseSchema,
       401: apiErrorSchema,
@@ -123,7 +155,7 @@ export const mailContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Link an existing Gmail draft to a web chat thread",
+    summary: "Link an existing email draft to a web chat thread",
   },
   getDraft: {
     method: "GET",
@@ -154,7 +186,7 @@ export const mailContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Get a Gmail draft attachment",
+    summary: "Get an email attachment",
   },
   deleteDraft: {
     method: "DELETE",
@@ -169,7 +201,7 @@ export const mailContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Permanently delete a Gmail draft and its Okou record",
+    summary: "Delete an email draft",
   },
   sendDraft: {
     method: "POST",
@@ -185,7 +217,7 @@ export const mailContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Send a linked Gmail draft",
+    summary: "Send a linked email draft",
   },
 });
 
@@ -196,3 +228,5 @@ export type MailInlineImage = zInfer<typeof mailInlineImageSchema>;
 export type MailDraft = zInfer<typeof mailDraftSchema>;
 export type ThreadMailSummary = zInfer<typeof threadMailSummarySchema>;
 export type MailContract = typeof mailContract;
+
+export type LinkMailDraftInput = zInfer<typeof linkMailDraftInputSchema>;

@@ -1169,6 +1169,21 @@ const connectors = [
     ),
   }),
   connector({
+    connectorSlug: "outlook-mail",
+    label: "Outlook Mail",
+    authMethods: [
+      standardOauthMethod({
+        connectorSlug: "outlook-mail",
+        prefix: "OUTLOOK_MAIL",
+        tokenEnvironmentNames: ["OUTLOOK_MAIL_TOKEN"],
+        scopes: ["Mail.ReadWrite", "Mail.Send", "User.Read", "offline_access"],
+      }),
+    ],
+    firewall: generatedFirewall([
+      bearerApi("https://graph.microsoft.com", "OUTLOOK_MAIL_TOKEN", []),
+    ]),
+  }),
+  connector({
     connectorSlug: "gmail",
     label: "Gmail",
     authMethods: [

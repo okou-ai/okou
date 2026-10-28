@@ -1685,6 +1685,9 @@ def _block_request_classification(
     if classification.kind == "platform_path_denied":
         _block_platform_path_denied(flow)
         return
+    if classification.kind == "outlook_send_blocked":
+        http_local_responses.block_outlook_send(flow)
+        return
     if classification.kind == "gmail_send_blocked":
         http_local_responses.block_gmail_send(flow)
         return
