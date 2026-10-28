@@ -14,6 +14,7 @@ import { writeArtifactSharePolicyObject } from "../external/s3";
 import { settle } from "../utils";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
 import { sharedThreadMember$ } from "./shared-thread-access.service";
+import { publicArtifactKeyFromUrl } from "./artifact-storage.service";
 import {
   readSharedThreadPolicy$,
   removeSharedThreadArtifactCopies$,
@@ -109,12 +110,9 @@ export const updateSharedThreadVisibility$ = command(
       args.audience !== "public" &&
       Object.values(owned.row.messageAttachments).some((attachments) => {
         return attachments?.some((attachment) => {
-          return (
-            URL.canParse(attachment.url) &&
-            new URL(attachment.url).pathname.startsWith(
-              `/shared-threads/${owned.row.id}/`,
-            )
-          );
+          return publicArtifactKeyFromUrl(attachment.url)
+            ?.toLowerCase()
+            .startsWith(`artifacts/shared-threads/${owned.row.id}/`);
         });
       })
     ) {

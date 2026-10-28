@@ -466,28 +466,57 @@ test.each(["private", "public"] as const)(
   },
 );
 
-test("asks for a new share before restricting legacy public attachment copies", async () => {
-  const f = await fixture();
-  const file = await f.upload(
-    "legacy.pdf",
-    "application/pdf",
-    "legacy public attachment",
-    "public",
-  );
-  const message = await f.send([file.part]);
-  const created = await accept(f.share(message), [201]);
-  const id = created.body.id;
-  await device.updateFeatureSwitches(f.actor, {
-    [FeatureSwitchKey.SharedThreadVisibility]: true,
-  });
-  const rejected = await accept(
-    api()(sharedThreadVisibilityContract).update({
-      headers,
-      params: { id: id.toUpperCase() },
-      body: { audience: "private", expectedRevision: null },
-    }),
-    [400],
-  );
-  expect(rejected.body.error.message).toContain("Create a new share");
-  await accept(api()(sharedThreadsContract).get({ params: { id } }), [200]);
-});
+test.each(["https://a.okou.io", "https://cdn.okou.io", "https://cdn.vm7.io"])(
+  "asks for a new share before restricting legacy public attachment copies on %s",
+  async (baseUrl) => {
+    mockEnv("OKOU_PUBLIC_ARTIFACTS_BASE_URL", baseUrl);
+    const f = await fixture();
+    const file = await f.upload(
+      "legacy.pdf",
+      "application/pdf",
+      "legacy public attachment",
+      "public",
+    );
+    const message = await f.send([file.part]);
+    const created = await accept(f.share(message), [201]);
+    const id = created.body.id;
+    const original = await accept(
+      api()(sharedThreadsContract).get({ params: { id } }),
+      [200],
+    );
+    const attachment = original.body.messages[0]?.attachments?.[0];
+    if (!attachment) {
+      throw new Error("Expected the public attachment copy");
+    }
+    expect(new URL(attachment.url).origin).toBe(baseUrl);
+    await device.updateFeatureSwitches(f.actor, {
+      [FeatureSwitchKey.SharedThreadVisibility]: true,
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            publicUserData: { userId: f.actor.userId },
+            organization: { id: f.actor.orgId, name: "Owner workspace" },
+          },
+        ],
+      },
+    );
+    for (const audience of ["private", "organization"] as const) {
+      const rejected = await accept(
+        api()(sharedThreadVisibilityContract).update({
+          headers,
+          params: { id: id.toUpperCase() },
+          body: { audience, expectedRevision: null },
+        }),
+        [400],
+      );
+      expect(rejected.body.error.message).toContain("Create a new share");
+    }
+    const unchanged = await accept(
+      api()(sharedThreadsContract).get({ params: { id } }),
+      [200],
+    );
+    expect(unchanged.body).toStrictEqual(original.body);
+  },
+);
