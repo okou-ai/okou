@@ -32,6 +32,7 @@ export function createRunnerBrowserFixtures(context: TestContext) {
   function profileProvider(beforeResponse?: () => Promise<void>) {
     const native = createNativeWindowProvider(context);
     const sessionIds = new Set<string>();
+    const stoppedSessionIds = new Set<string>();
     const profiles = new Map<
       string,
       { readonly id: string; readonly name: string }
@@ -73,7 +74,14 @@ export function createRunnerBrowserFixtures(context: TestContext) {
         );
       }),
       http.patch(`${PROVIDER_URL}/browsers/:id`, ({ params }) => {
+        if (
+          !sessionIds.has(String(params.id)) &&
+          !stoppedSessionIds.has(String(params.id))
+        ) {
+          return;
+        }
         sessionIds.delete(String(params.id));
+        stoppedSessionIds.add(String(params.id));
         return HttpResponse.json({
           id: String(params.id),
           status: "stopped",
@@ -85,17 +93,18 @@ export function createRunnerBrowserFixtures(context: TestContext) {
         });
       }),
       http.get(`${PROVIDER_URL}/browsers/:id`, ({ params }) => {
-        if (!sessionIds.has(String(params.id))) {
+        const active = sessionIds.has(String(params.id));
+        if (!active && !stoppedSessionIds.has(String(params.id))) {
           return;
         }
         return HttpResponse.json({
           id: String(params.id),
-          status: "active",
+          status: active ? "active" : "stopped",
           startedAt: new Date(START).toISOString(),
           timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
-          finishedAt: null,
-          liveUrl: "https://live.browser-use.com/owned-fixture",
-          cdpUrl: native.url,
+          finishedAt: active ? null : new Date(START).toISOString(),
+          liveUrl: active ? "https://live.browser-use.com/owned-fixture" : null,
+          cdpUrl: active ? native.url : null,
         });
       }),
       http.post(`${PROVIDER_URL}/profiles`, async ({ request }) => {

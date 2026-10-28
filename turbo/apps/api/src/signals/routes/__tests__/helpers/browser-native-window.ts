@@ -147,3 +147,64 @@ export function createNativeWindowProvider(context: TestContext) {
   });
   return Object.assign(state, { handler });
 }
+
+export function installBrowserWindowContentCommands(
+  native: ReturnType<typeof createNativeWindowProvider>,
+) {
+  const sizes = native.contentsSizes;
+  native.command = (command) => {
+    const targetId = command.sessionId?.replace(/^page-/u, "");
+    if (command.method === "Target.attachToTarget") {
+      return { sessionId: `page-${String(command.params.targetId)}` };
+    }
+    if (command.method === "Page.getFrameTree") {
+      return {
+        frameTree: {
+          frame: { id: "frame", loaderId: "loader", url: "about:blank" },
+        },
+      };
+    }
+    if (command.method === "Page.createIsolatedWorld") {
+      return { executionContextId: 1 };
+    }
+    if (command.method === "Runtime.evaluate") {
+      const expression = String(command.params.expression);
+      if (expression.includes("window.open(")) {
+        const source = native.targets.get(String(targetId));
+        if (!source) {
+          throw new Error("Restore source missing");
+        }
+        const match =
+          /^Boolean\(window\.open\(("(?:[^"\\]|\\.)*"), "_blank"\)\)$/u.exec(
+            expression,
+          );
+        if (!match?.[1]) {
+          throw new Error("Unexpected restore expression");
+        }
+        const target = {
+          targetId: randomUUID(),
+          windowId: source.windowId,
+          url: String(JSON.parse(match[1])),
+        };
+        native.targets.set(target.targetId, target);
+        return { result: { value: true } };
+      }
+      return { result: { value: true } };
+    }
+    if (command.method === "Page.getLayoutMetrics") {
+      return {
+        cssVisualViewport: {
+          pageX: 0,
+          pageY: 0,
+          clientWidth: 1440,
+          clientHeight: 900,
+        },
+      };
+    }
+    if (command.method === "Page.captureScreenshot") {
+      return { data: Buffer.from(`preview:${targetId}`).toString("base64") };
+    }
+    throw new Error(`Unexpected external CDP operation: ${command.method}`);
+  };
+  return { sizes };
+}

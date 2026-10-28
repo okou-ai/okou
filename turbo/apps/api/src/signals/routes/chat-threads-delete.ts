@@ -12,6 +12,7 @@ import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { deleteChatThread$ } from "../services/chat-thread.service";
 import { stopThreadBrowsers$ } from "../services/browser.service";
+import { reconcileSharedBrowsers$ } from "../services/browser-shared-reconcile.service";
 import { dispatchCancelSideEffects$ } from "../services/run-cancel.service";
 import { tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
@@ -75,6 +76,9 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     );
   }
+
+  await set(reconcileSharedBrowsers$, auth, signal);
+  signal.throwIfAborted();
 
   await publishThreadListChanged({ userId: auth.userId, orgId: auth.orgId });
   signal.throwIfAborted();

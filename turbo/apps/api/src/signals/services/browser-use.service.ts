@@ -3960,13 +3960,16 @@ export async function stopBrowserUseSessionForCleanup(
   providerSessionId: string,
   signal: AbortSignal,
 ): Promise<void> {
-  await browserUseRequest(
-    `/browsers/${encodeURIComponent(providerSessionId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ action: "stop" }),
-    },
-    signal,
-    [404],
-  );
+  await withBrowserUseCdpDeadline(signal, async (deadline) => {
+    await browserUseRequest(
+      `/browsers/${encodeURIComponent(providerSessionId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ action: "stop" }),
+        signal: deadline,
+      },
+      deadline,
+      [404],
+    );
+  });
 }

@@ -13,6 +13,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createBddApi } from "./helpers/api-bdd";
+import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -45,64 +46,6 @@ async function use(chat: Chat) {
     await accept(client().use({ headers: runHeaders(chat), body: {} }), [200])
   ).body;
 }
-function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
-  const sizes = f.provider.native.contentsSizes;
-  f.provider.native.command = (command) => {
-    const targetId = command.sessionId?.replace(/^page-/u, "");
-    if (command.method === "Target.attachToTarget") {
-      return { sessionId: `page-${String(command.params.targetId)}` };
-    }
-    if (command.method === "Page.getFrameTree") {
-      return {
-        frameTree: {
-          frame: { id: "frame", loaderId: "loader", url: "about:blank" },
-        },
-      };
-    }
-    if (command.method === "Page.createIsolatedWorld") {
-      return { executionContextId: 1 };
-    }
-    if (command.method === "Runtime.evaluate") {
-      const expression = String(command.params.expression);
-      if (expression.includes("window.open(")) {
-        const source = f.provider.native.targets.get(String(targetId));
-        if (!source) {
-          throw new Error("Restore source missing");
-        }
-        const match =
-          /^Boolean\(window\.open\(("(?:[^"\\]|\\.)*"), "_blank"\)\)$/u.exec(
-            expression,
-          );
-        if (!match?.[1]) {
-          throw new Error("Unexpected restore expression");
-        }
-        const target = {
-          targetId: randomUUID(),
-          windowId: source.windowId,
-          url: String(JSON.parse(match[1])),
-        };
-        f.provider.native.targets.set(target.targetId, target);
-        return { result: { value: true } };
-      }
-      return { result: { value: true } };
-    }
-    if (command.method === "Page.getLayoutMetrics") {
-      return {
-        cssVisualViewport: {
-          pageX: 0,
-          pageY: 0,
-          clientWidth: 1440,
-          clientHeight: 900,
-        },
-      };
-    }
-    if (command.method === "Page.captureScreenshot") {
-      return { data: Buffer.from(`preview:${targetId}`).toString("base64") };
-    }
-    throw new Error(`Unexpected external CDP operation: ${command.method}`);
-  };
-  return { sizes };
-}
 
 describe("shared Browser public consumers", () => {
   it.each([true, false])(
@@ -110,7 +53,7 @@ describe("shared Browser public consumers", () => {
     async (shared) => {
       const f = await fixture(shared);
       await f.owned.run(async () => {
-        nativeCommands(f);
+        installBrowserWindowContentCommands(f.provider.native);
         const a = await f.start();
         const result = await client().create({
           headers: runHeaders(a),
@@ -131,7 +74,7 @@ describe("shared Browser public consumers", () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const f = await fixture(false);
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       const b = await f.start();
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
@@ -171,7 +114,7 @@ describe("shared Browser public consumers", () => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
       const f = await fixture(false);
       await f.owned.run(async () => {
-        nativeCommands(f);
+        installBrowserWindowContentCommands(f.provider.native);
         const a = await f.start();
         const b = await f.start();
         const c = await f.start();
@@ -306,7 +249,7 @@ describe("shared Browser public consumers", () => {
   it("treats a missing provider instance as unavailable while preserving actual provider failures", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       await use(a);
       const [providerSessionId] = f.provider.sessionIds;
@@ -358,7 +301,7 @@ describe("shared Browser public consumers", () => {
   it("shares the owner Browser with a Slack chat and preserves its window after the Run ends", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const web = await use(await f.start());
       const actor = f.owned.actor;
       const integrations = createBddIntegrationApi(context);
@@ -424,7 +367,7 @@ describe("shared Browser public consumers", () => {
   it("provisions one profile and instance for two chats, reads and resizes only each owned window", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      const external = nativeCommands(f);
+      const external = installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       const b = await f.start();
       const first = await use(a);
@@ -484,7 +427,7 @@ describe("shared Browser public consumers", () => {
   it("captures only the chat URLs and reopens a new window without recreating the live owner instance", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       const b = await f.start();
       const first = await use(a);
@@ -589,7 +532,7 @@ describe("shared Browser public consumers", () => {
   it("preserves a named Browser and its preview while an earlier first open is still resolving", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       const instance = await allocate(a);
       await admit(a, instance.id, 0);
@@ -659,7 +602,7 @@ describe("shared Browser public consumers", () => {
   it("preserves a new window's preview when the old window's screenshot upload finishes late", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       const b = await f.start();
       const first = await use(a);
@@ -780,7 +723,7 @@ describe("shared Browser public consumers", () => {
   it("does not fall back to thread provisioning when shared admission is disabled", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       await use(a);
       await updateFeatureSwitchesForUser(context, f.featureActor, {
@@ -803,7 +746,7 @@ describe("shared Browser capture publication and admission", () => {
     async (state) => {
       const f = await fixture();
       await f.owned.run(async () => {
-        nativeCommands(f);
+        installBrowserWindowContentCommands(f.provider.native);
         const a = await f.start();
         const b = await f.start();
         const first = await use(a);
@@ -865,7 +808,7 @@ describe("shared Browser capture publication and admission", () => {
   it("keeps the restored winner when public and Runner admission create multi-page candidates", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
-      nativeCommands(f);
+      installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       const b = await f.start();
       const first = await use(a);
@@ -997,7 +940,7 @@ describe("shared Browser capture publication and admission", () => {
     async (completion) => {
       const f = await fixture();
       await f.owned.run(async () => {
-        nativeCommands(f);
+        installBrowserWindowContentCommands(f.provider.native);
         const a = await f.start();
         const first = await use(a);
         let capture = 0;
@@ -1151,7 +1094,7 @@ describe("shared Browser capture publication and admission", () => {
     async ({ reverse, before, after, warmup }) => {
       const f = await fixture();
       await f.owned.run(async () => {
-        nativeCommands(f);
+        installBrowserWindowContentCommands(f.provider.native);
         const a = await f.start();
         const b = await f.start();
         const first = await use(a);
@@ -1273,7 +1216,9 @@ describe("shared Browser capture publication and admission", () => {
     async (entry) => {
       const f = await fixture();
       await f.owned.run(async () => {
-        const { sizes } = nativeCommands(f);
+        const { sizes } = installBrowserWindowContentCommands(
+          f.provider.native,
+        );
         // External native state follows the separately measured local Chromium
         // viewport after creating a sibling of a 1440x720 window.
         f.provider.native.beforeCreateReply = (candidate) => {
@@ -1324,7 +1269,7 @@ describe("shared Browser capture publication and admission", () => {
     async (entry) => {
       const f = await fixture();
       await f.owned.run(async () => {
-        nativeCommands(f);
+        installBrowserWindowContentCommands(f.provider.native);
         const a = await f.start();
         const b = await f.start();
         const first = await use(a);

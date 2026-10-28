@@ -34,7 +34,6 @@ import {
 import {
   browserSessions,
   browserSessionInstances,
-  browserSessionTabSnapshots,
   browserSessionScreenshots,
   browserSessionScreenshotDeletions,
 } from "@okouai/db/schema/browser-session";
@@ -44,7 +43,6 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { settleIncludingAbort } from "../utils";
-import { browserCapturePublication } from "./browser-capture-publication";
 import {
   ORG_SENTINEL_USER_ID,
   userFeatureSwitchOverridesFromRows,
@@ -67,13 +65,16 @@ import {
   browserUseWindowExists,
   createBrowserUseSession,
   findBrowserUseSession,
-  listBrowserUseTabUrls,
   resizeBrowserUseSession,
   resolveBrowserUseViewerConnection,
   stopBrowserUseSessionForCleanup,
   type BrowserUseSession,
 } from "./browser-use.service";
-import { encryptPersistentSecretValue } from "./crypto.utils";
+import {
+  saveSharedSnapshot$,
+  sharedBrowserLifetime,
+} from "./browser-shared-snapshot.service";
+import { reconcileSharedBrowsers$ } from "./browser-shared-reconcile.service";
 
 interface SharedBrowserInput {
   readonly orgId: string;
@@ -142,41 +143,13 @@ async function provider<T>(
   }
   return result.value;
 }
-function lifetime(
-  owner: BrowserPublicAuthority,
-  profile: Profile,
-  window: Pick<Window, "primaryWindowId">,
-) {
-  return and(
-    eq(windows.chatThreadId, owner.chatThreadId),
-    eq(windows.instanceId, profile.instanceId),
-    eq(windows.primaryWindowId, window.primaryWindowId),
-    exists(
-      new QueryBuilder()
-        .select({ id: profiles.id })
-        .from(profiles)
-        .where(
-          and(
-            eq(profiles.id, profile.id),
-            eq(profiles.instanceId, profile.instanceId),
-            profile.providerSessionId
-              ? eq(profiles.providerSessionId, profile.providerSessionId)
-              : sql`false`,
-            eq(profiles.orgId, owner.orgId),
-            eq(profiles.userId, owner.userId),
-            inArray(profiles.status, ["active", "stopping"]),
-          ),
-        ),
-    ),
-  );
-}
 function liveSharedWindow(
   owner: BrowserPublicAuthority,
   profile: Profile,
   window: Pick<Window, "primaryWindowId">,
 ) {
   return and(
-    lifetime(owner, profile, window),
+    sharedBrowserLifetime(owner, profile, window),
     eq(windows.state, "active"),
     gt(windows.expiresAt, nowDate()),
     authorityStillCurrent(owner),
@@ -254,85 +227,6 @@ function presentation(
     updatedAt: meta.updatedAt.toISOString(),
   };
 }
-
-const saveSharedSnapshot$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly owner: BrowserPublicAuthority;
-      readonly profile: Profile;
-      readonly window: Window;
-      readonly cdpUrl: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const { owner, profile, window, cdpUrl } = args;
-    const t = browserSessionTabSnapshots;
-    const [previous] = await get(db$)
-      .select({ encryptedTabUrls: t.encryptedTabUrls })
-      .from(t)
-      .where(eq(t.chatThreadId, owner.chatThreadId));
-    signal.throwIfAborted();
-    const snapshot = await provider(
-      listBrowserUseTabUrls(cdpUrl, signal, window.primaryWindowId),
-      signal,
-    );
-    // A closed native window cannot replace its last recoverable snapshot.
-    // A live window containing only blank pages still deliberately saves [].
-    if (!snapshot.windowExists) {
-      return false;
-    }
-    const capturedAt = nowDate();
-    const encryptedTabUrls = await encryptPersistentSecretValue(
-      JSON.stringify(snapshot.urls),
-      { userId: owner.userId },
-    );
-    signal.throwIfAborted();
-    const db = set(writeDb$);
-    const publication = browserCapturePublication({
-      value: t.encryptedTabUrls,
-      updatedAt: t.updatedAt,
-      previousValue: previous?.encryptedTabUrls ?? null,
-      capturedAt,
-    });
-    const source = new QueryBuilder()
-      .select({
-        chatThreadId: windows.chatThreadId,
-        encryptedTabUrls: sql`${encryptedTabUrls}`
-          .mapWith(t.encryptedTabUrls)
-          .as("encrypted_tab_urls"),
-        createdAt: sql`${sql.param(capturedAt, t.createdAt)}::timestamp`
-          .mapWith(t.createdAt)
-          .as("created_at"),
-        updatedAt: sql`${sql.param(capturedAt, t.updatedAt)}::timestamp`
-          .mapWith(t.updatedAt)
-          .as("updated_at"),
-      })
-      .from(windows)
-      .where(lifetime(owner, profile, window));
-    await db
-      .insert(t)
-      .select(source)
-      .onConflictDoUpdate({
-        target: t.chatThreadId,
-        set: {
-          encryptedTabUrls,
-          updatedAt: publication.updatedAt,
-        },
-        setWhere: and(
-          exists(
-            new QueryBuilder()
-              .select({ id: windows.chatThreadId })
-              .from(windows)
-              .where(lifetime(owner, profile, window)),
-          ),
-          publication.canReplace,
-        ),
-      });
-    signal.throwIfAborted();
-    return true;
-  },
-);
 
 type SharedBrowserInputNode = Computed<
   SharedBrowserInput | null | Promise<SharedBrowserInput | null>
@@ -943,6 +837,9 @@ function sharedBrowserOpen(
       if (!ctx.mode.enabled) {
         return off();
       }
+      // Reclaim expired lifetimes before the graph captures its current rows.
+      await set(reconcileSharedBrowsers$, ctx.owner, signal);
+      signal.throwIfAborted();
       const view = await get(view$);
       signal.throwIfAborted();
       const operation = await settleIncludingAbort(
@@ -1136,7 +1033,7 @@ function sharedBrowserResize(
             .from(windows)
             .where(
               and(
-                lifetime(ctx.owner, view.profile, window),
+                sharedBrowserLifetime(ctx.owner, view.profile, window),
                 eq(windows.state, "active"),
                 gt(windows.expiresAt, nowDate()),
               ),
