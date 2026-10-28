@@ -9,6 +9,7 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command, computed, type Computed } from "ccstate";
@@ -24,6 +25,7 @@ import {
   not,
   sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -100,6 +102,26 @@ export const loadCompletedRunOutput$ = command(
 );
 
 const THREAD_START_SEQ_ID = 0;
+
+export const snapshotCandidateHead = alias(
+  chatEventSnapshots,
+  "current_chat_event_snapshot",
+);
+
+export function snapshotCandidateSelection() {
+  return {
+    chatThreadId: chatThreads.id,
+    indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId,
+    lastMessageAt: chatThreads.lastMessageAt,
+    headId: snapshotCandidateHead.id,
+    headLastSeqId: snapshotCandidateHead.lastSeqId,
+    headLastEventId: snapshotCandidateHead.lastEventId,
+    headTerminalSeqId: snapshotCandidateHead.terminalSeqId,
+    headTerminalEventId: snapshotCandidateHead.terminalEventId,
+    headObjectKey: snapshotCandidateHead.objectKey,
+    headArchiveSchemaVersion: snapshotCandidateHead.archiveSchemaVersion,
+  };
+}
 
 const chatEventRowSelection = {
   id: chatEvents.id,
