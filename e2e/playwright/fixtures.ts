@@ -1,12 +1,16 @@
 import { expect, test as base } from "@playwright/test";
 
 import { seedPreviewBypassCookie } from "./lib/preview-bypass";
+import { browserHttpProxy } from "./lib/http-proxy";
 
 interface PreviewBypassFixtures {
   readonly previewBypassCookie: void;
 }
 
 const test = base.extend<PreviewBypassFixtures>({
+  proxy: async ({ proxy }, use) => {
+    await use(browserHttpProxy() ?? proxy);
+  },
   page: async ({ page }, use) => {
     try {
       await use(page);

@@ -9,6 +9,7 @@ import { issueCliToken } from "./lib/cli-token";
 import { runnerTestAccounts } from "./lib/clerk-api";
 import { formatErrorReport } from "./lib/error-report";
 import { captureClerkReadiness } from "./lib/clerk-readiness";
+import { browserHttpProxy } from "./lib/http-proxy";
 import { ensureRunnerOrganizationReady } from "./lib/onboarding";
 import {
   completeRunnerOnboarding,
@@ -84,7 +85,7 @@ async function main(): Promise<void> {
     process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
   await mkdir(outputDirectory, { recursive: true });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ proxy: browserHttpProxy() });
   try {
     for (
       let batchStart = 0;
