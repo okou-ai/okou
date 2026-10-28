@@ -92,11 +92,6 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0333",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation-run.service.ts",
-      "owner": "commitWorkflowInput$"
-    },
-    {
       "id": "TX-0342",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteWorkflowRows$"
