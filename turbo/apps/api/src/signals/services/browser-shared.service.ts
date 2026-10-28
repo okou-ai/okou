@@ -843,11 +843,9 @@ function sharedBrowserPresent(
       if (!view?.browser) {
         return missing();
       }
+      const browser = view.browser;
       const operation = await settleIncludingAbort(
         (async (): Promise<Result<BrowserSession> | null> => {
-          if (!view.browser) {
-            return missing();
-          }
           const session =
             view.profile.status === "active" && view.profile.providerSessionId
               ? await provider(
@@ -863,7 +861,7 @@ function sharedBrowserPresent(
           return {
             kind: "ok",
             value: presentation(
-              view.browser,
+              browser,
               view.profile,
               view.window,
               session,
@@ -1104,18 +1102,13 @@ function sharedBrowserResize(
       ) {
         return unavailable();
       }
+      const { window, browser } = view;
+      const providerSessionId = view.profile.providerSessionId;
+      const aspectRatio = ctx.mode.input.aspectRatio;
       const operation = await settleIncludingAbort(
         (async (): Promise<Result<BrowserSession> | null> => {
-          if (
-            !view.window ||
-            !view.browser ||
-            !view.profile.providerSessionId ||
-            !ctx.mode.input.aspectRatio
-          ) {
-            return unavailable();
-          }
           const session = await provider(
-            findBrowserUseSession(view.profile.providerSessionId, signal),
+            findBrowserUseSession(providerSessionId, signal),
             signal,
           );
           if (!session || session.status !== "active" || !session.cdpUrl) {
@@ -1125,7 +1118,7 @@ function sharedBrowserResize(
             BROWSER_MAX_SCREEN_HEIGHT,
             Math.max(
               BROWSER_MIN_SCREEN_HEIGHT,
-              Math.round(BROWSER_SCREEN_WIDTH / ctx.mode.input.aspectRatio),
+              Math.round(BROWSER_SCREEN_WIDTH / aspectRatio),
             ),
           );
           await provider(
@@ -1134,7 +1127,7 @@ function sharedBrowserResize(
               BROWSER_SCREEN_WIDTH,
               height,
               signal,
-              view.window.primaryWindowId,
+              window.primaryWindowId,
             ),
             signal,
           );
@@ -1143,7 +1136,7 @@ function sharedBrowserResize(
             .from(windows)
             .where(
               and(
-                lifetime(ctx.owner, view.profile, view.window),
+                lifetime(ctx.owner, view.profile, window),
                 eq(windows.state, "active"),
                 gt(windows.expiresAt, nowDate()),
               ),
@@ -1155,7 +1148,7 @@ function sharedBrowserResize(
           return {
             kind: "ok",
             value: presentation(
-              view.browser,
+              browser,
               view.profile,
               currentWindow,
               session,
@@ -1200,13 +1193,11 @@ function sharedBrowserViewer(
       ) {
         return unavailable();
       }
+      const providerSessionId = view.profile.providerSessionId;
       const operation = await settleIncludingAbort(
         (async (): Promise<Result<{ readonly cdpUrl: string }> | null> => {
-          if (!view.profile.providerSessionId) {
-            return unavailable();
-          }
           const session = await provider(
-            findBrowserUseSession(view.profile.providerSessionId, signal),
+            findBrowserUseSession(providerSessionId, signal),
             signal,
           );
           if (!session || session.status !== "active" || !session.cdpUrl) {
@@ -1255,17 +1246,12 @@ function sharedBrowserClose(
         view.profile.status === "active" &&
         view.profile.providerSessionId
       ) {
+        const { window, browser } = view;
+        const providerSessionId = view.profile.providerSessionId;
         const operation = await settleIncludingAbort(
           (async (): Promise<Result<Record<string, never>> | null> => {
-            if (
-              !view.window ||
-              !view.browser ||
-              !view.profile.providerSessionId
-            ) {
-              return { kind: "ok", value: {} };
-            }
             const session = await provider(
-              findBrowserUseSession(view.profile.providerSessionId, signal),
+              findBrowserUseSession(providerSessionId, signal),
               signal,
             );
             if (session && session.status === "active" && session.cdpUrl) {
@@ -1274,17 +1260,17 @@ function sharedBrowserClose(
                 {
                   owner: ctx.owner,
                   profile: view.profile,
-                  window: view.window,
+                  window,
                   cdpUrl: session.cdpUrl,
                 },
                 signal,
               );
               if (captured) {
-                await set(captureAndStoreBrowserScreenshot$, view.browser, {
-                  providerSessionId: view.profile.providerSessionId,
+                await set(captureAndStoreBrowserScreenshot$, browser, {
+                  providerSessionId,
                   window: {
                     instanceId: view.profile.instanceId,
-                    primaryWindowId: view.window.primaryWindowId,
+                    primaryWindowId: window.primaryWindowId,
                   },
                 });
               }

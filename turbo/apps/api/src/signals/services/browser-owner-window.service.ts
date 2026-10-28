@@ -40,7 +40,7 @@ const unavailable = { outcome: "unavailable" } as const;
 type AdmissionAction = Extract<RunnerBrowserAction, { kind: "admit" }>;
 interface WindowCandidateCleanup {
   readonly instanceId: string;
-  cdpUrl?: string;
+  readonly cdpUrl: string;
   candidate?: BrowserUseWindowCandidate;
   publicationUncertain: boolean;
 }
@@ -71,7 +71,7 @@ const cleanupWindowCandidate$ = command(
     args: WindowCandidateCleanup,
     signal: AbortSignal,
   ): Promise<void> => {
-    if (!args.candidate || !args.cdpUrl || args.publicationUncertain) {
+    if (!args.candidate || args.publicationUncertain) {
       // A read cannot exclude a late write, even when another winner is
       // visible. Only a settled publication permits exact loser cleanup.
       return;
