@@ -1,7 +1,8 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { cn } from "@okouai/ui/lib/utils";
 import { ToggleButton } from "@okouai/ui/components/ui/toggle-button";
 import {
   Dialog,
@@ -25,6 +26,10 @@ import {
   tryFeatureGuidePrompt$,
 } from "../../signals/feature-guides.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
+import { Link } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
+import { FeatureGuideConversationPreview } from "./feature-guide-conversation.tsx";
 
 function GuideMedia({
   media,
@@ -65,7 +70,15 @@ function GuideMedia({
     throw new Error("Feature guide step is outside the current walkthrough");
   }
   return (
-    <div className="flex flex-col gap-3 rounded-xl bg-gray-50 p-4">
+    <div
+      className={cn(
+        "flex flex-col gap-4",
+        !step.conversation && "rounded-xl bg-gray-50 p-4 sm:p-5",
+      )}
+    >
+      {step.conversation && (
+        <FeatureGuideConversationPreview conversation={step.conversation} />
+      )}
       {step.imageUrl && (
         <img
           src={step.imageUrl}
@@ -74,8 +87,12 @@ function GuideMedia({
           className="max-h-48 w-full rounded-lg object-contain"
         />
       )}
-      <p className="text-sm font-medium">{step.title}</p>
-      <p className="text-sm text-muted-foreground">{step.description}</p>
+      <div className="flex flex-col gap-2" aria-live="polite">
+        <p className="text-lg font-medium">{step.title}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {step.description}
+        </p>
+      </div>
       <div className="flex items-center justify-between gap-3">
         <Button
           variant="quiet"
@@ -86,11 +103,13 @@ function GuideMedia({
           }}
         >
           <ArrowLeft />
-          {t(($) => {
-            return $.featureGuide.previous;
-          })}
+          <span className="sr-only sm:not-sr-only">
+            {t(($) => {
+              return $.featureGuide.previous;
+            })}
+          </span>
         </Button>
-        <span className="text-xs text-muted-foreground">
+        <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
           {stepIndex + 1} / {media.steps.length}
         </span>
         <Button
@@ -101,9 +120,11 @@ function GuideMedia({
             return selectStep(stepIndex + 1);
           }}
         >
-          {t(($) => {
-            return $.featureGuide.next;
-          })}
+          <span className="sr-only sm:not-sr-only">
+            {t(($) => {
+              return $.featureGuide.next;
+            })}
+          </span>
           <ArrowRight />
         </Button>
       </div>
@@ -150,26 +171,30 @@ function GuideContents({
         </DialogTitle>
         <DialogDescription>{edition.content.description}</DialogDescription>
       </DialogHeader>
-      <div className="grid gap-2 sm:grid-cols-3">
-        {edition.content.items.map((item, index) => {
-          return (
-            <ToggleButton
-              key={item.featureId}
-              layout="tile"
-              className="flex h-auto min-h-20 flex-col items-start justify-start gap-1 whitespace-normal rounded-xl p-3 text-left"
-              selected={index === itemIndex}
-              onClick={() => {
-                return selectItem(index);
-              }}
-            >
-              <span className="text-sm font-medium">{item.title}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {item.description}
-              </span>
-            </ToggleButton>
-          );
-        })}
-      </div>
+      {edition.content.items.length === 1 ? (
+        <h3 className="text-sm font-medium">{activeItem.title}</h3>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {edition.content.items.map((item, index) => {
+            return (
+              <ToggleButton
+                key={item.featureId}
+                layout="tile"
+                className="flex h-auto min-h-20 flex-col items-start justify-start gap-1 whitespace-normal rounded-xl p-3 text-left"
+                selected={index === itemIndex}
+                onClick={() => {
+                  return selectItem(index);
+                }}
+              >
+                <span className="text-sm font-medium">{item.title}</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {item.description}
+                </span>
+              </ToggleButton>
+            );
+          })}
+        </div>
+      )}
       {activeItem.media && (
         <GuideMedia
           key={activeItem.featureId}
@@ -183,7 +208,20 @@ function GuideContents({
             return $.featureGuide.dismiss;
           })}
         </Button>
-        {prompt && (
+        {activeItem.action?.type === "connect-discord" ? (
+          <Link
+            pathname={ROUTES.settingsDiscord}
+            className={buttonVariants()}
+            onClick={(event) => {
+              if (shouldHandleLinkClick(event)) {
+                onClose();
+              }
+            }}
+          >
+            {activeItem.action.label}
+            <ArrowRight />
+          </Link>
+        ) : prompt ? (
           <Button
             onClick={() => {
               return onTry(prompt);
@@ -194,7 +232,7 @@ function GuideContents({
             })}
             <ArrowRight />
           </Button>
-        )}
+        ) : null}
       </DialogFooter>
     </>
   );
@@ -252,6 +290,7 @@ export function FeatureGuideDialog() {
     >
       <DialogContent
         maxWidth="2xl"
+        contentClassName="auto-rows-max"
         closeLabel={t(($) => {
           return $.featureGuide.close;
         })}

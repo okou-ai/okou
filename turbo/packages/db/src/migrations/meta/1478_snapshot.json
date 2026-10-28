@@ -1,5 +1,5 @@
 {
-  "id": "fd6b6a0a-990b-44ed-9f85-5ac7a43e8231",
+  "id": "50525a7a-15d5-414c-9a86-409847201e1a",
   "prevId": "0f6863e7-9051-4437-adbe-f41ca2aa511a",
   "version": "7",
   "dialect": "postgresql",
@@ -19423,31 +19423,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'gmail'"
-        },
-        "outlook_message_id": {
-          "name": "outlook_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outlook_conversation_id": {
-          "name": "outlook_conversation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outlook_web_link": {
-          "name": "outlook_web_link",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "gmail_draft_id": {
           "name": "gmail_draft_id",
           "type": "text",
@@ -19518,27 +19493,6 @@
         }
       },
       "indexes": {
-        "mail_drafts_connector_outlook_message_unique": {
-          "name": "mail_drafts_connector_outlook_message_unique",
-          "columns": [
-            {
-              "expression": "connector_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "outlook_message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_mail_drafts_chat_thread": {
           "name": "idx_mail_drafts_chat_thread",
           "columns": [
@@ -19550,9 +19504,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mail_drafts_connector_gmail_draft_unique": {
           "name": "mail_drafts_connector_gmail_draft_unique",
@@ -19571,37 +19525,37 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "mail_drafts_chat_thread_id_chat_threads_id_fk": {
           "name": "mail_drafts_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "mail_drafts",
-          "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
           ],
+          "tableTo": "chat_threads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "mail_drafts_connector_id_connectors_id_fk": {
           "name": "mail_drafts_connector_id_connectors_id_fk",
           "tableFrom": "mail_drafts",
-          "tableTo": "connectors",
           "columnsFrom": [
             "connector_id"
           ],
+          "tableTo": "connectors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -28071,6 +28025,22 @@
           "primaryKey": false,
           "notNull": true
         },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "legacy_installation_tenant_id": {
+          "name": "legacy_installation_tenant_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "CASE WHEN org_id IS NULL THEN teams_tenant_id ELSE NULL END",
+            "type": "stored"
+          }
+        },
         "user_id": {
           "name": "user_id",
           "type": "text",
@@ -28112,6 +28082,28 @@
         }
       },
       "indexes": {
+        "idx_teams_org_connections_owner": {
+          "name": "idx_teams_org_connections_owner",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"teams_org_connections\".\"org_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_teams_org_connections_user_tenant": {
           "name": "idx_teams_org_connections_user_tenant",
           "columns": [
@@ -28129,10 +28121,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "teams_user_id IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_teams_org_connections_aad_tenant": {
           "name": "idx_teams_org_connections_aad_tenant",
@@ -28151,10 +28143,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "teams_aad_object_id IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_teams_org_connections_user_id_tenant": {
           "name": "idx_teams_org_connections_user_id_tenant",
@@ -28173,9 +28165,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_teams_org_connections_tenant": {
           "name": "idx_teams_org_connections_tenant",
@@ -28188,24 +28180,24 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "teams_org_connections_teams_tenant_id_teams_org_installations_teams_tenant_id_fk": {
           "name": "teams_org_connections_teams_tenant_id_teams_org_installations_teams_tenant_id_fk",
           "tableFrom": "teams_org_connections",
-          "columnsFrom": [
-            "teams_tenant_id"
-          ],
           "tableTo": "teams_org_installations",
+          "columnsFrom": [
+            "legacy_installation_tenant_id"
+          ],
           "columnsTo": [
             "teams_tenant_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},

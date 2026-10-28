@@ -1,178 +1,39 @@
-import {
-  discriminatedUnion,
-  literal,
-  object,
-  string,
-  union,
-  type output,
-} from "zod";
-
-import { asc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, inArray, sql, type SQL } from "drizzle-orm";
+import type { OfficialWorkflowAcceptedDefinition } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import type { OfficialWorkflowAcceptedDefinition } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { conflict } from "../../lib/error";
-import {
-  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-  type AcceptedOfficialWorkflowCatalog,
-} from "./official-workflow-catalog-read.service";
+import { OFFICIAL_WORKFLOW_CATALOG_AUTHORITY } from "./official-workflow-catalog-read.service";
 import {
   artifactMatches,
   blueprintIdentities,
   blueprintIdentitiesMatch,
   acceptedDefinitionForName,
   acceptedRevisionsMatchDefinitions,
-  lockedInstallationMatches,
   exactMountsMatch,
-  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
 } from "./official-workflow-run.service";
-import {
-  pendingCreditPlanSql,
-  pendingCreditPlanRowSchema,
-  pendingCreditPlanResult,
-} from "./pending-launch-credit-plan";
-import {
-  pendingLaunchAdmissionStart,
-  advancePendingLaunchAdmission,
-  pendingAdmissionRecordSchema,
-  type PendingAdmissionProgress,
-} from "./pending-launch-admission-plan";
+import { pendingCreditPlanSql } from "./pending-launch-credit-plan";
 import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
 
-const officialRowSchema = discriminatedUnion("phase", [
-  object({
-    phase: literal("catalog-lock"),
-    authority: string(),
-    releaseId: string(),
-  }),
-  object({
-    phase: literal("installation"),
-    id: string(),
-    orgId: string(),
-    agentId: string(),
-    name: string(),
-    visibility: string(),
-    ownerUserId: string(),
-    officialDefinitionName: string().nullable(),
-    officialInstallationState: string().nullable(),
-  }),
-  object({
-    phase: literal("automation"),
-    id: string(),
-    orgId: string(),
-    workflowId: string(),
-    ownerUserId: string(),
-    blueprintKey: string().nullable(),
-    appliedFingerprint: string().nullable(),
-    reconciliationStatus: string().nullable(),
-    definitionName: string().nullable(),
-  }),
-]);
-export const pendingLaunchAdmissionRowSchema = union([
-  officialRowSchema,
-  pendingCreditPlanRowSchema,
-  pendingAdmissionRecordSchema,
-]);
-type Record = output<typeof pendingLaunchAdmissionRowSchema>;
-type OfficialRecord = output<typeof officialRowSchema>;
-type OrdinaryRecord = output<typeof pendingAdmissionRecordSchema>;
-interface OfficialStatement {
-  readonly kind: "statement";
-  readonly phase:
-    "catalog-lock" | "credit-plan" | "installation" | "automation";
-  readonly sql: SQL;
-  readonly catalog: AcceptedOfficialWorkflowCatalog | null;
-  readonly accepted: readonly OfficialWorkflowAcceptedDefinition[];
-}
-type PendingLaunchAdmissionProgress =
-  PendingAdmissionProgress | OfficialStatement;
-type Statement = Extract<
-  PendingLaunchAdmissionProgress,
-  { readonly kind: "statement" }
->;
-
-/** Catalog SHARE -> credit-plan UPDATE -> installations UPDATE -> automation UPDATE.
- * Every phase occurs at most once, and all execution remains in the command. */
-export function pendingOfficialAdmissionStart(
+function capturedOfficialDefinitions(
   args: PreparedCommitPreparedLaunchArgs,
-): PendingLaunchAdmissionProgress {
-  if (!args.context.officialWorkflowRun) {
-    return pendingLaunchAdmissionStart(args);
-  }
-  return {
-    kind: "statement",
-    phase: "catalog-lock",
-    catalog: null,
-    accepted: [],
-    sql: sql`SELECT 'catalog-lock' AS phase, ${officialWorkflowCatalogState.authority} AS authority, ${officialWorkflowCatalogState.acceptedReleaseId} AS "releaseId"
-      FROM ${officialWorkflowCatalogState} WHERE ${eq(officialWorkflowCatalogState.authority, OFFICIAL_WORKFLOW_CATALOG_AUTHORITY)} FOR SHARE`,
-  };
-}
-
-function failedOfficial() {
-  return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
-}
-
-function installationRead(
-  args: PreparedCommitPreparedLaunchArgs,
-  step: OfficialStatement,
-): OfficialStatement {
+): readonly OfficialWorkflowAcceptedDefinition[] | null {
   const observation = args.context.officialWorkflowRun;
-  if (!observation) {
-    throw new Error("Official admission requires captured provenance");
-  }
-  return {
-    ...step,
-    phase: "installation",
-    sql: sql`SELECT 'installation' AS phase,
-    ${workflows.id} AS id, ${workflows.orgId} AS "orgId", ${workflows.agentId} AS "agentId", ${workflows.name} AS name,
-    ${workflows.visibility} AS visibility, ${workflows.ownerUserId} AS "ownerUserId", ${workflows.officialDefinitionName} AS "officialDefinitionName", ${workflows.officialInstallationState} AS "officialInstallationState"
-    FROM ${workflows} WHERE ${inArray(
-      workflows.id,
-      observation.definitions.map((definition) => {
-        return definition.workflowId;
-      }),
-    )}
-    ORDER BY ${asc(workflows.id)} FOR UPDATE`,
-  };
-}
-
-function acceptedInstallations(
-  args: PreparedCommitPreparedLaunchArgs,
-  step: OfficialStatement,
-  rows: readonly OfficialRecord[],
-) {
-  const observation = args.context.officialWorkflowRun;
-  const catalog = step.catalog;
-  if (!observation || !catalog) {
-    throw new Error("Official admission requires accepted catalog facts");
-  }
-  const installed = rows.filter((row) => {
-    return row.phase === "installation";
-  });
-  if (installed.length !== observation.definitions.length) {
+  const facts = args.context.officialWorkflowFacts;
+  if (
+    !observation ||
+    !facts ||
+    facts.catalog.releaseId !== observation.releaseId
+  ) {
     return null;
   }
-  const byId = new Map(
-    installed.map((row) => {
-      return [row.id, row] as const;
-    }),
-  );
   const accepted: OfficialWorkflowAcceptedDefinition[] = [];
   for (const expected of observation.definitions) {
-    const row = byId.get(expected.workflowId);
     const definition = acceptedDefinitionForName(
-      catalog.payload.definitions,
+      facts.catalog.payload.definitions,
       expected.name,
     );
     if (
-      !row ||
-      !lockedInstallationMatches(expected, row, {
-        orgId: args.createArgs.orgId,
-        userId: args.createArgs.userId,
-        agentId: args.context.resolved.agentId,
-      }) ||
       !definition ||
       definition.revision !== expected.revision ||
       !artifactMatches(expected.artifact, definition.artifact) ||
@@ -185,167 +46,130 @@ function acceptedInstallations(
     }
     accepted.push(definition);
   }
-  return accepted;
-}
-
-function finishRevisions(
-  args: PreparedCommitPreparedLaunchArgs,
-  step: OfficialStatement,
-): PendingLaunchAdmissionProgress {
-  const revisions = args.context.officialWorkflowFacts?.revisions;
-  if (!revisions) {
-    return failedOfficial();
-  }
-  const ordered = step.accepted.map((definition) => {
+  const revisions = accepted.map((definition) => {
     return (
-      revisions.get(JSON.stringify([definition.name, definition.revision])) ??
-      null
+      facts.revisions.get(
+        JSON.stringify([definition.name, definition.revision]),
+      ) ?? null
     );
   });
-  const observation = args.context.officialWorkflowRun;
-  if (
-    !observation ||
-    !acceptedRevisionsMatchDefinitions(step.accepted, ordered) ||
-    !exactMountsMatch(observation, args.launch.runStorageMounts)
-  ) {
-    return failedOfficial();
-  }
-  const id = args.createArgs.agentRunMetadata?.workflowAutomationId;
-  if (!id) {
-    return pendingLaunchAdmissionStart(args);
-  }
-  return {
-    ...step,
-    phase: "automation",
-    sql: sql`SELECT 'automation' AS phase,
-    ${workflowAutomations.id} AS id, ${workflowAutomations.orgId} AS "orgId", ${workflowAutomations.workflowId} AS "workflowId", ${workflowAutomations.ownerUserId} AS "ownerUserId", ${workflowAutomations.officialBlueprintKey} AS "blueprintKey",
-    ${workflowAutomations.officialAppliedFingerprint} AS "appliedFingerprint", ${workflowAutomations.officialReconciliationStatus} AS "reconciliationStatus", ${workflows.officialDefinitionName} AS "definitionName"
-    FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)} WHERE ${eq(workflowAutomations.id, id)} LIMIT 1 FOR UPDATE`,
-  };
+  return acceptedRevisionsMatchDefinitions(accepted, revisions) &&
+    exactMountsMatch(observation, args.launch.runStorageMounts)
+    ? accepted
+    : null;
 }
 
-function automationMatches(
-  args: PreparedCommitPreparedLaunchArgs,
-  row: Extract<OfficialRecord, { readonly phase: "automation" }> | undefined,
+function officialInstallationLockSql(
+  ids: readonly string[],
+  prerequisite: SQL,
 ) {
-  if (
-    !row ||
-    row.orgId !== args.createArgs.orgId ||
-    row.ownerUserId !== args.createArgs.userId
-  ) {
-    return false;
-  }
-  if (row.blueprintKey === null) {
-    return row.definitionName === null;
-  }
-  const definition = args.context.officialWorkflowRun?.definitions.find(
-    (candidate) => {
-      return candidate.workflowId === row.workflowId;
-    },
-  );
-  if (
-    !definition ||
-    row.definitionName !== definition.name ||
-    row.appliedFingerprint === null ||
-    row.reconciliationStatus !== "current"
-  ) {
-    return false;
-  }
-  return (
-    definition.blueprints.find((candidate) => {
-      return candidate.key === row.blueprintKey;
-    })?.fingerprint === row.appliedFingerprint
-  );
+  return sql`SELECT ${workflows.id} AS id, ${workflows.orgId} AS "orgId",
+    ${workflows.agentId} AS "agentId", ${workflows.ownerUserId} AS "ownerUserId",
+    ${workflows.name} AS name, ${workflows.visibility} AS visibility,
+    ${workflows.officialDefinitionName} AS "definitionName",
+    ${workflows.officialInstallationState} AS "installationState"
+    FROM ${workflows} WHERE ${and(inArray(workflows.id, ids), prerequisite)}
+    ORDER BY ${asc(workflows.id)} FOR UPDATE`;
 }
 
-function ordinaryStep(
-  step: Statement,
-): step is Extract<PendingAdmissionProgress, { readonly kind: "statement" }> {
-  return (
-    step.phase === "thread" ||
-    step.phase === "subscription" ||
-    step.phase === "head" ||
-    step.phase === "claim"
-  );
-}
-function ordinaryRecord(row: Record): row is OrdinaryRecord {
-  return (
-    !("caps" in row) &&
-    (!("phase" in row) ||
-      row.phase === "thread" ||
-      row.phase === "subscription" ||
-      row.phase === "head")
-  );
-}
-function officialRecord(row: Record): row is OfficialRecord {
-  return (
-    "phase" in row &&
-    (row.phase === "catalog-lock" ||
-      row.phase === "installation" ||
-      row.phase === "automation")
-  );
+function officialAutomationLockSql(id: string, prerequisite: SQL) {
+  return sql`SELECT ${workflowAutomations.id} AS id,
+    ${workflowAutomations.orgId} AS "orgId", ${workflowAutomations.workflowId} AS "workflowId",
+    ${workflowAutomations.ownerUserId} AS "ownerUserId",
+    ${workflowAutomations.officialBlueprintKey} AS "blueprintKey",
+    ${workflowAutomations.officialAppliedFingerprint} AS fingerprint,
+    ${workflowAutomations.officialReconciliationStatus} AS "reconciliationStatus",
+    ${workflows.officialDefinitionName} AS "definitionName"
+    FROM ${workflowAutomations} INNER JOIN ${workflows}
+      ON ${eq(workflows.id, workflowAutomations.workflowId)}
+    WHERE ${and(eq(workflowAutomations.id, id), prerequisite)} LIMIT 1 FOR UPDATE`;
 }
 
-export function advancePendingOfficialAdmission(
+/** Existing catalog -> plan -> installation -> automation locks, within publication. */
+export function pendingOfficialAdmissionGuardSql(
   args: PreparedCommitPreparedLaunchArgs,
-  step: Statement,
-  records: readonly Record[],
-): PendingLaunchAdmissionProgress {
-  if (ordinaryStep(step)) {
-    return advancePendingLaunchAdmission(
-      args,
-      step,
-      records.filter(ordinaryRecord),
-    );
+) {
+  const observation = args.context.officialWorkflowRun;
+  if (!observation) {
+    return sql`SELECT 'ready'::text AS reason`;
   }
-  const rows = records.filter(officialRecord);
-  switch (step.phase) {
-    case "catalog-lock": {
-      const row = rows.find((candidate) => {
-        return candidate.phase === "catalog-lock";
+  if (!capturedOfficialDefinitions(args)) {
+    return sql`SELECT 'official'::text AS reason`;
+  }
+  const definitions = observation.definitions;
+  const expected = JSON.stringify(
+    definitions.map((definition) => {
+      return {
+        id: definition.workflowId,
+        name: definition.workflowName,
+        definition: definition.name,
+      };
+    }),
+  );
+  const blueprints = JSON.stringify(
+    definitions.flatMap((definition) => {
+      return definition.blueprints.map((blueprint) => {
+        return {
+          workflowId: definition.workflowId,
+          definition: definition.name,
+          ...blueprint,
+        };
       });
-      const catalog = args.context.officialWorkflowFacts?.catalog;
-      if (
-        !row ||
-        !catalog ||
-        row.releaseId !== catalog.releaseId ||
-        catalog.releaseId !== args.context.officialWorkflowRun?.releaseId
-      ) {
-        return failedOfficial();
-      }
-      const acceptedStep = { ...step, catalog };
-      return args.enforceBuiltInCredits
-        ? {
-            ...acceptedStep,
-            phase: "credit-plan",
-            sql: pendingCreditPlanSql(args.createArgs.orgId),
-          }
-        : installationRead(args, acceptedStep);
-    }
-    case "credit-plan": {
-      pendingCreditPlanResult(
-        records.filter((row) => {
-          return "caps" in row;
-        }),
-        args.createArgs.orgId,
-      );
-      return installationRead(args, step);
-    }
-    case "installation": {
-      const accepted = acceptedInstallations(args, step, rows);
-      return accepted
-        ? finishRevisions(args, { ...step, accepted })
-        : failedOfficial();
-    }
-    case "automation": {
-      return automationMatches(
-        args,
-        rows.find((row) => {
-          return row.phase === "automation";
-        }),
-      )
-        ? pendingLaunchAdmissionStart(args)
-        : failedOfficial();
-    }
-  }
+    }),
+  );
+  const catalog = sql`SELECT ${officialWorkflowCatalogState.acceptedReleaseId} AS release
+    FROM ${officialWorkflowCatalogState}
+    WHERE ${eq(officialWorkflowCatalogState.authority, OFFICIAL_WORKFLOW_CATALOG_AUTHORITY)}
+    FOR SHARE`;
+  const catalogReady = sql`EXISTS (SELECT 1 FROM launch_official_catalog
+    WHERE release = ${observation.releaseId})`;
+  const plan = args.enforceBuiltInCredits
+    ? pendingCreditPlanSql(args.createArgs.orgId, catalogReady)
+    : sql`SELECT NULL::jsonb AS caps, false AS "orgExists" WHERE ${catalogReady}`;
+  const planReady = sql`${catalogReady} AND EXISTS (
+    SELECT 1 FROM launch_official_plan WHERE caps IS NOT NULL OR NOT "orgExists")`;
+  // Lock the original ID set first, then validate returned versions. Filtering
+  // ownership before FOR UPDATE would skip rows that reconciliation changes.
+  const installation = officialInstallationLockSql(
+    definitions.map((definition) => {
+      return definition.workflowId;
+    }),
+    planReady,
+  );
+  const installationReady = sql`${planReady} AND
+    (SELECT ${count()} FROM launch_official_installation AS installed
+      WHERE installed."orgId" = ${args.createArgs.orgId}
+        AND installed."ownerUserId" = ${args.createArgs.userId}
+        AND installed.visibility = 'private' AND installed."installationState" = 'installed'
+        AND installed."agentId" = ${args.context.resolved.agentId}::uuid
+        AND EXISTS (SELECT 1 FROM jsonb_to_recordset(${expected}::jsonb)
+          AS expected(id uuid, name text, definition text)
+          WHERE expected.id = installed.id AND expected.name = installed.name
+            AND expected.definition = installed."definitionName")) = ${definitions.length}`;
+  const automationId = args.createArgs.agentRunMetadata?.workflowAutomationId;
+  const automation = automationId
+    ? officialAutomationLockSql(automationId, installationReady)
+    : sql`SELECT 1 WHERE false`;
+  const automationReady = automationId
+    ? sql`EXISTS (SELECT 1 FROM launch_official_automation AS automation
+      WHERE automation."orgId" = ${args.createArgs.orgId}
+        AND automation."ownerUserId" = ${args.createArgs.userId}
+        AND ((automation."blueprintKey" IS NULL AND automation."definitionName" IS NULL)
+          OR (automation."reconciliationStatus" = 'current' AND EXISTS (
+            SELECT 1 FROM jsonb_to_recordset(${blueprints}::jsonb)
+              AS expected("workflowId" uuid, definition text, key text, fingerprint text)
+            WHERE expected."workflowId" = automation."workflowId"
+              AND expected.definition = automation."definitionName"
+              AND expected.key = automation."blueprintKey"
+              AND expected.fingerprint = automation.fingerprint))))`
+    : sql`true`;
+  return sql`WITH launch_official_catalog AS MATERIALIZED (${catalog}),
+    launch_official_plan AS MATERIALIZED (${plan}),
+    launch_official_installation AS MATERIALIZED (${installation}),
+    launch_official_automation AS MATERIALIZED (${automation})
+    SELECT CASE WHEN NOT ${catalogReady} THEN 'official'
+      WHEN NOT EXISTS (SELECT 1 FROM launch_official_plan WHERE caps IS NOT NULL OR NOT "orgExists") THEN 'plan'
+      WHEN NOT ${installationReady} THEN 'official'
+      WHEN NOT ${automationReady} THEN 'official'
+      ELSE 'ready' END::text AS reason`;
 }

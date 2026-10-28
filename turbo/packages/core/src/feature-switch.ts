@@ -68,12 +68,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.SlackWorkspaceIdentity]: {
+  [FeatureSwitchKey.TeamsWorkspaceIdentity]: {
     maintainer: "yuma@okou.ai",
-    displayName: "Slack workspace identity",
+    displayName: "Teams workspace identity",
     description:
-      "Connect your Slack identity independently of bot installation and use it in shared channels.",
-    enabled: true,
+      "Connect your Microsoft Teams identity independently of bot installation and use it in shared conversations.",
+    enabled: false,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
@@ -173,6 +173,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Separate chat history by day, with Today shown only alongside Yesterday.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",

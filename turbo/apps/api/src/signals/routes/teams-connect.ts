@@ -10,7 +10,9 @@ import {
   publishTeamsChanged$,
   uninstallTeamsInstallation$,
   teamsConnectStatus,
+  buildTeamsOauthConnectUrl,
 } from "../services/teams-connect.service";
+import { teamsWorkspaceIdentityEnabled } from "../services/teams-workspace-identity.service";
 import type { RouteEntry } from "../route-entry";
 import { createTeamsOAuthState$ } from "../services/teams-oauth-state";
 
@@ -35,36 +37,47 @@ const teamsConnectStatusIdentity$ = computed((get) => {
     isAdmin: "orgRole" in auth && auth.orgRole === "admin",
   };
 });
+const workspaceIdentity$ = teamsWorkspaceIdentityEnabled(
+  teamsConnectStatusIdentity$,
+);
 const teamsConnectStatus$ = teamsConnectStatus(teamsConnectStatusIdentity$);
 
 const getTeamsConnectStatusInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const body = await get(teamsConnectStatus$);
     signal.throwIfAborted();
-    if (!body.connectUrl) {
-      return { status: 200 as const, body };
-    }
     const auth = get(organizationAuthContext$);
-    const url = new URL(body.connectUrl);
-    const connectState = await set(
-      createTeamsOAuthState$,
-      {
-        purpose: "teams-start",
-        userId: auth.userId,
-        orgId: auth.orgId,
-        redirectUri: new URL(
-          "/api/integrations/teams/oauth/callback",
-          url,
-        ).toString(),
-        prompt: null,
-      },
-      signal,
-    );
-    url.search = new URLSearchParams({ connectState }).toString();
-    return {
-      status: 200 as const,
-      body: { ...body, connectUrl: url.toString() },
-    };
+    const signed: { connectUrl?: string | null; installUrl?: string | null } =
+      {};
+    for (const key of ["connectUrl", "installUrl"] as const) {
+      const value = body[key];
+      if (!value) {
+        continue;
+      }
+      const url = new URL(value);
+      if (url.pathname !== "/api/teams/oauth/connect") {
+        continue;
+      }
+      const connectState = await set(
+        createTeamsOAuthState$,
+        {
+          purpose: "teams-start",
+          userId: auth.userId,
+          orgId: auth.orgId,
+          redirectUri: new URL(
+            "/api/integrations/teams/oauth/callback",
+            url,
+          ).toString(),
+          prompt: null,
+          flow:
+            url.searchParams.get("flow") === "install" ? "install" : "connect",
+        },
+        signal,
+      );
+      url.search = new URLSearchParams({ connectState }).toString();
+      signed[key] = url.toString();
+    }
+    return { status: 200 as const, body: { ...body, ...signed } };
   },
 );
 
@@ -78,6 +91,13 @@ const connectInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const body = bodyResult.data;
+  if (await get(workspaceIdentity$)) {
+    return errorResponse(
+      403,
+      `Verify your Microsoft Teams account through OAuth: ${buildTeamsOauthConnectUrl(auth)}`,
+      "FORBIDDEN",
+    );
+  }
 
   const result = await set(
     connectTeamsInstallation$,

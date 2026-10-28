@@ -90,7 +90,7 @@ export function teamsTargetState(
     }
   }
   const org = params.get("orgId");
-  if (org && org !== orgId) {
+  if (status.workspaceIdentity !== true && org && org !== orgId) {
     return "orgMismatch";
   }
   const tenant = params.get("tenantId");
@@ -105,14 +105,18 @@ export function teamsTargetState(
   }
   if (
     (status.tenantId && status.tenantId !== tenant) ||
-    (team && status.teamId !== team)
+    (status.workspaceIdentity !== true && team && status.teamId !== team)
   ) {
     return "different";
   }
   return status.linkedAccounts.some((account) => {
     return (
       account.tenantId === tenant &&
-      (!user || account.teamsUserId === user) &&
+      (!user ||
+        account.teamsUserId === user ||
+        (status.workspaceIdentity === true &&
+          account.teamsUserId === null &&
+          aad === account.teamsAadObjectId)) &&
       (!aad || account.teamsAadObjectId === aad)
     );
   })

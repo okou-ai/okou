@@ -16,7 +16,9 @@ export const teamsConnectPageState$ = computed(async (get) => {
   assertCurrent();
   const target = teamsTargetState(params, data, orgId);
   const connected =
-    data.isInstalled && data.isConnected && !data.pendingInstallation;
+    data.isConnected &&
+    (data.workspaceIdentity === true ||
+      (data.isInstalled && !data.pendingInstallation));
   const success = connected && (target === "none" || target === "match");
   const body = teamsConnectBody(params);
   return {
@@ -25,6 +27,7 @@ export const teamsConnectPageState$ = computed(async (get) => {
     connected,
     success,
     canBind:
+      data.workspaceIdentity !== true &&
       Boolean(body) &&
       target !== "orgMismatch" &&
       target !== "invalid" &&

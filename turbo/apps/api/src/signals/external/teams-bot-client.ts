@@ -822,6 +822,7 @@ export async function checkTeamsConversationMember(
     conversationId: string;
     teamsUserId: string;
     tenantId: string;
+    aadObjectId?: string;
   },
   signal: AbortSignal,
 ): Promise<{ kind: "allowed" | "denied" } | TeamsApiErrorResult> {
@@ -858,9 +859,11 @@ export async function checkTeamsConversationMember(
   }
   const responseText = await response.text();
   signal.throwIfAborted();
-  const member = object({ id: string(), tenantId: string() }).safeParse(
-    safeJsonParse(responseText),
-  );
+  const member = object({
+    id: string(),
+    tenantId: string(),
+    aadObjectId: string().optional(),
+  }).safeParse(safeJsonParse(responseText));
   signal.throwIfAborted();
   if (!member.success) {
     return teamsApiError(
@@ -871,7 +874,8 @@ export async function checkTeamsConversationMember(
   return {
     kind:
       member.data.id === args.teamsUserId &&
-      member.data.tenantId === args.tenantId
+      member.data.tenantId === args.tenantId &&
+      (!args.aadObjectId || member.data.aadObjectId === args.aadObjectId)
         ? "allowed"
         : "denied",
   };

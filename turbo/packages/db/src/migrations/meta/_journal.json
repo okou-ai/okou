@@ -2799,7 +2799,14 @@
       "idx": 1478,
       "version": "7",
       "when": 1793192246459,
-      "tag": "1478_outlook_chat_mail",
+      "tag": "1478_teams_workspace_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1480,
+      "version": "7",
+      "when": 1793192247459,
+      "tag": "1480_outlook_chat_mail",
       "breakpoints": true
     }
   ]
