@@ -908,7 +908,7 @@ function preparedOrdinaryThread(
     values: {
       ...plan.values,
       id: thread.id,
-      modelSettings: thread.modelSettings,
+      modelSettings: read.modelSettings,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
       lastReadAt: sql`${read.atText}::timestamp`,
       lastMessageAt: sql`${read.atText}::timestamp`,
