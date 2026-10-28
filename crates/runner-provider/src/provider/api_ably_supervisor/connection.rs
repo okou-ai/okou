@@ -3,14 +3,15 @@
 use std::time::{Duration, Instant};
 
 use ably_subscriber::{Event, SubscribeConfig, Subscription};
-use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::info;
 
 use super::{ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX};
 
 enum Phase {
     Subscribed(Subscription),
-    Connecting(JoinHandle<Result<Subscription, ably_subscriber::Error>>),
+    // Retain abort custody when the owner or its consuming shutdown is dropped.
+    Connecting(AbortOnDropHandle<Result<Subscription, ably_subscriber::Error>>),
     WaitingUntil(Instant),
 }
 
@@ -38,7 +39,9 @@ impl AblyConnection {
 
     pub(super) fn start_if_due(&mut self, config: impl FnOnce() -> SubscribeConfig) {
         if matches!(self.phase, Phase::WaitingUntil(at) if Instant::now() >= at) {
-            self.phase = Phase::Connecting(tokio::spawn(ably_subscriber::subscribe(config())));
+            self.phase = Phase::Connecting(AbortOnDropHandle::new(tokio::spawn(
+                ably_subscriber::subscribe(config()),
+            )));
         }
     }
 
@@ -141,6 +144,8 @@ impl Backoff {
 
 #[cfg(test)]
 mod tests {
+    mod cancellation;
+
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
