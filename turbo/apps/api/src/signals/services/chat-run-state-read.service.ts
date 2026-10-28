@@ -49,6 +49,20 @@ export const loadTerminalChatCallbackLocator$ = command(
   },
 );
 
+export function runLifecycleMarkerReadPlan(
+  runId: string,
+  eventType: "run.completed" | "run.cancelled" | "run.failed",
+) {
+  return {
+    columns: { id: chatEvents.id, createdAt: chatEvents.createdAt },
+    condition: and(
+      eq(chatEvents.runId, runId),
+      eq(chatEvents.eventType, eventType),
+    ),
+    limit: 1,
+  };
+}
+
 export function sourceChatCallbackReadPlan(args: {
   readonly runId: string;
   readonly sourceCallbackId?: string;
