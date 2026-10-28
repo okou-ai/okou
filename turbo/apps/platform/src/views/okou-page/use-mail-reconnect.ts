@@ -1,3 +1,4 @@
+import type { MailProvider } from "@okouai/api-contracts/contracts/mail";
 import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 
@@ -9,14 +10,19 @@ import {
 } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-// Reconnecting Gmail needs its one catalog entry, not the full catalog status.
+// Read the selected provider entry without loading the full connector catalog.
 const gmailCatalogItem$ = connectorCatalogItemBySlug("gmail");
+const outlookCatalogItem$ = connectorCatalogItemBySlug("outlook-mail");
 
-export function useGmailReconnect(
+export function useMailReconnect(
+  provider: MailProvider,
   connectionId: string | undefined,
   onSuccess: () => void | Promise<void>,
 ) {
-  const connector = useLastResolved(gmailCatalogItem$) ?? undefined;
+  const connector =
+    useLastResolved(
+      provider === "gmail" ? gmailCatalogItem$ : outlookCatalogItem$,
+    ) ?? undefined;
   const [connection, connect] = useLoadableSet(
     connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
@@ -38,7 +44,7 @@ export function useGmailReconnect(
       detach(
         connect(
           {
-            connectorSlug: "gmail",
+            connectorSlug: provider === "gmail" ? "gmail" : "outlook-mail",
             method: authMethod,
             onSuccess,
             options: {

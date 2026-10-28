@@ -346,6 +346,29 @@ def block_builtin_host_policy_denied(
     )
 
 
+def block_outlook_send(flow: http.HTTPFlow) -> None:
+    flow_metadata.set_firewall_decision(flow.metadata, "DENY", error="outlook_send_blocked")
+    flow.response = make_local_json_response(
+        flow,
+        403,
+        {
+            "error": {
+                "code": "outlook_send_blocked",
+                "message": (
+                    "Direct Outlook API sending and mail-capable Graph batch requests "
+                    "are disabled. "
+                    "Create a draft with POST /v1.0/me/messages, or createReply/createReplyAll. "
+                    'Use Prefer: IdType="ImmutableId". Reuse or update an existing draft. '
+                    "Run okou mail link <outlook-message-id> --provider outlook and return "
+                    "the review URL so the user can review and send. "
+                    "Permission grants cannot unblock direct sending. "
+                    "For batch reads or draft edits, use individual API requests."
+                ),
+            },
+        },
+    )
+
+
 def block_gmail_send(flow: http.HTTPFlow) -> None:
     error_code = "gmail_send_blocked"
     flow_metadata.set_firewall_decision(flow.metadata, "DENY", error=error_code)

@@ -27,6 +27,7 @@ import flow_metadata_keys as metadata_keys
 import gmail_send
 import http_network_log
 import matching
+import outlook_send
 import public_destination
 import registry
 import registry_firewalls
@@ -225,6 +226,12 @@ class GmailSendBlocked:
 
 
 @dataclass(frozen=True)
+class OutlookSendBlocked:
+    sandbox_info: dict
+    kind: Literal["outlook_send_blocked"] = field(init=False, default="outlook_send_blocked")
+
+
+@dataclass(frozen=True)
 class FirewallAmbiguous:
     sandbox_info: dict
     firewall_ambiguous: matching.FirewallAmbiguous
@@ -286,6 +293,7 @@ BlockingRequestClassification = (
     | AuthorityDenied
     | PlatformPathDenied
     | GmailSendBlocked
+    | OutlookSendBlocked
     | FirewallAmbiguous
     | FirewallBlock
     | PublicDestinationDenied
@@ -589,6 +597,11 @@ def _classify_request(
     ):
         return BrowserAllow(sandbox_info=sandbox_info)
 
+    if sandbox_info.get("outlookMailReviewEnabled") is True and outlook_send.blocks_outlook_send(
+        trusted_authority.host, flow.request.path, None, defer_batch=True
+    ):
+        return OutlookSendBlocked(sandbox_info=sandbox_info)
+
     if gmail_send.blocks_gmail_send(trusted_authority.host, flow.request.path):
         return GmailSendBlocked(sandbox_info=sandbox_info)
 
@@ -642,6 +655,17 @@ def _classify_request(
                 )
             ):
                 return platform_connector_api_fallback
+            if sandbox_info.get("outlookMailReviewEnabled") is True:
+                identities = {
+                    firewall.intent_identity
+                    for firewall in compiled_firewalls.firewalls
+                    if firewall.name == firewall_allow.name
+                }
+                owner = firewall_allow.name if identities == {firewall_allow.name} else None
+                if outlook_send.blocks_outlook_send(
+                    trusted_authority.host, flow.request.path, owner
+                ):
+                    return OutlookSendBlocked(sandbox_info=sandbox_info)
             public_destination_denial = _public_destination_denial(
                 flow,
                 firewall_allow,
@@ -670,6 +694,11 @@ def _classify_request(
     if platform_connector_api_fallback is not None:
         return platform_connector_api_fallback
 
+    if sandbox_info.get("outlookMailReviewEnabled") is True and outlook_send.blocks_outlook_send(
+        trusted_authority.host, flow.request.path, None
+    ):
+        return OutlookSendBlocked(sandbox_info=sandbox_info)
+
     # No firewall owner was selected. Keep ordinary network fallback separate
     # from the connector credential-resolution path.
     return Allow(
@@ -686,6 +715,7 @@ def classification_needs_request_timing(classification: RequestClassification) -
         "platform_path_denied",
         "browser_allow",
         "gmail_send_blocked",
+        "outlook_send_blocked",
         "firewall_ambiguous",
         "firewall_block",
         "firewall_allow",

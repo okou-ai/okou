@@ -49,6 +49,7 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ArtifactDeletion = "artifactDeletion",
+  OutlookChatMail = "outlookChatMail",
   ThreadEmailManager = "threadEmailManager",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
