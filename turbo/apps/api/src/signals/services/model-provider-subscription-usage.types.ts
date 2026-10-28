@@ -9,3 +9,8 @@ export interface SubscriptionUsageMetadata {
   readonly fiveHour: SubscriptionUsageWindowMetadata | null;
   readonly weekly: SubscriptionUsageWindowMetadata | null;
 }
+
+export interface SubscriptionCreditsMetadata {
+  readonly balance: number | null;
+  readonly unlimited: boolean;
+}

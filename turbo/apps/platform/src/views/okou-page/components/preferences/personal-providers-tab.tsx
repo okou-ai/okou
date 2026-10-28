@@ -44,6 +44,7 @@ import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
 import { ProviderIcon } from "../settings/provider-icons.tsx";
+import { formatSubscriptionCredits } from "../../subscription-credits-format.ts";
 import {
   fallbackSubscriptionUsage,
   SubscriptionUsageRings,
@@ -420,6 +421,9 @@ function OAuthAccountTableRow({
     : t(($) => {
         return $.settings.models.personal.status.connected;
       });
+  const creditBalance = account.needsReconnect
+    ? null
+    : formatSubscriptionCredits(account);
 
   return (
     <div
@@ -442,7 +446,11 @@ function OAuthAccountTableRow({
           detail={detail}
           identity={identity}
           needsReconnect={account.needsReconnect}
-          statusLabel={statusLabel}
+          statusLabel={
+            creditBalance === null
+              ? statusLabel
+              : `${statusLabel} · ${creditBalance.text}`
+          }
         />
       </div>
       <div

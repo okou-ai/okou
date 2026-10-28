@@ -1,16 +1,19 @@
 import { settle } from "../utils";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
+  boolean,
   number,
   object,
   string,
   enum as zEnum,
+  unknown as zUnknown,
   type infer as zInfer,
 } from "zod";
 
 import { now } from "../../lib/time";
 import type { prepareCodexResetCreditExpiryRead } from "./codex-reset-credit-expiry.service";
 import type {
+  SubscriptionCreditsMetadata,
   SubscriptionUsageMetadata,
   SubscriptionUsageWindowMetadata,
 } from "./model-provider-subscription-usage.types";
@@ -43,6 +46,17 @@ const rateLimitResetCreditsSchema = object({
   available_count: number().int().nonnegative().nullable().optional(),
 }).passthrough();
 
+const creditStatusSchema = object({
+  unlimited: boolean(),
+  balance: zUnknown().optional(),
+});
+
+const creditBalanceSchema = string()
+  .trim()
+  .regex(/^\d+(?:\.\d+)?$/u)
+  .transform(Number)
+  .pipe(number().nonnegative());
+
 const namedMetadataSchema = object({
   title: string().nullable().optional(),
   name: string().nullable().optional(),
@@ -63,6 +77,8 @@ const codexUsageResponseSchema = object({
   organization_name: string().nullable().optional(),
   rate_limit: rateLimitDetailsSchema.nullable().optional(),
   rate_limit_reset_credits: rateLimitResetCreditsSchema.nullable().optional(),
+  // Parse this optional metric separately so it cannot discard valid quotas.
+  credits: zUnknown().optional(),
   workspace: namedMetadataSchema.nullable().optional(),
   workspace_name: string().nullable().optional(),
 }).passthrough();
@@ -83,6 +99,7 @@ interface CodexUsageMetadata {
   readonly subscriptionResetPeriod: string | null;
   readonly subscriptionNextResetAt: Date | null;
   readonly subscriptionUsage: SubscriptionUsageMetadata | null;
+  readonly subscriptionCredits: SubscriptionCreditsMetadata | null;
   readonly subscriptionResetCredits: number | null;
   readonly subscriptionResetCreditsNextExpiresAt: Date | null;
 }
@@ -94,6 +111,20 @@ interface UsageResetWindow {
   readonly period: string | null;
   readonly nextResetAt: Date | null;
   readonly limitWindowSeconds: number | null;
+}
+
+function subscriptionCreditsFromUsage(
+  value: unknown,
+): SubscriptionCreditsMetadata | null {
+  const status = creditStatusSchema.safeParse(value);
+  if (!status.success) {
+    return null;
+  }
+  const balance = creditBalanceSchema.safeParse(status.data.balance);
+  return {
+    balance: balance.success ? balance.data : null,
+    unlimited: status.data.unlimited,
+  };
 }
 
 /**
@@ -371,6 +402,7 @@ export async function fetchCodexUsageMetadata(
     subscriptionResetPeriod: resetWindow?.period ?? null,
     subscriptionNextResetAt: resetWindow?.nextResetAt ?? null,
     subscriptionUsage: subscriptionUsageFromRateLimit(parsed.data.rate_limit),
+    subscriptionCredits: subscriptionCreditsFromUsage(parsed.data.credits),
     subscriptionResetCredits:
       parsed.data.rate_limit_reset_credits?.available_count ?? null,
     subscriptionResetCreditsNextExpiresAt: resetCreditExpiry(),
