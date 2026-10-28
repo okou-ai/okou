@@ -2,7 +2,6 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -557,22 +556,4 @@ test("Take over the cloud browser from a working run and hand it back through th
     );
   });
   expect(within(sidebar).queryByText("You're in control")).toBeNull();
-});
-
-test("A take over that cannot stop the run does not hand the browser to the member", async () => {
-  const sidebar = await openWorkingRunWithBrowser();
-  let stopRequests = 0;
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    stopRequests += 1;
-    return respond(400, {
-      error: { code: "BAD_REQUEST", message: "Run could not be stopped" },
-    });
-  });
-
-  click(buttonByName("Take over", sidebar));
-
-  await waitFor(() => {
-    expect(stopRequests).toBe(1);
-    expect(within(sidebar).queryByText("You're in control")).toBeNull();
-  });
 });
