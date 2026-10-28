@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.796.2](https://github.com/okou-ai/okou/compare/core-v8.796.1...core-v8.796.2) (2026-10-28)
+
+
+### Refactoring
+
+* **browser:** roll out okou viewer and remove feature switch ([#43671](https://github.com/okou-ai/okou/issues/43671)) ([97e8ca7](https://github.com/okou-ai/okou/commit/97e8ca71f4d6ac0cd015de589eb5d8179a96bddd))
+
 ## [8.796.1](https://github.com/okou-ai/okou/compare/core-v8.796.0...core-v8.796.1) (2026-10-28)
 
 
