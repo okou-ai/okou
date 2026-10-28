@@ -258,6 +258,124 @@ esac
   }
 });
 
+test("paired rollback keeps Vercel required and Worker failures non-blocking with visible results", () => {
+  const rollbackJobs = jobs(read("rollback-production.yml"));
+  const api = rollbackJobs["rollback-api"];
+  const apiSteps = steps(api);
+  const byId = (id) => {
+    const matches = apiSteps.filter((step) =>
+      step.includes(`        id: ${id}\n`),
+    );
+    assert.equal(matches.length, 1, id);
+    return matches[0];
+  };
+  const promote = byId("promote");
+  const worker = byId("api-worker-rollback");
+  assert.ok(apiSteps.indexOf(worker) > apiSteps.indexOf(promote));
+  assert.equal(field(worker, "continue-on-error", 8), "true");
+  assert.doesNotMatch(api, /^    continue-on-error: true/m);
+  assert.doesNotMatch(promote, /^        continue-on-error: true/m);
+  assert.equal(
+    field(rollbackJobs["verify-production-domains"], "needs"),
+    "rollback-api",
+  );
+  for (const [outcome, expected] of [
+    ["success", true],
+    ["failure", false],
+    ["skipped", false],
+  ]) {
+    assert.equal(
+      evaluate(field(worker, "if", 8).replace(/^\$\{\{|\}\}$/g, ""), {
+        cancelled: () => false,
+        steps: { promote: { outcome } },
+      }),
+      expected,
+    );
+  }
+  const slack = apiSteps.find((step) =>
+    step.startsWith("        name: Notify Slack - Success\n"),
+  );
+  const payload = render(field(slack, "payload", 10), {
+    vars: { SLACK_RELEASE_CHANNEL_ID: "release-channel" },
+    needs: { "resolve-target": { outputs: { target_commit: "4".repeat(40) } } },
+    steps: {
+      "slack-start": { outputs: { ts: "123.456" } },
+      "api-worker-rollback": {
+        outcome: "failure",
+        outputs: {
+          status: "missing-version",
+          detail: "Worker left unchanged.",
+        },
+      },
+    },
+    github: {
+      server_url: "https://github.com",
+      repository: "okou-ai/okou",
+      run_id: "123",
+    },
+  });
+  assert.match(payload, /✅ Vercel API rolled back/);
+  assert.match(
+    payload,
+    /API Worker: ⚠️ missing-version — Worker left unchanged/,
+  );
+
+  const report = rollbackJobs["report-api-rollback"];
+  assert.deepEqual(dependencies(report), [
+    "resolve-target",
+    "rollback-api",
+    "verify-production-domains",
+  ]);
+  const reportStep = steps(report)[0];
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "paired-rollback-report-"),
+  );
+  try {
+    // Observe the actual dashboard issue comment at the external CLI boundary.
+    fs.writeFileSync(
+      path.join(directory, "gh"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = issue ] && [ "$2" = comment ] && [ "$3" = 42 ] && [ "$4" = --body-file ]
+cp "$5" "$COMMENT_FILE"
+`,
+      { mode: 0o700 },
+    );
+    const summary = path.join(directory, "summary");
+    const comment = path.join(directory, "comment");
+    const result = spawnSync("bash", ["-c", field(reportStep, "run", 8)], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${directory}${path.delimiter}${process.env.PATH}`,
+        GITHUB_STEP_SUMMARY: summary,
+        COMMENT_FILE: comment,
+        ISSUE_NUMBER: "42",
+        TARGET_COMMIT: "4".repeat(40),
+        VERCEL_OUTCOME: "success",
+        WORKER_STATUS: "failed",
+        WORKER_DETAIL: "Worker build-info did not verify the target SHA.",
+        WORKER_VERSION: "33333333-3333-3333-3333-333333333333",
+        WORKER_DEPLOYMENT: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        WORKER_OBSERVED_SHA: "5".repeat(40),
+        DOMAINS_RESULT: "success",
+        RUN_URL: "https://github.com/okou-ai/okou/actions/runs/123",
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const body = fs.readFileSync(comment, "utf8");
+    assert.equal(body, fs.readFileSync(summary, "utf8"));
+    assert.match(body, /Canonical Vercel API \| success/);
+    assert.match(body, /API Worker \(non-blocking\) \| failed/);
+    assert.ok(body.includes("5".repeat(40)));
+    assert.ok(
+      body.includes("https://github.com/okou-ai/okou/actions/runs/123"),
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("API deployments validate their final environment before migrating or deploying", () => {
   const command = 'pnpm --dir turbo/apps/api env:validate "$API_ENV_FILE"';
   const assertOrdered = (list, names) => {
