@@ -87,7 +87,7 @@ use crate::finalizing_admission::{
 use crate::finalizing_admission::{
     FinalizingSelectionTestHooks, select_finalizing_resource_with_test_hooks,
 };
-use crate::home_image_cache::HomeImagePrepareLockPolicy;
+use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::{ReservedIdleActivation, rollback_reserved_idle_for_spawn};
 use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
@@ -443,9 +443,9 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     };
     drop(activation_transfer_guard);
     if fresh_fallback {
-        let (predecessor_state, lock_policy) = admission.fresh_fallback_home_prepare_lock_policy();
-        request.job_profile.home_image_prepare_lock_policy = lock_policy;
-        if lock_policy == HomeImagePrepareLockPolicy::ImmediateFallback {
+        let (predecessor_state, lock_policy) = admission.fresh_fallback_home_prepare_policy();
+        request.job_profile.home_image_prepare_policy = lock_policy;
+        if lock_policy == HomeImagePreparePolicy::ImmediateFallback {
             info!(
                 run_id = %run_id,
                 ?predecessor_state,

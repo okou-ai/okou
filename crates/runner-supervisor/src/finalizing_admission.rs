@@ -37,7 +37,7 @@ use runner_executor::executor::{
 use runner_lifecycle::active_runs::{
     ActiveRunHandoffRequest, ActiveRunReuseProof, ActiveRunReuseState,
 };
-use runner_lifecycle::home_image_cache::HomeImagePrepareLockPolicy;
+use runner_lifecycle::home_image_cache::HomeImagePreparePolicy;
 use runner_lifecycle::idle_pool::{ExactIdleReservationMiss, FinalizingHandoffCandidate};
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
@@ -62,9 +62,9 @@ pub struct FinalizingAdmission {
 impl FinalizingAdmission {
     /// Read the live predecessor state when a fresh fallback is ready to start,
     /// not when its resource was first selected. Return the same snapshot for logging.
-    pub fn fresh_fallback_home_prepare_lock_policy(
+    pub fn fresh_fallback_home_prepare_policy(
         &self,
-    ) -> (ActiveRunReuseState, HomeImagePrepareLockPolicy) {
+    ) -> (ActiveRunReuseState, HomeImagePreparePolicy) {
         let state = self.predecessor.state();
         (state, home_prepare_lock_policy_for_fresh_fallback(state))
     }
@@ -72,16 +72,14 @@ impl FinalizingAdmission {
 
 fn home_prepare_lock_policy_for_fresh_fallback(
     state: ActiveRunReuseState,
-) -> HomeImagePrepareLockPolicy {
+) -> HomeImagePreparePolicy {
     match state {
         ActiveRunReuseState::Pending
         | ActiveRunReuseState::ExactSandboxPublished
-        | ActiveRunReuseState::ExactSandboxHandedOff => {
-            HomeImagePrepareLockPolicy::ImmediateFallback
-        }
+        | ActiveRunReuseState::ExactSandboxHandedOff => HomeImagePreparePolicy::ImmediateFallback,
         ActiveRunReuseState::Finalizing { .. }
         | ActiveRunReuseState::NoExactSandbox
-        | ActiveRunReuseState::Released => HomeImagePrepareLockPolicy::WaitForTransientContention,
+        | ActiveRunReuseState::Released => HomeImagePreparePolicy::WaitForTransientContention,
     }
 }
 
@@ -768,29 +766,29 @@ mod tests {
         let cases = [
             (
                 ActiveRunReuseState::Pending,
-                HomeImagePrepareLockPolicy::ImmediateFallback,
+                HomeImagePreparePolicy::ImmediateFallback,
             ),
             (
                 ActiveRunReuseState::Finalizing {
                     started_at: Instant::now(),
                 },
-                HomeImagePrepareLockPolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::WaitForTransientContention,
             ),
             (
                 ActiveRunReuseState::ExactSandboxPublished,
-                HomeImagePrepareLockPolicy::ImmediateFallback,
+                HomeImagePreparePolicy::ImmediateFallback,
             ),
             (
                 ActiveRunReuseState::ExactSandboxHandedOff,
-                HomeImagePrepareLockPolicy::ImmediateFallback,
+                HomeImagePreparePolicy::ImmediateFallback,
             ),
             (
                 ActiveRunReuseState::NoExactSandbox,
-                HomeImagePrepareLockPolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::WaitForTransientContention,
             ),
             (
                 ActiveRunReuseState::Released,
-                HomeImagePrepareLockPolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::WaitForTransientContention,
             ),
         ];
         for (state, expected) in cases {
@@ -822,36 +820,36 @@ mod tests {
             native_generation_run_id: Some(predecessor_run_id),
         };
         assert_eq!(
-            admission.fresh_fallback_home_prepare_lock_policy(),
+            admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::Pending,
-                HomeImagePrepareLockPolicy::ImmediateFallback
+                HomeImagePreparePolicy::ImmediateFallback
             )
         );
         let publisher = guard.reuse_publisher();
         let started_at = Instant::now();
         assert!(publisher.mark_finalizing(started_at));
         assert_eq!(
-            admission.fresh_fallback_home_prepare_lock_policy(),
+            admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::Finalizing { started_at },
-                HomeImagePrepareLockPolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::WaitForTransientContention,
             )
         );
         assert!(publisher.publish_exact_sandbox());
         assert_eq!(
-            admission.fresh_fallback_home_prepare_lock_policy(),
+            admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::ExactSandboxPublished,
-                HomeImagePrepareLockPolicy::ImmediateFallback
+                HomeImagePreparePolicy::ImmediateFallback
             )
         );
         drop(guard);
         assert_eq!(
-            admission.fresh_fallback_home_prepare_lock_policy(),
+            admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::Released,
-                HomeImagePrepareLockPolicy::WaitForTransientContention
+                HomeImagePreparePolicy::WaitForTransientContention
             )
         );
     }

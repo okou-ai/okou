@@ -84,7 +84,7 @@ pub(in crate::executor::tests) fn default_params() -> JobParams {
         home_disk_mb: 16_384,
         restore_guest_state: false,
         device_rate_limits: None,
-        home_image_prepare_lock_policy: Default::default(),
+        home_image_prepare_policy: Default::default(),
     }
 }
 

@@ -9,40 +9,71 @@ use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandb
 const WAIT: Duration = Duration::from_secs(10);
 const SIZE: u64 = 1024 * 1024;
 
+#[derive(Clone, Copy)]
 enum HomeCandidate {
     Ordinary,
-    SourceProbe,
-    OtherHostProbe,
+    FirstRun,
+    KnownLocal,
+    SourceLocation,
+    SourceAdvertised,
+    GenericAdvertised,
+    OtherHostLocation,
     OtherHostExpected,
+    UnknownOtherHostExpected,
 }
 
 #[tokio::test]
-async fn ordinary_admission_consumes_unadvertised_home_before_a_blank() {
-    assert_unadvertised_home(false, HomeCandidate::Ordinary).await;
+async fn first_run_without_a_home_hint_keeps_an_available_blank() {
+    assert_home_selection(false, HomeCandidate::FirstRun, true).await;
 }
 
 #[tokio::test]
-async fn reserved_blank_yields_to_unadvertised_home_published_during_claim() {
-    assert_unadvertised_home(true, HomeCandidate::Ordinary).await;
+async fn no_hint_keeps_reserved_blank_when_hidden_home_publishes_during_claim() {
+    assert_home_selection(true, HomeCandidate::Ordinary, true).await;
 }
 
 #[tokio::test]
-async fn source_host_probe_consumes_unadvertised_source_home() {
-    assert_unadvertised_home(false, HomeCandidate::SourceProbe).await;
+async fn first_run_without_a_home_hint_creates_a_fresh_home_without_a_seed() {
+    assert_home_selection(false, HomeCandidate::FirstRun, false).await;
 }
 
 #[tokio::test]
-async fn a_ready_unadvertised_home_preempts_another_hosts_probe() {
-    assert_unadvertised_home(false, HomeCandidate::OtherHostProbe).await;
+async fn ordinary_admission_reuses_a_positively_known_local_home() {
+    assert_home_selection(false, HomeCandidate::KnownLocal, true).await;
 }
 
 #[tokio::test]
-async fn ready_source_home_preempts_another_hosts_publication_expectation() {
-    assert_unadvertised_home(false, HomeCandidate::OtherHostExpected).await;
+async fn source_home_location_consumes_unadvertised_source_home() {
+    assert_home_selection(false, HomeCandidate::SourceLocation, true).await;
 }
 
 #[tokio::test]
-async fn source_host_probe_with_no_home_uses_an_available_blank() {
+async fn selected_home_advertisement_consumes_home_missing_from_local_inventory() {
+    assert_home_selection(false, HomeCandidate::SourceAdvertised, true).await;
+}
+
+#[tokio::test]
+async fn selected_generic_home_advice_retains_verified_source_through_claim() {
+    assert_home_selection(false, HomeCandidate::GenericAdvertised, true).await;
+}
+
+#[tokio::test]
+async fn a_known_ready_home_preempts_another_hosts_location() {
+    assert_home_selection(false, HomeCandidate::OtherHostLocation, true).await;
+}
+
+#[tokio::test]
+async fn known_ready_source_home_preempts_another_hosts_publication_expectation() {
+    assert_home_selection(false, HomeCandidate::OtherHostExpected, true).await;
+}
+
+#[tokio::test]
+async fn hidden_home_without_a_local_hint_does_not_preempt_another_host() {
+    assert_home_selection(false, HomeCandidate::UnknownOtherHostExpected, true).await;
+}
+
+#[tokio::test]
+async fn source_home_location_with_no_home_uses_an_available_blank() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -204,7 +235,11 @@ async fn park_blank(
     id
 }
 
-async fn assert_unadvertised_home(during_claim: bool, candidate_kind: HomeCandidate) {
+async fn assert_home_selection(
+    during_claim: bool,
+    candidate_kind: HomeCandidate,
+    blank_available: bool,
+) {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -216,40 +251,67 @@ async fn assert_unadvertised_home(during_claim: bool, candidate_kind: HomeCandid
     let paths = RunnerPaths::new(config.paths.base_dir.clone());
     let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache.clone());
-    let blank_id = park_blank(&config, &env, &overrides).await;
+    let blank_id = if blank_available {
+        Some(park_blank(&config, &env, &overrides).await)
+    } else {
+        None
+    };
     let publisher = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
     let cache_dir = config.paths.home.home_image_cache_dir();
     let budget = config.capacity.budget.clone();
+    let key = "thread:evidenced-home-selection";
+    let source = RunId::new_v4();
+    let successor = RunId::new_v4();
+    let known_local = matches!(
+        candidate_kind,
+        HomeCandidate::KnownLocal
+            | HomeCandidate::OtherHostLocation
+            | HomeCandidate::OtherHostExpected
+    );
+    if known_local {
+        publish_home(&publisher, &paths, key, source).await;
+    }
     let runner = tokio::spawn(run(config));
     wait_discover_entered(&env, WAIT).await;
     // Remove general watcher progress through a real filesystem lifecycle;
-    // only the requested-key path can observe the subsequent publication.
+    // Unadvertised entries below are discoverable only with selected advice.
     let moved = cache_dir.with_extension("moved");
     tokio::fs::rename(&cache_dir, &moved).await.unwrap();
     tokio::fs::rename(&moved, &cache_dir).await.unwrap();
-    let key = "thread:unadvertised-ordinary-home";
-    let source = RunId::new_v4();
-    let successor = RunId::new_v4();
-    if !during_claim {
+    if !during_claim && !known_local {
         publish_home(&publisher, &paths, key, source).await;
     }
-    env.provider
-        .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
+    let mut context = context_with_reuse_key(successor, key);
+    if matches!(candidate_kind, HomeCandidate::FirstRun) {
+        context.is_first_run = Some(true);
+    }
+    env.provider.set_claim_result(successor, Some(context));
     if during_claim {
         env.handle.block_claim(successor);
     }
     let candidate = match candidate_kind {
-        HomeCandidate::SourceProbe => ranked_candidate(
+        HomeCandidate::GenericAdvertised => ranked_candidate(
+            successor,
+            Some(key),
+            runner_provider::RunnerPreferenceTarget::HomeCache,
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+        ),
+        HomeCandidate::SourceLocation | HomeCandidate::SourceAdvertised => ranked_candidate(
             successor,
             Some(key),
             runner_provider::RunnerPreferenceTarget::SourceHome(
                 source,
-                runner_provider::SourceHomeObservation::Location,
+                if matches!(candidate_kind, HomeCandidate::SourceAdvertised) {
+                    runner_provider::SourceHomeObservation::Advertised
+                } else {
+                    runner_provider::SourceHomeObservation::Location
+                },
             ),
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ),
-        HomeCandidate::OtherHostProbe => ranked_candidate(
+        HomeCandidate::OtherHostLocation => ranked_candidate(
             successor,
             Some(key),
             runner_provider::RunnerPreferenceTarget::SourceHome(
@@ -259,24 +321,40 @@ async fn assert_unadvertised_home(during_claim: bool, candidate_kind: HomeCandid
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
         ),
-        HomeCandidate::OtherHostExpected => ranked_candidate(
-            successor,
-            Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHome(
-                source,
-                runner_provider::SourceHomeObservation::Expected {
-                    deadline: Instant::now() + Duration::from_secs(30),
-                },
-            ),
-            &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
-            1,
-        ),
-        HomeCandidate::Ordinary => {
+        HomeCandidate::OtherHostExpected | HomeCandidate::UnknownOtherHostExpected => {
+            ranked_candidate_until(
+                successor,
+                Some(key),
+                runner_provider::RunnerPreferenceTarget::SourceHome(
+                    source,
+                    runner_provider::SourceHomeObservation::Expected {
+                        deadline: Instant::now() + Duration::from_secs(30),
+                    },
+                ),
+                &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
+                1,
+                Instant::now() + Duration::from_secs(2),
+            )
+        }
+        HomeCandidate::Ordinary | HomeCandidate::FirstRun | HomeCandidate::KnownLocal => {
             runner_provider::JobCandidate::new(successor, "vm0/default".into())
                 .with_reuse_key(Some(key.into()))
         }
     };
     env.handle.discover_tx.send(candidate).unwrap();
+    if matches!(candidate_kind, HomeCandidate::UnknownOtherHostExpected) {
+        tokio::select! {
+            deferred = env.handle.wait_deferred_poll_count(1, WAIT) => assert!(deferred),
+            result = execution.wait_entered(1, WAIT) => {
+                result.unwrap();
+                panic!("an unknown hidden Home cannot preempt the selected Runner");
+            }
+        }
+        assert!(env.handle.claim_candidates().is_empty());
+        shutdown(&env, runner).await;
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        return;
+    }
     if during_claim {
         assert!(env.handle.wait_run_claim_in_flight(successor, WAIT).await);
         publish_home(&publisher, &paths, key, source).await;
@@ -284,25 +362,48 @@ async fn assert_unadvertised_home(during_claim: bool, candidate_kind: HomeCandid
     }
     execution.wait_entered(1, WAIT).await.unwrap();
     let created = overrides.create_configs();
-    assert_eq!(created.len(), 1);
-    let seed = created[0]
-        .home_drive
-        .as_ref()
-        .unwrap()
-        .seed_image
-        .as_ref()
-        .expect("Home seed required");
-    let seed_path = match seed {
-        sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => path,
-    };
-    assert_eq!(
-        tokio::fs::read(seed_path).await.unwrap(),
-        vec![0x5a; SIZE as usize]
+    let restore = !matches!(
+        candidate_kind,
+        HomeCandidate::Ordinary | HomeCandidate::FirstRun | HomeCandidate::UnknownOtherHostExpected
     );
+    if restore {
+        assert_eq!(created.len(), 1);
+        let seed = created[0]
+            .home_drive
+            .as_ref()
+            .unwrap()
+            .seed_image
+            .as_ref()
+            .expect("evidenced Home must supply its physical seed");
+        let seed_path = match seed {
+            sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => {
+                path
+            }
+        };
+        assert_eq!(
+            tokio::fs::read(seed_path).await.unwrap(),
+            vec![0x5a; SIZE as usize]
+        );
+    } else if blank_available {
+        assert!(
+            created.is_empty(),
+            "no-hint admission must retain the parked blank"
+        );
+    } else {
+        assert_eq!(created.len(), 1);
+        assert!(
+            created[0].home_drive.as_ref().unwrap().seed_image.is_none(),
+            "no-hint fresh preparation must not consume a hidden Home"
+        );
+    }
     execution.release_one();
     let completed = env.handle.wait_completion(successor, WAIT).await.unwrap();
     assert_eq!(completed.exit_code, 0);
-    assert_ne!(completed.sandbox_id, Some(blank_id));
+    if restore {
+        assert_ne!(completed.sandbox_id, blank_id);
+    } else if blank_available {
+        assert_eq!(completed.sandbox_id, blank_id);
+    }
     shutdown(&env, runner).await;
     assert_eq!(budget.allocated(), (0, 0, 0));
 }

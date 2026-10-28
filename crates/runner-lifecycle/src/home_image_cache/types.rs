@@ -76,7 +76,9 @@ pub struct HomeImagePrepareRequest<'a> {
     pub home_drive_required: bool,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum HomeImagePrepareLockPolicy {
+pub enum HomeImagePreparePolicy {
+    /// Do not read a cached image; retain only nonblocking publication ownership.
+    Fresh,
     #[default]
     WaitForTransientContention,
     ImmediateFallback,

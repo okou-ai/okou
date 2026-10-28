@@ -241,7 +241,7 @@ impl DiscoveredJobResult {
         jobs: &mut JoinSet<JobResult>,
     ) -> ReactorResult<Self> {
         if let Some(mut activation) = self.prepared.take() {
-            let request = finish_spawn_job_request(&mut activation)
+            let request = finish_spawn_job_request(&mut activation, ctx)
                 .map_err(|error| ReactorError::Internal(error.to_string()))?;
             spawn_job(request, ctx, jobs);
         }
@@ -697,7 +697,7 @@ pub(super) async fn build_spawn_job_request(
     ctx: &SpawnContext,
 ) -> Result<SpawnJobRequest, ClaimedActivationError> {
     prepare_spawn_job_request(activation, ctx).await?;
-    finish_spawn_job_request(activation)
+    finish_spawn_job_request(activation, ctx)
 }
 
 async fn prepare_spawn_job_request(
@@ -721,6 +721,7 @@ async fn prepare_spawn_job_request(
 
 fn finish_spawn_job_request(
     activation: &mut ClaimedActivationGuard,
+    ctx: &SpawnContext,
 ) -> Result<SpawnJobRequest, ClaimedActivationError> {
     let sandbox_id = activation.sandbox_id();
     let ClaimedJobSetup {
@@ -747,6 +748,17 @@ fn finish_spawn_job_request(
     } = resource;
     drop(idle_snapshot);
 
+    let home_image_prepare_policy = if home_source_run_id.is_some()
+        || ctx.exec_config.home_cache.is_some()
+            && claimed.context().reuse_key().is_some_and(|key| {
+                ctx.home_cache_snapshot
+                    .has_compatible_home(key, &profile_name)
+            }) {
+        crate::home_image_cache::HomeImagePreparePolicy::WaitForTransientContention
+    } else {
+        crate::home_image_cache::HomeImagePreparePolicy::Fresh
+    };
+
     Ok(SpawnJobRequest {
         claimed,
         sandbox_id,
@@ -760,7 +772,7 @@ fn finish_spawn_job_request(
             budget_lease: active_lease,
             restore_guest_state,
             device_rate_limits,
-            home_image_prepare_lock_policy: Default::default(),
+            home_image_prepare_policy,
             factory,
             cancellation,
         },

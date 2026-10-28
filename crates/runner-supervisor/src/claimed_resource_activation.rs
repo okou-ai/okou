@@ -603,14 +603,11 @@ pub async fn activate_reserved_idle(
 
     let claimed_home_cache_reuse_key = if reservation_kind == IdleSandboxKind::Blank {
         let started_at = Instant::now();
-        let possible = crate::home_selection::prefer_home(
-            ctx.home_cache,
-            ctx.home_cache_snapshot,
-            requested_reuse_key,
-            profile_name,
-            u64::from(home_disk_mb) * 1024 * 1024,
-        )
-        .await;
+        let possible = ctx.home_cache.is_some()
+            && requested_reuse_key.is_some_and(|key| {
+                ctx.home_cache_snapshot
+                    .has_compatible_home(key, profile_name)
+            });
         pre_spawn_timing
             .record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
         possible
@@ -912,14 +909,11 @@ pub async fn try_reuse_from_pool(
     let started_at = Instant::now();
     let claimed_home_cache_reuse_key = exact.is_none()
         && (home_source_run_id.is_some()
-            || crate::home_selection::prefer_home(
-                ctx.home_cache,
-                ctx.home_cache_snapshot,
-                reuse_key,
-                profile_name,
-                u64::from(home_disk_mb) * 1024 * 1024,
-            )
-            .await);
+            || ctx.home_cache.is_some()
+                && reuse_key.is_some_and(|key| {
+                    ctx.home_cache_snapshot
+                        .has_compatible_home(key, profile_name)
+                }));
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
     let (taken, blank_pool_selection) = match exact {
         Some(exact) => (Some(exact), None),

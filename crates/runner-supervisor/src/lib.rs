@@ -38,7 +38,6 @@ pub mod claimed_resource_activation;
 mod duration;
 pub mod finalizing_admission;
 pub mod heartbeat;
-mod home_selection;
 pub mod host_memory;
 pub mod idle_lifecycle;
 pub mod idle_pressure;

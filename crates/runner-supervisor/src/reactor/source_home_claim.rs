@@ -172,6 +172,10 @@ impl SourceHomeClaim {
             }
         };
         request.job_profile.home_source_run_id = home_source_run_id;
+        // Routing/publication expiry does not erase this claim's accepted
+        // local hint. Keep ordinary checkout's existing short contention policy.
+        request.job_profile.home_image_prepare_policy =
+            crate::home_image_cache::HomeImagePreparePolicy::WaitForTransientContention;
         Ok(run_job(request, ctx).await)
     }
 

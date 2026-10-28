@@ -374,14 +374,11 @@ async fn claim_with_local_admission(
     let resource = match resource {
         Some(resource) => resource,
         None => {
-            let allow_compatible_blank = !crate::home_selection::prefer_home(
-                ctx.home_cache,
-                ctx.home_cache_snapshot,
-                candidate.reuse_key(),
-                profile_name,
-                u64::from(home_disk_mb) * 1024 * 1024,
-            )
-            .await;
+            let allow_compatible_blank = !(ctx.home_cache.is_some()
+                && candidate.reuse_key().is_some_and(|key| {
+                    ctx.home_cache_snapshot
+                        .has_compatible_home(key, profile_name)
+                }));
             let Some((resource, selection)) = acquire_local_admission_resource(
                 &candidate,
                 profile_name,
@@ -743,12 +740,15 @@ async fn prepare_ranked_preference_candidate(
     let source_home = if let Some(source) = source_run_id
         && (selected_finalizing
             || selected_home.is_some()
-            || ranked_preference_allows(
-                advertised_tier,
-                RunnerPreferenceTier::SourceHome(SourceHomeObservation::Advertised),
-                selected,
-            )) {
-        crate::home_selection::probe_home(
+            || ctx
+                .home_cache_snapshot
+                .contains_source_home(reuse_key, profile_name, source)
+                && ranked_preference_allows(
+                    advertised_tier,
+                    RunnerPreferenceTier::SourceHome(SourceHomeObservation::Advertised),
+                    selected,
+                )) {
+        probe_home(
             ctx.home_cache,
             reuse_key,
             profile_name,
@@ -853,21 +853,27 @@ async fn prepare_ranked_preference_candidate(
         );
     }
 
-    let reason = if (selected_finalizing
-        || ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected))
-        // Ranking needs ready bytes; a Busy/unknown Home may only influence
-        // this Runner's own blank choice, not preempt another recipient.
-        && matches!(
-            crate::home_selection::probe_home(
-                ctx.home_cache,
-                reuse_key,
-                profile_name,
-                u64::from(home_disk_mb) * 1024 * 1024,
-                None,
-            )
-            .await,
-            Some(HomeCacheProbe::Ready { .. })
-        ) {
+    let known_home = ctx
+        .home_cache_snapshot
+        .has_compatible_home(reuse_key, profile_name);
+    // Only selected advice or positive local inventory authorizes IO.
+    // Ranking still requires ready bytes, never a Busy/unknown entry.
+    let home = if selected_finalizing
+        || ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected)
+            && (selected || known_home)
+    {
+        probe_home(
+            ctx.home_cache,
+            reuse_key,
+            profile_name,
+            u64::from(home_disk_mb) * 1024 * 1024,
+            None,
+        )
+        .await
+    } else {
+        None
+    };
+    let reason = if let Some(HomeCacheProbe::Ready { source_run_id }) = home {
         if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
             profile_name,
@@ -880,7 +886,7 @@ async fn prepare_ranked_preference_candidate(
         .await
         {
             return PreferencePreparation::Ready(PreparedCandidate {
-                home_source_run_id: None,
+                home_source_run_id: Some(source_run_id),
                 candidate,
                 resource: Some(resource),
                 source_home_wait: None,
@@ -903,6 +909,26 @@ async fn prepare_ranked_preference_candidate(
         reason,
     )
     .await
+}
+
+async fn probe_home(
+    cache: Option<&HomeImageCache>,
+    reuse_key: &str,
+    profile: &str,
+    image_size_bytes: u64,
+    required_source: Option<RunId>,
+) -> Option<HomeCacheProbe> {
+    match cache?
+        .probe_home(reuse_key, profile, image_size_bytes, required_source)
+        .await
+    {
+        Ok(observed) => Some(observed),
+        Err(error) => {
+            warn!(%error, profile, ?required_source, reuse_key_fingerprint = %short_digest(reuse_key),
+                "requested Home lookup failed during selection");
+            None
+        }
+    }
 }
 
 fn ranked_preference_allows(

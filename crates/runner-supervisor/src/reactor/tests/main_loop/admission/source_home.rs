@@ -412,7 +412,7 @@ async fn assert_late_draining_publication(drain_receiver: bool, lose_watcher: bo
     assert_eq!(budget.allocated(), (0, 0, 0));
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
@@ -420,10 +420,15 @@ async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
     let (mut config, env) = mock_run_config_with_overrides(profiles, 2, 8192, 1, overrides.clone());
     let (cache, paths) = enable_cache(&mut config);
     let key = "thread:peer-expiry";
-    seed_home_cache_state(&cache, &paths, key, "vm0/default", 1024 * 1024).await;
+    let cache_dir = config.paths.home.home_image_cache_dir();
     let budget = config.capacity.budget.clone();
     let runner = tokio::spawn(run(config));
     wait_discover_entered(&env, WAIT).await;
+    // Keep the snapshot empty: only the accepted preference authorizes the
+    // compatible checkout after its required-source publication wait expires.
+    let moved = cache_dir.with_extension("moved");
+    tokio::fs::rename(&cache_dir, &moved).await.unwrap();
+    tokio::fs::rename(&moved, &cache_dir).await.unwrap();
     let run_id = RunId::new_v4();
     env.provider
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
@@ -434,7 +439,8 @@ async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
     wait_owned_home(&env, run_id).await;
     assert_eq!(budget.allocated(), (2, 4096, 1));
     assert!(overrides.create_configs().is_empty());
-    tokio::time::advance(Duration::from_secs(31)).await;
+    seed_home_cache_state(&cache, &paths, key, "vm0/default", 1024 * 1024).await;
+    raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(31)).await;
     let completion = env
         .handle
         .wait_completion(run_id, WAIT)

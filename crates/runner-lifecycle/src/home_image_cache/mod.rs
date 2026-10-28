@@ -58,7 +58,7 @@ pub use types::{
     CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCachePressureThresholds,
     HomeCacheTerminalStatus, HomeImageCacheInspection, HomeImageCacheInspectionEntry,
     HomeImageCacheInspectionStatus, HomeImageCacheInspectionSummary, HomeImageLeaseIdentity,
-    HomeImageLeaseRequest, HomeImagePrepareLockPolicy, HomeImagePrepareRequest,
+    HomeImageLeaseRequest, HomeImagePreparePolicy, HomeImagePrepareRequest,
     HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
     HomeImagePromotionIdentityRequest, HomeImagePromotionRequest, HomeImageSourceIdentity,
 };

@@ -9,7 +9,7 @@ use std::{
 
 use async_trait::async_trait;
 use runner_lifecycle::home_image_cache::{
-    HomeCacheCheckoutResult, HomeImageLeaseIdentity, HomeImagePrepareLockPolicy,
+    HomeCacheCheckoutResult, HomeImageLeaseIdentity, HomeImagePreparePolicy,
 };
 use runner_provider::{ClaimedJob, CompletionAuth, JobCandidate, JobProvider, ProviderResult};
 use runner_supervisor::pre_claim_admission::GuardedSpeculativeAdmission;
@@ -338,12 +338,12 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
         }
         let attempt_run = RunId::new_v4();
         let attempt_sandbox = SandboxId::new_v4();
-        let attempted = request.cache.prepare_with_lock_policy(runner_lifecycle::home_image_cache::HomeImagePrepareRequest {
+        let attempted = request.cache.prepare_with_policy(runner_lifecycle::home_image_cache::HomeImagePrepareRequest {
             identity: HomeImageLeaseIdentity { run_id:attempt_run,sandbox_id:attempt_sandbox,profile_name:fixture::PROFILE,
                 rootfs_hash:&context.rootfs_hash,reuse_key:Some(&context.reuse_key),
                 working_dir:api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,image_size_bytes:fixture::IMAGE_BYTES },
             home_drive_required:true,
-        },HomeImagePrepareLockPolicy::ImmediateFallback).await;
+        },HomeImagePreparePolicy::ImmediateFallback).await;
         if attempted.result()!=HomeCacheCheckoutResult::LockBusy {
             request.proof.retain(attempted);
             return Err(io::Error::other("uncertain claim released original promotion lock").into());

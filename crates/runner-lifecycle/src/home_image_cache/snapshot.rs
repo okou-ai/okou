@@ -260,19 +260,17 @@ impl HomeCacheStateSnapshot {
         self.committed.send_replace(());
     }
 
-    /// Positive selection hint only; a miss requires a requested-key lookup.
-    /// Before loading, any compatible entry may exist.
-    pub fn might_contain_compatible_home(&self, reuse_key: &str, profile: &str) -> bool {
+    /// Positive observed evidence, including entries omitted from the wire projection.
+    /// Unloaded state alone grants no hint.
+    pub fn has_compatible_home(&self, reuse_key: &str, profile: &str) -> bool {
         let inner = self.lock_inner();
-        !inner.loaded
-            || inner.states.iter().any(|state| {
-                state.reuse_key == reuse_key
-                    && state.home_caches.iter().any(|home| {
-                        home.profile == profile
-                            && home.home_affinity_version
-                                == runner_types::types::HOME_AFFINITY_VERSION
-                    })
-            })
+        inner.entries.values().any(|state| {
+            state.reuse_key == reuse_key
+                && state.home_caches.iter().any(|home| {
+                    home.profile == profile
+                        && home.home_affinity_version == runner_types::types::HOME_AFFINITY_VERSION
+                })
+        })
     }
 
     pub fn current_held_home_states(
@@ -439,14 +437,14 @@ mod tests {
     }
 
     #[test]
-    fn home_cache_snapshot_treats_unloaded_cache_as_unknown() {
+    fn home_cache_snapshot_requires_positive_profile_evidence() {
         let snapshot = HomeCacheStateSnapshot::new();
         assert!(!snapshot.home_cache_loaded());
-        assert!(snapshot.might_contain_compatible_home("sess-cache", "vm0/default"));
+        assert!(!snapshot.has_compatible_home("sess-cache", "vm0/default"));
 
         refresh_snapshot(&snapshot, Vec::new());
         assert!(snapshot.home_cache_loaded());
-        assert!(!snapshot.might_contain_compatible_home("sess-cache", "vm0/default"));
+        assert!(!snapshot.has_compatible_home("sess-cache", "vm0/default"));
 
         refresh_snapshot(
             &snapshot,
@@ -456,12 +454,12 @@ mod tests {
                 &["vm0/default"],
             )],
         );
-        assert!(snapshot.might_contain_compatible_home("sess-cache", "vm0/default"));
-        assert!(!snapshot.might_contain_compatible_home("sess-cache", "vm0/other"));
+        assert!(snapshot.has_compatible_home("sess-cache", "vm0/default"));
+        assert!(!snapshot.has_compatible_home("sess-cache", "vm0/other"));
     }
 
     #[test]
-    fn home_cache_positive_hint_uses_the_bounded_profile_projection() {
+    fn home_cache_positive_hint_retains_observed_entries_beyond_wire_projection() {
         let snapshot = HomeCacheStateSnapshot::new();
         let scan = inventory(
             (0..MAX_HELD_HOME_STATES)
@@ -482,8 +480,8 @@ mod tests {
                 .iter()
                 .any(|state| state.reuse_key == "group-0000")
         );
-        assert!(!snapshot.might_contain_compatible_home("group-0000", "vm0/default"));
-        assert!(snapshot.might_contain_compatible_home(
+        assert!(snapshot.has_compatible_home("group-0000", "vm0/default"));
+        assert!(snapshot.has_compatible_home(
             &format!("group-{:04}", MAX_HELD_HOME_STATES - 1),
             "vm0/default"
         ));
