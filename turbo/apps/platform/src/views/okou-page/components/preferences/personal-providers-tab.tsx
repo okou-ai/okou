@@ -414,16 +414,6 @@ function OAuthAccountTableRow({
   const plan = formatSubscriptionPlan(account);
   const detail =
     account.workspaceName === identity ? null : account.workspaceName;
-  const statusLabel = account.needsReconnect
-    ? t(($) => {
-        return $.settings.models.personal.status.stale;
-      })
-    : t(($) => {
-        return $.settings.models.personal.status.connected;
-      });
-  const creditBalance = account.needsReconnect
-    ? null
-    : formatSubscriptionCredits(account);
 
   return (
     <div
@@ -443,14 +433,9 @@ function OAuthAccountTableRow({
           onActivate={onActivate}
         />
         <OAuthAccountIdentity
+          account={account}
           detail={detail}
           identity={identity}
-          needsReconnect={account.needsReconnect}
-          statusLabel={
-            creditBalance === null
-              ? statusLabel
-              : `${statusLabel} · ${creditBalance.text}`
-          }
         />
       </div>
       <div
@@ -585,16 +570,26 @@ function OAuthAccountActivateButton({
 }
 
 function OAuthAccountIdentity({
+  account,
   detail,
   identity,
-  needsReconnect,
-  statusLabel,
 }: {
+  readonly account: ModelProviderResponse;
   readonly detail: string | null | undefined;
   readonly identity: string;
-  readonly needsReconnect: boolean;
-  readonly statusLabel: string;
 }) {
+  const { t } = useTranslation();
+  const statusLabel = account.needsReconnect
+    ? t(($) => {
+        return $.settings.models.personal.status.stale;
+      })
+    : t(($) => {
+        return $.settings.models.personal.status.connected;
+      });
+  const creditBalance = account.needsReconnect
+    ? null
+    : formatSubscriptionCredits(account);
+
   return (
     <div className="min-w-0">
       {detail ? (
@@ -619,8 +614,12 @@ function OAuthAccountIdentity({
         </span>
       )}
       <ConnectorEntryStatus
-        label={statusLabel}
-        tone={needsReconnect ? "warning" : "success"}
+        label={
+          creditBalance === null
+            ? statusLabel
+            : `${statusLabel} · ${creditBalance.text}`
+        }
+        tone={account.needsReconnect ? "warning" : "success"}
         className="mt-0.5 text-xs text-muted-foreground"
       />
     </div>
