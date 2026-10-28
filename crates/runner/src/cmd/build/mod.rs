@@ -15,6 +15,7 @@ use crate::r2_cache::R2ImageCache;
 use runner_host::lock;
 use runner_host::paths::{HomePaths, RootfsPaths, touch_mtime};
 
+mod cleanup;
 mod guest;
 mod hashes;
 mod local_publish;
@@ -23,6 +24,7 @@ mod scripts;
 mod sizes;
 mod snapshot;
 
+use cleanup::TemplateCleanup;
 use guest::{GuestBinaries, guest_definitions};
 use hashes::{
     compute_ca_cert_fingerprint, compute_rootfs_build_hashes, compute_snapshot_hash,
@@ -665,13 +667,13 @@ async fn ensure_template_cached(input: &TemplateInput<'_>) -> RunnerResult<()> {
         // A successful HEAD must not queue behind an independent reader or
         // repair. Clean shared residue only when no writer owns it; defer busy
         // cleanup to a later eligible warm-up.
-        if let lock::TryLock::Acquired(_guard) =
+        if let lock::TryLock::Acquired(guard) =
             lock::acquire_with_contention_timeout(template_lock_path, std::time::Duration::ZERO)
                 .await?
         {
             let warm_parent = template_warm_parent_dir(input.paths, input.template_hash);
-            cleanup_template_warm_parent(&warm_parent).await?;
-            remove_empty_dir_if_exists(&warm_parent).await?;
+            let cleanup = TemplateCleanup::new(std::sync::Arc::new(guard));
+            cleanup.warm_parent(&warm_parent).await?;
         }
         tracing::info!(
             r2_key = ?cache.template_download_key(input.template_hash),
@@ -711,8 +713,8 @@ async fn ensure_template_cached_under_lock_with_scripts(
     })?;
 
     let warm_parent = template_warm_parent_dir(input.paths, input.template_hash);
-    cleanup_template_warm_parent(&warm_parent).await?;
-    remove_empty_dir_if_exists(&warm_parent).await?;
+    let cleanup = scripts.cleanup();
+    cleanup.warm_parent(&warm_parent).await?;
 
     match cache.template_exists(input.template_hash).await {
         Ok(true) => {
@@ -751,7 +753,7 @@ async fn ensure_template_cached_under_lock_with_scripts(
     )
     .await;
 
-    finish_template_warm_dir_result(&warm_parent, &warm_dir, result).await
+    cleanup.finish_warm(&warm_parent, &warm_dir, result).await
 }
 
 fn template_attempt_dir(parent: &Path, prefix: &str) -> PathBuf {
@@ -771,145 +773,16 @@ fn is_template_attempt_dir_name(name: &str, prefix: &str) -> bool {
     name.starts_with(prefix) && name.ends_with(TEMPLATE_ATTEMPT_DIR_SUFFIX)
 }
 
-async fn cleanup_stale_template_attempt_dirs(parent: &Path, prefix: &str) -> RunnerResult<()> {
-    let mut entries = match tokio::fs::read_dir(parent).await {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => {
-            return Err(RunnerError::Internal(format!(
-                "read template attempt parent {}: {e}",
-                parent.display()
-            )));
-        }
-    };
-
-    while let Some(entry) = entries.next_entry().await.map_err(|e| {
-        RunnerError::Internal(format!(
-            "read template attempt entry in {}: {e}",
-            parent.display()
-        ))
-    })? {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if is_template_attempt_dir_name(name, prefix) {
-            remove_path_if_exists(&entry.path(), "stale template attempt dir").await?;
-        }
-    }
-
-    Ok(())
-}
-
-async fn cleanup_template_warm_parent(parent: &Path) -> RunnerResult<()> {
-    match tokio::fs::symlink_metadata(parent).await {
-        Ok(metadata) if metadata.is_dir() => {
-            cleanup_stale_template_attempt_dirs(parent, TEMPLATE_WARM_ATTEMPT_DIR_PREFIX).await
-        }
-        Ok(_) => remove_path_if_exists(parent, "stale template warm parent").await,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(RunnerError::Internal(format!(
-            "stat template warm parent {}: {e}",
-            parent.display()
-        ))),
-    }
-}
-
-async fn remove_path_if_exists(path: &Path, label: &str) -> RunnerResult<()> {
-    let metadata = match tokio::fs::symlink_metadata(path).await {
-        Ok(metadata) => metadata,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => Err(RunnerError::Internal(format!(
-            "stat {label} {}: {e}",
-            path.display()
-        )))?,
-    };
-
-    let result = if metadata.is_dir() {
-        tokio::fs::remove_dir_all(path).await
-    } else {
-        tokio::fs::remove_file(path).await
-    };
-    result.map_err(|e| RunnerError::Internal(format!("remove {label} {}: {e}", path.display())))
-}
-
-async fn remove_dir_all_if_exists(path: &Path, label: &str) -> RunnerResult<()> {
-    match tokio::fs::remove_dir_all(path).await {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(RunnerError::Internal(format!(
-            "remove {label} {}: {e}",
-            path.display()
-        ))),
-    }
-}
-
-async fn finish_temp_dir_result(
-    path: &Path,
-    label: &str,
-    result: RunnerResult<()>,
-) -> RunnerResult<()> {
-    let cleanup = remove_dir_all_if_exists(path, label).await;
-    match (result, cleanup) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Ok(()), Err(cleanup_err)) => Err(cleanup_err),
-        (Err(original_err), Ok(())) => Err(original_err),
-        (Err(original_err), Err(cleanup_err)) => {
-            tracing::warn!(
-                "failed to remove {label} {} after an earlier error: {cleanup_err}",
-                path.display()
-            );
-            Err(original_err)
-        }
-    }
-}
-
-async fn finish_template_warm_dir_result(
-    parent: &Path,
-    attempt: &Path,
-    result: RunnerResult<()>,
-) -> RunnerResult<()> {
-    let result = finish_temp_dir_result(attempt, "template warm dir", result).await;
-    match remove_empty_dir_if_exists(parent).await {
-        Ok(()) => result,
-        Err(parent_err) => match result {
-            Ok(()) => Err(parent_err),
-            Err(original_err) => {
-                tracing::warn!(
-                    "failed to remove template warm parent {} after an earlier error: {parent_err}",
-                    parent.display()
-                );
-                Err(original_err)
-            }
-        },
-    }
-}
-
-async fn remove_empty_dir_if_exists(path: &Path) -> RunnerResult<()> {
-    match tokio::fs::remove_dir(path).await {
-        Ok(()) => Ok(()),
-        Err(e)
-            if matches!(
-                e.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
-            ) =>
-        {
-            Ok(())
-        }
-        Err(e) => Err(RunnerError::Internal(format!(
-            "remove empty template warm parent {}: {e}",
-            path.display()
-        ))),
-    }
-}
-
 async fn obtain_template_to_staging(
     input: &TemplateInput<'_>,
     rootfs_paths: &RootfsPaths,
     scripts: &mut RootfsScripts,
 ) -> RunnerResult<()> {
     let staging = rootfs_paths.rootfs_staging();
-    cleanup_stale_template_attempt_dirs(rootfs_paths.dir(), TEMPLATE_BUILD_DIR_PREFIX).await?;
+    let cleanup = scripts.cleanup();
+    cleanup
+        .stale_attempts(rootfs_paths.dir(), TEMPLATE_BUILD_DIR_PREFIX)
+        .await?;
     let attempt_dir = template_attempt_dir(rootfs_paths.dir(), TEMPLATE_BUILD_DIR_PREFIX);
 
     let result = async {
@@ -960,7 +833,9 @@ async fn obtain_template_to_staging(
     }
     .await;
 
-    finish_temp_dir_result(&attempt_dir, "template build dir", result).await
+    cleanup
+        .finish_attempt(&attempt_dir, "template build dir", result)
+        .await
 }
 
 async fn materialize_template_from_r2_or_build(

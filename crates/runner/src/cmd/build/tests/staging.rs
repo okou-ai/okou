@@ -1,3 +1,4 @@
+use super::fixtures::template_cleanup_owner;
 use super::*;
 
 #[tokio::test]
@@ -8,7 +9,8 @@ async fn temp_dir_cleanup_failure_fails_successful_operation() {
         .await
         .unwrap();
 
-    let err = finish_temp_dir_result(&file_path, "test temp dir", Ok(()))
+    let err = template_cleanup_owner(dir.path())
+        .finish_attempt(&file_path, "test temp dir", Ok(()))
         .await
         .unwrap_err();
 
@@ -26,13 +28,14 @@ async fn temp_dir_cleanup_preserves_original_error() {
         .await
         .unwrap();
 
-    let err = finish_temp_dir_result(
-        &file_path,
-        "test temp dir",
-        Err(RunnerError::Internal("original failure".into())),
-    )
-    .await
-    .unwrap_err();
+    let err = template_cleanup_owner(dir.path())
+        .finish_attempt(
+            &file_path,
+            "test temp dir",
+            Err(RunnerError::Internal("original failure".into())),
+        )
+        .await
+        .unwrap_err();
 
     assert!(
         err.to_string().contains("original failure"),
@@ -132,7 +135,8 @@ async fn stale_template_attempt_dir_is_removed_before_reuse() {
         .await
         .unwrap();
 
-    cleanup_stale_template_attempt_dirs(rootfs.dir(), TEMPLATE_BUILD_DIR_PREFIX)
+    template_cleanup_owner(dir.path())
+        .stale_attempts(rootfs.dir(), TEMPLATE_BUILD_DIR_PREFIX)
         .await
         .unwrap();
 
@@ -155,7 +159,8 @@ async fn stale_template_attempt_file_is_removed_before_reuse() {
         .await
         .unwrap();
 
-    cleanup_stale_template_attempt_dirs(rootfs.dir(), TEMPLATE_BUILD_DIR_PREFIX)
+    template_cleanup_owner(dir.path())
+        .stale_attempts(rootfs.dir(), TEMPLATE_BUILD_DIR_PREFIX)
         .await
         .unwrap();
 
@@ -176,7 +181,8 @@ async fn template_attempt_cleanup_preserves_other_hash_parent() {
     tokio::fs::create_dir_all(&this_dir).await.unwrap();
     tokio::fs::create_dir_all(&other_dir).await.unwrap();
 
-    cleanup_stale_template_attempt_dirs(&this_parent, TEMPLATE_WARM_ATTEMPT_DIR_PREFIX)
+    template_cleanup_owner(dir.path())
+        .stale_attempts(&this_parent, TEMPLATE_WARM_ATTEMPT_DIR_PREFIX)
         .await
         .unwrap();
 
