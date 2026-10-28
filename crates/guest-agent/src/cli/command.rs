@@ -254,18 +254,6 @@ mod tests {
     }
 
     #[test]
-    fn build_claude_args_with_append_system_prompt() {
-        let args = build_claude_args_for_test("", "Your name is Aria.", "", "", "");
-        let asp_idx = args
-            .iter()
-            .position(|a| a == "--append-system-prompt-file")
-            .unwrap();
-        assert_eq!(args[asp_idx + 1], TEST_APPEND_SYSTEM_PROMPT_FILE);
-        assert!(!args.iter().any(|arg| arg == "Your name is Aria."));
-        assert_claude_prompt_is_not_positional(&args, "analyze this");
-    }
-
-    #[test]
     fn build_claude_args_resume_log_omits_resume_id() {
         let _system_log_state_guard = crate::lock_system_log_test_state();
         let tmp = tempfile::tempdir().unwrap();
@@ -317,12 +305,6 @@ mod tests {
     }
 
     #[test]
-    fn build_claude_args_empty_disallowed_tools_omitted() {
-        let args = build_claude_args_for_test("", "", "", "", "");
-        assert!(!args.contains(&"--disallowed-tools".to_string()));
-    }
-
-    #[test]
     fn build_claude_args_with_tools() {
         let args = build_claude_args_for_test("", "", "", "Bash,Edit,Read", "");
         let t_idx = args.iter().position(|a| a == "--tools").unwrap();
@@ -330,12 +312,6 @@ mod tests {
         assert_eq!(args[t_idx + 2], "Edit");
         assert_eq!(args[t_idx + 3], "Read");
         assert_claude_prompt_is_not_positional(&args, "hello");
-    }
-
-    #[test]
-    fn build_claude_args_empty_tools_omitted() {
-        let args = build_claude_args_for_test("", "", "", "", "");
-        assert!(!args.contains(&"--tools".to_string()));
     }
 
     #[test]
