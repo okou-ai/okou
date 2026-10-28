@@ -4275,6 +4275,134 @@
         "teamCopy": "Travaillez dans le même espace.",
         "teamTitle": "Invitez un collègue"
       },
+      "outcomes": {
+        "accessibleLabel": "Exemple de {{title}} préparé à partir de {{source}}. Toutes les données sont fictives.",
+        "examples": {
+          "coaching": {
+            "context": "Jeu. 10:00 · séance de 45 min",
+            "next": "Définir la suite",
+            "nextTime": "10 min",
+            "practice": "Pratiquer la nouvelle compétence",
+            "practiceTime": "25 min",
+            "review": "Revoir la séance précédente",
+            "reviewTime": "10 min"
+          },
+          "consulting": {
+            "agenda": "Périmètre et calendrier",
+            "background": "Contexte",
+            "context": "Acme Studio · jeu. 10:00",
+            "discuss": "À discuter",
+            "expansion": "Expansion prévue",
+            "goal": "Objectif",
+            "objective": "Améliorer l’accueil"
+          },
+          "design": {
+            "brandGuide": "Charte de marque",
+            "clientBrief": "Brief client",
+            "deliverables": "Livrables",
+            "direction": "Direction visuelle",
+            "photos": "Photos produit",
+            "positioning": "« Même soin. Moins de déchets. » pour un public écoresponsable.",
+            "project": "Lancement de soins rechargeables",
+            "scope": "Page de destination + 3 pubs",
+            "visuals": "Gros plans épurés du produit"
+          },
+          "finance": {
+            "context": "Octobre · bilan mensuel",
+            "expenses": "Dépenses",
+            "income": "Recettes",
+            "reconcile": "À rapprocher",
+            "transactions": "3 transactions"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "Croissance du CA",
+            "margin": "Marge brute",
+            "metric": "Indicateur",
+            "northstar": "Northstar",
+            "watch": "À surveiller : concentration clients."
+          },
+          "marketing": {
+            "comparison": "vs 7 jours précédents",
+            "period": "7 derniers jours"
+          },
+          "operations": {
+            "agenda": "Confirmer l’ordre du jour",
+            "context": "Cette semaine · 3 priorités",
+            "friday": "Ven.",
+            "quote": "Examiner le devis fournisseur",
+            "today": "Aujourd’hui",
+            "tuesday": "Mar.",
+            "update": "Envoyer l’avancement du projet"
+          },
+          "other": {
+            "brief": "Lire le brief partagé",
+            "call": "Confirmer l’appel de demain",
+            "context": "À partir des e-mails récents",
+            "reply": "Répondre à Alex"
+          },
+          "research": {
+            "action": "Tester une première tâche guidée",
+            "context": "Entretiens clients · 5 notes",
+            "evidence": "Preuve",
+            "finding": "Constat",
+            "insight": "Configuration trop longue",
+            "interviews": "3 entretiens sur 5",
+            "next": "Suite"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 opportunités à suivre",
+            "demo": "Démo demain",
+            "next": "Ensuite : relancer Acme.",
+            "northstar": "Northstar",
+            "proposal": "Proposition envoyée"
+          },
+          "software": {
+            "context": "2 fusions · 1 problème ouvert",
+            "issue": "Échec de l’export CSV",
+            "search": "Recherche plus rapide",
+            "signup": "Inscription simplifiée"
+          }
+        },
+        "expandLabel": "Voir un exemple de résultat",
+        "industries": {
+          "coaching": {
+            "title": "Plan de séance"
+          },
+          "consulting": {
+            "title": "Brief de rendez-vous"
+          },
+          "design": {
+            "title": "Brief créatif"
+          },
+          "finance": {
+            "title": "Bilan mensuel"
+          },
+          "investing": {
+            "title": "Comparaison d’entreprises"
+          },
+          "marketing": {
+            "title": "Bilan des campagnes"
+          },
+          "operations": {
+            "title": "Cette semaine"
+          },
+          "other": {
+            "title": "Prochaines étapes"
+          },
+          "research": {
+            "title": "Synthèse de recherche"
+          },
+          "sales": {
+            "title": "Suivi commercial"
+          },
+          "software": {
+            "title": "Bilan de version"
+          }
+        },
+        "title": "Faites travailler vos outils du quotidien"
+      },
       "prompt": {
         "connectorsDescription": "Connectez vos outils pour qu’Okou comprenne votre travail et réalise les tâches en fonction de vos besoins. Vous pouvez aussi le faire plus tard.",
         "connectorsTitle": "Connectez vos outils de travail",

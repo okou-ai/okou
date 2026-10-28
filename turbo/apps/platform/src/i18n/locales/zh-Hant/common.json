@@ -4206,6 +4206,134 @@
         "teamCopy": "在同一個工作區協作。",
         "teamTitle": "邀請同事"
       },
+      "outcomes": {
+        "accessibleLabel": "根據 {{source}} 整理的{{title}}示意，內容均為範例資料。",
+        "examples": {
+          "coaching": {
+            "context": "週四 10:00 · 45 分鐘課程",
+            "next": "確定下一步",
+            "nextTime": "10 分鐘",
+            "practice": "練習新技能",
+            "practiceTime": "25 分鐘",
+            "review": "回顧上次課程",
+            "reviewTime": "10 分鐘"
+          },
+          "consulting": {
+            "agenda": "範圍與時程",
+            "background": "背景",
+            "context": "Acme Studio · 週四 10:00",
+            "discuss": "討論",
+            "expansion": "計畫拓展業務",
+            "goal": "目標",
+            "objective": "改善新使用者引導"
+          },
+          "design": {
+            "brandGuide": "品牌規範",
+            "clientBrief": "客戶 brief",
+            "deliverables": "交付項目",
+            "direction": "視覺方向",
+            "photos": "產品照片",
+            "positioning": "面向環保消費者，傳達「同樣保養，更少浪費」。",
+            "project": "補充裝保養品上市",
+            "scope": "到達網頁 + 3 張廣告素材",
+            "visuals": "簡潔的產品特寫"
+          },
+          "finance": {
+            "context": "10 月 · 月結回顧",
+            "expenses": "支出",
+            "income": "收入",
+            "reconcile": "待對帳",
+            "transactions": "3 筆交易"
+          },
+          "investing": {
+            "acme": "Acme",
+            "growth": "營收成長",
+            "margin": "毛利率",
+            "metric": "指標",
+            "northstar": "Northstar",
+            "watch": "關注：客戶集中度。"
+          },
+          "marketing": {
+            "comparison": "對比此前 7 天",
+            "period": "最近 7 天"
+          },
+          "operations": {
+            "agenda": "確認團隊議程",
+            "context": "本週 · 3 項重點",
+            "friday": "週五",
+            "quote": "審核供應商報價",
+            "today": "今天",
+            "tuesday": "週二",
+            "update": "傳送專案進展"
+          },
+          "other": {
+            "brief": "查看共用簡報",
+            "call": "確認明天的通話",
+            "context": "來自近期郵件",
+            "reply": "回覆 Alex"
+          },
+          "research": {
+            "action": "測試有引導的首個任務",
+            "context": "客戶訪談 · 5 份筆記",
+            "evidence": "依據",
+            "finding": "發現",
+            "insight": "設定過程耗時過長",
+            "interviews": "5 次訪談中有 3 次提及",
+            "next": "下一步"
+          },
+          "sales": {
+            "acme": "Acme Studio",
+            "context": "2 個商機需要關注",
+            "demo": "明天展示",
+            "next": "下一步：跟進 Acme。",
+            "northstar": "Northstar",
+            "proposal": "提案已傳送"
+          },
+          "software": {
+            "context": "2 項已合併 · 1 個待解決問題",
+            "issue": "CSV 匯出失敗",
+            "search": "提升搜尋速度",
+            "signup": "簡化註冊流程"
+          }
+        },
+        "expandLabel": "看看連接後能獲得什麼",
+        "industries": {
+          "coaching": {
+            "title": "課程準備計畫"
+          },
+          "consulting": {
+            "title": "客戶會前簡報"
+          },
+          "design": {
+            "title": "創意簡報"
+          },
+          "finance": {
+            "title": "月結概覽"
+          },
+          "investing": {
+            "title": "公司研究比較"
+          },
+          "marketing": {
+            "title": "廣告成效簡報"
+          },
+          "operations": {
+            "title": "本週工作計畫"
+          },
+          "other": {
+            "title": "下一步行動"
+          },
+          "research": {
+            "title": "研究重點摘要"
+          },
+          "sales": {
+            "title": "客戶跟進摘要"
+          },
+          "software": {
+            "title": "版本進展摘要"
+          }
+        },
+        "title": "讓常用工具幫你完成工作"
+      },
       "prompt": {
         "connectorsDescription": "連接這些工具，讓 Okou 更了解你的工作情境，更有針對性地幫你完成任務。也可以稍後再連接。",
         "connectorsTitle": "連接你的工作工具",
