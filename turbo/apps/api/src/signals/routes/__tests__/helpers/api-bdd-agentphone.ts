@@ -58,7 +58,7 @@ export interface AgentPhoneSendCapture {
 }
 
 interface AgentPhoneInboundMessage {
-  readonly channel: "imessage" | "sms" | "mms";
+  readonly channel: "imessage" | "sms" | "mms" | "whatsapp";
   readonly from: string;
   readonly body: string;
   readonly messageId?: string | null;

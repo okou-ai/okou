@@ -195,7 +195,7 @@ type ChatEventDisplayContext =
         readonly rootMessageId: string;
         readonly conversationId: string | null;
         readonly groupId: string | null;
-        readonly channel: "imessage" | "sms" | "mms";
+        readonly channel: "imessage" | "sms" | "mms" | "whatsapp";
         readonly isGroup: boolean;
         readonly phoneHandle: string;
         readonly fromNumber: string;
@@ -482,7 +482,7 @@ type NewDisplayContext =
       readonly rootMessageId: string;
       readonly conversationId: string | null;
       readonly groupId: string | null;
-      readonly channel: "imessage" | "sms" | "mms";
+      readonly channel: "imessage" | "sms" | "mms" | "whatsapp";
       readonly isGroup: boolean;
       readonly phoneHandle: string;
       readonly fromNumber: string;

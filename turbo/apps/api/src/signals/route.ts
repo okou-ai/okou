@@ -111,6 +111,7 @@ import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
 import { hostRoutes } from "./routes/host";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
+import { integrationsWhatsappRoutes } from "./routes/integrations-whatsapp";
 import { integrationsAgentPhoneRoutes } from "./routes/integrations-agentphone";
 import { integrationsDiscordRoutes } from "./routes/integrations-discord";
 import { integrationsDiscordFileRoutes } from "./routes/integrations-discord-files";
@@ -442,6 +443,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...teamsConnectRoutes,
   ...teamsOauthRoutes,
   ...integrationsAgentPhoneRoutes,
+  ...integrationsWhatsappRoutes,
   ...integrationsPhoneDownloadFileRoutes,
   ...integrationsPhoneMessageRoutes,
   ...integrationsPhoneUploadCompleteRoutes,

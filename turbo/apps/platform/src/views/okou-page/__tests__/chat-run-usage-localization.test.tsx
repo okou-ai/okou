@@ -75,6 +75,12 @@ test("Return to the conversation that started a chat message", async () => {
       label: "Open Messages",
       href: "sms:+15551234567",
     },
+    {
+      id: "source-whatsapp-dm",
+      kind: "agentphone" as const,
+      label: "Open chat in WhatsApp",
+      href: "https://wa.me/12025550199",
+    },
   ];
   const events: MockChatEventInput[] = sources.map((source, index) => {
     return {

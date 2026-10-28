@@ -40,6 +40,9 @@ import { bestEffort, safeUrlParse, settle } from "../utils";
 import { ensureAgentPhoneChatThreadRoute$ } from "./agentphone-chat-ingress.service";
 import {
   agentPhoneChannelForLinkedHandle,
+  agentPhoneUserLinksForChannel,
+  agentPhoneMessageLinkColumn,
+  agentPhoneReplyChunks,
   agentPhoneReplyDestination,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
@@ -308,7 +311,10 @@ function inboundAgentPhoneMessageValues(
     conversationId: event.conversationId,
     groupId: isGroup ? event.groupId : null,
     agentphoneAgentId: event.agentphoneAgentId,
-    agentphoneUserLinkId: userLinkId ?? null,
+    agentphoneUserLinkId:
+      event.channel === "whatsapp" ? null : (userLinkId ?? null),
+    whatsappUserLinkId:
+      event.channel === "whatsapp" ? (userLinkId ?? null) : null,
     phoneHandle: normalizeAgentPhoneHandle(event.fromNumber, event.channel),
     fromNumber: normalizeAgentPhoneHandle(
       event.senderIdentifier ?? event.fromNumber,
@@ -596,13 +602,20 @@ const fetchAgentPhoneContext$ = command(
       params.phoneHandle,
       params.channel,
     );
-    const providerContext = params.isGroup
-      ? ""
-      : formatAgentPhoneRecentHistoryContext(
-          params.recentHistory,
-          params.currentMessageId,
-          false,
-        );
+    // WhatsApp context comes only from messages archived under the current
+    // verified link. Provider history can predate a workspace rebind.
+    const providerContext =
+      params.isGroup || params.channel === "whatsapp"
+        ? ""
+        : formatAgentPhoneRecentHistoryContext(
+            params.recentHistory.filter((message) => {
+              return params.channel === "whatsapp"
+                ? message.channel?.trim().toLowerCase() === "whatsapp"
+                : message.channel?.trim().toLowerCase() !== "whatsapp";
+            }),
+            params.currentMessageId,
+            false,
+          );
     if (providerContext) {
       return { executionContext: providerContext };
     }
@@ -648,7 +661,10 @@ const fetchAgentPhoneContext$ = command(
             .from(agentphoneMessages)
             .where(
               and(
-                eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
+                eq(
+                  agentPhoneMessageLinkColumn(params.channel),
+                  params.userLinkId,
+                ),
                 eq(agentphoneMessages.phoneHandle, phoneHandle),
                 isNull(agentphoneMessages.groupId),
               ),
@@ -846,37 +862,42 @@ export const sendAgentPhoneText$ = command(
         )
       : [];
     signal.throwIfAborted();
-    const sent = await sendAgentPhoneMessage(
-      {
-        agentphoneAgentId: event.agentphoneAgentId,
-        toNumber: agentPhoneReplyDestination({
-          isGroup,
-          groupId: event.groupId,
-          phoneHandle: event.fromNumber,
-        }),
-        ...(event.channel === "imessage"
-          ? { replyToMessageId: event.messageId }
-          : {}),
-        body,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
+    for (const chunk of agentPhoneReplyChunks(body, event.channel)) {
+      const sent = await sendAgentPhoneMessage(
+        {
+          ...(event.channel === "whatsapp"
+            ? { channel: "whatsapp" as const }
+            : {}),
+          agentphoneAgentId: event.agentphoneAgentId,
+          toNumber: agentPhoneReplyDestination({
+            isGroup,
+            groupId: event.groupId,
+            phoneHandle: event.fromNumber,
+          }),
+          ...(event.channel === "imessage"
+            ? { replyToMessageId: event.messageId }
+            : {}),
+          body: chunk,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
 
-    if (isGroup) {
-      await set(storeOutboundAgentPhoneMessage$, {
-        agentphoneMessageId: sent.id,
-        conversationId: event.conversationId,
-        groupId: event.groupId,
-        agentphoneAgentId: event.agentphoneAgentId,
-        phoneHandle: event.fromNumber,
-        fromNumber: event.toNumber,
-        toNumber: sent.toNumber,
-        body,
-        channel: event.channel,
-        userChannel: event.channel,
-        visibilityRecipients,
-      });
+      if (isGroup) {
+        await set(storeOutboundAgentPhoneMessage$, {
+          agentphoneMessageId: sent.id,
+          conversationId: event.conversationId,
+          groupId: event.groupId,
+          agentphoneAgentId: event.agentphoneAgentId,
+          phoneHandle: event.fromNumber,
+          fromNumber: event.toNumber,
+          toNumber: sent.toNumber,
+          body: chunk,
+          channel: event.channel,
+          userChannel: event.channel,
+          visibilityRecipients,
+        });
+      }
     }
   },
 );
@@ -919,6 +940,9 @@ async function refreshTypingIfSupported(
 
 function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
   const { brandName } = BRAND_PRESENTATION;
+  if (event.channel === "whatsapp") {
+    return `Open ${env("APP_URL")}/works and connect WhatsApp, then send the connection code here.`;
+  }
   const connectUrl = buildAgentPhoneConnectUrl({
     phoneHandle: event.fromNumber,
     agentphoneAgentId: event.agentphoneAgentId,
@@ -1063,9 +1087,10 @@ const handleDisconnectCommand$ = command(
       return;
     }
 
-    await set(writeDb$)
-      .delete(agentphoneUserLinks)
-      .where(eq(agentphoneUserLinks.id, args.userLink.id));
+    const links = agentPhoneUserLinksForChannel(args.event.channel);
+    await set(writeDb$).delete(links).where(eq(links.id, args.userLink.id));
+    signal.throwIfAborted();
+    await publishAgentPhoneUserChanged(args.userLink.userId);
     signal.throwIfAborted();
 
     await set(
@@ -1235,6 +1260,7 @@ const persistAgentPhoneChatMessage$ = command(
           signal,
         ),
         agentphoneUserLinkId: args.userLink.id,
+        channel: args.event.channel,
         rootMessageId: args.rootMessageId,
         conversationId: args.event.conversationId,
         userId: args.userLink.userId,
@@ -1289,6 +1315,7 @@ const persistAgentPhoneChatMessage$ = command(
         files: integrationInputMessageFiles(assets),
         nonContentPart: createChatEventSourcePart({
           kind: "agentphone",
+          channel: args.event.channel,
           toNumber: normalizeAgentPhoneHandle(args.event.toNumber, "sms"),
           isGroup: args.event.isGroup,
         }),
