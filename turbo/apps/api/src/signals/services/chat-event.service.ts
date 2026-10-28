@@ -816,6 +816,27 @@ export function chatEventInsertSql(
   );
 }
 
+export function integrationCompletionFallbackInsertSql(
+  eventId: string,
+  input: {
+    readonly runId: string;
+    readonly threadId: string;
+    readonly createdAt: Date;
+  },
+): SQL {
+  return chatEventInsertSql(
+    {
+      id: eventId,
+      chatThreadId: input.threadId,
+      eventType: "output.message",
+      content: "Task completed successfully.",
+      runId: input.runId,
+      createdAt: input.createdAt,
+    },
+    "id",
+  );
+}
+
 /** Empty batches reserve nothing and return no rows. */
 export function chatEventsInsertSql(values: readonly AppendChatEvent[]): SQL {
   return appendCanonicalChatEventsSql(
