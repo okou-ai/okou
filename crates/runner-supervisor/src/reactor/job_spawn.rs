@@ -19,7 +19,8 @@ use super::job_terminal_log::log_terminal_job_outcome;
 use super::sandbox_recovery::{self, ActiveSandboxIdentity};
 #[cfg(test)]
 use super::{
-    OuterJobPanicPoint, StartLoopTestObserver, finalization_test_hooks, maybe_panic_outer_job,
+    OuterJobPanicPoint, StartLoopEvent, StartLoopTestObserver, finalization_test_hooks,
+    maybe_panic_outer_job,
 };
 use crate::SharedFactory;
 use crate::blank_pool::BlankPoolDiagnostics;
@@ -355,6 +356,12 @@ impl FinalizationPhase {
             discovered_cli_agent_session_id,
             restored_session_identity,
         } = outcome;
+        #[cfg(test)]
+        test_observer.record(StartLoopEvent::ExecutorCompleted {
+            run_id,
+            discovered_cli_agent_session_id: discovered_cli_agent_session_id.clone(),
+            sandbox_reuse_disposition,
+        });
         // Cancellation can arrive after terminal logging or while
         // `sandbox.park()` is in flight. Pass the live handle to the supervisor.
         let finalization_context = FinalizeContext {

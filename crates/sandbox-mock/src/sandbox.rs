@@ -1147,12 +1147,20 @@ impl Sandbox for MockSandbox {
     }
 
     async fn read_file(&self, path: &str, max_bytes: u64) -> Result<Option<Vec<u8>>> {
+        let call = ReadFileCall {
+            path: path.to_string(),
+            max_bytes,
+        };
         self.read_file_calls
             .lock_ignoring_poison()
-            .push(ReadFileCall {
-                path: path.to_string(),
-                max_bytes,
-            });
+            .push(call.clone());
+        if let Some(overrides) = &self.overrides {
+            overrides
+                .file
+                .read_file_calls
+                .lock_ignoring_poison()
+                .push(call);
+        }
         validate_mock_guest_file_path(SandboxOperation::ReadFile, "read_file", path)?;
         if max_bytes > u64::from(u32::MAX) {
             return Err(SandboxError::Operation {

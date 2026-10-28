@@ -419,6 +419,23 @@ async fn overrides_share_read_file_results_across_factory_sandboxes() {
         Some(b"second".to_vec())
     );
     assert_eq!(first.read_file("/tmp/empty", 1024).await.unwrap(), None);
+    assert_eq!(
+        overrides.read_file_calls(),
+        vec![
+            ReadFileCall {
+                path: "/tmp/one".into(),
+                max_bytes: 1024,
+            },
+            ReadFileCall {
+                path: "/tmp/two".into(),
+                max_bytes: 1024,
+            },
+            ReadFileCall {
+                path: "/tmp/empty".into(),
+                max_bytes: 1024,
+            },
+        ]
+    );
 }
 
 #[tokio::test]
