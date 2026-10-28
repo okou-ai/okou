@@ -1,0 +1,65 @@
+name: Preview Resource Transport Experiment
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/preview-resource-diagnostics.yml
+      - ops/preview-resource-diagnostics/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-resource-diagnostics-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    name: Read-only transport sample ${{ matrix.sample }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: e2e/package.json
+      - name: Install locked browser dependencies
+        working-directory: e2e
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec playwright install --with-deps --only-shell chromium
+      - name: Verify evidence and failure handling
+        run: node --test ops/preview-resource-diagnostics/probe.test.mjs
+      - name: Compare the original deployed resource transfers
+        env:
+          OUTPUT_DIRECTORY: ${{ runner.temp }}/preview-resource-diagnostics-${{ matrix.sample }}
+          SAMPLE: ${{ matrix.sample }}
+        run: node ops/preview-resource-diagnostics/probe.mjs "$OUTPUT_DIRECTORY" "$SAMPLE"
+      - name: Publish comparison summary
+        if: always()
+        shell: bash
+        env:
+          SUMMARY: ${{ runner.temp }}/preview-resource-diagnostics-${{ matrix.sample }}/results/summary.md
+        run: |
+          if [[ -f "$SUMMARY" ]]; then
+            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain sanitized resource transport evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preview-resource-transport-${{ matrix.sample }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/preview-resource-diagnostics-${{ matrix.sample }}/results
+          if-no-files-found: warn
+          retention-days: 1
