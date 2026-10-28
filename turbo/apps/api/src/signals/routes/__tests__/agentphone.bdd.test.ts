@@ -1474,6 +1474,142 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
   });
 
+  it.each([
+    { body: "@Okou hello", sender: "phone" },
+    { body: "/connect @Okou", sender: "email" },
+  ] as const)(
+    "connects an unlinked group $sender sender through a private link after $body",
+    async ({ body, sender }) => {
+      const integrations = createBddIntegrationApi(context);
+      const { actor, phone, runnerGroup, sends, ap } =
+        await entitledLinkedActor();
+      await integrations.requestUnlinkAgentPhone(actor, [204]);
+      const handle =
+        sender === "phone" ? phone : `member-${randomUUID()}@example.com`;
+      const conversationId = uniqueConversationId();
+      const groupId = bddGroupId(conversationId);
+      const before = sends.messages.length;
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: groupId,
+        senderIdentifier: handle,
+        body,
+        conversationId,
+        isGroup: true,
+        participants: [{ identifier: handle }],
+      });
+
+      const prompt = sends.messages[before];
+      expect(prompt).toMatchObject({
+        toNumber: handle,
+        agentId: AGENTPHONE_BDD_AGENT_ID,
+        body: expect.stringContaining("/agentphone/connect?"),
+      });
+      expect(prompt?.replyToMessageId).toBeUndefined();
+      expect(sends.messages[before + 1]).toMatchObject({
+        toNumber: groupId,
+        replyToMessageId: messageId,
+        body: expect.stringContaining(
+          "I've sent you a private connection link",
+        ),
+      });
+      expect(sends.messages[before + 1]?.body).not.toContain(
+        "/agentphone/connect?",
+      );
+
+      const url = prompt?.body?.match(/https?:\/\/\S+/u)?.[0];
+      if (!url) {
+        throw new Error(
+          "Expected a private connection link for the group sender",
+        );
+      }
+      const params = new URL(url).searchParams;
+      await integrations.requestConnectAgentPhone(
+        actor,
+        {
+          phoneHandle: params.get("handle") ?? "",
+          agentphoneAgentId: params.get("agent") ?? "",
+          timestamp: Number(params.get("ts")),
+          signature: params.get("sig") ?? "",
+          channel: params.get("channel") ?? undefined,
+        },
+        [200],
+      );
+      await expect(
+        integrations.getAgentPhoneLinkStatus(actor),
+      ).resolves.toMatchObject({
+        linked: true,
+        phoneHandle: handle,
+      });
+
+      // The next group mention works without first sending a private message.
+      const followUpId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: groupId,
+        senderIdentifier: handle,
+        body: "@Okou help me now",
+        conversationId,
+        isGroup: true,
+        participants: [{ identifier: handle }],
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.prompt).toBe("@Okou help me now");
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      expect(lastSend(sends)).toMatchObject({
+        toNumber: groupId,
+        replyToMessageId: followUpId,
+        body: "Task completed successfully.",
+      });
+    },
+  );
+
+  it("offers a direct-message recovery when the private connection link cannot be sent", async () => {
+    const { phone, sends, ap, actor } = await entitledLinkedActor();
+    await createBddIntegrationApi(context).requestUnlinkAgentPhone(
+      actor,
+      [204],
+    );
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    const before = sends.messages.length;
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        async ({ request }) => {
+          const body: unknown = await request.clone().json();
+          if (
+            typeof body === "object" &&
+            body !== null &&
+            "to_number" in body &&
+            body.to_number === phone
+          ) {
+            return HttpResponse.json(
+              { detail: "Cannot send a direct message" },
+              { status: 422 },
+            );
+          }
+          return undefined;
+        },
+      ),
+    );
+
+    const messageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "@Okou hello",
+      conversationId,
+      isGroup: true,
+      participants: [{ identifier: phone }],
+    });
+    expect(sends.messages.slice(before)).toMatchObject([
+      {
+        toNumber: groupId,
+        replyToMessageId: messageId,
+        body: "I couldn't send you a private connection link. Message this number directly and I'll send you one.",
+      },
+    ]);
+  });
+
   it.each(["dispatch context", "typing and plain-text completion"] as const)(
     "linked iMessage DMs preserve %s",
     async (scenario) => {
@@ -2557,8 +2693,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       ap.postAgentPhoneInboundMessage(message),
       ap.postAgentPhoneInboundMessage(message),
     ]);
-    expect(sends.messages).toHaveLength(1);
+    expect(sends.messages).toHaveLength(2);
     expect(sends.messages[0]).toMatchObject({
+      toNumber: phone,
+      body: expect.stringContaining("/agentphone/connect?"),
+    });
+    expect(sends.messages[0]?.replyToMessageId).toBeUndefined();
+    expect(sends.messages[1]).toMatchObject({
       toNumber: groupId,
       replyToMessageId: message.messageId,
     });
@@ -3476,7 +3617,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
       participants,
     });
-    await waitForSendCount(sends, before + 1);
+    await waitForSendCount(sends, before + 2);
 
     server.use(
       http.get("https://api.agentphone.test/v1/conversations/:id", () => {
@@ -3491,7 +3632,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
       participants,
     });
-    await waitForSendCount(sends, before + 2);
+    await waitForSendCount(sends, before + 4);
 
     const history = await integrations.requestAgentPhoneGroupHistory(
       actor,
@@ -3686,8 +3827,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const stillLinked = await integrations.getAgentPhoneLinkStatus(actor);
     expect(stillLinked).toMatchObject({ linked: true, phoneHandle: phone });
 
-    // Unlinked senders in a fresh group conversation are pointed to a DM,
-    // never to a signed connect link.
+    // Unlinked senders receive their signed link privately, with a notice
+    // in the originating group conversation.
     const stranger = uniquePhoneHandle();
     const strangerConversationId = uniqueConversationId();
     const beforeStrangerPrompt = sends.messages.length;
@@ -3704,17 +3845,24 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       (send) => {
         return (
           send.toNumber === bddGroupId(strangerConversationId) &&
-          (send.body?.includes("message this number directly") ?? false)
+          (send.body?.includes("I've sent you a private connection link") ??
+            false)
         );
       },
     );
     expect(dmPrompt.toNumber).toBe(bddGroupId(strangerConversationId));
     expect(dmPrompt.replyToMessageId).toBe(strangerMessageId);
-    expect(dmPrompt.body).toContain("message this number directly");
+    expect(sends.messages[beforeStrangerPrompt]).toMatchObject({
+      toNumber: stranger,
+      body: expect.stringContaining("/agentphone/connect?"),
+    });
+    expect(
+      sends.messages[beforeStrangerPrompt]?.replyToMessageId,
+    ).toBeUndefined();
     expect(dmPrompt.body).not.toContain("/agentphone/connect?");
 
-    // /connect from an unlinked sender in the linked conversation hits the
-    // same account-command guard.
+    // /connect also delivers a private link rather than borrowing the
+    // linked participant's account.
     const beforeStrangerCommand = sends.messages.length;
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
@@ -3726,7 +3874,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await waitForSendMatching(sends, beforeStrangerCommand, (send) => {
       return (
         send.toNumber === bddGroupId(conversationId) &&
-        (send.body?.includes("Only the linked sender") ?? false)
+        (send.body?.includes("I've sent you a private connection link") ??
+          false)
       );
     });
 
@@ -3746,7 +3895,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       (send) => {
         return (
           send.toNumber === bddGroupId(conversationId) &&
-          (send.body?.includes("message this number directly") ?? false)
+          (send.body?.includes("I've sent you a private connection link") ??
+            false)
         );
       },
     );
