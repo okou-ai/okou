@@ -1,10 +1,6 @@
 import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import type {
-  CSSProperties,
-  ReactNode,
-  TransitionEvent as ReactTransitionEvent,
-} from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { cn, LayoutPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -19,7 +15,6 @@ import {
   chatThreadSidebarResizeHandleRef$,
   unifiedChatThreadSidebarWidths$,
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
-import { syncActiveBrowserFitAction$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { unifiedChatWorkspace$ } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { ResizeSeam } from "./resize-seam.tsx";
 
@@ -194,7 +189,6 @@ export function ChatThreadSidebarShell({
   };
 }) {
   const transitionRef = useSet(layout.transitionOnRef$);
-  const syncActiveBrowserFitAction = useSet(syncActiveBrowserFitAction$);
   const { unified, width } = useChatThreadSidebarWidth(widthKey);
   const resizing = useGet(chatThreadSidebarResizing$);
   const { style, transition } = chatThreadSidebarLayout(
@@ -213,18 +207,6 @@ export function ChatThreadSidebarShell({
     workspace?.pwaNavigation,
     workspace?.fullscreen,
   ].join(":");
-
-  function handleSidebarTransitionEnd(
-    event: ReactTransitionEvent<HTMLDivElement>,
-  ): void {
-    if (
-      event.target !== event.currentTarget ||
-      (event.propertyName !== "width" && event.propertyName !== "flex-basis")
-    ) {
-      return;
-    }
-    syncActiveBrowserFitAction();
-  }
 
   const handle = open ? (
     <ChatThreadSidebarResizeHandle
@@ -252,7 +234,6 @@ export function ChatThreadSidebarShell({
         layoutKey={sidebarLayoutKey}
         onLayoutCommit={onSidebarLayoutCommit}
         data-testid="chat-thread-sidebar-pane"
-        onTransitionEnd={handleSidebarTransitionEnd}
         className={sidebarPanelClassName({
           open,
           unified,

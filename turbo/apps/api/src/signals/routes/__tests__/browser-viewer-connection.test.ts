@@ -1,5 +1,4 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { expect, test } from "vitest";
@@ -11,16 +10,11 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 
 const context = testContext();
 const PROVIDER_URL = "https://api.browser-use.com/api/v3";
@@ -103,7 +97,6 @@ async function viewerScenario() {
       }
     },
   });
-  owned.ownsFeatureSwitches();
   const current = await owned.run(async () => {
     const sent = await chat.sendAndLaunch(owned.actor, {
       agentId: owned.agentId,
@@ -128,19 +121,10 @@ async function viewerScenario() {
     provider,
     webSocketUrl,
     orgId,
-    async enable() {
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...owned.actor, orgId },
-        {
-          [FeatureSwitchKey.BrowserCdpViewer]: true,
-        },
-      );
-    },
   };
 }
 
-test("requires an enabled signed-in owner to retrieve a viewer connection", async () => {
+test("retrieves a viewer connection for its signed-in owner", async () => {
   const scenario = await viewerScenario();
   await scenario.run(async () => {
     const { params } = scenario;
@@ -148,10 +132,6 @@ test("requires an enabled signed-in owner to retrieve a viewer connection", asyn
       scenario.actor.userId,
       scenario.actor.orgId,
     );
-    expect((await client().viewerConnection({ headers, params })).status).toBe(
-      403,
-    );
-    await scenario.enable();
     const connected = await accept(
       client().viewerConnection({ headers, params }),
       [200],
@@ -165,21 +145,19 @@ test("requires an enabled signed-in owner to retrieve a viewer connection", asyn
     expect(deniedRun.status).toBe(403);
 
     const foreign = { userId: `user_${randomUUID()}`, orgId: scenario.orgId };
-    const foreignResponse = await settleIncludingAbort(async () => {
-      await updateFeatureSwitchesForUser(context, foreign, {
-        [FeatureSwitchKey.BrowserCdpViewer]: true,
-      });
-      return await client().viewerConnection({ headers, params });
+    createRouteMocks(context).clerk.session(foreign.userId, foreign.orgId);
+    const foreignResponse = await client().viewerConnection({
+      headers,
+      params,
     });
-    await deleteFeatureSwitchesForUser(context, foreign);
-    if (!foreignResponse.ok) {
-      throw foreignResponse.error;
-    }
-    expect(foreignResponse.value).toMatchObject({
+    expect(foreignResponse).toMatchObject({
       status: 404,
       body: { error: { code: "BROWSER_NOT_FOUND" } },
     });
-    await scenario.enable();
+    createRouteMocks(context).clerk.session(
+      scenario.actor.userId,
+      scenario.actor.orgId,
+    );
     scenario.provider.status = "stopped";
     const stopped = await client().viewerConnection({ headers, params });
     expect(stopped).toMatchObject({
@@ -194,7 +172,6 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
   async (source) => {
     const scenario = await viewerScenario();
     await scenario.run(async () => {
-      await scenario.enable();
       // A failed discovery endpoint proves the already resolved WSS is sufficient.
       scenario.provider.discoveryUrl = "not-a-websocket";
       if (source === "provider WSS") {
@@ -220,7 +197,6 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
 test("rejects an untrusted discovery endpoint without returning provider payloads", async () => {
   const scenario = await viewerScenario();
   await scenario.run(async () => {
-    await scenario.enable();
     scenario.provider.discoveryUrl = "wss://untrusted.example/private-token";
     const response = await client().viewerConnection({
       headers,
