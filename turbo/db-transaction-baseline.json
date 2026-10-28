@@ -62,11 +62,6 @@
       "owner": "deleteIfStillEligible"
     },
     {
-      "id": "TX-0268",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "prepareUsagePackMemberRemoval"
-    },
-    {
       "id": "TX-0284",
       "file": "turbo/apps/api/src/signals/services/usage-pack-pending-snapshot.service.ts",
       "owner": "writeUsagePackPendingSnapshots"
