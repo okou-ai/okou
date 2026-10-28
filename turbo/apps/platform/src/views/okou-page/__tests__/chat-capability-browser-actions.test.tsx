@@ -818,12 +818,19 @@ test("Closing an inline form clears password and code drafts while preserving or
   const dialog = await screen.findByRole("dialog", {
     name: "Sign in to download invoices",
   });
-  await fill(
-    within(dialog).getByLabelText("Account email"),
-    "owner@example.test",
-  );
-  await fill(within(dialog).getByLabelText("Password"), "synthetic-password");
-  await fill(within(dialog).getByLabelText("Verification code"), "123456");
+  const emailInput = within(dialog).getByLabelText("Account email");
+  const passwordInput = within(dialog).getByLabelText("Password");
+  const codeInput = within(dialog).getByLabelText("Verification code");
+  expect(emailInput.closest("form")).toHaveAttribute("autocomplete", "off");
+  expect(emailInput).toHaveAttribute("type", "email");
+  expect(emailInput).toHaveAttribute("autocomplete", "off");
+  expect(passwordInput).toHaveAttribute("type", "password");
+  expect(passwordInput).toHaveAttribute("autocomplete", "off");
+  expect(codeInput).toHaveAttribute("type", "text");
+  expect(codeInput).toHaveAttribute("autocomplete", "one-time-code");
+  await fill(emailInput, "owner@example.test");
+  await fill(passwordInput, "synthetic-password");
+  await fill(codeInput, "123456");
 
   const close = buttonsByName("Close", dialog)[0];
   if (!close) {

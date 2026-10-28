@@ -255,7 +255,11 @@ function ManualGrantForm({
   );
 
   return (
-    <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
+    <form
+      autoComplete="off"
+      className="flex flex-col gap-3"
+      onSubmit={handleSubmit}
+    >
       {method.description && <ConnectorHelpText text={method.description} />}
       {method.manualFields.map((fieldConfig) => {
         return (
@@ -265,6 +269,7 @@ function ManualGrantForm({
             </label>
             <Input
               type={fieldConfig.inputType}
+              autoComplete="off"
               placeholder={fieldConfig.placeholder ?? undefined}
               value={fieldValues[fieldConfig.id] ?? ""}
               onChange={(e) => {
