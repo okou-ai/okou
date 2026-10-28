@@ -1,4 +1,4 @@
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed, type Computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 

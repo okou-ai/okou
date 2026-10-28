@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import { schema } from "../src/index";
-import { orgMembersMetadata } from "../src/schema/org-members-metadata";
+import { orgMembersMetadata } from "../src/runtime/org-members-metadata";
 
 /** Current member preference CRUD, implicit RETURNING and root-schema queries. */
 export async function validatePermanentMemberMetadata(databaseUrl: string) {
