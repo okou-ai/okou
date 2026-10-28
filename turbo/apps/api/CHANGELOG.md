@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.20.1](https://github.com/okou-ai/okou/compare/api-v2.20.0...api-v2.20.1) (2026-10-28)
+
+
+### Refactoring
+
+* **api:** localize run lifecycle marker projection ([#43648](https://github.com/okou-ai/okou/issues/43648)) ([ef3665e](https://github.com/okou-ai/okou/commit/ef3665e53ac8a554cc6adb05d2b68889aaccf163))
+* **api:** remove tx-0096 connector selection savepoints ([#43658](https://github.com/okou-ai/okou/issues/43658)) ([c2e2d6b](https://github.com/okou-ai/okou/commit/c2e2d6b3ccbb70874d8d8fd5f27b413cb810cfd9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.0
+    * @okouai/db bumped to 2.8.4
+    * @okouai/pi-agent-runtime bumped to 1.51.10
+
 ## [2.20.0](https://github.com/okou-ai/okou/compare/api-v2.19.0...api-v2.20.0) (2026-10-28)
 
 
