@@ -167,14 +167,16 @@ describe("workflow skill storage presigned URL cache", () => {
         runnerGroup,
         run.runId,
       );
-      const skill = claim.storageManifest?.workflowSkills?.find((entry) => {
-        return entry.workflowId === workflow.body.id;
-      });
-      if (!skill?.attachments) {
+      const download = await createRunsApi(context).downloadWorkflow(
+        run.runId,
+        workflow.body.id,
+        claim.sandboxToken,
+      );
+      if (!download.attachments) {
         throw new Error("Expected Workflow attachments");
       }
       await cancelChatRun(actor, run.runId, sandboxHeaders);
-      return skill.attachments;
+      return download.attachments;
     };
     const first = await claimWorkflow();
     const second = await claimWorkflow();

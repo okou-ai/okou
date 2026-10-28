@@ -242,6 +242,11 @@ pub fn build_storage_plan(
     manifest: &StorageManifest,
     previous: Option<&StorageFingerprints>,
 ) -> RunnerResult<StoragePlan> {
+    if !manifest.workflow_references.is_empty() {
+        return Err(RunnerError::Internal(
+            "Workflow content must be downloaded before storage planning".into(),
+        ));
+    }
     let mut cleanup_paths = Vec::new();
     let mut instruction_cleanups = Vec::new();
     let mut reused_entries = 0;

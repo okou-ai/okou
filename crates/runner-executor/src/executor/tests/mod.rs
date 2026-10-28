@@ -9,3 +9,4 @@ mod sandbox_run_tests;
 mod storage_delivery_tests;
 mod storage_tests;
 mod telemetry_tests;
+mod workflow_download_tests;

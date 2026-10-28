@@ -56,7 +56,7 @@ test.each([
       };
       const pending = runnerIds.map((runnerId, index) => {
         return fetch(
-          `${fixture.url}/api/runners/jobs/${run.runId}/claim?workflowSkills=1`,
+          `${fixture.url}/api/runners/jobs/${run.runId}/claim?workflowSkills=2`,
           {
             method: "POST",
             headers,
@@ -112,7 +112,7 @@ test.each([
           runnerVersion: "1.0.0",
         });
         const retry = await fetch(
-          `${fixture.url}/api/runners/jobs/${run.runId}/claim?workflowSkills=1`,
+          `${fixture.url}/api/runners/jobs/${run.runId}/claim?workflowSkills=2`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
