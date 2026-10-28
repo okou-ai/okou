@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: preview-resource-diagnostics-${{ github.event.pull_request.number }}
   cancel-in-progress: true
