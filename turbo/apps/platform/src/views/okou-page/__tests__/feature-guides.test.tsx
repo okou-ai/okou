@@ -147,6 +147,119 @@ test("supports click-through media and pre-fills a task without running it", asy
   ).resolves.toBeInTheDocument();
 });
 
+test("shows Discord conversation examples and opens its setup from the guide", async () => {
+  const conversation = {
+    provider: "discord" as const,
+    label: "Example conversation",
+    title: "#launch",
+    subtitle: "Launch planning",
+  };
+  const discordEdition: FeatureGuideEdition = {
+    id: "discord-guide",
+    revisionId: "33333333-3333-4333-8333-333333333333",
+    content: {
+      schemaVersion: 1,
+      title: "Your teammate in Discord",
+      description: "Get work done in the conversation",
+      items: [
+        {
+          featureId: "discord-integration",
+          title: "A launch checklist",
+          description: "An example with your team",
+          media: {
+            type: "walkthrough",
+            steps: [
+              {
+                title: "Ask in the conversation",
+                description: "Mention Okou in a thread",
+                conversation: {
+                  ...conversation,
+                  messages: [
+                    {
+                      id: "request",
+                      role: "user",
+                      author: "Sam",
+                      text: "@Okou Make a launch checklist",
+                    },
+                    {
+                      id: "reply",
+                      role: "assistant",
+                      author: "Okou",
+                      text: "Review the launch email by Friday",
+                    },
+                  ],
+                },
+              },
+              {
+                title: "Keep the thread moving",
+                description: "Ask for a follow-up draft",
+                conversation: {
+                  ...conversation,
+                  messages: [
+                    {
+                      id: "reply",
+                      role: "assistant",
+                      author: "Okou",
+                      text: "Hi Maya, could you review the launch email?",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          action: { type: "connect-discord", label: "Connect Discord" },
+        },
+      ],
+    },
+  };
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    return respond(200, { edition: discordEdition, preview: true });
+  });
+  context.mocks.browser.open();
+  await setupPage({
+    context,
+    path: `${path}?featureGuidePreview=1`,
+    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: discordEdition.content.title,
+  });
+  const example = within(dialog).getByRole("group", {
+    name: "Example conversation",
+  });
+  expect(
+    within(example).getByText("@Okou Make a launch checklist"),
+  ).toBeInTheDocument();
+  expect(
+    within(example).getByText("Review the launch email by Friday"),
+  ).toBeInTheDocument();
+  click(button("Next", dialog));
+  await expect(
+    within(dialog).findByText("Hi Maya, could you review the launch email?"),
+  ).resolves.toBeInTheDocument();
+  const connect = queryAllByRoleFast("link", dialog).find((link) => {
+    return link.textContent?.trim() === "Connect Discord";
+  });
+  if (!connect) {
+    throw new Error("Expected a Discord setup link");
+  }
+  expect(connect).toHaveAttribute("href", "/settings/discord");
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Meta>}");
+  await user.click(connect);
+  await user.keyboard("{/Meta}");
+  expect(dialog).toBeInTheDocument();
+  click(connect);
+  await expect(
+    screen.findByRole("heading", { name: "Connect to Discord" }),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: discordEdition.content.title }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 test("keeps an already-seen edition closed based on the server response", async () => {
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
     return respond(200, { edition: null });

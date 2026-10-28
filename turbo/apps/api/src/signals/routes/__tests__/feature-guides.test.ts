@@ -12,7 +12,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
-import googleWorkspaceGuide from "../../../feature-guides/google-workspace-2026-10-28.json";
+import discordGuide from "../../../feature-guides/discord-2026-10-28.json";
 import { featureGuidesRoutes } from "../feature-guides";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -114,9 +114,7 @@ test("only delivers a published edition when its server-side feature switch is e
     isolatePg: true,
   });
   mockNow(NOW);
-  const prepared = await prepare(
-    importFeatureGuideSchema.parse(googleWorkspaceGuide),
-  );
+  const prepared = await prepare(importFeatureGuideSchema.parse(discordGuide));
   const viewer = await identity();
   await enable();
   await expect(current()).resolves.toBeNull();

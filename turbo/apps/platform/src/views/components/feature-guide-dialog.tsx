@@ -1,7 +1,8 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { cn } from "@okouai/ui/lib/utils";
 import { ToggleButton } from "@okouai/ui/components/ui/toggle-button";
 import {
   Dialog,
@@ -25,16 +26,17 @@ import {
   tryFeatureGuidePrompt$,
 } from "../../signals/feature-guides.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { GoogleWorkspaceGuideIllustration } from "./feature-guide-google-workspace.tsx";
+import { ROUTES } from "../../signals/route-paths.ts";
+import { Link } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
+import { FeatureGuideConversationPreview } from "./feature-guide-conversation.tsx";
 
 function GuideMedia({
   media,
   selection,
-  featureId,
 }: {
   readonly media: FeatureGuideMedia;
   readonly selection: FeatureGuideSnapshot["selection"];
-  readonly featureId: string;
 }) {
   const { t } = useTranslation();
   const stepIndex = useGet(selection.stepIndex$);
@@ -68,9 +70,14 @@ function GuideMedia({
     throw new Error("Feature guide step is outside the current walkthrough");
   }
   return (
-    <div className="flex flex-col gap-4 rounded-xl bg-gray-50 p-4 sm:p-5">
-      {featureId === "google-workspace-export" && (
-        <GoogleWorkspaceGuideIllustration stepIndex={stepIndex} />
+    <div
+      className={cn(
+        "flex flex-col gap-4",
+        !step.conversation && "rounded-xl bg-gray-50 p-4 sm:p-5",
+      )}
+    >
+      {step.conversation && (
+        <FeatureGuideConversationPreview conversation={step.conversation} />
       )}
       {step.imageUrl && (
         <img
@@ -165,12 +172,7 @@ function GuideContents({
         <DialogDescription>{edition.content.description}</DialogDescription>
       </DialogHeader>
       {edition.content.items.length === 1 ? (
-        <div className="flex flex-col gap-1">
-          <h3 className="text-sm font-medium">{activeItem.title}</h3>
-          <p className="text-sm text-muted-foreground">
-            {activeItem.description}
-          </p>
-        </div>
+        <h3 className="text-sm font-medium">{activeItem.title}</h3>
       ) : (
         <div className="grid gap-2 sm:grid-cols-3">
           {edition.content.items.map((item, index) => {
@@ -198,7 +200,6 @@ function GuideContents({
           key={activeItem.featureId}
           media={activeItem.media}
           selection={snapshot.selection}
-          featureId={activeItem.featureId}
         />
       )}
       <DialogFooter>
@@ -207,7 +208,20 @@ function GuideContents({
             return $.featureGuide.dismiss;
           })}
         </Button>
-        {prompt && (
+        {activeItem.action?.type === "connect-discord" ? (
+          <Link
+            pathname={ROUTES.settingsDiscord}
+            className={buttonVariants()}
+            onClick={(event) => {
+              if (shouldHandleLinkClick(event)) {
+                onClose();
+              }
+            }}
+          >
+            {activeItem.action.label}
+            <ArrowRight />
+          </Link>
+        ) : prompt ? (
           <Button
             onClick={() => {
               return onTry(prompt);
@@ -218,7 +232,7 @@ function GuideContents({
             })}
             <ArrowRight />
           </Button>
-        )}
+        ) : null}
       </DialogFooter>
     </>
   );
