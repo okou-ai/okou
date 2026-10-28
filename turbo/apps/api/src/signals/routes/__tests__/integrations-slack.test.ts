@@ -16,7 +16,6 @@ import { SlackFileFetchError } from "../../external/slack-file-fetcher";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -304,75 +303,6 @@ describe("DELETE /api/integrations/slack", () => {
     });
   });
 
-  it("keeps disabled-identity disconnect scoped and refreshes App Home", async () => {
-    const fixture = createDeleteFixture();
-    await fixture.run(async () => {
-      const install = await fixture.install();
-      const other = await fixture.connect(install);
-      const orgId = install.actor.orgId;
-      if (!orgId) {
-        throw new Error("Expected the Slack installation's organization");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...install.actor, orgId },
-        { slackWorkspaceIdentity: false },
-      );
-      context.mocks.slack.views.publish.mockClear();
-      context.mocks.ably.publish.mockClear();
-      context.mocks.ably.channelGet.mockClear();
-      mocks.clerk.session(install.actor.userId, install.actor.orgId);
-
-      const response = await accept(
-        slackClient().disconnect({
-          headers: { authorization: "Bearer clerk-session" },
-          query: {},
-        }),
-        [200],
-      );
-
-      expect(response.body).toStrictEqual({ ok: true });
-      await expect(
-        readSlackStatus(install.actor, "org:admin"),
-      ).resolves.toMatchObject({ isConnected: false, isInstalled: true });
-      await expect(
-        readSlackStatus(other.member, "org:member"),
-      ).resolves.toMatchObject({ isConnected: true, isInstalled: true });
-      await flushWaitUntilForTest();
-      expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(1);
-      expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          user_id: install.installerSlackUserId,
-          view: expect.objectContaining({
-            type: "home",
-            blocks: expect.arrayContaining([
-              expect.objectContaining({
-                type: "actions",
-                elements: expect.arrayContaining([
-                  expect.objectContaining({
-                    action_id: "home_login_prompt",
-                    text: { type: "plain_text", text: "Connect" },
-                    url: `${env("APP_URL")}/settings/slack?w=${install.teamId}&u=${install.installerSlackUserId}`,
-                  }),
-                ]),
-              }),
-            ]),
-          }),
-        }),
-      );
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "slack:changed",
-        null,
-      );
-      expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
-      expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-        `user:${install.actor.userId}`,
-      );
-      expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
-        `user:${other.member.userId}`,
-      );
-    });
-  });
   it.each(["unauthenticated", "without an organization"])(
     "returns 401 for a session that is %s",
     async (session) => {
