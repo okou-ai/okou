@@ -1378,6 +1378,8 @@
       "memberInControl": "你正在操作",
       "takeOver": "接管"
     },
+    "reclaimHint_one": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
+    "reclaimHint_other": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
     "status": {
       "live": "运行中",
       "starting": "启动中",

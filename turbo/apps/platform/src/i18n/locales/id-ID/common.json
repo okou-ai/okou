@@ -1378,6 +1378,8 @@
       "memberInControl": "Anda yang mengendalikan",
       "takeOver": "Ambil alih"
     },
+    "reclaimHint_one": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
+    "reclaimHint_other": "{{assistantName}} mempertahankan browser ini selama panel ini terbuka, lalu mengambilnya kembali setelah {{formattedCount}} menit tidak aktif.",
     "status": {
       "live": "Live",
       "starting": "Memulai",

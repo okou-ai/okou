@@ -74,8 +74,10 @@ export function BrowserSessionSidebar({
   overlay,
 }: BrowserSessionSidebarProps) {
   const { t } = useTranslation();
-  const cdpViewerEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.BrowserCdpViewer];
+  const switches = useGet(featureSwitch$);
+  const refined =
+    switches[FeatureSwitchKey.BrowserCdpViewer] &&
+    switches[FeatureSwitchKey.CloudBrowserPanel];
   const actions = <BrowserSessionActions signals={signals} onClose={onClose} />;
   return (
     <aside
@@ -85,7 +87,7 @@ export function BrowserSessionSidebar({
       data-browser-session-sidebar
       className="flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0"
     >
-      {cdpViewerEnabled ? null : (
+      {refined ? null : (
         <div className="flex min-h-14 shrink-0 items-center gap-1 border-b border-border/60 px-4">
           <span className="min-w-0 flex-1 text-sm font-medium">
             {t(($) => {
@@ -99,8 +101,8 @@ export function BrowserSessionSidebar({
         <BrowserSessionPanel
           signals={signals}
           containLiveFrame
-          actions={cdpViewerEnabled ? actions : undefined}
-          overlay={overlay}
+          actions={refined ? actions : undefined}
+          overlay={refined ? overlay : undefined}
         />
       </div>
     </aside>

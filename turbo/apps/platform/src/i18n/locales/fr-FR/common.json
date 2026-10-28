@@ -1402,6 +1402,9 @@
       "memberInControl": "Vous avez la main",
       "takeOver": "Prendre la main"
     },
+    "reclaimHint_one": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minute d'inactivité.",
+    "reclaimHint_many": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
+    "reclaimHint_other": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
     "status": {
       "live": "En direct",
       "starting": "Démarrage",

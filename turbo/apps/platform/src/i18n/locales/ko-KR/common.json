@@ -1378,6 +1378,8 @@
       "memberInControl": "직접 조작 중",
       "takeOver": "직접 조작"
     },
+    "reclaimHint_one": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
+    "reclaimHint_other": "이 패널이 열려 있는 동안 {{assistantName}}가 이 브라우저를 유지하며, {{formattedCount}}분 동안 유휴 시 회수합니다.",
     "status": {
       "live": "라이브",
       "starting": "시작 중",

@@ -1,4 +1,5 @@
 import {
+  BROWSER_IDLE_LEASE_MINUTES,
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
@@ -16,6 +17,8 @@ import {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { formatAppNumber } from "../../i18n/format.ts";
+import { i18n } from "../../i18n/index.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { onRef, setLoop, withCleanup } from "../utils.ts";
@@ -514,4 +517,20 @@ export function createBrowserSessionSignals(
     ...subscriptionSignals,
     keepAliveRef$,
   };
+}
+
+export function browserSessionReclaimHint(
+  session: BrowserSession,
+): string | null {
+  return session.status === "active"
+    ? i18n.t(
+        ($) => {
+          return $.browserSession.reclaimHint;
+        },
+        {
+          count: BROWSER_IDLE_LEASE_MINUTES,
+          formattedCount: formatAppNumber(BROWSER_IDLE_LEASE_MINUTES),
+        },
+      )
+    : null;
 }

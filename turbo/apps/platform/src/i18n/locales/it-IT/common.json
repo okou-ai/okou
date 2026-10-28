@@ -1402,6 +1402,9 @@
       "memberInControl": "Hai il controllo",
       "takeOver": "Prendi il controllo"
     },
+    "reclaimHint_one": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuto di inattività.",
+    "reclaimHint_many": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
+    "reclaimHint_other": "{{assistantName}} mantiene questo browser mentre il pannello è aperto e lo recupera dopo {{formattedCount}} minuti di inattività.",
     "status": {
       "live": "Attivo",
       "starting": "Avvio",

@@ -19,7 +19,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
-import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
+import {
+  browserSessionReclaimHint,
+  type BrowserSessionSignals,
+} from "../../signals/chat-page/browser-session-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { theme$ } from "../../signals/theme.ts";
@@ -74,7 +77,7 @@ function PanelMessage({
     <div
       className={cn(
         "flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center",
-        className,
+        className ?? "bg-muted/20",
       )}
     >
       {icon}
@@ -107,7 +110,7 @@ function LoadingBody() {
   const { t } = useTranslation();
   return (
     <div role="status" className="flex flex-1 items-center justify-center">
-      <Loader2 className="animate-spin text-muted-foreground" size={20} />
+      <Loader2 className="animate-spin" size={20} />
       <span className="sr-only">
         {t(($) => {
           return $.browserSession.status.starting;
@@ -117,10 +120,11 @@ function LoadingBody() {
   );
 }
 
-function UnavailableBody() {
+function UnavailableBody({ quiet = false }: { readonly quiet?: boolean }) {
   const { t } = useTranslation();
   return (
     <PanelMessage
+      className={quiet ? "" : undefined}
       icon={<AppWindowMac size={26} className="text-muted-foreground" />}
       title={t(($) => {
         return $.browserSession.unavailable.title;
@@ -208,11 +212,14 @@ function PanelActions({ actions }: { readonly actions: ReactNode }) {
 function BrowserCdpViewer({
   signals,
   liveUrl,
+  refined,
   actions,
   overlay,
 }: {
   readonly signals: BrowserSessionSignals;
   readonly liveUrl: string;
+  /** The Cloud browser panel switch: app tokens, merged tab row, presence. */
+  readonly refined: boolean;
   readonly actions: ReactNode;
   readonly overlay: ReactNode;
 }) {
@@ -240,7 +247,7 @@ function BrowserCdpViewer({
     return (
       <>
         {actions ? <PanelActions actions={actions} /> : null}
-        <UnavailableBody />
+        <UnavailableBody quiet={refined} />
       </>
     );
   }
@@ -254,20 +261,24 @@ function BrowserCdpViewer({
         onWindowSizeSyncChange={setWindowSizeSync}
         extensions={[browserUse()]}
         colorScheme={theme}
-        tabStyle="floating"
-        toolbarEnd={actions ?? undefined}
-        stageOverlay={overlay ?? undefined}
-        blankPage={<BrowserBlankPage />}
-        labels={{
-          addressPlaceholder: t(($) => {
-            return $.browserSession.addressPlaceholder;
-          }),
-          blankTabTitle: t(($) => {
-            return $.browserSession.blankTabTitle;
-          }),
-        }}
+        {...(refined
+          ? {
+              tabStyle: "floating",
+              toolbarEnd: actions ?? undefined,
+              stageOverlay: overlay ?? undefined,
+              blankPage: <BrowserBlankPage />,
+              labels: {
+                addressPlaceholder: t(($) => {
+                  return $.browserSession.addressPlaceholder;
+                }),
+                blankTabTitle: t(($) => {
+                  return $.browserSession.blankTabTitle;
+                }),
+              },
+            }
+          : {})}
         className="w-full flex-1"
-        style={okouViewerStyle()}
+        style={refined ? okouViewerStyle() : { height: "100%", minHeight: 0 }}
       />
     </div>
   );
@@ -379,6 +390,7 @@ function PausedBrowserSession({
   containLiveFrame,
   starting,
   onStart,
+  refined,
   actions,
 }: {
   readonly screenshotUrl?: string | null;
@@ -386,10 +398,27 @@ function PausedBrowserSession({
   readonly containLiveFrame: boolean;
   readonly starting: boolean;
   readonly onStart: () => void;
+  readonly refined: boolean;
   readonly actions: ReactNode;
 }) {
   const { t } = useTranslation();
   const showScreenshot = containLiveFrame && screenshotUrl;
+  const startContent = (
+    <>
+      {starting ? (
+        <Loader2 className="animate-spin" size={14} />
+      ) : (
+        <Play size={14} />
+      )}
+      {starting
+        ? t(($) => {
+            return $.browserSession.panel.starting;
+          })
+        : t(($) => {
+            return $.browserSession.panel.start;
+          })}
+    </>
+  );
   const pausedMessage = (
     <PanelMessage
       icon={<AppWindow size={26} className="text-muted-foreground" />}
@@ -400,33 +429,36 @@ function PausedBrowserSession({
         return $.browserSession.panel.startDescription;
       })}
       action={
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={starting}
-          data-browser-session-start
-          onClick={onStart}
-          className="mt-2 disabled:cursor-wait"
-        >
-          {starting ? (
-            <Loader2 className="animate-spin" size={14} />
-          ) : (
-            <Play size={14} />
-          )}
-          {starting
-            ? t(($) => {
-                return $.browserSession.panel.starting;
-              })
-            : t(($) => {
-                return $.browserSession.panel.start;
-              })}
-        </Button>
+        refined ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={starting}
+            data-browser-session-start
+            onClick={onStart}
+            className="mt-2 disabled:cursor-wait"
+          >
+            {startContent}
+          </Button>
+        ) : (
+          <button
+            type="button"
+            disabled={starting}
+            data-browser-session-start
+            onClick={onStart}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
+          >
+            {startContent}
+          </button>
+        )
       }
       className={
         showScreenshot
           ? "absolute inset-0 z-10 bg-background/50 backdrop-blur-md"
-          : undefined
+          : refined
+            ? ""
+            : undefined
       }
     />
   );
@@ -465,8 +497,10 @@ export function BrowserSessionPanel({
 }: BrowserSessionPanelProps) {
   const { t } = useTranslation();
   const sessionLoadable = useLastLoadable(signals.panelSession$);
-  const cdpViewerEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.BrowserCdpViewer];
+  const switches = useGet(featureSwitch$);
+  const cdpViewerEnabled = switches[FeatureSwitchKey.BrowserCdpViewer];
+  const refined =
+    cdpViewerEnabled && switches[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
   const starting = startOperation.state === "loading";
@@ -485,7 +519,7 @@ export function BrowserSessionPanel({
     return (
       <PanelFrame>
         {actionsRow}
-        <UnavailableBody />
+        <UnavailableBody quiet={refined} />
       </PanelFrame>
     );
   }
@@ -502,6 +536,7 @@ export function BrowserSessionPanel({
         onStart={() => {
           detach(start(pageSignal), Reason.DomCallback);
         }}
+        refined={refined}
         actions={actions}
       />
     );
@@ -533,6 +568,7 @@ export function BrowserSessionPanel({
         <BrowserCdpViewer
           signals={signals}
           liveUrl={liveUrl}
+          refined={refined}
           actions={actions}
           overlay={overlay}
         />
@@ -546,6 +582,11 @@ export function BrowserSessionPanel({
         </ContainedLiveBrowserViewport>
       ) : (
         liveFrame
+      )}
+      {refined ? null : (
+        <p className="border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
+          {browserSessionReclaimHint(session)}
+        </p>
       )}
     </PanelFrame>
   );

@@ -1380,6 +1380,8 @@
       "memberInControl": "Du hast die Kontrolle",
       "takeOver": "Übernehmen"
     },
+    "reclaimHint_one": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minute Inaktivität zurück.",
+    "reclaimHint_other": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minuten Inaktivität zurück.",
     "status": {
       "live": "Live",
       "starting": "Beginnt",

@@ -1380,6 +1380,8 @@
       "memberInControl": "नियंत्रण आपके पास है",
       "takeOver": "नियंत्रण लें"
     },
+    "reclaimHint_one": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनट के बाद इसे पुनः प्राप्त करता है।",
+    "reclaimHint_other": "जब यह पैनल खुला होता है तो {{assistantName}} इस ब्राउज़र को रखता है, और {{formattedCount}} निष्क्रिय मिनटों के बाद इसे पुनः प्राप्त करता है।",
     "status": {
       "live": "रहना",
       "starting": "प्रारंभ",

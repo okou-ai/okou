@@ -1380,6 +1380,8 @@
       "memberInControl": "You're in control",
       "takeOver": "Take over"
     },
+    "reclaimHint_one": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minute.",
+    "reclaimHint_other": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minutes.",
     "status": {
       "live": "Live",
       "starting": "Starting",

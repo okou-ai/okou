@@ -526,7 +526,10 @@ test("Take over the cloud browser from a working run and hand it back through th
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserCdpViewer]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.BrowserCdpViewer]: true,
+      [FeatureSwitchKey.CloudBrowserPanel]: true,
+    },
   });
   await expectConversationReady();
   click(buttonByName("Open browser"));

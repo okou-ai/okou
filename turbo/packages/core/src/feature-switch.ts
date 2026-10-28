@@ -132,6 +132,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
     enabled: false,
   },
+  [FeatureSwitchKey.CloudBrowserPanel]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Cloud browser panel",
+    description:
+      "With Okou browser viewer on, theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatThreadTimeline]: {
     maintainer: "yuma@okou.ai",
     displayName: "Chat timeline",

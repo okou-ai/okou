@@ -1402,6 +1402,9 @@
       "memberInControl": "Você está no controle",
       "takeOver": "Assumir"
     },
+    "reclaimHint_one": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minuto de inatividade.",
+    "reclaimHint_many": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
+    "reclaimHint_other": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
     "status": {
       "live": "Ao vivo",
       "starting": "Iniciando",

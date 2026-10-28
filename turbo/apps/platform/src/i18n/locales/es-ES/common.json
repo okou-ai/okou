@@ -1402,6 +1402,9 @@
       "memberInControl": "Tienes el control",
       "takeOver": "Tomar el control"
     },
+    "reclaimHint_one": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minuto de reposo.",
+    "reclaimHint_many": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minutos de reposo.",
+    "reclaimHint_other": "{{assistantName}} mantiene este navegador mientras este panel está abierto y lo recupera tras {{formattedCount}} minutos de reposo.",
     "status": {
       "live": "En directo",
       "starting": "Iniciando",
