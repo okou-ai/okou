@@ -454,6 +454,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AutoContinueBusyChats]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Auto-continue busy chats",
+    description:
+      "Continue chats interrupted by a busy model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"],
+  },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
     description:
