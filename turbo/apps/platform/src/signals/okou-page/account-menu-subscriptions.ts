@@ -21,7 +21,8 @@ export type AccountMenuSubscriptionUsageWindow = NonNullable<
 
 export interface AccountMenuSubscriptionUsageRow {
   readonly type: ModelProviderType;
-  readonly usage: AccountMenuSubscriptionUsage;
+  readonly usage: AccountMenuSubscriptionUsage | null;
+  readonly credits?: ModelProviderResponse["subscriptionCredits"];
   readonly resetCredits?: number | null;
   readonly resetCreditsNextExpiresAt?: string | null;
 }
@@ -115,13 +116,17 @@ export function accountMenuSubscriptionUsageRows(
       return [];
     }
     const usage = fallbackSubscriptionUsage(provider);
-    if (!usage || subscriptionUsageWindows(usage).length === 0) {
+    const credits = provider.needsReconnect
+      ? undefined
+      : provider.subscriptionCredits;
+    if (subscriptionUsageWindows(usage).length === 0 && credits === undefined) {
       return [];
     }
     return [
       {
         type: definition.type,
         usage,
+        ...(credits === undefined ? {} : { credits }),
         ...(provider.type !== "codex-oauth-token" ||
         provider.subscriptionResetCredits === undefined
           ? {}

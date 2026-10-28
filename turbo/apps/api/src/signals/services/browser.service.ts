@@ -2587,7 +2587,7 @@ export const openBrowserForThread$ = command(
     if (connection.kind === "error") {
       return connection;
     }
-    // Keep lifecycle responses compatible with existing clients. The gated
+    // Keep lifecycle responses compatible with existing clients. The
     // first-party viewer obtains CDP through its session-only endpoint.
     return {
       kind: "ok",

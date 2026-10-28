@@ -30,11 +30,10 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { object, string, type infer as zInfer } from "zod";
 
-import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
@@ -74,7 +73,8 @@ import {
 import {
   assistantErrorEventInsertSql,
   assistantErrorEventType,
-  chatEventInsertSql,
+  runLifecycleMarkerEventType,
+  runLifecycleMarkerInsertSql,
   integrationCompletionFallbackInsertSql,
 } from "./chat-event.service";
 import type {
@@ -161,6 +161,10 @@ import { sendUserPushNotifications$ } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
+import {
+  slackChatDeliveryFields,
+  type SlackDeliveryTarget,
+} from "./slack-chat-callback-payload";
 import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
@@ -703,13 +707,6 @@ const loadCompletedChatOutput$ = command(
   },
 );
 
-interface SlackDeliveryTarget {
-  readonly workspaceId?: string;
-  readonly channelId: string;
-  readonly threadTs: string;
-  readonly routeThreadTs?: string;
-}
-
 const CHAT_DELIVERY_CALLBACK_NAMESPACE = "3c3c6fe0-1041-4d9b-8fbc-403eec20e47b";
 
 type ChatDeliveryKind =
@@ -720,66 +717,69 @@ type ChatDeliveryKind =
   | "telegram:chat"
   | "agentphone:chat";
 
-async function insertChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly internalKind: ChatDeliveryKind;
-  readonly chatEventId: string;
-  readonly payload: NonNullable<
-    (typeof agentRunCallbacks.$inferInsert)["payload"]
-  >;
-}): Promise<string> {
-  const source = await (async () => {
-    const plan = sourceChatCallbackReadPlan({
+const insertChatDeliveryCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly sourceCallbackId: string;
+      readonly internalKind: ChatDeliveryKind;
+      readonly chatEventId: string;
+      readonly payload: NonNullable<
+        (typeof agentRunCallbacks.$inferInsert)["payload"]
+      >;
+    },
+  ): Promise<string> => {
+    const database = set(writeDb$);
+    const source = await (async () => {
+      const plan = sourceChatCallbackReadPlan({
+        runId: args.runId,
+        sourceCallbackId: args.sourceCallbackId,
+      });
+      const [source] = await database
+        .select(plan.columns)
+        .from(agentRunCallbacks)
+        .where(plan.condition)
+        .orderBy(plan.order)
+        .limit(plan.limit);
+      return requiredSourceChatCallback(source);
+    })();
+
+    const id = uuidv5(
+      `${source.id}:${args.internalKind}:${args.chatEventId}`,
+      CHAT_DELIVERY_CALLBACK_NAMESPACE,
+    );
+    await database
+      .insert(agentRunCallbacks)
+      .values({
+        id,
+        runId: args.runId,
+        internalKind: args.internalKind,
+        encryptedSecret: source.encryptedSecret,
+        payload: args.payload,
+      })
+      .onConflictDoNothing({ target: agentRunCallbacks.id });
+    return id;
+  },
+);
+
+const insertSlackChatDeliveryCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly sourceCallbackId: string;
+      readonly target: SlackDeliveryTarget;
+      readonly chatEventId: string;
+    },
+  ): Promise<string> => {
+    return await set(insertChatDeliveryCallback$, {
       runId: args.runId,
       sourceCallbackId: args.sourceCallbackId,
+      ...slackChatDeliveryFields(args.target, args.chatEventId),
     });
-    const [source] = await args.db
-      .select(plan.columns)
-      .from(agentRunCallbacks)
-      .where(plan.condition)
-      .orderBy(plan.order)
-      .limit(plan.limit);
-    return requiredSourceChatCallback(source);
-  })();
-
-  const id = uuidv5(
-    `${source.id}:${args.internalKind}:${args.chatEventId}`,
-    CHAT_DELIVERY_CALLBACK_NAMESPACE,
-  );
-  await args.db
-    .insert(agentRunCallbacks)
-    .values({
-      id,
-      runId: args.runId,
-      internalKind: args.internalKind,
-      encryptedSecret: source.encryptedSecret,
-      payload: args.payload,
-    })
-    .onConflictDoNothing({ target: agentRunCallbacks.id });
-  return id;
-}
-
-async function insertSlackChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: SlackDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "slack:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
-}
+  },
+);
 
 function feishuChatDeliveryFields(
   target: FeishuDeliveryTarget,
@@ -990,8 +990,7 @@ const insertAssistantErrorEvent$ = command(
           return null;
         }
         const slackDeliveryCallbackId = input.slackDelivery
-          ? await insertSlackChatDeliveryCallback({
-              db: database,
+          ? await set(insertSlackChatDeliveryCallback$, {
               runId: input.runId,
               sourceCallbackId: input.sourceCallbackId,
               target: input.slackDelivery,
@@ -999,16 +998,14 @@ const insertAssistantErrorEvent$ = command(
             })
           : undefined;
         const feishuDeliveryCallbackId = input.feishuDelivery
-          ? await insertChatDeliveryCallback({
-              db: database,
+          ? await set(insertChatDeliveryCallback$, {
               runId: input.runId,
               sourceCallbackId: input.sourceCallbackId,
               ...feishuChatDeliveryFields(input.feishuDelivery, event.id),
             })
           : undefined;
         const teamsDeliveryCallbackId = input.teamsDelivery
-          ? await insertChatDeliveryCallback({
-              db: database,
+          ? await set(insertChatDeliveryCallback$, {
               runId: input.runId,
               sourceCallbackId: input.sourceCallbackId,
               ...teamsChatDeliveryFields(input.teamsDelivery, event.id),
@@ -1031,8 +1028,7 @@ const insertAssistantErrorEvent$ = command(
               })()
             : undefined;
         const wechatDeliveryCallbackId = input.wechatDelivery
-          ? await insertChatDeliveryCallback({
-              db: database,
+          ? await set(insertChatDeliveryCallback$, {
               ...assistantErrorWechatCallbackValues(
                 input,
                 input.wechatDelivery,
@@ -1041,16 +1037,14 @@ const insertAssistantErrorEvent$ = command(
             })
           : undefined;
         const telegramDeliveryCallbackId = input.telegramDelivery
-          ? await insertChatDeliveryCallback({
-              db: database,
+          ? await set(insertChatDeliveryCallback$, {
               runId: input.runId,
               sourceCallbackId: input.sourceCallbackId,
               ...telegramChatDeliveryFields(input.telegramDelivery, event.id),
             })
           : undefined;
         const agentphoneDeliveryCallbackId = input.agentphoneDelivery
-          ? await insertChatDeliveryCallback({
-              db: database,
+          ? await set(insertChatDeliveryCallback$, {
               runId: input.runId,
               sourceCallbackId: input.sourceCallbackId,
               ...agentPhoneChatDeliveryFields(
@@ -1089,10 +1083,7 @@ const insertAssistantErrorEvent$ = command(
   },
 );
 
-type ChatCallbackTransaction = Db | Tx;
-
 interface RunLifecycleMarkerArgs {
-  readonly db: Db;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -1156,208 +1147,144 @@ function requiresIntegrationCompletionFallback(
   );
 }
 
-async function registerRunLifecycleDeliveryCallbacks(
-  tx: ChatCallbackTransaction,
-  input: RunLifecycleMarkerArgs,
-  deliveryEvent: { readonly id: string } | undefined,
-  markerInserted: boolean,
-): Promise<RunLifecycleDeliveryCallbacks> {
-  const slackDeliveryCallbackId =
-    deliveryEvent && input.slackDelivery
-      ? await insertSlackChatDeliveryCallback({
-          db: tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          target: input.slackDelivery,
-          chatEventId: deliveryEvent.id,
-        })
-      : undefined;
-  const feishuDeliveryCallbackId =
-    deliveryEvent && input.feishuDelivery
-      ? await insertChatDeliveryCallback({
-          db: tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          ...feishuChatDeliveryFields(input.feishuDelivery, deliveryEvent.id),
-        })
-      : undefined;
-  const teamsDeliveryCallbackId =
-    deliveryEvent && input.teamsDelivery
-      ? await insertChatDeliveryCallback({
-          db: tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          ...teamsChatDeliveryFields(input.teamsDelivery, deliveryEvent.id),
-        })
-      : undefined;
-  const discordTarget = input.discordDelivery;
-  const discordReply =
-    deliveryEvent && discordTarget && markerInserted
-      ? await (async () => {
-          const [run] = await tx
-            .select(discordReplyRunSelection)
-            .from(agentRuns)
-            .where(eq(agentRuns.id, input.runId))
-            .limit(1);
-          return discordReplyRequest({
-            run,
-            target: discordTarget,
+const registerRunLifecycleDeliveryCallbacks$ = command(
+  async (
+    { set },
+    input: RunLifecycleMarkerArgs,
+    deliveryEvent: { readonly id: string } | undefined,
+    markerInserted: boolean,
+  ): Promise<RunLifecycleDeliveryCallbacks> => {
+    const slackDeliveryCallbackId =
+      deliveryEvent && input.slackDelivery
+        ? await set(insertSlackChatDeliveryCallback$, {
+            runId: input.runId,
+            sourceCallbackId: input.sourceCallbackId,
+            target: input.slackDelivery,
             chatEventId: deliveryEvent.id,
-          });
-        })()
-      : undefined;
-  const wechatDeliveryCallbackId =
-    deliveryEvent && input.wechatDelivery
-      ? await insertChatDeliveryCallback({
-          db: tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          internalKind: "wechat:chat",
-          chatEventId: deliveryEvent.id,
-          payload: {
-            userId: input.userId,
-            orgId: input.orgId,
-            chatThreadId: input.threadId,
-            target: input.wechatDelivery,
+          })
+        : undefined;
+    const feishuDeliveryCallbackId =
+      deliveryEvent && input.feishuDelivery
+        ? await set(insertChatDeliveryCallback$, {
+            runId: input.runId,
+            sourceCallbackId: input.sourceCallbackId,
+            ...feishuChatDeliveryFields(input.feishuDelivery, deliveryEvent.id),
+          })
+        : undefined;
+    const teamsDeliveryCallbackId =
+      deliveryEvent && input.teamsDelivery
+        ? await set(insertChatDeliveryCallback$, {
+            runId: input.runId,
+            sourceCallbackId: input.sourceCallbackId,
+            ...teamsChatDeliveryFields(input.teamsDelivery, deliveryEvent.id),
+          })
+        : undefined;
+    const discordTarget = input.discordDelivery;
+    const discordReply =
+      deliveryEvent && discordTarget && markerInserted
+        ? await (async () => {
+            const database = set(writeDb$);
+            const [run] = await database
+              .select(discordReplyRunSelection)
+              .from(agentRuns)
+              .where(eq(agentRuns.id, input.runId))
+              .limit(1);
+            return discordReplyRequest({
+              run,
+              target: discordTarget,
+              chatEventId: deliveryEvent.id,
+            });
+          })()
+        : undefined;
+    const wechatDeliveryCallbackId =
+      deliveryEvent && input.wechatDelivery
+        ? await set(insertChatDeliveryCallback$, {
+            runId: input.runId,
+            sourceCallbackId: input.sourceCallbackId,
+            internalKind: "wechat:chat",
             chatEventId: deliveryEvent.id,
-          },
-        })
-      : undefined;
-  const telegramDeliveryCallbackId =
-    deliveryEvent && input.telegramDelivery
-      ? await insertChatDeliveryCallback({
-          db: tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          ...telegramChatDeliveryFields(
-            input.telegramDelivery,
-            deliveryEvent.id,
-          ),
-        })
-      : undefined;
-  const agentphoneDeliveryCallbackId =
-    deliveryEvent && input.agentphoneDelivery
-      ? await insertChatDeliveryCallback({
-          db: tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          ...agentPhoneChatDeliveryFields(
-            input.agentphoneDelivery,
-            deliveryEvent.id,
-          ),
-        })
-      : undefined;
+            payload: {
+              userId: input.userId,
+              orgId: input.orgId,
+              chatThreadId: input.threadId,
+              target: input.wechatDelivery,
+              chatEventId: deliveryEvent.id,
+            },
+          })
+        : undefined;
+    const telegramDeliveryCallbackId =
+      deliveryEvent && input.telegramDelivery
+        ? await set(insertChatDeliveryCallback$, {
+            runId: input.runId,
+            sourceCallbackId: input.sourceCallbackId,
+            ...telegramChatDeliveryFields(
+              input.telegramDelivery,
+              deliveryEvent.id,
+            ),
+          })
+        : undefined;
+    const agentphoneDeliveryCallbackId =
+      deliveryEvent && input.agentphoneDelivery
+        ? await set(insertChatDeliveryCallback$, {
+            runId: input.runId,
+            sourceCallbackId: input.sourceCallbackId,
+            ...agentPhoneChatDeliveryFields(
+              input.agentphoneDelivery,
+              deliveryEvent.id,
+            ),
+          })
+        : undefined;
+    return {
+      slackDeliveryCallbackId,
+      feishuDeliveryCallbackId,
+      teamsDeliveryCallbackId,
+      discordReply,
+      wechatDeliveryCallbackId,
+      telegramDeliveryCallbackId,
+      agentphoneDeliveryCallbackId,
+    };
+  },
+);
+
+type RunLifecycleMarkerProjection = RunLifecycleDeliveryCallbacks & {
+  readonly markerInserted: boolean;
+};
+
+function runLifecycleMarkerTouchOptions(
+  args: RunLifecycleMarkerArgs,
+  markerCreatedAt: Date,
+) {
   return {
-    slackDeliveryCallbackId,
-    feishuDeliveryCallbackId,
-    teamsDeliveryCallbackId,
-    discordReply,
-    wechatDeliveryCallbackId,
-    telegramDeliveryCallbackId,
-    agentphoneDeliveryCallbackId,
+    touchedAt: markerCreatedAt,
+    orgId: args.orgId,
+    unarchive:
+      args.event === "completed" &&
+      !hasExternalNotificationDeliveryChannel(args),
+    markRead:
+      args.event === "completed" &&
+      hasExternalNotificationDeliveryChannel(args),
   };
 }
 
-export async function insertRunLifecycleMarkerProjection(args: {
-  readonly tx: ChatCallbackTransaction;
-  readonly input: RunLifecycleMarkerArgs;
-  readonly markerCreatedAt: Date;
-}): Promise<
-  (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
-> {
-  const { input } = args;
-  const canonicalDatabase = args.tx;
-  const canonicalRunId = input.runId;
-  const canonicalReadEnabled = hasExternalNotificationDeliveryChannel(input);
-  let deliveryEvent = await (async () => {
-    if (!canonicalReadEnabled) {
-      return undefined;
-    }
-    const plan = canonicalDeliveryEventReadPlan(canonicalRunId);
-    const query = canonicalDatabase.select(plan.columns).from(chatEvents);
-    const [event] = await query
-      .where(plan.condition)
-      .orderBy(plan.order)
-      .limit(plan.limit);
-    return event;
-  })();
-  if (!deliveryEvent && requiresIntegrationCompletionFallback(input)) {
-    const fallbackDatabase = args.tx;
-    const fallbackInput = {
-      runId: input.runId,
-      threadId: input.threadId,
-      createdAt: args.markerCreatedAt,
-    };
-    deliveryEvent = await (async () => {
-      const eventId = integrationCompletionFallbackEventIdForRun(
-        fallbackInput.runId,
-      );
-      const inserted =
-        parseRawRows(
-          chatEventCommandResultSchema,
-          await fallbackDatabase.execute(
-            integrationCompletionFallbackInsertSql(eventId, fallbackInput),
-          ),
-        )[0] ?? null;
-      if (inserted) {
-        return { id: inserted.id };
-      }
-      const plan = integrationCompletionFallbackReadPlan(eventId);
-      const query = fallbackDatabase.select(plan.columns).from(chatEvents);
-      const [existing] = await query.where(plan.condition).limit(plan.limit);
-      if (!existing) {
-        throw new Error("Failed to persist integration completion fallback");
-      }
-      return existing;
-    })();
-  }
-  const marker =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await args.tx.execute(
-        chatEventInsertSql(
-          {
-            chatThreadId: input.threadId,
-            eventType:
-              input.event === "completed" ? "run.completed" : "run.cancelled",
-            content: null,
-            runId: input.runId,
-            createdAt: args.markerCreatedAt,
-          },
-          "run-lifecycle",
-        ),
-      ),
-    )[0] ?? null;
-  if (
-    !marker &&
-    !(await (async () => {
-      const database = args.tx;
-      const runId = input.runId;
-      const eventType =
-        input.event === "completed" ? "run.completed" : "run.cancelled";
-      const plan = runLifecycleMarkerReadPlan(runId, eventType);
-      const query = database.select(plan.columns).from(chatEvents);
-      const [marker] = await query.where(plan.condition).limit(plan.limit);
-      return marker;
-    })())
-  ) {
-    return null;
-  }
+function runLifecycleMarkerResult(inserted: RunLifecycleMarkerProjection): {
+  readonly outcome: "written" | "replayed";
+} & RunLifecycleDeliveryCallbacks {
   return {
-    markerInserted: marker !== null,
-    ...(await registerRunLifecycleDeliveryCallbacks(
-      args.tx,
-      input,
-      deliveryEvent,
-      marker !== null,
-    )),
+    outcome: inserted.markerInserted ? "written" : "replayed",
+    slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
+    feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
+    teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
+    discordReply: inserted.discordReply,
+    wechatDeliveryCallbackId: inserted.wechatDeliveryCallbackId,
+    telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
+    agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
   };
 }
 
 const insertRunLifecycleMarker$ = command(
   async (
     { set },
-    args: Omit<RunLifecycleMarkerArgs, "db">,
+    args: RunLifecycleMarkerArgs,
     signal: AbortSignal,
   ): Promise<
     | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
@@ -1367,11 +1294,98 @@ const insertRunLifecycleMarker$ = command(
   > => {
     signal.throwIfAborted();
     const markerCreatedAt = nowDate();
-    const inserted = await insertRunLifecycleMarkerProjection({
-      tx: set(writeDb$),
-      input: { ...args, db: set(writeDb$) },
-      markerCreatedAt,
-    });
+    const tx = set(writeDb$);
+    const input = { ...args };
+    const inserted =
+      await (async (): Promise<RunLifecycleMarkerProjection | null> => {
+        const canonicalDatabase = tx;
+        const canonicalRunId = input.runId;
+        const canonicalReadEnabled =
+          hasExternalNotificationDeliveryChannel(input);
+        let deliveryEvent = await (async () => {
+          if (!canonicalReadEnabled) {
+            return undefined;
+          }
+          const plan = canonicalDeliveryEventReadPlan(canonicalRunId);
+          const query = canonicalDatabase.select(plan.columns).from(chatEvents);
+          const [event] = await query
+            .where(plan.condition)
+            .orderBy(plan.order)
+            .limit(plan.limit);
+          return event;
+        })();
+        if (!deliveryEvent && requiresIntegrationCompletionFallback(input)) {
+          const fallbackDatabase = tx;
+          const fallbackInput = {
+            runId: input.runId,
+            threadId: input.threadId,
+            createdAt: markerCreatedAt,
+          };
+          deliveryEvent = await (async () => {
+            const eventId = integrationCompletionFallbackEventIdForRun(
+              fallbackInput.runId,
+            );
+            const inserted =
+              parseRawRows(
+                chatEventCommandResultSchema,
+                await fallbackDatabase.execute(
+                  integrationCompletionFallbackInsertSql(
+                    eventId,
+                    fallbackInput,
+                  ),
+                ),
+              )[0] ?? null;
+            if (inserted) {
+              return { id: inserted.id };
+            }
+            const plan = integrationCompletionFallbackReadPlan(eventId);
+            const query = fallbackDatabase
+              .select(plan.columns)
+              .from(chatEvents);
+            const [existing] = await query
+              .where(plan.condition)
+              .limit(plan.limit);
+            if (!existing) {
+              throw new Error(
+                "Failed to persist integration completion fallback",
+              );
+            }
+            return existing;
+          })();
+        }
+        const marker =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(
+              runLifecycleMarkerInsertSql(input, markerCreatedAt),
+            ),
+          )[0] ?? null;
+        if (
+          !marker &&
+          !(await (async () => {
+            const database = tx;
+            const runId = input.runId;
+            const eventType = runLifecycleMarkerEventType(input.event);
+            const plan = runLifecycleMarkerReadPlan(runId, eventType);
+            const query = database.select(plan.columns).from(chatEvents);
+            const [marker] = await query
+              .where(plan.condition)
+              .limit(plan.limit);
+            return marker;
+          })())
+        ) {
+          return null;
+        }
+        return {
+          markerInserted: marker !== null,
+          ...(await set(
+            registerRunLifecycleDeliveryCallbacks$,
+            input,
+            deliveryEvent,
+            marker !== null,
+          )),
+        };
+      })();
     signal.throwIfAborted();
     if (!inserted) {
       return { outcome: "duplicate" };
@@ -1383,16 +1397,7 @@ const insertRunLifecycleMarker$ = command(
     await set(
       touchChatThreadLastMessageAtIndependently$,
       args.threadId,
-      {
-        touchedAt: markerCreatedAt,
-        orgId: args.orgId,
-        unarchive:
-          args.event === "completed" &&
-          !hasExternalNotificationDeliveryChannel(args),
-        markRead:
-          args.event === "completed" &&
-          hasExternalNotificationDeliveryChannel(args),
-      },
+      runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
     await publishChatThreadMessageCreatedSafely({
@@ -1406,16 +1411,7 @@ const insertRunLifecycleMarker$ = command(
       orgId: args.orgId,
     });
     signal.throwIfAborted();
-    return {
-      outcome: inserted.markerInserted ? "written" : "replayed",
-      slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
-      feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
-      teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
-      discordReply: inserted.discordReply,
-      wechatDeliveryCallbackId: inserted.wechatDeliveryCallbackId,
-      telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
-      agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
-    };
+    return runLifecycleMarkerResult(inserted);
   },
 );
 

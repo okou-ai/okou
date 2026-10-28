@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.10](https://github.com/okou-ai/okou/compare/desktop-v0.54.9...desktop-v0.54.10) (2026-10-28)
+
+
+### Bug Fixes
+
+* **desktop:** reuse the main menu during status refreshes ([#43639](https://github.com/okou-ai/okou/issues/43639)) ([4edbc18](https://github.com/okou-ai/okou/commit/4edbc18f427da33618131c8c6a2762e6df688a4a))
+
 ## [0.54.9](https://github.com/okou-ai/okou/compare/desktop-v0.54.8...desktop-v0.54.9) (2026-10-27)
 
 

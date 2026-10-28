@@ -2777,8 +2777,15 @@
     {
       "idx": 1475,
       "version": "7",
-      "when": 1793158795519,
-      "tag": "1475_whatsapp_agentphone_integration",
+      "when": 1793160498064,
+      "tag": "1475_handy_guardsmen",
+      "breakpoints": true
+    },
+    {
+      "idx": 1476,
+      "version": "7",
+      "when": 1793177891181,
+      "tag": "1476_whatsapp_agentphone_integration",
       "breakpoints": true
     }
   ]

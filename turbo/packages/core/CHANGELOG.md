@@ -1,5 +1,37 @@
 # Changelog
 
+## [8.796.2](https://github.com/okou-ai/okou/compare/core-v8.796.1...core-v8.796.2) (2026-10-28)
+
+
+### Refactoring
+
+* **browser:** roll out okou viewer and remove feature switch ([#43671](https://github.com/okou-ai/okou/issues/43671)) ([97e8ca7](https://github.com/okou-ai/okou/commit/97e8ca71f4d6ac0cd015de589eb5d8179a96bddd))
+
+## [8.796.1](https://github.com/okou-ai/okou/compare/core-v8.796.0...core-v8.796.1) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.15.0
+
+## [8.796.0](https://github.com/okou-ai/okou/compare/core-v8.795.1...core-v8.796.0) (2026-10-28)
+
+
+### Features
+
+* **app:** add gated date separators to chat threads ([#43646](https://github.com/okou-ai/okou/issues/43646)) ([5a0449a](https://github.com/okou-ai/okou/commit/5a0449a28f270e0d4101a0c862bf003830e40987))
+
+## [8.795.1](https://github.com/okou-ai/okou/compare/core-v8.795.0...core-v8.795.1) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.2
+
 ## [8.795.0](https://github.com/okou-ai/okou/compare/core-v8.794.1...core-v8.795.0) (2026-10-28)
 
 

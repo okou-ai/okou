@@ -12,6 +12,61 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1072.2](https://github.com/okou-ai/okou/compare/app-v0.1072.1...app-v0.1072.2) (2026-10-28)
+
+
+### Refactoring
+
+* **browser:** roll out okou viewer and remove feature switch ([#43671](https://github.com/okou-ai/okou/issues/43671)) ([97e8ca7](https://github.com/okou-ai/okou/commit/97e8ca71f4d6ac0cd015de589eb5d8179a96bddd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.2
+
+## [0.1072.1](https://github.com/okou-ai/okou/compare/app-v0.1072.0...app-v0.1072.1) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.15.0
+    * @okouai/core bumped to 8.796.1
+
+## [0.1072.0](https://github.com/okou-ai/okou/compare/app-v0.1071.1...app-v0.1072.0) (2026-10-28)
+
+
+### Features
+
+* **app:** add gated date separators to chat threads ([#43646](https://github.com/okou-ai/okou/issues/43646)) ([5a0449a](https://github.com/okou-ai/okou/commit/5a0449a28f270e0d4101a0c862bf003830e40987))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.0
+
+## [0.1071.1](https://github.com/okou-ai/okou/compare/app-v0.1071.0...app-v0.1071.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **app:** show manually opened resources without delay ([#43521](https://github.com/okou-ai/okou/issues/43521)) ([cc755d3](https://github.com/okou-ai/okou/commit/cc755d389ed12ab5069d4c896a58e01beb57aeb7))
+* **pi:** classify opaque codex bad requests ([#43630](https://github.com/okou-ai/okou/issues/43630)) ([fd956ef](https://github.com/okou-ai/okou/commit/fd956ef072e4118fdc15a39febed4e286f479b5d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.2
+    * @okouai/connectors bumped to 3.18.0
+    * @okouai/core bumped to 8.795.1
+
 ## [0.1071.0](https://github.com/okou-ai/okou/compare/app-v0.1070.1...app-v0.1071.0) (2026-10-28)
 
 

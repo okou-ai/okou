@@ -19,6 +19,7 @@ decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-st
 data_router_response_id_floor=$(<"${repo_root}/.github/rollback-floors/data-router-response-id")
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
 desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/desktop-manifest-r2-reader")
+data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
 cat >"${fake_bin}/git" <<'SH'
@@ -47,6 +48,12 @@ case "${1:-}" in
         [ "${MOCK_HOME_CACHE_CAPACITY_READER_ON_MAIN:-1}" = "1" ]
       else
         [ "${MOCK_HOME_CACHE_CAPACITY_READER_TARGET_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_DATA_ROUTER_STATELESS_MCP_API_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_DATA_ROUTER_STATELESS_MCP_API_TARGET_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -321,6 +328,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_DATA_ROUTER_RESPONSE_ID_COMMIT-$MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/data-router-stateless-mcp-api" ]; then
+      [ "${MOCK_DATA_ROUTER_STATELESS_MCP_API_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_DATA_ROUTER_STATELESS_MCP_API_COMMIT-$MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/desktop-manifest-r2-reader" ]; then
       [ "${MOCK_DESKTOP_MANIFEST_R2_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "$MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR"
@@ -423,6 +435,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR="$data_router_response_id_floor" \
     MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR="$connector_diagnostic_targets_floor" \
     MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
+    MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
@@ -531,6 +544,21 @@ for desktop_manifest_case in \
   [ ! -s "${tmp_dir}/desktop-manifest-r2-reader.output" ] || fail "unsupported Desktop manifest reader must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Desktop manifest R2 policy must reject before provider or host access"
+  fi
+done
+
+# APIs before #43447 send envelope-less JSON-RPC that Router no longer serves.
+for data_router_mcp_case in \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_AVAILABLE=0|Cannot read the Data Router stateless MCP API rollback floor from main" \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_COMMIT=not-a-commit|Missing or invalid Data Router stateless MCP API rollback floor" \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_ON_MAIN=0|Data Router stateless MCP API rollback floor is not on main" \
+  "MOCK_DATA_ROUTER_STATELESS_MCP_API_TARGET_VALID=0|Rollback target predates the Data Router stateless MCP requests"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${data_router_mcp_case#*|}" \
+    run_resolver "${tmp_dir}/data-router-stateless-mcp.output" "${data_router_mcp_case%%|*}"
+  [ ! -s "${tmp_dir}/data-router-stateless-mcp.output" ] || fail "pre-stateless Data Router API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Data Router stateless MCP policy must reject before provider or host access"
   fi
 done
 

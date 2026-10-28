@@ -846,6 +846,32 @@ export function assistantErrorEventInsertSql(
   );
 }
 
+export function runLifecycleMarkerEventType(
+  event: "completed" | "cancelled",
+): "run.completed" | "run.cancelled" {
+  return event === "completed" ? "run.completed" : "run.cancelled";
+}
+
+export function runLifecycleMarkerInsertSql(
+  input: {
+    readonly threadId: string;
+    readonly event: "completed" | "cancelled";
+    readonly runId: string;
+  },
+  markerCreatedAt: Date,
+): SQL {
+  return chatEventInsertSql(
+    {
+      chatThreadId: input.threadId,
+      eventType: runLifecycleMarkerEventType(input.event),
+      content: null,
+      runId: input.runId,
+      createdAt: markerCreatedAt,
+    },
+    "run-lifecycle",
+  );
+}
+
 export function integrationCompletionFallbackInsertSql(
   eventId: string,
   input: {

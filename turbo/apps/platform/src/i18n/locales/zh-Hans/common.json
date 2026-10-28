@@ -1349,12 +1349,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "输入网址",
+    "blankPage": {
+      "description": "{{assistantName}} 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
+      "title": "还没有打开网页"
+    },
+    "blankTabTitle": "新标签页",
     "cardTitle": "云端浏览器",
-    "close": "关闭实时浏览器",
-    "documentTitle": "实时浏览器",
-    "fitAction": "适应",
-    "fitWindow": "让浏览器适应窗口",
-    "iframeTitle": "实时浏览器：{{name}}",
+    "close": "关闭云端浏览器",
+    "documentTitle": "云端浏览器",
     "notFound": "未找到浏览器",
     "open": "打开 {{name}} 浏览器",
     "openAction": "打开",
@@ -1365,6 +1368,13 @@
       "startDescription": "启动时会尽量恢复已保存的登录信息和存储数据，并重新打开此前保存的标签页。",
       "starting": "正在启动…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} 正在工作",
+      "handBack": "交还",
+      "handBackMessage": "我在浏览器里操作完了，请继续。",
+      "memberInControl": "你正在操作",
+      "takeOver": "接管"
+    },
     "reclaimHint_one": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
     "reclaimHint_other": "面板打开期间，{{assistantName}} 会一直保留这个浏览器，闲置 {{formattedCount}} 分钟后回收。",
     "status": {
@@ -1372,7 +1382,7 @@
       "starting": "启动中",
       "stopped": "已停止"
     },
-    "title": "实时浏览器",
+    "title": "云端浏览器",
     "unavailable": {
       "description": "这个浏览器不属于当前对话，或者已被删除。",
       "title": "浏览器不可用"
@@ -3991,6 +4001,15 @@
     "title": "文档",
     "useNamed": "使用 {{title}}"
   },
+  "featureGuide": {
+    "close": "关闭新功能指南",
+    "dismiss": "知道了",
+    "label": "新功能",
+    "next": "下一步",
+    "preview": "预览",
+    "previous": "上一步",
+    "tryPrompt": "试试这个任务"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -5344,6 +5363,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "连接",
         "connectAccount": "连接账号",
+        "creditsBalance": "{{value}} {{provider}} 积分",
+        "creditsLabel": "{{provider}} 积分",
+        "creditsUnlimited": "不限量",
         "disconnectAccount": "断开账号连接",
         "disconnectDescription": "这会把账号从 Okou 中移除，但不会取消你在该服务商处的订阅。",
         "disconnecting": "正在断开…",

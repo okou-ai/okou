@@ -28,6 +28,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockBrowserCdp } from "../../../__tests__/browser-cdp-fixture.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   CAPABILITY_AGENT_ID,
@@ -275,6 +276,11 @@ async function browserUserActionSubscribed() {
 async function openManagedBrowserChat(
   sharedWorkerTestTransport: "direct" | "message-port" = "direct",
 ) {
+  const cdpUrl = "wss://cdp.browser-use.com/research";
+  mockBrowserCdp(context, cdpUrl);
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, { cdpUrl });
+  });
   let browser = managedBrowserSession({
     status: "active",
     screenshotUrl: INITIAL_SCREENSHOT_URL,
@@ -442,13 +448,12 @@ test("Follow suspension and resumption in the live browser panel", async () => {
   click(card);
 
   const sidebar = await screen.findByRole("complementary", {
-    name: "Live browser",
+    name: "Cloud browser",
   });
   expect(sidebar).toBeVisible();
-  expect(screen.getByTitle("Live browser: Research")).toHaveAttribute(
-    "src",
-    ACTIVE_BROWSER_URL,
-  );
+  await expect(
+    within(sidebar).findByDisplayValue("https://example.com"),
+  ).resolves.toBeEnabled();
   expect(screen.getByTestId("browser-session-thumbnail")).toHaveAttribute(
     "src",
     INITIAL_SCREENSHOT_URL,
@@ -467,7 +472,9 @@ test("Follow suspension and resumption in the live browser panel", async () => {
       "Stopped",
     );
   });
-  expect(screen.queryByTitle("Live browser: Research")).toBeNull();
+  expect(
+    within(sidebar).queryByRole("region", { name: "Remote browser viewer" }),
+  ).toBeNull();
   await expect(
     screen.findByTestId("browser-session-panel-screenshot"),
   ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
@@ -485,8 +492,8 @@ test("Follow suspension and resumption in the live browser panel", async () => {
     expect(screen.getByText("Live")).toBeVisible();
   });
   await expect(
-    screen.findByTitle("Live browser: Research"),
-  ).resolves.toHaveAttribute("src", RESUMED_BROWSER_URL);
+    within(sidebar).findByDisplayValue("https://example.com"),
+  ).resolves.toBeEnabled();
   expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
 });
 
@@ -1740,6 +1747,6 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
   const browserCard = await findButton("Open Research browser");
   click(browserCard);
   await expect(
-    screen.findByRole("complementary", { name: "Live browser" }),
+    screen.findByRole("complementary", { name: "Cloud browser" }),
   ).resolves.toBeVisible();
 });

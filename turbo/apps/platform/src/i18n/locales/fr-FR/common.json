@@ -1373,12 +1373,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Saisir une URL",
+    "blankPage": {
+      "description": "{{assistantName}} ouvre les pages ici pendant qu’il travaille. Saisissez une URL ci-dessus pour naviguer vous-même.",
+      "title": "Rien d’ouvert pour l’instant"
+    },
+    "blankTabTitle": "Nouvel onglet",
     "cardTitle": "Navigateur cloud",
-    "close": "Fermer le navigateur en direct",
-    "documentTitle": "Navigateur en direct",
-    "fitAction": "Adapter",
-    "fitWindow": "Adapter le navigateur à la fenêtre",
-    "iframeTitle": "Navigateur en direct : {{name}}",
+    "close": "Fermer le navigateur cloud",
+    "documentTitle": "Navigateur cloud",
     "notFound": "Navigateur introuvable",
     "open": "Ouvrir le navigateur {{name}}",
     "openAction": "Ouvrir",
@@ -1389,6 +1392,13 @@
       "startDescription": "Le démarrage restaure le profil de connexion et le stockage enregistrés lorsqu'ils sont disponibles, et rouvre les onglets enregistrés lorsque cela est possible.",
       "starting": "Démarrage…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} travaille",
+      "handBack": "Rendre la main",
+      "handBackMessage": "J’ai terminé dans le navigateur. Tu peux continuer.",
+      "memberInControl": "Vous avez la main",
+      "takeOver": "Prendre la main"
+    },
     "reclaimHint_one": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minute d'inactivité.",
     "reclaimHint_many": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
     "reclaimHint_other": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
@@ -1397,7 +1407,7 @@
       "starting": "Démarrage",
       "stopped": "Arrêté"
     },
-    "title": "Navigateur en direct",
+    "title": "Navigateur cloud",
     "unavailable": {
       "description": "Ce navigateur n'appartient pas à ce chat ou a été supprimé.",
       "title": "Navigateur indisponible"
@@ -4060,6 +4070,15 @@
     "title": "Document",
     "useNamed": "Utiliser {{title}}"
   },
+  "featureGuide": {
+    "close": "Fermer le guide des nouveautés",
+    "dismiss": "J’ai compris",
+    "label": "Nouveautés",
+    "next": "Suivant",
+    "preview": "Aperçu",
+    "previous": "Précédent",
+    "tryPrompt": "Essayer cette tâche"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -5420,6 +5439,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "Connecter",
         "connectAccount": "Connecter un compte",
+        "creditsBalance": "{{value}} crédits {{provider}}",
+        "creditsLabel": "Crédits {{provider}}",
+        "creditsUnlimited": "Illimité",
         "disconnectAccount": "Déconnecter le compte",
         "disconnectDescription": "Cette action supprime le compte d’Okou. Elle n’annule pas votre abonnement auprès du fournisseur.",
         "disconnecting": "Déconnexion…",

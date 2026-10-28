@@ -1373,12 +1373,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Digite uma URL",
+    "blankPage": {
+      "description": "{{assistantName}} abre páginas aqui enquanto trabalha. Digite uma URL acima para navegar por conta própria.",
+      "title": "Nada aberto ainda"
+    },
+    "blankTabTitle": "Nova guia",
     "cardTitle": "Navegador na nuvem",
-    "close": "Fechar navegador ao vivo",
-    "documentTitle": "Navegador ao vivo",
-    "fitAction": "Ajustar",
-    "fitWindow": "Ajustar navegador à janela",
-    "iframeTitle": "Navegador ao vivo: {{name}}",
+    "close": "Fechar navegador na nuvem",
+    "documentTitle": "Navegador na nuvem",
     "notFound": "Navegador não encontrado",
     "open": "Abrir o navegador {{name}}",
     "openAction": "Abrir",
@@ -1389,6 +1392,13 @@
       "startDescription": "Ao iniciar, o perfil de login e o armazenamento salvos são restaurados quando disponíveis, e as abas salvas são reabertas quando possível.",
       "starting": "Iniciando…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} está trabalhando",
+      "handBack": "Devolver",
+      "handBackMessage": "Terminei no navegador. Pode continuar.",
+      "memberInControl": "Você está no controle",
+      "takeOver": "Assumir"
+    },
     "reclaimHint_one": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minuto de inatividade.",
     "reclaimHint_many": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
     "reclaimHint_other": "O {{assistantName}} mantém este navegador enquanto o painel está aberto e o recupera após {{formattedCount}} minutos de inatividade.",
@@ -1397,7 +1407,7 @@
       "starting": "Iniciando",
       "stopped": "Parado"
     },
-    "title": "Navegador ao vivo",
+    "title": "Navegador na nuvem",
     "unavailable": {
       "description": "Este navegador não pertence a este chat ou foi removido.",
       "title": "Navegador indisponível"
@@ -4060,6 +4070,15 @@
     "title": "Documento",
     "useNamed": "Usar {{title}}"
   },
+  "featureGuide": {
+    "close": "Fechar guia de novidades",
+    "dismiss": "Entendi",
+    "label": "Novidades",
+    "next": "Próximo",
+    "preview": "Prévia",
+    "previous": "Anterior",
+    "tryPrompt": "Experimentar esta tarefa"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -5420,6 +5439,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "Conectar",
         "connectAccount": "Conectar conta",
+        "creditsBalance": "{{value}} créditos {{provider}}",
+        "creditsLabel": "Créditos {{provider}}",
+        "creditsUnlimited": "Ilimitados",
         "disconnectAccount": "Desconectar conta",
         "disconnectDescription": "Isso remove a conta do Okou. Sua assinatura com o provedor não será cancelada.",
         "disconnecting": "Desconectando…",

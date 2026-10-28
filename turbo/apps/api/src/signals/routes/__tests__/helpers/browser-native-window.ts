@@ -21,6 +21,7 @@ export function createNativeWindowProvider(context: TestContext) {
     readonly windowErrors: Map<string, string>;
     beforeCreateReply?: (target: NativeTarget) => Promise<void> | void;
     beforeWindowReply?: (targetId: string) => Promise<void> | void;
+    onSocketClose?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
     createReply: "reply" | "disconnect" | "withhold";
@@ -41,6 +42,9 @@ export function createNativeWindowProvider(context: TestContext) {
     params: record(string(), zUnknown()),
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
+    client.addEventListener("close", () => {
+      state.onSocketClose?.();
+    });
     const reply = async (event: { readonly data: unknown }) => {
       const command = commandSchema.parse(JSON.parse(String(event.data)));
       let result: unknown;

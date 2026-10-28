@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.47](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.46...runner-supervisor-v0.20.47) (2026-10-28)
+
+
+### Bug Fixes
+
+* **pi:** classify opaque codex bad requests ([#43630](https://github.com/okou-ai/okou/issues/43630)) ([fd956ef](https://github.com/okou-ai/okou/commit/fd956ef072e4118fdc15a39febed4e286f479b5d))
+
 ## [0.20.46](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.45...runner-supervisor-v0.20.46) (2026-10-28)
 
 ## [0.20.45](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.44...runner-supervisor-v0.20.45) (2026-10-27)

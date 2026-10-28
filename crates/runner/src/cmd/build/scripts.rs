@@ -9,6 +9,8 @@ use nix::fcntl::Flock;
 
 use crate::error::{RunnerError, RunnerResult};
 
+use super::cleanup::TemplateCleanup;
+
 #[cfg(test)]
 mod process_tests;
 
@@ -84,6 +86,10 @@ impl RootfsScripts {
 
     pub(super) fn retain_template_lock(&mut self, guard: Arc<Flock<File>>) {
         self.template_lock = Some(guard);
+    }
+
+    pub(super) fn cleanup(&self) -> TemplateCleanup {
+        TemplateCleanup::new(Arc::clone(&self.primary_lock))
     }
 
     pub(super) async fn path(&mut self) -> RunnerResult<RootfsScriptDir> {

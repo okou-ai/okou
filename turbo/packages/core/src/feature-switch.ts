@@ -46,6 +46,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.FeatureGuides]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feature guides",
+    description: "Show published product updates once per user and edition.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OnboardingSourceOutcomes]: {
     maintainer: "ming@okou.ai",
     displayName: "Onboarding source outcomes",
@@ -132,6 +138,20 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
     enabled: false,
   },
+  [FeatureSwitchKey.CloudBrowserPanel]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Cloud browser panel",
+    description:
+      "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.ChatThreadTimeline]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Chat timeline",
+    description:
+      "Separate chat history by day, with Today shown only alongside Yesterday.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -191,14 +211,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description:
       "Create native web forms that apply user-provided values to exact managed Browser controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.BrowserCdpViewer]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Okou browser viewer",
-    description:
-      "Use Okou's interactive browser viewer in conversations and standalone browser pages",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -396,7 +408,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Show Codex and Claude Code personal subscription usage in the account menu and on the Me page.",
+      "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

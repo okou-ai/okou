@@ -27,11 +27,6 @@
       "owner": "createChatThread$"
     },
     {
-      "id": "TX-0096",
-      "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
-      "owner": "createChatThread$/thread"
-    },
-    {
       "id": "TX-0097",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "deleteChatThreadContent$"
@@ -65,11 +60,6 @@
       "id": "TX-0236",
       "file": "turbo/apps/api/src/signals/services/run-built-in-admission.service.ts",
       "owner": "startRunBuiltInAdmission$"
-    },
-    {
-      "id": "TX-0247",
-      "file": "turbo/apps/api/src/signals/services/slack-installation-write.service.ts",
-      "owner": "commitSlackInstallation$"
     },
     {
       "id": "TX-0248",

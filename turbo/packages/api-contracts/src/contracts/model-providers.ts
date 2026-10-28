@@ -412,6 +412,14 @@ export const modelProviderResponseSchema = object({
   subscriptionResetPeriod: string().nullable().optional(),
   subscriptionNextResetAt: string().nullable().optional(),
   subscriptionUsage: modelProviderSubscriptionUsageSchema.nullable().optional(),
+  // Live provider credits, separate from Okou credits and reset entitlements.
+  // Omitted when unsupported or disabled; null means the live read is unavailable.
+  subscriptionCredits: object({
+    balance: number().nonnegative().nullable(),
+    unlimited: boolean(),
+  })
+    .nullable()
+    .optional(),
   // A provider capability, independent of the currently available reset credits.
   subscriptionResetSupported: boolean().optional(),
   subscriptionResetCredits: number().int().nonnegative().nullable().optional(),

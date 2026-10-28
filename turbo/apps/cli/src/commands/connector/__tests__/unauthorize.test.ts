@@ -17,13 +17,40 @@ const API = "http://localhost:3000";
 const AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const OTHER_AGENT_ID = "550e8400-e29b-41d4-a716-446655440099";
 
+const agentCases = [
+  {
+    name: "the current Agent by default",
+    runAgentId: AGENT_ID,
+    agentId: AGENT_ID,
+    args: [],
+  },
+  {
+    name: "the current Agent explicitly",
+    runAgentId: AGENT_ID,
+    agentId: AGENT_ID,
+    args: ["--agent", AGENT_ID],
+  },
+  {
+    name: "another Agent during a run",
+    runAgentId: AGENT_ID,
+    agentId: OTHER_AGENT_ID,
+    args: ["--agent", OTHER_AGENT_ID],
+  },
+  {
+    name: "the selected Agent outside a run",
+    runAgentId: undefined,
+    agentId: OTHER_AGENT_ID,
+    args: ["--agent", OTHER_AGENT_ID],
+  },
+];
+
 function agentResponse(agentId: string) {
   return {
     agentId,
     isDefaultAgent: false,
     ownerId: "user-1",
     description: null,
-    displayName: "Research",
+    displayName: agentId === AGENT_ID ? "Research" : "Other Research",
     sound: null,
     avatarUrl: null,
     visibility: "private",
@@ -66,77 +93,94 @@ describe("connector unauthorize", () => {
     vi.unstubAllEnvs();
   });
 
-  it("removes a builtin connector from the current run's Agent without an approval link", async () => {
-    let enabled = ["querit", "github"];
-    const updates: unknown[] = [];
-    server.use(
-      http.get(`${API}/api/agents/${AGENT_ID}/user-connectors`, () => {
-        return HttpResponse.json({ enabledConnectorSlugs: enabled });
-      }),
-      http.put(
-        `${API}/api/agents/${AGENT_ID}/user-connectors`,
-        async ({ request }) => {
-          updates.push(await request.json());
-          enabled = ["github"];
+  it.each(agentCases)(
+    "removes a builtin connector for $name without an approval link",
+    async ({ runAgentId, agentId, args }) => {
+      vi.stubEnv("OKOU_AGENT_ID", runAgentId);
+      let enabled = ["querit", "github"];
+      const updates: unknown[] = [];
+      server.use(
+        stubAgent(agentId),
+        http.get(`${API}/api/agents/${agentId}/user-connectors`, () => {
           return HttpResponse.json({ enabledConnectorSlugs: enabled });
-        },
-      ),
-    );
+        }),
+        http.put(
+          `${API}/api/agents/${agentId}/user-connectors`,
+          async ({ request }) => {
+            updates.push(await request.json());
+            enabled = ["github"];
+            return HttpResponse.json({ enabledConnectorSlugs: enabled });
+          },
+        ),
+      );
 
-    await unauthorizeCommand.parseAsync(["node", "okou", "querit"]);
+      await unauthorizeCommand.parseAsync([
+        "node",
+        "okou",
+        "builtin:querit",
+        ...args,
+      ]);
 
-    expect(updates).toEqual([
-      { enabledConnectorSlugs: ["querit"], operation: "remove" },
-    ]);
-    const output = log.mock.calls.flat().join("\n");
-    expect(output).toContain(
-      "✓ Unauthorized Querit (querit) for Agent Research",
-    );
-    expect(output).toContain("New runs no longer receive this connector");
-    expect(output).not.toContain("http");
-  });
+      expect(updates).toEqual([
+        { enabledConnectorSlugs: ["querit"], operation: "remove" },
+      ]);
+      const output = log.mock.calls.flat().join("\n");
+      const agentLabel = agentId === AGENT_ID ? "Research" : "Other Research";
+      expect(output).toContain(
+        `✓ Unauthorized Querit (querit) for Agent ${agentLabel}`,
+      );
+      expect(output).toContain("New runs no longer receive this connector");
+      expect(output).not.toContain("http");
+    },
+  );
 
-  it("removes a custom connector grant by display name and prints JSON", async () => {
-    const connector = customMcpConnector();
-    const updates: unknown[] = [];
-    server.use(
-      http.get(`${API}/api/agents/${AGENT_ID}/custom-connectors`, () => {
-        return HttpResponse.json({
+  it.each(agentCases)(
+    "removes a custom connector grant for $name by display name and prints JSON",
+    async ({ runAgentId, agentId, args }) => {
+      vi.stubEnv("OKOU_AGENT_ID", runAgentId);
+      const connector = customMcpConnector();
+      const updates: unknown[] = [];
+      server.use(
+        stubAgent(agentId),
+        http.get(`${API}/api/agents/${agentId}/custom-connectors`, () => {
+          return HttpResponse.json({
+            grants: [{ customConnectorId: connector.id, permissionNames: [] }],
+          });
+        }),
+        http.put(
+          `${API}/api/agents/${agentId}/custom-connectors`,
+          async ({ request }) => {
+            updates.push(await request.json());
+            return HttpResponse.json({ grants: [] });
+          },
+        ),
+      );
+
+      await unauthorizeCommand.parseAsync([
+        "node",
+        "okou",
+        connector.displayName,
+        "--json",
+        ...args,
+      ]);
+
+      expect(updates).toEqual([
+        {
           grants: [{ customConnectorId: connector.id, permissionNames: [] }],
-        });
-      }),
-      http.put(
-        `${API}/api/agents/${AGENT_ID}/custom-connectors`,
-        async ({ request }) => {
-          updates.push(await request.json());
-          return HttpResponse.json({ grants: [] });
+          operation: "remove",
         },
-      ),
-    );
-
-    await unauthorizeCommand.parseAsync([
-      "node",
-      "okou",
-      connector.displayName,
-      "--json",
-    ]);
-
-    expect(updates).toEqual([
-      {
-        grants: [{ customConnectorId: connector.id, permissionNames: [] }],
-        operation: "remove",
-      },
-    ]);
-    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
-      agentId: AGENT_ID,
-      connector: {
-        kind: "custom",
-        customConnectorId: connector.id,
-        slug: connector.slug,
-      },
-      result: "unauthorized",
-    });
-  });
+      ]);
+      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
+        agentId,
+        connector: {
+          kind: "custom",
+          customConnectorId: connector.id,
+          slug: connector.slug,
+        },
+        result: "unauthorized",
+      });
+    },
+  );
 
   it("reports a connector that is not authorized without writing", async () => {
     let writes = 0;
@@ -199,33 +243,22 @@ describe("connector unauthorize", () => {
     expect(requests).toEqual([]);
   });
 
-  it("narrows the selected Agent outside a run", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
-    const updates: unknown[] = [];
+  it("rejects an empty explicit Agent instead of revoking from the current Agent", async () => {
+    const requests: string[] = [];
     server.use(
-      stubAgent(OTHER_AGENT_ID),
-      http.get(`${API}/api/agents/${OTHER_AGENT_ID}/user-connectors`, () => {
-        return HttpResponse.json({ enabledConnectorSlugs: ["querit"] });
+      http.all("*", ({ request }) => {
+        requests.push(request.url);
+        return HttpResponse.json({ error: "Unexpected" }, { status: 500 });
       }),
-      http.put(
-        `${API}/api/agents/${OTHER_AGENT_ID}/user-connectors`,
-        async ({ request }) => {
-          updates.push(await request.json());
-          return HttpResponse.json({ enabledConnectorSlugs: [] });
-        },
-      ),
     );
 
-    await unauthorizeCommand.parseAsync([
-      "node",
-      "okou",
-      "builtin:querit",
-      "--agent",
-      OTHER_AGENT_ID,
-    ]);
+    await expect(
+      unauthorizeCommand.parseAsync(["node", "okou", "querit", "--agent", ""]),
+    ).rejects.toThrow("process.exit called");
 
-    expect(updates).toEqual([
-      { enabledConnectorSlugs: ["querit"], operation: "remove" },
-    ]);
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "Specify the Agent with --agent <id>",
+    );
+    expect(requests).toEqual([]);
   });
 });

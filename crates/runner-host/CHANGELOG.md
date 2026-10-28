@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.9.45](https://github.com/okou-ai/okou/compare/runner-host-v0.9.44...runner-host-v0.9.45) (2026-10-28)
+
 ## [0.9.44](https://github.com/okou-ai/okou/compare/runner-host-v0.9.43...runner-host-v0.9.44) (2026-10-28)
 
 

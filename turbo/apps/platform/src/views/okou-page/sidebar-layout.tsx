@@ -530,12 +530,19 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
   const pwaNavigation = useGet(pwaNavigationEnabled$);
+  const unified = useGet(unifiedChatWorkspace$);
 
   return withChatScrollLayout(
     <div
       ref={shellDocumentAttributesRef}
       data-slot="app-shell"
-      className="box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0 md:bg-sidebar"
+      className={cn(
+        "box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0",
+        // The unified workspace's ground is the whole rail, not a thin frame,
+        // so it sits one stop deeper than the sidebar fill: gray-100 is a
+        // visible step below the white sheet without weighing it down.
+        unified ? "md:bg-gray-100" : "md:bg-sidebar",
+      )}
       data-gradient-color-themes={
         paletteColorTheme === undefined ? undefined : true
       }

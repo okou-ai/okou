@@ -9,6 +9,82 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.20.3](https://github.com/okou-ai/okou/compare/api-v2.20.2...api-v2.20.3) (2026-10-28)
+
+
+### Refactoring
+
+* **api:** localize terminal delivery callback registration ([#43673](https://github.com/okou-ai/okou/issues/43673)) ([4f09fc6](https://github.com/okou-ai/okou/commit/4f09fc66da38072bd2ac33ed9fd8fad319ec8dcf))
+* **browser:** roll out okou viewer and remove feature switch ([#43671](https://github.com/okou-ai/okou/issues/43671)) ([97e8ca7](https://github.com/okou-ai/okou/commit/97e8ca71f4d6ac0cd015de589eb5d8179a96bddd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.2
+    * @okouai/db bumped to 2.8.6
+    * @okouai/pi-agent-runtime bumped to 1.51.12
+
+## [2.20.2](https://github.com/okou-ai/okou/compare/api-v2.20.1...api-v2.20.2) (2026-10-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.15.0
+    * @okouai/core bumped to 8.796.1
+    * @okouai/db bumped to 2.8.5
+    * @okouai/pi-agent-runtime bumped to 1.51.11
+
+## [2.20.1](https://github.com/okou-ai/okou/compare/api-v2.20.0...api-v2.20.1) (2026-10-28)
+
+
+### Refactoring
+
+* **api:** localize run lifecycle marker projection ([#43648](https://github.com/okou-ai/okou/issues/43648)) ([ef3665e](https://github.com/okou-ai/okou/commit/ef3665e53ac8a554cc6adb05d2b68889aaccf163))
+* **api:** remove tx-0096 connector selection savepoints ([#43658](https://github.com/okou-ai/okou/issues/43658)) ([c2e2d6b](https://github.com/okou-ai/okou/commit/c2e2d6b3ccbb70874d8d8fd5f27b413cb810cfd9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.796.0
+    * @okouai/db bumped to 2.8.4
+    * @okouai/pi-agent-runtime bumped to 1.51.10
+
+## [2.20.0](https://github.com/okou-ai/okou/compare/api-v2.19.0...api-v2.20.0) (2026-10-28)
+
+
+### Features
+
+* **mcp:** support catalog-owned static request headers ([#43626](https://github.com/okou-ai/okou/issues/43626)) ([e145904](https://github.com/okou-ai/okou/commit/e145904a15970ef0072eff84c990cf2cc24f6212))
+
+
+### Bug Fixes
+
+* **pi:** classify opaque codex bad requests ([#43630](https://github.com/okou-ai/okou/issues/43630)) ([fd956ef](https://github.com/okou-ai/okou/commit/fd956ef072e4118fdc15a39febed4e286f479b5d))
+
+
+### Refactoring
+
+* **api:** localize assistant error event projection ([#43627](https://github.com/okou-ai/okou/issues/43627)) ([3f000f0](https://github.com/okou-ai/okou/commit/3f000f09ced4ddb2e0a49ea5926879a6e8ac2909))
+* **api:** localize delivery source callback resolution ([#43637](https://github.com/okou-ai/okou/issues/43637)) ([31fc0ce](https://github.com/okou-ai/okou/commit/31fc0ce9d7647c18af2296ef0700fd365276fd4d))
+* **api:** publish workflow copies atomically ([#43614](https://github.com/okou-ai/okou/issues/43614)) ([16d2f50](https://github.com/okou-ai/okou/commit/16d2f50d68f7013791dbb75000d0f4428fdb7d38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.2
+    * @okouai/connectors bumped to 3.18.0
+    * @okouai/core bumped to 8.795.1
+    * @okouai/db bumped to 2.8.3
+    * @okouai/pi-agent-runtime bumped to 1.51.9
+
 ## [2.19.0](https://github.com/okou-ai/okou/compare/api-v2.18.0...api-v2.19.0) (2026-10-28)
 
 

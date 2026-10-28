@@ -1349,12 +1349,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "輸入網址",
+    "blankPage": {
+      "description": "{{assistantName}} 工作時會在這裡開啟網頁。你也可以在上方輸入網址自行瀏覽。",
+      "title": "尚未開啟網頁"
+    },
+    "blankTabTitle": "新分頁",
     "cardTitle": "雲端瀏覽器",
-    "close": "關閉實時瀏覽器",
-    "documentTitle": "實時瀏覽器",
-    "fitAction": "適應",
-    "fitWindow": "讓瀏覽器適應視窗",
-    "iframeTitle": "實時瀏覽器：{{name}}",
+    "close": "關閉雲端瀏覽器",
+    "documentTitle": "雲端瀏覽器",
     "notFound": "未找到瀏覽器",
     "open": "開啟 {{name}} 瀏覽器",
     "openAction": "開啟",
@@ -1365,6 +1368,13 @@
       "startDescription": "啟動時會盡量恢復已儲存的登入資訊和儲存資料，並重新開啟此前儲存的標籤頁。",
       "starting": "正在啟動…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} 正在工作",
+      "handBack": "交還",
+      "handBackMessage": "我在瀏覽器裡操作完了，請繼續。",
+      "memberInControl": "你正在操作",
+      "takeOver": "接管"
+    },
     "reclaimHint_one": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
     "reclaimHint_other": "面板開啟期間，{{assistantName}} 會一直保留這個瀏覽器，閒置 {{formattedCount}} 分鐘後回收。",
     "status": {
@@ -1372,7 +1382,7 @@
       "starting": "啟動中",
       "stopped": "已停止"
     },
-    "title": "實時瀏覽器",
+    "title": "雲端瀏覽器",
     "unavailable": {
       "description": "這個瀏覽器不屬於當前對話，或者已被刪除。",
       "title": "瀏覽器不可用"
@@ -3991,6 +4001,15 @@
     "title": "文件",
     "useNamed": "使用 {{title}}"
   },
+  "featureGuide": {
+    "close": "關閉新功能指南",
+    "dismiss": "知道了",
+    "label": "新功能",
+    "next": "下一步",
+    "preview": "預覽",
+    "previous": "上一步",
+    "tryPrompt": "試試這個任務"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
@@ -5344,6 +5363,9 @@
         "codexTitle": "ChatGPT (Codex)",
         "connect": "連接",
         "connectAccount": "連接帳號",
+        "creditsBalance": "{{value}} {{provider}} 積分",
+        "creditsLabel": "{{provider}} 積分",
+        "creditsUnlimited": "無上限",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從 Okou 中移除，但不會取消你在該服務商處的訂閱。",
         "disconnecting": "正在斷開…",
