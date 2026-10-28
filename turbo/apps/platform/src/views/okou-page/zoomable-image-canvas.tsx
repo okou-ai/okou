@@ -8,7 +8,8 @@ import {
   type ZoomableImageCanvasSignals,
 } from "../../signals/zoomable-image-canvas.ts";
 
-const IMAGE_ZOOM_STEP = 0.15;
+const IMAGE_BUTTON_ZOOM_STEP = 0.15;
+const IMAGE_WHEEL_ZOOM_STEP = 0.05;
 const IMAGE_DOUBLE_CLICK_ZOOM_STEP = 1;
 
 function isImageWheelZoomActivated(keys: string[]): boolean {
@@ -96,7 +97,7 @@ export function ZoomableArtifactImageCanvas({
       trackPadPanning={{ disabled: false }}
       wheel={{
         activationKeys: isImageWheelZoomActivated,
-        step: IMAGE_ZOOM_STEP,
+        step: IMAGE_WHEEL_ZOOM_STEP,
       }}
     >
       {({ zoomIn, zoomOut }) => {
@@ -106,10 +107,10 @@ export function ZoomableArtifactImageCanvas({
           resetZoom,
           zoom,
           zoomIn: () => {
-            zoomIn(IMAGE_ZOOM_STEP, 0);
+            zoomIn(IMAGE_BUTTON_ZOOM_STEP, 0);
           },
           zoomOut: () => {
-            zoomOut(IMAGE_ZOOM_STEP, 0);
+            zoomOut(IMAGE_BUTTON_ZOOM_STEP, 0);
           },
         };
 
