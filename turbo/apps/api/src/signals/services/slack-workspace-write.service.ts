@@ -101,7 +101,7 @@ const commitSlackWorkspaceConnection$ = command(
     signal: AbortSignal,
   ): Promise<SlackWorkspaceConnectionResult> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0248; new non-billing transactions are prohibited.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: workspace binding and its permanent Slack reward receipt, credit lot and wallet increment must commit together; single-statement alternative: either reward uniqueness conflict needs savepoint recovery and a later ineligible-receipt write while preserving the successful connection.
     const result = await db.transaction(
       async (tx): Promise<SlackWorkspaceConnectionResult> => {
         const [inserted] = await tx
