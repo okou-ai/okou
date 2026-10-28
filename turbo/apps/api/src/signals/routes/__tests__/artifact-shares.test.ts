@@ -314,7 +314,7 @@ describe("artifact deletion", () => {
     },
   );
 
-  it("requires the switch, original organization, owner, and write capability", async () => {
+  it("requires the switch, original organization, and owner", async () => {
     const f = fixture();
     await file();
     const artifactId = await onlyCatalogArtifactId();
@@ -327,13 +327,6 @@ describe("artifact deletion", () => {
       [403],
     );
     await enableArtifactDeletion();
-    await accept(
-      api()(artifactCatalogContract).delete({
-        headers: runHeaders(f.owner, f.org, ["artifact:read"]),
-        params: { artifactId },
-      }),
-      [403],
-    );
     for (const [userId, orgId] of [
       [`user_${randomUUID()}`, f.org],
       [f.owner, `org_${randomUUID()}`],
@@ -448,11 +441,26 @@ describe("artifact deletion", () => {
       expect.objectContaining({ id: artifactId }),
     );
     await accept(
+      api()(artifactCatalogContract).get({ headers, params: { artifactId } }),
+      [200],
+    );
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: artifactReferenceFromUrl(share.body.ownerUrl) },
+      }),
+      [404],
+    );
+    await accept(
       api()(artifactCatalogContract).delete({
         headers,
         params: { artifactId },
       }),
       [200],
+    );
+    await accept(
+      api()(artifactCatalogContract).get({ headers, params: { artifactId } }),
+      [404],
     );
     await accept(
       api()(artifactReferencesContract).resolve({

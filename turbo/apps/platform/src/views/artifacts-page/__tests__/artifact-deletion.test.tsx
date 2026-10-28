@@ -5,6 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -114,6 +115,7 @@ test("the deletion switch hides artifact management actions", async () => {
 test.each([false, true])(
   "preview cancellation and deletion keep the catalog consistent (sidebar=%s)",
   async (sidebar) => {
+    const user = userEvent.setup();
     mockPreview();
     let removed = false;
     const deleting = context.mocks.deferred<void>();
@@ -158,6 +160,15 @@ test.each([false, true])(
         screen.getByTestId("artifact-sidebar");
       expect(getButtonByName("Delete", preview)).toHaveFocus();
     });
+    await user.keyboard("{Enter}");
+    const keyboardDialog = await screen.findByRole("dialog", {
+      name: `Delete ${report.title}?`,
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(keyboardDialog).not.toBeInTheDocument();
+      expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
+    });
     const dialog = await openDeletion();
     click(getButtonByName("Delete", dialog));
     await deleting.promise;
@@ -165,6 +176,10 @@ test.each([false, true])(
       return expect(getButtonByName("Deleting…", dialog)).toBeDisabled();
     });
     expect(getButtonByName("Cancel", dialog)).toBeDisabled();
+    expect(queryButtonByName("Close", dialog)).toBeUndefined();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeInTheDocument();
+    expect(currentPreview()).toBeInTheDocument();
     expect(
       document.querySelector(`button[data-artifact-id="${report.id}"]`),
     ).toBeInTheDocument();
@@ -179,7 +194,7 @@ test.each([false, true])(
   },
 );
 
-test("a failed deletion keeps confirmation open and can be retried", async () => {
+test("a failed deletion can be cancelled, reopened, and retried", async () => {
   mockPreview();
   let removed = false;
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
@@ -213,7 +228,18 @@ test("a failed deletion keeps confirmation open and can be retried", async () =>
     document.querySelector(`button[data-artifact-id="${report.id}"]`),
   ).toBeInTheDocument();
   expect(getButtonByName("Delete", dialog)).toBeEnabled();
-  click(getButtonByName("Delete", dialog));
+  click(getButtonByName("Cancel", dialog));
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
+  });
+  const preview = currentPreview()!;
+  click(getButtonByName("Close", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+  const reopened = await openDeletion();
+  click(getButtonByName("Delete", reopened));
   await expect(
     screen.findByText("No artifacts found"),
   ).resolves.toBeInTheDocument();

@@ -1367,12 +1367,10 @@ const fileDetail$ = command(
         previewImageUrl: runUploadedFiles.previewImageUrl,
       })
       .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.id, fileId),
-          isNull(runUploadedFiles.deletedAt),
-        ),
-      )
+      // An unfinished withdrawal must remain manageable after a failed delete.
+      // The owning catalog read hides completed deletions. Fresh owner access
+      // and new share requests independently honor the file tombstone.
+      .where(eq(runUploadedFiles.id, fileId))
       .limit(1);
     signal.throwIfAborted();
     if (!row?.url) {
