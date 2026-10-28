@@ -9,7 +9,7 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { and, count, exists, sql, type SQL } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import {
   chatThreadEventInsertPlan,
   chatThreadServiceTierFromCodex,
@@ -29,7 +29,11 @@ import {
   type CopyAccountSnapshot,
 } from "./workflow-copy-account-publication";
 import { copySourcePublicationClauses } from "./workflow-copy-source-publication";
-import { copyInsertSql } from "./workflow-copy-write-sql";
+import {
+  copyInsertSql,
+  copyInsertManySql,
+  copyInsertInputAlias,
+} from "./workflow-copy-write-sql";
 
 export const copyPublicationResultSchema = object({
   source_valid: boolean(),
@@ -42,9 +46,11 @@ function copiedAutomationClauses(
   args: WorkflowCopyPublicationArgs,
   accounts: readonly CopyAccountSnapshot[],
 ) {
-  const clauses: SQL[] = [];
-  const checks: SQL[] = [];
-  for (const [index, source] of args.source.sourceAutomations.entries()) {
+  if (args.source.sourceAutomations.length === 0) {
+    return { clauses: [], checks: [] };
+  }
+  const hooks: Readonly<Record<string, unknown>>[] = [];
+  const rows = args.source.sourceAutomations.map((source) => {
     const automation = copyAutomationPlan(args, source);
     const id = randomUUID();
     const slug = workflowAutomationAccountConnectorSlug(source.eventType);
@@ -69,42 +75,32 @@ function copiedAutomationClauses(
           account.slug,
         )
       : null;
-    const eventConfig =
-      slug === "google-forms" &&
-      account !== undefined &&
-      account.connectorId !== null
-        ? sql`CASE WHEN ${sql.param(source.eventConfig, workflowAutomations.eventConfig)}::jsonb ->> 'connectorId' IS DISTINCT FROM ${account.connectorId}
-          THEN jsonb_set(${sql.param(source.eventConfig, workflowAutomations.eventConfig)}::jsonb, '{connectorId}', to_jsonb(${account.connectorId}::text))
-          ELSE ${sql.param(source.eventConfig, workflowAutomations.eventConfig)}::jsonb END`
-        : projected && "eventConfig" in projected
-          ? projected.eventConfig
-          : source.eventConfig;
-    const values = {
-      ...automation.values,
-      id,
-      ...projected,
-      eventConfig,
-      ...(slug === "google-forms" && account !== undefined
-        ? { eventConnectorId: account.connectorId }
-        : {}),
-    };
-    const name = sql.identifier("copied_automation_" + index);
-    clauses.push(
-      sql`${name} AS (${copyInsertSql(workflowAutomations, values, copied, workflowAutomations.id)})`,
-    );
-    checks.push(sql`(SELECT ${count()} FROM ${name}) = 1`);
     if (automation.webhook) {
-      const hook = sql.identifier("copied_hook_" + index);
-      clauses.push(
-        sql`${hook} AS (${copyInsertSql(
-          workflowWebhookAutomations,
-          { ...automation.webhook, automationId: id },
-          exists(sql`(SELECT 1 FROM ${name})`),
-          workflowWebhookAutomations.automationId,
-        )})`,
-      );
-      checks.push(sql`(SELECT ${count()} FROM ${hook}) = 1`);
+      hooks.push({ ...automation.webhook, automationId: id });
     }
+    return { ...automation.values, id, eventConnectorId: null, ...projected };
+  });
+  const input = alias(workflowAutomations, copyInsertInputAlias);
+  const eventConfig = sql`CASE WHEN ${input.eventType} = 'google-forms-response-submitted'
+    AND ${input.eventConnectorId} IS NOT NULL
+    AND ${input.eventConfig}->>'connectorId' IS DISTINCT FROM ${input.eventConnectorId}::text
+    THEN jsonb_set(${input.eventConfig}, '{connectorId}', to_jsonb(${input.eventConnectorId}::text))
+    ELSE ${input.eventConfig} END`;
+  const clauses = [
+    sql`copied_automations AS (${copyInsertManySql(workflowAutomations, rows, copied, workflowAutomations.id, { eventConfig })})`,
+  ];
+  const complete = sql`(SELECT ${count()} FROM copied_automations) = ${rows.length}`;
+  const checks = [complete];
+  if (hooks.length > 0) {
+    clauses.push(
+      sql`copied_hooks AS (${copyInsertManySql(
+        workflowWebhookAutomations,
+        hooks,
+        sql`${copied} AND (${complete})`,
+        workflowWebhookAutomations.automationId,
+      )})`,
+    );
+    checks.push(sql`(SELECT ${count()} FROM copied_hooks) = ${hooks.length}`);
   }
   return { clauses, checks };
 }

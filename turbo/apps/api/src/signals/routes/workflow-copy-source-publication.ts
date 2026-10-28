@@ -111,9 +111,13 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
       and(
         inArray(
           workflowWebhookAutomations.automationId,
-          args.source.sourceAutomations.map((row) => {
-            return row.id;
-          }),
+          query.select({
+            id: sql`copy_expected_automation.id`.mapWith(
+              workflowAutomations.id,
+            ),
+          })
+            .from(sql`jsonb_to_recordset(${JSON.stringify(args.source.observation.automations)}::jsonb)
+              AS copy_expected_automation(id uuid, xmin text)`),
         ),
         after("copy_automations_locked"),
       ),
