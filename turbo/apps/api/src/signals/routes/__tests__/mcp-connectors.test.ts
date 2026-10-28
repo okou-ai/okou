@@ -514,7 +514,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       dcrTokenEndpointAuthMethod: "client_secret_basic",
     },
   ] as const)(
-    "reauthorizes the pinned $registration account with $dcrTokenEndpointAuthMethod and offline access registered=$offlineAccessRegistered",
+    "reauthorizes the parent-resource $registration account with $dcrTokenEndpointAuthMethod and offline access registered=$offlineAccessRegistered",
     async ({
       registration,
       offlineAccessRegistered,
@@ -527,9 +527,11 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
+      const resource = "https://automatic-mcp.example.test";
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
         dcrTokenEndpointAuthMethod,
+        resource,
         initialExpiresIn: 3600,
         authorizationCodeScopes: ["read", "read", "read admin offline_access"],
         authorizationServerScopes: offlineAccessRegistered
@@ -563,6 +565,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         { intent: "add", displayName: "Pinned account" },
       );
       const firstState = stateFromAuthorizationUrl(firstAuthorization);
+      expect(new URL(firstAuthorization).searchParams.get("resource")).toBe(
+        resource,
+      );
       const firstCallback =
         await connectors.completeCustomConnectorOAuth2Callback({
           code: "pinned-account-code",
@@ -572,6 +577,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       expect(firstCallback.headers.get("location")).toBe(
         "https://app.okou.ai/connectors/custom/callback/success",
       );
+      expect(provider.tokenBodies[0]?.get("resource")).toBe(resource);
       const secondAuthorization = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
@@ -681,6 +687,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       );
 
       const authorizationUrl = new URL(response.body.authorizationUrl);
+      expect(authorizationUrl.searchParams.get("resource")).toBe(resource);
       expect(authorizationUrl.searchParams.get("scope")).toBe(
         "read admin offline_access",
       );
@@ -701,6 +708,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       expect(reauthorizationCallback.headers.get("location")).toBe(
         "https://app.okou.ai/connectors/custom/callback/success",
       );
+      expect(provider.tokenBodies.at(-1)?.get("resource")).toBe(resource);
       const upgradedAccounts = await connectors.listCustomConnectorAccounts(
         actor,
         connector.id,
@@ -720,6 +728,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         registration,
         dcrTokenEndpointAuthMethod,
         endpoint: provider.endpoint,
+        resource,
         issuer: "https://alternate-issuer.example.test",
         dcrClientId: "replacement-dcr-client",
         dcrClientSecret: "replacement-dcr-secret",
@@ -769,6 +778,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         });
       expect(changedCallback.headers.get("location")).toBe(
         "https://app.okou.ai/connectors/custom/callback/success",
+      );
+      expect(replacementProvider.tokenBodies[0]?.get("resource")).toBe(
+        resource,
       );
       await useAccount();
       expect(replacementProvider.tokenBodies.at(-1)?.get("grant_type")).toBe(

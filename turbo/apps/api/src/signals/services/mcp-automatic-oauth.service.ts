@@ -4,6 +4,7 @@ import {
   OAuthError,
   RegistrationRejectedError,
   StreamableHTTPClientTransport,
+  checkResourceAllowed,
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
   exchangeAuthorization,
@@ -430,11 +431,11 @@ async function discoverAutomaticOAuthAuthority(
       );
     },
   );
-  const expectedResource = resourceUrlFromServerUrl(args.endpoint).href;
-  const resource = new URL(
-    requiredHttpsUrl(protectedResourceMetadata.resource, "protected resource"),
-  ).href;
-  if (resource !== expectedResource) {
+  const resource = requiredHttpsUrl(
+    protectedResourceMetadata.resource,
+    "protected resource",
+  );
+  if (!mcpAutomaticOAuthResourceMatchesEndpoint(resource, args.endpoint)) {
     throw new McpAutomaticOAuthError(
       { kind: "incompatible", reason: "invalid-discovery-metadata" },
       "MCP OAuth protected resource metadata does not match the connector endpoint",
@@ -528,7 +529,34 @@ export function mcpAutomaticOAuthResourceMatchesEndpoint(
   resource: string,
   endpoint: string,
 ): boolean {
-  return resource === resourceUrlFromServerUrl(endpoint).href;
+  const resourceUrl = new URL(resource);
+  return (
+    resourceUrl.protocol === "https:" &&
+    resourceUrl.username === "" &&
+    resourceUrl.password === "" &&
+    !resourceUrl.href.includes("#") &&
+    checkResourceAllowed({
+      requestedResource: resourceUrlFromServerUrl(endpoint),
+      configuredResource: resourceUrl,
+    })
+  );
+}
+
+function assertAutomaticOAuthAuthorityMatchesBinding(
+  authority: DiscoveredAutomaticOAuthAuthority,
+  binding: McpAutomaticOAuthBinding,
+): void {
+  // URL-equivalent metadata cannot replace the resource sent for this grant.
+  if (
+    new URL(authority.resource).href !== new URL(binding.resource).href ||
+    authority.issuer !== binding.issuer ||
+    authority.tokenEndpoint !== binding.tokenEndpoint
+  ) {
+    throw new McpAutomaticOAuthError(
+      { kind: "binding-drift", reason: "binding-drift" },
+      "MCP OAuth token authority changed",
+    );
+  }
 }
 
 function supportedTokenAuthMethods(
@@ -907,7 +935,7 @@ export async function prepareMcpAutomaticOAuthReauthorization(
         redirectUrl: args.redirectUri,
         scope: requestedScope,
         state: args.state,
-        resource: new URL(authority.resource),
+        resource: authority.resource,
       });
     },
   );
@@ -1011,7 +1039,7 @@ export async function prepareMcpAutomaticOAuthAuthorization(
         redirectUrl: args.redirectUri,
         scope: authority.scope,
         state: args.state,
-        resource: new URL(authority.resource),
+        resource: authority.resource,
       });
     },
   );
@@ -1149,7 +1177,7 @@ export async function exchangeMcpAutomaticOAuthCode(
       iss: args.iss,
       codeVerifier: args.codeVerifier,
       redirectUri: args.redirectUri,
-      resource: new URL(args.context.resource),
+      resource: args.context.resource,
       fetchFn: fetchWithSignal(signal),
     }),
     signal,
@@ -1224,6 +1252,7 @@ export async function refreshMcpAutomaticOAuthToken(
     args.endpoint,
     signal,
   );
+  assertAutomaticOAuthAuthorityMatchesBinding(authority, args.binding);
   const clientInformation = await boundClientInformation({
     ...args,
     context: boundClientContext(args.binding),
@@ -1241,7 +1270,7 @@ export async function refreshMcpAutomaticOAuthToken(
       }),
       clientInformation,
       refreshToken: args.refreshToken,
-      resource: new URL(authority.resource),
+      resource: args.binding.resource,
       fetchFn: fetchWithSignal(signal),
     }),
     signal,
