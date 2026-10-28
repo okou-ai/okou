@@ -3991,6 +3991,15 @@
     "title": "文档",
     "useNamed": "使用 {{title}}"
   },
+  "featureGuide": {
+    "close": "关闭新功能指南",
+    "dismiss": "知道了",
+    "label": "新功能",
+    "next": "下一步",
+    "preview": "预览",
+    "previous": "上一步",
+    "tryPrompt": "试试这个任务"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",

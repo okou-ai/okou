@@ -4060,6 +4060,15 @@
     "title": "Documento",
     "useNamed": "Usar {{title}}"
   },
+  "featureGuide": {
+    "close": "Cerrar guía de novedades",
+    "dismiss": "Entendido",
+    "label": "Novedades",
+    "next": "Siguiente",
+    "preview": "Vista previa",
+    "previous": "Anterior",
+    "tryPrompt": "Probar esta tarea"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",

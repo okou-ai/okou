@@ -4006,6 +4006,15 @@
     "title": "Dokument",
     "useNamed": "{{title}} verwenden"
   },
+  "featureGuide": {
+    "close": "Funktionsübersicht schließen",
+    "dismiss": "Verstanden",
+    "label": "Was gibt es Neues?",
+    "next": "Weiter",
+    "preview": "Vorschau",
+    "previous": "Zurück",
+    "tryPrompt": "Diese Aufgabe ausprobieren"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",

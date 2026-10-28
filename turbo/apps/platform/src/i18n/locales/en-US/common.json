@@ -4004,6 +4004,15 @@
     "title": "Document",
     "useNamed": "Use {{title}}"
   },
+  "featureGuide": {
+    "close": "Close feature guide",
+    "dismiss": "Got it",
+    "label": "What's new",
+    "next": "Next",
+    "preview": "Preview",
+    "previous": "Previous",
+    "tryPrompt": "Try this task"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
