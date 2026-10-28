@@ -33,7 +33,7 @@ async fn workflow_documents_use_private_transport_and_propagate_helper_failure()
     let workflow_id = uuid::Uuid::new_v4();
     for body in ["Unicode 正文\n'$(never execute)'", ""] {
         context.storage_manifest = Some(
-            serde_json::from_value(serde_json::json!({
+            crate::executor::tests::support::downloaded_workflow_manifest(serde_json::json!({
                 "storageMounts": [],
                 "workflowSkills": [{
                     "workflowId": workflow_id,

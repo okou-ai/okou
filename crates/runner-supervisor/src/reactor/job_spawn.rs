@@ -163,6 +163,11 @@ impl ExecutorInvocation {
         let exec_config_for_panic = Arc::clone(&exec_config);
         let cancel_for_outcome = cancellation.any();
         let cancellation_for_executor = cancellation.clone();
+        let initial_storage_fingerprints = context
+            .storage_manifest
+            .as_ref()
+            .map(StorageFingerprints::from_manifest)
+            .unwrap_or_default();
 
         // Inner spawn isolates panics: if execute_job panics, the outer task
         // still reports completion and releases budget.
@@ -242,6 +247,7 @@ impl ExecutorInvocation {
                 ExecutorPhaseOutcome {
                     outcome: executor::ExecuteOutcome {
                         failure: Some(failure),
+                        storage_fingerprints: initial_storage_fingerprints,
                         sandbox_reuse_disposition: executor::SandboxReuseDisposition::default(),
                         sandbox: None,
                         source_ip: String::new(),
@@ -273,7 +279,6 @@ struct FinalizationPhase {
     rootfs_hash: String,
     reuse_key: Option<String>,
     cli_agent_session_id: Option<String>,
-    storage_fingerprints: StorageFingerprints,
     device_rate_limits: Option<sandbox::DeviceRateLimits>,
     guest_timezone_intent: GuestTimezoneIntent,
     factory: SharedFactory,
@@ -307,7 +312,6 @@ impl FinalizationPhase {
             rootfs_hash,
             reuse_key,
             cli_agent_session_id,
-            storage_fingerprints,
             device_rate_limits,
             guest_timezone_intent,
             factory,
@@ -347,6 +351,7 @@ impl FinalizationPhase {
         let executor::ExecuteOutcome {
             failure: _,
             sandbox_reuse_disposition,
+            storage_fingerprints,
             sandbox,
             source_ip,
             network_log_session,
@@ -550,12 +555,6 @@ pub(super) async fn run_job(
     };
     let job_device_rate_limits = params.device_rate_limits.clone();
 
-    let storage_fingerprints = context
-        .storage_manifest
-        .as_ref()
-        .map(crate::storage_fingerprints::StorageFingerprints::from_manifest)
-        .unwrap_or_default();
-
     let provider = Arc::clone(&ctx.provider);
     let runner_id = ctx.runner_id.clone();
     let exec_config = Arc::clone(&ctx.exec_config);
@@ -641,7 +640,6 @@ pub(super) async fn run_job(
         rootfs_hash,
         reuse_key,
         cli_agent_session_id,
-        storage_fingerprints,
         device_rate_limits: job_device_rate_limits,
         guest_timezone_intent,
         factory,
@@ -938,7 +936,6 @@ mod tests {
                     .into(),
                 reuse_key: Some(session_id.into()),
                 cli_agent_session_id: Some(session_id.into()),
-                storage_fingerprints: StorageFingerprints::default(),
                 guest_timezone_intent: GuestTimezoneIntent::Unknown,
                 device_rate_limits: None,
                 factory: Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new())),
@@ -978,6 +975,7 @@ mod tests {
         ExecutorPhaseOutcome {
             outcome: executor::ExecuteOutcome {
                 failure: None,
+                storage_fingerprints: StorageFingerprints::default(),
                 sandbox_reuse_disposition: executor::SandboxReuseDisposition::Eligible(
                     executor::SandboxReuseTerminal::Success,
                 ),
@@ -1000,6 +998,7 @@ mod tests {
         ExecutorPhaseOutcome {
             outcome: executor::ExecuteOutcome {
                 failure: None,
+                storage_fingerprints: StorageFingerprints::default(),
                 sandbox_reuse_disposition: executor::SandboxReuseDisposition::default(),
                 sandbox: None,
                 source_ip: String::new(),

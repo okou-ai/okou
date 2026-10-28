@@ -25,7 +25,9 @@ const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
 mod workflow_documents;
+mod workflow_download;
 pub(super) use workflow_documents::apply_workflow_skill_documents;
+pub(super) use workflow_download::resolve_workflow_documents;
 
 pub(super) struct AgentInstructionSource<'a> {
     path: String,
