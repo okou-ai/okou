@@ -97,6 +97,7 @@ import {
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import { reconcileBrowserUserActions$ } from "./browser-user-actions.service";
+import { browserCapturePublication } from "./browser-capture-publication";
 
 const RECONCILE_BATCH_SIZE = 20;
 const BROWSER_RESIZE_TIMEOUT_MS = 30_000;
@@ -970,6 +971,8 @@ const publishBrowserScreenshot$ = command(
       readonly shared?: {
         readonly providerSessionId: string;
         readonly window: BrowserWindowContext;
+        readonly previousValue: string | null;
+        readonly capturedAt: Date;
       };
       readonly objectKey: string;
       readonly url: string;
@@ -980,6 +983,12 @@ const publishBrowserScreenshot$ = command(
     const db = set(writeDb$);
     if (shared) {
       const t = browserSessionScreenshots;
+      const publication = browserCapturePublication({
+        value: t.objectKey,
+        updatedAt: t.updatedAt,
+        previousValue: shared.previousValue,
+        capturedAt: shared.capturedAt,
+      });
       const guard = and(
         eq(browserOwnerWindows.chatThreadId, browser.chatThreadId),
         eq(browserOwnerWindows.instanceId, shared.window.instanceId),
@@ -1006,12 +1015,14 @@ const publishBrowserScreenshot$ = command(
           chatThreadId: browserOwnerWindows.chatThreadId,
           objectKey: sql`${artifact.key}`.mapWith(t.objectKey).as("object_key"),
           url: sql`${artifact.url}`.mapWith(t.url).as("url"),
-          createdAt: sql`${sql.param(nowDate(), t.createdAt)}::timestamp`
-            .mapWith(t.createdAt)
-            .as("created_at"),
-          updatedAt: sql`${sql.param(nowDate(), t.updatedAt)}::timestamp`
-            .mapWith(t.updatedAt)
-            .as("updated_at"),
+          createdAt:
+            sql`${sql.param(shared.capturedAt, t.createdAt)}::timestamp`
+              .mapWith(t.createdAt)
+              .as("created_at"),
+          updatedAt:
+            sql`${sql.param(shared.capturedAt, t.updatedAt)}::timestamp`
+              .mapWith(t.updatedAt)
+              .as("updated_at"),
         })
         .from(browserOwnerWindows)
         .where(guard);
@@ -1023,13 +1034,16 @@ const publishBrowserScreenshot$ = command(
           set: {
             objectKey: artifact.key,
             url: artifact.url,
-            updatedAt: nowDate(),
+            updatedAt: publication.updatedAt,
           },
-          setWhere: exists(
-            new QueryBuilder()
-              .select({ id: browserOwnerWindows.chatThreadId })
-              .from(browserOwnerWindows)
-              .where(guard),
+          setWhere: and(
+            exists(
+              new QueryBuilder()
+                .select({ id: browserOwnerWindows.chatThreadId })
+                .from(browserOwnerWindows)
+                .where(guard),
+            ),
+            publication.canReplace,
           ),
         })
         .returning({ id: t.chatThreadId });
@@ -1086,6 +1100,17 @@ export const captureAndStoreBrowserScreenshot$ = command(
         if (!instance) {
           return;
         }
+        let previousValue: string | null = null;
+        if (shared) {
+          const [previous] = await get(db$)
+            .select({ objectKey: browserSessionScreenshots.objectKey })
+            .from(browserSessionScreenshots)
+            .where(
+              eq(browserSessionScreenshots.chatThreadId, browser.chatThreadId),
+            );
+          signal.throwIfAborted();
+          previousValue = previous?.objectKey ?? null;
+        }
         const provider = await getBrowserUseSession(
           instance.providerSessionId,
           signal,
@@ -1104,6 +1129,7 @@ export const captureAndStoreBrowserScreenshot$ = command(
           shared?.window.primaryWindowId,
         );
         signal.throwIfAborted();
+        const capturedAt = nowDate();
         stage = "upload";
         const artifact = await set(
           allocateUploadedArtifact$,
@@ -1143,7 +1169,7 @@ export const captureAndStoreBrowserScreenshot$ = command(
         }
         const saved = await set(publishBrowserScreenshot$, {
           browser,
-          shared,
+          shared: shared ? { ...shared, previousValue, capturedAt } : undefined,
           objectKey: artifact.key,
           url: artifact.url,
         });

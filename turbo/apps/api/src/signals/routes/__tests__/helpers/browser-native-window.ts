@@ -16,6 +16,10 @@ export function createNativeWindowProvider(context: TestContext) {
   const state: {
     readonly url: string;
     readonly targets: Map<string, NativeTarget>;
+    readonly contentsSizes: Map<
+      number,
+      { readonly width: number; readonly height: number }
+    >;
     readonly created: NativeTarget[];
     readonly closed: string[];
     readonly windowIds: number[];
@@ -34,6 +38,7 @@ export function createNativeWindowProvider(context: TestContext) {
   } = {
     url,
     targets: new Map(),
+    contentsSizes: new Map(),
     created: [],
     closed: [],
     windowIds: [],
@@ -59,6 +64,7 @@ export function createNativeWindowProvider(context: TestContext) {
         };
         nextWindowId = Math.max(nextWindowId, target.windowId + 1);
         state.targets.set(target.targetId, target);
+        state.contentsSizes.set(target.windowId, { width: 800, height: 600 });
         state.created.push(target);
         await state.beforeCreateReply?.(target);
         context.signal.throwIfAborted();
@@ -86,6 +92,12 @@ export function createNativeWindowProvider(context: TestContext) {
           return;
         }
         result = { windowId: target.windowId };
+      } else if (command.method === "Browser.setContentsSize") {
+        state.contentsSizes.set(Number(command.params.windowId), {
+          width: Number(command.params.width),
+          height: Number(command.params.height),
+        });
+        result = {};
       } else if (command.method === "Target.getTargets") {
         result = {
           targetInfos: [...state.targets.values()].map((target) => {

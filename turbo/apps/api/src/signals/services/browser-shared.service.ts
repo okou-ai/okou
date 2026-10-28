@@ -10,14 +10,13 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   notExists,
   or,
   sql,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { array, string } from "zod";
 import {
-  BROWSER_INITIAL_SCREEN_HEIGHT,
   BROWSER_MAX_SCREEN_HEIGHT,
   BROWSER_MIN_SCREEN_HEIGHT,
   BROWSER_PROVIDER_TIMEOUT_MINUTES,
@@ -46,6 +45,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { settleIncludingAbort } from "../utils";
+import { browserCapturePublication } from "./browser-capture-publication";
 import {
   ORG_SENTINEL_USER_ID,
   userFeatureSwitchOverridesFromRows,
@@ -56,6 +56,7 @@ import {
   type BrowserPublicAuthority,
 } from "./browser-owner.service";
 import { allocateBrowserOwnerProfile$ } from "./browser-owner-profile.service";
+import { createBrowserOwnerWindow$ } from "./browser-owner-window.service";
 import {
   ensureBrowserCapacity$,
   loadBrowserScreenshotUrl$,
@@ -65,22 +66,15 @@ import {
 import {
   BrowserUseProviderError,
   browserUseWindowExists,
-  closeBrowserUseWindow,
-  createBrowserUseWindow,
   createBrowserUseSession,
   findBrowserUseSession,
-  initialBrowserUseWindow,
   listBrowserUseTabUrls,
   resizeBrowserUseSession,
   resolveBrowserUseViewerConnection,
-  restoreBrowserUseWindowTabUrls,
   stopBrowserUseSessionForCleanup,
   type BrowserUseSession,
 } from "./browser-use.service";
-import {
-  decryptPersistentSecretValue,
-  encryptPersistentSecretValue,
-} from "./crypto.utils";
+import { encryptPersistentSecretValue } from "./crypto.utils";
 
 interface SharedBrowserInput {
   readonly orgId: string;
@@ -153,7 +147,7 @@ async function provider<T>(
 function lifetime(
   owner: BrowserPublicAuthority,
   profile: Profile,
-  window: Window,
+  window: Pick<Window, "primaryWindowId">,
 ) {
   return and(
     eq(windows.chatThreadId, owner.chatThreadId),
@@ -181,7 +175,7 @@ function lifetime(
 function liveSharedWindow(
   owner: BrowserPublicAuthority,
   profile: Profile,
-  window: Window,
+  window: Pick<Window, "primaryWindowId">,
 ) {
   return and(
     lifetime(owner, profile, window),
@@ -270,7 +264,7 @@ function presentation(
 
 const saveSharedSnapshot$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly owner: BrowserPublicAuthority;
       readonly profile: Profile;
@@ -280,18 +274,29 @@ const saveSharedSnapshot$ = command(
     signal: AbortSignal,
   ) => {
     const { owner, profile, window, cdpUrl } = args;
+    const t = browserSessionTabSnapshots;
+    const [previous] = await get(db$)
+      .select({ encryptedTabUrls: t.encryptedTabUrls })
+      .from(t)
+      .where(eq(t.chatThreadId, owner.chatThreadId));
+    signal.throwIfAborted();
     const urls = await provider(
       listBrowserUseTabUrls(cdpUrl, signal, window.primaryWindowId),
       signal,
     );
+    const capturedAt = nowDate();
     const encryptedTabUrls = await encryptPersistentSecretValue(
       JSON.stringify(urls),
       { userId: owner.userId },
     );
     signal.throwIfAborted();
     const db = set(writeDb$);
-    const at = nowDate();
-    const t = browserSessionTabSnapshots;
+    const publication = browserCapturePublication({
+      value: t.encryptedTabUrls,
+      updatedAt: t.updatedAt,
+      previousValue: previous?.encryptedTabUrls ?? null,
+      capturedAt,
+    });
     const source = new QueryBuilder()
       .select({
         chatThreadId: windows.chatThreadId,
@@ -301,10 +306,10 @@ const saveSharedSnapshot$ = command(
         ownerProfileId: sql`${profile.id}::uuid`
           .mapWith(profiles.id)
           .as("owner_profile_id"),
-        createdAt: sql`${sql.param(at, t.createdAt)}::timestamp`
+        createdAt: sql`${sql.param(capturedAt, t.createdAt)}::timestamp`
           .mapWith(t.createdAt)
           .as("created_at"),
-        updatedAt: sql`${sql.param(at, t.updatedAt)}::timestamp`
+        updatedAt: sql`${sql.param(capturedAt, t.updatedAt)}::timestamp`
           .mapWith(t.updatedAt)
           .as("updated_at"),
       })
@@ -315,12 +320,23 @@ const saveSharedSnapshot$ = command(
       .select(source)
       .onConflictDoUpdate({
         target: t.chatThreadId,
-        set: { encryptedTabUrls, ownerProfileId: profile.id, updatedAt: at },
-        setWhere: exists(
-          new QueryBuilder()
-            .select({ id: windows.chatThreadId })
-            .from(windows)
-            .where(lifetime(owner, profile, window)),
+        set: {
+          encryptedTabUrls,
+          ownerProfileId: profile.id,
+          updatedAt: publication.updatedAt,
+        },
+        setWhere: and(
+          exists(
+            new QueryBuilder()
+              .select({ id: windows.chatThreadId })
+              .from(windows)
+              .where(lifetime(owner, profile, window)),
+          ),
+          or(
+            isNull(t.ownerProfileId),
+            ne(t.ownerProfileId, profile.id),
+            publication.canReplace,
+          ),
         ),
       });
   },
@@ -537,143 +553,36 @@ interface AdmitSharedWindow {
   readonly profile: Profile;
   readonly cdpUrl: string;
   readonly initial: boolean;
-  readonly encryptedTabUrls: string | null;
 }
-async function restoreSharedWindow(
-  args: AdmitSharedWindow,
-  candidate: Awaited<ReturnType<typeof createBrowserUseWindow>>,
-  signal: AbortSignal,
-) {
-  if (!args.encryptedTabUrls) {
-    return;
-  }
-  const decoded = await decryptPersistentSecretValue(args.encryptedTabUrls, {
-    userId: args.owner.userId,
-  });
-  signal.throwIfAborted();
-  const urls = array(string().max(8192)).max(50).parse(JSON.parse(decoded));
-  await provider(
-    restoreBrowserUseWindowTabUrls(args.cdpUrl, candidate, urls, signal),
-    signal,
-  );
-}
-// Once a native candidate is known, retain or clean it before honoring request cancellation.
-const settleSharedWindowAdmission$ = command(
-  async (
-    { set },
-    input: {
-      readonly args: AdmitSharedWindow;
-      readonly candidate: Awaited<ReturnType<typeof createBrowserUseWindow>>;
-    },
-  ): Promise<Result<Window>> => {
-    const { args, candidate } = input;
-    const signal = AbortSignal.timeout(15_000);
-    let uncertain = false;
-    const admission = await settleIncludingAbort(
-      (async () => {
-        await provider(
-          resizeBrowserUseSession(
-            args.cdpUrl,
-            BROWSER_SCREEN_WIDTH,
-            BROWSER_INITIAL_SCREEN_HEIGHT,
-            signal,
-            candidate.primaryWindowId,
-          ),
-          signal,
-        );
-        await restoreSharedWindow(args, candidate, signal);
-        uncertain = true;
-        const result = await set(
-          controlBrowserOwner$,
-          args.owner,
-          {
-            kind: "admit",
-            instanceId: args.profile.instanceId,
-            primaryWindowId: candidate.primaryWindowId,
-          },
-          signal,
-        );
-        uncertain = false;
-        return result;
-      })(),
-    );
-    const db = set(writeDb$);
-    if (!uncertain) {
-      const [referenced] = await db
-        .select({ id: windows.chatThreadId })
-        .from(windows)
-        .where(
-          and(
-            eq(windows.instanceId, args.profile.instanceId),
-            eq(windows.primaryWindowId, candidate.primaryWindowId),
-          ),
-        );
-      if (!referenced) {
-        await provider(
-          closeBrowserUseWindow(
-            args.cdpUrl,
-            candidate.primaryWindowId,
-            AbortSignal.timeout(15_000),
-          ),
-          signal,
-        );
-      }
-    }
-    signal.throwIfAborted();
-    if (!admission.ok) {
-      throw admission.error;
-    }
-    if (
-      admission.value.outcome !== "accepted" ||
-      admission.value.instance.window?.primaryWindowId !==
-        candidate.primaryWindowId
-    ) {
-      return unavailable();
-    }
-    const [window] = await db
-      .select()
-      .from(windows)
-      .where(
-        and(
-          eq(windows.chatThreadId, args.owner.chatThreadId),
-          eq(windows.instanceId, args.profile.instanceId),
-        ),
-      );
-    signal.throwIfAborted();
-    return window ? { kind: "ok", value: window } : unavailable();
-  },
-);
 
 const admitSharedWindow$ = command(
   async (
-    { set },
+    { get, set },
     args: AdmitSharedWindow,
     signal: AbortSignal,
   ): Promise<Result<Window>> => {
-    const creation = await settleIncludingAbort(
-      args.initial
-        ? initialBrowserUseWindow(args.cdpUrl, signal)
-        : createBrowserUseWindow(args.cdpUrl, signal),
+    const result = await set(
+      createBrowserOwnerWindow$,
+      {
+        owner: args.owner,
+        instanceId: args.profile.instanceId,
+        cdpUrl: args.cdpUrl,
+        initial: args.initial,
+      },
+      signal,
     );
-    if (signal.aborted) {
-      if (creation.ok) {
-        await set(settleSharedWindowAdmission$, {
-          args,
-          candidate: creation.value,
-        });
-      }
-      signal.throwIfAborted();
-    }
-    if (!creation.ok) {
-      signal.throwIfAborted();
-      throw creation.error;
-    }
-    const result = await set(settleSharedWindowAdmission$, {
-      args,
-      candidate: creation.value,
-    });
     signal.throwIfAborted();
-    return result;
+    if (result.outcome !== "accepted" || !result.instance.window) {
+      return unavailable();
+    }
+    const [window] = await get(db$)
+      .select()
+      .from(windows)
+      .where(
+        liveSharedWindow(args.owner, args.profile, result.instance.window),
+      );
+    signal.throwIfAborted();
+    return window ? { kind: "ok", value: window } : unavailable();
   },
 );
 
@@ -912,9 +821,6 @@ function sharedBrowserView(context$: ReturnType<typeof sharedBrowserContext>) {
         profile: getTableColumns(profiles),
         window: getTableColumns(windows),
         browser: getTableColumns(browserSessions),
-        snapshot: {
-          encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls,
-        },
       })
       .from(profiles)
       .leftJoin(
@@ -931,13 +837,6 @@ function sharedBrowserView(context$: ReturnType<typeof sharedBrowserContext>) {
           eq(browserSessions.orgId, ctx.owner.orgId),
           eq(browserSessions.userId, ctx.owner.userId),
           eq(browserSessions.status, "active"),
-        ),
-      )
-      .leftJoin(
-        browserSessionTabSnapshots,
-        and(
-          eq(browserSessionTabSnapshots.chatThreadId, ctx.owner.chatThreadId),
-          eq(browserSessionTabSnapshots.ownerProfileId, profiles.id),
         ),
       )
       .where(
@@ -1110,7 +1009,6 @@ function sharedBrowserOpen(
               profile,
               cdpUrl: session.cdpUrl,
               initial: created,
-              encryptedTabUrls: view?.snapshot?.encryptedTabUrls ?? null,
               window:
                 view?.profile.instanceId === profile.instanceId
                   ? view.window

@@ -720,8 +720,8 @@ export async function createBrowserUseWindow(
       });
     }),
   );
-  signal.throwIfAborted();
   if (!created.ok) {
+    signal.throwIfAborted();
     if (created.error instanceof BrowserUseProviderError) {
       throw created.error;
     }
@@ -731,6 +731,8 @@ export async function createBrowserUseWindow(
       "Managed Browser window creation could not be confirmed",
     );
   }
+  // The admission owner must receive a known candidate before it can honor
+  // caller cancellation and finish exact candidate cleanup.
   return created.value;
 }
 
@@ -788,43 +790,6 @@ export async function browserUseWindowExists(
         throw lookupFailure;
       }
       return false;
-    });
-  });
-}
-
-/** A moved page belongs to its current window; never close it as a loser. */
-export async function closeBrowserUseWindowCandidate(
-  cdpUrl: string,
-  candidate: BrowserUseWindowCandidate,
-  signal: AbortSignal,
-): Promise<void> {
-  await withBrowserUseCdpDeadline(signal, async (deadline) => {
-    await withBrowserUseCdpSocket(cdpUrl, deadline, async (socket) => {
-      const sequence = { next: 1 };
-      if (
-        (await nativeWindowForTarget(
-          socket,
-          candidate.targetId,
-          sequence,
-          deadline,
-        )) !== candidate.primaryWindowId
-      ) {
-        return;
-      }
-      const closed = object({ success: boolean() }).parse(
-        await sendBrowserUseCdpCommand(
-          socket,
-          {
-            id: sequence.next++,
-            method: "Target.closeTarget",
-            params: { targetId: candidate.targetId },
-          },
-          deadline,
-        ),
-      );
-      if (!closed.success) {
-        throw new Error("The Browser window candidate could not be closed");
-      }
     });
   });
 }
