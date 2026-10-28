@@ -4,7 +4,7 @@ import { i18n } from "../../i18n/index.ts";
 
 import { ArtifactCatalogPage } from "../../views/artifacts-page/artifact-catalog-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
-import { setArtifactDeleteTarget$ } from "./artifact-deletion.ts";
+import { setArtifactDeleteTarget$ } from "../artifact-deletion.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";

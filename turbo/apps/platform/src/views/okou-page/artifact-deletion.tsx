@@ -1,4 +1,6 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
+import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   Button,
@@ -20,9 +22,12 @@ import { useTranslation } from "react-i18next";
 import {
   artifactDeleteTarget$,
   artifactDeletionFinalFocus$,
+  artifactPreviewDeletionScope,
   deleteCatalogArtifact$,
   setArtifactDeleteTarget$,
-} from "../../signals/artifacts-page/artifact-deletion.ts";
+  type PreviewArtifactDeletion,
+} from "../../signals/artifact-deletion.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
@@ -74,13 +79,139 @@ export function ArtifactDeleteMenu({
 }
 
 export function ArtifactDeleteDialog() {
-  const { t } = useTranslation();
   const target = useGet(artifactDeleteTarget$);
   const finalFocus = useSet(artifactDeletionFinalFocus$);
   const setTarget = useSet(setArtifactDeleteTarget$);
   const [deletion, deleteArtifact] = useLoadableSet(deleteCatalogArtifact$);
   const pageSignal = useGet(pageSignal$);
-  const busy = deletion.state === "loading";
+  return (
+    <ArtifactDeleteConfirmation
+      target={target}
+      busy={deletion.state === "loading"}
+      finalFocus={finalFocus}
+      onCancel={() => {
+        setTarget(null);
+      }}
+      onConfirm={() => {
+        detach(
+          deleteArtifact(pageSignal),
+          Reason.DomCallback,
+          "delete artifact",
+        );
+      }}
+    />
+  );
+}
+
+/** Owner-only action shared by catalog and chat previews, next to Share. */
+export function ArtifactDeleteButton({
+  artifactId,
+  surface,
+  onDeleted,
+  iconSize = 16,
+}: {
+  readonly artifactId?: string;
+  readonly surface: "dialog" | "sidebar";
+  readonly onDeleted: () => void;
+  readonly iconSize?: number;
+}) {
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
+  const scope = artifactPreviewDeletionScope(surface);
+  const mountRef = useSet(scope.mountRef$);
+  const session = useGet(scope.session$);
+  if (!enabled || !artifactId) {
+    return null;
+  }
+  return (
+    <span
+      key={artifactId}
+      ref={mountRef}
+      data-artifact-id={artifactId}
+      className="inline-flex"
+    >
+      {session?.artifactId === artifactId && (
+        <PreviewArtifactDeleteButton
+          key={artifactId}
+          session={session}
+          onDeleted={onDeleted}
+          iconSize={iconSize}
+        />
+      )}
+    </span>
+  );
+}
+
+function PreviewArtifactDeleteButton({
+  session,
+  onDeleted,
+  iconSize,
+}: {
+  readonly session: PreviewArtifactDeletion;
+  readonly onDeleted: () => void;
+  readonly iconSize: number;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const detail = useLoadable(session.detail$);
+  const target = useGet(session.target$);
+  const requestDeletion = useSet(session.request$);
+  const close = useSet(session.close$);
+  const finalFocus = useSet(session.finalFocus$);
+  const [deletion, confirm] = useLoadableSet(session.confirm$);
+  return (
+    <>
+      {detail.state === "hasData" && detail.data && (
+        <Button
+          showTooltip
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          className="shrink-0 text-muted-foreground hover:text-destructive"
+          aria-label={t(($) => {
+            return $.artifacts.deletion.delete;
+          })}
+          onClick={(event) => {
+            detach(
+              requestDeletion(event.currentTarget, pageSignal),
+              Reason.DomCallback,
+              "confirm artifact deletion",
+            );
+          }}
+        >
+          <Trash2 size={iconSize} />
+        </Button>
+      )}
+      <ArtifactDeleteConfirmation
+        target={target}
+        busy={deletion.state === "loading"}
+        finalFocus={finalFocus}
+        onCancel={close}
+        onConfirm={() => {
+          detach(
+            confirm(onDeleted, pageSignal),
+            Reason.DomCallback,
+            "delete preview artifact",
+          );
+        }}
+      />
+    </>
+  );
+}
+
+function ArtifactDeleteConfirmation({
+  target,
+  busy,
+  finalFocus,
+  onCancel,
+  onConfirm,
+}: {
+  readonly target: ArtifactSummary | null;
+  readonly busy: boolean;
+  readonly finalFocus: () => HTMLElement | boolean | null;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
   return (
     <Dialog
       open={target !== null}
@@ -88,7 +219,7 @@ export function ArtifactDeleteDialog() {
         if (busy) {
           details.cancel();
         } else if (!open) {
-          setTarget(null);
+          onCancel();
         }
       }}
     >
@@ -131,17 +262,7 @@ export function ArtifactDeleteDialog() {
               return $.artifacts.deletion.cancel;
             })}
           </DialogClose>
-          <Button
-            variant="destructive"
-            disabled={busy}
-            onClick={() => {
-              detach(
-                deleteArtifact(pageSignal),
-                Reason.DomCallback,
-                "delete artifact",
-              );
-            }}
-          >
+          <Button variant="destructive" disabled={busy} onClick={onConfirm}>
             {busy && <Loader2 size={14} className="animate-spin" />}
             {busy
               ? t(($) => {

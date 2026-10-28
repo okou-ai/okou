@@ -426,6 +426,9 @@ describe("GET /api/artifacts/catalog", () => {
     );
     const after = await chat.listArtifactCatalog(owner.actor);
     expect(after.artifacts).toStrictEqual([]);
+    await expect(
+      chat.listThreadArtifacts(owner.actor, uploaded.threadId),
+    ).resolves.toStrictEqual({ runs: [] });
   });
 
   it.each(["hosted-site", "presentation-html"] as const)(
@@ -433,13 +436,18 @@ describe("GET /api/artifacts/catalog", () => {
     async (artifactKind) => {
       const owner = await catalogActor("Hosted artifact deletion");
       const site = `artifact-delete-${randomUUID().slice(0, 8)}`;
-      await publishHostedSite({ owner, site, artifactKind });
+      const first = await publishHostedSite({ owner, site, artifactKind });
       const published = await publishHostedSite({ owner, site, artifactKind });
       const before = await chat.listArtifactCatalog(owner.actor);
       const entry = before.artifacts[0];
       if (!entry) {
         throw new Error("Expected a published catalog artifact");
       }
+      const firstThreadArtifacts = await chat.listThreadArtifacts(
+        owner.actor,
+        first.threadId,
+      );
+      expect(firstThreadArtifacts.runs[0]?.files[0]?.artifactId).toBe(entry.id);
       const headers = authenticateSharedThread(owner.actor);
       const client = setupApp({
         context,
@@ -465,6 +473,12 @@ describe("GET /api/artifacts/catalog", () => {
       );
       const after = await chat.listArtifactCatalog(owner.actor);
       expect(after.artifacts).toStrictEqual([]);
+      await expect(
+        chat.listThreadArtifacts(owner.actor, published.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
+      await expect(
+        chat.listThreadArtifacts(owner.actor, first.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
       await accept(
         client(artifactCatalogContract).get({
           headers,
@@ -492,6 +506,12 @@ describe("GET /api/artifacts/catalog", () => {
       expect(restored.artifacts).toStrictEqual([
         expect.objectContaining({ id: entry.id }),
       ]);
+      await expect(
+        chat.listThreadArtifacts(owner.actor, first.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
+      await expect(
+        chat.listThreadArtifacts(owner.actor, published.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
       const detail = await chat.getArtifactCatalogEntry(owner.actor, entry.id);
       expect(detail).toMatchObject({ site: { deploymentVersion: 3 } });
       authenticateSharedThread(owner.actor);

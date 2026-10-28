@@ -1,3 +1,4 @@
+import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   isAutoSelectedModel,
@@ -1435,6 +1436,7 @@ function createArtifacts(threadId: string) {
     chatThreadId: threadId,
   });
   const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+    get(artifactCatalogRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
     const result = await accept(client.list({ params: { threadId } }), [200]);
     return result.body.runs;

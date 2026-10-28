@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, exists, inArray, or } from "drizzle-orm";
+import { and, eq, exists, inArray, lte, or, sql } from "drizzle-orm";
 import type { ArtifactCatalogDeleteRouteResponse } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   artifacts,
@@ -46,6 +46,7 @@ const withdrawHostedArtifact$ = command(
   async (
     { get, set },
     { artifact, ...owner }: ArtifactWithdrawalArgs,
+    deletedAt: Date,
     signal: AbortSignal,
   ): Promise<Exclude<
     ArtifactCatalogDeleteRouteResponse,
@@ -92,9 +93,41 @@ const withdrawHostedArtifact$ = command(
     if (result.status === "config_error") {
       return notConfigured(result.message);
     }
-    return result.status === "not_found"
-      ? notFound("Artifact not found")
-      : null;
+    if (result.status === "not_found") {
+      return notFound("Artifact not found");
+    }
+    await set(
+      tombstoneHostedArtifactFiles$,
+      { ...owner, siteId },
+      deletedAt,
+      signal,
+    );
+    return null;
+  },
+);
+
+const tombstoneHostedArtifactFiles$ = command(
+  async (
+    { set },
+    owner: ArtifactOwner & { readonly siteId: string },
+    deletedAt: Date,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    await db
+      .update(runUploadedFiles)
+      .set({ deletedAt })
+      .where(
+        and(
+          eq(runUploadedFiles.userId, owner.userId),
+          eq(runUploadedFiles.orgId, owner.orgId),
+          eq(sql`${runUploadedFiles.metadata}->>'siteId'`, owner.siteId),
+          // A new publication can restore the catalog, but cannot restore removed
+          // publications in older chats. Never tombstone a concurrently newer run.
+          lte(runUploadedFiles.createdAt, deletedAt),
+        ),
+      );
+    signal.throwIfAborted();
   },
 );
 
@@ -197,7 +230,12 @@ export const deleteArtifact$ = command(
       artifact.kind === "hosted-site" || artifact.kind === "presentation";
     const withdrawal = { artifact, userId: args.userId, orgId: args.orgId };
     if (hosted && !artifact.deletedAt) {
-      const denied = await set(withdrawHostedArtifact$, withdrawal, signal);
+      const denied = await set(
+        withdrawHostedArtifact$,
+        withdrawal,
+        deletedAt,
+        signal,
+      );
       signal.throwIfAborted();
       if (denied) {
         return denied;

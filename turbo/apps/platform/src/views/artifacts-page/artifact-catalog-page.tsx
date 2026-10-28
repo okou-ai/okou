@@ -50,11 +50,11 @@ import { classifyChatAttachment } from "../../signals/chat-page/parse-body-block
 import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
 import { officeFilePreviewKind } from "../okou-page/office-file-preview.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { artifactCatalogViewportRef$ } from "../../signals/artifacts-page/artifact-deletion.ts";
+import { artifactCatalogViewportRef$ } from "../../signals/artifact-deletion.ts";
 import {
   ArtifactDeleteDialog,
   ArtifactDeleteMenu,
-} from "./artifact-deletion.tsx";
+} from "../okou-page/artifact-deletion.tsx";
 
 // Distance from the bottom of the scroll container at which the next page is
 // requested. The signal layer deduplicates repeated requests for one cursor.
@@ -460,13 +460,11 @@ function ArtifactSharedConversationList({
 export function ArtifactCatalogGrid({
   artifacts,
   onOpen,
-  canDelete = false,
   scrollToArtifactId = null,
   appearance = "card",
 }: {
   readonly artifacts: readonly CatalogArtifact[];
   readonly onOpen: (artifactId: string) => void;
-  readonly canDelete?: boolean;
   readonly scrollToArtifactId?: string | null;
   readonly appearance?: ArtifactCatalogAppearance;
 }) {
@@ -481,19 +479,13 @@ export function ArtifactCatalogGrid({
     >
       {artifacts.map((artifact) => {
         return (
-          <div key={artifact.id} className="relative min-w-0">
-            <ArtifactCatalogCard
-              artifact={artifact}
-              onOpen={onOpen}
-              scrollIntoView={artifact.id === scrollToArtifactId}
-              appearance={appearance}
-            />
-            {canDelete && (
-              <div className="absolute right-2 top-2">
-                <ArtifactDeleteMenu artifact={artifact} />
-              </div>
-            )}
-          </div>
+          <ArtifactCatalogCard
+            key={artifact.id}
+            artifact={artifact}
+            onOpen={onOpen}
+            scrollIntoView={artifact.id === scrollToArtifactId}
+            appearance={appearance}
+          />
         );
       })}
     </div>
@@ -804,7 +796,6 @@ export function ArtifactCatalogPage({
             ) : (
               <ArtifactCatalogGrid
                 artifacts={artifacts}
-                canDelete={deletionEnabled}
                 scrollToArtifactId={scrollToArtifactId}
                 onOpen={(artifactId) => {
                   detach(

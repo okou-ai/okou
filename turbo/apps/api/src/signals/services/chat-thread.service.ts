@@ -603,14 +603,31 @@ function chatThreadArtifactRows(args: {
       .leftJoin(
         artifacts,
         and(
-          eq(artifacts.projectionFileId, runUploadedFiles.id),
+          or(
+            eq(artifacts.projectionFileId, runUploadedFiles.id),
+            // Every immutable publication in a chat manages the same site.
+            eq(
+              artifacts.logicalKey,
+              sql`'site:' || (${runUploadedFiles.metadata}->>'siteId')`,
+            ),
+          ),
           eq(artifacts.orgId, runUploadedFiles.orgId),
           eq(artifacts.authorUserId, args.userId),
+        ),
+      )
+      .leftJoin(
+        hostedSites,
+        eq(
+          sql`${runUploadedFiles.metadata}->>'siteId'`,
+          sql`${hostedSites.id}::text`,
         ),
       )
       .where(
         and(
           eq(runUploadedFiles.userId, args.userId),
+          isNull(runUploadedFiles.deletedAt),
+          isNull(artifacts.deletedAt),
+          isNull(hostedSites.deletedAt),
           isNotNull(runUploadedFiles.runId),
           eq(runUploadedFiles.chatThreadId, args.threadId),
         ),

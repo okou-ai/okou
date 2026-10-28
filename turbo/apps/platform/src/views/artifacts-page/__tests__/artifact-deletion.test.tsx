@@ -1,4 +1,8 @@
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { HttpResponse } from "msw";
+import {
+  type ArtifactSummary,
+  artifactCatalogContract,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -20,7 +24,41 @@ import {
 const context = testContext();
 const report = artifact();
 
-async function openDeletion() {
+function mockPreview(summary: ArtifactSummary = report) {
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return summary.kind === "hosted-site"
+      ? respond(200, {
+          ...summary,
+          kind: "hosted-site",
+          site: {
+            id: "f0000000-0000-4000-a000-000000000001",
+            slug: "test-site",
+            publicSlug: "test-site",
+            url: "https://files.example.test/site",
+            deploymentVersion: 1,
+            entrypoint: "index.html",
+            spaFallback: false,
+          },
+        })
+      : respond(200, {
+          ...summary,
+          kind: "file",
+          file: {
+            id: "f0000000-0000-4000-a000-000000000001",
+            filename: summary.title,
+            contentType: "text/plain",
+            size: 12,
+            url: "https://files.example.test/report.txt",
+            previewImageUrl: null,
+          },
+        });
+  });
+  context.mocks.http.get("https://files.example.test/report.txt", () => {
+    return HttpResponse.text("Report content");
+  });
+}
+
+async function openSharedConversationDeletion() {
   await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
   click(getButtonByName(`More actions for ${report.title}`));
   const menu = await screen.findByRole("menu");
@@ -28,13 +66,36 @@ async function openDeletion() {
     return element.textContent?.trim() === "Delete";
   });
   if (!item) {
-    throw new Error("Expected the artifact delete menu item");
+    throw new Error("Expected the shared-conversation delete action");
   }
   click(item);
   return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });
 }
 
+function currentPreview() {
+  return (
+    screen.queryByTestId("attachment-lightbox") ??
+    screen.queryByTestId("artifact-sidebar")
+  );
+}
+
+async function openDeletion() {
+  if (!currentPreview()) {
+    click(await findArtifactAction(report.title));
+  }
+  await waitFor(() => {
+    expect(currentPreview()).toBeInTheDocument();
+  });
+  const preview = currentPreview()!;
+  await waitFor(() => {
+    expect(getButtonByName("Delete", preview)).toBeInTheDocument();
+  });
+  click(getButtonByName("Delete", preview));
+  return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });
+}
+
 test("the deletion switch hides artifact management actions", async () => {
+  mockPreview();
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, { artifacts: [report], nextCursor: null });
   });
@@ -45,63 +106,81 @@ test("the deletion switch hides artifact management actions", async () => {
   });
   await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
   expect(queryButtonByName(`More actions for ${report.title}`)).toBeUndefined();
+  click(await findArtifactAction(report.title));
+  const preview = await screen.findByTestId("attachment-lightbox");
+  expect(queryButtonByName("Delete", preview)).toBeUndefined();
 });
 
-test("cancel preserves an artifact and confirmation waits for deletion before removing it", async () => {
-  let removed = false;
-  const deleting = context.mocks.deferred<void>();
-  const finish = context.mocks.deferred<void>();
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: removed ? [] : [report],
-      nextCursor: null,
+test.each([false, true])(
+  "preview cancellation and deletion keep the catalog consistent (sidebar=%s)",
+  async (sidebar) => {
+    mockPreview();
+    let removed = false;
+    const deleting = context.mocks.deferred<void>();
+    const finish = context.mocks.deferred<void>();
+    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+      return respond(200, {
+        artifacts: removed ? [] : [report],
+        nextCursor: null,
+      });
     });
-  });
-  context.mocks.api(
-    artifactCatalogContract.delete,
-    async ({ params, respond }) => {
-      expect(params.artifactId).toBe(report.id);
-      deleting.resolve();
-      await finish.promise;
-      removed = true;
-      return respond(200, { deleted: true });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
-  });
-  const cancelled = await openDeletion();
-  expect(
-    within(cancelled).getByText(/Copies already downloaded/),
-  ).toBeInTheDocument();
-  click(getButtonByName("Cancel", cancelled));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  await waitFor(() => {
-    expect(getButtonByName(`More actions for ${report.title}`)).toHaveFocus();
-  });
-  const dialog = await openDeletion();
-  click(getButtonByName("Delete", dialog));
-  await deleting.promise;
-  await waitFor(() => {
-    return expect(getButtonByName("Deleting…", dialog)).toBeDisabled();
-  });
-  expect(getButtonByName("Cancel", dialog)).toBeDisabled();
-  expect(screen.getByText(report.title)).toBeInTheDocument();
-  finish.resolve();
-  await expect(
-    screen.findByText("No artifacts found"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText(report.title)).not.toBeInTheDocument();
-  await waitFor(() => {
-    return expect(document.querySelector("main")).toHaveFocus();
-  });
-});
+    context.mocks.api(
+      artifactCatalogContract.delete,
+      async ({ params, respond }) => {
+        expect(params.artifactId).toBe(report.id);
+        deleting.resolve();
+        await finish.promise;
+        removed = true;
+        return respond(200, { deleted: true });
+      },
+    );
+    await setupPage({
+      context,
+      path: "/artifacts?tab=file",
+      featureSwitches: {
+        [FeatureSwitchKey.ArtifactDeletion]: true,
+        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
+      },
+    });
+    const cancelled = await openDeletion();
+    expect(
+      within(cancelled).getByText(/Copies already downloaded/),
+    ).toBeInTheDocument();
+    click(getButtonByName("Cancel", cancelled));
+    await waitFor(() => {
+      return expect(
+        screen.queryByRole("dialog", { name: `Delete ${report.title}?` }),
+      ).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      const preview =
+        screen.queryByTestId("attachment-lightbox") ??
+        screen.getByTestId("artifact-sidebar");
+      expect(getButtonByName("Delete", preview)).toHaveFocus();
+    });
+    const dialog = await openDeletion();
+    click(getButtonByName("Delete", dialog));
+    await deleting.promise;
+    await waitFor(() => {
+      return expect(getButtonByName("Deleting…", dialog)).toBeDisabled();
+    });
+    expect(getButtonByName("Cancel", dialog)).toBeDisabled();
+    expect(
+      document.querySelector(`button[data-artifact-id="${report.id}"]`),
+    ).toBeInTheDocument();
+    finish.resolve();
+    await expect(
+      screen.findByText("No artifacts found"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByText(report.title)).not.toBeInTheDocument();
+    await waitFor(() => {
+      return expect(document.querySelector("main")).toHaveFocus();
+    });
+  },
+);
 
 test("a failed deletion keeps confirmation open and can be retried", async () => {
+  mockPreview();
   let removed = false;
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
@@ -130,7 +209,9 @@ test("a failed deletion keeps confirmation open and can be retried", async () =>
   await expect(
     screen.findByText("Could not delete artifact"),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByText(report.title)).toBeInTheDocument();
+  expect(
+    document.querySelector(`button[data-artifact-id="${report.id}"]`),
+  ).toBeInTheDocument();
   expect(getButtonByName("Delete", dialog)).toBeEnabled();
   click(getButtonByName("Delete", dialog));
   await expect(
@@ -156,7 +237,7 @@ test("deleting a saved shared conversation explains that its original link remai
     path: "/artifacts?tab=shared-thread",
     featureSwitches: { [FeatureSwitchKey.ArtifactDeletion]: true },
   });
-  const dialog = await openDeletion();
+  const dialog = await openSharedConversationDeletion();
   expect(
     within(dialog).getByText(
       /The original conversation and its shared link will stay available/,
@@ -169,6 +250,7 @@ test("deleting a saved shared conversation explains that its original link remai
 });
 
 test("deleting a later-page artifact discards stale pages when the catalog refreshes", async () => {
+  mockPreview();
   const first = artifact({
     id: "a0000000-0000-4000-a000-000000000002",
     title: "keep-this.txt",
@@ -196,7 +278,9 @@ test("deleting a later-page artifact discards stale pages when the catalog refre
   const dialog = await openDeletion();
   click(getButtonByName("Delete", dialog));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: `Delete ${report.title}?` }),
+    ).not.toBeInTheDocument();
   });
   await expect(findArtifactAction(first.title)).resolves.toBeInTheDocument();
   expect(screen.queryByText(report.title)).not.toBeInTheDocument();
@@ -204,6 +288,7 @@ test("deleting a later-page artifact discards stale pages when the catalog refre
 
 test("a new publication can reappear under the same catalog identity", async () => {
   const website = artifact({ kind: "hosted-site" });
+  mockPreview(website);
   let removed = false;
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     return respond(200, {

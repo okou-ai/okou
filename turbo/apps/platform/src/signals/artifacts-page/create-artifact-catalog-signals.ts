@@ -29,7 +29,7 @@ import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
 import {
   artifactCatalogRevision$,
   createArtifactDeleteMenuSignals,
-} from "./artifact-deletion.ts";
+} from "../artifact-deletion.ts";
 
 // First screen and every scroll step request the same page size. The server
 // orders by `(createdAt, id)` and never reorders on update, so a cursor stays

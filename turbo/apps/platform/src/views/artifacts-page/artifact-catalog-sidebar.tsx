@@ -73,6 +73,7 @@ export function ArtifactCatalogSidebar() {
   return (
     <>
       <ArtifactSidebarContent
+        artifactId={detail.data.id}
         artifactRef={{
           url: preview.url,
           filename: preview.filename,
