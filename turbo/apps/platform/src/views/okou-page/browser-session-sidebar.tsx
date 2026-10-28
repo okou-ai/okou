@@ -1,6 +1,6 @@
 import { ExternalLink, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button, buttonVariants, cn } from "@okouai/ui";
+import { Button, buttonVariants } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -36,10 +36,7 @@ function BrowserSessionActions({
           aria-label={t(($) => {
             return $.browserSession.openNewPage;
           })}
-          className={cn(
-            buttonVariants({ variant: "quiet", size: "icon-sm" }),
-            "text-muted-foreground hover:text-foreground",
-          )}
+          className={buttonVariants({ variant: "quiet", size: "icon-sm" })}
         >
           <ExternalLink size={16} />
         </a>
@@ -60,7 +57,6 @@ function BrowserSessionActions({
         })}
         variant="quiet"
         size="icon-sm"
-        className="text-muted-foreground hover:text-foreground"
       >
         <X size={16} />
       </Button>

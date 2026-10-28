@@ -51,7 +51,8 @@ export function BrowserPresence({
   const controller = browserController({
     liveRunId,
     latestRunId,
-    takeoverRunId,
+    // A stop that failed leaves the Run working, so control stays with it.
+    takeoverRunId: stopOperation.state === "hasError" ? null : takeoverRunId,
   });
 
   if (controller === "agent") {
