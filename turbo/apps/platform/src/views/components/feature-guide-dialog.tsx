@@ -52,12 +52,7 @@ function GuideMedia({ media }: { readonly media: FeatureGuideMedia }) {
         className="max-h-64 w-full rounded-xl"
       >
         <source src={media.url} type="video/mp4" />
-        <track
-          kind="captions"
-          src={media.captionsUrl}
-          srcLang="en"
-          default
-        />
+        <track kind="captions" src={media.captionsUrl} srcLang="en" default />
       </video>
     );
   }
