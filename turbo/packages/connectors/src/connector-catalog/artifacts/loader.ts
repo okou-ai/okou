@@ -5,24 +5,24 @@ import { object, type infer as zInfer, type ZodType } from "zod";
 import {
   CONNECTOR_CATALOG_MAX_RAW_BYTES,
   type ConnectorCatalogValidationFailureCode,
-} from "../contracts";
-import { attempt, parseJson } from "../safe";
+} from "../contracts.js";
+import { attempt, parseJson } from "../safe.js";
 import {
   connectorCatalogArtifactSchema,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
-} from "./artifacts";
+} from "./artifacts.js";
 import {
   connectorCatalogVersionSchema,
   artifactKeySchema,
   digestSchema,
-} from "./common";
-import { validateConnectorCatalogPublicProjection } from "./public-leak";
-import { validateConnectorCatalogArtifact } from "./relationships";
+} from "./common.js";
+import { validateConnectorCatalogPublicProjection } from "./public-leak.js";
+import { validateConnectorCatalogArtifact } from "./relationships.js";
 import {
   ConnectorCatalogRelationshipError,
   type ConnectorCatalogRelationshipRule,
-} from "./relationship-error";
+} from "./relationship-error.js";
 
 const ACTIVE_POINTER_MAX_BYTES = 16 * 1024;
 

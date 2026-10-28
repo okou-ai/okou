@@ -12,7 +12,10 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
+import {
+  hasRawWhitespace,
+  hasUnsafeUrlCodepoint,
+} from "./firewall-url-utils.js";
 
 const HOST_DOT_EQUIVALENT_PATTERN = /[\u3002\uff0e\uff61]/g;
 const HOST_POLICY_HOST_FORBIDDEN_PATTERN = /[%*[\]/?#@\\:{}<>^|]/u;

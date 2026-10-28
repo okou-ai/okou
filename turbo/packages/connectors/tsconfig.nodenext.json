@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  },
+  "files": [
+    "src/firewall-types.ts",
+    "src/firewall-expander.ts",
+    "src/firewall-rule-matcher.ts",
+    "src/connector-catalog/artifacts/loader.ts",
+    "src/connector-catalog/artifacts/mcp-auth.ts"
+  ],
+  "include": []
+}

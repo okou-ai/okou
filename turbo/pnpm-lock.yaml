@@ -1079,6 +1079,9 @@ importers:
 
   packages/connectors:
     dependencies:
+      '@types/tr46':
+        specifier: 5.0.1
+        version: 5.0.1
       tr46:
         specifier: 5.1.1
         version: 5.1.1
@@ -1098,9 +1101,6 @@ importers:
       '@types/node':
         specifier: ^24.3.0
         version: 24.3.0
-      '@types/tr46':
-        specifier: 5.0.1
-        version: 5.0.1
       '@typescript/native':
         specifier: npm:typescript@7.0.2
         version: typescript@7.0.2

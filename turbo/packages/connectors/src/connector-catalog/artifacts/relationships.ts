@@ -5,33 +5,33 @@ import {
   normalizeFirewallFixedHost,
   type FirewallBaseHostPolicy,
   type FirewallConfig,
-} from "../../firewall-types";
+} from "../../firewall-types.js";
 
 import type {
   ConnectorCatalogArtifact,
   ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
-} from "./artifacts";
+} from "./artifacts.js";
 import {
   firewallAuthInjectsCredentials,
   firewallBaseVariableNames,
   firewallTemplateReferences,
   parseFirewallBaseUrl,
   validateFirewallGeneratorResult,
-} from "./firewall";
+} from "./firewall.js";
 import {
   catalogSourceSchema,
   connectorSourceSchema,
   validateCatalogSourceSemantics,
   validateConnectorSourceSemantics,
   type ConnectorGrantSource,
-} from "./source";
+} from "./source.js";
 
-import { ConnectorCatalogRelationshipError } from "./relationship-error";
+import { ConnectorCatalogRelationshipError } from "./relationship-error.js";
 import {
   AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
   automaticMcpRuntimeFirewallAuthKind,
-} from "./mcp-auth";
+} from "./mcp-auth.js";
 
 const MODEL_PROVIDER_FIREWALL_PREFIX = "model-provider:";
 
