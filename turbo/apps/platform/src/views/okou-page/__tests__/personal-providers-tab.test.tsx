@@ -1,6 +1,7 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -220,6 +221,7 @@ async function setupPersonalSubscriptionIdentityReview() {
     }),
     workspaceName: "Account A Organization",
     subscriptionResetCreditsNextExpiresAt: "2030-01-04T00:48:00.000Z",
+    subscriptionCredits: { balance: 1250.5, unlimited: false },
   };
   const accountB = {
     ...connectedPersonalCodexAccount({
@@ -229,6 +231,7 @@ async function setupPersonalSubscriptionIdentityReview() {
       createdAt: "2026-03-02T00:00:00Z",
     }),
     subscriptionResetCredits: 0,
+    subscriptionCredits: { balance: 0, unlimited: false },
   };
   const accountC = {
     ...connectedPersonalCodexAccount({
@@ -238,9 +241,14 @@ async function setupPersonalSubscriptionIdentityReview() {
       createdAt: "2026-03-03T00:00:00Z",
     }),
     subscriptionResetCredits: null,
+    subscriptionCredits: null,
   };
   context.mocks.data.personalModelProviders([accountA, accountB, accountC]);
-  await openModelSettings("Use more models");
+  await setupPage({
+    context,
+    path: "/?settings=model",
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+  });
   return {
     accountA,
     rowA: await screen.findByTestId(`oauth-account-${accountA.id}`),
@@ -253,6 +261,15 @@ test("Review personal subscription identity and usage", async () => {
   const { rowA, rowB, rowC } = await setupPersonalSubscriptionIdentityReview();
   expect(within(rowA).getByText("account-a@example.com")).toBeInTheDocument();
   expect(within(rowB).getByText("account-b@example.com")).toBeInTheDocument();
+  expect(
+    within(rowA).getByText("Connected · 1,250.5 ChatGPT credits"),
+  ).toBeInTheDocument();
+  expect(
+    within(rowB).getByText("Connected · 0 ChatGPT credits"),
+  ).toBeInTheDocument();
+  expect(
+    within(rowC).getByText("Connected · — ChatGPT credits"),
+  ).toBeInTheDocument();
   expect(within(rowA).getByText("2 resets left")).toBeVisible();
   expect(within(rowB).queryByText(/resets? left/u)).not.toBeInTheDocument();
   expect(within(rowC).getByText("Resets —")).toBeVisible();
@@ -507,6 +524,7 @@ test("Keep a failed disconnect open and finish a successful retry", async () => 
 });
 
 test("Review personal subscriptions through account switching", async () => {
+  const user = userEvent.setup();
   const { rowA, rowB } = await setupPersonalSubscriptionIdentityReview();
   click(activationButton("Use: account-b@example.com", rowB));
   await waitFor(() => {
@@ -520,6 +538,23 @@ test("Review personal subscriptions through account switching", async () => {
       ),
     ).toHaveAttribute("aria-pressed", "false");
   });
+  expect(
+    within(rowA).getByText("Connected · 1,250.5 ChatGPT credits"),
+  ).toBeInTheDocument();
+  expect(
+    within(rowB).getByText("Connected · 0 ChatGPT credits"),
+  ).toBeInTheDocument();
+
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(settings).not.toBeInTheDocument();
+  });
+  click(activationButton("Test User"));
+  const menu = await screen.findByRole("menu");
+  const panel = await within(menu).findByTestId("account-menu-subscriptions");
+  expect(within(panel).getByText("ChatGPT credits")).toBeInTheDocument();
+  expect(within(panel).getByText("0")).toBeInTheDocument();
 });
 
 test("View personal account groups by default in an external workspace", async () => {
