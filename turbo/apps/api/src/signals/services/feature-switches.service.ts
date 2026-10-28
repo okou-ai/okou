@@ -5,6 +5,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
@@ -193,6 +194,24 @@ export const updateUserFeatureSwitches$ = command(
     }
     if (args.switches[FeatureSwitchKey.DesktopShell] === false) {
       await set(retireQueuedShellCommands$, args, signal);
+    }
+    if (args.switches[FeatureSwitchKey.AutoContinueBusyChats] === false) {
+      await writeDb
+        .update(backgroundJobs)
+        .set({
+          status: "cancelled",
+          completedAt: nowDate(),
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(backgroundJobs.kind, FeatureSwitchKey.AutoContinueBusyChats),
+            eq(backgroundJobs.orgId, args.orgId),
+            eq(backgroundJobs.userId, args.userId),
+            eq(backgroundJobs.status, "pending"),
+          ),
+        );
+      signal.throwIfAborted();
     }
     const context = await set(
       loadUserFeatureSwitchContext$,

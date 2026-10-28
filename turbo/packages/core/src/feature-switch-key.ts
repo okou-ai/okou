@@ -53,6 +53,7 @@ export enum FeatureSwitchKey {
   WechatIntegration = "wechatIntegration",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
+  AutoContinueBusyChats = "autoContinueBusyChats",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",

@@ -1,5 +1,8 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
+import {
+  getFeatureSwitchMetadata,
+  isFeatureSwitchAvailable,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -91,7 +94,12 @@ test("Lab groups active feature switches", async () => {
     alpha: "Alpha",
     internal: "Internal",
   } as const;
-  const keys = Object.values(FeatureSwitchKey);
+  const keys = Object.values(FeatureSwitchKey).filter((key) => {
+    return isFeatureSwitchAvailable(key, {
+      userId: "data-rollout-lab-user",
+      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+    });
+  });
   for (const key of keys) {
     const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
     expect(
@@ -108,6 +116,38 @@ test("Lab groups active feature switches", async () => {
     ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
+  expect(
+    screen.queryByText("Auto-continue busy chats"),
+  ).not.toBeInTheDocument();
+});
+
+test("Bingjie can turn automatic busy recovery off in Lab", async () => {
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: "/_/lab",
+    auth: {
+      user: { id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV", fullName: "Bingjie" },
+    },
+    featureSwitches: { [FeatureSwitchKey.Lab]: true },
+  });
+  await screen.findByText("Auto-continue busy chats");
+  let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  const control = within(
+    featureSwitchRow(FeatureSwitchKey.AutoContinueBusyChats),
+  ).getByRole("switch");
+  expect(control).toHaveAttribute("aria-checked", "true");
+  await user.click(control);
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "false");
+  });
 });
 
 test("The maintainer can manage the remote UI switch in Lab", async () => {
