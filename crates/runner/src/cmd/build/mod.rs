@@ -630,12 +630,14 @@ async fn ensure_rootfs_under_lock(
             let work_dir_path = scripts.path().await?;
             customize_rootfs_staging(&input, &work_dir_path).await?;
             verify_rootfs(input.rootfs_paths, &work_dir_path, input.okou_cli).await?;
-            write_okou_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
-            verify_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
             // Commit the rootfs. Same-filesystem rename is POSIX-atomic, so
             // `rootfs.ext4` only becomes visible once customization and
             // verification have fully succeeded.
-            publish.commit()?;
+            publish.commit(
+                input
+                    .okou_cli
+                    .map(OkouCliArtifact::installed_manifest_bytes),
+            )?;
             tracing::info!("rootfs committed: {}", publish.stable().display());
             Ok(())
         }
@@ -1150,35 +1152,6 @@ async fn customize_rootfs_staging(
     Ok(())
 }
 
-/// Publish or clear the installed Okou CLI sidecar for a rootfs about to commit.
-///
-/// The running service reads this file to advertise installed versions at claim
-/// time. The verified package and fixed installation recipe determine these
-/// bytes; the rootfs hash covers that package's SHA-256, not the sidecar again.
-/// Publish before committing the rootfs, then check exact sidecar bytes before
-/// cached reuse.
-async fn write_okou_cli_sidecar(
-    rootfs_paths: &RootfsPaths,
-    okou_cli: Option<&OkouCliArtifact>,
-) -> RunnerResult<()> {
-    let sidecar = rootfs_paths.okou_cli_manifest();
-    match okou_cli {
-        Some(okou_cli) => tokio::fs::write(&sidecar, okou_cli.installed_manifest_bytes())
-            .await
-            .map_err(|e| {
-                RunnerError::Internal(format!("write Okou CLI sidecar {}: {e}", sidecar.display()))
-            }),
-        None => match tokio::fs::remove_file(&sidecar).await {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(RunnerError::Internal(format!(
-                "remove stale Okou CLI sidecar {}: {e}",
-                sidecar.display()
-            ))),
-        },
-    }
-}
-
 /// Reject cached rootfs metadata that does not match the embedded package.
 /// The rootfs file is committed only after script verification and sidecar
 /// publication; a missing or altered sidecar cannot be used as a cache hit.
@@ -1194,12 +1167,11 @@ async fn verify_cli_sidecar(
                 path.display()
             ))
         })?;
-        if actual != okou_cli.installed_manifest_bytes() {
-            return Err(RunnerError::Internal(format!(
-                "cached Okou CLI sidecar does not match embedded bundle: {}",
-                path.display()
-            )));
-        }
+        local_publish::verify_cli_sidecar_bytes(
+            &path,
+            &actual,
+            okou_cli.installed_manifest_bytes(),
+        )?;
     }
     Ok(())
 }

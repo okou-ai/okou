@@ -6,15 +6,16 @@ use runner_host::paths::RootfsPaths;
 pub(super) struct LocalFilePublish {
     staging: PathBuf,
     stable: PathBuf,
+    sidecar: PathBuf,
 }
 
 impl LocalFilePublish {
-    fn new(staging: PathBuf, stable: PathBuf) -> Self {
-        Self { staging, stable }
-    }
-
     pub(super) fn for_rootfs(rootfs: &RootfsPaths) -> Self {
-        Self::new(rootfs.rootfs_staging(), rootfs.rootfs())
+        Self {
+            staging: rootfs.rootfs_staging(),
+            stable: rootfs.rootfs(),
+            sidecar: rootfs.okou_cli_manifest(),
+        }
     }
 
     pub(super) fn stable(&self) -> &Path {
@@ -60,11 +61,18 @@ impl LocalFilePublish {
         }
     }
 
-    /// Atomic commit: rename staging to stable.
+    /// Publish trusted installed CLI metadata, then commit staging to stable.
     ///
-    /// Same-filesystem rename is POSIX-atomic, so this is the single step
-    /// that makes the published file visible to future presence checks.
-    pub(super) fn commit(&self) -> RunnerResult<()> {
+    /// The service advertises installed versions from the sidecar. The rootfs
+    /// hash covers the verified CLI package, not these metadata bytes again.
+    /// Keep mutation, exact readback and rename synchronous under the caller's
+    /// rootfs flock: cancelling a Tokio fs waiter can otherwise release that
+    /// authority before its accepted physical operation finishes.
+    ///
+    /// The same-filesystem rootfs rename is the atomic visibility step, not a
+    /// multi-file transaction or a new crash-durability guarantee.
+    pub(super) fn commit(&self, installed_manifest: Option<&[u8]>) -> RunnerResult<()> {
+        self.publish_cli_sidecar(installed_manifest)?;
         std::fs::rename(&self.staging, &self.stable).map_err(|e| {
             RunnerError::Internal(format!(
                 "commit rootfs {} → {}: {e}",
@@ -72,6 +80,34 @@ impl LocalFilePublish {
                 self.stable.display()
             ))
         })
+    }
+
+    fn publish_cli_sidecar(&self, installed_manifest: Option<&[u8]>) -> RunnerResult<()> {
+        match installed_manifest {
+            Some(bytes) => {
+                std::fs::write(&self.sidecar, bytes).map_err(|e| {
+                    RunnerError::Internal(format!(
+                        "write Okou CLI sidecar {}: {e}",
+                        self.sidecar.display()
+                    ))
+                })?;
+                let actual = std::fs::read(&self.sidecar).map_err(|e| {
+                    RunnerError::Internal(format!(
+                        "read cached Okou CLI sidecar {}: {e}",
+                        self.sidecar.display()
+                    ))
+                })?;
+                verify_cli_sidecar_bytes(&self.sidecar, &actual, bytes)
+            }
+            None => match std::fs::remove_file(&self.sidecar) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(RunnerError::Internal(format!(
+                    "remove stale Okou CLI sidecar {}: {e}",
+                    self.sidecar.display()
+                ))),
+            },
+        }
     }
 
     pub(super) fn finish_after_result(&self, result: RunnerResult<()>) -> RunnerResult<()> {
@@ -93,6 +129,20 @@ impl LocalFilePublish {
     }
 }
 
+pub(super) fn verify_cli_sidecar_bytes(
+    path: &Path,
+    actual: &[u8],
+    expected: &[u8],
+) -> RunnerResult<()> {
+    if actual != expected {
+        return Err(RunnerError::Internal(format!(
+            "cached Okou CLI sidecar does not match embedded bundle: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 fn remove_file_if_exists_sync(path: &Path, label: &str) -> RunnerResult<()> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -103,6 +153,9 @@ fn remove_file_if_exists_sync(path: &Path, label: &str) -> RunnerResult<()> {
         ))),
     }
 }
+
+#[cfg(test)]
+mod sidecar_tests;
 
 #[cfg(test)]
 mod tests {
@@ -232,7 +285,7 @@ mod tests {
             .await
             .unwrap();
 
-        publish.commit().unwrap();
+        publish.commit(None).unwrap();
 
         assert!(!rootfs.rootfs_staging().exists());
         assert!(rootfs.rootfs().exists());
