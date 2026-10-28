@@ -419,7 +419,7 @@ describe("shared Browser public consumers", () => {
         }),
         [200],
       );
-      expect(resized.body.browser.screen?.height).toBe(720);
+      expect(resized.body.browser.window).toStrictEqual(first.browser.window);
       const second = await use(b);
       expect(first.browser.window?.instanceId).toBe(
         second.browser.window?.instanceId,
@@ -442,7 +442,9 @@ describe("shared Browser public consumers", () => {
         client().get({ headers, params: { threadId: b.threadId } }),
         [200],
       );
-      expect(unchanged.body.browser.screen?.height).toBe(900);
+      expect(unchanged.body.browser.window).toStrictEqual(
+        second.browser.window,
+      );
       mockNow(START + MINUTE);
       const leased = await accept(
         client().lease({ headers: runHeaders(a), body: {} }),
@@ -1243,7 +1245,7 @@ describe("shared Browser capture publication and admission", () => {
   );
 
   it.each(["public", "runner"] as const)(
-    "initializes a window admitted via %s before reporting 900px",
+    "initializes native contents before publishing a window admitted via %s",
     async (entry) => {
       const f = await fixture();
       await f.owned.run(async () => {
@@ -1281,7 +1283,6 @@ describe("shared Browser capture publication and admission", () => {
           );
         }
         const joined = await use(a);
-        expect(joined.browser.screen?.height).toBe(900);
         const joinedWindow = joined.browser.window;
         if (!joinedWindow) {
           throw new Error("Expected the admitted Browser window");

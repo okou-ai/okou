@@ -1,5 +1,5 @@
 {
-  "id": "c2c3c667-e8cb-460f-906b-912e55995f00",
+  "id": "24153055-4064-45fd-af39-b92e096024cc",
   "prevId": "fd5335ea-c3dc-4533-bd5b-52700d6ceb71",
   "version": "7",
   "dialect": "postgresql",
@@ -4643,13 +4643,6 @@
           "type": "bigint",
           "primaryKey": false,
           "notNull": true
-        },
-        "screen_height": {
-          "name": "screen_height",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 900
         },
         "expires_at": {
           "name": "expires_at",

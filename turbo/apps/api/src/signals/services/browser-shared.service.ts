@@ -246,11 +246,6 @@ function presentation(
             instanceId: profile.instanceId,
             primaryWindowId: window.primaryWindowId,
           },
-          screen: {
-            width: BROWSER_SCREEN_WIDTH,
-            height: window.screenHeight,
-            resizable: true,
-          },
         }
       : {}),
     idleExpiresAt: live ? window.expiresAt.toISOString() : null,
@@ -1162,9 +1157,9 @@ function sharedBrowserResize(
             ),
             signal,
           );
-          const [changed] = await set(writeDb$)
-            .update(windows)
-            .set({ screenHeight: height, updatedAt: nowDate() })
+          const [currentWindow] = await get(db$)
+            .select()
+            .from(windows)
             .where(
               and(
                 lifetime(ctx.owner, view.profile, view.window),
@@ -1172,8 +1167,8 @@ function sharedBrowserResize(
                 gt(windows.expiresAt, nowDate()),
               ),
             )
-            .returning();
-          if (!changed) {
+            .limit(1);
+          if (!currentWindow) {
             return unavailable();
           }
           return {
@@ -1181,7 +1176,7 @@ function sharedBrowserResize(
             value: presentation(
               view.browser,
               view.profile,
-              changed,
+              currentWindow,
               session,
               await set(
                 loadBrowserScreenshotUrl$,

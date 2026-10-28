@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { BROWSER_INITIAL_SCREEN_HEIGHT } from "@okouai/api-contracts/contracts/browser";
 import type {
   RunnerBrowserAction,
   RunnerBrowserRequest,
@@ -552,9 +551,6 @@ const admitOwnerBrowserWindow$ = command(
               primaryWindowId: sql`${action.primaryWindowId}::bigint`
                 .mapWith(windows.primaryWindowId)
                 .as("primary_window_id"),
-              screenHeight: sql`${BROWSER_INITIAL_SCREEN_HEIGHT}::integer`
-                .mapWith(windows.screenHeight)
-                .as("screen_height"),
               expiresAt:
                 sql`least(${profiles.timeoutAt}, ${sql.param(new Date(now.getTime() + IDLE_MS), windows.expiresAt)}::timestamp)`
                   .mapWith(windows.expiresAt)
