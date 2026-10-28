@@ -1339,6 +1339,14 @@ class: a class in the selector is a first-party class-selector declaration, and
 the document-level selectors that spell it are allowlisted rather than
 exemplary.
 
+The unified chat workspace's shell paints the ground the rail and the chat list
+stand on through `bg-workspace-ground`, over `--okou-workspace-ground` keyed in
+the same blocks, because the ground is defined against the canvas: the stop
+below its fill. That is gray-100 in Light; in Dark it is gray-0 under the
+default canvas and gray-50 under a palette's card. A single gray token cannot
+follow the fill across the four variants, and Dark gray-100 sits above the
+canvas rather than below it.
+
 Consumers spell `before:bg-[length:100%_100%]` beside the two background
 utilities. `background-size: 100% 100%` and the initial `auto auto` size a
 gradient to the same box, so it is a stated rather than a load-bearing value.

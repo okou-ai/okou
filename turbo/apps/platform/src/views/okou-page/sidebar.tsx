@@ -930,8 +930,10 @@ function ChatListResizeSeam() {
       resizing={resizing}
       // The target stays inside the list so it needs no paint priority over
       // the sheet; the sheet's own border draws the resting line at its end.
+      // It spans only the straight run of that edge, past the sheet's 8px
+      // margin and 16px corner, so the drag line never crosses a corner.
       line="end"
-      className="absolute inset-y-0 right-0"
+      className="absolute inset-y-6 right-0"
     />
   );
 }
@@ -944,11 +946,10 @@ function ChatListColumn() {
       data-testid="chat-list-column"
       className={cn(
         "hidden md:flex shrink-0 flex-col",
-        // Unified: the list is the left part of the workspace sheet, which
-        // continues it from the divider rightwards.
-        unified
-          ? "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas"
-          : "h-full w-[300px] bg-sidebar",
+        // Unified: the list stands on the page ground with the rail, and the
+        // workspace sheet beside it is the one raised surface. The top
+        // padding matches the sheet's margin, so the header lines up with it.
+        unified ? "relative h-full pt-2" : "h-full w-[300px] bg-sidebar",
       )}
       style={unified ? { width } : undefined}
     >
