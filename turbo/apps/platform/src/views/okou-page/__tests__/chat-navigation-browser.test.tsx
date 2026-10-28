@@ -323,9 +323,12 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   await openConversation([], true);
   await expectConversationReady();
   click(buttonByName("Open browser"));
-  const address = await screen.findByDisplayValue("https://example.com");
+  const sidebar = liveBrowserSidebar();
+  const address = await within(sidebar).findByDisplayValue(
+    "https://example.com",
+  );
   expect(address).toBeEnabled();
-  const viewer = screen.getByRole("region", {
+  const viewer = within(sidebar).getByRole("region", {
     name: "Remote browser viewer",
   });
   const sizingMenu = await openViewerSizingMenu(viewer);
