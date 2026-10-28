@@ -15,6 +15,7 @@ use crate::status_file::{self, StatusForDoctor};
 use chrono::{DateTime, Utc};
 use clap::Args;
 use futures_util::{StreamExt, stream};
+use nbd_cow::orphan::NbdOrphanCandidate;
 use reqwest::Client;
 use runner_host::paths::HomePaths;
 use runner_host::process;
@@ -110,7 +111,7 @@ enum Warning {
     /// A network namespace whose pool lock is not held by any process.
     OrphanNamespace { ns_name: String, lock_path: PathBuf },
     /// An NBD device whose recorded owner task has exited and whose lock is free.
-    OrphanNbdDevice { device_index: u32, pid: u32 },
+    OrphanNbdDevice { candidate: NbdOrphanCandidate },
     /// The NBD orphan scan task panicked (bug in find_nbd_orphans).
     NbdScanFailed,
 }
@@ -174,7 +175,9 @@ impl fmt::Display for Warning {
             Self::OrphanNamespace { ns_name, .. } => {
                 write!(f, "orphan namespace {ns_name} (pool lock not held)")
             }
-            Self::OrphanNbdDevice { device_index, pid } => {
+            Self::OrphanNbdDevice { candidate } => {
+                let device_index = candidate.device_index();
+                let pid = candidate.owner_tid();
                 write!(
                     f,
                     "orphan NBD device /dev/nbd{device_index} (owner PID {pid} no longer exists)"
@@ -345,14 +348,11 @@ impl Warning {
                 }
                 is_lock_free(lock_path).await
             }
-            Self::OrphanNbdDevice { device_index, pid } => {
-                let idx = *device_index;
-                let original_pid = *pid;
-                tokio::task::spawn_blocking(move || {
-                    super::nbd::nbd_orphan_is_reportable(idx, original_pid)
-                })
-                .await
-                .unwrap_or(false)
+            Self::OrphanNbdDevice { candidate } => {
+                let candidate = *candidate;
+                tokio::task::spawn_blocking(move || super::nbd::nbd_orphan_is_reportable(candidate))
+                    .await
+                    .unwrap_or(false)
             }
             Self::NbdScanFailed => {
                 // Retry the scan — persists if it panics again.
@@ -401,10 +401,6 @@ fn firecracker_found_for_sandbox(
 
 struct RunnerReport {
     live_runner: LiveRunnerInstance,
-    base_dir: Option<PathBuf>,
-    pid: u32,
-    config_path: PathBuf,
-    subcommand: String,
     service_type: ServiceType,
     status: Option<StatusInfo>,
     api_ok: Option<bool>,
@@ -530,11 +526,11 @@ pub async fn run_doctor(args: DoctorArgs) -> RunnerResult<ExitCode> {
         let mut warnings = Vec::new();
 
         // Orphan firecracker: scope by base_dir match.
-        let selected_base_dir = reports.first().and_then(|r| r.base_dir.clone());
+        let selected_base_dir = reports.first().map(|r| r.live_runner.base_dir.as_path());
         if let Some(base_dir) = selected_base_dir {
             let runner_pids: Vec<u32> = live_runners.iter().map(|runner| runner.pid).collect();
             warnings.extend(
-                detect_orphan_firecrackers(&discovered.firecrackers, &runner_pids, Some(&base_dir))
+                detect_orphan_firecrackers(&discovered.firecrackers, &runner_pids, Some(base_dir))
                     .await,
             );
         }
@@ -756,10 +752,6 @@ async fn build_runner_report(
 
     let mut report = RunnerReport {
         live_runner: runner.clone(),
-        base_dir: Some(runner.base_dir.clone()),
-        pid: runner.pid,
-        config_path: runner.config_path.clone(),
-        subcommand: runner.subcommand.clone(),
         service_type,
         status: None,
         api_ok,
@@ -1235,7 +1227,7 @@ async fn detect_global_orphans(
 ) -> Vec<Warning> {
     let mut warnings = Vec::new();
 
-    let runner_pids: Vec<u32> = reports.iter().map(|r| r.pid).collect();
+    let runner_pids: Vec<u32> = reports.iter().map(|r| r.live_runner.pid).collect();
 
     // Orphan firecracker processes (all runners)
     warnings.extend(detect_orphan_firecrackers(fc_procs, &runner_pids, None).await);
@@ -1366,7 +1358,7 @@ fn parse_netns_list_line(line: &str) -> Option<(&str, u32)> {
 
 /// Scan for lock-free NBD devices whose recorded owner task has exited.
 async fn detect_nbd_orphans() -> Vec<Warning> {
-    let (_, orphans) = match tokio::task::spawn_blocking(super::nbd::find_nbd_orphans).await {
+    let orphans = match tokio::task::spawn_blocking(super::nbd::find_nbd_orphans).await {
         Ok(result) => result,
         Err(e) => {
             tracing::warn!("NBD orphan scan task failed: {e}");
@@ -1376,7 +1368,7 @@ async fn detect_nbd_orphans() -> Vec<Warning> {
 
     orphans
         .into_iter()
-        .map(|(device_index, pid)| Warning::OrphanNbdDevice { device_index, pid })
+        .map(|candidate| Warning::OrphanNbdDevice { candidate })
         .collect()
 }
 
@@ -1423,9 +1415,9 @@ fn print_report(
         println!(
             "[{}] {} (PID {}) [{}]",
             i + 1,
-            r.config_path.display(),
-            r.pid,
-            r.subcommand,
+            r.live_runner.config_path.display(),
+            r.live_runner.pid,
+            r.live_runner.subcommand,
         );
 
         // Service type
@@ -3208,10 +3200,6 @@ printf '%s\n' \
                 PathBuf::from("/data/active.yaml"),
                 PathBuf::from("/data/active"),
             ),
-            base_dir: None,
-            pid: 1,
-            config_path: PathBuf::from("/data/active.yaml"),
-            subcommand: "start".into(),
             service_type: ServiceType::Installed("vm0-runner-active".into()),
             status: None,
             api_ok: None,
@@ -3229,11 +3217,7 @@ printf '%s\n' \
     fn make_report(label: &str) -> RunnerReport {
         let config_path = PathBuf::from(format!("/data/{label}.yaml"));
         RunnerReport {
-            live_runner: live_runner_instance(1, config_path.clone(), PathBuf::from("/data/test")),
-            base_dir: None,
-            pid: 1,
-            config_path,
-            subcommand: "start".into(),
+            live_runner: live_runner_instance(1, config_path, PathBuf::from("/data/test")),
             service_type: ServiceType::Bare,
             status: None,
             api_ok: None,
@@ -3319,8 +3303,7 @@ printf '%s\n' \
         );
 
         let w = Warning::OrphanNbdDevice {
-            device_index: 3,
-            pid: 12345,
+            candidate: NbdOrphanCandidate::from_dead_owner_observation(3, 12345),
         };
         assert_eq!(
             w.to_string(),
@@ -3456,7 +3439,7 @@ printf '%s\n' \
             fixture.base_dir.clone(),
         );
         let report = build_runner_report(&runner, None, &[], &mitm_procs, &dns_procs, &[]).await;
-        assert!(report.base_dir.is_some(), "test config should load");
+        assert_eq!(report.live_runner.base_dir, fixture.base_dir);
         assert!(report.status.is_some(), "test status should load");
         report
     }
@@ -3727,10 +3710,6 @@ printf '%s\n' \
         );
         let mut reports = vec![RunnerReport {
             live_runner: runner.clone(),
-            base_dir: Some(base_dir.clone()),
-            pid: runner.pid,
-            config_path: runner.config_path.clone(),
-            subcommand: "start".into(),
             service_type: ServiceType::Bare,
             status: None,
             api_ok: None,
@@ -3782,10 +3761,6 @@ printf '%s\n' \
             .unwrap();
         let mut reports = vec![RunnerReport {
             live_runner: runner.clone(),
-            base_dir: Some(base_dir.clone()),
-            pid: runner.pid,
-            config_path: runner.config_path.clone(),
-            subcommand: "start".into(),
             service_type: ServiceType::Bare,
             status: None,
             api_ok: None,
@@ -3835,10 +3810,6 @@ printf '%s\n' \
         .unwrap();
         let mut reports = vec![RunnerReport {
             live_runner: runner.clone(),
-            base_dir: Some(base_dir.clone()),
-            pid: runner.pid,
-            config_path: runner.config_path.clone(),
-            subcommand: "start".into(),
             service_type: ServiceType::Bare,
             status: None,
             api_ok: None,
@@ -3888,10 +3859,13 @@ printf '%s\n' \
 
         let report = build_runner_report(&runner, None, &[], &[], &[], &[]).await;
 
-        assert_eq!(report.base_dir.as_deref(), Some(base_dir.as_path()));
-        assert_eq!(report.config_path, dir.path().join("missing-runner.yaml"));
-        assert_eq!(report.pid, std::process::id());
-        assert_eq!(report.subcommand, "start");
+        assert_eq!(report.live_runner.base_dir, base_dir);
+        assert_eq!(
+            report.live_runner.config_path,
+            dir.path().join("missing-runner.yaml")
+        );
+        assert_eq!(report.live_runner.pid, std::process::id());
+        assert_eq!(report.live_runner.subcommand, "start");
         assert!(report.status.is_some());
         assert_eq!(report.api_ok, None);
     }
@@ -3909,7 +3883,7 @@ printf '%s\n' \
         let report =
             build_runner_report(&runner, None, &[], &[mitm_proc(123, 32821)], &[], &[]).await;
 
-        assert_eq!(report.subcommand, "benchmark");
+        assert_eq!(report.live_runner.subcommand, "benchmark");
         assert!(report.status.is_none());
         assert!(!has_status_unavailable_warning(&report));
         assert!(report.warnings.is_empty());
@@ -4040,7 +4014,7 @@ printf '%s\n' \
         assert_eq!(
             reports
                 .iter()
-                .map(|report| report.config_path.as_path())
+                .map(|report| report.live_runner.config_path.as_path())
                 .collect::<Vec<_>>(),
             fixtures
                 .iter()
@@ -4103,7 +4077,10 @@ printf '%s\n' \
         .await;
 
         assert_eq!(reports.len(), 1);
-        assert_eq!(reports[0].config_path, target_fixture.config_path);
+        assert_eq!(
+            reports[0].live_runner.config_path,
+            target_fixture.config_path
+        );
         target_api.assert_calls_async(1).await;
         other_api.assert_calls_async(0).await;
     }
@@ -4125,7 +4102,7 @@ printf '%s\n' \
             .collect();
         let expected_paths: Vec<_> = reports
             .iter()
-            .map(|report| report.config_path.clone())
+            .map(|report| report.live_runner.config_path.clone())
             .collect();
         let client = build_api_client();
         let discovered = empty_discovered();
@@ -4138,7 +4115,7 @@ printf '%s\n' \
         assert_eq!(
             reports
                 .iter()
-                .map(|report| report.config_path.clone())
+                .map(|report| report.live_runner.config_path.clone())
                 .collect::<Vec<_>>(),
             expected_paths,
         );

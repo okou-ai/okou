@@ -220,12 +220,15 @@ describe("builtin MCP automatic authentication", () => {
     ).toStrictEqual([]);
   });
 
-  it("completes CIMD OAuth through the fixed callback and exact receipt", async () => {
+  it("completes parent-resource CIMD OAuth through the fixed callback and exact receipt", async () => {
     const f = fixture();
+    const resource = new URL(f.endpoint).origin;
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
+      resource,
     });
     const started = await beginOAuth(f);
+    expect(started.url.searchParams.get("resource")).toBe(resource);
     expect(started.url.searchParams.get("redirect_uri")).toBe(
       "https://api.okou.ai/api/connectors/automatic/callback",
     );
@@ -257,6 +260,7 @@ describe("builtin MCP automatic authentication", () => {
     expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(
       "https://api.okou.ai/api/connectors/automatic/callback",
     );
+    expect(provider.tokenBodies[0]?.get("resource")).toBe(resource);
     expect((await callback(started.state, provider.issuer)).body.status).toBe(
       "error",
     );

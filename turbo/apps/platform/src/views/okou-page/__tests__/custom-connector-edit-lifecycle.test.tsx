@@ -28,9 +28,16 @@ test("A completed edit preserves a newer connector draft", async () => {
     customConnectorByIdContract.update,
     async ({ body, respond }) => {
       expect(body.displayName).toBe("Saved first API");
+      expect(body).toMatchObject({
+        prefixTemplates: ["http://api.acme.test/v1/"],
+      });
       started.resolve();
       await response.promise;
-      saved = { ...connector, displayName: "Saved first API" };
+      saved = {
+        ...connector,
+        displayName: "Saved first API",
+        prefixTemplates: ["http://api.acme.test/v1/"],
+      };
       return respond(200, saved);
     },
   );
@@ -45,6 +52,10 @@ test("A completed edit preserves a newer connector draft", async () => {
     name: "Edit custom connector",
   });
   await fill(within(edit).getByLabelText("Display name"), "Saved first API");
+  await fill(
+    within(edit).getByLabelText(/Prefixes/u),
+    "http://api.acme.test/v1/",
+  );
   click(getConnectorAction("button", "Save", edit));
   await started.promise;
   click(getConnectorAction("button", "Close", edit));

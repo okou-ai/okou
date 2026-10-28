@@ -197,6 +197,15 @@ provider, HTTP hooks revalidate trusted authority, method/scheme, current run,
 firewall owner, permission, route and host policy. A connected destination still
 passes ordinary endpoint admission; a live socket alone is not authorization.
 
+Registered custom HTTP API entries may use ordinary Header/Query credentials.
+Their asserted domain becomes trusted only after a matching registry-owned custom
+candidate and independent DNS-to-original-public-IP agreement. The flow-owned
+binding preserves the concrete upstream IP as the acquisition target and leaves
+wire Host/`:authority` unchanged. Authority, connection identity, destination and
+current custom ownership are revalidated before credential injection and sending.
+This exception does not authorize builtin credentials, `auth.base`, or AWS signing
+over HTTP; unrelated HTTP traffic retains transparent destination authority.
+
 For an authorized, non-streamed HTTPS request without a live upstream, secure
 TLS must remain enabled. The addon selects the validated hostname through the
 public `request.host` field and preserves wire Host/`:authority` and body. Normal

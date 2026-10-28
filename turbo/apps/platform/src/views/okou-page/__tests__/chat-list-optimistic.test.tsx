@@ -229,7 +229,7 @@ test.each([true, false])(
     expect(screen.queryByLabelText("Pin chat")).toBeNull();
     expect(screen.queryByLabelText("Share messages")).toBeNull();
     expect(
-      screen.queryByLabelText(desktop ? "Resources" : "More actions"),
+      screen.queryByLabelText(desktop ? "Artifacts and chats" : "More actions"),
     ).toBeNull();
     if (!requests.threadId || !requests.eventId) {
       throw new Error("Expected optimistic thread identifiers");
@@ -252,7 +252,7 @@ test.each([true, false])(
       );
       expect(screen.getByLabelText("Share messages")).toBeVisible();
       expect(
-        screen.getByLabelText(desktop ? "Resources" : "More actions"),
+        screen.getByLabelText(desktop ? "Artifacts and chats" : "More actions"),
       ).toBeVisible();
     });
   },

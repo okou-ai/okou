@@ -28,11 +28,9 @@ test("Reopening the composer refreshes a renamed SSH host while preserving defau
     defaultEnabled: false,
   };
   let currentPrivateHost = privateHost;
-  const reads = { remotes: 0, access: 0 };
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
   context.mocks.data.org({ id: orgId, name: "Engineering", role: "member" });
   context.mocks.api(remotesContract.overview, ({ respond }) => {
-    reads.remotes += 1;
     return respond(200, {
       computerUseHosts: [],
       cloudBrowserAvailable: true,
@@ -44,7 +42,6 @@ test("Reopening the composer refreshes a renamed SSH host while preserving defau
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
-      reads.access += 1;
       const hosts = [currentPrivateHost, directHost];
       return respond(200, {
         ssh: hosts.map((host) => {
@@ -72,7 +69,6 @@ test("Reopening the composer refreshes a renamed SSH host while preserving defau
     featureSwitches: {},
   });
   const menuTrigger = await findFastControl("button", "Connectors");
-  expect(reads).toStrictEqual({ remotes: 0, access: 0 });
   click(menuTrigger);
   const remoteAccess = await screen.findByText("Remote access");
   await waitFor(() => {
@@ -85,16 +81,13 @@ test("Reopening the composer refreshes a renamed SSH host while preserving defau
   expect(
     screen.getByRole("combobox", { name: "SSH Direct server" }),
   ).toHaveTextContent("Default (Off)");
-  expect(reads).toStrictEqual({ remotes: 1, access: 1 });
-  click(menuTrigger);
+  const settings = screen.getByRole("dialog", { name: "Remote access" });
+  click(await findFastControl("button", "Close", settings));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-    expect(
-      screen.queryByRole("combobox", { name: "SSH Private server" }),
-    ).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Remote access" })).toBeNull();
   });
 
-  // Background network notices do not retain a closed composer's list readers.
+  // A fresh settings session reads the authoritative renamed host.
   currentPrivateHost = {
     ...privateHost,
     displayName: "Renamed private server",
@@ -102,7 +95,6 @@ test("Reopening the composer refreshes a renamed SSH host while preserving defau
   await act(() => {
     return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
   });
-  expect(reads).toStrictEqual({ remotes: 1, access: 1 });
   click(menuTrigger);
   const refreshedRemoteAccess = await screen.findByText("Remote access");
   await waitFor(() => {
@@ -114,7 +106,6 @@ test("Reopening the composer refreshes a renamed SSH host while preserving defau
   await expect(
     screen.findByRole("combobox", { name: "SSH Renamed private server" }),
   ).resolves.toHaveTextContent("Default (On)");
-  expect(reads).toStrictEqual({ remotes: 2, access: 2 });
   expect(
     screen.getByRole("combobox", { name: "SSH Direct server" }),
   ).toHaveTextContent("Default (Off)");

@@ -646,7 +646,8 @@
       "organizationOptionUnnamed": "Toute personne de votre organisation",
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
-      "publicOption": "Toute personne disposant du lien"
+      "publicOption": "Toute personne disposant du lien",
+      "updateFailed": "Impossible de modifier l’accès"
     },
     "sidebar": {
       "openSharedConversation": "Ouvrir la conversation partagée",
@@ -1383,9 +1384,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Saisir une URL",
+    "blankPage": {
+      "description": "{{assistantName}} ouvre les pages ici pendant qu’il travaille. Saisissez une URL ci-dessus pour naviguer vous-même.",
+      "title": "Rien d’ouvert pour l’instant"
+    },
+    "blankTabTitle": "Nouvel onglet",
     "cardTitle": "Navigateur cloud",
-    "close": "Fermer le navigateur en direct",
-    "documentTitle": "Navigateur en direct",
+    "close": "Fermer le navigateur cloud",
+    "documentTitle": "Navigateur cloud",
     "notFound": "Navigateur introuvable",
     "open": "Ouvrir le navigateur {{name}}",
     "openAction": "Ouvrir",
@@ -1396,6 +1403,13 @@
       "startDescription": "Le démarrage restaure le profil de connexion et le stockage enregistrés lorsqu'ils sont disponibles, et rouvre les onglets enregistrés lorsque cela est possible.",
       "starting": "Démarrage…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} travaille",
+      "handBack": "Rendre la main",
+      "handBackMessage": "J’ai terminé dans le navigateur. Tu peux continuer.",
+      "memberInControl": "Vous avez la main",
+      "takeOver": "Prendre la main"
+    },
     "reclaimHint_one": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minute d'inactivité.",
     "reclaimHint_many": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
     "reclaimHint_other": "{{assistantName}} conserve ce navigateur tant que ce panneau est ouvert, et le récupère après {{formattedCount}} minutes d'inactivité.",
@@ -1404,7 +1418,7 @@
       "starting": "Démarrage",
       "stopped": "Arrêté"
     },
-    "title": "Navigateur en direct",
+    "title": "Navigateur cloud",
     "unavailable": {
       "description": "Ce navigateur n'appartient pas à ce chat ou a été supprimé.",
       "title": "Navigateur indisponible"
@@ -2225,12 +2239,12 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "emptyDescription": "Les fichiers et discussions de ce chat apparaîtront ici.",
-      "emptyTitle": "Aucune ressource pour l’instant",
-      "loadFailed": "Impossible de charger les ressources",
-      "loading": "Chargement des ressources",
+      "emptyDescription": "Les fichiers, sites Web et autres artéfacts créés dans ce chat apparaîtront ici.",
+      "emptyTitle": "Aucun artéfact pour l’instant",
+      "loadFailed": "Impossible de charger les artéfacts",
+      "loading": "Chargement des artéfacts",
       "showMore": "Afficher plus",
-      "title": "Ressources du chat"
+      "title": "Artéfacts et discussions"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",
@@ -2301,7 +2315,8 @@
       "shareLink": "Lien de la conversation partagée",
       "shareLinkCopied": "Lien de partage copié",
       "start": "Partager des messages",
-      "tooLarge": "Sélectionnez moins de messages à partager"
+      "tooLarge": "Sélectionnez moins de messages à partager",
+      "visibilityDescription": "Choisissez qui peut voir cette conversation. Vous seul pouvez modifier l’accès."
     },
     "shortcuts": {
       "number": "numéro"
@@ -3532,7 +3547,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Retour à {{brandName}}",
         "connectDescription": "Associez ce numéro de téléphone à votre compte {{brandName}} afin de pouvoir interagir avec {{assistantName}} par messages texte.",
         "connectTitle": "Connecter le numéro de téléphone",
         "documentTitle": "Connecter Messages",
@@ -3542,9 +3556,16 @@
         "invalidSignature": "La signature de ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage de ce lien n'est pas valide.",
         "invalidTitle": "Le lien de connexion est invalide",
+        "keepPhone": "Conserver {{phone}}",
+        "phoneInUseDescription": "Ce numéro est connecté à un autre compte ou à une autre organisation Okou. Déconnectez-le là-bas avant de réessayer.",
+        "phoneInUseTitle": "Numéro de téléphone déjà connecté",
+        "phoneMismatchDescription": "Votre compte Okou utilise actuellement {{currentPhone}} dans cette organisation. Passer à {{requestedPhone}}, le numéro qui a ouvert ce lien ?",
+        "phoneMismatchTitle": "Changer de numéro de téléphone ?",
         "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro.",
         "successDescription": "{{phone}} est connecté. Envoyez un message texte pour commencer à discuter avec {{assistantName}}.",
-        "successTitle": "Numéro de téléphone connecté"
+        "successTitle": "Numéro de téléphone connecté",
+        "switchPhone": "Passer à {{phone}}",
+        "unavailable": "La connexion téléphonique n’est pas disponible pour le moment."
       },
       "common": {
         "backToSettings": "Retour aux paramètres",
@@ -5984,6 +6005,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "Vous ne pouvez pas voir cette conversation",
     "handoffDescription": "{{assistantName}} transfère le contexte vers une nouvelle conversation",
     "handoffPrompt": "Poursuis cette conversation partagée avec moi : {{url}}",
     "makeConversationYours": "Faites de cette conversation la vôtre",

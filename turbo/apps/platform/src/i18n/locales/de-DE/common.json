@@ -630,7 +630,8 @@
       "organizationOptionUnnamed": "Alle in Ihrer Organisation",
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
-      "publicOption": "Alle mit dem Link"
+      "publicOption": "Alle mit dem Link",
+      "updateFailed": "Zugriff konnte nicht aktualisiert werden"
     },
     "sidebar": {
       "openSharedConversation": "Geteilte Unterhaltung öffnen",
@@ -1361,9 +1362,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "URL eingeben",
+    "blankPage": {
+      "description": "{{assistantName}} öffnet hier Seiten, während es arbeitet. Gib oben eine URL ein, um selbst zu surfen.",
+      "title": "Noch nichts geöffnet"
+    },
+    "blankTabTitle": "Neuer Tab",
     "cardTitle": "Cloud-Browser",
-    "close": "Schließen Sie den Live-Browser",
-    "documentTitle": "Live-Browser",
+    "close": "Cloud-Browser schließen",
+    "documentTitle": "Cloud-Browser",
     "notFound": "Browser nicht gefunden",
     "open": "Öffnen Sie den Browser {{name}}",
     "openAction": "Offen",
@@ -1374,6 +1381,13 @@
       "startDescription": "Beim Start werden das gespeicherte Anmeldeprofil und der Speicher wiederhergestellt, sofern verfügbar, und gespeicherte Tabs nach Möglichkeit erneut geöffnet.",
       "starting": "Wird gestartet…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} arbeitet",
+      "handBack": "Zurückgeben",
+      "handBackMessage": "Ich bin im Browser fertig. Bitte mach weiter.",
+      "memberInControl": "Du hast die Kontrolle",
+      "takeOver": "Übernehmen"
+    },
     "reclaimHint_one": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minute Inaktivität zurück.",
     "reclaimHint_other": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minuten Inaktivität zurück.",
     "status": {
@@ -1381,7 +1395,7 @@
       "starting": "Beginnt",
       "stopped": "Angehalten"
     },
-    "title": "Live-Browser",
+    "title": "Cloud-Browser",
     "unavailable": {
       "description": "Dieser Browser gehört nicht zu diesem Chat oder wurde entfernt.",
       "title": "Browser nicht verfügbar"
@@ -2186,12 +2200,12 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "emptyDescription": "Dateien und Chats aus diesem Chat werden hier angezeigt.",
-      "emptyTitle": "Noch keine Ressourcen",
-      "loadFailed": "Ressourcen konnten nicht geladen werden",
-      "loading": "Ressourcen werden geladen",
+      "emptyDescription": "Dateien, Websites und andere Artefakte aus diesem Chat werden hier angezeigt.",
+      "emptyTitle": "Noch keine Artefakte",
+      "loadFailed": "Artefakte konnten nicht geladen werden",
+      "loading": "Artefakte werden geladen",
       "showMore": "Mehr anzeigen",
-      "title": "Chat-Ressourcen"
+      "title": "Artefakte und Chats"
     },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",
@@ -2257,7 +2271,8 @@
       "shareLink": "Link zur geteilten Unterhaltung",
       "shareLinkCopied": "Freigabelink kopiert",
       "start": "Nachrichten teilen",
-      "tooLarge": "Wähle weniger Nachrichten zum Teilen aus"
+      "tooLarge": "Wähle weniger Nachrichten zum Teilen aus",
+      "visibilityDescription": "Wähle, wer diese Unterhaltung sehen kann. Nur du kannst den Zugriff ändern."
     },
     "shortcuts": {
       "number": "Nummer"
@@ -3478,7 +3493,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Zurück zu {{brandName}}",
         "connectDescription": "Verknüpfen Sie diese Telefonnummer mit Ihrem {{brandName}}-Konto, damit Sie über Textnachrichten mit {{assistantName}} interagieren können.",
         "connectTitle": "Telefonnummer verbinden",
         "documentTitle": "Nachrichten verbinden",
@@ -3488,9 +3502,16 @@
         "invalidSignature": "Die Signatur auf diesem Link ist ungültig.",
         "invalidTimestamp": "Der Zeitstempel auf diesem Link ist ungültig.",
         "invalidTitle": "Der Verbindungslink ist ungültig",
+        "keepPhone": "{{phone}} beibehalten",
+        "phoneInUseDescription": "Diese Telefonnummer ist mit einem anderen Okou-Konto oder einer anderen Organisation verbunden. Trenne sie dort, bevor du es erneut versuchst.",
+        "phoneInUseTitle": "Telefonnummer bereits verbunden",
+        "phoneMismatchDescription": "Dein Okou-Konto verwendet in dieser Organisation derzeit {{currentPhone}}. Zu {{requestedPhone}} wechseln, der Nummer, die diesen Link geöffnet hat?",
+        "phoneMismatchTitle": "Telefonnummer wechseln?",
         "risk": "SMS- und MMS-Antworten werden möglicherweise nicht zuverlässig zugestellt. Für ein möglichst zuverlässiges Erlebnis verwenden Sie iMessage mit dieser Nummer.",
         "successDescription": "{{phone}} ist verbunden. Senden Sie eine Textnachricht, um mit {{assistantName}} zu chatten.",
-        "successTitle": "Telefonnummer verbunden"
+        "successTitle": "Telefonnummer verbunden",
+        "switchPhone": "Zu {{phone}} wechseln",
+        "unavailable": "Die Telefonverbindung ist derzeit nicht verfügbar."
       },
       "common": {
         "backToSettings": "Zurück zu den Einstellungen",
@@ -5921,6 +5942,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "Du kannst diese Unterhaltung nicht ansehen",
     "handoffDescription": "{{assistantName}} übernimmt den Kontext in einen neuen Chat",
     "handoffPrompt": "Setze diese geteilte Unterhaltung mit mir fort: {{url}}",
     "makeConversationYours": "Mach diese Unterhaltung zu deiner",

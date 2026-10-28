@@ -13,7 +13,7 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
-  chatThreadEventInsertSql,
+  chatThreadEventInsertPlan,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 
@@ -106,14 +106,14 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
 }
 
 /** Pure list-event statement; execution stays with the creation owner. */
-export function chatThreadCreatedEventSql(args: {
+function createdThreadEventArgs(args: {
   readonly orgId: string;
   readonly eventId?: string;
   readonly thread: CreatedThread;
 }) {
   const { thread } = args;
-  return chatThreadEventInsertSql({
-    kind: "created",
+  return {
+    kind: "created" as const,
     userId: thread.userId,
     orgId: args.orgId,
     chatThreadId: thread.id,
@@ -127,7 +127,15 @@ export function chatThreadCreatedEventSql(args: {
     computerUseHostId: thread.computerUseHostId,
     cloudBrowserEnabled: thread.cloudBrowserEnabled,
     createdAt: thread.createdAt,
-  });
+  };
+}
+
+/** Compound initialization uses the same ordered list-event writes. */
+export function chatThreadCreatedEventPlan(
+  args: Parameters<typeof createdThreadEventArgs>[0],
+  source: Parameters<typeof chatThreadEventInsertPlan>[1],
+) {
+  return chatThreadEventInsertPlan(createdThreadEventArgs(args), source);
 }
 
 /** Validate the stored preferences before the creation owner may commit. */

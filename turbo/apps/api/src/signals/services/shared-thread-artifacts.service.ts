@@ -1,3 +1,4 @@
+import { canReadSharedThreadPolicy$ } from "./shared-thread-access.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
@@ -89,7 +90,8 @@ const authorizedSharedThreadHostedSnapshot$ = command(
     if (
       policy.status !== "active" ||
       policy.threadId !== record.threadId ||
-      policy.publicBrand !== record.publicBrand
+      policy.publicBrand !== record.publicBrand ||
+      !(await set(canReadSharedThreadPolicy$, policy, args.viewerId, signal))
     ) {
       return null;
     }
@@ -230,7 +232,7 @@ export const signSharedThreadHostedDownload$ = command(
   },
 );
 
-const readPolicy$ = command(
+export const readSharedThreadPolicy$ = command(
   async ({ get }, identity: SnapshotIdentity, signal: AbortSignal) => {
     const read = await settle(
       get(
@@ -246,7 +248,7 @@ const readPolicy$ = command(
       signal,
     );
     if (!read.ok) {
-      if (read.error instanceof Error && read.error.name === "NoSuchKey") {
+      if (isS3NotFoundError(read.error)) {
         return null;
       }
       throw read.error;
@@ -268,10 +270,19 @@ const readPolicy$ = command(
 );
 
 export const sharedThreadArtifactsReadable$ = command(
-  async ({ set }, identity: SnapshotIdentity, signal: AbortSignal) => {
+  async (
+    { set },
+    identity: SnapshotIdentity,
+    viewerId: string | undefined,
+    signal: AbortSignal,
+  ) => {
+    if (!identity.hasArtifactSnapshot) {
+      return true;
+    }
+    const current = await set(readSharedThreadPolicy$, identity, signal);
     return (
-      !identity.hasArtifactSnapshot ||
-      (await set(readPolicy$, identity, signal))?.policy.status === "active"
+      current !== null &&
+      (await set(canReadSharedThreadPolicy$, current.policy, viewerId, signal))
     );
   },
 );
@@ -318,7 +329,7 @@ const changeSharedThreadArtifactPhase$ = command(
     if (!row?.hasArtifactSnapshot) {
       throw new Error("Conversation snapshot was removed before publication");
     }
-    const current = await set(readPolicy$, row, signal);
+    const current = await set(readSharedThreadPolicy$, row, signal);
     if (!current || current.policy.status !== "preparing") {
       throw new Error("Conversation snapshot is no longer pending publication");
     }
@@ -447,7 +458,7 @@ const revokePolicy$ = command(
     if (!identity.hasArtifactSnapshot) {
       return null;
     }
-    const current = await set(readPolicy$, identity, signal);
+    const current = await set(readSharedThreadPolicy$, identity, signal);
     if (!current) {
       return null;
     }

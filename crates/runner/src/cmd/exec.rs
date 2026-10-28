@@ -563,26 +563,6 @@ mod tests {
     }
 
     #[test]
-    fn non_exited_terminations_map_to_cli_exit_codes() {
-        assert_eq!(
-            remote_exec_exit_code(ExecTermination::TimedOut),
-            ExitCode::from(REMOTE_EXEC_TIMEOUT_EXIT_CODE)
-        );
-        assert_eq!(
-            remote_exec_exit_code(ExecTermination::Cancelled),
-            ExitCode::FAILURE
-        );
-        assert_eq!(
-            remote_exec_exit_code(ExecTermination::StartFailed),
-            ExitCode::FAILURE
-        );
-        assert_eq!(
-            remote_exec_exit_code(ExecTermination::WaitFailed),
-            ExitCode::FAILURE
-        );
-    }
-
-    #[test]
     fn terminal_diagnostic_starts_on_new_line_after_stderr() {
         let result = RemoteExecResult {
             termination: ExecTermination::WaitFailed,

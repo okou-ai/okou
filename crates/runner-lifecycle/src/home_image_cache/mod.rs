@@ -46,7 +46,7 @@ use background::BackgroundGcActivity;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
 pub use gc_pressure::{HomeCacheReclaimOutcome, HomeCacheReclaimStatus};
-pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates};
+pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates, HomeCacheProbe};
 pub use lifecycle::{
     HomeImageLease, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
     HomeImagePromotionOutcome, cap_held_home_states,
@@ -58,7 +58,7 @@ pub use types::{
     CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCachePressureThresholds,
     HomeCacheTerminalStatus, HomeImageCacheInspection, HomeImageCacheInspectionEntry,
     HomeImageCacheInspectionStatus, HomeImageCacheInspectionSummary, HomeImageLeaseIdentity,
-    HomeImageLeaseRequest, HomeImagePrepareLockPolicy, HomeImagePrepareRequest,
+    HomeImageLeaseRequest, HomeImagePreparePolicy, HomeImagePrepareRequest,
     HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
     HomeImagePromotionIdentityRequest, HomeImagePromotionRequest, HomeImageSourceIdentity,
 };

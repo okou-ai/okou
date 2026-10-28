@@ -163,7 +163,7 @@ export const notifyRunnerJob$ = command(
     );
     const runnerPreference =
       resolution?.preference ?? runnerReusePreferenceLookupError();
-    const finalizingPreferenceSource = resolution?.finalizingSource;
+    const waitBudgetSource = resolution?.waitBudgetSource;
     const preferenceFinishedAt = now();
     const publishStartedAt = now();
     const published = await publishRunnerJobNotification({
@@ -193,8 +193,8 @@ export const notifyRunnerJob$ = command(
       reuse_key_kind: runnerReuseKeyTelemetryKind(args.reuseKey),
       ...(args.reuseKey === null ? {} : { reuse_key: args.reuseKey }),
       ...preferenceDimensions,
-      ...(finalizingPreferenceSource
-        ? { runner_preference_finalizing_source: finalizingPreferenceSource }
+      ...(waitBudgetSource
+        ? { runner_preference_finalizing_source: waitBudgetSource }
         : {}),
     };
     // Queue-relative actions are cumulative boundaries. Preference lookup and

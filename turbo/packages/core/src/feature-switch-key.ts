@@ -4,10 +4,12 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
   SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
+  SharedThreadVisibility = "sharedThreadVisibility",
   HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
@@ -55,6 +57,7 @@ export enum FeatureSwitchKey {
   WechatIntegration = "wechatIntegration",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
+  AutoContinueBusyChats = "_autoContinueBusyChats",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
@@ -70,4 +73,5 @@ export enum FeatureSwitchKey {
   ChatReplyNameLine = "chatReplyNameLine",
   ChatThreadTimeline = "chatThreadTimeline",
   UnifiedChatWorkspace = "unifiedChatWorkspace",
+  CloudBrowserPanel = "cloudBrowserPanel",
 }

@@ -707,8 +707,9 @@ def should_try_firewall_stream_request(classification: RequestClassification) ->
     if not isinstance(classification, FirewallAllow):
         return False
     allow = classification.firewall_allow
-    # Router JSON-RPC calls must be buffered so registration precedes execution,
-    # including when credential authorization is already cached.
+    # Router JSON-RPC calls stay buffered for request-body admission, including
+    # when credential authorization is already cached. Execution-ID registration
+    # happens after receiving the upstream response.
     return allow.name != "data-router" and not firewall_allow_uses_public_destination(allow)
 
 

@@ -71,6 +71,7 @@ use runner_provider::{JobProvider, RunCancellationRegistry};
 use runner_types::ids::RunId;
 
 mod claim_tasks;
+mod claimed_home_wait;
 pub mod error;
 mod factory_lifecycle;
 mod finalizing_claim;
@@ -82,7 +83,6 @@ mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
 mod maintenance;
-mod peer_home_claim;
 mod pending_candidate;
 mod prune_idle;
 mod sandbox_recovery;
@@ -399,7 +399,7 @@ enum StartLoopEvent {
     FinalizingCapacityWaitEntered {
         run_id: RunId,
     },
-    PeerHomeRecheckCompleted {
+    HomeReadinessRecheckCompleted {
         run_id: RunId,
         ready: bool,
     },

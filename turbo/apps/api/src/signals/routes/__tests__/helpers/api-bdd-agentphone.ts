@@ -219,7 +219,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
     readonly channel: string | undefined;
   } {
     const prompt = [...capture.messages].reverse().find((message) => {
-      return message.body?.includes("/agentphone/connect?") ?? false;
+      return message.body?.includes("/settings/agentphone?") ?? false;
     });
     const url = prompt?.body?.match(/https?:\/\/\S+/u)?.[0];
     if (!url) {
@@ -298,6 +298,19 @@ export function createAgentPhoneBddApi(context: TestContext) {
   return {
     postAgentPhoneInboundMessage,
     postRawAgentPhoneInboundWebhook,
+
+    async requestConnectLink(
+      phone: string,
+      capture: AgentPhoneSendCapture,
+      channel: "sms" | "imessage" = "sms",
+    ) {
+      await postAgentPhoneInboundMessage({
+        channel,
+        from: phone,
+        body: "/connect",
+      });
+      return harvestConnectBody(capture);
+    },
 
     captureAgentPhoneSends(): AgentPhoneSendCapture {
       const messages: AgentPhoneProviderSend[] = [];

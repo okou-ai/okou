@@ -8,6 +8,7 @@ final class NotificationServiceExtension: UNNotificationServiceExtension {
   private let delivery: NotificationExtensionDelivery
 
   override init() {
+    CrashReporting.start()
     delivery = NotificationExtensionDelivery()
     super.init()
   }

@@ -1,0 +1,581 @@
+{
+  "copy": {
+    "again": "Mainkan lagi",
+    "back": "Kembali ke Okou",
+    "backToGame": "Kembali ke permainan",
+    "boo": "Huhu!",
+    "brand": "Okou",
+    "campaign": "Halloween yang menyeramkan",
+    "climb": "Pendakian",
+    "correct": "Benar",
+    "error": "Kami tidak dapat memuat kuis. Silakan coba lagi.",
+    "footerAfter": "untuk rincian kelayakan dan hadiah.",
+    "footerBefore": "Lihat aktivitas",
+    "footerLink": "aturan",
+    "hint": "Empat jawaban yang benar. Satu akhir yang manis.",
+    "language": "Bahasa Indonesia",
+    "leave": "Tinggalkan kuis",
+    "lost": "Anda tertipu!",
+    "lostSub": "Okou membantu Anda kali ini.",
+    "magic": "Ciptakan keajaiban dengan Okou",
+    "next": "Pertanyaan selanjutnya",
+    "nudgeLabel": "Mainkan kuis Halloween",
+    "optional": "Teruslah menjelajah dengan Okou. Aktivitas ini bersifat opsional.",
+    "questionProgress": "Pertanyaan {{current}} dari {{total}}",
+    "result": "Lihat hasil saya",
+    "resultRewardEmphasis": "7 hari Okou Pro",
+    "resultRewardRest": ", dapat ditinjau. Tidak ada kredit yang disertakan.",
+    "review": "Tunduk pada tinjauan kelayakan.",
+    "rewardEmphasis": "7 hari Okou Pro.",
+    "rewardPrefix": "Mainkan untuk",
+    "roundProgress": "Babak {{current}} · {{title}}",
+    "rules": "Aturan aktivitas",
+    "rulesBrand": "Okou ·Halloween",
+    "rulesHeading": "Halloween Seram — aturan aktivitas",
+    "rulesSub": "Sedikit kenakalan. Beberapa aturan sederhana.",
+    "soundOff": "Matikan suara",
+    "soundOn": "Nyalakan suara",
+    "start": "Ayo bermain",
+    "subtitle": "Tapi pertama-tama, kuis kecil.",
+    "tagline": "Halloween Seram · Sedikit kenakalan. Banyak kemungkinan.",
+    "taskSub": "Beri dia tugas.",
+    "taskTitle": "Sekarang giliran Okou.",
+    "title": "Hadiah dari Okou.",
+    "unavailable": "Sedikit keajaiban sedang terjadi.",
+    "unavailableSub": "Kuis Halloween belum tersedia. Segera kembali.",
+    "won": "Anda lulus kuis!",
+    "wonSub": "Dia tahu kamu memilikinya di dalam dirimu."
+  },
+  "levels": {
+    "five": "Okou menyukaimu",
+    "four": "Legenda Halloween",
+    "one": "Pemula",
+    "three": "Ahli trik",
+    "two": "Bintang yang sedang naik daun"
+  },
+  "nudges": {
+    "one": "Beristirahat sejenak\nistirahat seram?",
+    "three": "Kuis kecil.\nSuguhan manis?",
+    "two": "Satu ronde lagi\n?"
+  },
+  "questions": {
+    "QUIZ-01": {
+      "explanation": "Itu “oh keren.” Seperti reaksi Anda ketika rekan satu tim AI Anda menyelesaikan pekerjaan dengan benar dan cepat.",
+      "options": {
+        "A": "Oh-sapi",
+        "B": "goku",
+        "C": "Oh keren"
+      },
+      "text": "Bagaimana cara mengucapkan Okou?"
+    },
+    "QUIZ-02": {
+      "explanation": "Delapan kelopak di sekitar bagian tengah yang terbuka. Itu bunga, bukan perlengkapan dalam kostum.",
+      "options": {
+        "A": "Enam",
+        "B": "Delapan",
+        "C": "Kelopak? Bukankah itu hanya sebuah lingkaran?"
+      },
+      "text": "Berapa banyak kelopak yang dimiliki simbol bunga Okou?"
+    },
+    "QUIZ-03": {
+      "explanation": "Zero sedang beristirahat dengan baik. Okou hadir untuk meneruskan pekerjaan ini.",
+      "options": {
+        "A": "Nol",
+        "B": "Siri",
+        "C": "Alexander"
+      },
+      "text": "Sebelum Okou mengambil alih, siapa yang ada di tim?"
+    },
+    "QUIZ-04": {
+      "explanation": "Ayolah—penelitian, deck, situs web… dia punya lebih dari satu trik.",
+      "options": {
+        "A": "Membuat kerusakan",
+        "B": "Menjadikannya hujan permen",
+        "C": "Menjadi rekan setim AI Anda yang serba bisa"
+      },
+      "text": "Halloween atau tidak, apa pekerjaan sebenarnya Okou?"
+    },
+    "QUIZ-05": {
+      "explanation": "Beri tahu Okou apa yang Anda inginkan, dapatkan apa yang Anda butuhkan. Dia memanfaatkan alat Anda yang terhubung.",
+      "options": {
+        "A": "Hanya memberimu saran",
+        "B": "Rencanakan langkah-langkahnya dan mulai bekerja",
+        "C": "Membuatmu takut sampai Halloween berikutnya"
+      },
+      "text": "Berikan Okou pekerjaan. Apa yang dia lakukan?"
+    },
+    "QUIZ-06": {
+      "explanation": "Lebih banyak yang selesai. Tim yang sama. Kurangi kesibukan.",
+      "options": {
+        "A": "Lebih banyak yang selesai. Tim yang sama.",
+        "B": "Lebih banyak pertemuan. Lebih banyak hal yang harus dilakukan.",
+        "C": "Pekerjaan yang sama. Kekacauan yang sama."
+      },
+      "text": "Apa moto Okou untuk tim yang terkubur dalam pekerjaan?"
+    },
+    "QUIZ-07": {
+      "explanation": "Singkat Okou dalam bahasa yang sederhana. Sesederhana itu—tidak diperlukan keahlian AI.",
+      "options": {
+        "A": "Ya—tulislah beberapa kode!",
+        "B": "[Okou sedang berada di luar kantor. Kembali setelah Halloween.]",
+        "C": "Tidak—jelaskan saja ide Anda"
+      },
+      "text": "Apakah Anda perlu membuat kode untuk menjelaskan Okou?"
+    },
+    "QUIZ-08": {
+      "explanation": "Laptop Anda bisa istirahat. Pekerjaan Okou berjalan di cloud.",
+      "options": {
+        "A": "Ya—dia berubah menjadi labu",
+        "B": "Tidaaaak—dia bisa terus bekerja di cloud",
+        "C": "Lebih baik biarkan laptop itu tetap terbuka"
+      },
+      "text": "Apakah Okou “tertidur” saat Anda menutup laptop?"
+    },
+    "QUIZ-09": {
+      "explanation": "Tugas lain? Ayo. Okou bisa lebih dari itu.",
+      "options": {
+        "A": "Tentu saja—tugas dapat berjalan secara paralel",
+        "B": "Tidak—tanyakan lagi pada Halloween berikutnya",
+        "C": "Tidak—dia tidak punya banyak “tangan”"
+      },
+      "text": "Pekerjaan penelitian yang panjang sedang berjalan. Bisakah Okou mengambil tugas lain?"
+    },
+    "QUIZ-10": {
+      "explanation": "Pesan, hasil, dan koreksi sebelumnya tetap sesuai konteks. Kurang menceritakan kembali cerita yang sama.",
+      "options": {
+        "A": "Obrolan baru menarik hantu nakal",
+        "B": "Itu hanya kebiasaan",
+        "C": "Itu mempertahankan konteks sebelumnya"
+      },
+      "text": "Mengapa menyaring ringkasan seram dalam obrolan Okou yang sama?"
+    },
+    "QUIZ-11": {
+      "explanation": "Topi yang sama, pekerjaan yang sama. Instruksi bersama membuat semua orang memiliki pemahaman yang sama.",
+      "options": {
+        "A": "Pertemuan tim lainnya",
+        "B": "Peran dan instruksi yang sama",
+        "C": "“Kode” lain yang perlu dihafal"
+      },
+      "text": "Apa yang diberikan agen Okou bersama kepada tim Anda?"
+    },
+    "QUIZ-12": {
+      "explanation": "Simpan metode yang telah ditinjau sebagai Alur Kerja—SOP yang dapat digunakan kembali dan dapat dijalankan kembali oleh tim Anda.",
+      "options": {
+        "A": "Simpan sebagai Alur Kerja Okou",
+        "B": "Mulailah dari awal setiap saat",
+        "C": "Percayai memori pasca-Halloween Anda"
+      },
+      "text": "Suatu proses bekerja seperti keajaiban. Bagaimana cara membuatnya dapat digunakan kembali?"
+    },
+    "QUIZ-13": {
+      "explanation": "Beri tahu Okou kapan harus dijalankan. Dia menyiapkan pemicunya—tidak diperlukan kode penjadwalan.",
+      "options": {
+        "A": "Tulis kode penjadwalan Anda sendiri",
+        "B": "Setel alarm dan jalankan sendiri",
+        "C": "Cukup minta Okou untuk menyiapkannya"
+      },
+      "text": "Apa cara termudah untuk mengotomatiskan alur kerja Okou?"
+    },
+    "QUIZ-14": {
+      "explanation": "Jelaskan, tinjau langkah-langkah yang diusulkan, lalu simpan versi yang Anda setujui.",
+      "options": {
+        "A": "Bangun semuanya dalam diagram alur",
+        "B": "Beri tahu Okou langkah-langkahnya dengan bahasa yang sederhana",
+        "C": "Pesan pertemuan dengan IT terlebih dahulu"
+      },
+      "text": "Apa cara termudah untuk membangun alur kerja dengan Okou?"
+    },
+    "QUIZ-15": {
+      "explanation": "Atur sekali. Okou menjalankan alur kerja secara otomatis—tidak perlu “memanggil” dia setiap saat.",
+      "options": {
+        "A": "Otomatisasi terjadwal",
+        "B": "Pembatalan permanen pada hari Senin",
+        "C": "Pertemuan hari Senin lainnya"
+      },
+      "text": "Anda menulis laporan setiap Senin pagi. Bagaimana Okou dapat membantu?"
+    },
+    "QUIZ-16": {
+      "explanation": "Email, acara kalender, atau proses yang telah selesai dapat memulai alur kerja yang dikonfigurasi.",
+      "options": {
+        "A": "Menambahkan URGENT ke nama alur kerja",
+        "B": "Membiarkan laptop Anda terbuka semalaman",
+        "C": "Email yang cocok di kotak masuk yang terhubung"
+      },
+      "text": "Selain jadwal, apa yang dapat membangunkan Otomatisasi Okou?"
+    },
+    "QUIZ-17": {
+      "explanation": "Simpan perbaikannya sekali. Siapa pun yang memiliki akses ke alur kerja dapat menggunakan versi yang diperbarui.",
+      "options": {
+        "A": "Hanya Anda—Andalah bosnya",
+        "B": "Siapa pun yang memiliki akses ke alur kerja",
+        "C": "Hanya kamu dan adminnya"
+      },
+      "text": "Anda menyimpan perbaikan ke alur kerja Okou bersama. Siapa yang bisa menggunakannya?"
+    },
+    "QUIZ-18": {
+      "explanation": "Prosesnya berhenti dan menyimpan lognya, sehingga Anda dapat melihat langkah mana yang salah.",
+      "options": {
+        "A": "Log yang dijalankan",
+        "B": "Tidak ada—proses yang gagal akan hilang",
+        "C": "Tidak tahu… mungkin percobaan ulang akan berhasil?"
+      },
+      "text": "Otomatisasi Okou gagal. Catatan apa yang bisa Anda periksa?"
+    },
+    "QUIZ-19": {
+      "explanation": "Dek, situs web, gambar, dan file—semuanya di satu tempat: Artefak.",
+      "options": {
+        "A": "Artefak",
+        "B": "Alur kerja",
+        "C": "Templat"
+      },
+      "text": "Bagian Okou manakah yang menyatukan kreasi Anda yang sudah jadi?"
+    },
+    "QUIZ-20": {
+      "explanation": "Dek kosong adalah sejarah. Okou adalah rekan setim AI Anda yang serba bisa.",
+      "options": {
+        "A": "Hanya template slide kosong",
+        "B": "Dek tertulis dan dirancang",
+        "C": "Hanya tips untuk membuatnya sendiri"
+      },
+      "text": "Minta Okou untuk presentasi singkat Halloween. Apa yang bisa dia bangun?"
+    },
+    "QUIZ-21": {
+      "explanation": "Dek PowerPoint yang dapat diedit? Okou tidak akan mengecewakan Anda.",
+      "options": {
+        "A": "Hanya tangkapan layar slide",
+        "B": "Hanya garis besar teks",
+        "C": "File PowerPoint yang dapat diedit (.pptx)"
+      },
+      "text": "Okou dapat mengekspor dek Halloween Anda sebagai apa?"
+    },
+    "QUIZ-22": {
+      "explanation": "Pribadi secara default. Gunakan Bagikan untuk memilih siapa yang mendapat akses.",
+      "options": {
+        "A": "Hanya kamu",
+        "B": "Seluruh tim Anda",
+        "C": "Siapapun yang punya tautannya"
+      },
+      "text": "Siapa yang dapat melihat file pribadi Okou baru Anda secara default?"
+    },
+    "QUIZ-23": {
+      "explanation": "Unggah gambar. Okou akan membangunnya kembali sebagai slide yang dapat diedit. Lalu revisi di chat.",
+      "options": {
+        "A": "Ketik ulang semuanya sendiri",
+        "B": "Tanyakan Okou. Mudah.",
+        "C": "Biarkan saja—itu hanya sebuah gambar"
+      },
+      "text": "Gambar slide memiliki terlalu banyak teks. Perbaikan termudah?"
+    },
+    "QUIZ-24": {
+      "explanation": "Kirim Okou file merek Anda atau tautan Figma. Dia akan mengurus penataannya.",
+      "options": {
+        "A": "Dia tidak bisa—hanya gaya bawaannya",
+        "B": "Tidak... Hanya jika Anda menata ulang setiap slide",
+        "C": "Cukup bagikan file merek Anda atau tautan Figma"
+      },
+      "text": "Ingin warna merek Anda di dek Halloween Anda? Bagaimana Okou dapat membantu?"
+    },
+    "QUIZ-25": {
+      "explanation": "Jelaskan subjek dan gayanya. Okou membuat ilustrasi untuk ide Anda.",
+      "options": {
+        "A": "Ilustrasi khusus",
+        "B": "Hanya tautan ke situs stok gambar",
+        "C": "Hanya deskripsi gambar tertulis"
+      },
+      "text": "Butuh ilustrasi Halloween? Apa yang dapat Okou buat untuk Anda?"
+    },
+    "QUIZ-26": {
+      "explanation": "Seri yang cocok? Sepotong kue untuk Okou.",
+      "options": {
+        "A": "Hanya satu ilustrasi",
+        "B": "Satu set lengkap dengan gaya yang sama",
+        "C": "Hanya papan suasana hati untuk Anda ikuti"
+      },
+      "text": "Butuh serangkaian ilustrasi Halloween yang serasi? Apa yang dapat Okou buat untuk Anda?"
+    },
+    "QUIZ-27": {
+      "explanation": "Kirimkan gambar referensi dan jelaskan hasil yang Anda inginkan. Okou dapat bekerja darinya.",
+      "options": {
+        "A": "Hanya deskripsi gambar",
+        "B": "Hanya salinan dari aslinya",
+        "C": "Ilustrasi baru yang menggunakannya sebagai referensi"
+      },
+      "text": "Punya gambar Halloween yang kamu suka? Apa yang dapat Okou buat untuk Anda?"
+    },
+    "QUIZ-28": {
+      "explanation": "Pratinjau gambarnya, lalu unduh untuk digunakan di mana pun Anda memerlukannya.",
+      "options": {
+        "A": "Pratinjau dan file yang dapat diunduh",
+        "B": "Hanya pratinjau",
+        "C": "Hanya deskripsi teks"
+      },
+      "text": "Saat Okou membuat gambar, apa yang Anda dapatkan?"
+    },
+    "QUIZ-29": {
+      "explanation": "Analisis, bagan, dan tata letak yang sempurna—Okou menyatukan keseluruhan laporan.",
+      "options": {
+        "A": "Hanya analisis tertulis",
+        "B": "Analisis, tabel, bagan, dan tata letak",
+        "C": "Hanya grafik dan tabel"
+      },
+      "text": "Apa yang bisa Okou masukkan ke dalam laporan kampanye seram Anda?"
+    },
+    "QUIZ-30": {
+      "explanation": "Berikan Okou data baru atau gunakan sumber yang terhubung. Dia dapat memperbarui laporan tanpa Anda membuatnya ulang secara manual.",
+      "options": {
+        "A": "Tidak—Anda harus membangunnya kembali setiap saat",
+        "B": "Hanya jika Anda mengedit sendiri setiap nomor",
+        "C": "Ya—minta dia untuk memperbaruinya dengan data baru"
+      },
+      "text": "Data baru baru saja masuk. Bisakah Okou memperbarui laporan yang ada?"
+    },
+    "QUIZ-31": {
+      "explanation": "Bagikan tautan dengan akses diaktifkan. Mereka dapat membuka laporan langsung di browser mereka.",
+      "options": {
+        "A": "Buka tautan yang dibagikan",
+        "B": "Pinjam laptop Anda—tidak ada cara lain",
+        "C": "Instal aplikasi khusus terlebih dahulu"
+      },
+      "text": "Bagaimana orang lain dapat melihat laporan Halloween Okou Anda?"
+    },
+    "QUIZ-32": {
+      "explanation": "Dari salinan hingga desain hingga tautan langsung—Okou menyiapkan situs Anda untuk pengunjung.",
+      "options": {
+        "A": "Hanya maket desain",
+        "B": "Situs yang sudah selesai dengan tautan yang dapat dibagikan",
+        "C": "Hanya salinan situs webnya"
+      },
+      "text": "Peluncuran Halloween Anda memerlukan sebuah situs. Apa yang dapat diberikan oleh Okou?"
+    },
+    "QUIZ-33": {
+      "explanation": "Ponsel atau laptop, Okou menyesuaikan tata letak agar sesuai dengan layar.",
+      "options": {
+        "A": "Teks kecil. Semoga mereka membawa kaca pembesar.",
+        "B": "Halaman raksasa. Geser, geser, geser.",
+        "C": "Tata letak yang sesuai dengan layar mereka"
+      },
+      "text": "Seseorang membuka situs Okou Anda di ponsel. Apa yang mereka lihat?"
+    },
+    "QUIZ-34": {
+      "explanation": "Ucapkan “Ubah laporan ini menjadi sebuah dek.”",
+      "options": {
+        "A": "Tidak. Saatnya menyalin dan menempel.",
+        "B": "Hanya jika Anda beralih ke alat lain",
+        "C": "Ya—minta saja dia untuk membuatkannya setumpuk"
+      },
+      "text": "Bisakah Okou mengubah laporan yang dia buat menjadi presentasi?"
+    },
+    "QUIZ-35": {
+      "explanation": "Ketik @Okou di mana tim Anda berbicara. Itu mantra pemanggilanmu.",
+      "options": {
+        "A": "@ dia",
+        "B": "Berteriaklah padanya",
+        "C": "Menatapnya"
+      },
+      "text": "Bagaimana cara memanggil Okou di thread Slack?"
+    },
+    "QUIZ-36": {
+      "explanation": "@Okou di saluran untuk kerja tim, atau DM dia untuk mengerjakan draf secara pribadi!",
+      "options": {
+        "A": "Hanya di saluran—DMs tidak diizinkan",
+        "B": "Di saluran atau DM",
+        "C": "Tidak ada tempat. Dia hanya web."
+      },
+      "text": "Di mana Anda dapat menemukan Okou di Slack?"
+    },
+    "QUIZ-37": {
+      "explanation": "Buka Okou di web. Thread yang sama menyatukan log dan file yang dijalankan secara penuh.",
+      "options": {
+        "A": "Tidak ada tempat—tetap di Slack",
+        "B": "Di web, tetapi hanya jika Anda memulai dari awal",
+        "C": "Thread yang sama juga ada di web"
+      },
+      "text": "Perjalanan panjang Okou dimulai pada Slack. Di mana lagi Anda bisa melihat proses selengkapnya?"
+    },
+    "QUIZ-38": {
+      "explanation": "4.000+ konektor kini ada di Okou!!!",
+      "options": {
+        "A": "Tentu saja melalui konektor",
+        "B": "Dia sudah memiliki akses ke setiap aplikasi",
+        "C": "Hanya dengan mengetahui nama aplikasinya"
+      },
+      "text": "Bagaimana Okou terhubung ke aplikasi kerja Anda?"
+    },
+    "QUIZ-39": {
+      "explanation": "Pilih apa yang Okou dapat diakses dan berapa lama. Anda memegang kendali.",
+      "options": {
+        "A": "Rekan satu tim Anda",
+        "B": "kamu",
+        "C": "Okou dirinya sendiri"
+      },
+      "text": "Siapa yang mengontrol izin Okou Anda?"
+    },
+    "QUIZ-40": {
+      "explanation": "Bagikan alur kerja, bukan akses akun Anda. Setiap orang menggunakan izinnya masing-masing—jaga privasi Anda.",
+      "options": {
+        "A": "Milikmu",
+        "B": "milik semua orang",
+        "C": "Milik rekan satu tim Anda"
+      },
+      "text": "Rekan satu tim Anda menjalankan alur kerja yang Anda bagikan. Aplikasi terhubung siapa yang digunakannya?"
+    },
+    "QUIZ-41": {
+      "explanation": "Jika alat memiliki API, konektor khusus dapat membawanya ke Okou—bahkan alat internal.",
+      "options": {
+        "A": "Belum—coba konektor khusus",
+        "B": "Ya. Tidak ada daftar, tidak ada peluang.",
+        "C": "Ya. Saatnya beralih alat."
+      },
+      "text": "Alat tim Anda tidak ada dalam daftar konektor Okou. Apakah permainan itu sudah berakhir?"
+    },
+    "QUIZ-42": {
+      "explanation": "Dengan persetujuan Anda, Okou dapat mengajukan masalah GitHub. Selagi Anda berada di sana, berikan Okou bintang!",
+      "options": {
+        "A": "Jelaskan saja apa itu bug",
+        "B": "Ajukan masalah GitHub beserta detailnya",
+        "C": "“Matikan dan hidupkan”"
+      },
+      "text": "Anda menemukan bug yang lebih menakutkan daripada Halloween. Bagaimana Okou dapat membantu melacaknya?"
+    },
+    "QUIZ-43": {
+      "explanation": "Jelaskan pelanggan ideal Anda. Berapa banyak yang Anda inginkan, berapa banyak yang Anda dapatkan.",
+      "options": {
+        "A": "Sarankan kata kunci pencarian",
+        "B": "Urutkan daftar yang sudah Anda miliki",
+        "C": "Temukan prospek yang cocok dengan sumber"
+      },
+      "text": "Saluran penjualan Anda adalah kota hantu. Hasil Okou manakah yang memberi Anda prospek baru untuk dievaluasi?"
+    },
+    "QUIZ-44": {
+      "explanation": "Bagikan pembaruan terkini. Okou dapat menyatukan semuanya dalam satu Google Sheet!",
+      "options": {
+        "A": "Pelacak Google Sheets",
+        "B": "Daftar kontak dengan nama saja",
+        "C": "Pengingat tindak lanjut satu kali"
+      },
+      "text": "Anda perlu melacak status setiap kontak kolaborasi dan langkah selanjutnya. Apa yang harus Anda minta Okou untuk dibuat?"
+    },
+    "QUIZ-45": {
+      "explanation": "Okou tidak akan mengirimkan email ini tanpa izin Anda. Anda mendapat panggilan terakhir.",
+      "options": {
+        "A": "Okou—itu akan padam segera setelah dia selesai",
+        "B": "Anda—Anda memeriksanya dan menekan Kirim",
+        "C": "Admin tim Anda—setiap draf memerlukan persetujuan"
+      },
+      "text": "Okou membuat draf email kolaborasi Anda. Siapa yang mendapat keputusan akhir sebelum dikirimkan?"
+    },
+    "QUIZ-46": {
+      "explanation": "Klik Dapatkan lebih banyak kredit di kanan atas obrolan untuk melihat tugas dan persyaratan Anda yang tersedia.",
+      "options": {
+        "A": "Di menu templat",
+        "B": "Di Artefak, di samping file Anda",
+        "C": "Di bawah Dapatkan lebih banyak kredit"
+      },
+      "text": "Mencari kredit tambahan Okou? Di mana tugas hadiahnya?"
+    },
+    "QUIZ-47": {
+      "explanation": "Katakan saja pada Okou. Dia di sini untuk menjadi rekan setim AI terbaik Anda.",
+      "options": {
+        "A": "Katakan saja padanya—dia akan mendapatkan idenya",
+        "B": "Dia harus tahu segalanya, meskipun Anda tidak mengatakan apa-apa",
+        "C": "Kebenaran atau tantangan?"
+      },
+      "text": "Ingin Okou mendapatkan gaya kerja Anda? Apa yang paling membantu?"
+    },
+    "QUIZ-48": {
+      "explanation": "Keyakinan bukanlah bukti. Okou dapat membantu Anda memeriksa sumber dan memisahkan fakta dari asumsi.",
+      "options": {
+        "A": "Ya—keyakinan berarti keakuratan",
+        "B": "Tidak—periksa buktinya",
+        "C": "Ya, jika jawabannya cukup panjang"
+      },
+      "text": "AI terdengar percaya diri. Apakah itu bukti bahwa itu benar?"
+    },
+    "QUIZ-49": {
+      "explanation": "Pertama datanya, lalu jawabannya. Okou akan menanyakan apa yang hilang, bukan menciptakannya.",
+      "options": {
+        "A": "Pilih nomor yang kedengarannya benar",
+        "B": "Katakan “Banyak!” dan menyebutnya sehari",
+        "C": "Mintalah data penjualannya terlebih dahulu"
+      },
+      "text": "“Okou, berapa banyak yang kita jual?” Apa yang harus dia lakukan tanpa data penjualan?"
+    },
+    "QUIZ-50": {
+      "explanation": "Lewati kepanikan halaman kosong. Berikan Okou ringkasan dan biarkan dia melakukan penelitian dan penulisan—Anda meninjau rencananya.",
+      "options": {
+        "A": "Draf rencananya",
+        "B": "Jadwalkan retrospektif",
+        "C": "“Kamu dapat ini.”"
+      },
+      "text": "Bos Anda menginginkan rencana kampanye Halloween “selambat-lambatnya kemarin”. Bagaimana Okou dapat membantu?"
+    },
+    "QUIZ-51": {
+      "explanation": "Anda menentukan arahnya. Okou membantu menyelesaikan pekerjaan. Tetap tim Anda, tetap panggilan Anda.",
+      "options": {
+        "A": "Kepala Petugas Salin-Tempel",
+        "B": "Pengambil keputusan—Andalah yang mengambil keputusan",
+        "C": "Pengamat bilah kemajuan penuh waktu"
+      },
+      "text": "Dengan Okou yang menangani pekerjaan ini, apa peran Anda?"
+    },
+    "QUIZ-52": {
+      "explanation": "OMG, Anda benar-benar mengerti! Anda benar-benar seorang Okou profesional.",
+      "options": {
+        "A": "/",
+        "B": "@",
+        "C": "#"
+      },
+      "text": "Apa yang Anda ketik di kotak obrolan Okou untuk membuka menu templat? (Pertanyaan tersulit. Tidak ada tekanan.)"
+    },
+    "QUIZ-53": {
+      "explanation": "Oh keren. Dia juga menyukaimu!",
+      "options": {
+        "A": "Tentu saja.",
+        "B": "Anda yakin.",
+        "C": "Lebih dari sekedar permen."
+      },
+      "text": "Apakah kamu suka Okou?"
+    }
+  },
+  "roundTitles": {
+    "five": "Okou menyukaimu",
+    "four": "Satu trik terakhir",
+    "one": "Mari kita lihat apa yang Anda punya",
+    "three": "Dia terkesan",
+    "two": "Anda menyukai tipuannya"
+  },
+  "rules": {
+    "availability": {
+      "text": "Kuis Halloween tersedia setiap kali muncul di Okou. Jika aktivitas menjadi tidak tersedia, putaran tersimpan Anda tetap utuh dan dapat dilanjutkan saat muncul kembali.",
+      "title": "Ketersediaan aktivitas"
+    },
+    "play": {
+      "text": "Mainkan dari akun Okou yang Anda masuki, tanpa perlu melakukan tugas apa pun. Setiap putaran disimpan langsung ke akun tersebut dan memiliki empat pertanyaan yang dipilih secara acak, tanpa pengulangan di putaran tersebut, diikuti dengan 'Apakah Anda suka Okou?'—setiap jawaban pada pertanyaan terakhir adalah benar. Satu jawaban yang salah mengakhiri putaran. Menutup atau menyegarkan kuis akan mempertahankan kemajuan atau hasil Anda saat ini. Pilih 'Tinggalkan kuis' untuk meninggalkan babak yang belum selesai, atau 'Mainkan lagi' setelah hasil untuk memulai babak baru.",
+      "title": "Cara bermain"
+    },
+    "reward": {
+      "text": "Peserta terpilih menerima akses Okou Pro selama tujuh hari kalender. Tidak ada kredit yang disertakan. Saldo pulsa yang ada dan batas pemakaian normal masih berlaku. Memenangkan permainan atau menyelesaikan tugas opsional tidak menjamin hadiah. Putaran yang berhasil dan gagal dapat ditinjau. Setiap akun dapat menerima paling banyak satu hadiah; akses Pro yang ada diperpanjang tujuh hari. Uji coba baru dimulai ketika diberikan; tanggal lokal tersebut dihitung sebagai hari pertama, dan akses berakhir pada pukul 00.00 tujuh tanggal lokal setelahnya. Misalnya, hadiah yang diberikan pada tanggal 30 Oktober akan berakhir pada tanggal 6 November pukul 00.00 di Los Angeles.",
+      "title": "Hadiah Halloween Anda"
+    },
+    "support": {
+      "text": "Putaran dicatat terhadap akun Okou yang saat ini masuk. Kelayakan ditinjau oleh tim Okou menggunakan daftar peserta yang dikumpulkan selama dan setelah acara. Akun yang termasuk dalam daftar yang dikumpulkan dan ditinjau akan menerima email, baik dipilih atau tidak; email tidak dijanjikan kepada setiap peserta. Tidak ada ulasan tetap atau tanggal pengiriman yang dijanjikan. Pertanyaan? Hubungi support@okou.ai. Okou berhak atas interpretasi akhir atas peraturan ini sejauh diizinkan oleh hukum yang berlaku.",
+      "title": "Permainan & dukungan yang adil"
+    }
+  },
+  "tasks": {
+    "connectTools": {
+      "prompt": "Bantu saya menghubungkan alat saya ke Okou.",
+      "text": "Bawalah alat kerja favorit Anda.",
+      "title": "Hubungkan alat Anda"
+    },
+    "createImage": {
+      "prompt": "Buat gambar Halloween: hantu ramah berbagi permen di bawah bulan yang bersinar.",
+      "text": "Beri dia ide. Saksikan itu menjadi hidup.",
+      "title": "Buat gambar Halloween"
+    },
+    "explore": {
+      "text": "Pilih sesuatu dari daftar tugas Anda.",
+      "title": "Lihat apa lagi yang bisa dia lakukan"
+    }
+  }
+}

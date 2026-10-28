@@ -1,5 +1,6 @@
 /** Public App destinations; each provider owns its query and authorization state. */
 export const INTEGRATION_SETTINGS_PATHS = {
+  agentphone: "/settings/agentphone",
   slack: "/settings/slack",
   discord: "/settings/discord",
   teams: "/settings/teams",

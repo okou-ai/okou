@@ -94,7 +94,7 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
         active_runs: &active_runs,
         home_cache_snapshot: &home,
         sandbox_op_reporter: None,
-        has_home_cache: false,
+        home_cache: None,
         idle_destroy_tracker: &tracker,
         reuse_state_notify: &notify,
         blank_pool_diagnostics: &diagnostics,

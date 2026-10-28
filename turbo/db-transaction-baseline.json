@@ -7,11 +7,6 @@
       "owner": "updateAgentMetadataInner$"
     },
     {
-      "id": "TX-0019",
-      "file": "turbo/apps/api/src/signals/routes/integrations-agentphone.ts",
-      "owner": "sendAgentPhoneVerificationText$"
-    },
-    {
       "id": "TX-0047",
       "file": "turbo/apps/api/src/signals/services/agent-deletion.service.ts",
       "owner": "deleteAgentRows$"
@@ -20,11 +15,6 @@
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"
-    },
-    {
-      "id": "TX-0095",
-      "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
-      "owner": "createChatThread$"
     },
     {
       "id": "TX-0097",
@@ -95,11 +85,6 @@
       "id": "TX-0314",
       "file": "turbo/apps/api/src/signals/services/user-permission-grants.service.ts",
       "owner": "applyVisibleAgentGrantRows"
-    },
-    {
-      "id": "TX-0333",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation-run.service.ts",
-      "owner": "commitWorkflowInput$"
     },
     {
       "id": "TX-0342",

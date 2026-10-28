@@ -54,23 +54,28 @@ function googleFormsQueueAdmissionSql(source: GoogleFormsQueueSource) {
     )`;
 }
 
-/** The owner's transaction rolls back the receipt if cursor/authority loses. */
-export function googleFormsQueueReceiptSql(
+/** The compound owner rolls back the receipt if cursor/authority loses. */
+export function googleFormsQueueReceiptPlan(
   source: GoogleFormsQueueSource,
   currentTime: Date,
 ) {
   const timestamp = currentTime.toISOString();
-  return sql`WITH processed AS (
+  return {
+    precedingCtes: [
+      sql`workflow_forms_processed AS (
     INSERT INTO ${googleFormsProcessedEvents} (watch_state_id, automation_id, pubsub_message_id, response_id, last_submitted_time, created_at)
     VALUES (${source.watchStateId}::uuid, ${source.automationId}::uuid, ${source.pubsubMessageId}, ${source.responseId}, ${source.lastSubmittedTime}, ${timestamp}::timestamp)
     ON CONFLICT DO NOTHING RETURNING id
-  ) UPDATE ${googleFormsAutomationCursors}
+  )`,
+    ],
+    statement: sql`UPDATE ${googleFormsAutomationCursors}
     SET last_seen_submitted_time = ${source.lastSubmittedTime}, updated_at = ${timestamp}::timestamp
     WHERE ${and(
       eq(googleFormsAutomationCursors.automationId, source.automationId),
       eq(googleFormsAutomationCursors.watchStateId, source.watchStateId),
       eq(googleFormsAutomationCursors.lastSeenSubmittedTime, source.cursor),
-    )} AND EXISTS (SELECT 1 FROM processed)
+    )} AND EXISTS (SELECT 1 FROM workflow_forms_processed)
       AND EXISTS (${googleFormsQueueAdmissionSql(source)})
-    RETURNING automation_id`;
+    RETURNING automation_id`,
+  };
 }

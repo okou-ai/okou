@@ -138,6 +138,9 @@ Firewall and auth context
   terminal cleanup when signing does not consume it.
 - ``TRUSTED_AUTHORITY_HOST``: ``str`` host from authority validation. Read by
   auth-base URL rewrite logic when reconstructing trusted request authority.
+- ``CUSTOM_HTTP_BINDING``: flow-owned custom API domain/public-IP proof. Written
+  before HTTP classification, revalidated before credentials, and removed by
+  terminal flow cleanup. It never authorizes a different server or destination.
 
 Response streaming
 ------------------
@@ -266,6 +269,7 @@ PUBLIC_DESTINATION_BODY_ADMISSION: Final = "public_destination_body_admission"
 MANAGED_OPENROUTER_UPLOAD: Final = "managed_openrouter_upload"
 AWS_SIGV4_REQUEST_INSPECTION: Final = "aws_sigv4_request_inspection"
 TRUSTED_AUTHORITY_HOST: Final = "trusted_authority_host"
+CUSTOM_HTTP_BINDING: Final = "custom_http_binding"
 
 # Usage and streaming metadata
 MODEL_PROVIDER_USAGE: Final = "model_provider_usage"

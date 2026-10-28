@@ -176,12 +176,12 @@ describe("okou connector custom update", () => {
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain("_acme-mcp");
   });
 
-  it("updates an HTTP connector by its exact slug", async () => {
+  it("updates an HTTP connector to an HTTP prefix by its exact slug", async () => {
     const connector = customConnector({ id: CONNECTOR_ID });
     const definition = {
       kind: connector.kind,
       displayName: "Updated HTTP connector",
-      prefixTemplates: connector.prefixTemplates,
+      prefixTemplates: ["http://api.acme.example:8080/v2/"],
       fields: connector.fields,
       headerInjections: connector.headerInjections,
       queryInjections: connector.queryInjections,

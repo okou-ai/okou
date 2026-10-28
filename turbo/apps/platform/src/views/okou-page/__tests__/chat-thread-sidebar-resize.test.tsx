@@ -94,7 +94,7 @@ test.each(["pointerup", "pointercancel", "lostpointercapture"] as const)(
     );
     click(
       buttonNamed(
-        "Close resources",
+        "Close artifacts",
         screen.getByTestId("thread-sidebar-artifacts"),
       ),
     );
@@ -133,7 +133,7 @@ test("Closing the sidebar during a resize removes its blocking mask", async () =
 
   // Keyboard activation can close the panel while the pointer is still held.
   const close = buttonNamed(
-    "Close resources",
+    "Close artifacts",
     screen.getByTestId("thread-sidebar-artifacts"),
   );
   close.focus();

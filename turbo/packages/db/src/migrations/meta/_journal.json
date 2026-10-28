@@ -2784,8 +2784,22 @@
     {
       "idx": 1476,
       "version": "7",
-      "when": 1793176156062,
-      "tag": "1476_artifact_deletion",
+      "when": 1793176316250,
+      "tag": "1476_halloween_quiz_2026",
+      "breakpoints": true
+    },
+    {
+      "idx": 1477,
+      "version": "7",
+      "when": 1793192245459,
+      "tag": "1477_retire_historical_run_callbacks",
+      "breakpoints": true
+    },
+    {
+      "idx": 1478,
+      "version": "7",
+      "when": 1793192246459,
+      "tag": "1478_artifact_deletion",
       "breakpoints": true
     }
   ]

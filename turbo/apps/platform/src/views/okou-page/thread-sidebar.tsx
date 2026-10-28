@@ -28,6 +28,7 @@ import {
   ArtifactCatalogSkeleton,
 } from "../artifacts-page/artifact-catalog-page.tsx";
 import { BrowserSessionSidebar } from "./browser-session-sidebar.tsx";
+import { BrowserPresence } from "./browser-presence.tsx";
 import { MailDraftPanel } from "./mail-draft-panel.tsx";
 import { ThreadMailLink } from "./thread-mail.tsx";
 import type { MailDraftSignals } from "../../signals/chat-page/mail-draft.ts";
@@ -153,7 +154,7 @@ function ThreadArtifactsPanel({
 }) {
   const { t } = useTranslation();
   const title = t(($) => {
-    return $.chat.resources.title;
+    return $.artifacts.sidebar.panelTitle;
   });
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
@@ -528,6 +529,7 @@ function ThreadBrowserSessionPanel({
     <BrowserSessionSidebar
       signals={thread.browserSessionSignals}
       onClose={close}
+      overlay={<BrowserPresence thread={thread} />}
     />
   );
 }

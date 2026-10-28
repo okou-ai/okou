@@ -26,6 +26,15 @@ assert 'node ios/scripts/testflight.mjs distribute' in commands
 consume = next(step for step in steps if 'archive-promotion.py consume' in step.get('run', ''))
 assert 'archive-promotion.py consume' in consume['run']
 assert steps.index(consume) < steps.index(next(step for step in steps if step.get('id') == 'prepare'))
+symbols = next(step for step in steps if 'upload-sentry-symbols.py' in step.get('run', ''))
+assert symbols['env'] == {
+    'SENTRY_AUTH_TOKEN': '${{ secrets.SENTRY_AUTH_TOKEN }}',
+    'SENTRY_ORG': '${{ vars.SENTRY_ORG }}',
+    'SENTRY_PROJECT': '${{ vars.SENTRY_PROJECT_IOS }}',
+}
+assert '"$IOS_ARCHIVE_DIR/Original.xcarchive"' in symbols['run']
+assert steps.index(consume) < steps.index(symbols) < steps.index(next(step for step in steps if step.get('id') == 'prepare'))
+assert 'continue-on-error' not in symbols
 artifact_env = {
     'AWS_ACCESS_KEY_ID': '${{ secrets.R2_STATIC_ACCESS_KEY_ID }}',
     'AWS_SECRET_ACCESS_KEY': '${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}',

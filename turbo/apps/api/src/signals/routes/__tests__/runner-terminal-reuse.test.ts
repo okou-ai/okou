@@ -31,7 +31,7 @@ describe("terminal predecessor reuse preference", () => {
       const preference = {
         kind: "preference",
         tier: "finalizingPredecessor",
-        finalizingSourceRunId: f.run.runId,
+        predecessorRunId: f.run.runId,
         runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
         expiresAt: new Date(
           f.clock + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,

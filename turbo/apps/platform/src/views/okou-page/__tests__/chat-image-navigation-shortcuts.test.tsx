@@ -252,7 +252,7 @@ test("A failed sidebar image can be skipped to a usable image preview", async ()
   await waitFor(() => {
     expect(
       within(sidebar).getByTestId("artifact-sidebar-image-zoom-level"),
-    ).toHaveTextContent("115%");
+    ).toHaveTextContent("112%");
   });
 });
 
@@ -295,7 +295,7 @@ test("A late decode failure does not replace the image the user navigated to", a
   await waitFor(() => {
     expect(
       within(sidebar).getByTestId("artifact-sidebar-image-zoom-level"),
-    ).toHaveTextContent("115%");
+    ).toHaveTextContent("112%");
   });
 });
 
