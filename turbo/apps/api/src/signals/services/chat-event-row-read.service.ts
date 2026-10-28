@@ -26,6 +26,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -138,6 +139,18 @@ const chatEventRowSelection = {
   seqId: chatEvents.seqId,
   createdAt: chatEvents.createdAt,
 } as const;
+
+export function retentionEventRowSelection() {
+  return {
+    id: chatEventRowSelection.id,
+    chatThreadId: chatEventRowSelection.chatThreadId,
+    runId: chatEventRowSelection.runId,
+    eventType: chatEventRowSelection.eventType,
+    seqId: chatEventRowSelection.seqId,
+    // Text keeps microseconds so the cursor compares at full precision.
+    createdAt: sql`${chatEvents.createdAt}::text`.mapWith(pgTextDecoder),
+  };
+}
 
 export function snapshotArchivePageReadPlan(args: {
   readonly threadId: string;
