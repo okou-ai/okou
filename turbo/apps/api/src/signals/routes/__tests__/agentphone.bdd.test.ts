@@ -1640,9 +1640,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         },
         {
           to_number: phone,
-          body: "Hi, I'm Okou. You mentioned me in the group. Reply to this message and I'll send you a private link to connect your account.",
+          body: expect.stringContaining("You can text me like a teammate"),
         },
       ]);
+      expect(privateAttempts[1]).toMatchObject({
+        body: expect.stringContaining(
+          "Reply to this message and I'll send you a private link to start using Okou.",
+        ),
+      });
       expect(privateAttempts[1]).not.toHaveProperty("reply_to_message_id");
       expect(lastSend(sends)).toMatchObject({
         toNumber: groupId,

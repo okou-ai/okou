@@ -913,23 +913,29 @@ async function refreshTypingIfSupported(
   );
 }
 
-function formatConnectPrompt(event: AgentPhoneMessageEvent): string {
+function formatConnectPrompt(
+  event: AgentPhoneMessageEvent,
+  action: "link" | "reply" = "link",
+): string {
   const { brandName } = BRAND_PRESENTATION;
-  const connectUrl = buildAgentPhoneConnectUrl({
-    phoneHandle: event.fromNumber,
-    agentphoneAgentId: event.agentphoneAgentId,
-    secret: env("SECRETS_ENCRYPTION_KEY"),
-    channel: event.channel,
-  });
+  const nextStep =
+    action === "reply"
+      ? `Reply to this message and I'll send you a private link to start using ${brandName}.`
+      : `Click the link below to start using ${brandName}.\n\n${buildAgentPhoneConnectUrl(
+          {
+            phoneHandle: event.fromNumber,
+            agentphoneAgentId: event.agentphoneAgentId,
+            secret: env("SECRETS_ENCRYPTION_KEY"),
+            channel: event.channel,
+          },
+        )}`;
 
   return [
     "You can text me like a teammate and I'll actually do the work: research something, draft and send emails, summarize long documents, update spreadsheets, triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.",
     "",
     "I'm most useful once I'm connected to the tools you already use — GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, X, and 100+ others.",
     "",
-    `Click the link below to start using ${brandName}.`,
-    "",
-    connectUrl,
+    nextStep,
   ].join("\n");
 }
 
@@ -986,7 +992,7 @@ const sendConnectPrompt$ = command(
           sendAgentPhoneMessage(
             {
               ...recipient,
-              body: `Hi, I'm ${BRAND_PRESENTATION.brandName}. You mentioned me in the group. Reply to this message and I'll send you a private link to connect your account.`,
+              body: formatConnectPrompt(event, "reply"),
             },
             signal,
           ),
