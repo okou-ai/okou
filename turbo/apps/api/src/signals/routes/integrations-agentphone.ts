@@ -1,7 +1,14 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { linkAgentPhoneIdentity$ } from "../services/agentphone-link.service";
+import {
+  linkAgentPhoneIdentity$,
+  switchAgentPhoneIdentity$,
+} from "../services/agentphone-link.service";
 import { prepareAgentPhoneContactCard$ } from "../services/agentphone-contact-card.service";
-import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import {
+  integrationsAgentPhoneContract,
+  type AgentPhoneConnectRequest,
+  type AgentPhoneConnectStatus,
+} from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
@@ -89,6 +96,9 @@ const startLinkBody$ = bodyResultOf(integrationsAgentPhoneContract.startLink);
 const groupHistoryQuery$ = queryOf(integrationsAgentPhoneContract.groupHistory);
 const connectBody$ = bodyResultOf(
   integrationsAgentPhoneContract.connectAgentPhone,
+);
+const connectStatusQuery$ = queryOf(
+  integrationsAgentPhoneContract.getConnectStatus,
 );
 
 const webhookBodySchema = record(string(), zUnknown());
@@ -250,6 +260,66 @@ async function sendAgentPhoneVerificationMessage(
 // `startLink` only ever delivers via SMS, so we hard-code the channel for
 // signing.
 const APPS_API_CONNECT_CHANNEL: AgentPhoneChannel = "sms";
+
+function verifiedConnectParams(body: AgentPhoneConnectRequest): {
+  readonly phoneHandle: string;
+  readonly channel: AgentPhoneChannel;
+} | null {
+  const channel = body.channel ?? "sms";
+  if (!isAgentPhoneChannel(channel)) {
+    return null;
+  }
+  const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
+  return phoneHandle &&
+    verifyAgentPhoneConnectSignature({
+      phoneHandle,
+      agentphoneAgentId: body.agentphoneAgentId,
+      timestamp: body.timestamp,
+      channel,
+      signature: body.signature,
+      secret: env("SECRETS_ENCRYPTION_KEY"),
+    })
+    ? { phoneHandle, channel }
+    : null;
+}
+
+const getConnectStatus$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const verified = verifiedConnectParams(get(connectStatusQuery$));
+  if (!verified) {
+    return badRequestMessage(
+      "Invalid or expired connection link. Send /connect again.",
+    );
+  }
+  const { phoneHandle } = verified;
+  const rows = await get(db$)
+    .select()
+    .from(agentphoneUserLinks)
+    .where(
+      or(
+        eq(agentphoneUserLinks.phoneHandle, phoneHandle),
+        and(
+          eq(agentphoneUserLinks.userId, auth.userId),
+          eq(agentphoneUserLinks.orgId, auth.orgId),
+        ),
+      ),
+    )
+    .limit(2);
+  const requested = rows.find((row) => {
+    return row.phoneHandle === phoneHandle;
+  });
+  const current = rows.find((row) => {
+    return row.userId === auth.userId && row.orgId === auth.orgId;
+  });
+  const body: AgentPhoneConnectStatus = requested
+    ? requested === current
+      ? { kind: "connected", phoneHandle }
+      : { kind: "phone_in_use" }
+    : current
+      ? { kind: "phone_mismatch", currentPhoneHandle: current.phoneHandle }
+      : { kind: "connect" };
+  return { status: 200 as const, body };
+});
 
 const getLinkStatus$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -643,40 +713,41 @@ const connectAgentPhone$ = command(
     }
 
     const body = bodyResult.data;
-    const channel = body.channel ?? "sms";
-    if (!isAgentPhoneChannel(channel)) {
+    const verified = verifiedConnectParams(body);
+    if (!verified) {
       return badRequestMessage(
         "Invalid or expired connection link. Send /connect again.",
       );
     }
-    const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
-    if (
-      !phoneHandle ||
-      !verifyAgentPhoneConnectSignature({
-        phoneHandle,
-        agentphoneAgentId: body.agentphoneAgentId,
-        timestamp: body.timestamp,
-        channel,
-        signature: body.signature,
-        secret: env("SECRETS_ENCRYPTION_KEY"),
-      })
-    ) {
-      return badRequestMessage(
-        "Invalid or expired connection link. Send /connect again.",
-      );
-    }
+    const { phoneHandle, channel } = verified;
 
-    const result = await set(
-      linkAgentPhoneIdentity$,
-      {
-        phoneHandle,
-        channel,
-        source: { kind: "direct", userId: auth.userId, orgId: auth.orgId },
-      },
-      signal,
-    );
+    const result = body.replacePhoneHandle
+      ? await set(
+          switchAgentPhoneIdentity$,
+          {
+            orgId: auth.orgId,
+            userId: auth.userId,
+            phoneHandle,
+            replacePhoneHandle: body.replacePhoneHandle,
+          },
+          signal,
+        )
+      : await set(
+          linkAgentPhoneIdentity$,
+          {
+            phoneHandle,
+            channel,
+            source: { kind: "direct", userId: auth.userId, orgId: auth.orgId },
+          },
+          signal,
+        );
     signal.throwIfAborted();
 
+    if (result.kind === "stale") {
+      return conflict(
+        "Your phone connection changed. Reload this page and try again.",
+      );
+    }
     if (result.kind !== "linked") {
       return connectConflict(
         result.kind === "conflict" ? result.reason : "conflict",
@@ -1601,6 +1672,10 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
 });
 
 export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
+  {
+    route: integrationsAgentPhoneContract.getConnectStatus,
+    handler: authRoute(agentPhoneAuthOptions, getConnectStatus$),
+  },
   {
     route: integrationsAgentPhoneContract.connectAgentPhone,
     handler: authRoute(agentPhoneAuthOptions, connectAgentPhone$),

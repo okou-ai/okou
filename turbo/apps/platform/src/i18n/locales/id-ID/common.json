@@ -3476,9 +3476,15 @@
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
         "invalidTitle": "Tautan koneksi tidak valid",
+        "keepPhone": "Tetap gunakan {{phone}}",
+        "phoneInUseDescription": "Nomor ini terhubung ke akun atau organisasi Okou lain. Putuskan koneksinya di sana sebelum mencoba lagi.",
+        "phoneInUseTitle": "Nomor telepon sudah terhubung",
+        "phoneMismatchDescription": "Akun Okou Anda saat ini menggunakan {{currentPhone}} di organisasi ini. Beralih ke {{requestedPhone}}, nomor yang membuka tautan ini?",
+        "phoneMismatchTitle": "Ganti nomor telepon?",
         "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
-        "successTitle": "Nomor telepon terhubung"
+        "successTitle": "Nomor telepon terhubung",
+        "switchPhone": "Beralih ke {{phone}}"
       },
       "common": {
         "backToSettings": "Kembali ke setelan",

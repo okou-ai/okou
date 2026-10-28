@@ -414,8 +414,8 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupTelegramConnectPage$),
   },
   {
-    path: ROUTES.agentphoneConnect,
-    setup: setupAuthPageWrapper(setupAgentPhoneConnectPage$),
+    path: ROUTES.settingsAgentPhone,
+    setup: setupAuthSidebarPageWrapper(setupAgentPhoneConnectPage$),
   },
   {
     path: ROUTES.activityInspect,

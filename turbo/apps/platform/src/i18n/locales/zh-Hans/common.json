@@ -3476,9 +3476,15 @@
         "invalidSignature": "此链接的签名无效。",
         "invalidTimestamp": "此链接的时间戳无效。",
         "invalidTitle": "连接链接无效",
+        "keepPhone": "保留 {{phone}}",
+        "phoneInUseDescription": "此号码已连接到其他 Okou 账号或组织。请先在那里断开连接，再重试。",
+        "phoneInUseTitle": "号码已连接",
+        "phoneMismatchDescription": "你的 Okou 账号在此组织中当前使用 {{currentPhone}}。要切换到打开此链接的号码 {{requestedPhone}} 吗？",
+        "phoneMismatchTitle": "切换号码？",
         "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用 iMessage 与这个号码通信。",
         "successDescription": "{{phone}}已连接。发送一条短信，即可开始与 {{assistantName}} 对话。",
-        "successTitle": "电话号码已连接"
+        "successTitle": "电话号码已连接",
+        "switchPhone": "切换到 {{phone}}"
       },
       "common": {
         "backToSettings": "返回设置",

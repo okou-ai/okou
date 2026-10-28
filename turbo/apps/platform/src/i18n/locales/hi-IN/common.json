@@ -3491,9 +3491,15 @@
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं है.",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है.",
         "invalidTitle": "कनेक्ट लिंक अमान्य है",
+        "keepPhone": "{{phone}} बनाए रखें",
+        "phoneInUseDescription": "यह फ़ोन नंबर किसी अन्य Okou खाते या संगठन से जुड़ा है। दोबारा कोशिश करने से पहले वहाँ से इसे डिस्कनेक्ट करें।",
+        "phoneInUseTitle": "फ़ोन नंबर पहले से जुड़ा है",
+        "phoneMismatchDescription": "इस संगठन में आपका Okou खाता अभी {{currentPhone}} इस्तेमाल करता है। क्या इस लिंक को खोलने वाले नंबर {{requestedPhone}} पर स्विच करें?",
+        "phoneMismatchTitle": "फ़ोन नंबर बदलें?",
         "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस नंबर के साथ iMessage का उपयोग करें।",
         "successDescription": "{{phone}} जुड़ा हुआ है. {{assistantName}} के साथ चैट शुरू करने के लिए एक टेक्स्ट संदेश भेजें।",
-        "successTitle": "फ़ोन नंबर कनेक्ट हो गया"
+        "successTitle": "फ़ोन नंबर कनेक्ट हो गया",
+        "switchPhone": "{{phone}} पर स्विच करें"
       },
       "common": {
         "backToSettings": "सेटिंग्स पर वापस जाएँ",

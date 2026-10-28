@@ -3545,9 +3545,15 @@
         "invalidSignature": "A assinatura deste link não é válida.",
         "invalidTimestamp": "O carimbo de data e hora deste link não é válido.",
         "invalidTitle": "O link de conexão não é válido",
+        "keepPhone": "Manter {{phone}}",
+        "phoneInUseDescription": "Este número está conectado a outra conta ou organização do Okou. Desconecte-o lá antes de tentar novamente.",
+        "phoneInUseTitle": "Número de telefone já conectado",
+        "phoneMismatchDescription": "Sua conta do Okou usa {{currentPhone}} nesta organização. Mudar para {{requestedPhone}}, o número que abriu este link?",
+        "phoneMismatchTitle": "Mudar número de telefone?",
         "risk": "As respostas por SMS e MMS podem não ser entregues de forma confiável. Para uma experiência mais confiável, use o iMessage com este número.",
         "successDescription": "{{phone}} está conectado. Envie uma mensagem de texto para começar a conversar com o {{assistantName}}.",
-        "successTitle": "Número de telefone conectado"
+        "successTitle": "Número de telefone conectado",
+        "switchPhone": "Mudar para {{phone}}"
       },
       "common": {
         "backToSettings": "Voltar para as configurações",
