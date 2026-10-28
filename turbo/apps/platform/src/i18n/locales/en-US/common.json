@@ -1688,12 +1688,13 @@
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
       "proCard": {
+        "description": "Run 3 tasks at once, automate repeat work, and research deeper.",
         "noTasksLeft": "You have no free tasks left",
         "priceUnavailable": "See plans for current pricing",
-        "tasksLeft_one": "You have up to {{count}} task left",
-        "tasksLeft_other": "You have up to {{count}} tasks left",
+        "tasksLeft_one": "Up to {{count}} task left",
+        "tasksLeft_other": "Up to {{count}} tasks left",
         "title": "Do more with Pro",
-        "upgradeBonus": "Upgrade today to earn an extra {{credits}} credits"
+        "upgradeBonus": "Upgrade today for {{credits}} extra credits."
       },
       "redirecting": "Redirecting...",
       "upgradeToContinue": "Upgrade to Pro to keep chatting with {{assistantName}}.",

@@ -1684,11 +1684,12 @@
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
       "proCard": {
+        "description": "3 件のタスクを同時に実行し、繰り返し作業を自動化して、さらに詳しく調査できます。",
         "noTasksLeft": "無料タスクを使い切りました",
         "priceUnavailable": "プランで最新の料金を確認",
-        "tasksLeft_other": "あと最大 {{count}} 件のタスクを実行できます",
+        "tasksLeft_other": "あと最大 {{count}} 件のタスク",
         "title": "Pro でもっとできる",
-        "upgradeBonus": "今日アップグレードすると {{credits}} クレジットを追加獲得"
+        "upgradeBonus": "今日アップグレードすると {{credits}} クレジットを追加獲得。"
       },
       "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
