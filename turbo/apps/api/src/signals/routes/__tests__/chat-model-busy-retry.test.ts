@@ -222,6 +222,43 @@ describe("Automatic continuation after a busy model", () => {
     await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
   });
 
+  it.each([false, true])(
+    "resets recovery to its identity default (enabled: %s) without reviving cancelled retries",
+    async (defaultEnabled) => {
+      // The real cron sweeps jobs across tenants.
+      await setupApp({
+        context,
+        routes: cronProcessBackgroundJobsRoutes,
+        isolatePg: true,
+      });
+      const fixture = await setupFixture(
+        defaultEnabled ? BINGJIE_USER_ID : `user_${randomUUID()}`,
+      );
+      await setEnabled(fixture.actor, true);
+      const threadId = await fixture.send();
+      await fixture.fail(await latestRun(fixture, threadId));
+      createRouteMocks(context).clerk.session(
+        fixture.actor.userId,
+        fixture.actor.orgId,
+        fixture.actor.orgRole,
+      );
+      const features = setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      await accept(features.delete({ headers }), [200]);
+      const reset = await accept(features.get({ headers }), [200]);
+      expect(
+        reset.body.effectiveSwitches[FeatureSwitchKey.AutoContinueBusyChats],
+      ).toBe(defaultEnabled);
+      await setEnabled(fixture.actor, true);
+      await fixture.tick(60_000);
+      await expect(fixture.runs(threadId)).resolves.toHaveLength(
+        defaultEnabled ? 2 : 1,
+      );
+    },
+  );
+
   it("stays off for other users until they explicitly opt in", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({

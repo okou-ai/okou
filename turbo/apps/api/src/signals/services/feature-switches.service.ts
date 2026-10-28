@@ -2,6 +2,7 @@ import { computerUseCommands } from "@okouai/db/schema/computer-use-host";
 import { command, computed, type Computed } from "ccstate";
 import {
   getAllFeatureStates,
+  isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -148,6 +149,28 @@ const retireQueuedShellCommands$ = command(
   },
 );
 
+const cancelPendingBusyRetries$ = command(
+  async ({ set }, identity: UserFeatureSwitchIdentity, signal: AbortSignal) => {
+    const cancelledAt = nowDate();
+    await set(writeDb$)
+      .update(backgroundJobs)
+      .set({
+        status: "cancelled",
+        completedAt: cancelledAt,
+        updatedAt: cancelledAt,
+      })
+      .where(
+        and(
+          eq(backgroundJobs.kind, FeatureSwitchKey.AutoContinueBusyChats),
+          eq(backgroundJobs.orgId, identity.orgId),
+          eq(backgroundJobs.userId, identity.userId),
+          eq(backgroundJobs.status, "pending"),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 export const updateUserFeatureSwitches$ = command(
   async (
     { set },
@@ -196,22 +219,7 @@ export const updateUserFeatureSwitches$ = command(
       await set(retireQueuedShellCommands$, args, signal);
     }
     if (args.switches[FeatureSwitchKey.AutoContinueBusyChats] === false) {
-      await writeDb
-        .update(backgroundJobs)
-        .set({
-          status: "cancelled",
-          completedAt: nowDate(),
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(backgroundJobs.kind, FeatureSwitchKey.AutoContinueBusyChats),
-            eq(backgroundJobs.orgId, args.orgId),
-            eq(backgroundJobs.userId, args.userId),
-            eq(backgroundJobs.status, "pending"),
-          ),
-        );
-      signal.throwIfAborted();
+      await set(cancelPendingBusyRetries$, args, signal);
     }
     const context = await set(
       loadUserFeatureSwitchContext$,
@@ -257,5 +265,8 @@ export const deleteUserFeatureSwitches$ = command(
       .where(and(orgCondition, eq(userFeatureSwitches.switches, {})));
     signal.throwIfAborted();
     await set(retireQueuedShellCommands$, args, signal);
+    if (!isFeatureEnabled(FeatureSwitchKey.AutoContinueBusyChats, args)) {
+      await set(cancelPendingBusyRetries$, args, signal);
+    }
   },
 );

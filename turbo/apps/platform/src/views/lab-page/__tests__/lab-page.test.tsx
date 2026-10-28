@@ -1,11 +1,14 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
+import {
+  getAllFeatureStates,
+  getFeatureSwitchMetadata,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -121,29 +124,32 @@ test("Lab groups active feature switches", async () => {
 });
 
 test("Bingjie can turn automatic busy recovery off in Lab", async () => {
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: "/_/lab",
-    auth: {
-      user: { id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV", fullName: "Bingjie" },
-    },
-    featureSwitches: { [FeatureSwitchKey.Lab]: true },
-  });
-  await screen.findByText("Auto-continue busy chats");
+  const userId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
   let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, { switches, effectiveSwitches: switches });
+    return respond(200, {
+      switches,
+      effectiveSwitches: getAllFeatureStates({ userId, overrides: switches }),
+    });
   });
   context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
     switches = { ...switches, ...body.switches };
-    return respond(200, { switches, effectiveSwitches: switches });
+    return respond(200, {
+      switches,
+      effectiveSwitches: getAllFeatureStates({ userId, overrides: switches }),
+    });
   });
+  await setupPage({
+    context,
+    path: "/_/lab",
+    auth: { user: { id: userId, fullName: "Bingjie" } },
+  });
+  await screen.findByText("Auto-continue busy chats");
   const control = within(
     featureSwitchRow(FeatureSwitchKey.AutoContinueBusyChats),
   ).getByRole("switch");
   expect(control).toHaveAttribute("aria-checked", "true");
-  await user.click(control);
+  click(control);
   await waitFor(() => {
     expect(control).toHaveAttribute("aria-checked", "false");
   });
