@@ -423,6 +423,7 @@ export const storeInboundAgentPhoneMessage$ = command(
           ${values.webhookId}, ${values.agentphoneMessageId},
           ${values.conversationId}, ${values.groupId}, ${values.agentphoneAgentId},
           ${values.agentphoneUserLinkId}, ${values.phoneHandle},
+          ${values.whatsappUserLinkId},
           ${values.fromNumber}, ${values.toNumber}, ${values.direction},
           ${values.channel}, ${values.body}, ${values.mediaUrl}, ${values.isBot},
           ${sql.param(receivedAt, agentphoneMessages.receivedAt)}, now()

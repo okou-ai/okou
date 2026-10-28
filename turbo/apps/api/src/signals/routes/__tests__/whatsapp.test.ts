@@ -10,7 +10,6 @@ import { server } from "../../../mocks/server";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
 import { integrationsWhatsappRoutes } from "../integrations-whatsapp";
@@ -259,7 +258,6 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         sandboxHeaders,
         [200],
       );
-      await clearAllDetached();
       await flushWaitUntilForTest();
       if (disconnectBeforeCompletion) {
         expect(setup.sends).toHaveLength(0);
