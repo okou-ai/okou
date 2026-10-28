@@ -493,10 +493,16 @@ function automaticOAuthTokenResponse(args: {
   };
 }
 
-function automaticOAuthProviderIssuer(
-  options: AutomaticMcpOAuthProviderOptions,
-): string {
-  return options.issuer ?? "https://automatic-issuer.example.test";
+function automaticOAuthProviderUrls(options: AutomaticMcpOAuthProviderOptions) {
+  const issuer = options.issuer ?? "https://automatic-issuer.example.test";
+  return {
+    issuer,
+    authorizationUrl: `${issuer}/authorize`,
+    tokenUrl: options.tokenEndpoint ?? `${issuer}/token`,
+    registrationUrl: `${issuer}/register`,
+    jwksUrl: `${issuer}/jwks.json`,
+    userInfoUrl: options.userInfoEndpoint ?? `${issuer}/userinfo`,
+  };
 }
 
 function automaticOAuthGrantTypes(
@@ -522,12 +528,14 @@ export function mockAutomaticMcpOAuthProvider(
   const endpointUrl = new URL(endpoint);
   const endpointMatcher = `${endpointUrl.origin}${endpointUrl.pathname}`;
   const resourceMetadataUrl = new URL("/oauth-resource", endpoint).href;
-  const issuer = automaticOAuthProviderIssuer(options);
-  const authorizationUrl = `${issuer}/authorize`;
-  const tokenUrl = options.tokenEndpoint ?? `${issuer}/token`;
-  const registrationUrl = `${issuer}/register`;
-  const jwksUrl = `${issuer}/jwks.json`;
-  const userInfoUrl = options.userInfoEndpoint ?? `${issuer}/userinfo`;
+  const {
+    issuer,
+    authorizationUrl,
+    tokenUrl,
+    registrationUrl,
+    jwksUrl,
+    userInfoUrl,
+  } = automaticOAuthProviderUrls(options);
   const resourceMetadata = {
     resource: options.resource ?? endpoint,
     scopes_supported: [...(options.metadataScopes ?? ["metadata-fallback"])],
