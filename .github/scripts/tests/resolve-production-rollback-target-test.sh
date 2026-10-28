@@ -100,6 +100,12 @@ case "${1:-}" in
       [ "${MOCK_STRIPE_INVOICE_PAID_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "26bacab4693d32e4a4453dce5c84e565d7129b9c" ]; then
       [ "${MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "c8de6212dc54a5aae0d4658acf1afa6a35f939ab" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_DAV_RUNNER_READER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_DAV_API_READER_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "b610ff61043274157618e3925b13a66dc56ef84b" ]; then
       [ "${MOCK_FINALIZING_SOURCE_RUNNER_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5959595959595959595959595959595959595959" ]; then
@@ -434,6 +440,24 @@ assert_failure() {
   fi
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
+
+# Publishing DAV catalog rules must not make either independently selected
+# rollback artifact unable to read the catalog or bypass the iCloud rollout.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates DAV connector preparation" \
+  run_resolver "${tmp_dir}/dav-api-reader.output" MOCK_DAV_API_READER_VALID=0
+[ ! -s "${tmp_dir}/dav-api-reader.output" ] || fail "pre-DAV API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-DAV API must fail before provider or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates DAV firewall method support" \
+  run_resolver "${tmp_dir}/dav-runner-reader.output" MOCK_DAV_RUNNER_READER_VALID=0
+[ ! -s "${tmp_dir}/dav-runner-reader.output" ] || fail "pre-DAV Runner must not publish outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "pre-DAV Runner must fail before Runner artifact or host access"
+fi
 
 # Outgoing configuration requests must not overlap a rollback that can adopt
 # already-visible custom Agents as the workspace default.
