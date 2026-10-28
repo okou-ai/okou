@@ -180,15 +180,16 @@ function tokenCredentialPublication(args: TokenConnectionPublication) {
   return { clauses, checks };
 }
 
-/** One rollback authority for account, credentials, cleanup, grant and projection. */
-export function builtinTokenConnectionPublicationSql(
+/** Pure clauses let device completion share the same rollback authority. */
+export function builtinTokenConnectionPublicationClauses(
   args: TokenConnectionPublication,
-): SQL {
+  prerequisite?: SQL,
+) {
   const credentials = tokenCredentialPublication(args);
   const projections = tokenConnectionProjectionClauses(args.projection);
   const clauses = [
     ...tokenConnectionWalletClauses(args.orgId),
-    ...tokenConnectionMetadataClauses(args),
+    ...tokenConnectionMetadataClauses(args, prerequisite),
     ...tokenReconciliationClauses(args),
     ...credentials.clauses,
     ...projections.clauses,
@@ -214,6 +215,14 @@ export function builtinTokenConnectionPublicationSql(
           }),
           sql` AND `,
         );
+  return { clauses, complete };
+}
+
+/** One rollback authority for account, credentials, cleanup, grant and projection. */
+export function builtinTokenConnectionPublicationSql(
+  args: TokenConnectionPublication,
+): SQL {
+  const { clauses, complete } = builtinTokenConnectionPublicationClauses(args);
   return sql`WITH ${sql.join(clauses, sql`,\n`)}
     SELECT (SELECT payload FROM token_connection) AS connector,
       1 / CASE WHEN NOT (${admitted}) OR (${complete}) THEN 1 ELSE 0 END AS complete`;

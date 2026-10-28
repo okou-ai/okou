@@ -39,14 +39,6 @@ const accountConnectorByInput: Readonly<
   Record<string, WorkflowAutomationAccountConnectorSlug | null | undefined>
 > = accountConnectorByEventType;
 
-export function isWorkflowAutomationAccountConnectorSlug(
-  connectorSlug: string,
-): connectorSlug is WorkflowAutomationAccountConnectorSlug {
-  return WORKFLOW_AUTOMATION_ACCOUNT_CONNECTOR_SLUGS.some((candidate) => {
-    return candidate === connectorSlug;
-  });
-}
-
 export function workflowAutomationAccountConnectorSlug(
   eventType: string | null,
 ): WorkflowAutomationAccountConnectorSlug | null {

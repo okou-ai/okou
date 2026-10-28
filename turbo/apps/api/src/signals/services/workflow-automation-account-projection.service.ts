@@ -33,48 +33,6 @@ export type ProjectedAutomation =
       "id" | "workflowId" | "eventConnectorId"
     >;
 
-type RowProjectionConnector =
-  "gmail" | "google-calendar" | "google-meet" | "notion";
-
-export function workflowAutomationReprojectionColumns(
-  connectorSlug: RowProjectionConnector,
-) {
-  switch (connectorSlug) {
-    case "gmail": {
-      return gmailAutomationProjectionColumns();
-    }
-    case "google-calendar": {
-      return googleCalendarAutomationProjectionColumns();
-    }
-    case "google-meet": {
-      return googleMeetAutomationProjectionColumns();
-    }
-    case "notion": {
-      return notionAutomationProjectionColumns();
-    }
-  }
-}
-
-export function workflowAutomationReprojectionCondition(
-  args: { readonly orgId: string; readonly userId: string },
-  connectorSlug: RowProjectionConnector,
-) {
-  switch (connectorSlug) {
-    case "gmail": {
-      return gmailAutomationProjectionCondition(args);
-    }
-    case "google-calendar": {
-      return googleCalendarAutomationProjectionCondition(args);
-    }
-    case "google-meet": {
-      return googleMeetAutomationProjectionCondition(args);
-    }
-    case "notion": {
-      return notionAutomationProjectionCondition(args);
-    }
-  }
-}
-
 export interface PreparedDefaultAccountProjection {
   readonly id: string;
   readonly connector_id: string | null;
