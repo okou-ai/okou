@@ -62,6 +62,7 @@ export type AttachmentArtifactMetadata = {
 };
 
 interface AttachmentNamedLightboxBase {
+  readonly catalogArtifactId?: string;
   readonly threadId?: string;
   readonly url: string;
   readonly filename: string;
@@ -94,6 +95,7 @@ type AttachmentPreviewSource =
   | { readonly url?: string; readonly file: File };
 
 type AttachmentImageLightboxInput = AttachmentPreviewSource & {
+  readonly catalogArtifactId?: string;
   /** Reuse the initiating surface's already resolved credential. */
   readonly preview?: AttachmentPreviewSignals;
   /**

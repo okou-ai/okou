@@ -520,6 +520,16 @@
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak"
     },
+    "deletion": {
+      "cancel": "Batal",
+      "delete": "Hapus",
+      "deleting": "Menghapus…",
+      "description": "Artefak ini akan dihapus dan tautan Okou-nya dinonaktifkan. Salinan yang sudah diunduh atau disimpan di layanan lain akan tetap ada.",
+      "hostedDescription": "Situs web dan semua versi yang dipublikasikan akan dinonaktifkan. Salinan yang disimpan di layanan lain akan tetap ada.",
+      "menu": "Tindakan lainnya untuk {{title}}",
+      "sharedDescription": "Hapus percakapan tersimpan ini dari artefak Anda. Percakapan asli dan tautan berbaginya akan tetap tersedia.",
+      "title": "Hapus {{title}}?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

@@ -1,5 +1,6 @@
 import type { ReactNode, UIEvent as ReactUIEvent } from "react";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ChevronRight,
   File,
@@ -48,6 +49,12 @@ import {
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
 import { officeFilePreviewKind } from "../okou-page/office-file-preview.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { artifactCatalogViewportRef$ } from "../../signals/artifact-deletion.ts";
+import {
+  ArtifactDeleteDialog,
+  ArtifactDeleteMenu,
+} from "../okou-page/artifact-deletion.tsx";
 
 // Distance from the bottom of the scroll container at which the next page is
 // requested. The signal layer deduplicates repeated requests for one cursor.
@@ -325,7 +332,7 @@ function ArtifactCatalogCard({
         onOpen(artifact.id);
       }}
       className={cn(
-        "group flex min-w-0 cursor-pointer flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "group flex w-full min-w-0 cursor-pointer flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         gallery
           ? "rounded-surface"
           : "overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-foreground/20",
@@ -388,10 +395,12 @@ function ArtifactCatalogCard({
 function ArtifactSharedConversationList({
   artifacts,
   onOpen,
+  canDelete = false,
   scrollToArtifactId,
 }: {
   readonly artifacts: readonly CatalogArtifact[];
   readonly onOpen: (artifactId: string) => void;
+  readonly canDelete?: boolean;
   readonly scrollToArtifactId: string | null;
 }) {
   const { t } = useTranslation();
@@ -404,7 +413,7 @@ function ArtifactSharedConversationList({
     >
       {artifacts.map((artifact) => {
         return (
-          <li key={artifact.id}>
+          <li key={artifact.id} className="flex items-center">
             <button
               ref={
                 artifact.id === scrollToArtifactId
@@ -422,7 +431,7 @@ function ArtifactSharedConversationList({
               onClick={() => {
                 onOpen(artifact.id);
               }}
-              className="group flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="group flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground transition-colors group-hover:text-foreground">
                 <MessagesSquare size={16} aria-hidden />
@@ -436,6 +445,11 @@ function ArtifactSharedConversationList({
                 className="shrink-0 transition-colors group-hover:text-foreground"
               />
             </button>
+            {canDelete && (
+              <div className="pr-3">
+                <ArtifactDeleteMenu artifact={artifact} />
+              </div>
+            )}
           </li>
         );
       })}
@@ -687,6 +701,9 @@ export function ArtifactCatalogPage({
   readonly scrollToArtifactId: string | null;
 }) {
   const { t } = useTranslation();
+  const viewportRef = useSet(artifactCatalogViewportRef$);
+  const deletionEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactDeletion];
   const sidebarOpen = useGet(artifactCatalogSidebar.open$);
   const syncImageLayout = useSet(
     artifactCatalogSidebar.imageCanvas.syncLayout$,
@@ -749,6 +766,8 @@ export function ArtifactCatalogPage({
         </header>
 
         <main
+          ref={viewportRef}
+          tabIndex={-1}
           onScroll={handleScroll}
           className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
         >
@@ -764,6 +783,7 @@ export function ArtifactCatalogPage({
             ) : sharedConversationLayout ? (
               <ArtifactSharedConversationList
                 artifacts={artifacts}
+                canDelete={deletionEnabled}
                 scrollToArtifactId={scrollToArtifactId}
                 onOpen={(artifactId) => {
                   detach(
@@ -788,6 +808,7 @@ export function ArtifactCatalogPage({
             )}
           </div>
         </main>
+        {deletionEnabled && <ArtifactDeleteDialog />}
       </div>
     </ChatThreadSidebarShell>
   );

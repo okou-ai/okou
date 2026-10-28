@@ -419,6 +419,9 @@ const changeSharedThreadArtifactPhase$ = command(
             thumbnail: sql`NULL::jsonb`
               .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
               .as("thumbnail"),
+            deletedAt: sql`NULL::timestamp`
+              .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
+              .as("deleted_at"),
             createdAt: sharedThreads.createdAt,
             updatedAt: sharedThreads.createdAt,
           })

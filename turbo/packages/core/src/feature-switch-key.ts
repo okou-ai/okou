@@ -48,6 +48,7 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
+  ArtifactDeletion = "artifactDeletion",
   OutlookChatMail = "outlookChatMail",
   ThreadEmailManager = "threadEmailManager",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",

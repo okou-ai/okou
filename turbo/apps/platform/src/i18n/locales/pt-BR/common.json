@@ -536,6 +536,16 @@
       "kindIcon": "Artefato do tipo {{kind}}",
       "loading": "Carregando artefatos"
     },
+    "deletion": {
+      "cancel": "Cancelar",
+      "delete": "Excluir",
+      "deleting": "Excluindo…",
+      "description": "Isso remove o artefato e desativa seus links do Okou. Cópias já baixadas ou salvas em outros serviços serão mantidas.",
+      "hostedDescription": "Isso tira o site e todas as versões publicadas do ar. Cópias salvas em outros serviços serão mantidas.",
+      "menu": "Mais ações para {{title}}",
+      "sharedDescription": "Remova esta conversa salva dos seus artefatos. A conversa original e seu link compartilhado continuarão disponíveis.",
+      "title": "Excluir {{title}}?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "ÁUD",

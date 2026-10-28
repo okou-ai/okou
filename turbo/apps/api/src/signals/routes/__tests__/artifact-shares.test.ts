@@ -4,6 +4,9 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { createHash, randomUUID } from "node:crypto";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Readable } from "node:stream";
 import {
   GetObjectCommand,
@@ -31,6 +34,8 @@ import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactShareRoutes } from "../artifact-shares";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
+import { artifactCatalogRoutes } from "../artifact-catalog";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
 import { createDeferredPromise } from "../../utils";
@@ -61,6 +66,8 @@ const api = () => {
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
       ...webFileUrlRoutes,
+      ...artifactCatalogRoutes,
+      ...featureSwitchesRoutes,
     ],
   });
 };
@@ -218,6 +225,252 @@ function fixture() {
   session();
   return { owner, org, organization, members, objects, session };
 }
+
+async function enableArtifactDeletion(enabled = true) {
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: enabled } },
+    }),
+    [200],
+  );
+}
+
+async function onlyCatalogArtifactId() {
+  const listed = await accept(
+    api()(artifactCatalogContract).list({ headers }),
+    [200],
+  );
+  const artifact = listed.body.artifacts[0];
+  if (!artifact) {
+    throw new Error("Expected an uploaded catalog artifact");
+  }
+  return artifact.id;
+}
+
+describe("artifact deletion", () => {
+  it.each(["private", "organization", "public"] as const)(
+    "withdraws %s files from the catalog, owner access, and shares",
+    async (audience) => {
+      fixture();
+      const target = await file();
+      const artifactId = await onlyCatalogArtifactId();
+      const share = await accept(
+        api()(artifactSharesContract).update({
+          headers,
+          body: { target, audience },
+        }),
+        [200],
+      );
+      await enableArtifactDeletion();
+      await accept(
+        api()(artifactCatalogContract).delete({
+          headers,
+          params: { artifactId },
+        }),
+        [200],
+      );
+
+      const listed = await accept(
+        api()(artifactCatalogContract).list({ headers }),
+        [200],
+      );
+      expect(listed.body.artifacts).toStrictEqual([]);
+      await accept(
+        api()(artifactCatalogContract).get({ headers, params: { artifactId } }),
+        [404],
+      );
+      await accept(
+        api()(artifactReferencesContract).resolve({
+          headers,
+          params: { reference: artifactReferenceFromUrl(share.body.ownerUrl) },
+        }),
+        [404],
+      );
+      await accept(
+        api()(artifactSharesContract).update({
+          headers,
+          body: { target, audience: "public" },
+        }),
+        [404],
+      );
+      // Re-completion and repeated deletion must not republish an old file.
+      await accept(
+        api()(uploadsContract).complete({ headers, body: { id: target.id } }),
+        [404],
+      );
+      await accept(
+        api()(artifactCatalogContract).delete({
+          headers,
+          params: { artifactId },
+        }),
+        [200],
+      );
+      const afterRetry = await accept(
+        api()(artifactCatalogContract).list({ headers }),
+        [200],
+      );
+      expect(afterRetry.body.artifacts).toStrictEqual([]);
+    },
+  );
+
+  it("requires the switch, original organization, and owner", async () => {
+    const f = fixture();
+    await file();
+    const artifactId = await onlyCatalogArtifactId();
+    await enableArtifactDeletion(false);
+    await accept(
+      api()(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId },
+      }),
+      [403],
+    );
+    await enableArtifactDeletion();
+    for (const [userId, orgId] of [
+      [`user_${randomUUID()}`, f.org],
+      [f.owner, `org_${randomUUID()}`],
+    ]) {
+      f.session(userId, orgId);
+      await enableArtifactDeletion();
+      await accept(
+        api()(artifactCatalogContract).delete({
+          headers,
+          params: { artifactId },
+        }),
+        [404],
+      );
+    }
+    f.session();
+    const owned = await accept(
+      api()(artifactCatalogContract).get({ headers, params: { artifactId } }),
+      [200],
+    );
+    expect(owned.body.id).toBe(artifactId);
+  });
+
+  it("a delayed first public share cannot resurrect a deleted artifact", async () => {
+    fixture();
+    const target = await file();
+    const artifactId = await onlyCatalogArtifactId();
+    const ownerStatus = await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [200],
+    );
+    const ownerReference = artifactReferenceFromUrl(ownerStatus.body.ownerUrl);
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: ownerReference },
+      }),
+      [200],
+    );
+    await enableArtifactDeletion();
+    const copying = createDeferredPromise<void>(context.signal);
+    const releaseCopy = createDeferredPromise<void>(context.signal);
+    const storage = context.mocks.s3.send.getMockImplementation()!;
+    context.mocks.s3.send.mockImplementation(async (cmd) => {
+      if (cmd instanceof CopyObjectCommand) {
+        copying.resolve();
+        await releaseCopy.promise;
+      }
+      return await storage(cmd);
+    });
+    const sharing = api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    });
+    await copying.promise;
+    await accept(
+      api()(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId },
+      }),
+      [200],
+    );
+    releaseCopy.resolve();
+    expect((await sharing).status).not.toBe(200);
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: ownerReference },
+      }),
+      [404],
+    );
+    await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [404],
+    );
+  });
+
+  it("a retry finishes revocation after its storage write failed", async () => {
+    fixture();
+    const target = await file();
+    const artifactId = await onlyCatalogArtifactId();
+    const share = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "public" },
+      }),
+      [200],
+    );
+    await enableArtifactDeletion();
+    const storage = context.mocks.s3.send.getMockImplementation()!;
+    let failRevocation = true;
+    context.mocks.s3.send.mockImplementation(async (cmd) => {
+      if (
+        failRevocation &&
+        cmd instanceof PutObjectCommand &&
+        cmd.input.Key?.startsWith("artifact-shares/")
+      ) {
+        failRevocation = false;
+        throw new Error("Temporary storage failure");
+      }
+      return await storage(cmd);
+    });
+    const failed = await api()(artifactCatalogContract).delete({
+      headers,
+      params: { artifactId },
+    });
+    expect(failed.status).toBe(500);
+    const pending = await accept(
+      api()(artifactCatalogContract).list({ headers }),
+      [200],
+    );
+    expect(pending.body.artifacts).toContainEqual(
+      expect.objectContaining({ id: artifactId }),
+    );
+    await accept(
+      api()(artifactCatalogContract).get({ headers, params: { artifactId } }),
+      [200],
+    );
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: artifactReferenceFromUrl(share.body.ownerUrl) },
+      }),
+      [404],
+    );
+    await accept(
+      api()(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId },
+      }),
+      [200],
+    );
+    await accept(
+      api()(artifactCatalogContract).get({ headers, params: { artifactId } }),
+      [404],
+    );
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: artifactReferenceFromUrl(share.body.ownerUrl) },
+      }),
+      [404],
+    );
+  });
+});
 
 test.each(["private", "organization", "public"] as const)(
   "%s share status reuses the fresh membership name and observes renames",

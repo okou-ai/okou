@@ -521,6 +521,16 @@
       "kindIcon": "{{kind}} Artefakt",
       "loading": "Artefakte werden geladen"
     },
+    "deletion": {
+      "cancel": "Abbrechen",
+      "delete": "Löschen",
+      "deleting": "Wird gelöscht…",
+      "description": "Das Artefakt wird entfernt und seine Okou-Links werden deaktiviert. Bereits heruntergeladene oder in anderen Diensten gespeicherte Kopien bleiben erhalten.",
+      "hostedDescription": "Die Website und alle veröffentlichten Versionen werden offline genommen. In anderen Diensten gespeicherte Kopien bleiben erhalten.",
+      "menu": "Weitere Aktionen für {{title}}",
+      "sharedDescription": "Diese gespeicherte Unterhaltung wird aus deinen Artefakten entfernt. Die ursprüngliche Unterhaltung und ihr Freigabelink bleiben verfügbar.",
+      "title": "{{title}} löschen?"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

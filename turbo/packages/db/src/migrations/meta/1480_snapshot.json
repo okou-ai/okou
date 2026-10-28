@@ -1,6 +1,6 @@
 {
-  "id": "67547fba-e0a8-4ba8-9984-85a3fadeb061",
-  "prevId": "50525a7a-15d5-414c-9a86-409847201e1a",
+  "id": "d3dcc344-db49-4c41-8ff4-c477b009811d",
+  "prevId": "ed7c16e6-cb43-4083-a629-8c2e5af31dfb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2499,6 +2499,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -2532,9 +2538,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "artifacts_author_logical_key_unique": {
           "name": "artifacts_author_logical_key_unique",
@@ -2559,9 +2565,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "artifacts_projection_file_org_idx": {
           "name": "artifacts_projection_file_org_idx",
@@ -2580,10 +2586,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "artifacts_thread_author_created_idx": {
           "name": "artifacts_thread_author_created_idx",
@@ -2620,10 +2626,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"artifacts\".\"chat_thread_id\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "artifacts_author_created_idx": {
           "name": "artifacts_author_created_idx",
@@ -2654,9 +2660,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "artifacts_author_kind_created_idx": {
           "name": "artifacts_author_kind_created_idx",
@@ -2693,24 +2699,24 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "artifacts_chat_thread_id_chat_threads_id_fk": {
           "name": "artifacts_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "artifacts",
+          "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
           ],
-          "tableTo": "chat_threads",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -24862,6 +24868,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -24889,9 +24901,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_run_uploaded_files_run_source_external": {
           "name": "idx_run_uploaded_files_run_source_external",
@@ -24916,9 +24928,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_run_uploaded_files_source_external": {
           "name": "idx_run_uploaded_files_source_external",
@@ -24937,9 +24949,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_run_uploaded_files_updated": {
           "name": "idx_run_uploaded_files_updated",
@@ -24958,10 +24970,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"run_uploaded_files\".\"url\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "run_uploaded_files_canonical_idempotency_unique": {
           "name": "run_uploaded_files_canonical_idempotency_unique",
@@ -24986,10 +24998,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"run_uploaded_files\".\"asset_version\" = 1",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "run_uploaded_files_chat_thread_idx": {
           "name": "run_uploaded_files_chat_thread_idx",
@@ -25002,25 +25014,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"run_uploaded_files\".\"chat_thread_id\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "run_uploaded_files_chat_thread_id_chat_threads_id_fk": {
           "name": "run_uploaded_files_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "run_uploaded_files",
+          "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
           ],
-          "tableTo": "chat_threads",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},

@@ -11,7 +11,7 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { delay } from "signal-timers";
+import { animationFrame, delay } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
   threadMailLocation$,
@@ -118,6 +118,19 @@ export const closeThreadMailDraft$ = command(
     if (target?.type === "email-draft" && target.signals === draft) {
       set(thread.sidebar.close$);
     }
+  },
+);
+
+/** The deleted output's sidebar disappears; keyboard input returns to its chat. */
+export const closeDeletedThreadArtifact$ = command(
+  ({ set }, thread: ChatPanelSignals, signal: AbortSignal) => {
+    set(thread.sidebar.close$);
+    animationFrame(
+      () => {
+        set(thread.composer.editor.focus$);
+      },
+      { signal },
+    );
   },
 );
 

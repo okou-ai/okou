@@ -6,7 +6,10 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
@@ -20,6 +23,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { sharedThreadRoutes } from "../shared-threads";
+import { featureSwitchesRoutes } from "../feature-switches";
 import {
   createBddApi,
   expectApiError,
@@ -48,6 +52,7 @@ const routeMocks = createRouteMocks(context);
 const sharedThreadTestRoutes: readonly RouteEntry[] = [
   ...artifactCatalogRoutes,
   ...sharedThreadRoutes,
+  ...featureSwitchesRoutes,
 ];
 function createCatalogStorage() {
   let storage:
@@ -392,6 +397,143 @@ async function publishHostedSite(args: {
 }
 
 describe("GET /api/artifacts/catalog", () => {
+  it("withdraws the owned object for a historical public file", async () => {
+    const owner = await catalogActor("Historical artifact deletion");
+    const uploaded = await uploadFile({
+      owner,
+      prompt: "Create a legacy file",
+      filename: "legacy-report.txt",
+      contentType: "text/plain",
+    });
+    const listed = await chat.listArtifactCatalog(owner.actor);
+    const entry = listed.artifacts[0];
+    if (!entry) {
+      throw new Error("Expected a file catalog artifact");
+    }
+    const headers = authenticateSharedThread(owner.actor);
+    const client = setupApp({
+      context,
+      routes: [...artifactCatalogRoutes, ...featureSwitchesRoutes],
+    });
+    await accept(
+      client(featureSwitchesContract).update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
+      }),
+      [200],
+    );
+    await accept(
+      client(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId: entry.id },
+      }),
+      [200],
+    );
+    expect(owner.storage.deletedKeys).toContain(
+      `artifacts/${owner.actor.userId}/${uploaded.fileId}/legacy-report.txt`,
+    );
+    const after = await chat.listArtifactCatalog(owner.actor);
+    expect(after.artifacts).toStrictEqual([]);
+    await expect(
+      chat.listThreadArtifacts(owner.actor, uploaded.threadId),
+    ).resolves.toStrictEqual({ runs: [] });
+  });
+
+  it.each(["hosted-site", "presentation-html"] as const)(
+    "deletes a %s and restores the catalog only for a new publication",
+    async (artifactKind) => {
+      const owner = await catalogActor("Hosted artifact deletion");
+      const site = `artifact-delete-${randomUUID().slice(0, 8)}`;
+      const first = await publishHostedSite({ owner, site, artifactKind });
+      const published = await publishHostedSite({ owner, site, artifactKind });
+      const before = await chat.listArtifactCatalog(owner.actor);
+      const entry = before.artifacts[0];
+      if (!entry) {
+        throw new Error("Expected a published catalog artifact");
+      }
+      const firstThreadArtifacts = await chat.listThreadArtifacts(
+        owner.actor,
+        first.threadId,
+      );
+      expect(firstThreadArtifacts.runs[0]?.files[0]?.artifactId).toBe(entry.id);
+      const headers = authenticateSharedThread(owner.actor);
+      const client = setupApp({
+        context,
+        routes: [
+          ...artifactCatalogRoutes,
+          ...featureSwitchesRoutes,
+          ...hostRoutes,
+        ],
+      });
+      await accept(
+        client(featureSwitchesContract).update({
+          headers,
+          body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
+        }),
+        [200],
+      );
+      await accept(
+        client(artifactCatalogContract).delete({
+          headers,
+          params: { artifactId: entry.id },
+        }),
+        [200],
+      );
+      const after = await chat.listArtifactCatalog(owner.actor);
+      expect(after.artifacts).toStrictEqual([]);
+      await expect(
+        chat.listThreadArtifacts(owner.actor, published.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
+      await expect(
+        chat.listThreadArtifacts(owner.actor, first.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
+      await accept(
+        client(artifactCatalogContract).get({
+          headers,
+          params: { artifactId: entry.id },
+        }),
+        [404],
+      );
+      await accept(
+        client(hostContract).files({
+          headers,
+          params: { publicSlug: published.publicSlug },
+          query: {},
+        }),
+        [409],
+      );
+      await accept(
+        client(artifactCatalogContract).delete({
+          headers,
+          params: { artifactId: entry.id },
+        }),
+        [200],
+      );
+      await publishHostedSite({ owner, site, artifactKind });
+      const restored = await chat.listArtifactCatalog(owner.actor);
+      expect(restored.artifacts).toStrictEqual([
+        expect.objectContaining({ id: entry.id }),
+      ]);
+      await expect(
+        chat.listThreadArtifacts(owner.actor, first.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
+      await expect(
+        chat.listThreadArtifacts(owner.actor, published.threadId),
+      ).resolves.toStrictEqual({ runs: [] });
+      const detail = await chat.getArtifactCatalogEntry(owner.actor, entry.id);
+      expect(detail).toMatchObject({ site: { deploymentVersion: 3 } });
+      authenticateSharedThread(owner.actor);
+      await accept(
+        client(hostContract).files({
+          headers,
+          params: { publicSlug: `dpl-${published.deploymentId}` },
+          query: {},
+        }),
+        [409],
+      );
+    },
+  );
+
   it("shares the explicit site title across Chat and Artifacts and retains renames on redeploy", async () => {
     const owner = await catalogActor("Site title owner");
     const site = `title-${randomUUID().slice(0, 8)}`;
@@ -1562,6 +1704,61 @@ describe("GET /api/artifacts/catalog", () => {
 });
 
 describe("shared thread routes", () => {
+  it("removes a saved conversation without revoking its original shared link", async () => {
+    const owner = await catalogActor("Saved conversation deletion");
+    mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
+    const run = await sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Save this conversation",
+    });
+    await completeChatRunWithMessage(owner, run.runId, "A shared conversation");
+    chatCallbacks.mockVertexCompletions(() => {
+      return "Saved conversation";
+    });
+    await flushWaitUntilForTest();
+    const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
+    const prompt = events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId === run.runId;
+    });
+    if (!prompt) {
+      throw new Error("Expected a visible prompt");
+    }
+    const shared = await createSharedThreadSnapshot(owner.actor, run.threadId, [
+      prompt.id,
+    ]);
+    const publicBefore = await readSharedThreadSnapshot(shared.id);
+    const listed = await chat.listArtifactCatalog(owner.actor, {
+      kind: "shared-thread",
+    });
+    const artifact = listed.artifacts[0];
+    if (!artifact) {
+      throw new Error("Expected a saved shared conversation");
+    }
+    const headers = authenticateSharedThread(owner.actor);
+    const client = setupApp({ context, routes: sharedThreadTestRoutes });
+    await accept(
+      client(featureSwitchesContract).update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.ArtifactDeletion]: true } },
+      }),
+      [200],
+    );
+    await accept(
+      client(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId: artifact.id },
+      }),
+      [200],
+    );
+    const after = await chat.listArtifactCatalog(owner.actor, {
+      kind: "shared-thread",
+    });
+    expect(after.artifacts).toStrictEqual([]);
+    await expect(readSharedThreadSnapshot(shared.id)).resolves.toMatchObject({
+      body: publicBefore.body,
+    });
+  });
+
   it("creates immutable, redacted snapshots from selected visible messages", async () => {
     const owner = await catalogActor("Shared thread test agent");
     const run = await sendChatRun(owner.actor, {
