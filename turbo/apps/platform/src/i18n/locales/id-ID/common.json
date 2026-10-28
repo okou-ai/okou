@@ -1686,10 +1686,7 @@
       "proCard": {
         "bonusCreditsNow": "kredit bonus · Sekarang juga",
         "description": "Pro mencakup model canggih, otomatisasi, data riset bawaan, dan 3 tugas sekaligus.",
-        "estimateBasis": "Perkiraan dari penggunaan umum Okou; penggunaan aktual bervariasi.",
         "estimatedTasksLeft_other": "Tersisa kurang dari {{count}} tugas",
-        "monthlyEstimateBasis": "Perkiraan dengan {{credits}} credits/tugas; penggunaan aktual bervariasi.",
-        "monthlyTasks_other": "Sekitar {{formattedCount}} tugas/bulan",
         "priceUnavailable": "Lihat paket untuk harga terbaru",
         "title": "Lakukan lebih banyak dengan Pro",
         "upgradeNow": "Upgrade sekarang"

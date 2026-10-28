@@ -1686,10 +1686,7 @@
       "proCard": {
         "bonusCreditsNow": "ボーナスクレジット · 今すぐ",
         "description": "Pro なら高度なモデル、自動化、組み込みの調査データが使え、3 件のタスクを同時に実行できます。",
-        "estimateBasis": "Okou の一般的な使用量からの推定です。実際の使用量は異なります。",
         "estimatedTasksLeft_other": "残りのタスクは {{count}} 件未満の見込み",
-        "monthlyEstimateBasis": "1 タスク {{credits}} credits として推定。実際の使用量は異なります。",
-        "monthlyTasks_other": "月に約 {{formattedCount}} 件のタスク",
         "priceUnavailable": "プランで最新の料金を確認",
         "title": "Pro でもっとできる",
         "upgradeNow": "今すぐアップグレード"

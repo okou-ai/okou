@@ -1690,12 +1690,8 @@
       "proCard": {
         "bonusCreditsNow": "Bonus-Credits · Jetzt gleich",
         "description": "Pro bietet fortschrittliche Modelle, Automatisierungen, integrierte Recherchedaten und 3 Aufgaben gleichzeitig.",
-        "estimateBasis": "Schätzung anhand typischer Okou-Nutzung; der tatsächliche Verbrauch variiert.",
         "estimatedTasksLeft_one": "Weniger als {{count}} Aufgabe übrig",
         "estimatedTasksLeft_other": "Weniger als {{count}} Aufgaben übrig",
-        "monthlyEstimateBasis": "Geschätzt mit {{credits}} Credits pro Aufgabe; der tatsächliche Verbrauch variiert.",
-        "monthlyTasks_one": "Etwa {{formattedCount}} Aufgabe/Monat",
-        "monthlyTasks_other": "Etwa {{formattedCount}} Aufgaben/Monat",
         "priceUnavailable": "Aktuelle Preise in den Tarifen ansehen",
         "title": "Mehr erledigen mit Pro",
         "upgradeNow": "Jetzt upgraden"

@@ -1690,12 +1690,8 @@
       "proCard": {
         "bonusCreditsNow": "bonus credits · Just now",
         "description": "Pro includes advanced models, automations, built-in research data, and 3 tasks at once.",
-        "estimateBasis": "Estimated from typical Okou usage; actual usage varies.",
         "estimatedTasksLeft_one": "Fewer than {{count}} task left",
         "estimatedTasksLeft_other": "Fewer than {{count}} tasks left",
-        "monthlyEstimateBasis": "Estimated at {{credits}} credits/task; actual usage varies.",
-        "monthlyTasks_one": "About {{formattedCount}} task/month",
-        "monthlyTasks_other": "About {{formattedCount}} tasks/month",
         "priceUnavailable": "See plans for current pricing",
         "title": "Do more with Pro",
         "upgradeNow": "Upgrade now"

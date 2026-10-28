@@ -1718,14 +1718,9 @@
       "proCard": {
         "bonusCreditsNow": "créditos extras · Agora mesmo",
         "description": "O Pro inclui modelos avançados, automações, dados de pesquisa integrados e 3 tarefas ao mesmo tempo.",
-        "estimateBasis": "Estimativa com base no uso típico do Okou; o consumo real varia.",
         "estimatedTasksLeft_one": "Resta menos de {{count}} tarefa",
         "estimatedTasksLeft_many": "Restam menos de {{count}} tarefas",
         "estimatedTasksLeft_other": "Restam menos de {{count}} tarefas",
-        "monthlyEstimateBasis": "Estimativa de {{credits}} créditos por tarefa; o consumo real varia.",
-        "monthlyTasks_one": "Cerca de {{formattedCount}} tarefa/mês",
-        "monthlyTasks_many": "Cerca de {{formattedCount}} tarefas/mês",
-        "monthlyTasks_other": "Cerca de {{formattedCount}} tarefas/mês",
         "priceUnavailable": "Veja os preços atuais dos planos",
         "title": "Faça mais com o Pro",
         "upgradeNow": "Fazer upgrade agora"
