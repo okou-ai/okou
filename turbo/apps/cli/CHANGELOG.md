@@ -1,5 +1,22 @@
 # Changelog
 
+## [10.5.3](https://github.com/okou-ai/okou/compare/cli-v10.5.2...cli-v10.5.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **cli:** allow cross-agent connector revocation ([#43640](https://github.com/okou-ai/okou/issues/43640)) ([e1b3162](https://github.com/okou-ai/okou/commit/e1b31622711f73dd73c99e8add7cceb836fb6548))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.14.2
+    * @okouai/connectors bumped to 3.18.0
+    * @okouai/core bumped to 8.795.1
+    * @okouai/pi-agent-runtime bumped to 1.51.9
+
 ## [10.5.2](https://github.com/okou-ai/okou/compare/cli-v10.5.1...cli-v10.5.2) (2026-10-28)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.239.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.238.0...runner-rs-v0.239.0) (2026-10-28)
+
+
+### Features
+
+* **mcp:** support catalog-owned static request headers ([#43626](https://github.com/okou-ai/okou/issues/43626)) ([e145904](https://github.com/okou-ai/okou/commit/e145904a15970ef0072eff84c990cf2cc24f6212))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.238.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.21...runner-rs-v0.238.0) (2026-10-28)
 
 

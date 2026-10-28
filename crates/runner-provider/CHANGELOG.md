@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.30](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.29...runner-provider-v0.11.30) (2026-10-28)
+
+
+### Bug Fixes
+
+* **runner-provider:** retain ably connect task custody ([#43635](https://github.com/okou-ai/okou/issues/43635)) ([ca7e2c4](https://github.com/okou-ai/okou/commit/ca7e2c43a90837015d5448b5648fed49711d363e))
+
 ## [0.11.29](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.28...runner-provider-v0.11.29) (2026-10-28)
 
 ## [0.11.28](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.27...runner-provider-v0.11.28) (2026-10-27)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.16](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.15...guest-agent-v0.109.16) (2026-10-28)
+
+
+### Bug Fixes
+
+* **pi:** classify opaque codex bad requests ([#43630](https://github.com/okou-ai/okou/issues/43630)) ([fd956ef](https://github.com/okou-ai/okou/commit/fd956ef072e4118fdc15a39febed4e286f479b5d))
+
 ## [0.109.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.14...guest-agent-v0.109.15) (2026-10-27)
 
 ## [0.109.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.13...guest-agent-v0.109.14) (2026-10-27)
