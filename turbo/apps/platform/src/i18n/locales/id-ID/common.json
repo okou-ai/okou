@@ -3998,6 +3998,15 @@
     "title": "Dokumen",
     "useNamed": "Gunakan {{title}}"
   },
+  "featureGuide": {
+    "close": "Tutup panduan fitur",
+    "dismiss": "Mengerti",
+    "label": "Yang baru",
+    "next": "Berikutnya",
+    "preview": "Pratinjau",
+    "previous": "Sebelumnya",
+    "tryPrompt": "Coba tugas ini"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",

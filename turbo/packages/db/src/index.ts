@@ -8,6 +8,7 @@ import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as agentSuggestionSchema from "./schema/agent-suggestion";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
+import * as featureGuideSchema from "./schema/feature-guide";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as agentSchema from "./schema/agent";
@@ -169,6 +170,7 @@ export const schema = {
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
   ...userSchema,
+  ...featureGuideSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,

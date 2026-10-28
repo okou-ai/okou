@@ -4067,6 +4067,15 @@
     "title": "Document",
     "useNamed": "Utiliser {{title}}"
   },
+  "featureGuide": {
+    "close": "Fermer le guide des nouveautés",
+    "dismiss": "J’ai compris",
+    "label": "Nouveautés",
+    "next": "Suivant",
+    "preview": "Aperçu",
+    "previous": "Précédent",
+    "tryPrompt": "Essayer cette tâche"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",

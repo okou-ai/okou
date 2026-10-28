@@ -1,5 +1,5 @@
 {
-  "id": "b63be5af-88f2-4ae1-82fc-b7152dfb1475",
+  "id": "c949909c-de9e-40df-9ed3-b259ead27fbd",
   "prevId": "fd5335ea-c3dc-4533-bd5b-52700d6ceb71",
   "version": "7",
   "dialect": "postgresql",
@@ -2496,12 +2496,6 @@
         "thumbnail": {
           "name": "thumbnail",
           "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -14404,6 +14398,238 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.feature_guide_editions": {
+      "name": "feature_guide_editions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "published_revision_id": {
+          "name": "published_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "published_by": {
+          "name": "published_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_feature_guide_editions_published": {
+          "name": "idx_feature_guide_editions_published",
+          "columns": [
+            {
+              "expression": "published_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "feature_guide_published_revision_fk": {
+          "name": "feature_guide_published_revision_fk",
+          "tableFrom": "feature_guide_editions",
+          "tableTo": "feature_guide_revisions",
+          "columnsFrom": [
+            "id",
+            "published_revision_id"
+          ],
+          "columnsTo": [
+            "edition_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.feature_guide_receipts": {
+      "name": "feature_guide_receipts",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision_id": {
+          "name": "revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seen_at": {
+          "name": "seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "feature_guide_receipt_revision_fk": {
+          "name": "feature_guide_receipt_revision_fk",
+          "tableFrom": "feature_guide_receipts",
+          "tableTo": "feature_guide_revisions",
+          "columnsFrom": [
+            "edition_id",
+            "revision_id"
+          ],
+          "columnsTo": [
+            "edition_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "feature_guide_receipts_user_id_edition_id_pk": {
+          "name": "feature_guide_receipts_user_id_edition_id_pk",
+          "columns": [
+            "user_id",
+            "edition_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.feature_guide_revisions": {
+      "name": "feature_guide_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "feature_guide_revisions_edition_id_feature_guide_editions_id_fk": {
+          "name": "feature_guide_revisions_edition_id_feature_guide_editions_id_fk",
+          "tableFrom": "feature_guide_revisions",
+          "tableTo": "feature_guide_editions",
+          "columnsFrom": [
+            "edition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "feature_guide_revision_edition_identity": {
+          "name": "feature_guide_revision_edition_identity",
+          "nullsNotDistinct": false,
+          "columns": [
+            "edition_id",
+            "id"
+          ]
+        },
+        "feature_guide_revision_content_hash": {
+          "name": "feature_guide_revision_content_hash",
+          "nullsNotDistinct": false,
+          "columns": [
+            "edition_id",
+            "content_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.feishu_chat_ingress": {
       "name": "feishu_chat_ingress",
       "schema": "",
@@ -24355,12 +24581,6 @@
         "idempotency_key": {
           "name": "idempotency_key",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },

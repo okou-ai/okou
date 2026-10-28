@@ -40,7 +40,7 @@ function createPaidToolsSignals(
       return !disabledTools.includes(toolId);
     });
     const update$ = command(
-      async ({ set }, enabled: boolean, signal: AbortSignal) => {
+      async ({ get, set }, enabled: boolean, signal: AbortSignal) => {
         signal.throwIfAborted();
         assertCurrent();
         const response = await accept(
@@ -58,6 +58,10 @@ function createPaidToolsSignals(
           set(imageModel.discardDraft$);
         }
         set(reloadDisabledPaidTools$);
+        // Keep this row saving until its confirmed state is visible again.
+        await get(enabled$);
+        signal.throwIfAborted();
+        assertCurrent();
       },
     );
     return { toolId, enabled$, update$ };

@@ -87,7 +87,7 @@ async fn staging_contract_happy_path() {
     tokio::fs::write(rootfs.rootfs_staging(), b"customized")
         .await
         .unwrap();
-    publish.commit().unwrap();
+    publish.commit(None).unwrap();
 
     assert!(rootfs.rootfs().exists());
     assert!(!rootfs.rootfs_staging().exists());

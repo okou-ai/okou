@@ -102,6 +102,7 @@ import { debugMorningBriefRoutes } from "./routes/debug-morning-brief";
 import { notificationsRoutes } from "./routes/notifications";
 import { emailUnsubscribeRoutes } from "./routes/email-unsubscribe";
 import { featureSwitchesRoutes } from "./routes/feature-switches";
+import { featureGuidesRoutes } from "./routes/feature-guides";
 import { feishuBrowserConnectRoutes } from "./routes/feishu-browser-connect";
 import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
@@ -350,6 +351,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
   ...featureSwitchesRoutes,
+  ...featureGuidesRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,

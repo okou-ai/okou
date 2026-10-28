@@ -1,5 +1,6 @@
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { onRef } from "./utils.ts";
+import { rootVersion$ } from "./root-signal.ts";
 import {
   captureBootstrapPhaseTiming$,
   captureFirstSkeletonHide$,
@@ -8,6 +9,11 @@ import {
   recordClientTelemetry,
   startClientTelemetryMeasurement,
 } from "../lib/client-telemetry.ts";
+
+const contentReadyState$ = state<number | null>(null);
+export const appContentReady$ = computed((get) => {
+  return get(contentReadyState$) === get(rootVersion$);
+});
 
 const APP_BOOTSTRAP_SKELETON_ID = "app-bootstrap-skeleton";
 const APP_BOOTSTRAP_SKELETON_HIDDEN_CLASS = "app-bootstrap-skeleton--hidden";
@@ -55,12 +61,13 @@ export async function hideBootstrapSkeleton(
 }
 
 export const hideAppSkeleton$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
     if (!(await hideBootstrapSkeleton(signal))) {
       return;
     }
     set(captureFirstSkeletonHide$);
     set(captureBootstrapPhaseTiming$);
+    set(contentReadyState$, get(rootVersion$));
   },
 );
 

@@ -52,7 +52,7 @@ function ToolToggleRow({
   readonly grouped?: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useLoadable(tool.enabled$);
+  const enabled = useLastLoadable(tool.enabled$);
   const [save, update] = useLoadableSet(tool.update$);
   const signal = useGet(settingsActionSignal$);
   const pending = save.state === "loading";
@@ -185,7 +185,7 @@ function ImageModelRow({
 }) {
   const { t } = useTranslation();
   const selected = useLastLoadable(imageModel.selected$);
-  const enabled = useLoadable(toolEnabled);
+  const enabled = useLastLoadable(toolEnabled);
   const draft = useGet(imageModel.draft$);
   const [save, update] = useLoadableSet(imageModel.update$);
   const signal = useGet(settingsActionSignal$);

@@ -46,6 +46,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.FeatureGuides]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feature guides",
+    description: "Show published product updates once per user and edition.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OnboardingSourceOutcomes]: {
     maintainer: "ming@okou.ai",
     displayName: "Onboarding source outcomes",

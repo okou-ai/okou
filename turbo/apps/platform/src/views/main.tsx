@@ -5,6 +5,7 @@ import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
 import { Router } from "./router.tsx";
 import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
+import { FeatureGuideDialog } from "./components/feature-guide-dialog.tsx";
 import { ForceUpgradeDialog } from "./components/force-upgrade-dialog.tsx";
 import { SharedWorkerFailureDialog } from "./components/shared-worker-failure-dialog.tsx";
 import { InspectLogFileInput } from "./inspect-log-file-input.tsx";
@@ -77,6 +78,7 @@ export const setupRouter = (
           </ClerkOptionsProvider>
           <InspectLogFileInput />
           <ForceUpgradeDialog />
+          <FeatureGuideDialog />
           <InstatusStatusNotice />
         </ErrorBoundary>
         <SharedWorkerFailureDialog />

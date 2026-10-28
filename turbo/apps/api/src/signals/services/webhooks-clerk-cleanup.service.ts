@@ -33,6 +33,7 @@ import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { removeUsagePackMemberAllocation$ } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits$ } from "./usage-pack-credit-refund.service";
+import { deleteFeatureGuideReceipts$ } from "./feature-guides.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.service";
 
@@ -249,6 +250,7 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "user", userId } as const;
+    await set(deleteFeatureGuideReceipts$, userId, signal);
     await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);

@@ -4013,6 +4013,15 @@
     "title": "दस्तावेज़",
     "useNamed": "{{title}} इस्तेमाल करें"
   },
+  "featureGuide": {
+    "close": "नई सुविधाओं की गाइड बंद करें",
+    "dismiss": "समझ गया",
+    "label": "नया क्या है",
+    "next": "अगला",
+    "preview": "पूर्वावलोकन",
+    "previous": "पिछला",
+    "tryPrompt": "यह काम आज़माएँ"
+  },
   "global": {
     "errors": {
       "httpStatus": "HTTP {{status}}",
