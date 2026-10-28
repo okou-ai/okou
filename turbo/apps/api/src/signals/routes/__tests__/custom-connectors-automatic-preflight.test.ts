@@ -107,7 +107,7 @@ describe("Automatic custom connector preflight", () => {
         connector.id,
       );
       expect(new URL(authorization).searchParams.get("resource")).toBe(
-        new URL(resource).href,
+        resource,
       );
       await complete(authorization, provider.issuer);
       await expect(
@@ -115,9 +115,7 @@ describe("Automatic custom connector preflight", () => {
       ).resolves.toMatchObject([
         { connectionStatus: "connected", oauthScopes: ["read", "write"] },
       ]);
-      expect(provider.tokenBodies[0]?.get("resource")).toBe(
-        new URL(resource).href,
-      );
+      expect(provider.tokenBodies[0]?.get("resource")).toBe(resource);
       expect(new Set(provider.endpointRequests)).toStrictEqual(
         new Set([endpoint]),
       );
