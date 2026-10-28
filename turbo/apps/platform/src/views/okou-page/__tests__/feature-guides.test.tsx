@@ -175,7 +175,7 @@ test("keeps the UI hidden while the feature switch is off", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("replays a preview without acknowledging a real impression", async () => {
+test("replays a preview from the home link without acknowledging a real impression", async () => {
   let seen = false;
   context.mocks.api(featureGuidesContract.current, ({ query, respond }) => {
     expect(query?.preview).toBe("1");
@@ -187,7 +187,7 @@ test("replays a preview without acknowledging a real impression", async () => {
   });
   await setupPage({
     context,
-    path: `${path}?featureGuidePreview=1`,
+    path: "/?featureGuidePreview=1",
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {

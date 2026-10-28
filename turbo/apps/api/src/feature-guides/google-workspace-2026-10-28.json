@@ -1,0 +1,35 @@
+{
+  "editionId": "google-workspace-2026-10-28",
+  "startsAt": "2026-10-28T00:00:00.000Z",
+  "expiresAt": null,
+  "content": {
+    "schemaVersion": 1,
+    "title": "Made by Okou. Ready for your team.",
+    "description": "Take your report or spreadsheet into Google Docs or Sheets. Keep editing, sharing, and working together.",
+    "items": [
+      {
+        "featureId": "google-workspace-export",
+        "title": "Export to Google Docs & Sheets",
+        "description": "An editable copy in your Google Drive, ready for the next person.",
+        "media": {
+          "type": "walkthrough",
+          "steps": [
+            {
+              "title": "Let Okou do the first draft",
+              "description": "Ask for a weekly report, a project tracker, or a spreadsheet. Open the finished file in Okou."
+            },
+            {
+              "title": "Send it to Docs or Sheets",
+              "description": "In the file menu, choose Upload to Google Docs or Upload to Google Sheets. Connect Google Drive when prompted on your first export."
+            },
+            {
+              "title": "Pick up where Okou left off",
+              "description": "Choose Open in Google Docs or Open in Google Sheets. Review your editable copy, then invite your team to keep working together. Your original file stays in Okou; formatting may change during conversion."
+            }
+          ]
+        },
+        "prompt": "Help me turn this week's notes into a team update and a project tracker. Ask me for the notes first. Prepare files I can export to Google Docs and Google Sheets, and let me review them before sharing."
+      }
+    ]
+  }
+}

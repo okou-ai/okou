@@ -65,7 +65,7 @@ function GuideMedia({
     throw new Error("Feature guide step is outside the current walkthrough");
   }
   return (
-    <div className="flex flex-col gap-3 rounded-xl bg-gray-50 p-4">
+    <div className="flex flex-col gap-4 rounded-xl bg-gray-50 p-4 sm:p-5">
       {step.imageUrl && (
         <img
           src={step.imageUrl}
@@ -74,8 +74,12 @@ function GuideMedia({
           className="max-h-48 w-full rounded-lg object-contain"
         />
       )}
-      <p className="text-sm font-medium">{step.title}</p>
-      <p className="text-sm text-muted-foreground">{step.description}</p>
+      <div className="flex flex-col gap-2" aria-live="polite">
+        <p className="text-lg font-medium">{step.title}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {step.description}
+        </p>
+      </div>
       <div className="flex items-center justify-between gap-3">
         <Button
           variant="quiet"
@@ -150,26 +154,35 @@ function GuideContents({
         </DialogTitle>
         <DialogDescription>{edition.content.description}</DialogDescription>
       </DialogHeader>
-      <div className="grid gap-2 sm:grid-cols-3">
-        {edition.content.items.map((item, index) => {
-          return (
-            <ToggleButton
-              key={item.featureId}
-              layout="tile"
-              className="flex h-auto min-h-20 flex-col items-start justify-start gap-1 whitespace-normal rounded-xl p-3 text-left"
-              selected={index === itemIndex}
-              onClick={() => {
-                return selectItem(index);
-              }}
-            >
-              <span className="text-sm font-medium">{item.title}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {item.description}
-              </span>
-            </ToggleButton>
-          );
-        })}
-      </div>
+      {edition.content.items.length === 1 ? (
+        <div className="flex flex-col gap-1">
+          <h3 className="text-sm font-medium">{activeItem.title}</h3>
+          <p className="text-sm text-muted-foreground">
+            {activeItem.description}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {edition.content.items.map((item, index) => {
+            return (
+              <ToggleButton
+                key={item.featureId}
+                layout="tile"
+                className="flex h-auto min-h-20 flex-col items-start justify-start gap-1 whitespace-normal rounded-xl p-3 text-left"
+                selected={index === itemIndex}
+                onClick={() => {
+                  return selectItem(index);
+                }}
+              >
+                <span className="text-sm font-medium">{item.title}</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {item.description}
+                </span>
+              </ToggleButton>
+            );
+          })}
+        </div>
+      )}
       {activeItem.media && (
         <GuideMedia
           key={activeItem.featureId}
@@ -252,6 +265,7 @@ export function FeatureGuideDialog() {
     >
       <DialogContent
         maxWidth="2xl"
+        contentClassName="auto-rows-max"
         closeLabel={t(($) => {
           return $.featureGuide.close;
         })}
