@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
-import { onTestFinished } from "vitest";
+import { onTestFinished, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
@@ -22,7 +22,7 @@ function headers(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-it("rejects a prepared copy after the source Workflow changes", async () => {
+test("rejects a prepared copy after the source Workflow changes", async () => {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   const source = await bdd.createAgent(actor, { displayName: "Copy source" });
@@ -94,7 +94,7 @@ it("rejects a prepared copy after the source Workflow changes", async () => {
   expect(current.body.instruction).toBe("# Changed during preparation");
 });
 
-it("rejects a prepared admin copy after another owner's target Agent becomes private", async () => {
+test("rejects a prepared admin copy after another owner's target Agent becomes private", async () => {
   const admin = bdd.user({ orgRole: "org:admin" });
   const owner = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
   bdd.acceptAgentStorageWrites();

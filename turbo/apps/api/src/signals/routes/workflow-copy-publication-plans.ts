@@ -26,7 +26,7 @@ import {
 } from "../services/workflow-automation-account-classification.service";
 import { officialAccountProjectionReadPlan } from "../services/official-workflow-account-projection";
 import { prepareChatThreadInsert } from "../services/chat-thread-create.service";
-import { type WorkflowThreadPreparation } from "../services/workflow-user-automation-thread.service";
+import type { WorkflowThreadPreparation } from "../services/workflow-user-automation-thread.service";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import {
   type WorkflowCopyInput,

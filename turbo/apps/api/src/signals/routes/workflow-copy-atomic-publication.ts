@@ -8,7 +8,7 @@ import {
   workflowWebhookAutomations,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
-import { and, count, exists, sql, type SQL } from "drizzle-orm";
+import { count, exists, sql, type SQL } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import {
   chatThreadEventInsertPlan,
