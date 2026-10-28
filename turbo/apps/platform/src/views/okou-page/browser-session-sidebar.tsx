@@ -69,7 +69,7 @@ export function BrowserSessionSidebar({
         </Button>
       </div>
       <div className="min-h-0 flex-1">
-        <BrowserSessionPanel signals={signals} containLiveFrame />
+        <BrowserSessionPanel signals={signals} showPausedScreenshot />
       </div>
     </aside>
   );

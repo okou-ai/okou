@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { animationFrame } from "signal-timers";
 
 import { localStorageSignals } from "../external/local-storage.ts";
 import {
@@ -15,7 +14,6 @@ import {
 } from "../okou-page/unified-chat-workspace.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { isNonArrayRecord, jsonParseOr, onRef, resetSignal } from "../utils.ts";
-import { syncActiveBrowserFitAction$ } from "./thread-sidebar-coordinator.ts";
 
 // Smallest the sidebar may shrink to before its content stops being usable.
 export const CHAT_THREAD_SIDEBAR_MIN_WIDTH = 400;
@@ -211,7 +209,6 @@ const startChatThreadSidebarResize$ = command(
     // blocking the page. Events stay on this owner across embedded frames.
     handle.setPointerCapture(pointerId);
     const dragMaskEl = get(chatThreadSidebarDragMaskEl$);
-    let fitCheckScheduled = false;
 
     function resetResize(): void {
       if (unifiedKey !== null) {
@@ -243,23 +240,6 @@ const startChatThreadSidebarResize$ = command(
       }
     }
 
-    function scheduleBrowserFitCheck(): void {
-      if (fitCheckScheduled) {
-        return;
-      }
-      fitCheckScheduled = true;
-      // React applies the width subscription after this native pointer event.
-      // Keep the final check alive through pointerup so it measures the
-      // committed sidebar size on the next frame.
-      animationFrame(
-        () => {
-          fitCheckScheduled = false;
-          set(syncActiveBrowserFitAction$);
-        },
-        { signal: ownerSignal },
-      );
-    }
-
     handle.addEventListener(
       "pointermove",
       (event) => {
@@ -279,7 +259,6 @@ const startChatThreadSidebarResize$ = command(
         } else {
           moveUnified(unifiedKey, event.clientX);
         }
-        scheduleBrowserFitCheck();
       },
       { signal: dragSignal },
     );
@@ -345,7 +324,6 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
       () => {
         if (get(unifiedChatWorkspace$)) {
           set(writeSidebarWidth$, handle.dataset.widthKey ?? "", null);
-          set(syncActiveBrowserFitAction$);
         }
       },
       { signal: mountSignal },
@@ -384,7 +362,6 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
           // The focused separator owns Enter as "restore the default width".
           event.preventDefault();
           set(writeSidebarWidth$, key, null);
-          set(syncActiveBrowserFitAction$);
           return;
         }
         if (next === null) {
@@ -397,7 +374,6 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
           key,
           Math.min(Math.max(next, CHAT_THREAD_SIDEBAR_MIN_WIDTH), maxWidth),
         );
-        set(syncActiveBrowserFitAction$);
       },
       { signal: mountSignal },
     );

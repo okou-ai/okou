@@ -201,14 +201,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.BrowserCdpViewer]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Okou browser viewer",
-    description:
-      "Use Okou's interactive browser viewer in conversations and standalone browser pages",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.BrowserSharedOwner]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Shared Browser",
