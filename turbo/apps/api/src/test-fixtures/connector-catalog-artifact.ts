@@ -2428,6 +2428,7 @@ function automaticMcpConnector(
   tokenPrefix = firewallAuth === "oauth"
     ? "AUTOMATIC"
     : `AUTOMATIC_${firewallAuth.toUpperCase()}`,
+  staticHeaders: Readonly<Record<string, string>> = {},
 ): ConnectorCatalogArtifactConnector {
   const template = connectors.find((entry) => {
     return entry.slug === "public-mcp";
@@ -2477,6 +2478,7 @@ function automaticMcpConnector(
                 : {
                     headers: {
                       Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+                      ...staticHeaders,
                     },
                   },
             permissions: [],
@@ -2524,6 +2526,12 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     ...connectors,
     automaticMcpConnector("none"),
     automaticMcpConnector("oauth"),
+    {
+      ...automaticMcpConnector("oauth", "AUTOMATIC_STATIC", {
+        "X-Datadog-MCP-Toolsets": "all,cases",
+      }),
+      slug: "automatic-mcp-static-headers",
+    },
     builtinAutomaticMcpConnector("monday-mcp", "Monday.com", "MONDAY_MCP"),
     builtinAutomaticMcpConnector("plaud-mcp", "Plaud", "PLAUD_MCP"),
   ],
