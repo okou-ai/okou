@@ -12,7 +12,12 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached, settle, settleIncludingAbort } from "../../utils";
+import {
+  clearAllDetached,
+  joinAll,
+  settle,
+  settleIncludingAbort,
+} from "../../utils";
 import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import {
   createBddApi,
@@ -123,10 +128,12 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   const sends = ap.captureAgentPhoneSends();
 
   await runs.grantProEntitlement(actor);
-  await runs.ensurePersonalSubscriptionModel(actor);
-  await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const phone = uniquePhoneHandle();
-  await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
+  // Linking does not select a model; both prerequisites finish before ingress.
+  await joinAll([
+    runs.ensurePersonalSubscriptionModel(actor),
+    ap.linkViaWebhookConnectPrompt(actor, phone, sends),
+  ]);
   return { actor, ap, phone, runnerGroup, sends, storage };
 }
 
