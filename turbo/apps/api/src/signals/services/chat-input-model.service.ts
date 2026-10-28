@@ -20,10 +20,6 @@ import { command } from "ccstate";
 import { db$ } from "../external/db";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
-  chatThreadEventInsertSql,
-  chatThreadServiceTierFromCodex,
-} from "./chat-thread-event.service";
-import {
   autoSelectionPin,
   resolveModelSelectionPin$,
   isReplacedModelSelection,
@@ -296,33 +292,6 @@ export function threadModelReplacementWritePlan(
     ),
     returning: { id: chatThreads.id },
   };
-}
-
-/** Build each event only when its owner is ready to execute it. */
-export function* threadModelReplacementEventStatements({
-  replacement,
-  updatedAt,
-  tierChanged,
-}: ReturnType<typeof threadModelReplacementWritePlan>["eventScope"]) {
-  const event = {
-    userId: replacement.userId,
-    orgId: replacement.orgId,
-    chatThreadId: replacement.chatThreadId,
-    agentId: replacement.agentId,
-    createdAt: updatedAt,
-  };
-  yield chatThreadEventInsertSql({
-    ...event,
-    kind: "model_selection_updated",
-    selectedModel: replacement.selectedModel,
-  });
-  if (tierChanged) {
-    yield chatThreadEventInsertSql({
-      ...event,
-      kind: "service_tier_updated",
-      serviceTier: chatThreadServiceTierFromCodex(replacement.codexServiceTier),
-    });
-  }
 }
 
 /**

@@ -59,6 +59,7 @@ function conflictClause(conflict: ChatEventAppendConflict): SQL {
 export function canonicalChatEventInputCtes(
   values: readonly PreparedChatEventRow[],
   inputEligibility?: SQL,
+  additionalInput?: SQL,
 ): SQL {
   const input = JSON.stringify(
     values.map((value, ordinal) => {
@@ -78,6 +79,7 @@ export function canonicalChatEventInputCtes(
         "runEventSequenceNumber" integer, "runEventId" text,
         "createdAt" timestamp, ordinal integer
       )${inputEligibility ? sql` WHERE ${inputEligibility}` : sql.empty()}
+      ${additionalInput ? sql`UNION ALL ${additionalInput}` : sql.empty()}
     ), counts AS MATERIALIZED (
       SELECT "chatThreadId" AS chat_thread_id, count(*) AS event_count
       FROM input GROUP BY "chatThreadId"
