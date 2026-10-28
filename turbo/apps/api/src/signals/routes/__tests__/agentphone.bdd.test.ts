@@ -1863,6 +1863,140 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
+  it("identifies the workspace and offers account recovery after a run runs out of credits", async () => {
+    const { actor, ap, phone, runnerGroup, sends } =
+      await entitledLinkedActor();
+    const workspaceName = "Finance * Operations";
+    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+      id: actor.orgId,
+      name: workspaceName,
+    });
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "finish my report",
+      conversationId: uniqueConversationId(),
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    const beforeCompletion = sends.messages.length;
+    await completeSandboxRun(run.sandboxToken, run.runId, 1, {
+      error: "insufficient_credits",
+    });
+    await waitForSendCount(sends, beforeCompletion + 1);
+    const reply = lastSend(sends).body;
+    expect(reply).toContain(`workspace "${workspaceName}"`);
+    expect(reply).toContain("which has insufficient credits to continue");
+    expect(reply).toContain(
+      "Add credits or connect a personal Codex or Claude",
+    );
+    expect(reply).toContain("?settings=billing&billingView=credits");
+    expect(reply).toContain("send /disconnect, then /connect");
+    expect(reply).toContain(
+      "These commands work even when credits are depleted",
+    );
+    expect(reply).toContain("Send /help for available commands");
+
+    const chat = createChatFilesBddApi(context);
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
+    }
+    const thread = lifecycle.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!thread) {
+      throw new Error("Expected the Phone chat thread");
+    }
+    const events = await chat.listThreadEvents(actor, thread.chatThreadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "run.failed",
+        content: "insufficient_credits",
+      }),
+    );
+  });
+
+  it.each([
+    { role: "org:admin", isGroup: false },
+    { role: "org:member", isGroup: false },
+    { role: "org:admin", isGroup: true },
+  ] as const)(
+    "offers role-aware recovery for a depleted workspace ($role, group=$isGroup)",
+    async ({ role, isGroup }) => {
+      const bdd = createBddApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const ap = createAgentPhoneBddApi(context);
+      const owner = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      integrations.configureAgentPhoneProvider();
+      integrations.configureAgentPhoneWebhook();
+      const sends = ap.captureAgentPhoneSends();
+      await bdd.bootstrapLimitedFreeOnboarding(owner, {
+        displayName: "Workspace recovery agent",
+      });
+      const actor =
+        role === "org:admin"
+          ? owner
+          : bdd.user({ orgId: owner.orgId, orgRole: role });
+      const phone = uniquePhoneHandle();
+      await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
+      // Let the public onboarding and connection rewards expire naturally.
+      mockNow(now() + 90 * 24 * 60 * 60 * 1000);
+      const workspaceName = "Original Phone Workspace";
+      context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+        id: actor.orgId,
+        name: workspaceName,
+      });
+      const conversationId = uniqueConversationId();
+      const beforeSend = sends.messages.length;
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "@Okou help me with this report",
+        conversationId,
+        isGroup,
+      });
+      await waitForSendCount(sends, beforeSend + 1);
+      const reply = lastSend(sends).body;
+      if (isGroup) {
+        expect(reply).toContain("Insufficient credits");
+        expect(reply).not.toContain(workspaceName);
+        expect(reply).not.toContain("/disconnect");
+        return;
+      }
+      expect(reply).toContain(`workspace "${workspaceName}"`);
+      expect(reply).toContain("send /disconnect, then /connect");
+      if (role === "org:admin") {
+        expect(reply).toContain("?settings=billing&billingView=plans");
+      } else {
+        expect(reply).toContain("Ask a workspace admin");
+        expect(reply).not.toContain("?settings=billing");
+      }
+
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "/help",
+      });
+      expect(lastSend(sends).body).toContain("Okou text message commands");
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "/disconnect",
+      });
+      const status = await integrations.getAgentPhoneLinkStatus(actor);
+      expect(status.linked).toBeFalsy();
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "/connect",
+      });
+      expect(lastSend(sends).body).toContain("/agentphone/connect?");
+    },
+  );
+
   it("keeps the phone conversation usable after the provider rejects a completion reply", async () => {
     const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
     const webhooks = createWebhookCallbackApi(context);
