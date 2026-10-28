@@ -15,6 +15,7 @@ use crate::status_file::{self, StatusForDoctor};
 use chrono::{DateTime, Utc};
 use clap::Args;
 use futures_util::{StreamExt, stream};
+use nbd_cow::orphan::NbdOrphanCandidate;
 use reqwest::Client;
 use runner_host::paths::HomePaths;
 use runner_host::process;
@@ -110,7 +111,7 @@ enum Warning {
     /// A network namespace whose pool lock is not held by any process.
     OrphanNamespace { ns_name: String, lock_path: PathBuf },
     /// An NBD device whose recorded owner task has exited and whose lock is free.
-    OrphanNbdDevice { device_index: u32, pid: u32 },
+    OrphanNbdDevice { candidate: NbdOrphanCandidate },
     /// The NBD orphan scan task panicked (bug in find_nbd_orphans).
     NbdScanFailed,
 }
@@ -174,7 +175,9 @@ impl fmt::Display for Warning {
             Self::OrphanNamespace { ns_name, .. } => {
                 write!(f, "orphan namespace {ns_name} (pool lock not held)")
             }
-            Self::OrphanNbdDevice { device_index, pid } => {
+            Self::OrphanNbdDevice { candidate } => {
+                let device_index = candidate.device_index();
+                let pid = candidate.owner_tid();
                 write!(
                     f,
                     "orphan NBD device /dev/nbd{device_index} (owner PID {pid} no longer exists)"
@@ -345,14 +348,11 @@ impl Warning {
                 }
                 is_lock_free(lock_path).await
             }
-            Self::OrphanNbdDevice { device_index, pid } => {
-                let idx = *device_index;
-                let original_pid = *pid;
-                tokio::task::spawn_blocking(move || {
-                    super::nbd::nbd_orphan_is_reportable(idx, original_pid)
-                })
-                .await
-                .unwrap_or(false)
+            Self::OrphanNbdDevice { candidate } => {
+                let candidate = *candidate;
+                tokio::task::spawn_blocking(move || super::nbd::nbd_orphan_is_reportable(candidate))
+                    .await
+                    .unwrap_or(false)
             }
             Self::NbdScanFailed => {
                 // Retry the scan — persists if it panics again.
@@ -1366,7 +1366,7 @@ fn parse_netns_list_line(line: &str) -> Option<(&str, u32)> {
 
 /// Scan for lock-free NBD devices whose recorded owner task has exited.
 async fn detect_nbd_orphans() -> Vec<Warning> {
-    let (_, orphans) = match tokio::task::spawn_blocking(super::nbd::find_nbd_orphans).await {
+    let orphans = match tokio::task::spawn_blocking(super::nbd::find_nbd_orphans).await {
         Ok(result) => result,
         Err(e) => {
             tracing::warn!("NBD orphan scan task failed: {e}");
@@ -1376,7 +1376,7 @@ async fn detect_nbd_orphans() -> Vec<Warning> {
 
     orphans
         .into_iter()
-        .map(|(device_index, pid)| Warning::OrphanNbdDevice { device_index, pid })
+        .map(|candidate| Warning::OrphanNbdDevice { candidate })
         .collect()
 }
 
@@ -3319,8 +3319,7 @@ printf '%s\n' \
         );
 
         let w = Warning::OrphanNbdDevice {
-            device_index: 3,
-            pid: 12345,
+            candidate: NbdOrphanCandidate::from_dead_owner_observation(3, 12345),
         };
         assert_eq!(
             w.to_string(),
