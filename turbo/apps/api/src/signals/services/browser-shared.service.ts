@@ -9,6 +9,8 @@ import {
   gt,
   inArray,
   isNotNull,
+  isNull,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -175,6 +177,53 @@ function lifetime(
         ),
     ),
   );
+}
+function liveSharedWindow(
+  owner: BrowserPublicAuthority,
+  profile: Profile,
+  window: Window,
+) {
+  return and(
+    lifetime(owner, profile, window),
+    eq(windows.state, "active"),
+    gt(windows.expiresAt, nowDate()),
+    authorityStillCurrent(owner),
+  );
+}
+function legacyBrowserPreview(
+  owner: BrowserPublicAuthority,
+  profile: Profile,
+  window: Window,
+) {
+  return new QueryBuilder()
+    .select({ objectKey: browserSessionScreenshots.objectKey })
+    .from(browserSessionScreenshots)
+    .where(
+      and(
+        eq(browserSessionScreenshots.chatThreadId, owner.chatThreadId),
+        exists(
+          new QueryBuilder()
+            .select({ id: windows.chatThreadId })
+            .from(windows)
+            .where(liveSharedWindow(owner, profile, window)),
+        ),
+        notExists(
+          new QueryBuilder()
+            .select({ id: browserSessions.id })
+            .from(browserSessions)
+            .where(
+              and(
+                eq(browserSessions.chatThreadId, owner.chatThreadId),
+                eq(browserSessions.orgId, owner.orgId),
+                eq(browserSessions.userId, owner.userId),
+                eq(browserSessions.status, "active"),
+                isNull(browserSessions.browserThreadProfileId),
+                isNull(browserSessions.browserProfileId),
+              ),
+            ),
+        ),
+      ),
+    );
 }
 function presentation(
   meta: Metadata,
@@ -647,16 +696,22 @@ const publishSharedMetadata$ = command(
       previous.browserThreadProfileId ||
       previous.browserProfileId
     ) {
-      const removed = db
-        .$with("previous_browser_preview")
-        .as(
-          db
-            .delete(browserSessionScreenshots)
-            .where(
+      // Another first open can publish shared metadata after this request's read.
+      // Match the selected immutable key so a concurrent replacement survives.
+      const removed = db.$with("previous_browser_preview").as(
+        db
+          .delete(browserSessionScreenshots)
+          .where(
+            and(
               eq(browserSessionScreenshots.chatThreadId, owner.chatThreadId),
-            )
-            .returning(),
-        );
+              inArray(
+                browserSessionScreenshots.objectKey,
+                legacyBrowserPreview(owner, profile, window),
+              ),
+            ),
+          )
+          .returning(),
+      );
       await db
         .with(removed)
         .insert(browserSessionScreenshotDeletions)
@@ -712,14 +767,7 @@ const publishSharedMetadata$ = command(
     const [confirmed] = await db
       .select({ id: windows.chatThreadId })
       .from(windows)
-      .where(
-        and(
-          lifetime(owner, profile, window),
-          eq(windows.state, "active"),
-          gt(windows.expiresAt, nowDate()),
-          authorityStillCurrent(owner),
-        ),
-      );
+      .where(liveSharedWindow(owner, profile, window));
     signal.throwIfAborted();
     if (!confirmed) {
       return unavailable();

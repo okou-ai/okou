@@ -27,7 +27,8 @@ import {
 } from "./helpers/runner-browser-fixture";
 
 const context = testContext();
-const { fixture, accepted } = createRunnerBrowserFixtures(context);
+const { fixture, allocate, admit, accepted } =
+  createRunnerBrowserFixtures(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
@@ -387,6 +388,66 @@ describe("shared Browser public consumers", () => {
       );
       expect(sleepingSibling.body.browser.status).toBe("suspended");
       expect(sleepingSibling.body.browser.window).toBeUndefined();
+    });
+  });
+
+  it("preserves a preview published while an earlier first open is still resolving", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      nativeCommands(f);
+      const a = await f.start();
+      const instance = await allocate(a);
+      await admit(a, instance.id, 0);
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let first = true;
+      f.provider.native.beforeWindowReply = async () => {
+        if (first) {
+          first = false;
+          entered.resolve();
+          await release.promise;
+        }
+      };
+      const earlier = settleIncludingAbort(use(a));
+      const published = await settleIncludingAbort(async () => {
+        await Promise.race([
+          entered.promise,
+          earlier.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("The first open never reached its provider read");
+          }),
+        ]);
+        await use(a);
+        await accept(
+          client().close({
+            headers,
+            params: { threadId: a.threadId },
+            body: {},
+          }),
+          [200],
+        );
+        const viewed = await accept(
+          client().get({ headers, params: { threadId: a.threadId } }),
+          [200],
+        );
+        expect(viewed.body.browser.screenshotUrl).not.toBeNull();
+        return viewed.body.browser.screenshotUrl;
+      });
+      release.resolve();
+      const completed = await earlier;
+      if (!published.ok) {
+        throw published.error;
+      }
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      const latest = await accept(
+        client().get({ headers, params: { threadId: a.threadId } }),
+        [200],
+      );
+      expect(latest.body.browser.screenshotUrl).toBe(published.value);
     });
   });
 
