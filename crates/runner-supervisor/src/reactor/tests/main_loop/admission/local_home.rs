@@ -13,6 +13,7 @@ enum HomeCandidate {
     Ordinary,
     SourceProbe,
     OtherHostProbe,
+    OtherHostExpected,
 }
 
 #[tokio::test]
@@ -33,6 +34,11 @@ async fn source_host_probe_consumes_unadvertised_source_home() {
 #[tokio::test]
 async fn a_ready_unadvertised_home_preempts_another_hosts_probe() {
     assert_unadvertised_home(false, HomeCandidate::OtherHostProbe).await;
+}
+
+#[tokio::test]
+async fn ready_source_home_preempts_another_hosts_publication_expectation() {
+    assert_unadvertised_home(false, HomeCandidate::OtherHostExpected).await;
 }
 
 #[tokio::test]
@@ -63,7 +69,10 @@ async fn source_host_probe_with_no_home_uses_an_available_blank() {
         .send(ranked_candidate(
             successor,
             Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHostProbe(RunId::new_v4()),
+            runner_provider::RunnerPreferenceTarget::SourceHome(
+                RunId::new_v4(),
+                runner_provider::SourceHomeObservation::Location,
+            ),
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -111,7 +120,10 @@ async fn a_busy_home_does_not_preempt_another_hosts_probe() {
         .send(ranked_candidate(
             successor,
             Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHostProbe(RunId::new_v4()),
+            runner_provider::RunnerPreferenceTarget::SourceHome(
+                RunId::new_v4(),
+                runner_provider::SourceHomeObservation::Location,
+            ),
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
         ))
@@ -230,14 +242,32 @@ async fn assert_unadvertised_home(during_claim: bool, candidate_kind: HomeCandid
         HomeCandidate::SourceProbe => ranked_candidate(
             successor,
             Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHostProbe(source),
+            runner_provider::RunnerPreferenceTarget::SourceHome(
+                source,
+                runner_provider::SourceHomeObservation::Location,
+            ),
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ),
         HomeCandidate::OtherHostProbe => ranked_candidate(
             successor,
             Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHostProbe(RunId::new_v4()),
+            runner_provider::RunnerPreferenceTarget::SourceHome(
+                RunId::new_v4(),
+                runner_provider::SourceHomeObservation::Location,
+            ),
+            &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
+            1,
+        ),
+        HomeCandidate::OtherHostExpected => ranked_candidate(
+            successor,
+            Some(key),
+            runner_provider::RunnerPreferenceTarget::SourceHome(
+                source,
+                runner_provider::SourceHomeObservation::Expected {
+                    deadline: Instant::now() + Duration::from_secs(30),
+                },
+            ),
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
         ),

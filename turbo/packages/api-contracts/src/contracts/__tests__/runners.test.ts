@@ -1102,16 +1102,13 @@ describe("runner reuse preference contract", () => {
     for (const tier of [
       "exactSandbox",
       "finalizingPredecessor",
-      "peerFinalizingPredecessor",
       "reusableSandbox",
       "homeCache",
     ] as const) {
       const preference = {
         ...runnerPreference,
         tier,
-        ...(tier === "exactSandbox" ||
-        tier === "finalizingPredecessor" ||
-        tier === "peerFinalizingPredecessor"
+        ...(tier === "exactSandbox" || tier === "finalizingPredecessor"
           ? { finalizingSourceRunId: "11111111-1111-4111-8111-111111111111" }
           : {}),
       };

@@ -38,27 +38,73 @@ pub trait AblySideMessageHandler: Send + Sync {
     fn handle(&self, message: &ably_subscriber::Message) -> bool;
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+/// Source-Home discovery evidence carried independently of routing expiry.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(
+    tag = "evidence",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum SourceHomeEvidence {
+    Advertised,
+    Expected {
+        home_wait_until: DateTime<FixedOffset>,
+    },
+    Location,
+}
+
+/// Recipient-local deadlines; publication waiting can outlive routing advice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceHomeObservation {
+    Advertised,
+    Expected { deadline: Instant },
+    Location,
+}
+
+impl SourceHomeEvidence {
+    fn active(&self) -> Result<SourceHomeObservation, serde_json::Error> {
+        Ok(match self {
+            Self::Advertised => SourceHomeObservation::Advertised,
+            Self::Expected { home_wait_until } => SourceHomeObservation::Expected {
+                deadline: preference_deadline(*home_wait_until)?,
+            },
+            Self::Location => SourceHomeObservation::Location,
+        })
+    }
+}
+
+impl SourceHomeObservation {
+    fn into_wire(self) -> SourceHomeEvidence {
+        match self {
+            Self::Advertised => SourceHomeEvidence::Advertised,
+            Self::Expected { deadline } => SourceHomeEvidence::Expected {
+                home_wait_until: preference_expires_at(deadline),
+            },
+            Self::Location => SourceHomeEvidence::Location,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunnerPreferenceTier {
     ExactSandbox,
     FinalizingPredecessor,
-    PeerFinalizingPredecessor,
-    SourceHomeCache,
+    SourceHome(SourceHomeObservation),
     ReusableSandbox,
     HomeCache,
-    SourceHostProbe,
 }
 
 impl RunnerPreferenceTier {
     pub fn rank(self) -> u8 {
         match self {
-            Self::SourceHostProbe => 0,
+            Self::SourceHome(SourceHomeObservation::Location) => 0,
             Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
-            Self::SourceHomeCache => 3,
-            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 4,
-            Self::ExactSandbox => 5,
+            Self::SourceHome(SourceHomeObservation::Expected { .. }) => 3,
+            Self::SourceHome(SourceHomeObservation::Advertised) => 4,
+            Self::FinalizingPredecessor => 5,
+            Self::ExactSandbox => 6,
         }
     }
 }
@@ -103,17 +149,18 @@ pub enum RunnerPreference {
     deny_unknown_fields
 )]
 pub enum RunnerPreferenceDecision {
+    SourceHome {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        source_run_id: RunId,
+        home: SourceHomeEvidence,
+    },
     ExactSandbox {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
         finalizing_source_run_id: RunId,
     },
     FinalizingPredecessor {
-        runner_identity: RunnerProcessIdentity,
-        expires_at: DateTime<FixedOffset>,
-        finalizing_source_run_id: RunId,
-    },
-    PeerFinalizingPredecessor {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
         finalizing_source_run_id: RunId,
@@ -126,27 +173,15 @@ pub enum RunnerPreferenceDecision {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
     },
-    SourceHomeCache {
-        runner_identity: RunnerProcessIdentity,
-        expires_at: DateTime<FixedOffset>,
-        finalizing_source_run_id: RunId,
-    },
-    SourceHostProbe {
-        runner_identity: RunnerProcessIdentity,
-        expires_at: DateTime<FixedOffset>,
-        finalizing_source_run_id: RunId,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunnerPreferenceTarget {
     SourceSandbox(RunId),
     FinalizingPredecessor(RunId),
-    PeerFinalizingPredecessor(RunId),
+    SourceHome(RunId, SourceHomeObservation),
     ReusableSandbox,
     HomeCache,
-    SourceHomeCache(RunId),
-    SourceHostProbe(RunId),
 }
 
 impl RunnerPreferenceTarget {
@@ -154,11 +189,9 @@ impl RunnerPreferenceTarget {
         match self {
             Self::SourceSandbox(_) => RunnerPreferenceTier::ExactSandbox,
             Self::FinalizingPredecessor(_) => RunnerPreferenceTier::FinalizingPredecessor,
-            Self::PeerFinalizingPredecessor(_) => RunnerPreferenceTier::PeerFinalizingPredecessor,
+            Self::SourceHome(_, home) => RunnerPreferenceTier::SourceHome(home),
             Self::ReusableSandbox => RunnerPreferenceTier::ReusableSandbox,
             Self::HomeCache => RunnerPreferenceTier::HomeCache,
-            Self::SourceHomeCache(_) => RunnerPreferenceTier::SourceHomeCache,
-            Self::SourceHostProbe(_) => RunnerPreferenceTier::SourceHostProbe,
         }
     }
 
@@ -166,9 +199,7 @@ impl RunnerPreferenceTarget {
         match self {
             Self::SourceSandbox(source)
             | Self::FinalizingPredecessor(source)
-            | Self::PeerFinalizingPredecessor(source)
-            | Self::SourceHomeCache(source)
-            | Self::SourceHostProbe(source) => Some(source),
+            | Self::SourceHome(source, _) => Some(source),
             Self::ReusableSandbox | Self::HomeCache => None,
         }
     }
@@ -191,13 +222,12 @@ impl RunnerPreferenceTarget {
                     finalizing_source_run_id,
                 }
             }
-            Self::PeerFinalizingPredecessor(finalizing_source_run_id) => {
-                RunnerPreferenceDecision::PeerFinalizingPredecessor {
-                    runner_identity,
-                    expires_at,
-                    finalizing_source_run_id,
-                }
-            }
+            Self::SourceHome(source_run_id, home) => RunnerPreferenceDecision::SourceHome {
+                runner_identity,
+                expires_at,
+                source_run_id,
+                home: home.into_wire(),
+            },
             Self::ReusableSandbox => RunnerPreferenceDecision::ReusableSandbox {
                 runner_identity,
                 expires_at,
@@ -205,16 +235,6 @@ impl RunnerPreferenceTarget {
             Self::HomeCache => RunnerPreferenceDecision::HomeCache {
                 runner_identity,
                 expires_at,
-            },
-            Self::SourceHomeCache(source) => RunnerPreferenceDecision::SourceHomeCache {
-                runner_identity,
-                expires_at,
-                finalizing_source_run_id: source,
-            },
-            Self::SourceHostProbe(source) => RunnerPreferenceDecision::SourceHostProbe {
-                runner_identity,
-                expires_at,
-                finalizing_source_run_id: source,
             },
         }
     }
@@ -241,13 +261,14 @@ impl RunnerPreferenceDecision {
                 RunnerPreferenceTarget::FinalizingPredecessor(*finalizing_source_run_id),
                 expires_at,
             ),
-            Self::PeerFinalizingPredecessor {
+            Self::SourceHome {
                 runner_identity,
                 expires_at,
-                finalizing_source_run_id,
+                source_run_id,
+                home,
             } => (
                 runner_identity,
-                RunnerPreferenceTarget::PeerFinalizingPredecessor(*finalizing_source_run_id),
+                RunnerPreferenceTarget::SourceHome(*source_run_id, home.active()?),
                 expires_at,
             ),
             Self::ReusableSandbox {
@@ -264,24 +285,6 @@ impl RunnerPreferenceDecision {
             } => (
                 runner_identity,
                 RunnerPreferenceTarget::HomeCache,
-                expires_at,
-            ),
-            Self::SourceHomeCache {
-                runner_identity,
-                expires_at,
-                finalizing_source_run_id,
-            } => (
-                runner_identity,
-                RunnerPreferenceTarget::SourceHomeCache(*finalizing_source_run_id),
-                expires_at,
-            ),
-            Self::SourceHostProbe {
-                runner_identity,
-                expires_at,
-                finalizing_source_run_id,
-            } => (
-                runner_identity,
-                RunnerPreferenceTarget::SourceHostProbe(*finalizing_source_run_id),
                 expires_at,
             ),
         };
@@ -356,6 +359,13 @@ pub fn parse_runner_preference(
     }))
 }
 
+fn preference_expires_at(deadline: Instant) -> DateTime<FixedOffset> {
+    (Utc::now()
+        + chrono::Duration::from_std(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or(chrono::Duration::MAX))
+    .fixed_offset()
+}
+
 fn preference_deadline(expires_at: DateTime<FixedOffset>) -> Result<Instant, serde_json::Error> {
     let now = Instant::now();
     let remaining = (expires_at.with_timezone(&Utc) - Utc::now())
@@ -397,9 +407,7 @@ impl RunnerPreferenceContext {
 
     fn from_active_preference(preference: ActiveRunnerPreference) -> Self {
         let runner_identity = preference.runner_identity;
-        let expires_at = (Utc::now()
-            + chrono::Duration::from_std(preference.remaining()).unwrap_or(chrono::Duration::MAX))
-        .fixed_offset();
+        let expires_at = preference_expires_at(preference.deadline());
         Self {
             runner_preference: RunnerPreference::Preference(
                 preference.target.into_wire(runner_identity, expires_at),

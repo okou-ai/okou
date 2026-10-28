@@ -103,7 +103,10 @@ async fn assert_exact_reuse_claim_progresses_during_status_write(exact: bool) {
     let tier = if exact {
         RunnerPreferenceTarget::SourceSandbox(generation_run_id)
     } else {
-        RunnerPreferenceTarget::SourceHomeCache(generation_run_id)
+        RunnerPreferenceTarget::SourceHome(
+            generation_run_id,
+            runner_provider::SourceHomeObservation::Advertised,
+        )
     };
     let sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,

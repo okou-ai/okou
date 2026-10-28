@@ -29,7 +29,7 @@ use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
 use runner_provider::{
     ClaimedJob, JobCandidate, JobProvider, RunCancellationRegistration, RunCancellationRegistry,
-    RunnerPreferenceRemovalReason, RunnerPreferenceTier,
+    RunnerPreferenceRemovalReason, RunnerPreferenceTier, SourceHomeObservation,
 };
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
@@ -81,8 +81,8 @@ enum LocalAdmissionResource {
 /// One owned resource transferred with a successful claim to Runner activation.
 pub enum AdmittedResource {
     Fresh(BudgetLease),
-    /// This Runner's ordinary capacity retained through the peer publication wait.
-    PeerHome {
+    /// This Runner's ordinary capacity retained through the source publication wait.
+    SourceHome {
         lease: BudgetLease,
         deadline: Instant,
         source_run_id: RunId,
@@ -231,13 +231,13 @@ impl PendingFinalizingCandidate {
 
 struct PreparedCandidate {
     home_source_run_id: Option<RunId>,
-    peer_home_preference: Option<PeerHomePreference>,
+    source_home_wait: Option<SourceHomeWait>,
     candidate: JobCandidate,
     resource: Option<LocalAdmissionResource>,
     blank_pool_selection: Option<BlankPoolSelection>,
 }
 
-struct PeerHomePreference {
+struct SourceHomeWait {
     source_run_id: RunId,
     deadline: Instant,
 }
@@ -359,7 +359,7 @@ async fn claim_with_local_admission(
     } = request;
     let PreparedCandidate {
         home_source_run_id,
-        peer_home_preference,
+        source_home_wait,
         mut candidate,
         resource,
         mut blank_pool_selection,
@@ -545,14 +545,14 @@ async fn claim_with_local_admission(
         return None;
     }
 
-    let admitted_resource = match (admitted_resource, peer_home_preference) {
+    let admitted_resource = match (admitted_resource, source_home_wait) {
         (
             AdmittedResource::Fresh(lease),
-            Some(PeerHomePreference {
+            Some(SourceHomeWait {
                 source_run_id,
                 deadline,
             }),
-        ) => AdmittedResource::PeerHome {
+        ) => AdmittedResource::SourceHome {
             lease,
             deadline,
             source_run_id,
@@ -717,9 +717,10 @@ async fn prepare_ranked_preference_candidate(
 
     let selected_finalizing =
         advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
-    let selected_peer =
-        advertised_tier == RunnerPreferenceTier::PeerFinalizingPredecessor && selected;
-    let selected_probe = advertised_tier == RunnerPreferenceTier::SourceHostProbe && selected;
+    let selected_home = match preference.target() {
+        runner_provider::RunnerPreferenceTarget::SourceHome(_, home) if selected => Some(home),
+        _ => None,
+    };
     if selected_finalizing
         && let runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source_run_id) =
             preference.target()
@@ -741,10 +742,10 @@ async fn prepare_ranked_preference_candidate(
 
     let source_home = if let Some(source) = source_run_id
         && (selected_finalizing
-            || selected_peer
+            || selected_home.is_some()
             || ranked_preference_allows(
                 advertised_tier,
-                RunnerPreferenceTier::SourceHomeCache,
+                RunnerPreferenceTier::SourceHome(SourceHomeObservation::Advertised),
                 selected,
             )) {
         crate::home_selection::probe_home(
@@ -776,13 +777,13 @@ async fn prepare_ranked_preference_candidate(
             home_source_run_id: Some(source),
             candidate,
             resource: Some(resource),
-            peer_home_preference: None,
+            source_home_wait: None,
             blank_pool_selection,
         });
     }
 
     if (selected_finalizing
-        || selected_peer
+        || selected_home.is_some()
         || ranked_preference_allows(
             advertised_tier,
             RunnerPreferenceTier::ReusableSandbox,
@@ -799,8 +800,17 @@ async fn prepare_ranked_preference_candidate(
         return reusable_preparation(candidate, reservation);
     }
 
-    if (selected_peer || selected_probe && matches!(source_home, Some((_, HomeCacheProbe::Busy))))
-        && let Some(source_run_id) = preference.target().source_run_id()
+    let home_wait_deadline = match selected_home {
+        Some(SourceHomeObservation::Expected { deadline }) => Some(deadline),
+        Some(SourceHomeObservation::Location)
+            if matches!(source_home, Some((_, HomeCacheProbe::Busy))) =>
+        {
+            Some(preference.deadline())
+        }
+        _ => None,
+    };
+    if let Some(deadline) = home_wait_deadline.filter(|deadline| *deadline > Instant::now())
+        && let Some(source_run_id) = source_run_id
     {
         if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
@@ -817,9 +827,9 @@ async fn prepare_ranked_preference_candidate(
         {
             return PreferencePreparation::Ready(PreparedCandidate {
                 home_source_run_id: None,
-                peer_home_preference: Some(PeerHomePreference {
+                source_home_wait: Some(SourceHomeWait {
                     source_run_id,
-                    deadline: preference.deadline(),
+                    deadline,
                 }),
                 candidate,
                 resource: Some(resource),
@@ -837,7 +847,7 @@ async fn prepare_ranked_preference_candidate(
         .await;
     }
 
-    if selected_probe {
+    if selected_home.is_some() {
         return ordinary_preparation(
             candidate.without_runner_preference(RunnerPreferenceRemovalReason::Cleared),
         );
@@ -873,7 +883,7 @@ async fn prepare_ranked_preference_candidate(
                 home_source_run_id: None,
                 candidate,
                 resource: Some(resource),
-                peer_home_preference: None,
+                source_home_wait: None,
                 blank_pool_selection,
             });
         }
@@ -910,7 +920,7 @@ fn ranked_preference_allows(
 fn ordinary_preparation(candidate: JobCandidate) -> PreferencePreparation {
     PreferencePreparation::Ready(PreparedCandidate {
         home_source_run_id: None,
-        peer_home_preference: None,
+        source_home_wait: None,
         candidate,
         resource: None,
         blank_pool_selection: None,
@@ -925,7 +935,7 @@ fn reusable_preparation(
         home_source_run_id: None,
         candidate,
         resource: Some(LocalAdmissionResource::Reusable(reservation)),
-        peer_home_preference: None,
+        source_home_wait: None,
         blank_pool_selection: None,
     })
 }
@@ -946,7 +956,7 @@ fn exact_speculative_preparation(
                 idle_snapshot,
             },
         )),
-        peer_home_preference: None,
+        source_home_wait: None,
         blank_pool_selection: None,
     })
 }
@@ -969,7 +979,7 @@ fn finalizing_preparation(
             // Native handoff is established only by the authoritative claim.
             native_generation_run_id: None,
         })),
-        peer_home_preference: None,
+        source_home_wait: None,
         blank_pool_selection: None,
     })
 }
@@ -1135,7 +1145,7 @@ async fn rollback_admitted_resource(
     ctx: &PreClaimResources<'_>,
 ) {
     let resource = match resource {
-        AdmittedResource::Fresh(lease) | AdmittedResource::PeerHome { lease, .. } => {
+        AdmittedResource::Fresh(lease) | AdmittedResource::SourceHome { lease, .. } => {
             SandboxAdmittedResource::Fresh(lease)
         }
         AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),

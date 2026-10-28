@@ -23,16 +23,26 @@ const job = {
 
 describe("independent finalizing source contract", () => {
   it.each([
-    "finalizingPredecessor",
-    "peerFinalizingPredecessor",
-    "sourceHostProbe",
-  ] as const)(
-    "preserves %s source identity without manufacturing native history",
-    (tier) => {
-      const runnerPreference = { ...preference, tier };
+    preference,
+    ...[
+      { evidence: "advertised" },
+      { evidence: "location" },
+      { evidence: "expected", homeWaitUntil: "2026-10-20T00:00:49.000Z" },
+    ].map((home) => {
+      return {
+        kind: "preference",
+        runnerIdentity: preference.runnerIdentity,
+        tier: "sourceHome",
+        sourceRunId,
+        expiresAt: "2026-10-20T00:00:02.000Z",
+        home,
+      };
+    }),
+  ])(
+    "preserves source and independent wait policy without native history: $tier",
+    (runnerPreference) => {
       const parsed = jobSchema.parse({ ...job, runnerPreference });
       expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
-
       const telemetry = {
         runnerPreference,
         runnerPreferenceClaimState: "active",

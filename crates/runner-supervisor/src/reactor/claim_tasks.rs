@@ -20,7 +20,7 @@ use super::job_discovery::{
     recover_unconsumed_finalizing_claim,
 };
 use super::job_spawn::JobResult;
-use super::peer_home_claim::{PeerHomeClaim, PeerHomeClaimRequest};
+use super::source_home_claim::{SourceHomeClaim, SourceHomeClaimRequest};
 use crate::SharedFactory;
 use crate::pre_claim_admission::{
     AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, SandboxAdmittedResource,
@@ -160,7 +160,7 @@ impl ClaimTasks {
                 spawn_finalizing_claim(request, &self.context.spawn_ctx, jobs);
                 Ok(DiscoveredJobResult::completed(false))
             }
-            ClaimTaskOutcome::PeerHome(claim) => {
+            ClaimTaskOutcome::SourceHome(claim) => {
                 jobs.spawn((*claim).run(self.context.spawn_ctx.clone()));
                 Ok(DiscoveredJobResult::completed(false))
             }
@@ -199,7 +199,7 @@ pub(super) struct ClaimTaskResult {
 enum ClaimTaskOutcome {
     Prepared(Box<DiscoveredJobResult>),
     Finalizing(Box<UnconsumedFinalizingClaim>),
-    PeerHome(Box<PeerHomeClaim>),
+    SourceHome(Box<SourceHomeClaim>),
     Pending(Box<JobCandidate>),
     Deferred,
     Failed(ReactorError),
@@ -220,13 +220,13 @@ async fn prepare_claimed(
         blank_pool_selection,
     } = admission;
     let resource = match resource {
-        AdmittedResource::PeerHome {
+        AdmittedResource::SourceHome {
             lease,
             deadline,
             source_run_id,
         } => {
-            return ClaimTaskOutcome::PeerHome(Box::new(PeerHomeClaim::new(
-                PeerHomeClaimRequest {
+            return ClaimTaskOutcome::SourceHome(Box::new(SourceHomeClaim::new(
+                SourceHomeClaimRequest {
                     source_run_id,
                     claimed,
                     cancellation,

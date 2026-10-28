@@ -3,20 +3,20 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow } from "../../../lib/time";
 import {
-  PEER_HOSTNAME,
-  peerContinuation,
-  peerFinalizingFixture,
-  peerHeartbeat,
-  peerPoll,
-} from "./helpers/peer-finalizing-fixture";
+  SOURCE_HOME_HOSTNAME,
+  sourceHomeContinuation,
+  sourceHomeFixture,
+  sourceHomeHeartbeat,
+  sourceHomePoll,
+} from "./helpers/source-home-fixture";
 
 const context = testContext();
 
-describe("peer finalizing evidence", () => {
+describe("source Home publication evidence", () => {
   it("requires the winning source claim's hostname as well as matching heartbeats", async () => {
-    const f = await peerFinalizingFixture(context, { claimHostname: null });
-    await peerContinuation(f);
-    expect((await peerPoll(f))?.runnerPreference).toMatchObject({
+    const f = await sourceHomeFixture(context, { claimHostname: null });
+    await sourceHomeContinuation(f);
+    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
   });
@@ -24,14 +24,14 @@ describe("peer finalizing evidence", () => {
   it.each(["source", "receiver"] as const)(
     "does not use an accepted PAT %s snapshot as finalizing ownership",
     async (role) => {
-      const f = await peerFinalizingFixture(context);
+      const f = await sourceHomeFixture(context);
       const pat = await f.owned.run(() => {
         return f.api.createCliToken(f.owned.actor);
       });
       await f.owned.run(() => {
         return f.api.requestHeartbeatRunnerAs(`Bearer ${pat.token}`, [200], {
           runnerId: role === "source" ? f.sourceId : f.receiverId,
-          runnerHostname: PEER_HOSTNAME,
+          runnerHostname: SOURCE_HOME_HOSTNAME,
           group: f.group,
           snapshotGeneration: role === "source" ? 7 : 8,
           snapshotSequence: 100,
@@ -45,10 +45,11 @@ describe("peer finalizing evidence", () => {
           ],
         });
       });
-      await peerContinuation(f);
-      expect((await peerPoll(f))?.runnerPreference).toMatchObject(
+      mockNow(f.clock + 2000);
+      await sourceHomeContinuation(f);
+      expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject(
         role === "source"
-          ? { tier: "sourceHostProbe" }
+          ? { tier: "sourceHome", home: { evidence: "location" } }
           : { kind: "noPreference" },
       );
     },
@@ -57,13 +58,16 @@ describe("peer finalizing evidence", () => {
   it.each(["source", "receiver"] as const)(
     "requires fresh recipient state without borrowing stale %s producer proof",
     async (role) => {
-      const f = await peerFinalizingFixture(context);
+      const f = await sourceHomeFixture(context);
       mockNow(f.clock + 30_001);
-      await peerHeartbeat(f, role === "source" ? f.receiverId : f.sourceId);
-      await peerContinuation(f);
-      expect((await peerPoll(f))?.runnerPreference).toMatchObject(
+      await sourceHomeHeartbeat(
+        f,
+        role === "source" ? f.receiverId : f.sourceId,
+      );
+      await sourceHomeContinuation(f);
+      expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject(
         role === "source"
-          ? { tier: "sourceHostProbe" }
+          ? { tier: "sourceHome", home: { evidence: "location" } }
           : { kind: "noPreference" },
       );
     },
@@ -72,8 +76,8 @@ describe("peer finalizing evidence", () => {
   it.each(["run", "reuseKey", "profile"] as const)(
     "does not earn a post-bridge window from the wrong producer %s",
     async (field) => {
-      const f = await peerFinalizingFixture(context);
-      await peerHeartbeat(f, f.sourceId, {
+      const f = await sourceHomeFixture(context);
+      await sourceHomeHeartbeat(f, f.sourceId, {
         activeReuseProducers: [
           {
             runId: field === "run" ? randomUUID() : f.source.runId,
@@ -83,42 +87,49 @@ describe("peer finalizing evidence", () => {
         ],
       });
       mockNow(f.clock + 2000);
-      await peerContinuation(f);
-      expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-        tier: "sourceHostProbe",
+      await sourceHomeContinuation(f);
+      expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
+        tier: "sourceHome",
+        home: { evidence: "location" },
         expiresAt: new Date(f.clock + 4000).toISOString(),
       });
     },
   );
 
   it("does not let a stale hostname heartbeat undo a newer accepted snapshot", async () => {
-    const f = await peerFinalizingFixture(context);
-    await peerHeartbeat(f, f.receiverId, {
+    const f = await sourceHomeFixture(context);
+    await sourceHomeHeartbeat(f, f.receiverId, {
       runnerHostname: "different-host.example.test",
     });
-    await peerHeartbeat(f, f.receiverId, { snapshotSequence: 1 });
-    await peerContinuation(f);
-    expect((await peerPoll(f))?.runnerPreference).toMatchObject({
+    await sourceHomeHeartbeat(f, f.receiverId, { snapshotSequence: 1 });
+    await sourceHomeContinuation(f);
+    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
-    await peerHeartbeat(f, f.receiverId);
-    expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-      tier: "peerFinalizingPredecessor",
+    await sourceHomeHeartbeat(f, f.receiverId);
+    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
+      tier: "sourceHome",
+      home: { evidence: "expected" },
     });
   });
 
   it("does not borrow another draining process's producer for the winning source", async () => {
-    const f = await peerFinalizingFixture(context);
-    await peerHeartbeat(f, f.sourceId, { mode: "starting" });
-    await peerHeartbeat(f, randomUUID(), {
+    const f = await sourceHomeFixture(context);
+    await sourceHomeHeartbeat(f, f.sourceId, {
+      snapshotGeneration: 8,
+      activeReuseProducers: [],
+    });
+    await sourceHomeHeartbeat(f, randomUUID(), {
       mode: "draining",
       activeReuseProducers: [
         { runId: f.source.runId, reuseKey: f.reuseKey, profile: "vm0/default" },
       ],
     });
-    await peerContinuation(f);
-    expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-      tier: "sourceHostProbe",
+    mockNow(f.clock + 2000);
+    await sourceHomeContinuation(f);
+    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
+      tier: "sourceHome",
+      home: { evidence: "location" },
     });
   });
 });

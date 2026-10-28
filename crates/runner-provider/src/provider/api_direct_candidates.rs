@@ -513,7 +513,10 @@ mod tests {
                 Some("session:first-decision".to_string()),
                 Some(ranked_preference_context(
                     10,
-                    RunnerPreferenceTarget::SourceHomeCache(source),
+                    RunnerPreferenceTarget::SourceHome(
+                        source,
+                        crate::provider::SourceHomeObservation::Advertised,
+                    ),
                     first_deadline,
                 )),
             ))
@@ -554,7 +557,10 @@ mod tests {
         let preference = candidate.runner_preference().expect("runner preference");
         assert_eq!(
             preference.target(),
-            RunnerPreferenceTarget::SourceHomeCache(source)
+            RunnerPreferenceTarget::SourceHome(
+                source,
+                crate::provider::SourceHomeObservation::Advertised
+            )
         );
         assert_eq!(preference.deadline(), first_deadline);
         assert!(
@@ -566,7 +572,7 @@ mod tests {
         assert!(matches!(
             telemetry.runner_preference,
             RunnerPreference::Preference(
-                crate::provider::RunnerPreferenceDecision::SourceHomeCache { .. }
+                crate::provider::RunnerPreferenceDecision::SourceHome { .. }
             )
         ));
         assert_eq!(

@@ -82,12 +82,12 @@ mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
 mod maintenance;
-mod peer_home_claim;
 mod pending_candidate;
 mod prune_idle;
 mod sandbox_recovery;
 pub(crate) mod signals;
 mod soft_drain;
+mod source_home_claim;
 mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
@@ -399,7 +399,7 @@ enum StartLoopEvent {
     FinalizingCapacityWaitEntered {
         run_id: RunId,
     },
-    PeerHomeRecheckCompleted {
+    SourceHomeRecheckCompleted {
         run_id: RunId,
         ready: bool,
     },

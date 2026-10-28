@@ -11,9 +11,9 @@ import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { publicChatActor } from "./public-chat-actor";
 import { completePublicClaudeRun } from "./public-native-run";
 
-export const PEER_HOSTNAME = "shared-finalizing.example.test";
+export const SOURCE_HOME_HOSTNAME = "shared-finalizing.example.test";
 
-export async function peerFinalizingFixture(
+export async function sourceHomeFixture(
   context: TestContext,
   args: {
     readonly status?: "completed" | "cancelled" | "failed";
@@ -49,12 +49,12 @@ export async function peerFinalizingFixture(
     receiverId: randomUUID(),
     sequences: new Map<string, number>(),
   };
-  await peerHeartbeat(fixture, fixture.sourceId, { mode: "running" });
+  await sourceHomeHeartbeat(fixture, fixture.sourceId, { mode: "running" });
   const claim = await owned.claimRunnerRun(source.runId, {
     runnerIdentity: { runnerId: fixture.sourceId, heartbeatGeneration: 7 },
     ...(args.claimHostname === null
       ? {}
-      : { runnerHostname: args.claimHostname ?? PEER_HOSTNAME }),
+      : { runnerHostname: args.claimHostname ?? SOURCE_HOME_HOSTNAME }),
   });
   await owned.run(async () => {
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
@@ -111,18 +111,18 @@ export async function peerFinalizingFixture(
     );
     await flushWaitUntilForTest();
   });
-  await peerHeartbeat(fixture, fixture.sourceId);
-  await peerHeartbeat(fixture, fixture.receiverId);
+  await sourceHomeHeartbeat(fixture, fixture.sourceId);
+  await sourceHomeHeartbeat(fixture, fixture.receiverId);
   return fixture;
 }
 
-type PeerFixture = Awaited<ReturnType<typeof peerFinalizingFixture>>;
+type SourceHomeFixture = Awaited<ReturnType<typeof sourceHomeFixture>>;
 type HeartbeatOptions = Parameters<
-  PeerFixture["api"]["requestHeartbeatRunner"]
+  SourceHomeFixture["api"]["requestHeartbeatRunner"]
 >[2];
 
-export async function peerHeartbeat(
-  f: PeerFixture,
+export async function sourceHomeHeartbeat(
+  f: SourceHomeFixture,
   runnerId: string,
   changes: HeartbeatOptions = {},
 ): Promise<void> {
@@ -131,7 +131,7 @@ export async function peerHeartbeat(
   await f.owned.run(() => {
     return f.api.requestHeartbeatRunner(true, [200], {
       runnerId,
-      runnerHostname: PEER_HOSTNAME,
+      runnerHostname: SOURCE_HOME_HOSTNAME,
       group: f.group,
       snapshotGeneration: runnerId === f.sourceId ? 7 : 8,
       snapshotSequence: sequence,
@@ -151,7 +151,7 @@ export async function peerHeartbeat(
   });
 }
 
-export async function peerContinuation(f: PeerFixture) {
+export async function sourceHomeContinuation(f: SourceHomeFixture) {
   return await f.owned.run(async () => {
     const next = await f.api.createThreadRun(f.owned.actor, {
       agentId: f.owned.agentId,
@@ -163,7 +163,10 @@ export async function peerContinuation(f: PeerFixture) {
   });
 }
 
-export async function peerPoll(f: PeerFixture, runnerId = f.receiverId) {
+export async function sourceHomePoll(
+  f: SourceHomeFixture,
+  runnerId = f.receiverId,
+) {
   return await f.owned.run(async () => {
     const response = await accept(
       f.pollClient.poll({

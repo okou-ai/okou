@@ -21,8 +21,8 @@ use runner_provider::{
 
 mod independent_source;
 mod local_home;
-mod peer_home;
 mod physical_handoff;
+mod source_home;
 mod terminal_reuse;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;

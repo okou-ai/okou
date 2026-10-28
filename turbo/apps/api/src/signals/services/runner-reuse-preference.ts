@@ -1,3 +1,4 @@
+import { enum as zEnum } from "zod";
 import {
   RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   type RunnerPreference,
@@ -30,6 +31,7 @@ import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
+  zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -45,9 +47,14 @@ const RUNNER_EXACT_SOURCE_PROTECTION_MS = Math.min(
 const RUNNER_FINALIZING_COMPLETION_BRIDGE_MS = 1500;
 const RUNNER_REUSE_HOLDER_FRESH_MS = 30_000;
 
-const finalizingSourceRun = alias(agentRuns, "finalizing_source_run");
-const peerFinalizingRunnerState = alias(runnerState, "peer_finalizing_runner");
-const currentRun = alias(agentRuns, "finalizing_current_run");
+const predecessorRun = alias(agentRuns, "reuse_predecessor_run");
+const sourceHomePublisherState = alias(runnerState, "source_home_publisher");
+const currentRun = alias(agentRuns, "reuse_current_run");
+const sourceHomeEvidenceKindSchema = zEnum([
+  "advertised",
+  "expected",
+  "location",
+]);
 
 /**
  * Pending discovery reads the owned Thread's durable predecessor, independently
@@ -118,7 +125,7 @@ function reusableSandboxCondition(args: {
 function activeProducerCondition(args: {
   readonly inventory:
     | typeof runnerState.activeReuseProducers
-    | typeof peerFinalizingRunnerState.activeReuseProducers;
+    | typeof sourceHomePublisherState.activeReuseProducers;
   readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
   readonly sourceRunId: SQLWrapper;
@@ -136,7 +143,7 @@ function activeProducerCondition(args: {
 function pendingFinalizingProducerCondition(args: {
   readonly inventory:
     | typeof runnerState.activeReuseProducers
-    | typeof peerFinalizingRunnerState.activeReuseProducers;
+    | typeof sourceHomePublisherState.activeReuseProducers;
   readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
   readonly sourceRunId: SQLWrapper;
@@ -208,75 +215,34 @@ function finalizingPredecessorCondition(args: {
   // process is still finalizing. Poll and Ably recipients enforce static
   // profile support before admitting the advisory preference.
   return and(
-    inArray(finalizingSourceRun.status, ["completed", "cancelled", "failed"]),
+    inArray(predecessorRun.status, ["completed", "cancelled", "failed"]),
     or(
-      gt(finalizingSourceRun.completedAt, args.completedAfter),
+      gt(predecessorRun.completedAt, args.completedAfter),
       args.activeProducer,
     ),
-    eq(finalizingSourceRun.runnerGroup, args.runnerGroup),
-    isNotNull(sql`${finalizingSourceRun.launchSnapshot}->>'runnerProfile'`),
-    eq(
-      sql`${finalizingSourceRun.launchSnapshot}->>'runnerProfile'`,
-      args.profile,
-    ),
-    isNotNull(finalizingSourceRun.runnerId),
-    isNotNull(finalizingSourceRun.runnerHeartbeatGeneration),
-    eq(args.runnerId, finalizingSourceRun.runnerId),
-    eq(args.heartbeatGeneration, finalizingSourceRun.runnerHeartbeatGeneration),
+    eq(predecessorRun.runnerGroup, args.runnerGroup),
+    isNotNull(sql`${predecessorRun.launchSnapshot}->>'runnerProfile'`),
+    eq(sql`${predecessorRun.launchSnapshot}->>'runnerProfile'`, args.profile),
+    isNotNull(predecessorRun.runnerId),
+    isNotNull(predecessorRun.runnerHeartbeatGeneration),
+    eq(args.runnerId, predecessorRun.runnerId),
+    eq(args.heartbeatGeneration, predecessorRun.runnerHeartbeatGeneration),
   );
 }
 
-function peerFinalizingPredecessorCondition(args: {
-  readonly runnerGroup: string;
-  readonly profile: SQLWrapper;
-  readonly freshAfter: Date;
-  readonly completedAfter: Date;
-  readonly activeProducer: SQL;
-}): SQL | undefined {
-  return and(
-    finalizingPredecessorCondition({
-      ...args,
-      runnerId: peerFinalizingRunnerState.runnerId,
-      heartbeatGeneration: peerFinalizingRunnerState.heartbeatGeneration,
-    }),
-    eq(peerFinalizingRunnerState.runnerGroup, args.runnerGroup),
-    eq(peerFinalizingRunnerState.mode, "draining"),
-    gt(peerFinalizingRunnerState.lastSeenAt, args.freshAfter),
-    gt(peerFinalizingRunnerState.heartbeatGeneration, 0),
-    isNotNull(finalizingSourceRun.completedAt),
-    isNotNull(finalizingSourceRun.runnerHostname),
-    ne(finalizingSourceRun.runnerHostname, ""),
-    isNotNull(peerFinalizingRunnerState.runnerHostname),
-    isNotNull(runnerState.runnerHostname),
-    eq(
-      peerFinalizingRunnerState.runnerHostname,
-      finalizingSourceRun.runnerHostname,
-    ),
-    eq(runnerState.runnerHostname, peerFinalizingRunnerState.runnerHostname),
-    ne(runnerState.runnerId, peerFinalizingRunnerState.runnerId),
-    arrayContains(
-      runnerState.admittableProfiles,
-      sql`jsonb_build_array(cast(${args.profile} as text))`,
-    ),
-  );
-}
-
-/** Locality hint only: the source process need not still exist or advertise Home. */
-function sourceHostProbeCondition(args: {
+/** Source placement survives the publishing process and is only advisory. */
+function sourceHomePlacementCondition(args: {
   readonly runnerGroup: string;
   readonly profile: SQLWrapper;
 }): SQL {
   return (
     and(
-      inArray(finalizingSourceRun.status, ["completed", "cancelled", "failed"]),
-      eq(finalizingSourceRun.runnerGroup, args.runnerGroup),
-      eq(
-        sql`${finalizingSourceRun.launchSnapshot}->>'runnerProfile'`,
-        args.profile,
-      ),
-      isNotNull(finalizingSourceRun.runnerHostname),
-      ne(finalizingSourceRun.runnerHostname, ""),
-      eq(runnerState.runnerHostname, finalizingSourceRun.runnerHostname),
+      inArray(predecessorRun.status, ["completed", "cancelled", "failed"]),
+      eq(predecessorRun.runnerGroup, args.runnerGroup),
+      eq(sql`${predecessorRun.launchSnapshot}->>'runnerProfile'`, args.profile),
+      isNotNull(predecessorRun.runnerHostname),
+      ne(predecessorRun.runnerHostname, ""),
+      eq(runnerState.runnerHostname, predecessorRun.runnerHostname),
       arrayContains(
         runnerState.admittableProfiles,
         sql`jsonb_build_array(cast(${args.profile} as text))`,
@@ -285,20 +251,65 @@ function sourceHostProbeCondition(args: {
   );
 }
 
-function runnerStateHasSourceHostProbe(args: {
+function sourceHomeConditions(args: {
+  readonly runnerGroup: string;
+  readonly reuseKey: SQLWrapper;
+  readonly profile: SQLWrapper;
+  readonly freshAfter: Date;
+  readonly completedAfter: Date;
+}) {
+  const location = sourceHomePlacementCondition(args);
+  const producer =
+    and(
+      eq(sourceHomePublisherState.runnerId, predecessorRun.runnerId),
+      eq(
+        sourceHomePublisherState.heartbeatGeneration,
+        predecessorRun.runnerHeartbeatGeneration,
+      ),
+      eq(sourceHomePublisherState.runnerGroup, args.runnerGroup),
+      gt(sourceHomePublisherState.lastSeenAt, args.freshAfter),
+      gt(sourceHomePublisherState.heartbeatGeneration, 0),
+      eq(
+        sourceHomePublisherState.runnerHostname,
+        predecessorRun.runnerHostname,
+      ),
+      activeProducerCondition({
+        inventory: sourceHomePublisherState.activeReuseProducers,
+        reuseKey: args.reuseKey,
+        profile: args.profile,
+        sourceRunId: predecessorRun.id,
+      }),
+    ) ?? sql`false`;
+  return {
+    location,
+    producer,
+    expected:
+      and(
+        location,
+        or(gt(predecessorRun.completedAt, args.completedAfter), producer),
+      ) ?? sql`false`,
+  };
+}
+
+function runnerStateHasSourceHome(args: {
   readonly runnerId?: string;
   readonly runnerGroup: string;
   readonly sourceRunId: SQLWrapper;
+  readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
   readonly freshAfter: Date;
+  readonly completedAfter: Date;
+  readonly evidence: "expected" | "location";
 }): SQL {
+  const home = sourceHomeConditions(args);
   return exists(
     new QueryBuilder()
       .select({ runnerId: runnerState.runnerId })
       .from(runnerState)
-      .innerJoin(
-        finalizingSourceRun,
-        eq(finalizingSourceRun.id, args.sourceRunId),
+      .innerJoin(predecessorRun, eq(predecessorRun.id, args.sourceRunId))
+      .leftJoin(
+        sourceHomePublisherState,
+        eq(sourceHomePublisherState.runnerId, predecessorRun.runnerId),
       )
       .where(
         and(
@@ -307,24 +318,29 @@ function runnerStateHasSourceHostProbe(args: {
           eq(runnerState.mode, "running"),
           gt(runnerState.lastSeenAt, args.freshAfter),
           gt(runnerState.heartbeatGeneration, 0),
-          sourceHostProbeCondition(args),
+          home[args.evidence],
         ),
       ),
   );
 }
 
-function sourceHostProbePollHolders(args: {
+function sourceHomePollHolders(args: {
   readonly runnerId: string;
   readonly runnerGroup: string;
   readonly sourceRunId: SQLWrapper;
+  readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
   readonly freshAfter: Date;
+  readonly completedAfter: Date;
 }) {
   const { runnerId, ...conditions } = args;
-  return {
-    global: runnerStateHasSourceHostProbe(conditions),
-    local: runnerStateHasSourceHostProbe({ ...conditions, runnerId }),
+  const holders = (evidence: "expected" | "location") => {
+    return {
+      global: runnerStateHasSourceHome({ ...conditions, evidence }),
+      local: runnerStateHasSourceHome({ ...conditions, evidence, runnerId }),
+    };
   };
+  return { expected: holders("expected"), location: holders("location") };
 }
 
 function runnerStateHasFinalizingPredecessor(args: {
@@ -335,20 +351,12 @@ function runnerStateHasFinalizingPredecessor(args: {
   readonly freshAfter: Date;
   readonly completedAfter: Date;
   readonly activeProducer: SQL;
-  readonly peerActiveProducer: SQL;
 }): SQL {
   return exists(
     new QueryBuilder()
       .select({ runnerId: runnerState.runnerId })
       .from(runnerState)
-      .innerJoin(
-        finalizingSourceRun,
-        eq(finalizingSourceRun.id, args.sourceRunId),
-      )
-      .leftJoin(
-        peerFinalizingRunnerState,
-        eq(peerFinalizingRunnerState.runnerId, finalizingSourceRun.runnerId),
-      )
+      .innerJoin(predecessorRun, eq(predecessorRun.id, args.sourceRunId))
       .where(
         and(
           eq(runnerState.runnerGroup, args.runnerGroup),
@@ -356,17 +364,11 @@ function runnerStateHasFinalizingPredecessor(args: {
           eq(runnerState.mode, "running"),
           gt(runnerState.lastSeenAt, args.freshAfter),
           gt(runnerState.heartbeatGeneration, 0),
-          or(
-            finalizingPredecessorCondition({
-              ...args,
-              runnerId: runnerState.runnerId,
-              heartbeatGeneration: runnerState.heartbeatGeneration,
-            }),
-            peerFinalizingPredecessorCondition({
-              ...args,
-              activeProducer: args.peerActiveProducer,
-            }),
-          ),
+          finalizingPredecessorCondition({
+            ...args,
+            runnerId: runnerState.runnerId,
+            heartbeatGeneration: runnerState.heartbeatGeneration,
+          }),
         ),
       ),
   );
@@ -392,7 +394,7 @@ function finalizingPollHolders(args: {
   const producer = {
     reuseKey: args.reuseKey,
     profile: args.profile,
-    sourceRunId: finalizingSourceRun.id,
+    sourceRunId: predecessorRun.id,
     protectedAfter: args.protectedAfter,
   };
   const conditions = {
@@ -405,10 +407,6 @@ function finalizingPollHolders(args: {
       ...producer,
       inventory: runnerState.activeReuseProducers,
     }),
-    peerActiveProducer: pendingFinalizingProducerCondition({
-      ...producer,
-      inventory: peerFinalizingRunnerState.activeReuseProducers,
-    }),
   };
   return {
     global: runnerStateHasFinalizingPredecessor(conditions),
@@ -416,6 +414,42 @@ function finalizingPollHolders(args: {
       ...conditions,
       runnerId: args.runnerId,
     }),
+  };
+}
+
+function readyPollHolders(args: {
+  readonly runnerId: string;
+  readonly runnerGroup: string;
+  readonly sourceRunId: SQLWrapper;
+  readonly reuseKey: SQLWrapper;
+  readonly profile: SQLWrapper;
+  readonly freshAfter: Date;
+}) {
+  const identity = { reuseKey: args.reuseKey, profile: args.profile };
+  const holders = (resourceCondition: SQL) => {
+    return {
+      global: runnerStateHas({
+        runnerGroup: args.runnerGroup,
+        freshAfter: args.freshAfter,
+        resourceCondition,
+      }),
+      local: runnerStateHas({
+        runnerId: args.runnerId,
+        runnerGroup: args.runnerGroup,
+        freshAfter: args.freshAfter,
+        resourceCondition,
+      }),
+    };
+  };
+  return {
+    exact: holders(
+      reusableSandboxCondition({ ...identity, sourceRunId: args.sourceRunId }),
+    ),
+    sourceHome: holders(
+      capableHomeCondition({ ...identity, sourceRunId: args.sourceRunId }),
+    ),
+    reusable: holders(reusableSandboxCondition(identity)),
+    home: holders(capableHomeCondition(identity)),
   };
 }
 
@@ -447,47 +481,22 @@ export function runnerReusePreferencePollPriority(args: {
     runId: runnerJobQueue.runId,
     reuseKey,
   });
-  const exactCondition = reusableSandboxCondition({
-    reuseKey,
-    profile,
-    sourceRunId,
-  });
-  const reusableCondition = reusableSandboxCondition({ reuseKey, profile });
-  const homeCondition = capableHomeCondition({ reuseKey, profile });
-  const sourceHomeCondition = capableHomeCondition({
-    reuseKey,
-    profile,
-    sourceRunId,
-  });
-  const global = (resourceCondition: SQL) => {
-    return runnerStateHas({
-      runnerGroup: args.runnerGroup,
-      freshAfter,
-      resourceCondition,
-    });
-  };
-  const local = (resourceCondition: SQL) => {
-    return runnerStateHas({
-      runnerId: args.runnerId,
-      runnerGroup: args.runnerGroup,
-      freshAfter,
-      resourceCondition,
-    });
-  };
-  const hasGlobalExact = global(exactCondition);
-  const hasLocalExact = local(exactCondition);
-  const hasGlobalReusable = global(reusableCondition);
-  const hasLocalReusable = local(reusableCondition);
-  const hasGlobalHome = global(homeCondition);
-  const hasLocalHome = local(homeCondition);
-  const hasGlobalSourceHome = global(sourceHomeCondition);
-  const hasLocalSourceHome = local(sourceHomeCondition);
-  const hostProbe = sourceHostProbePollHolders({
+  const ready = readyPollHolders({
     runnerId: args.runnerId,
     runnerGroup: args.runnerGroup,
+    sourceRunId,
+    reuseKey,
+    profile,
+    freshAfter,
+  });
+  const sourceHome = sourceHomePollHolders({
+    runnerId: args.runnerId,
+    runnerGroup: args.runnerGroup,
+    reuseKey,
     profile,
     sourceRunId,
     freshAfter,
+    completedAfter: finalizingCompletedAfter,
   });
   const finalizing = finalizingPollHolders({
     runnerId: args.runnerId,
@@ -504,51 +513,62 @@ export function runnerReusePreferencePollPriority(args: {
       discoveryWindowCondition(sourceProtectedAfter),
       isNotNull(runnerJobQueue.reuseKey),
       isNotNull(sourceRunId),
-      hasGlobalExact,
+      ready.exact.global,
     )}
-    THEN CASE WHEN ${hasLocalExact} THEN 9 ELSE 0 END
+    THEN CASE WHEN ${ready.exact.local} THEN 7 ELSE 0 END
     WHEN ${and(
       isNotNull(runnerJobQueue.reuseKey),
       discoveryWindowCondition(producerProtectedAfter),
       finalizing.global,
     )}
     THEN CASE
-      WHEN ${hasLocalExact} THEN 8
-      WHEN ${finalizing.local} THEN 7
+      WHEN ${ready.exact.local} THEN 7
+      WHEN ${finalizing.local} THEN 6
       ELSE 0
     END
     WHEN ${and(
       discoveryWindowCondition(protectedAfter),
       isNotNull(runnerJobQueue.reuseKey),
-      hasGlobalSourceHome,
+      ready.sourceHome.global,
     )}
     THEN CASE
-      WHEN ${hasLocalExact} THEN 6
-      WHEN ${hasLocalSourceHome} THEN 5
+      WHEN ${ready.exact.local} THEN 7
+      WHEN ${ready.sourceHome.local} THEN 5
       ELSE 0
     END
     WHEN ${and(
       discoveryWindowCondition(protectedAfter),
       isNotNull(runnerJobQueue.reuseKey),
-      hasGlobalReusable,
-    )}
-    THEN CASE WHEN ${hasLocalReusable} THEN 4 ELSE 0 END
-    WHEN ${and(
-      discoveryWindowCondition(protectedAfter),
-      isNotNull(runnerJobQueue.reuseKey),
-      hasGlobalHome,
+      sourceHome.expected.global,
     )}
     THEN CASE
-      WHEN ${hasLocalReusable} THEN 4
-      WHEN ${hasLocalHome} THEN 3
+      WHEN ${ready.exact.local} THEN 7
+      WHEN ${ready.sourceHome.local} THEN 5
+      WHEN ${sourceHome.expected.local} THEN 4
       ELSE 0
     END
     WHEN ${and(
       discoveryWindowCondition(protectedAfter),
       isNotNull(runnerJobQueue.reuseKey),
-      hostProbe.global,
+      ready.reusable.global,
     )}
-    THEN CASE WHEN ${hostProbe.local} THEN 2 ELSE 0 END
+    THEN CASE WHEN ${ready.reusable.local} THEN 3 ELSE 0 END
+    WHEN ${and(
+      discoveryWindowCondition(protectedAfter),
+      isNotNull(runnerJobQueue.reuseKey),
+      ready.home.global,
+    )}
+    THEN CASE
+      WHEN ${ready.reusable.local} THEN 3
+      WHEN ${ready.home.local} THEN 2
+      ELSE 0
+    END
+    WHEN ${and(
+      discoveryWindowCondition(protectedAfter),
+      isNotNull(runnerJobQueue.reuseKey),
+      sourceHome.location.global,
+    )}
+    THEN CASE WHEN ${sourceHome.location.local} THEN 1 ELSE 0 END
     ELSE 0
   END`;
 }
@@ -562,11 +582,9 @@ type NoRunnerPreference = Extract<RunnerPreference, { kind: "noPreference" }>;
 const preferenceResolutionByTier = {
   exactSandbox: "exact_source_run",
   finalizingPredecessor: "finalizing_predecessor",
-  peerFinalizingPredecessor: "peer_finalizing_predecessor",
   reusableSandbox: "matching_reusable_sandbox",
   homeCache: "matching_home_cache",
-  sourceHomeCache: "matching_source_home_cache",
-  sourceHostProbe: "source_host_probe",
+  sourceHome: "source_home",
 } as const satisfies Record<PositiveRunnerPreference["tier"], string>;
 
 const noPreferenceResolutionByReason = {
@@ -613,6 +631,17 @@ export function runnerPreferenceTelemetryDimensions(
             preference.runnerIdentity.heartbeatGeneration,
           ),
           runner_preference_expires_at: preference.expiresAt,
+          ...(preference.tier === "sourceHome"
+            ? {
+                runner_preference_home_evidence: preference.home.evidence,
+                ...(preference.home.evidence === "expected"
+                  ? {
+                      runner_preference_home_wait_until:
+                        preference.home.homeWaitUntil,
+                    }
+                  : {}),
+              }
+            : {}),
         }
       : { runner_preference_no_preference_reason: preference.reason }),
   };
@@ -621,14 +650,13 @@ export function runnerPreferenceTelemetryDimensions(
 interface RunnerReuseHolder {
   readonly runnerIdentity: PositiveRunnerPreference["runnerIdentity"];
   readonly hasExactSource: boolean;
-  readonly hasSourceHome: boolean;
   readonly isFinalizingPredecessor: boolean;
-  readonly isPeerFinalizingPredecessor: boolean;
-  readonly isSourceHostProbe: boolean;
-  readonly finalizingSourceHasActiveProducer: boolean;
+  readonly sourceHomeEvidence: "advertised" | "expected" | "location" | null;
+  readonly sourceHomeHasActiveProducer: boolean;
+  readonly localSourceHasActiveProducer: boolean;
   readonly hasReusableSandbox: boolean;
   readonly sourceCompletedAt: Date | null;
-  readonly finalizingSourceRunId: string | null;
+  readonly sourceRunId: string | null;
 }
 
 function readyReuseHolderConditions(
@@ -686,7 +714,7 @@ function runnerReuseHolderPlan(args: {
         inventory: runnerState.activeReuseProducers,
         reuseKey: sql.param(args.reuseKey),
         profile: sql.param(args.profile),
-        sourceRunId: finalizingSourceRun.id,
+        sourceRunId: predecessorRun.id,
       })
     : sql`false`;
   const finalizingCondition =
@@ -700,35 +728,30 @@ function runnerReuseHolderPlan(args: {
           activeProducer: producerCondition,
         })
       : undefined) ?? sql`false`;
-  const peerProducerCondition = args.shouldLookUpFinalizingProducer
-    ? activeProducerCondition({
-        inventory: peerFinalizingRunnerState.activeReuseProducers,
-        reuseKey: sql.param(args.reuseKey),
-        profile: sql.param(args.profile),
-        sourceRunId: finalizingSourceRun.id,
-      })
+  const sourceHome = sourceHomeConditions({
+    runnerGroup: args.runnerGroup,
+    reuseKey: sql.param(args.reuseKey),
+    profile: sql.param(args.profile),
+    freshAfter: args.freshAfter,
+    completedAfter: args.finalizingCompletedAfter,
+  });
+  const expectedHome = args.shouldLookUpGenericReuse
+    ? sourceHome.expected
     : sql`false`;
-  const peerFinalizingCondition =
-    (args.shouldLookUpFinalizingProducer
-      ? peerFinalizingPredecessorCondition({
-          runnerGroup: args.runnerGroup,
-          profile: sql.param(args.profile),
-          freshAfter: args.freshAfter,
-          completedAfter: args.finalizingCompletedAfter,
-          activeProducer: peerProducerCondition,
-        })
-      : undefined) ?? sql`false`;
-  const hostProbeCondition = args.shouldLookUpGenericReuse
-    ? sourceHostProbeCondition({
-        runnerGroup: args.runnerGroup,
-        profile: sql.param(args.profile),
-      })
+  const locationHome = args.shouldLookUpGenericReuse
+    ? sourceHome.location
     : sql`false`;
+  const homeEvidence = sql`CASE
+    WHEN ${sourceHomeCondition} THEN 'advertised'
+    WHEN ${expectedHome} THEN 'expected'
+    WHEN ${locationHome} AND NOT (${homeCondition} OR ${reusableCondition}) THEN 'location'
+    ELSE NULL
+  END`;
   const resourceRank = sql`CASE
-    WHEN ${exactSourceCondition} THEN 5
-    WHEN ${finalizingCondition} THEN 4
-    WHEN ${peerFinalizingCondition} THEN 4
-    WHEN ${sourceHomeCondition} THEN 3
+    WHEN ${exactSourceCondition} THEN 6
+    WHEN ${finalizingCondition} THEN 5
+    WHEN ${sourceHomeCondition} THEN 4
+    WHEN ${expectedHome} THEN 3
     WHEN ${reusableCondition} THEN 2
     WHEN ${homeCondition} THEN 1
     ELSE 0
@@ -738,32 +761,28 @@ function runnerReuseHolderPlan(args: {
       runnerId: runnerState.runnerId,
       heartbeatGeneration: runnerState.heartbeatGeneration,
       hasExactSource: sql`${exactSourceCondition}`.mapWith(pgBooleanDecoder),
-      hasSourceHome: sql`${sourceHomeCondition}`.mapWith(pgBooleanDecoder),
       isFinalizingPredecessor: sql`${finalizingCondition}`.mapWith(
         pgBooleanDecoder,
       ),
-      isPeerFinalizingPredecessor: sql`${peerFinalizingCondition}`.mapWith(
+      sourceHomeEvidence: sql`${homeEvidence}`.mapWith(
+        nullableDriverValueDecoder(
+          zodEnumDriverValueDecoder(sourceHomeEvidenceKindSchema),
+        ),
+      ),
+      sourceHomeHasActiveProducer:
+        sql`coalesce(${sourceHome.producer}, false)`.mapWith(pgBooleanDecoder),
+      localSourceHasActiveProducer: sql`${producerCondition}`.mapWith(
         pgBooleanDecoder,
       ),
-      isSourceHostProbe: sql`CASE
-        WHEN ${homeCondition} OR ${reusableCondition} THEN false
-        ELSE coalesce(${hostProbeCondition}, false)
-      END`.mapWith(pgBooleanDecoder),
-      // A's producer inventory determines the budget even when B is empty or
-      // advertises unrelated producers.
-      finalizingSourceHasActiveProducer: sql`CASE
-        WHEN ${peerFinalizingCondition} THEN ${peerProducerCondition}
-        ELSE ${producerCondition}
-      END`.mapWith(pgBooleanDecoder),
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
-      sourceCompletedAt: finalizingSourceRun.completedAt,
+      sourceCompletedAt: predecessorRun.completedAt,
       // Ready sandbox/home provenance survives deletion of the settled Run.
-      finalizingSourceRunId: sourceRunId.mapWith(
+      sourceRunId: sourceRunId.mapWith(
         nullableDriverValueDecoder(chatThreads.frameworkSessionRunId),
       ),
     },
     // Only unsettled finalization needs the producer's completion/process facts.
-    joinCondition: eq(finalizingSourceRun.id, sourceRunId),
+    joinCondition: eq(predecessorRun.id, sourceRunId),
     where: and(
       eq(runnerState.runnerGroup, args.runnerGroup),
       eq(runnerState.mode, "running"),
@@ -772,11 +791,11 @@ function runnerReuseHolderPlan(args: {
       or(
         exactSourceCondition,
         finalizingCondition,
-        peerFinalizingCondition,
+        expectedHome,
         sourceHomeCondition,
         reusableCondition,
         homeCondition,
-        hostProbeCondition,
+        locationHome,
       ),
     ),
     orderBy: [desc(resourceRank), asc(runnerState.runnerId)] as const,
@@ -874,10 +893,10 @@ const findRunnerReuseHolder$ = command(
     const [row] = await get(db$)
       .select(plan.fields)
       .from(runnerState)
-      .leftJoin(finalizingSourceRun, plan.joinCondition)
+      .leftJoin(predecessorRun, plan.joinCondition)
       .leftJoin(
-        peerFinalizingRunnerState,
-        eq(peerFinalizingRunnerState.runnerId, finalizingSourceRun.runnerId),
+        sourceHomePublisherState,
+        eq(sourceHomePublisherState.runnerId, predecessorRun.runnerId),
       )
       .where(plan.where)
       .orderBy(...plan.orderBy)
@@ -889,15 +908,13 @@ const findRunnerReuseHolder$ = command(
             heartbeatGeneration: row.heartbeatGeneration,
           },
           hasExactSource: row.hasExactSource,
-          hasSourceHome: row.hasSourceHome,
           isFinalizingPredecessor: row.isFinalizingPredecessor,
-          isPeerFinalizingPredecessor: row.isPeerFinalizingPredecessor,
-          isSourceHostProbe: row.isSourceHostProbe,
-          finalizingSourceHasActiveProducer:
-            row.finalizingSourceHasActiveProducer,
+          sourceHomeEvidence: row.sourceHomeEvidence,
+          sourceHomeHasActiveProducer: row.sourceHomeHasActiveProducer,
+          localSourceHasActiveProducer: row.localSourceHasActiveProducer,
           hasReusableSandbox: row.hasReusableSandbox,
           sourceCompletedAt: row.sourceCompletedAt,
-          finalizingSourceRunId: row.finalizingSourceRunId,
+          sourceRunId: row.sourceRunId,
         }
       : null;
   },
@@ -1029,7 +1046,7 @@ function runnerReusePreferenceResult(args: {
   }
 
   if (holder.hasExactSource) {
-    if (!holder.finalizingSourceRunId) {
+    if (!holder.sourceRunId) {
       throw new Error("Exact source preference is missing its producer");
     }
     return {
@@ -1037,30 +1054,28 @@ function runnerReusePreferenceResult(args: {
         kind: "preference",
         runnerIdentity: holder.runnerIdentity,
         tier: "exactSandbox",
-        finalizingSourceRunId: holder.finalizingSourceRunId,
+        finalizingSourceRunId: holder.sourceRunId,
         expiresAt: exactSourceExpiresAt.toISOString(),
       },
     };
   }
 
-  if (holder.isFinalizingPredecessor || holder.isPeerFinalizingPredecessor) {
-    if (!holder.sourceCompletedAt || !holder.finalizingSourceRunId) {
+  if (holder.isFinalizingPredecessor) {
+    if (!holder.sourceCompletedAt || !holder.sourceRunId) {
       throw new Error(
         "Finalizing predecessor is missing its source identity or completion time",
       );
     }
     return {
-      finalizingSource: holder.finalizingSourceHasActiveProducer
+      finalizingSource: holder.localSourceHasActiveProducer
         ? "active_producer"
         : "completion_bridge",
       preference: {
         kind: "preference",
         runnerIdentity: holder.runnerIdentity,
-        tier: holder.isPeerFinalizingPredecessor
-          ? "peerFinalizingPredecessor"
-          : "finalizingPredecessor",
-        finalizingSourceRunId: holder.finalizingSourceRunId,
-        expiresAt: (holder.finalizingSourceHasActiveProducer
+        tier: "finalizingPredecessor",
+        finalizingSourceRunId: holder.sourceRunId,
+        expiresAt: (holder.localSourceHasActiveProducer
           ? finalizingProducerExpiresAt
           : new Date(
               Math.min(
@@ -1074,34 +1089,12 @@ function runnerReusePreferenceResult(args: {
     };
   }
 
-  if (holder.hasSourceHome) {
-    if (!holder.finalizingSourceRunId) {
-      throw new Error("Source home preference is missing its producer");
-    }
-    return {
-      preference: {
-        kind: "preference",
-        runnerIdentity: holder.runnerIdentity,
-        tier: "sourceHomeCache",
-        finalizingSourceRunId: holder.finalizingSourceRunId,
-        expiresAt: matchingReuseExpiresAt.toISOString(),
-      },
-    };
-  }
-
-  if (holder.isSourceHostProbe) {
-    if (!holder.finalizingSourceRunId) {
-      throw new Error("Source host probe is missing its source identity");
-    }
-    return {
-      preference: {
-        kind: "preference",
-        runnerIdentity: holder.runnerIdentity,
-        tier: "sourceHostProbe",
-        finalizingSourceRunId: holder.finalizingSourceRunId,
-        expiresAt: matchingReuseExpiresAt.toISOString(),
-      },
-    };
+  if (holder.sourceHomeEvidence !== null) {
+    return sourceHomePreferenceResult(
+      holder,
+      matchingReuseExpiresAt,
+      finalizingProducerExpiresAt,
+    );
   }
 
   return {
@@ -1112,6 +1105,66 @@ function runnerReusePreferenceResult(args: {
       expiresAt: matchingReuseExpiresAt.toISOString(),
     },
   };
+}
+
+function sourceHomePreferenceResult(
+  holder: RunnerReuseHolder,
+  routingExpiresAt: Date,
+  producerExpiresAt: Date,
+): RunnerReusePreferenceResolution {
+  if (!holder.sourceRunId || holder.sourceHomeEvidence === null) {
+    throw new Error("Source Home preference is missing its source or evidence");
+  }
+  const evidence = holder.sourceHomeEvidence;
+  const home: Extract<
+    PositiveRunnerPreference,
+    { tier: "sourceHome" }
+  >["home"] =
+    evidence === "expected"
+      ? {
+          evidence,
+          homeWaitUntil: sourceHomeWaitUntil(
+            holder,
+            producerExpiresAt,
+          ).toISOString(),
+        }
+      : { evidence };
+  return {
+    ...(evidence === "expected"
+      ? {
+          finalizingSource: holder.sourceHomeHasActiveProducer
+            ? "active_producer"
+            : "completion_bridge",
+        }
+      : {}),
+    preference: {
+      kind: "preference",
+      runnerIdentity: holder.runnerIdentity,
+      tier: "sourceHome",
+      sourceRunId: holder.sourceRunId,
+      expiresAt: routingExpiresAt.toISOString(),
+      home,
+    },
+  };
+}
+
+function sourceHomeWaitUntil(
+  holder: RunnerReuseHolder,
+  producerExpiresAt: Date,
+): Date {
+  if (holder.sourceHomeHasActiveProducer) {
+    return producerExpiresAt;
+  }
+  if (!holder.sourceCompletedAt) {
+    throw new Error("Expected Home is missing its completion bridge");
+  }
+  return new Date(
+    Math.min(
+      holder.sourceCompletedAt.getTime() +
+        RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
+      producerExpiresAt.getTime(),
+    ),
+  );
 }
 
 export function runnerReuseKeyTelemetryKind(

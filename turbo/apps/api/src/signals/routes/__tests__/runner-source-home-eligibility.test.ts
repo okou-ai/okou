@@ -1,20 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { mockNow } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import {
-  peerContinuation,
-  peerFinalizingFixture,
-  peerHeartbeat,
-  peerPoll,
-} from "./helpers/peer-finalizing-fixture";
+  sourceHomeContinuation,
+  sourceHomeFixture,
+  sourceHomeHeartbeat,
+  sourceHomePoll,
+} from "./helpers/source-home-fixture";
 
 const context = testContext();
 
-describe("peer finalizing eligibility", () => {
+describe("source Home recipient eligibility", () => {
   it.each<
     readonly [
       string,
       "source" | "receiver",
-      NonNullable<Parameters<typeof peerHeartbeat>[2]>,
+      NonNullable<Parameters<typeof sourceHomeHeartbeat>[2]>,
     ]
   >([
     [
@@ -47,21 +48,23 @@ describe("peer finalizing eligibility", () => {
   ])(
     "does not infer finalizing ownership from %s",
     async (_label, role, changes) => {
-      const f = await peerFinalizingFixture(context);
-      await peerHeartbeat(
+      const f = await sourceHomeFixture(context);
+      await sourceHomeHeartbeat(
         f,
         role === "source" ? f.sourceId : f.receiverId,
         changes,
       );
-      const next = await peerContinuation(f);
-      await expect(peerPoll(f)).resolves.toMatchObject({
+      mockNow(f.clock + 2000);
+      const next = await sourceHomeContinuation(f);
+      await expect(sourceHomePoll(f)).resolves.toMatchObject({
         runId: next.runId,
         runnerPreference:
           role === "source"
             ? {
                 kind: "preference",
-                tier: "sourceHostProbe",
-                finalizingSourceRunId: f.source.runId,
+                tier: "sourceHome",
+                home: { evidence: "location" },
+                sourceRunId: f.source.runId,
               }
             : { kind: "noPreference" },
       });

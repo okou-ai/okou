@@ -1,4 +1,4 @@
-//! Resource-backed peer publication waiting after successful claim.
+//! Source Home publication waiting, independently of expired routing advice.
 //!
 //! The existing activation guard owns the claim, cancellation and local ordinary
 //! capacity from the RPC result through this owned job and executor handoff.
@@ -28,7 +28,7 @@ use runner_types::types::SandboxReuseResult;
 const HOME_RECHECK_INITIAL_DELAY: Duration = Duration::from_millis(50);
 const HOME_RECHECK_MAX_DELAY: Duration = Duration::from_secs(1);
 
-pub(super) struct PeerHomeClaimRequest {
+pub(super) struct SourceHomeClaimRequest {
     pub(super) source_run_id: RunId,
     pub(super) claimed: ClaimedJob,
     pub(super) cancellation: RunCancellationRegistration,
@@ -39,15 +39,15 @@ pub(super) struct PeerHomeClaimRequest {
     pub(super) profile: DiscoveredJobProfile,
 }
 
-pub(super) struct PeerHomeClaim {
+pub(super) struct SourceHomeClaim {
     source_run_id: RunId,
     activation: ClaimedActivationGuard,
     deadline: Instant,
 }
 
-impl PeerHomeClaim {
-    pub(super) fn new(request: PeerHomeClaimRequest, ctx: &SpawnContext) -> Self {
-        let PeerHomeClaimRequest {
+impl SourceHomeClaim {
+    pub(super) fn new(request: SourceHomeClaimRequest, ctx: &SpawnContext) -> Self {
+        let SourceHomeClaimRequest {
             source_run_id,
             claimed,
             cancellation,
@@ -131,7 +131,7 @@ impl PeerHomeClaim {
             source_run_id = %self.source_run_id,
             outcome = outcome.as_str(),
             elapsed_ms = elapsed.as_millis(),
-            "claimed peer Home wait completed"
+            "claimed source Home wait completed"
         );
         setup
             .pre_spawn_timing
@@ -145,7 +145,7 @@ impl PeerHomeClaim {
                 .await);
         }
         // The same lease remains owned on expiry. Ordinary execution still
-        // validates/locks checkout and may start without the peer's image.
+        // validates/locks checkout and may start without the source image.
         let prepared = AssertUnwindSafe(build_spawn_job_request(&mut self.activation, &ctx))
             .catch_unwind()
             .await;
@@ -162,8 +162,8 @@ impl PeerHomeClaim {
             Err(panic) => {
                 self.activation
                     .recover(
-                        "peer_activation_panicked",
-                        "peer activation panicked".into(),
+                        "source_home_activation_panicked",
+                        "source Home activation panicked".into(),
                     )
                     .await?
                     .finish()
@@ -220,7 +220,7 @@ impl PeerHomeClaim {
                         Some(self.source_run_id),
                     ).await;
                     #[cfg(test)]
-                    ctx.test_observer.record(super::StartLoopEvent::PeerHomeRecheckCompleted {
+                    ctx.test_observer.record(super::StartLoopEvent::SourceHomeRecheckCompleted {
                         run_id,
                         ready: matches!(&observed, Ok(HomeCacheProbe::Ready { .. })),
                     });
@@ -238,7 +238,7 @@ impl PeerHomeClaim {
                             %run_id,
                             source_run_id = %self.source_run_id,
                             %error,
-                            "claimed peer Home revalidation failed; retaining original wait"
+                            "claimed source Home revalidation failed; retaining original wait"
                         ),
                     }
                     recheck_at = now + recheck_delay;

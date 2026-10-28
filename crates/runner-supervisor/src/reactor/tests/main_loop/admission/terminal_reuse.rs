@@ -158,18 +158,36 @@ async fn assert_cleanup_reuses_sandbox(
 
 #[tokio::test]
 async fn resolved_finalizing_preference_consumes_ready_generic_sandbox() {
-    assert_ready_sandbox(false).await;
+    assert_ready_sandbox(ReadySandboxPreference::Finalizing).await;
 }
 
 #[tokio::test]
 async fn source_exact_preference_consumes_and_republishes_actual_producer_without_native_history() {
-    assert_ready_sandbox(true).await;
+    assert_ready_sandbox(ReadySandboxPreference::Exact).await;
 }
 
-async fn assert_ready_sandbox(source_exact: bool) {
+#[tokio::test]
+async fn stale_advertised_source_home_uses_an_available_generic_sandbox() {
+    assert_ready_sandbox(ReadySandboxPreference::StaleHome).await;
+}
+
+enum ReadySandboxPreference {
+    Finalizing,
+    Exact,
+    StaleHome,
+}
+
+async fn assert_ready_sandbox(preference: ReadySandboxPreference) {
     let overrides = Arc::new(MockSandboxOverrides::new());
-    let (config, env) =
+    let (mut config, env) =
         mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
+    if matches!(preference, ReadySandboxPreference::StaleHome) {
+        Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(HomeImageCache::shared(
+            RunnerPaths::new(config.paths.base_dir.clone()),
+            &config.paths.home,
+            &config.runner.group,
+        ));
+    }
     let reuse_key = "thread:ready-terminal-sandbox";
     let sandbox_id = seed_idle_pool_with_overrides(
         &env.idle_pool,
@@ -196,10 +214,19 @@ async fn assert_ready_sandbox(source_exact: bool) {
         .send(ranked_candidate(
             successor,
             Some(reuse_key),
-            if source_exact {
-                runner_provider::RunnerPreferenceTarget::SourceSandbox(producer)
-            } else {
-                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4())
+            match preference {
+                ReadySandboxPreference::Exact => {
+                    runner_provider::RunnerPreferenceTarget::SourceSandbox(producer)
+                }
+                ReadySandboxPreference::Finalizing => {
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4())
+                }
+                ReadySandboxPreference::StaleHome => {
+                    runner_provider::RunnerPreferenceTarget::SourceHome(
+                        RunId::new_v4(),
+                        runner_provider::SourceHomeObservation::Advertised,
+                    )
+                }
             },
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
@@ -285,7 +312,10 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, source_
             successor,
             Some(reuse_key),
             if source_home {
-                runner_provider::RunnerPreferenceTarget::SourceHomeCache(predecessor)
+                runner_provider::RunnerPreferenceTarget::SourceHome(
+                    predecessor,
+                    runner_provider::SourceHomeObservation::Advertised,
+                )
             } else {
                 runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(predecessor)
             },

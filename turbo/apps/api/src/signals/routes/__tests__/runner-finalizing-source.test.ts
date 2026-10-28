@@ -113,8 +113,13 @@ describe("independent finalizing resource source", () => {
             }
           : {
               kind: "preference",
-              tier: resource === "sandbox" ? "exactSandbox" : "sourceHomeCache",
-              finalizingSourceRunId: f.run.runId,
+              ...(resource === "sandbox"
+                ? { tier: "exactSandbox", finalizingSourceRunId: f.run.runId }
+                : {
+                    tier: "sourceHome",
+                    sourceRunId: f.run.runId,
+                    home: { evidence: "advertised" },
+                  }),
               runnerIdentity: { runnerId: ready, heartbeatGeneration: 7 },
               expiresAt: new Date(
                 f.clock + (resource === "sandbox" ? 3500 : 4500),
