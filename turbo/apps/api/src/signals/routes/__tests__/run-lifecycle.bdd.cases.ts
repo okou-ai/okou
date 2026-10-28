@@ -6116,6 +6116,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           displayName: "BDD No Auth HTTP Runtime",
           prefixTemplates: [
             `https://{{variables.region}}.${rand}.no-auth.example.test/v1/`,
+            `http://{{variables.region}}.${rand}.no-auth.example.test:8080/v1/`,
           ],
           fields: [
             {
@@ -6187,6 +6188,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).toMatchObject([
           {
             base: `https://us-east.${rand}.no-auth.example.test/v1/`,
+            auth: { headers: {}, query: {} },
+          },
+          {
+            base: `http://us-east.${rand}.no-auth.example.test:8080/v1/`,
             auth: { headers: {}, query: {} },
           },
         ]);
@@ -6514,6 +6519,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               slug,
               displayName: "BDD Internal API",
               prefixTemplates: [
+                "http://{{variables.tenant}}.internal.example.com:8080/api/",
                 "https://{{variables.tenant}}.internal.example.com/api/",
               ],
               fields: [
@@ -6536,7 +6542,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                   valueTemplate: "Bearer {{secrets.secret}}",
                 },
               ],
-              queryInjections: [],
+              queryInjections: [
+                { name: "api_key", valueTemplate: "{{secrets.secret}}" },
+              ],
               authMode: "manual",
             });
           });
@@ -6578,12 +6586,26 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
           const secretKey = `CUSTOM_${custom.id.replaceAll("-", "")}_S_SECRET`;
           const customApis = inlineFirewallApis(claim.firewalls, internalName);
-          expect(customApis[0]?.base).toBe(
-            "https://acme.internal.example.com/api/",
-          );
-          expect(customApis[0]?.auth?.headers?.Authorization).toBe(
-            `Bearer \${{ secrets.${secretKey} }}`,
-          );
+          expect(customApis).toMatchObject([
+            {
+              base: "http://acme.internal.example.com:8080/api/",
+              auth: {
+                headers: {
+                  Authorization: `Bearer \${{ secrets.${secretKey} }}`,
+                },
+                query: { api_key: `\${{ secrets.${secretKey} }}` },
+              },
+            },
+            {
+              base: "https://acme.internal.example.com/api/",
+              auth: {
+                headers: {
+                  Authorization: `Bearer \${{ secrets.${secretKey} }}`,
+                },
+                query: { api_key: `\${{ secrets.${secretKey} }}` },
+              },
+            },
+          ]);
           expect(claim.networkPolicies?.[internalName]?.unknownPolicy).toBe(
             "allow",
           );
@@ -6628,6 +6650,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               fw.encryptedSecretsBody({}),
             );
           expect(initialApi.id).toBe(`${internalName}:0`);
+          expect(initialApi.base).toBe(
+            "http://acme.internal.example.com:8080/api/",
+          );
           expect(initialAvailable.firewall.customConnectorId).toBe(custom.id);
           expect(initialAvailable.networkPolicy.unknownPolicy).toBe("allow");
           const initialCurrentAuth = await own(() => {
@@ -6639,6 +6664,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(initialCurrentAuth.body).toMatchObject({
             headers: { Authorization: "Bearer custom-secret-value" },
+            query: { api_key: "custom-secret-value" },
             expiresAt: null,
           });
 
@@ -6730,6 +6756,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(currentUpdatedAuth.body).toMatchObject({
             headers: { Authorization: "Bearer updated-custom-secret-value" },
+            query: { api_key: "updated-custom-secret-value" },
             expiresAt: null,
           });
 
@@ -6774,6 +6801,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(recoveredAuth.body).toMatchObject({
             headers: { Authorization: "Bearer recovered-custom-secret-value" },
+            query: { api_key: "recovered-custom-secret-value" },
             expiresAt: null,
           });
 

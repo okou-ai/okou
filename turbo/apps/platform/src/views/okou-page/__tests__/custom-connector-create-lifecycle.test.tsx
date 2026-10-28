@@ -13,7 +13,10 @@ const context = testContext();
 
 test("A completed creation preserves a newer connector draft and directory search", async () => {
   mockCustomConnectorStory(context);
-  const connector = customConnector({ displayName: "First API" });
+  const connector = customConnector({
+    displayName: "First API",
+    prefixTemplates: ["http://api.acme.test/v1/"],
+  });
   const started = context.mocks.deferred<void>();
   const response = context.mocks.deferred<void>();
   let created = false;
@@ -24,6 +27,10 @@ test("A completed creation preserves a newer connector draft and directory searc
     customConnectorsContract.create,
     async ({ body, respond }) => {
       expect(body.displayName).toBe("First API");
+      expect(body).toMatchObject({
+        prefixTemplates: ["http://api.acme.test/v1/"],
+        authMode: "manual",
+      });
       started.resolve();
       await response.promise;
       created = true;
@@ -43,7 +50,7 @@ test("A completed creation preserves a newer connector draft and directory searc
   await fill(within(create).getByLabelText("Display name"), "First API");
   await fill(
     within(create).getByLabelText(/Prefixes/u),
-    "https://api.acme.test/v1/",
+    "http://api.acme.test/v1/",
   );
   click(getConnectorAction("button", "Add authentication", create));
   const menu = await screen.findByRole("menu");
