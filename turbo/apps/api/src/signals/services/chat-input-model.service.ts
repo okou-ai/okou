@@ -263,7 +263,7 @@ export interface EnqueuedChatInputModel {
 }
 
 /**
- * Guarded snapshot update for the input's enqueue transaction, after its input
+ * Guarded snapshot update for the atomic enqueue owner, after its input
  * event. Only a thread still on the replaced selection changes, so a concurrent
  * model change wins. The owner appends model/tier events only after this wins.
  */

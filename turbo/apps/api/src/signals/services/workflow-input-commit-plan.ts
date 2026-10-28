@@ -9,8 +9,8 @@ import { DrizzleQueryError, asc, eq, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { object, number, string } from "zod";
 import {
-  canonicalChatEventInputCtes,
   canonicalChatEventInsertSql,
+  type PreparedChatEventRow,
 } from "./chat-event-append.service";
 import {
   pendingWorkflowScheduleTickCondition,
@@ -34,6 +34,36 @@ export const workflowInputCommitRowSchema = object({
 type ModelEventScope = ReturnType<
   typeof threadModelReplacementWritePlan
 >["eventScope"];
+
+/** One input plus SQL-discovered revocations share the existing sequence row. */
+function workflowInputCtes(row: PreparedChatEventRow, additionalInput: SQL) {
+  const input = JSON.stringify([
+    { ...row, ordinal: 0, createdAt: row.createdAt.toISOString() },
+  ]);
+  return sql`
+    input AS MATERIALIZED (
+      SELECT * FROM jsonb_to_recordset(${input}::jsonb) AS event(
+        id uuid, "chatThreadId" uuid, "runId" uuid, "revokesEventId" uuid,
+        "eventType" text, payload jsonb, "modelSelection" jsonb, "failureReason" text,
+        "requiredOfficialWorkflowIds" uuid[], "contextType" text, "contextId" uuid,
+        "runEventSequenceNumber" integer, "runEventId" text,
+        "createdAt" timestamp, ordinal integer
+      )
+      ${additionalInput}
+    ), counts AS MATERIALIZED (
+      SELECT "chatThreadId" AS chat_thread_id, count(*) AS event_count
+      FROM input GROUP BY "chatThreadId"
+    ), reserved AS (
+      INSERT INTO chat_event_sequences (chat_thread_id, last_seq_id)
+      SELECT counts.chat_thread_id, counts.event_count
+      FROM counts
+      ORDER BY counts.chat_thread_id
+      ON CONFLICT (chat_thread_id) DO UPDATE
+        SET last_seq_id = chat_event_sequences.last_seq_id + EXCLUDED.last_seq_id
+      RETURNING chat_thread_id, last_seq_id
+    )
+  `;
+}
 
 function pendingTicksSql(args: {
   readonly chatThreadId: string;
@@ -139,12 +169,11 @@ export function workflowInputCommitSql(args: {
     );
   }
   ctes.push(
-    canonicalChatEventInputCtes(
-      [plan.row],
-      undefined,
+    workflowInputCtes(
+      plan.row,
       args.replacePendingTicks
-        ? pendingTickInputSql(chatThreadId, currentTime)
-        : undefined,
+        ? sql`UNION ALL ${pendingTickInputSql(chatThreadId, currentTime)}`
+        : sql.empty(),
     ),
   );
   ctes.push(

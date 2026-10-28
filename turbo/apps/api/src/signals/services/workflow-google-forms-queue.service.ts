@@ -54,7 +54,7 @@ function googleFormsQueueAdmissionSql(source: GoogleFormsQueueSource) {
     )`;
 }
 
-/** The owner's transaction rolls back the receipt if cursor/authority loses. */
+/** The compound owner rolls back the receipt if cursor/authority loses. */
 export function googleFormsQueueReceiptPlan(
   source: GoogleFormsQueueSource,
   currentTime: Date,
