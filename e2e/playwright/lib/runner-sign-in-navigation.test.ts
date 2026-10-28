@@ -5,8 +5,11 @@ import { test, type TestContext } from "node:test";
 
 import { chromium, errors, expect } from "@playwright/test";
 
-import { navigateToRunnerSignIn } from "./runner-sign-in-navigation";
 import { startRunnerNetworkDiagnostics } from "./runner-network-diagnostics";
+import {
+  navigateToRunnerSignIn,
+  type RunnerSignInNavigationOptions,
+} from "./runner-sign-in-navigation";
 
 async function fixture(context: TestContext, handler: RequestListener) {
   const server = createServer(handler);
@@ -27,58 +30,63 @@ async function fixture(context: TestContext, handler: RequestListener) {
   const page = await browser.newPage();
   const url = `http://127.0.0.1:${address.port}/sign-in`;
   const started = performance.now();
-  const network = await startRunnerNetworkDiagnostics(
-    page,
-    () => Math.round(performance.now() - started),
-    { appOrigin: new URL(url).origin, expected: { kind: "missing" } },
-  );
+  const observe = () =>
+    startRunnerNetworkDiagnostics(
+      page,
+      () => Math.round(performance.now() - started),
+      { appOrigin: new URL(url).origin, expected: { kind: "missing" } },
+    );
+  let network = await observe();
   context.after(() => network.dispose());
   return {
     page,
     url,
-    responseHeaders: () => network.responseHeaders(),
-    network,
+    get network() {
+      return network;
+    },
+    navigate: (
+      options: RunnerSignInNavigationOptions,
+      beforeRetry: (attempt: number) => Promise<void> = async () => {},
+    ) =>
+      navigateToRunnerSignIn(
+        page,
+        url,
+        options,
+        beforeRetry,
+        () => network.transferActivity(),
+        async () => {
+          await network.dispose();
+          network = await observe();
+        },
+      ),
   };
 }
 
 test("initial sign-in navigation succeeds without replacing a healthy page", async (context) => {
   let documents = 0;
-  const { page, url, responseHeaders } = await fixture(
-    context,
-    (request, response) => {
-      if (request.url !== "/sign-in") {
-        response.writeHead(404).end();
-        return;
-      }
-      documents++;
-      response.writeHead(200, { "content-type": "text/html" });
-      response.end("<!doctype html><h1>Sign in</h1>");
-    },
-  );
-  await navigateToRunnerSignIn(
-    page,
-    url,
-    { noResponseTimeoutMs: 100, timeoutMs: 2_000 },
-    async () => assert.fail("A healthy page must not be replaced"),
-    responseHeaders,
+  const { page, navigate } = await fixture(context, (request, response) => {
+    if (request.url !== "/sign-in") {
+      response.writeHead(404).end();
+      return;
+    }
+    documents++;
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end("<!doctype html><h1>Sign in</h1>");
+  });
+  await navigate({ idleTimeoutMs: 100, timeoutMs: 2_000 }, async () =>
+    assert.fail("A healthy page must not be replaced"),
   );
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   assert.equal(documents, 1);
 });
 
-test("persistent no-response navigation stops after two replacements", async (context) => {
+test("persistent idle navigation stops after two replacements", async (context) => {
   let documents = 0;
-  const { page, url, responseHeaders } = await fixture(context, () => {
+  const { navigate } = await fixture(context, () => {
     documents++;
   });
   await assert.rejects(
-    navigateToRunnerSignIn(
-      page,
-      url,
-      { noResponseTimeoutMs: 100, timeoutMs: 800 },
-      async () => {},
-      responseHeaders,
-    ),
+    navigate({ idleTimeoutMs: 100, timeoutMs: 1_500 }),
     errors.TimeoutError,
   );
   assert.equal(documents, 3);
@@ -86,144 +94,127 @@ test("persistent no-response navigation stops after two replacements", async (co
 
 test("the shared navigation deadline can expire before a retry is eligible", async (context) => {
   let documents = 0;
-  const { page, url, responseHeaders } = await fixture(context, () => {
+  const { navigate } = await fixture(context, () => {
     documents++;
   });
   await assert.rejects(
-    navigateToRunnerSignIn(
-      page,
-      url,
-      { noResponseTimeoutMs: 1_000, timeoutMs: 100 },
-      async () => assert.fail("The navigation budget has expired"),
-      responseHeaders,
+    navigate({ idleTimeoutMs: 1_000, timeoutMs: 100 }, async () =>
+      assert.fail("The navigation budget has expired"),
     ),
     errors.TimeoutError,
   );
   assert.equal(documents, 1);
 });
 
-test("unavailable response observation keeps the bounded navigation without retries", async (context) => {
+test("unavailable transfer observation keeps the bounded navigation without retries", async (context) => {
   let documents = 0;
-  const { page, url, responseHeaders, network } = await fixture(context, () => {
+  const { navigate, network } = await fixture(context, () => {
     documents++;
   });
   await network.dispose();
   await assert.rejects(
-    navigateToRunnerSignIn(
-      page,
-      url,
-      { noResponseTimeoutMs: 100, timeoutMs: 400 },
-      async () =>
-        assert.fail("Incomplete observation cannot establish a stall"),
-      responseHeaders,
+    navigate({ idleTimeoutMs: 100, timeoutMs: 400 }, async () =>
+      assert.fail("Incomplete observation cannot establish inactivity"),
     ),
     errors.TimeoutError,
   );
   assert.equal(documents, 1);
 });
 
-for (const resource of ["document", "script"]) {
-  test(`a responded ${resource} body stall is not a no-response retry`, async (context) => {
-    let documents = 0;
-    const { page, url, responseHeaders, network } = await fixture(
-      context,
-      (request, response) => {
-        if (request.url === "/sign-in") {
-          documents++;
-          response.writeHead(200, { "content-type": "text/html" });
-          if (resource === "document") {
-            response.flushHeaders();
-          } else {
-            response.end(
-              '<!doctype html><script defer src="/okou-app/assets/entry.js"></script>',
-            );
-          }
-        } else if (request.url === "/okou-app/assets/entry.js") {
-          response.writeHead(200, {
-            "content-type": "text/javascript",
-            "x-content-type-options": "nosniff",
-            "set-cookie": "private=header-secret",
-          });
-          response.flushHeaders();
-        } else {
-          response.writeHead(404).end();
-        }
-      },
-    );
-    await assert.rejects(
-      navigateToRunnerSignIn(
-        page,
-        url,
-        { noResponseTimeoutMs: 100, timeoutMs: 400 },
-        async () => assert.fail("A response was already observed"),
-        responseHeaders,
-      ),
-      errors.TimeoutError,
-    );
-    assert.equal(documents, 1);
-    const report = network.freeze();
-    assert.equal(report.kind, "observed");
-    if (report.kind === "observed") {
-      const transfer = report.requests.find(
-        (request) => request.resourceType === resource,
-      );
-      assert.ok(transfer);
-      assert.ok(
-        report.responseHeaders.some(
-          (headers) =>
-            headers.requestId === transfer.requestId && headers.status === 200,
-        ),
-      );
+test("a document making regular progress can outlast the idle interval", async (context) => {
+  let documents = 0;
+  const { page, navigate } = await fixture(context, (request, response) => {
+    if (request.url !== "/sign-in") {
+      response.writeHead(404).end();
+      return;
     }
-    assert.doesNotMatch(JSON.stringify(report), /header-secret|set-cookie/iu);
+    documents++;
+    response.writeHead(200, { "content-type": "text/html" });
+    response.write("<!doctype html><body>");
+    let chunks = 0;
+    // Model an actual streaming peer. Every tick emits body data; this is the
+    // transfer under test, not a sleep used to synchronize a test assertion.
+    const stream = setInterval(() => {
+      response.write(`<p>${"progress ".repeat(1_024)}</p>`);
+      if (++chunks === 8) {
+        clearInterval(stream);
+        response.end("<h1>Complete</h1>");
+      }
+    }, 75);
+    response.on("close", () => clearInterval(stream));
   });
-}
+  await navigate({ idleTimeoutMs: 300, timeoutMs: 3_000 }, async () =>
+    assert.fail("Regular body progress must keep the navigation"),
+  );
+  await expect(page.getByRole("heading", { name: "Complete" })).toBeVisible();
+  assert.equal(documents, 1);
+});
+
+test("navigation completed during evidence capture is not replaced", async (context) => {
+  let documents = 0;
+  let finish: (() => void) | undefined;
+  const { page, navigate } = await fixture(context, (request, response) => {
+    if (request.url !== "/sign-in") {
+      response.writeHead(404).end();
+      return;
+    }
+    documents++;
+    finish = () =>
+      response
+        .writeHead(200, { "content-type": "text/html" })
+        .end("<!doctype html><h1>Late completion</h1>");
+  });
+  await navigate({ idleTimeoutMs: 100, timeoutMs: 3_000 }, async () => {
+    assert.ok(finish);
+    // The original document has not committed, so about:blank's state is not
+    // evidence of completion. Await the real document before the load state.
+    const committed = page.waitForEvent("framenavigated", {
+      predicate: (frame) => frame === page.mainFrame(),
+    });
+    finish();
+    await committed;
+    await page.waitForLoadState("domcontentloaded");
+  });
+  await expect(
+    page.getByRole("heading", { name: "Late completion" }),
+  ).toBeVisible();
+  assert.equal(documents, 1);
+});
 
 test("an explicit navigation network failure is not retried", async (context) => {
   let documents = 0;
-  const { page, url, responseHeaders } = await fixture(context, (request) => {
+  const { navigate } = await fixture(context, (request) => {
     documents++;
     request.socket.destroy();
   });
   await assert.rejects(
-    navigateToRunnerSignIn(
-      page,
-      url,
-      { noResponseTimeoutMs: 100, timeoutMs: 800 },
-      async () => assert.fail("An explicit network failure is not a stall"),
-      responseHeaders,
+    navigate({ idleTimeoutMs: 100, timeoutMs: 800 }, async () =>
+      assert.fail("An explicit network failure is not a stall"),
     ),
     /net::ERR_/u,
   );
-  // Chromium may itself repeat a failed GET; the helper must not navigate again.
+  // Chromium itself may repeat a failed GET; the helper must not navigate again.
   assert.ok(documents > 0);
 });
 
-test("an HTTP failure is not hidden by another script without a response", async (context) => {
+test("an HTTP failure is not hidden by another idle script", async (context) => {
   let documents = 0;
-  const { page, url, responseHeaders } = await fixture(
-    context,
-    (request, response) => {
-      if (request.url === "/sign-in") {
-        documents++;
-        response.writeHead(200, { "content-type": "text/html" }).end(`
+  const { navigate } = await fixture(context, (request, response) => {
+    if (request.url === "/sign-in") {
+      documents++;
+      response.writeHead(200, { "content-type": "text/html" }).end(`
         <!doctype html>
         <script defer src="/okou-app/assets/broken.js"></script>
         <script defer src="/okou-app/assets/pending.js"></script>`);
-      } else if (request.url === "/okou-app/assets/broken.js") {
-        response.writeHead(503).end();
-      } else if (request.url !== "/okou-app/assets/pending.js") {
-        response.writeHead(404).end();
-      }
-    },
-  );
+    } else if (request.url === "/okou-app/assets/broken.js") {
+      response.writeHead(503).end();
+    } else if (request.url !== "/okou-app/assets/pending.js") {
+      response.writeHead(404).end();
+    }
+  });
   await assert.rejects(
-    navigateToRunnerSignIn(
-      page,
-      url,
-      { noResponseTimeoutMs: 100, timeoutMs: 800 },
-      async () => assert.fail("An HTTP failure is not a no-response stall"),
-      responseHeaders,
+    navigate({ idleTimeoutMs: 100, timeoutMs: 800 }, async () =>
+      assert.fail("An HTTP failure is not an idle-transfer retry"),
     ),
     errors.TimeoutError,
   );

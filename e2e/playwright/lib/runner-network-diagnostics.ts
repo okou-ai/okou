@@ -147,7 +147,8 @@ interface ResponseMetadata {
 }
 
 interface NetworkDiagnostics {
-  responseHeaders(): ReadonlyMap<string, number> | undefined;
+  transferActivity(): ReadonlyMap<string, TransferActivity> | undefined;
+  snapshot(): ReturnType<NetworkDiagnostics["freeze"]>;
   freeze():
     | {
         kind: "observed";
@@ -159,6 +160,12 @@ interface NetworkDiagnostics {
       }
     | { kind: "unavailable"; reason: "setup-failed" | "setup-deadline" };
   dispose(): Promise<void>;
+}
+
+export interface TransferActivity {
+  readonly idleMs: number;
+  readonly pending: boolean;
+  readonly failed: boolean;
 }
 
 interface ResponseHeadersObservation {
@@ -325,8 +332,10 @@ function observeNetwork(
     observation.dataEvents++;
     observation.decodedDataBytes += event.dataLength;
     observation.encodedDataBytes += event.encodedDataLength;
-    observation.firstDataMs ??= elapsed();
-    observation.lastDataMs = elapsed();
+    if (event.dataLength > 0 || event.encodedDataLength > 0) {
+      observation.firstDataMs ??= elapsed();
+      observation.lastDataMs = elapsed();
+    }
   });
   session.on("Network.loadingFinished", (event) => {
     const observation = observationFor(event.requestId);
@@ -351,8 +360,18 @@ function observeNetwork(
     if (recording) interrupted = true;
   });
 
+  const snapshot = () => ({
+    kind: "observed" as const,
+    interrupted,
+    requests: requests.map((request) => ({ ...request })),
+    omittedRequests,
+    responseHeaders: [...responseHeaders],
+    omittedResponseHeaders,
+  });
+
   return {
-    responseHeaders() {
+    snapshot,
+    transferActivity() {
       if (
         !recording ||
         interrupted ||
@@ -361,32 +380,37 @@ function observeNetwork(
       ) {
         return undefined;
       }
-      const statuses = new Map<string, number>();
-      for (const headers of responseHeaders) {
-        // Redirect hops reuse request IDs, and queries are intentionally
-        // redacted. Conservatively treat every matching URL as responded;
-        // never guess a hop or retry a possibly responding request.
-        for (const request of requests) {
-          if (
-            request.requestId === headers.requestId &&
-            (!statuses.has(request.url) || headers.status >= 400)
-          ) {
-            statuses.set(request.url, headers.status);
-          }
-        }
+      const activity = new Map<string, TransferActivity>();
+      const now = elapsed();
+      for (const request of requests) {
+        const headers = responseHeaders.filter(
+          (headers) => headers.requestId === request.requestId,
+        );
+        const previous = activity.get(request.url);
+        // Redirect IDs and redacted URLs can cover multiple transfers. Use
+        // their latest progress and fail/finish conservatively, never infer
+        // inactivity from a guessed hop or a truncated observation.
+        const lastProgress = Math.max(
+          request.startedMs,
+          request.responseMs ?? request.startedMs,
+          request.lastDataMs ?? request.startedMs,
+          ...headers.map((headers) => headers.elapsedMs),
+        );
+        activity.set(request.url, {
+          idleMs: Math.min(previous?.idleMs ?? Infinity, now - lastProgress),
+          pending: (previous?.pending ?? true) && request.outcome === "pending",
+          failed:
+            (previous?.failed ?? false) ||
+            request.outcome === "failed" ||
+            (request.status !== undefined && request.status >= 400) ||
+            headers.some((headers) => headers.status >= 400),
+        });
       }
-      return statuses;
+      return activity;
     },
     freeze() {
       recording = false;
-      return {
-        kind: "observed",
-        interrupted,
-        requests,
-        omittedRequests,
-        responseHeaders,
-        omittedResponseHeaders,
-      };
+      return snapshot();
     },
     async dispose() {
       recording = false;
@@ -401,7 +425,8 @@ function unavailable(
   reason: "setup-failed" | "setup-deadline",
 ): NetworkDiagnostics {
   return {
-    responseHeaders: () => undefined,
+    transferActivity: () => undefined,
+    snapshot: () => ({ kind: "unavailable", reason }),
     freeze: () => ({ kind: "unavailable", reason }),
     dispose: async () => {},
   };

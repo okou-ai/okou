@@ -68,7 +68,7 @@ async function capturePageState(page: Page) {
   }
 }
 
-/** Failure-only evidence for the standalone Runner credential preparation. */
+/** Evidence for failed and recovered Runner credential sign-in attempts. */
 export async function signInRunnerWithDiagnostics(
   page: Page,
   email: string,
@@ -183,7 +183,7 @@ export async function signInRunnerWithDiagnostics(
         omittedMilestones,
         requests: [...requests.values()].map((request) => ({ ...request })),
         omittedRequests,
-        network: network.freeze(),
+        network: network.snapshot(),
         pageState: await capturePageState(page),
       };
       await mkdir(dirname(path), { recursive: true });
@@ -211,20 +211,24 @@ export async function signInRunnerWithDiagnostics(
                   await saveDiagnostics(
                     `${options.diagnosticPath}.navigation-${attempt}.json`,
                   );
+                },
+                () => network.transferActivity(),
+                async () => {
+                  // The old load has stopped. Start a clean observer before
+                  // the next GET so intentional cancellation is not a failure.
                   await network.dispose();
                   requests.clear();
                   milestones.length = 0;
                   omittedRequests = 0;
                   omittedMilestones = 0;
                   pageErrors = 0;
-                  navigationAttempt = attempt + 1;
+                  navigationAttempt++;
                   network = await startRunnerNetworkDiagnostics(
                     page,
                     elapsed,
                     build,
                   );
                 },
-                () => network.responseHeaders(),
               )
           : options.navigateToSignIn,
       });

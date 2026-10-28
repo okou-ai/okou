@@ -9,7 +9,11 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { createServer, type RequestListener } from "node:http";
+import {
+  createServer,
+  type RequestListener,
+  type ServerResponse,
+} from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -415,18 +419,52 @@ function signInDocument(script = "", failVerification = false) {
     </script>`;
 }
 
-for (const resource of ["document", "script"]) {
-  test(`runner sign-in recovers an unresponsive ${resource} and retains pre-retry evidence`, async (context) => {
+for (const { resource, phase } of [
+  { resource: "document", phase: "no-response" },
+  { resource: "script", phase: "no-response" },
+  { resource: "document", phase: "headers" },
+  { resource: "script", phase: "headers" },
+  { resource: "stylesheet", phase: "headers" },
+  { resource: "document", phase: "partial-body" },
+  { resource: "script", phase: "partial-body" },
+  { resource: "stylesheet", phase: "partial-body" },
+]) {
+  test(`runner sign-in recovers an idle ${resource} after ${phase} and retains evidence`, async (context) => {
     let documents = 0;
     let scripts = 0;
     let emails = 0;
     let verifications = 0;
+    const assetPath = `/okou-app/assets/entry.${resource === "stylesheet" ? "css" : "js"}`;
+    const stall = (response: ServerResponse) => {
+      if (phase === "no-response") return;
+      response.writeHead(200, {
+        "content-type":
+          resource === "document"
+            ? "text/html"
+            : resource === "script"
+              ? "text/javascript"
+              : "text/css",
+        "x-content-type-options": "nosniff",
+        "set-cookie": "private=header-secret",
+      });
+      response.flushHeaders();
+      if (phase === "partial-body") {
+        response.write(
+          resource === "document"
+            ? `<!doctype html><body><p>${"body-secret".repeat(4_096)}</p>`
+            : `/* ${"body-secret".repeat(4_096)} */`,
+        );
+      }
+    };
     const { appUrl, diagnosticPath, signIn } = await fixture(
       context,
       (request, response) => {
         if (request.url === "/sign-in") {
           documents++;
-          if (resource === "document" && documents === 1) return;
+          if (resource === "document" && documents === 1) {
+            stall(response);
+            return;
+          }
           response.writeHead(200, {
             "content-type": "text/html",
             "x-okou-preview-build-sha": expectedSha,
@@ -435,14 +473,24 @@ for (const resource of ["document", "script"]) {
           response.end(
             signInDocument(
               resource === "script"
-                ? '<script defer src="/okou-app/assets/entry.js?query-secret"></script>'
-                : "",
+                ? `<script defer src="${assetPath}?query-secret"></script>`
+                : resource === "stylesheet"
+                  ? `<link rel="stylesheet" href="${assetPath}?query-secret">`
+                  : "",
             ),
           );
-        } else if (request.url?.startsWith("/okou-app/assets/entry.js")) {
+        } else if (request.url?.startsWith(assetPath)) {
           scripts++;
-          if (scripts === 1) return;
-          response.writeHead(200, { "content-type": "text/javascript" }).end();
+          if (scripts === 1) {
+            stall(response);
+            return;
+          }
+          response
+            .writeHead(200, {
+              "content-type":
+                resource === "stylesheet" ? "text/css" : "text/javascript",
+            })
+            .end();
         } else if (request.url === "/email") {
           emails++;
           response.writeHead(204).end();
@@ -454,7 +502,7 @@ for (const resource of ["document", "script"]) {
         }
       },
       expectedSha,
-      { noResponseTimeoutMs: 150, timeoutMs: 5_000 },
+      { idleTimeoutMs: 150, timeoutMs: 5_000 },
     );
     assert.equal(await signIn(), "token-secret");
     assert.equal(documents, 2);
@@ -467,12 +515,32 @@ for (const resource of ["document", "script"]) {
         request.url ===
         (resource === "document"
           ? `${appUrl}/sign-in`
-          : `${appUrl}/okou-app/assets/entry.js`),
+          : `${appUrl}${assetPath}`),
     );
     assert.ok(transfer);
     assert.equal(transfer.outcome, "pending");
-    assert.equal(transfer.status, undefined);
-    assert.equal(transfer.dataEvents, 0);
+    if (phase === "no-response") {
+      assert.equal(transfer.status, undefined);
+      assert.equal(transfer.dataEvents, 0);
+    } else {
+      const parsed: unknown = JSON.parse(report);
+      assert.ok(isRecord(parsed) && isRecord(parsed.network));
+      assert.ok(Array.isArray(parsed.network.responseHeaders));
+      assert.ok(
+        parsed.network.responseHeaders.some(
+          (headers: unknown) =>
+            isRecord(headers) &&
+            headers.requestId === transfer.requestId &&
+            headers.status === 200,
+        ),
+      );
+      if (phase === "partial-body" && resource !== "script") {
+        assert.ok(
+          typeof transfer.decodedDataBytes === "number" &&
+            transfer.decodedDataBytes > 0,
+        );
+      }
+    }
     assert.match(report, /"navigationAttempt": 1/u);
     assert.doesNotMatch(report, /secret|ERR_ABORTED|\?/u);
     assert.equal((await stat(retryPath)).mode & 0o777, 0o600);
@@ -504,7 +572,7 @@ test("runner navigation recovery survives an unavailable diagnostic path", async
     {
       activeOrganizationId: "org_fixture",
       diagnosticPath: join(blockedDirectory, "runner.json"),
-      navigationRetry: { noResponseTimeoutMs: 150, timeoutMs: 5_000 },
+      navigationRetry: { idleTimeoutMs: 150, timeoutMs: 5_000 },
     },
   );
   assert.equal(token, "token-secret");
@@ -529,7 +597,7 @@ test("runner sign-in does not replay authentication after navigation succeeds", 
       }
     },
     undefined,
-    { noResponseTimeoutMs: 150, timeoutMs: 5_000 },
+    { idleTimeoutMs: 150, timeoutMs: 5_000 },
   );
   await assert.rejects(signIn, /verification-fixture-failure/u);
   assert.equal(documents, 1);

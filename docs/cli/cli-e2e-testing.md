@@ -277,21 +277,27 @@ These reports exclude URL queries/fragments/userinfo, headers other than the
 validated cf-ray and preview-build identifiers, cookies, payloads,
 raw console/error text, screenshots and raw traces. Healthy sign-in writes no
 report. Runner credential preparation opts into initial-navigation recovery:
-if a main-frame GET document or same-origin application JS under
-`/okou-app/assets/` has no browser-observed response for five seconds, it may
-replace that navigation up to twice. Navigation waits, evidence capture and
+if a main-frame GET document or same-origin application JS/CSS under
+`/okou-app/assets/` remains pending without browser-observed transfer progress
+for five seconds, it may replace that navigation up to twice. New response
+headers and positive body-data events reset that request's idle interval;
+receiving headers alone does not exempt an unfinished body. A progressing
+transfer can take longer than five seconds without being restarted.
+Navigation waits, evidence capture and
 replacement share the original 30-second navigation budget. A local blank
 document stops the old load before navigating to the sign-in URL again.
-Responded transfers, explicit HTTP/network failures, and page closure/crash do
-not trigger recovery. This policy describes observed response absence, not
-whether a transport connection opened.
-Recovery also consults the early CDP header evidence, conservatively treating
-matching redacted URLs/redirect IDs as responded. Unavailable, interrupted or
-truncated observation disables retries; the ordinary bounded navigation still
-must succeed.
+Completed transfers, explicit HTTP/network failures, and page closure/crash do
+not trigger recovery. This policy describes browser-observed inactivity;
+buffering can hide wire progress, so it does not prove server inactivity or
+whether a transport connection opened. Activity includes early CDP headers;
+matching redacted URLs/redirect IDs use their latest progress and any terminal
+failure conservatively. Unavailable, interrupted or truncated observation
+disables retries; the ordinary bounded navigation still must succeed.
 
-Before each replacement, an attempt-labelled `.navigation-N.json` report freezes
-the stalled state before intentional cancellation. Recovered attempts retain
+Before each replacement, an attempt-labelled `.navigation-N.json` report saves
+a bounded snapshot of the stalled state before intentional cancellation.
+Observation continues during capture: if navigation completes or the transfer
+resumes progress in the meantime, keep the original load. Recovered attempts retain
 these reports even if sign-in then succeeds; a final failure also keeps the
 normal per-account report. Each report includes `navigationAttempt`. Diagnostic
 failure preserves the original sign-in error or recovery decision. The retry

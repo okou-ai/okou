@@ -6,12 +6,15 @@ import {
   type Response,
 } from "@playwright/test";
 
-import { safeNetworkUrl } from "./runner-network-diagnostics";
+import {
+  safeNetworkUrl,
+  type TransferActivity,
+} from "./runner-network-diagnostics";
 
 const MAX_RETRIES = 2;
 
 export interface RunnerSignInNavigationOptions {
-  readonly noResponseTimeoutMs: number;
+  readonly idleTimeoutMs: number;
   readonly timeoutMs: number;
 }
 
@@ -21,48 +24,47 @@ export async function navigateToRunnerSignIn(
   url: string,
   options: RunnerSignInNavigationOptions,
   beforeRetry: (attempt: number) => Promise<void>,
-  responseHeaders: () => ReadonlyMap<string, number> | undefined,
+  transferActivity: () => ReadonlyMap<string, TransferActivity> | undefined,
+  afterRetry: () => Promise<void>,
 ): Promise<void> {
   const deadline = performance.now() + options.timeoutMs;
   const origin = new URL(url).origin;
-  const pending = new Map<Request, { started: number; responded: boolean }>();
+  const pending = new Set<Request>();
   let committed = false;
   let failed = false;
   let crashed = false;
   let lastTimeout = new errors.TimeoutError(
     "Runner sign-in navigation exceeded its shared deadline",
   );
-  const observeHeaders = () => {
-    const headers = responseHeaders();
-    if (!headers) return false;
-    for (const [request, observation] of pending) {
-      const status = headers.get(safeNetworkUrl(request.url()));
-      if (status !== undefined) {
-        observation.responded = true;
-        if (status >= 400) failed = true;
-      }
+  const observeActivity = () => {
+    const activity = transferActivity();
+    if (!activity) return undefined;
+    const transfers: TransferActivity[] = [];
+    for (const request of pending) {
+      const progress = activity.get(safeNetworkUrl(request.url()));
+      if (!progress) return undefined;
+      if (progress.failed) failed = true;
+      if (progress.pending) transfers.push(progress);
     }
-    return true;
+    return transfers;
   };
   const onRequest = (request: Request) => {
     const target = new URL(request.url());
     if (request.method() !== "GET" || target.origin !== origin) return;
     const document =
       request.isNavigationRequest() && request.frame() === page.mainFrame();
-    const applicationScript =
-      request.resourceType() === "script" &&
+    const applicationAsset =
+      (request.resourceType() === "script" ||
+        request.resourceType() === "stylesheet") &&
       target.pathname.startsWith("/okou-app/assets/") &&
-      target.pathname.endsWith(".js");
-    if (document || applicationScript) {
-      pending.set(request, { started: performance.now(), responded: false });
+      /\.(?:js|css)$/u.test(target.pathname);
+    if (document || applicationAsset) {
+      pending.add(request);
     }
   };
   const onResponse = (response: Response) => {
-    const request = pending.get(response.request());
-    if (request) {
-      request.responded = true;
-      if (response.status() >= 400) failed = true;
-    }
+    if (pending.has(response.request()) && response.status() >= 400)
+      failed = true;
   };
   const onFinished = (request: Request) => pending.delete(request);
   const onFailed = (request: Request) => {
@@ -87,19 +89,19 @@ export async function navigateToRunnerSignIn(
       failed = false;
       let navigate = true;
       for (;;) {
-        const headersAvailable = observeHeaders();
+        const transfers = observeActivity();
         const now = performance.now();
         const remaining = deadline - now;
         if (remaining <= 0) throw lastTimeout;
-        const responseDeadline = Math.min(
-          now + options.noResponseTimeoutMs,
-          ...[...pending.values()]
-            .filter((request) => !request.responded)
-            .map((request) => request.started + options.noResponseTimeoutMs),
+        const untilIdle = Math.min(
+          options.idleTimeoutMs,
+          ...(transfers ?? []).map(
+            (transfer) => options.idleTimeoutMs - transfer.idleMs,
+          ),
         );
         const timeout =
-          attempt <= MAX_RETRIES && !failed && headersAvailable
-            ? Math.max(1, Math.min(remaining, responseDeadline - now))
+          attempt <= MAX_RETRIES && !failed && transfers
+            ? Math.max(1, Math.min(remaining, untilIdle))
             : Math.max(1, remaining);
         try {
           if (navigate) {
@@ -120,26 +122,45 @@ export async function navigateToRunnerSignIn(
         } catch (error: unknown) {
           if (!(error instanceof errors.TimeoutError)) throw error;
           lastTimeout = error;
-          const headersAvailable = observeHeaders();
+          const transfers = observeActivity();
           const expired = performance.now();
           if (expired >= deadline || failed || crashed || page.isClosed()) {
             throw error;
           }
-          const stalled = [...pending.values()].some(
-            (request) =>
-              !request.responded &&
-              expired - request.started >= options.noResponseTimeoutMs,
+          const stalled = transfers?.some(
+            (transfer) => transfer.idleMs >= options.idleTimeoutMs,
           );
-          if (stalled && headersAvailable && attempt <= MAX_RETRIES) {
+          if (stalled && attempt <= MAX_RETRIES) {
             // Preserve evidence before cancelling the stalled load. Commit a
             // local blank document first so the previous navigation cannot
             // abort the next same-URL goto. Every browser wait is awaited.
             await beforeRetry(attempt);
             if (performance.now() >= deadline) throw error;
+            const current = observeActivity();
+            if (failed || crashed || page.isClosed()) throw error;
+            // Diagnostic capture can take time. Do not replace a load that
+            // completed or resumed progress while its snapshot was written.
+            if (committed) {
+              try {
+                await page.waitForLoadState("domcontentloaded", { timeout: 1 });
+                return;
+              } catch (readyError: unknown) {
+                if (!(readyError instanceof errors.TimeoutError))
+                  throw readyError;
+              }
+            }
+            if (
+              !current?.some(
+                (transfer) => transfer.idleMs >= options.idleTimeoutMs,
+              )
+            ) {
+              continue;
+            }
             await page.goto("about:blank", {
               waitUntil: "commit",
               timeout: Math.max(1, deadline - performance.now()),
             });
+            await afterRetry();
             break;
           }
         }
