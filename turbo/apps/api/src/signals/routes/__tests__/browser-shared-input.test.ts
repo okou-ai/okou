@@ -414,21 +414,43 @@ describe("shared-window native Browser input", () => {
           },
         ),
       );
-      const application = client().apply({
-        headers,
-        params,
-        body: { values: [{ key: "entry", value: "private-retired-value" }] },
-      });
-      await entered.promise;
-      const retirement = await settleIncludingAbort(
-        s.a.request({ kind: "retire", ...s.aWindow, reason: "closed" }),
+      const application = settleIncludingAbort(
+        accept(
+          client().apply({
+            headers,
+            params,
+            body: {
+              values: [{ key: "entry", value: "private-retired-value" }],
+            },
+          }),
+          [200],
+        ),
       );
-      release.resolve();
+      const retirement = await settleIncludingAbort(async () => {
+        await Promise.race([
+          entered.promise,
+          application.then((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            throw new Error("The apply never reached its provider read");
+          }),
+        ]);
+        accepted(
+          await s.a.request({ kind: "retire", ...s.aWindow, reason: "closed" }),
+        );
+      });
+      if (!release.settled()) {
+        release.resolve();
+      }
+      const completed = await application;
       if (!retirement.ok) {
         throw retirement.error;
       }
-      accepted(retirement.value);
-      expect((await accept(application, [200])).body.state).toBe("stale");
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      expect(completed.value.body.state).toBe("stale");
       expect(s.state.writes).toBe(0);
       expect(s.state.values.size).toBe(0);
     });
