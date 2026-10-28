@@ -1,8 +1,5 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import {
-  getFeatureSwitchMetadata,
-  isFeatureSwitchAvailable,
-} from "@okouai/core/feature-switch";
+import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -94,12 +91,7 @@ test("Lab groups active feature switches", async () => {
     alpha: "Alpha",
     internal: "Internal",
   } as const;
-  const keys = Object.values(FeatureSwitchKey).filter((key) => {
-    return isFeatureSwitchAvailable(key, {
-      userId: "data-rollout-lab-user",
-      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-    });
-  });
+  const keys = Object.values(FeatureSwitchKey);
   for (const key of keys) {
     const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
     expect(
@@ -117,8 +109,15 @@ test("Lab groups active feature switches", async () => {
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
   expect(
-    screen.queryByText("Auto-continue busy chats"),
-  ).not.toBeInTheDocument();
+    within(featureSwitchGroup("Internal")).getByText(
+      "Auto-continue busy chats",
+    ),
+  ).toBeVisible();
+  expect(
+    within(featureSwitchRow(FeatureSwitchKey.AutoContinueBusyChats)).getByRole(
+      "switch",
+    ),
+  ).toHaveAttribute("aria-checked", "false");
 });
 
 test("Bingjie can turn automatic busy recovery off in Lab", async () => {

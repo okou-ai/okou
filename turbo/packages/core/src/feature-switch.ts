@@ -433,7 +433,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Continue chats interrupted by a busy model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
     enabled: false,
     enabledUserHashes: ["032a75d8"],
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",

@@ -222,7 +222,7 @@ describe("Automatic continuation after a busy model", () => {
     await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
   });
 
-  it("cannot be enabled by another user even with an explicit override", async () => {
+  it("stays off for other users until they explicitly opt in", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({
       context,
@@ -230,14 +230,18 @@ describe("Automatic continuation after a busy model", () => {
       isolatePg: true,
     });
     const fixture = await setupFixture(`user_${randomUUID()}`);
-    const response = await setEnabled(fixture.actor, true);
-    expect(
-      response.body.effectiveSwitches[FeatureSwitchKey.AutoContinueBusyChats],
-    ).toBeFalsy();
     const threadId = await fixture.send();
     await fixture.fail(await latestRun(fixture, threadId));
     await fixture.tick(60_000);
     await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
+    const response = await setEnabled(fixture.actor, true);
+    expect(
+      response.body.effectiveSwitches[FeatureSwitchKey.AutoContinueBusyChats],
+    ).toBeTruthy();
+    const another = await fixture.send();
+    await fixture.fail(await latestRun(fixture, another));
+    await fixture.tick(60_000);
+    await expect(fixture.runs(another)).resolves.toHaveLength(2);
   });
 
   it.each([
