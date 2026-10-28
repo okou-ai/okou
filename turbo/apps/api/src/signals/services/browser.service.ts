@@ -558,6 +558,22 @@ interface ActiveBrowserInstance {
   readonly userId: string;
 }
 
+// Shared ownership persists across instance stops; legacy writers and
+// retention must not reclaim that owner's chat snapshots after cutover.
+function uncutBrowserOwner() {
+  return notExists(
+    new QueryBuilder()
+      .select({ id: browserOwnerProfiles.id })
+      .from(browserOwnerProfiles)
+      .where(
+        and(
+          eq(browserOwnerProfiles.orgId, browserSessions.orgId),
+          eq(browserOwnerProfiles.userId, browserSessions.userId),
+        ),
+      ),
+  );
+}
+
 const saveBrowserTabSnapshot$ = command(
   async (
     { set },
@@ -588,20 +604,60 @@ const saveBrowserTabSnapshot$ = command(
           { userId: target.userId },
         );
         signal.throwIfAborted();
-        await db
-          .insert(browserSessionTabSnapshots)
-          .values({
-            chatThreadId: target.chatThreadId,
-            encryptedTabUrls,
-            ownerProfileId: null,
+        const t = browserSessionTabSnapshots;
+        const savedAt = nowDate();
+        // Provider/KMS work may outlive legacy retirement and shared cutover.
+        // Recheck the exact instance in both insertion and conflict publication.
+        const currentInstance = new QueryBuilder()
+          .select({ chatThreadId: browserSessions.chatThreadId })
+          .from(browserSessionInstances)
+          .innerJoin(
+            browserSessions,
+            eq(
+              browserSessions.chatThreadId,
+              browserSessionInstances.chatThreadId,
+            ),
+          )
+          .where(
+            and(
+              eq(
+                browserSessionInstances.providerSessionId,
+                target.providerSessionId,
+              ),
+              eq(browserSessionInstances.status, "active"),
+              eq(browserSessions.chatThreadId, target.chatThreadId),
+              eq(browserSessions.orgId, target.orgId),
+              eq(browserSessions.userId, target.userId),
+              eq(browserSessions.status, "active"),
+              uncutBrowserOwner(),
+            ),
+          );
+        const source = new QueryBuilder()
+          .select({
+            chatThreadId: sql`${target.chatThreadId}::uuid`
+              .mapWith(t.chatThreadId)
+              .as("chat_thread_id"),
+            encryptedTabUrls: sql`${encryptedTabUrls}::text`
+              .mapWith(t.encryptedTabUrls)
+              .as("encrypted_tab_urls"),
+            createdAt: sql`${sql.param(savedAt, t.createdAt)}::timestamp`
+              .mapWith(t.createdAt)
+              .as("created_at"),
+            updatedAt: sql`${sql.param(savedAt, t.updatedAt)}::timestamp`
+              .mapWith(t.updatedAt)
+              .as("updated_at"),
           })
+          .from(currentInstance.as("current_instance"));
+        await db
+          .insert(t)
+          .select(source)
           .onConflictDoUpdate({
-            target: browserSessionTabSnapshots.chatThreadId,
+            target: t.chatThreadId,
             set: {
               encryptedTabUrls,
-              ownerProfileId: null,
-              updatedAt: nowDate(),
+              updatedAt: savedAt,
             },
+            setWhere: exists(currentInstance),
           });
         signal.throwIfAborted();
       })(),
@@ -3390,6 +3446,7 @@ const claimExpiredInactiveBrowser$ = command(
             eq(browserSessions.status, target.status),
             eq(browserSessions.updatedAt, target.updatedAt),
             lte(browserSessions.updatedAt, cutoff),
+            uncutBrowserOwner(),
             target.providerProfileId === null
               ? notExists(
                   tx
@@ -3712,6 +3769,7 @@ const reconcileExpiredInactiveBrowsers$ = command(
         and(
           inArray(browserSessions.status, [...INACTIVE_BROWSER_STATUSES]),
           lte(browserSessions.updatedAt, cutoff),
+          uncutBrowserOwner(),
           notExists(
             db
               .select({

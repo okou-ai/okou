@@ -74,7 +74,15 @@ export function createRunnerBrowserFixtures(context: TestContext) {
       }),
       http.patch(`${PROVIDER_URL}/browsers/:id`, ({ params }) => {
         sessionIds.delete(String(params.id));
-        return new HttpResponse(null, { status: 204 });
+        return HttpResponse.json({
+          id: String(params.id),
+          status: "stopped",
+          startedAt: new Date(START).toISOString(),
+          timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+          finishedAt: new Date(START).toISOString(),
+          liveUrl: null,
+          cdpUrl: null,
+        });
       }),
       http.get(`${PROVIDER_URL}/browsers/:id`, ({ params }) => {
         if (!sessionIds.has(String(params.id))) {

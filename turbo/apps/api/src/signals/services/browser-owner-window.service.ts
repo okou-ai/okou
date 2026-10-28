@@ -147,13 +147,7 @@ export const createBrowserOwnerWindow$ = command(
       .from(browserOwnerProfiles)
       .leftJoin(
         browserSessionTabSnapshots,
-        and(
-          eq(browserSessionTabSnapshots.chatThreadId, input.owner.chatThreadId),
-          eq(
-            browserSessionTabSnapshots.ownerProfileId,
-            browserOwnerProfiles.id,
-          ),
-        ),
+        eq(browserSessionTabSnapshots.chatThreadId, input.owner.chatThreadId),
       )
       .where(
         and(

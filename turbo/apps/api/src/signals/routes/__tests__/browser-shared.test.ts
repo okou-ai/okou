@@ -6,12 +6,14 @@ import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -103,6 +105,182 @@ function nativeCommands(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("shared Browser public consumers", () => {
+  it("adopts legacy chat URLs after shared cutover", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
+    const f = await fixture(false);
+    await f.owned.run(async () => {
+      nativeCommands(f);
+      const a = await f.start();
+      const b = await f.start();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      await use(a);
+      for (const page of f.provider.native.targets.values()) {
+        page.url = "https://a.example.test/legacy-saved";
+      }
+      // B reclaims A through ordinary Browser capacity admission.
+      await use(b);
+      await flushWaitUntilForTest();
+      await createChatFilesBddApi(context).deleteThread(
+        f.owned.actor,
+        b.threadId,
+      );
+      await flushWaitUntilForTest();
+      f.provider.native.targets.clear();
+      f.owned.ownsFeatureSwitches();
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+      });
+      const reopened = await use(a);
+      expect(reopened.browser.window).toBeDefined();
+      const urls = [...f.provider.native.targets.values()]
+        .filter((page) => {
+          return page.windowId === reopened.browser.window?.primaryWindowId;
+        })
+        .map((page) => {
+          return page.url;
+        });
+      expect(urls).toStrictEqual(["https://a.example.test/legacy-saved"]);
+    });
+  });
+
+  it.each(["legacy", "shared"] as const)(
+    "rejects a legacy URL capture finishing after %s replacement",
+    async (replacement) => {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
+      const f = await fixture(false);
+      await f.owned.run(async () => {
+        nativeCommands(f);
+        const a = await f.start();
+        const b = await f.start();
+        const c = await f.start();
+        mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+        await use(a);
+        for (const page of f.provider.native.targets.values()) {
+          page.url = "https://a.example.test/older";
+        }
+        // Reclamation must preserve URLs even if the requesting Browser's
+        // subsequent provider start fails. Both requests independently own A's
+        // capture; only the first request is held at external KMS.
+        let rejectSessionStarts = true;
+        server.use(
+          http.post(`${PROVIDER_URL}/browsers`, () => {
+            if (rejectSessionStarts) {
+              return HttpResponse.json(
+                { detail: "Provider temporarily unavailable" },
+                { status: 503 },
+              );
+            }
+            return;
+          }),
+        );
+        const kms = holdSecretKms(1, context.signal);
+        const earlier = settleIncludingAbort(
+          client().use({ headers: runHeaders(b), body: {} }),
+        );
+        const replaced = await settleIncludingAbort(async () => {
+          await Promise.race([
+            kms.entered,
+            earlier.then((result) => {
+              if (!result.ok) {
+                throw result.error;
+              }
+              throw new Error(
+                "Expected the legacy capture to reach encryption",
+              );
+            }),
+          ]);
+          for (const page of f.provider.native.targets.values()) {
+            page.url = "https://a.example.test/newer";
+          }
+          const failedStart = await client().use({
+            headers: runHeaders(c),
+            body: {},
+          });
+          expect(failedStart).toMatchObject({
+            status: 502,
+            body: { error: { code: "BROWSER_USE_ERROR" } },
+          });
+          await flushWaitUntilForTest();
+          f.provider.native.targets.clear();
+          if (replacement === "shared") {
+            f.owned.ownsFeatureSwitches();
+            await updateFeatureSwitchesForUser(context, f.featureActor, {
+              [FeatureSwitchKey.BrowserSharedOwner]: true,
+            });
+          }
+          rejectSessionStarts = false;
+          const current = await use(a);
+          if (replacement === "shared") {
+            await accept(
+              client().close({
+                headers,
+                params: { threadId: a.threadId },
+                body: {},
+              }),
+              [200],
+            );
+          }
+          return current.browser.window;
+        });
+        rejectSessionStarts = true;
+        kms.release();
+        const completed = await earlier;
+        if (!replaced.ok) {
+          throw replaced.error;
+        }
+        if (!completed.ok) {
+          throw completed.error;
+        }
+        expect(completed.value).toMatchObject({
+          status: 502,
+          body: { error: { code: "BROWSER_USE_ERROR" } },
+        });
+        if (replacement === "shared") {
+          const window = replaced.value;
+          if (!window) {
+            throw new Error("Expected the replacement shared window");
+          }
+          accepted(
+            await a.request({ kind: "retire", ...window, reason: "closed" }),
+          );
+          f.provider.native.targets.clear();
+          accepted(await a.request({ kind: "completeWindowClose", ...window }));
+        } else {
+          const [providerSessionId] = f.provider.sessionIds;
+          if (!providerSessionId) {
+            throw new Error("Expected the replacement legacy instance");
+          }
+          server.use(
+            http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
+              return HttpResponse.json({
+                id: providerSessionId,
+                status: "stopped",
+                startedAt: new Date(START).toISOString(),
+                timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
+                finishedAt: new Date(START + 12 * MINUTE).toISOString(),
+                liveUrl: null,
+                cdpUrl: null,
+              });
+            }),
+          );
+          f.provider.native.targets.clear();
+        }
+        rejectSessionStarts = false;
+        const reopened = await use(a);
+        const urls = [...f.provider.native.targets.values()].map((page) => {
+          return page.url;
+        });
+        expect(urls).toContain("https://a.example.test/newer");
+        expect(urls).not.toContain("https://a.example.test/older");
+        if (replacement === "shared") {
+          expect(reopened.browser.window?.primaryWindowId).not.toBe(
+            replaced.value?.primaryWindowId,
+          );
+        }
+      });
+    },
+  );
+
   it("treats a missing provider instance as unavailable while preserving actual provider failures", async () => {
     const f = await fixture();
     await f.owned.run(async () => {

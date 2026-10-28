@@ -10,7 +10,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  ne,
   notExists,
   or,
   sql,
@@ -308,9 +307,6 @@ const saveSharedSnapshot$ = command(
         encryptedTabUrls: sql`${encryptedTabUrls}`
           .mapWith(t.encryptedTabUrls)
           .as("encrypted_tab_urls"),
-        ownerProfileId: sql`${profile.id}::uuid`
-          .mapWith(profiles.id)
-          .as("owner_profile_id"),
         createdAt: sql`${sql.param(capturedAt, t.createdAt)}::timestamp`
           .mapWith(t.createdAt)
           .as("created_at"),
@@ -327,7 +323,6 @@ const saveSharedSnapshot$ = command(
         target: t.chatThreadId,
         set: {
           encryptedTabUrls,
-          ownerProfileId: profile.id,
           updatedAt: publication.updatedAt,
         },
         setWhere: and(
@@ -337,11 +332,7 @@ const saveSharedSnapshot$ = command(
               .from(windows)
               .where(lifetime(owner, profile, window)),
           ),
-          or(
-            isNull(t.ownerProfileId),
-            ne(t.ownerProfileId, profile.id),
-            publication.canReplace,
-          ),
+          publication.canReplace,
         ),
       });
     signal.throwIfAborted();

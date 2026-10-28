@@ -61,6 +61,7 @@ export function createNativeWindowProvider(context: TestContext) {
         const target = {
           targetId: randomUUID().replaceAll("-", ""),
           windowId: state.windowIds.shift() ?? nextWindowId++,
+          url: string().parse(command.params.url),
         };
         nextWindowId = Math.max(nextWindowId, target.windowId + 1);
         state.targets.set(target.targetId, target);
