@@ -910,15 +910,16 @@ pub async fn try_reuse_from_pool(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
     let started_at = Instant::now();
-    let claimed_home_cache_reuse_key = home_source_run_id.is_some()
-        || crate::home_selection::prefer_home(
-            ctx.home_cache,
-            ctx.home_cache_snapshot,
-            reuse_key,
-            profile_name,
-            u64::from(home_disk_mb) * 1024 * 1024,
-        )
-        .await;
+    let claimed_home_cache_reuse_key = exact.is_none()
+        && (home_source_run_id.is_some()
+            || crate::home_selection::prefer_home(
+                ctx.home_cache,
+                ctx.home_cache_snapshot,
+                reuse_key,
+                profile_name,
+                u64::from(home_disk_mb) * 1024 * 1024,
+            )
+            .await);
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
     let (taken, blank_pool_selection) = match exact {
         Some(exact) => (Some(exact), None),
