@@ -216,14 +216,21 @@ async fn exact_service_realm_case_and_malformed_encoded_tickets_refuse_before_to
     assert_eq!(fs::read_dir(path).unwrap().count(), 0);
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 #[ignore = "requires supported native Linux namespace/Landlock runtime; strict matrix job"]
 async fn cancellation_while_authority_is_pending_reaps_even_when_context_survives() {
     use kerberos_worker::KdcExchange;
+    use rustix::{
+        event::{PollFd, PollFlags, poll},
+        process::{Pid, PidfdFlags, pidfd_open},
+    };
+    use tokio::sync::oneshot;
     use zeroize::Zeroizing;
-    struct Pending;
+    struct Pending(Option<oneshot::Sender<()>>);
     impl KdcExchange for Pending {
         async fn authorize(&mut self) -> Result<(), Error> {
+            self.0.take().unwrap().send(()).unwrap();
             std::future::pending().await
         }
         async fn exchange(&mut self, _: &str, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
@@ -232,24 +239,115 @@ async fn cancellation_while_authority_is_pending_reaps_even_when_context_survive
     }
     let root = root();
     let path = root.path().canonicalize().unwrap();
+    let (occupied, _) = kerberos_worker::open(
+        &path,
+        credentials("fixture"),
+        policy(),
+        Instant::now() + Duration::from_secs(30),
+        &mut NoKdc,
+    )
+    .await
+    .unwrap();
+    let occupied_pid = Pid::from_raw(i32::try_from(occupied.process_id()).unwrap()).unwrap();
+    let occupied_pidfd = pidfd_open(occupied_pid, PidfdFlags::empty()).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
     let (mut context, _) = kerberos_worker::open(
         &path,
         credentials("fixture"),
         policy(),
-        Instant::now() + Duration::from_secs(10),
+        deadline,
         &mut NoKdc,
     )
     .await
     .unwrap();
     let id = context.process_id();
-    assert!(
-        tokio::time::timeout(Duration::from_millis(20), context.step(None, &mut Pending))
+    let pid = Pid::from_raw(i32::try_from(id).unwrap()).unwrap();
+    let pidfd = pidfd_open(pid, PidfdFlags::empty()).unwrap();
+    // A separate early bound prevents the normal deadline from satisfying reap.
+    let observation_deadline =
+        (Instant::now() + Duration::from_secs(2)).min(deadline - Duration::from_secs(1));
+    let mut replacement = None;
+    let observed: Result<(), String> = async {
+        let (entered_tx, entered_rx) = oneshot::channel();
+        let mut caller = Pending(Some(entered_tx));
+        let mut operation = Box::pin(context.step(None, &mut caller));
+        tokio::select! {
+            result = &mut operation => return Err(format!("step completed before cancellation: {result:?}")),
+            entered = tokio::time::timeout_at(observation_deadline, entered_rx) => {
+                entered.map_err(|_| "authorization callback was not entered")?
+                    .map_err(|_| "authorization callback notification was dropped")?;
+            }
+        }
+        // Drop only the operation, retaining Context throughout every observation.
+        drop(operation);
+        let reaped = tokio::task::spawn_blocking(move || {
+            // Empty interests wait for HUP (reap), not IN (exit/zombie).
+            let mut events = [PollFd::new(&pidfd, PollFlags::empty())];
+            loop {
+                let timeout = observation_deadline
+                    .into_std()
+                    .saturating_duration_since(std::time::Instant::now())
+                    .try_into()
+                    .unwrap();
+                match poll(&mut events, Some(&timeout)) {
+                    Err(rustix::io::Errno::INTR) => continue,
+                    result => {
+                        return result.map(|ready| {
+                            ready == 1 && events[0].revents().contains(PollFlags::HUP)
+                        });
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|error| format!("reap observer failed: {error}"))?
+        .map_err(|error| format!("pidfd poll failed: {error}"))?;
+        if !reaped || Instant::now() >= observation_deadline {
+            return Err("cancelled worker was not reaped before the early observation bound".into());
+        }
+        if Path::new(&format!("/proc/{id}")).exists()
+            || fs::read_dir(&path)
+                .map_err(|error| format!("resource observation failed: {error}"))?
+                .next()
+                .is_some()
+        {
+            return Err("cancelled worker retained its process or private resources".into());
+        }
+        replacement = Some(
+            kerberos_worker::open(
+                &path,
+                credentials("fixture"),
+                policy(),
+                deadline - Duration::from_secs(1),
+                &mut NoKdc,
+            )
             .await
-            .is_err()
-    );
-    // Keep Context alive: dropping only the operation must still abort actual native work.
-    context.close().await.unwrap();
-    assert!(!std::path::Path::new(&format!("/proc/{id}")).exists());
+            .map_err(|error| format!("cancelled worker did not release capacity: {error:?}"))?
+            .0,
+        );
+        let mut events = [PollFd::new(&occupied_pidfd, PollFlags::IN)];
+        let no_wait = Duration::ZERO.try_into().unwrap();
+        let occupied_ready = loop {
+            match poll(&mut events, Some(&no_wait)) {
+                Err(rustix::io::Errno::INTR) => continue,
+                result => break result.map_err(|error| format!("blocker poll failed: {error}"))?,
+            }
+        };
+        if occupied_ready != 0 || Instant::now() >= deadline {
+            return Err("replacement was not admitted before expiry with the blocker alive".into());
+        }
+        Ok(())
+    }
+    .await;
+    // Save failure before defensive close: close itself must not satisfy the test.
+    let cancelled_cleanup = context.close().await;
+    let occupied_cleanup = occupied.close().await;
+    if let Some(replacement) = replacement {
+        replacement.close().await.unwrap();
+    }
+    cancelled_cleanup.unwrap();
+    occupied_cleanup.unwrap();
+    observed.unwrap();
     assert_eq!(fs::read_dir(path).unwrap().count(), 0);
 }
 
