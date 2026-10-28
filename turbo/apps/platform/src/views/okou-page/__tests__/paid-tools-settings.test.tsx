@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { state } from "ccstate";
+import { DATA_ROUTER_PROTOCOL_VERSION } from "@okouai/api-contracts/contracts/data-router-tools";
 import {
   paidToolsContract,
   type PaidToolId,
@@ -181,11 +182,28 @@ test("Advanced data research saves independently and retains preferences across 
   ]);
 });
 
+/** Router serves only anonymous, stateless 2026-07-28 requests with JSON responses. */
+async function readRouterMessage(request: Request) {
+  expect(request.headers.get("authorization")).toBeNull();
+  expect(request.headers.get("accept")).toBe("application/json");
+  expect(request.headers.get("mcp-protocol-version")).toBe(
+    DATA_ROUTER_PROTOCOL_VERSION,
+  );
+  expect(request.headers.get("mcp-method")).toBe("tools/list");
+  const message = (await request.json()) as {
+    id: unknown;
+    params: { cursor?: string; _meta: Record<string, unknown> };
+  };
+  expect(message.params._meta).toMatchObject({
+    "io.modelcontextprotocol/protocolVersion": DATA_ROUTER_PROTOCOL_VERSION,
+  });
+  return message;
+}
+
 function mockDataRouter(result: unknown, status = 200) {
   for (const url of DATA_ROUTER_URLS) {
     context.mocks.http.post(url, async ({ request }) => {
-      expect(request.headers.get("authorization")).toBeNull();
-      const message = (await request.json()) as { id: unknown };
+      const message = await readRouterMessage(request);
       return status === 200
         ? HttpResponse.json({ jsonrpc: "2.0", id: message.id, result })
         : HttpResponse.json({ error: "Unavailable" }, { status });
@@ -268,11 +286,8 @@ test.each([
     let holdNextResponse = true;
     for (const url of DATA_ROUTER_URLS) {
       context.mocks.http.post(url, async ({ request }) => {
-        const message = (await request.json()) as {
-          id: unknown;
-          params?: { cursor?: string };
-        };
-        const cursor = message.params?.cursor;
+        const message = await readRouterMessage(request);
+        const cursor = message.params.cursor;
         const title = cursor ?? catalog;
         const result = cursor
           ? {
