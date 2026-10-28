@@ -67,11 +67,6 @@
       "owner": "startRunBuiltInAdmission$"
     },
     {
-      "id": "TX-0247",
-      "file": "turbo/apps/api/src/signals/services/slack-installation-write.service.ts",
-      "owner": "commitSlackInstallation$"
-    },
-    {
       "id": "TX-0248",
       "file": "turbo/apps/api/src/signals/services/slack-workspace-write.service.ts",
       "owner": "commitSlackWorkspaceConnection$"
