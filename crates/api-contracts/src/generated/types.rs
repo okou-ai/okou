@@ -3527,6 +3527,9 @@ pub mod webhooks {
                 /// The provider returned a server error.
                 #[serde(rename = "provider_server_error")]
                 ProviderServerError,
+                /// Codex returned an opaque HTTP 400 with no more specific cause.
+                #[serde(rename = "provider_bad_request")]
+                ProviderBadRequest,
                 /// The response connection was lost.
                 #[serde(rename = "response_connection_lost")]
                 ResponseConnectionLost,

@@ -23,6 +23,7 @@ import cyberSafetyRefusal from "./test/fixtures/codex-cyber-safety-refusal.json"
 import requestProcessingError from "./test/fixtures/codex-request-processing-error.json";
 import { piModelFailureReason } from "./model-request-diagnostics";
 import { normalizeContext } from "@earendil-works/pi-ai";
+import { retryAssistantCall } from "@earendil-works/pi-ai/utils/retry";
 
 const route = {
   provider: "openai-codex",
@@ -112,6 +113,137 @@ function successResponse(text?: string) {
 }
 
 describe("Codex model request diagnostics", () => {
+  it.each(["result", "iterator"] as const)(
+    "classifies an opaque HTTP 400 through %s without changing the error or retrying",
+    async (consumption) => {
+      const error = '{"detail":"Bad Request"}';
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests++;
+          return new HttpResponse(error, {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          });
+        }),
+      );
+
+      const result = await retryAssistantCall(
+        async () => {
+          const response = stream();
+          if (consumption === "result") return response.result();
+          for await (const event of response) {
+            if (event.type === "error") return event.error;
+          }
+          throw new Error("Expected the failed Codex model result");
+        },
+        { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+        undefined,
+      );
+
+      expect(result.stopReason).toBe("error");
+      expect(result.errorMessage).toBe(error);
+      expect(piModelFailureReason(result)).toBe("provider_bad_request");
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          type: "okou_model_request",
+          details: {
+            httpStatus: 400,
+            transportAttempts: 1,
+            failureReason: "provider_bad_request",
+          },
+        }),
+      );
+      expect(requests).toBe(1);
+    },
+  );
+
+  it.each([
+    {
+      evidence: "the non-400 status",
+      status: 401,
+      body: { detail: "Bad Request" },
+      reason: undefined,
+    },
+    {
+      evidence: "additional provider response fields",
+      status: 400,
+      body: { detail: "Bad Request", param: "input" },
+      reason: undefined,
+    },
+    {
+      evidence: "a structured error containing quoted JSON",
+      status: 400,
+      body: {
+        error: {
+          type: "invalid_request_error",
+          message: '{"detail":"Bad Request"}',
+        },
+      },
+      reason: undefined,
+    },
+    {
+      evidence: "the specific context error code",
+      status: 400,
+      body: {
+        detail: "Bad Request",
+        error: { code: "context_length_exceeded", message: "Prompt too long" },
+      },
+      reason: "context_window_exceeded",
+    },
+  ])("preserves $evidence", async ({ status, body, reason }) => {
+    server.use(
+      http.post(endpoint, () => {
+        return HttpResponse.json(body, { status });
+      }),
+    );
+    const result = await stream().result();
+    expect(result.stopReason).toBe("error");
+    expect(piModelFailureReason(result)).toBe(reason);
+  });
+
+  it("requires the Codex adapter for the opaque HTTP 400 classification", async () => {
+    const publicRoute = {
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      apiKey: "synthetic-token",
+      dialect: "openai-responses",
+      transport: "sse",
+    } as const;
+    server.use(
+      http.post("https://openrouter.ai/api/v1/responses", () => {
+        return HttpResponse.json({ detail: "Bad Request" }, { status: 400 });
+      }),
+    );
+    const model = resolvePiAgentModel(publicRoute);
+    if (!model) throw new Error("Public Responses model is required");
+    const result = await piAgentStreamForConfig(publicRoute)(
+      model,
+      normalizeContext({
+        messages: [{ role: "user", content: "hello", timestamp: 1 }],
+      }),
+      { apiKey: publicRoute.apiKey },
+    ).result();
+
+    expect(result.stopReason).toBe("error");
+    expect(piModelFailureReason(result)).toBeUndefined();
+  });
+
+  it("keeps the same JSON in a successful answer as ordinary content", async () => {
+    const text = '{"detail":"Bad Request"}';
+    server.use(
+      http.post(endpoint, () => {
+        return successResponse(text);
+      }),
+    );
+    const result = await stream().result();
+    expect(result.stopReason).toBe("stop");
+    expect(result.content).toMatchObject([{ type: "text", text }]);
+    expect(piModelFailureReason(result)).toBeUndefined();
+  });
+
   it("preserves a top-level provider message before the SDK renders HTTP 503", async () => {
     server.use(
       http.post(endpoint, () => {

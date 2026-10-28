@@ -637,6 +637,9 @@ export const rustTypeBindings = [
             "The provider expired the request before processing started.",
           ],
           provider_server_error: ["The provider returned a server error."],
+          provider_bad_request: [
+            "Codex returned an opaque HTTP 400 with no more specific cause.",
+          ],
           response_connection_lost: ["The response connection was lost."],
           safety_policy_refusal: ["The provider refused for safety policy."],
           reconnect_required: ["The CLI requires reconnecting."],
