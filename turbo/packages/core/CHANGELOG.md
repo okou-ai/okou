@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.796.0](https://github.com/okou-ai/okou/compare/core-v8.795.1...core-v8.796.0) (2026-10-28)
+
+
+### Features
+
+* **app:** add gated date separators to chat threads ([#43646](https://github.com/okou-ai/okou/issues/43646)) ([5a0449a](https://github.com/okou-ai/okou/commit/5a0449a28f270e0d4101a0c862bf003830e40987))
+
 ## [8.795.1](https://github.com/okou-ai/okou/compare/core-v8.795.0...core-v8.795.1) (2026-10-28)
 
 
