@@ -299,7 +299,7 @@ test("a reopened chat shows the catalog title and copies the current site addres
 });
 
 test.each([false, true])(
-  "legacy websites keep their share link without URL customization (sidebar=%s)",
+  "Share directly copies legacy website links without URL customization (sidebar=%s)",
   async (sidebar) => {
     const clipboard = context.mocks.browser.clipboardWriteText();
     const preview = await setupHostedSite(
@@ -315,20 +315,12 @@ test.each([false, true])(
       expect(buttonNamed(shareLabel, preview)).toBeEnabled();
     });
     click(buttonNamed(shareLabel, preview));
-    const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
-    await waitFor(() => {
-      expect(
-        siteAddress(shareMenu, "legacy-site.sites.vm0.io"),
-      ).toBeInTheDocument();
-    });
+    await screen.findByText("Link copied");
+    expect(clipboard.writes).toStrictEqual([
+      "https://legacy-site.sites.vm0.io",
+    ]);
     expect(
-      queryAllByRoleFast("button", shareMenu).find((button) => {
-        return button.textContent?.trim() === "Customize URL";
-      }),
-    ).toBeUndefined();
-    click(buttonNamed("Copy link", shareMenu));
-    await waitFor(() => {
-      expect(clipboard.writes.at(-1)).toBe("https://legacy-site.sites.vm0.io");
-    });
+      screen.queryByRole("dialog", { name: shareLabel }),
+    ).not.toBeInTheDocument();
   },
 );
