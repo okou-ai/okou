@@ -7,9 +7,10 @@ import { withCleanup } from "../utils.ts";
 export interface WorkspaceInvitation {
   readonly id: string;
   readonly publicOrganizationData: {
-    readonly id?: string;
+    readonly id: string;
     readonly name: string;
     readonly imageUrl: string;
+    readonly hasImage: boolean;
   };
   readonly accept: () => Promise<unknown>;
 }
