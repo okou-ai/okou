@@ -74,7 +74,8 @@ import {
 import {
   assistantErrorEventInsertSql,
   assistantErrorEventType,
-  chatEventInsertSql,
+  runLifecycleMarkerEventType,
+  runLifecycleMarkerInsertSql,
   integrationCompletionFallbackInsertSql,
 } from "./chat-event.service";
 import type {
@@ -1092,7 +1093,6 @@ const insertAssistantErrorEvent$ = command(
 type ChatCallbackTransaction = Db | Tx;
 
 interface RunLifecycleMarkerArgs {
-  readonly db: Db;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -1258,106 +1258,45 @@ async function registerRunLifecycleDeliveryCallbacks(
   };
 }
 
-export async function insertRunLifecycleMarkerProjection(args: {
-  readonly tx: ChatCallbackTransaction;
-  readonly input: RunLifecycleMarkerArgs;
-  readonly markerCreatedAt: Date;
-}): Promise<
-  (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
-> {
-  const { input } = args;
-  const canonicalDatabase = args.tx;
-  const canonicalRunId = input.runId;
-  const canonicalReadEnabled = hasExternalNotificationDeliveryChannel(input);
-  let deliveryEvent = await (async () => {
-    if (!canonicalReadEnabled) {
-      return undefined;
-    }
-    const plan = canonicalDeliveryEventReadPlan(canonicalRunId);
-    const query = canonicalDatabase.select(plan.columns).from(chatEvents);
-    const [event] = await query
-      .where(plan.condition)
-      .orderBy(plan.order)
-      .limit(plan.limit);
-    return event;
-  })();
-  if (!deliveryEvent && requiresIntegrationCompletionFallback(input)) {
-    const fallbackDatabase = args.tx;
-    const fallbackInput = {
-      runId: input.runId,
-      threadId: input.threadId,
-      createdAt: args.markerCreatedAt,
-    };
-    deliveryEvent = await (async () => {
-      const eventId = integrationCompletionFallbackEventIdForRun(
-        fallbackInput.runId,
-      );
-      const inserted =
-        parseRawRows(
-          chatEventCommandResultSchema,
-          await fallbackDatabase.execute(
-            integrationCompletionFallbackInsertSql(eventId, fallbackInput),
-          ),
-        )[0] ?? null;
-      if (inserted) {
-        return { id: inserted.id };
-      }
-      const plan = integrationCompletionFallbackReadPlan(eventId);
-      const query = fallbackDatabase.select(plan.columns).from(chatEvents);
-      const [existing] = await query.where(plan.condition).limit(plan.limit);
-      if (!existing) {
-        throw new Error("Failed to persist integration completion fallback");
-      }
-      return existing;
-    })();
-  }
-  const marker =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await args.tx.execute(
-        chatEventInsertSql(
-          {
-            chatThreadId: input.threadId,
-            eventType:
-              input.event === "completed" ? "run.completed" : "run.cancelled",
-            content: null,
-            runId: input.runId,
-            createdAt: args.markerCreatedAt,
-          },
-          "run-lifecycle",
-        ),
-      ),
-    )[0] ?? null;
-  if (
-    !marker &&
-    !(await (async () => {
-      const database = args.tx;
-      const runId = input.runId;
-      const eventType =
-        input.event === "completed" ? "run.completed" : "run.cancelled";
-      const plan = runLifecycleMarkerReadPlan(runId, eventType);
-      const query = database.select(plan.columns).from(chatEvents);
-      const [marker] = await query.where(plan.condition).limit(plan.limit);
-      return marker;
-    })())
-  ) {
-    return null;
-  }
+type RunLifecycleMarkerProjection = RunLifecycleDeliveryCallbacks & {
+  readonly markerInserted: boolean;
+};
+
+function runLifecycleMarkerTouchOptions(
+  args: RunLifecycleMarkerArgs,
+  markerCreatedAt: Date,
+) {
   return {
-    markerInserted: marker !== null,
-    ...(await registerRunLifecycleDeliveryCallbacks(
-      args.tx,
-      input,
-      deliveryEvent,
-      marker !== null,
-    )),
+    touchedAt: markerCreatedAt,
+    orgId: args.orgId,
+    unarchive:
+      args.event === "completed" &&
+      !hasExternalNotificationDeliveryChannel(args),
+    markRead:
+      args.event === "completed" &&
+      hasExternalNotificationDeliveryChannel(args),
+  };
+}
+
+function runLifecycleMarkerResult(inserted: RunLifecycleMarkerProjection): {
+  readonly outcome: "written" | "replayed";
+} & RunLifecycleDeliveryCallbacks {
+  return {
+    outcome: inserted.markerInserted ? "written" : "replayed",
+    slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
+    feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
+    teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
+    discordReply: inserted.discordReply,
+    wechatDeliveryCallbackId: inserted.wechatDeliveryCallbackId,
+    telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
+    agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
   };
 }
 
 const insertRunLifecycleMarker$ = command(
   async (
     { set },
-    args: Omit<RunLifecycleMarkerArgs, "db">,
+    args: RunLifecycleMarkerArgs,
     signal: AbortSignal,
   ): Promise<
     | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
@@ -1367,11 +1306,98 @@ const insertRunLifecycleMarker$ = command(
   > => {
     signal.throwIfAborted();
     const markerCreatedAt = nowDate();
-    const inserted = await insertRunLifecycleMarkerProjection({
-      tx: set(writeDb$),
-      input: { ...args, db: set(writeDb$) },
-      markerCreatedAt,
-    });
+    const tx = set(writeDb$);
+    const input = { ...args };
+    const inserted =
+      await (async (): Promise<RunLifecycleMarkerProjection | null> => {
+        const canonicalDatabase = tx;
+        const canonicalRunId = input.runId;
+        const canonicalReadEnabled =
+          hasExternalNotificationDeliveryChannel(input);
+        let deliveryEvent = await (async () => {
+          if (!canonicalReadEnabled) {
+            return undefined;
+          }
+          const plan = canonicalDeliveryEventReadPlan(canonicalRunId);
+          const query = canonicalDatabase.select(plan.columns).from(chatEvents);
+          const [event] = await query
+            .where(plan.condition)
+            .orderBy(plan.order)
+            .limit(plan.limit);
+          return event;
+        })();
+        if (!deliveryEvent && requiresIntegrationCompletionFallback(input)) {
+          const fallbackDatabase = tx;
+          const fallbackInput = {
+            runId: input.runId,
+            threadId: input.threadId,
+            createdAt: markerCreatedAt,
+          };
+          deliveryEvent = await (async () => {
+            const eventId = integrationCompletionFallbackEventIdForRun(
+              fallbackInput.runId,
+            );
+            const inserted =
+              parseRawRows(
+                chatEventCommandResultSchema,
+                await fallbackDatabase.execute(
+                  integrationCompletionFallbackInsertSql(
+                    eventId,
+                    fallbackInput,
+                  ),
+                ),
+              )[0] ?? null;
+            if (inserted) {
+              return { id: inserted.id };
+            }
+            const plan = integrationCompletionFallbackReadPlan(eventId);
+            const query = fallbackDatabase
+              .select(plan.columns)
+              .from(chatEvents);
+            const [existing] = await query
+              .where(plan.condition)
+              .limit(plan.limit);
+            if (!existing) {
+              throw new Error(
+                "Failed to persist integration completion fallback",
+              );
+            }
+            return existing;
+          })();
+        }
+        const marker =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(
+              runLifecycleMarkerInsertSql(input, markerCreatedAt),
+            ),
+          )[0] ?? null;
+        if (
+          !marker &&
+          !(await (async () => {
+            const database = tx;
+            const runId = input.runId;
+            const eventType = runLifecycleMarkerEventType(input.event);
+            const plan = runLifecycleMarkerReadPlan(runId, eventType);
+            const query = database.select(plan.columns).from(chatEvents);
+            const [marker] = await query
+              .where(plan.condition)
+              .limit(plan.limit);
+            return marker;
+          })())
+        ) {
+          return null;
+        }
+        return {
+          markerInserted: marker !== null,
+          ...(await registerRunLifecycleDeliveryCallbacks(
+            tx,
+            input,
+            deliveryEvent,
+            marker !== null,
+          )),
+        };
+      })();
     signal.throwIfAborted();
     if (!inserted) {
       return { outcome: "duplicate" };
@@ -1383,16 +1409,7 @@ const insertRunLifecycleMarker$ = command(
     await set(
       touchChatThreadLastMessageAtIndependently$,
       args.threadId,
-      {
-        touchedAt: markerCreatedAt,
-        orgId: args.orgId,
-        unarchive:
-          args.event === "completed" &&
-          !hasExternalNotificationDeliveryChannel(args),
-        markRead:
-          args.event === "completed" &&
-          hasExternalNotificationDeliveryChannel(args),
-      },
+      runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
     await publishChatThreadMessageCreatedSafely({
@@ -1406,16 +1423,7 @@ const insertRunLifecycleMarker$ = command(
       orgId: args.orgId,
     });
     signal.throwIfAborted();
-    return {
-      outcome: inserted.markerInserted ? "written" : "replayed",
-      slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
-      feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
-      teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
-      discordReply: inserted.discordReply,
-      wechatDeliveryCallbackId: inserted.wechatDeliveryCallbackId,
-      telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
-      agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
-    };
+    return runLifecycleMarkerResult(inserted);
   },
 );
 
