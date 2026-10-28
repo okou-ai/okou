@@ -1351,9 +1351,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "Enter a URL",
+    "blankPage": {
+      "description": "{{assistantName}} opens pages here as it works. Enter a URL above to browse yourself.",
+      "title": "Nothing open yet"
+    },
+    "blankTabTitle": "New tab",
     "cardTitle": "Cloud browser",
-    "close": "Close live browser",
-    "documentTitle": "Live browser",
+    "close": "Close cloud browser",
+    "documentTitle": "Cloud browser",
     "notFound": "Browser not found",
     "open": "Open {{name}} browser",
     "openAction": "Open",
@@ -1364,6 +1370,13 @@
       "startDescription": "Starting restores the saved login profile and storage when available, and reopens saved tabs when possible.",
       "starting": "Starting…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} is working",
+      "handBack": "Hand back",
+      "handBackMessage": "I'm done in the browser. Please continue.",
+      "memberInControl": "You're in control",
+      "takeOver": "Take over"
+    },
     "reclaimHint_one": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minute.",
     "reclaimHint_other": "{{assistantName}} keeps this browser while this panel is open, and reclaims it after {{formattedCount}} idle minutes.",
     "status": {
@@ -1371,7 +1384,7 @@
       "starting": "Starting",
       "stopped": "Stopped"
     },
-    "title": "Live browser",
+    "title": "Cloud browser",
     "unavailable": {
       "description": "This browser does not belong to this chat or has been removed.",
       "title": "Browser unavailable"
@@ -4000,6 +4013,15 @@
     "previousPage": "Previous sample page",
     "title": "Document",
     "useNamed": "Use {{title}}"
+  },
+  "featureGuide": {
+    "close": "Close feature guide",
+    "dismiss": "Got it",
+    "label": "What's new",
+    "next": "Next",
+    "preview": "Preview",
+    "previous": "Previous",
+    "tryPrompt": "Try this task"
   },
   "global": {
     "errors": {

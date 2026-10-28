@@ -448,7 +448,7 @@ test("Follow suspension and resumption in the live browser panel", async () => {
   click(card);
 
   const sidebar = await screen.findByRole("complementary", {
-    name: "Live browser",
+    name: "Cloud browser",
   });
   expect(sidebar).toBeVisible();
   await expect(
@@ -1747,6 +1747,6 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
   const browserCard = await findButton("Open Research browser");
   click(browserCard);
   await expect(
-    screen.findByRole("complementary", { name: "Live browser" }),
+    screen.findByRole("complementary", { name: "Cloud browser" }),
   ).resolves.toBeVisible();
 });

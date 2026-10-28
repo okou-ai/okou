@@ -11,6 +11,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
+import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
 import { debounceCommand, throttleCommand } from "./command-scheduling.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
@@ -278,6 +279,20 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const editor = createSiteUrlEditorSignals(details$, saved$);
   const visibility = createSiteVisibilitySignals(sourceUrl);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
+  const hasSettings$ = computed(async (get) => {
+    const [details, permissions] = await Promise.all([
+      get(details$),
+      get(visibility.visibility$),
+    ]);
+    return (
+      permissions !== null ||
+      (details?.isActive === true &&
+        new URL(details.url).hostname.endsWith(
+          `.${resolveEditableHostedSiteDomain()}`,
+        ))
+    );
+  });
+  const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const changeVisibility$ = command(
     ({ set }, choice: Visibility, signal: AbortSignal) => {
@@ -288,9 +303,22 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
+      set(resetOpenSignal$);
       set(editor.cancel$);
       set(editor.returnFocus$, false);
       set(linkCopy.clear$);
+    }
+  });
+  const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
+    const signal = set(resetOpenSignal$, parentSignal);
+    set(open$, true);
+    const hasSettings = await get(hasSettings$);
+    signal.throwIfAborted();
+    if (!hasSettings) {
+      set(open$, false);
+      const url = await get(copyUrl$);
+      signal.throwIfAborted();
+      await copyAttachmentLinkToClipboard(url, undefined, signal);
     }
   });
   const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -302,6 +330,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     signal$,
     details$,
     copyUrl$,
+    hasSettings$,
     ...visibility,
     ...banner,
     changeVisibility$,
@@ -309,6 +338,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     ...editor,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
     setOpen$,
+    show$,
     copy$,
     copiedUrl$: linkCopy.copiedUrl$,
   };

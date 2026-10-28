@@ -154,6 +154,85 @@ test("Paid tools toggles save inverted enabled state and can re-enable a tool", 
   ]);
 });
 
+test.each(["Image generation", "Web search", "Advanced data research"])(
+  "Saving %s preserves other controls while preferences refresh",
+  async (name) => {
+    const refreshing = context.mocks.deferred<void>();
+    const releaseRefresh = context.mocks.deferred<void>();
+    let disabledTools: PaidToolId[] = ["finance"];
+    let saved = false;
+    context.mocks.api(paidToolsContract.get, async ({ respond }) => {
+      if (saved && !releaseRefresh.settled()) {
+        refreshing.resolve();
+        await releaseRefresh.promise;
+      }
+      return respond(200, { disabledTools });
+    });
+    context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+      disabledTools = disabledTools.filter((toolId) => {
+        return toolId !== params.toolId;
+      });
+      if (body.disabled) {
+        disabledTools.push(params.toolId);
+      }
+      saved = true;
+      return respond(200, { toolId: params.toolId, disabled: body.disabled });
+    });
+    const dialog = await openPaidTools();
+    const target = await readySwitch(name);
+    const others = await Promise.all(
+      [
+        "Image generation",
+        "Web search",
+        "Advanced data research",
+        "People search",
+      ]
+        .filter((label) => {
+          return label !== name;
+        })
+        .map(readySwitch),
+    );
+    const financial = await readySwitch("Financial data");
+    const model = await imageModelSelect();
+    await waitFor(() => {
+      expect(model).toBeEnabled();
+    });
+    click(target);
+    await refreshing.promise;
+    try {
+      await waitFor(() => {
+        expect(target).toHaveAttribute("aria-disabled", "true");
+      });
+      for (const other of others) {
+        expect(other).toBeChecked();
+        expect(other).not.toHaveAttribute("aria-disabled", "true");
+      }
+      expect(financial).not.toBeChecked();
+      expect(financial).not.toHaveAttribute("aria-disabled", "true");
+      expect(model).toBeEnabled();
+      expect(target).toBeChecked();
+      expect(within(dialog).getByText("Saving…")).toBeInTheDocument();
+    } finally {
+      releaseRefresh.resolve();
+    }
+    await waitFor(() => {
+      expect(target).not.toHaveAttribute("aria-disabled", "true");
+      expect(target).not.toBeChecked();
+    });
+    for (const other of others) {
+      expect(other).toBeChecked();
+    }
+    expect(financial).not.toBeChecked();
+    expect(model).toHaveProperty("disabled", name === "Image generation");
+    click(target);
+    await waitFor(() => {
+      expect(target).not.toHaveAttribute("aria-disabled", "true");
+      expect(target).toBeChecked();
+    });
+    expect(model).toBeEnabled();
+  },
+);
+
 test("Advanced data research saves independently and retains preferences across Tools visits", async () => {
   const updates = mockPaidTools();
   const dialog = await openPaidTools();

@@ -8,7 +8,6 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
-  ArrowLeft,
   AlertTriangle,
   ChevronRight,
   Monitor,
@@ -30,13 +29,21 @@ import {
 } from "../../signals/remote-access.ts";
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
-import { Button } from "@okouai/ui/components/ui/button";
+import { useMediaQuery } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@okouai/ui/components/ui/popover";
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@okouai/ui/components/ui/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from "@okouai/ui/components/ui/drawer";
 import {
   Select,
   SelectContent,
@@ -119,44 +126,6 @@ function OwnerRemoteHostDefaultToggle({
         />
       )}
     </div>
-  );
-}
-
-function HostChoice({
-  threadId,
-  protocol,
-  host,
-}: {
-  threadId: string;
-  protocol: RemoteAccessProtocol;
-  host: ThreadRemoteHostAccess;
-}) {
-  const signal = useGet(pageSignal$);
-  const [saving, update] = useLoadableSet(setThreadRemoteAccess$);
-  const value =
-    host.overrideEnabled === null
-      ? "default"
-      : host.overrideEnabled
-        ? "on"
-        : "off";
-  return (
-    <HostChoiceSelect
-      protocol={protocol}
-      host={host}
-      value={value}
-      disabled={saving.state === "loading"}
-      onChange={async (next) => {
-        await update(
-          {
-            threadId,
-            protocol,
-            connectionId: host.connectionId,
-            enabled: next,
-          },
-          signal,
-        );
-      }}
-    />
   );
 }
 
@@ -337,16 +306,24 @@ function HostChoiceSelect({
   );
 }
 
-function PendingHostChoice({
+interface RemoteHostChoiceActions {
+  disabled: boolean;
+  onChange: (
+    protocol: RemoteAccessProtocol,
+    connectionId: string,
+    enabled: boolean | null,
+  ) => void | Promise<void>;
+}
+
+function RemoteHostChoiceRow({
   protocol,
   host,
-  pendingRemoteAccess,
+  choiceActions,
 }: {
   protocol: RemoteAccessProtocol;
   host: ThreadRemoteHostAccess;
-  pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
+  choiceActions: RemoteHostChoiceActions;
 }) {
-  const update = useSet(pendingRemoteAccess.setOverride$);
   return (
     <HostChoiceSelect
       protocol={protocol}
@@ -358,46 +335,22 @@ function PendingHostChoice({
             ? "on"
             : "off"
       }
-      disabled={false}
+      disabled={choiceActions.disabled}
       onChange={(enabled) => {
-        update(protocol, host.connectionId, enabled);
+        return choiceActions.onChange(protocol, host.connectionId, enabled);
       }}
     />
   );
 }
 
-function RemoteHostChoiceRow({
-  threadId,
-  protocol,
-  host,
-  pendingRemoteAccess,
-}: {
-  threadId?: string;
-  protocol: RemoteAccessProtocol;
-  host: ThreadRemoteHostAccess;
-  pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
-}) {
-  return threadId ? (
-    <HostChoice threadId={threadId} protocol={protocol} host={host} />
-  ) : (
-    <PendingHostChoice
-      protocol={protocol}
-      host={host}
-      pendingRemoteAccess={pendingRemoteAccess}
-    />
-  );
-}
-
 function VncHostChoiceRow({
-  threadId,
   host,
-  pendingRemoteAccess,
+  choiceActions,
   sshConnectionIds,
   sshHosts,
 }: {
-  threadId?: string;
   host: ThreadRemoteHostAccess;
-  pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
+  choiceActions: RemoteHostChoiceActions;
   sshConnectionIds: readonly string[];
   sshHosts: readonly ThreadRemoteHostAccess[];
 }) {
@@ -405,10 +358,9 @@ function VncHostChoiceRow({
   return (
     <div>
       <RemoteHostChoiceRow
-        threadId={threadId}
         protocol="vnc"
         host={host}
-        pendingRemoteAccess={pendingRemoteAccess}
+        choiceActions={choiceActions}
       />
       {sshConnectionIds.map((connectionId) => {
         const sshHost = sshHosts.find((item) => {
@@ -472,8 +424,7 @@ interface ThreadRemoteAccessSectionProps {
   remoteAccess$: ComposerSignals["remoteAccess$"];
   defaults$: ComposerSignals["connector"]["resources"]["remoteHostDefaults$"];
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpen: () => void;
 }
 
 export function ThreadRemoteAccessSection(
@@ -497,8 +448,7 @@ function OwnerThreadRemoteAccessSection({
   remoteAccess$,
   defaults$,
   pendingRemoteAccess,
-  open,
-  onOpenChange,
+  onOpen,
 }: ThreadRemoteAccessSectionProps) {
   const { t } = useTranslation();
   const defaults = useLoadable(defaults$);
@@ -533,74 +483,145 @@ function OwnerThreadRemoteAccessSection({
     return $.chat.remoteAccess.title;
   });
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
-        render={
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-md border-t border-border/50 px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-state-hover"
-          >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
-              <Network size={16} aria-hidden="true" />
-            </span>
-            <span className="min-w-0 flex-1 truncate">{title}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {enabledCount === null
-                ? defaults.state === "hasError" ||
-                  (threadId &&
-                    (access.state === "hasError" || access.state === "hasData"))
-                  ? t(($) => {
-                      return $.chat.remoteAccess.loadFailed;
-                    })
-                  : t(($) => {
-                      return $.chat.remoteAccess.loading;
-                    })
-                : t(
-                    ($) => {
-                      return $.chat.remoteAccess.enabledCount;
-                    },
-                    { count: enabledCount },
-                  )}
-            </span>
-            <ChevronRight
-              size={14}
-              className="shrink-0 text-muted-foreground"
-            />
-          </button>
-        }
-      />
-      <PopoverContent
-        side="right"
-        align="start"
-        className="flex max-h-[min(25rem,var(--available-height))] w-80 flex-col overflow-hidden p-0"
-        aria-label={title}
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      onClick={onOpen}
+      className="flex w-full items-center gap-2 rounded-md border-t border-border/50 px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-state-hover"
+    >
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
+        <Network size={16} aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {enabledCount === null
+          ? defaults.state === "hasError" ||
+            (threadId &&
+              (access.state === "hasError" || access.state === "hasData"))
+            ? t(($) => {
+                return $.chat.remoteAccess.loadFailed;
+              })
+            : t(($) => {
+                return $.chat.remoteAccess.loading;
+              })
+          : t(
+              ($) => {
+                return $.chat.remoteAccess.enabledCount;
+              },
+              { count: enabledCount },
+            )}
+      </span>
+      <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
+    </button>
+  );
+}
+
+export function ThreadRemoteAccessDialog({
+  signals,
+}: {
+  signals: ComposerSignals;
+}) {
+  const identity = useLoadable(sshIdentity$);
+  if (identity.state !== "hasData" || !identity.data) {
+    return null;
+  }
+  return (
+    <OwnerThreadRemoteAccessDialog
+      key={`${identity.data}:${signals.threadId ?? "new"}`}
+      signals={signals}
+    />
+  );
+}
+
+function OwnerThreadRemoteAccessDialog({
+  signals,
+}: {
+  signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const { remoteAccessDialogOpen: open } = useGet(
+    signals.connector.connectorUiState$,
+  );
+  const close = useSet(signals.connector.closeRemoteAccessDialog$);
+  const triggerElement = useGet(signals.connector.triggerElement$);
+  const signal = useGet(pageSignal$);
+  // Keep the operation loadable above the responsive containers so resizing
+  // or reopening settings cannot enable a second write during an active save.
+  const [saving, update] = useLoadableSet(setThreadRemoteAccess$);
+  const updatePending = useSet(signals.pendingRemoteAccess.setOverride$);
+  const choiceActions: RemoteHostChoiceActions = {
+    disabled: saving.state === "loading",
+    onChange: async (protocol, connectionId, enabled) => {
+      if (signals.threadId) {
+        await update(
+          { threadId: signals.threadId, protocol, connectionId, enabled },
+          signal,
+        );
+      } else {
+        updatePending(protocol, connectionId, enabled);
+      }
+    },
+  };
+  const onOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      close();
+    }
+  };
+  const title = t(($) => {
+    return $.chat.remoteAccess.title;
+  });
+  const closeLabel = t(($) => {
+    return $.workflows.common.close;
+  });
+  const choices = open ? (
+    <ThreadRemoteHostChoices
+      threadId={signals.threadId}
+      remoteAccess$={signals.remoteAccess$}
+      defaults$={signals.connector.resources.remoteHostDefaults$}
+      pendingRemoteAccess={signals.pendingRemoteAccess}
+      choiceActions={choiceActions}
+    />
+  ) : null;
+
+  if (isDesktop) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          maxWidth="lg"
+          scrollable={false}
+          contentClassName="flex min-h-0 flex-col gap-0 p-0"
+          aria-describedby={undefined}
+          closeLabel={closeLabel}
+          finalFocus={() => {
+            return !open && triggerElement?.isConnected
+              ? triggerElement
+              : false;
+          }}
+        >
+          <DialogHeader className="shrink-0 border-b px-6 py-5 pr-14">
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+          {choices}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent
+        aria-describedby={undefined}
+        closeLabel={closeLabel}
+        finalFocus={() => {
+          return !open && triggerElement?.isConnected ? triggerElement : false;
+        }}
       >
-        <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 pl-1.5 pr-2 text-sm font-medium text-foreground">
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-xs"
-            aria-label={t(($) => {
-              return $.chat.connectors.back;
-            })}
-            onClick={() => {
-              return onOpenChange(false);
-            }}
-          >
-            <ArrowLeft size={16} aria-hidden="true" />
-          </Button>
-          <span className="min-w-0 flex-1 truncate">{title}</span>
-        </div>
-        {open && (
-          <ThreadRemoteHostChoices
-            threadId={threadId}
-            remoteAccess$={remoteAccess$}
-            defaults$={defaults$}
-            pendingRemoteAccess={pendingRemoteAccess}
-          />
-        )}
-      </PopoverContent>
-    </Popover>
+        <DrawerHeader className="border-b pb-4">
+          <DrawerTitle>{title}</DrawerTitle>
+        </DrawerHeader>
+        {choices}
+      </DrawerContent>
+    </Drawer>
   );
 }
 
@@ -625,11 +646,13 @@ function ThreadRemoteHostChoices({
   remoteAccess$,
   defaults$,
   pendingRemoteAccess,
+  choiceActions,
 }: {
   threadId?: string;
   remoteAccess$: ComposerSignals["remoteAccess$"];
   defaults$: ComposerSignals["connector"]["resources"]["remoteHostDefaults$"];
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
+  choiceActions: RemoteHostChoiceActions;
 }) {
   const { t } = useTranslation();
   const defaults = useLoadable(defaults$);
@@ -659,7 +682,7 @@ function ThreadRemoteHostChoices({
     pendingOverrides,
   );
   return (
-    <div className="min-h-0 overflow-y-auto p-1">
+    <DialogBody className="min-h-0 flex-1 overscroll-contain p-2">
       {(defaults.state === "hasError" || accessFailed) && (
         <RemoteHostLoadError />
       )}
@@ -682,10 +705,9 @@ function ThreadRemoteHostChoices({
             return (
               <RemoteHostChoiceRow
                 key={host.connectionId}
-                threadId={threadId}
                 protocol="ssh"
                 host={host}
-                pendingRemoteAccess={pendingRemoteAccess}
+                choiceActions={choiceActions}
               />
             );
           })}
@@ -721,9 +743,8 @@ function ThreadRemoteHostChoices({
             return (
               <VncHostChoiceRow
                 key={host.connectionId}
-                threadId={threadId}
                 host={host}
-                pendingRemoteAccess={pendingRemoteAccess}
+                choiceActions={choiceActions}
                 sshConnectionIds={[...sshConnectionIds]}
                 sshHosts={sshHosts}
               />
@@ -731,6 +752,6 @@ function ThreadRemoteHostChoices({
           })}
         </>
       )}
-    </div>
+    </DialogBody>
   );
 }

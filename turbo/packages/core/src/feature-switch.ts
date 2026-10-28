@@ -46,6 +46,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.FeatureGuides]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feature guides",
+    description: "Show published product updates once per user and edition.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OnboardingSourceOutcomes]: {
     maintainer: "ming@okou.ai",
     displayName: "Onboarding source outcomes",
@@ -130,6 +136,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Unified chat workspace",
     description:
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.CloudBrowserPanel]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Cloud browser panel",
+    description:
+      "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
     enabled: false,
   },
   [FeatureSwitchKey.ChatThreadTimeline]: {

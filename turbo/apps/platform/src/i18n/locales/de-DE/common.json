@@ -1351,9 +1351,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "URL eingeben",
+    "blankPage": {
+      "description": "{{assistantName}} öffnet hier Seiten, während es arbeitet. Gib oben eine URL ein, um selbst zu surfen.",
+      "title": "Noch nichts geöffnet"
+    },
+    "blankTabTitle": "Neuer Tab",
     "cardTitle": "Cloud-Browser",
-    "close": "Schließen Sie den Live-Browser",
-    "documentTitle": "Live-Browser",
+    "close": "Cloud-Browser schließen",
+    "documentTitle": "Cloud-Browser",
     "notFound": "Browser nicht gefunden",
     "open": "Öffnen Sie den Browser {{name}}",
     "openAction": "Offen",
@@ -1364,6 +1370,13 @@
       "startDescription": "Beim Start werden das gespeicherte Anmeldeprofil und der Speicher wiederhergestellt, sofern verfügbar, und gespeicherte Tabs nach Möglichkeit erneut geöffnet.",
       "starting": "Wird gestartet…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} arbeitet",
+      "handBack": "Zurückgeben",
+      "handBackMessage": "Ich bin im Browser fertig. Bitte mach weiter.",
+      "memberInControl": "Du hast die Kontrolle",
+      "takeOver": "Übernehmen"
+    },
     "reclaimHint_one": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minute Inaktivität zurück.",
     "reclaimHint_other": "{{assistantName}} behält diesen Browser, während dieses Panel geöffnet ist, und beansprucht ihn nach {{formattedCount}} Minuten Inaktivität zurück.",
     "status": {
@@ -1371,7 +1384,7 @@
       "starting": "Beginnt",
       "stopped": "Angehalten"
     },
-    "title": "Live-Browser",
+    "title": "Cloud-Browser",
     "unavailable": {
       "description": "Dieser Browser gehört nicht zu diesem Chat oder wurde entfernt.",
       "title": "Browser nicht verfügbar"
@@ -4002,6 +4015,15 @@
     "previousPage": "Vorherige Beispielseite",
     "title": "Dokument",
     "useNamed": "{{title}} verwenden"
+  },
+  "featureGuide": {
+    "close": "Funktionsübersicht schließen",
+    "dismiss": "Verstanden",
+    "label": "Was gibt es Neues?",
+    "next": "Weiter",
+    "preview": "Vorschau",
+    "previous": "Zurück",
+    "tryPrompt": "Diese Aufgabe ausprobieren"
   },
   "global": {
     "errors": {

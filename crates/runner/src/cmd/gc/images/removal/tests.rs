@@ -1,51 +1,15 @@
 use std::fs::File;
-use std::future::Future;
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
-use std::task::{Context, Waker};
-use std::time::Duration;
 
 use nix::fcntl::Flock;
+use runner_host::gc::test_support::cancel_queued_removal;
 use runner_host::gc::{ExistingLockProbe, LockProbe, probe_existing_lock, probe_lock};
 use runner_host::lock::lock_matches_path;
 use runner_host::paths::HomePaths;
-use tokio::runtime::{Builder, Runtime};
-use tokio::task::JoinHandle;
 
 use super::{SnapshotRemovalLocks, remove_image_dir, remove_snapshot_dir};
 use crate::cmd::gc::test_support::test_home;
-
-const WAIT: Duration = Duration::from_secs(5);
-
-struct ReleaseWorkerOnDrop(Option<mpsc::Sender<()>>);
-
-impl Drop for ReleaseWorkerOnDrop {
-    fn drop(&mut self) {
-        if let Some(release) = self.0.take() {
-            let _ = release.send(());
-        }
-    }
-}
-
-fn occupy_blocking_worker(runtime: &Runtime) -> (ReleaseWorkerOnDrop, JoinHandle<()>) {
-    let (started, started_rx) = mpsc::sync_channel(0);
-    let (release, release_rx) = mpsc::channel();
-    let gate = ReleaseWorkerOnDrop(Some(release));
-    let worker = runtime.spawn_blocking(move || {
-        started.send(()).unwrap();
-        release_rx.recv().unwrap();
-    });
-    started_rx.recv_timeout(WAIT).unwrap();
-    (gate, worker)
-}
-
-fn runtime() -> Runtime {
-    Builder::new_current_thread()
-        .enable_all()
-        .max_blocking_threads(1)
-        .build()
-        .unwrap()
-}
 
 fn acquire(path: &Path) -> Flock<File> {
     match probe_lock(path) {
@@ -72,54 +36,6 @@ fn assert_released(path: &Path) {
         probe_existing_lock(path),
         ExistingLockProbe::Free(_)
     ));
-}
-
-// Discovery and policy IO precede this boundary. Poll the actual image admission
-// once with its blocking worker occupied, then cancel only its async observer.
-fn cancel_admitted_removal(
-    runtime: &Runtime,
-    removal: impl Future,
-    lock_paths: &[PathBuf],
-) -> Vec<Flock<File>> {
-    let (gate, worker) = occupy_blocking_worker(runtime);
-    let mut removal = Box::pin(removal);
-    let entered = runtime.enter();
-    assert!(
-        removal
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-            .is_pending()
-    );
-    drop(entered);
-    drop(removal);
-    for path in lock_paths {
-        assert_held(path);
-    }
-
-    drop(gate);
-    runtime.block_on(async {
-        tokio::time::timeout(WAIT, async {
-            worker.await.unwrap();
-            let mut successors = Vec::new();
-            for path in lock_paths {
-                let successor = loop {
-                    match probe_existing_lock(path) {
-                        ExistingLockProbe::Free(lock) => break lock,
-                        ExistingLockProbe::Held => tokio::task::yield_now().await,
-                        ExistingLockProbe::Missing => panic!("image lock key disappeared"),
-                        ExistingLockProbe::Error(error) => {
-                            panic!("cannot inspect image lock: {error}")
-                        }
-                    }
-                };
-                assert_returned(&successor, path);
-                successors.push(successor);
-            }
-            successors
-        })
-        .await
-        .expect("accepted image deletion did not retire its authority")
-    })
 }
 
 #[derive(Clone, Copy)]
@@ -181,8 +97,7 @@ fn cancelled_single_image(kind: SingleImage, failing: bool) {
     std::fs::create_dir_all(home.locks_dir()).unwrap();
     let (path, key, lock) = single_image(&home, kind);
     prepare_removal(&path, failing);
-    let runtime = runtime();
-    let _successors = cancel_admitted_removal(&runtime, remove_image_dir(&path, lock), &[key]);
+    let _successors = cancel_queued_removal(remove_image_dir(&path, lock), &[key]).unwrap();
     assert_physical_result(&path, failing);
 }
 
@@ -192,8 +107,7 @@ fn cancelled_snapshot(failing: bool) {
     std::fs::create_dir_all(home.locks_dir()).unwrap();
     let (path, keys, locks) = snapshot(&home);
     prepare_removal(&path, failing);
-    let runtime = runtime();
-    let _successors = cancel_admitted_removal(&runtime, remove_snapshot_dir(&path, locks), &keys);
+    let _successors = cancel_queued_removal(remove_snapshot_dir(&path, locks), &keys).unwrap();
     assert_physical_result(&path, failing);
 }
 
@@ -268,6 +182,7 @@ async fn observed_snapshot_result(failing: bool) {
     if failing {
         prepare_removal(&path, true);
     }
+    let original_fds = (locks.rootfs.as_raw_fd(), locks.snapshot.as_raw_fd());
     let (locks, result) = remove_snapshot_dir(&path, locks).await;
 
     let expected = if failing {
@@ -279,6 +194,34 @@ async fn observed_snapshot_result(failing: bool) {
     if failing {
         assert_physical_result(&path, true);
     }
+    assert_eq!(
+        (locks.rootfs.as_raw_fd(), locks.snapshot.as_raw_fd()),
+        original_fds
+    );
+    assert_returned(&locks.rootfs, &keys[0]);
+    assert_returned(&locks.snapshot, &keys[1]);
+    drop(locks);
+    for key in keys {
+        assert_released(&key);
+    }
+}
+
+#[tokio::test]
+async fn observed_snapshot_deletion_returns_both_original_guards() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    std::fs::create_dir_all(home.locks_dir()).unwrap();
+    let (path, keys, locks) = snapshot(&home);
+    prepare_removal(&path, false);
+    let original_fds = (locks.rootfs.as_raw_fd(), locks.snapshot.as_raw_fd());
+    let (locks, result) = remove_snapshot_dir(&path, locks).await;
+
+    result.unwrap();
+    assert_physical_result(&path, false);
+    assert_eq!(
+        (locks.rootfs.as_raw_fd(), locks.snapshot.as_raw_fd()),
+        original_fds
+    );
     assert_returned(&locks.rootfs, &keys[0]);
     assert_returned(&locks.snapshot, &keys[1]);
     drop(locks);

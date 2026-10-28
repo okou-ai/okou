@@ -35,8 +35,10 @@ function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
   return (
     <div className="flex min-w-0 items-center gap-3 overflow-hidden px-3 py-2.5">
       <WorkspaceLogo
+        id={invitation.publicOrganizationData.id}
         name={invitation.publicOrganizationData.name}
         imageUrl={invitation.publicOrganizationData.imageUrl}
+        hasImage={invitation.publicOrganizationData.hasImage}
       />
       <span className="min-w-0 flex-1 text-sm truncate">
         {invitation.publicOrganizationData.name}
@@ -154,8 +156,10 @@ function OtherMembershipsList() {
             className="min-w-0 gap-3 px-3"
           >
             <WorkspaceLogo
+              id={membership.organization.id}
               name={membership.organization.name}
               imageUrl={membership.organization.imageUrl}
+              hasImage={membership.organization.hasImage}
             />
             <span className="min-w-0 flex-1 truncate">
               {membership.organization.name}
@@ -205,11 +209,17 @@ function OrgDropdownBody() {
   return (
     <>
       <div className="flex min-w-0 shrink-0 items-center gap-3 px-2 py-1.5">
-        <WorkspaceLogo
-          name={orgName}
-          imageUrl={currentOrg?.imageUrl}
-          size="lg"
-        />
+        {currentOrg ? (
+          <WorkspaceLogo
+            id={currentOrg.id}
+            name={orgName}
+            imageUrl={currentOrg.imageUrl}
+            hasImage={currentOrg.hasImage}
+            size="lg"
+          />
+        ) : (
+          <ThumbnailPlaceholder size="lg" />
+        )}
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold leading-tight truncate text-foreground">
             {orgName}
@@ -283,14 +293,16 @@ export function OrgSwitcherCompact() {
           />
         }
       >
-        {currentOrg === undefined ? (
-          <ThumbnailPlaceholder size="md+" />
-        ) : (
+        {currentOrg ? (
           <WorkspaceLogo
+            id={currentOrg.id}
             name={orgName}
-            imageUrl={currentOrg?.imageUrl}
+            imageUrl={currentOrg.imageUrl}
+            hasImage={currentOrg.hasImage}
             size="md+"
           />
+        ) : (
+          <ThumbnailPlaceholder size="md+" />
         )}
         <PendingInvitationsBadge />
       </DropdownMenuTrigger>
@@ -325,10 +337,15 @@ export function OrgSwitcher() {
           {/* Until the workspace loads its mark and name stay empty rather
               than showing the generic "Organization" and its initial. */}
           <span className="relative shrink-0">
-            {currentOrg === undefined ? (
-              <ThumbnailPlaceholder />
+            {currentOrg ? (
+              <WorkspaceLogo
+                id={currentOrg.id}
+                name={orgName}
+                imageUrl={currentOrg.imageUrl}
+                hasImage={currentOrg.hasImage}
+              />
             ) : (
-              <WorkspaceLogo name={orgName} imageUrl={currentOrg?.imageUrl} />
+              <ThumbnailPlaceholder />
             )}
             <PendingInvitationsBadge />
           </span>

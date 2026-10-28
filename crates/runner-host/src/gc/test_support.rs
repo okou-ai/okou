@@ -3,6 +3,10 @@ use std::time::{Duration, SystemTime};
 
 use crate::paths::HomePaths;
 
+mod removal;
+
+pub use removal::cancel_queued_removal;
+
 /// Immutable counts for testing a caller's workspace report projection.
 pub fn workspace_gc_report(
     workspaces_cleaned: u32,

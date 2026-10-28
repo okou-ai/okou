@@ -12,7 +12,9 @@ import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
-import { settleIncludingAbort, tapError } from "../utils";
+import { clerk$, isClerkResourceNotFound } from "../external/clerk";
+import { settle, settleIncludingAbort, tapError } from "../utils";
+import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import { sendPendingAgentPhoneContactCard$ } from "./agentphone-contact-card.service";
 import {
   agentphoneChatCallbackPayloadSchema,
@@ -26,10 +28,72 @@ import {
   storeOutboundAgentPhoneMessage$,
 } from "./agentphone-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 
 const L = logger("InternalCallbacksAgentPhoneChat");
 type AgentPhoneSendResult = Awaited<ReturnType<typeof sendAgentPhoneMessage>>;
+
+const AGENTPHONE_ACCOUNT_SWITCH_GUIDANCE =
+  "Or switch to a different Okou account or workspace: send /switch.";
+
+const formatAgentPhoneMessageContent$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly isGroup: boolean;
+      readonly content: string;
+      readonly error: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    // Workspace identity and account-management instructions belong in a DM.
+    if (args.isGroup || args.error !== "insufficient_credits") {
+      return markdownToImessagePlain(args.content);
+    }
+
+    const workspace = await settle(
+      get(clerk$).organizations.getOrganization(
+        { organizationId: args.orgId },
+        undefined,
+        signal,
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!workspace.ok) {
+      if (!isClerkResourceNotFound(workspace.error)) {
+        throw workspace.error;
+      }
+      return [
+        "The workspace connected to this phone is no longer available.",
+        AGENTPHONE_ACCOUNT_SWITCH_GUIDANCE,
+      ].join("\n\n");
+    }
+
+    const billingGuidance = await set(
+      formatIntegrationRunError$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        code: "INSUFFICIENT_CREDITS",
+        message:
+          "Add credits or connect a personal Codex or Claude subscription.",
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return [
+      `Your phone is connected to workspace "${workspace.value.name}", which has insufficient credits to continue.`,
+      markdownToImessagePlain(billingGuidance),
+      AGENTPHONE_ACCOUNT_SWITCH_GUIDANCE,
+    ].join("\n\n");
+  },
+);
 
 interface ClaimedAgentPhoneChatDelivery {
   readonly runId: string;
@@ -182,7 +246,10 @@ const loadAgentPhoneChatDeliveryContext$ = command(
     };
 
     const [event] = await get(db$)
-      .select({ content: canonicalChatEventContent() })
+      .select({
+        content: canonicalChatEventContent(),
+        error: canonicalChatEventError(),
+      })
       .from(chatEvents)
       .where(
         and(
@@ -216,6 +283,7 @@ const loadAgentPhoneChatDeliveryContext$ = command(
       payload,
       run: runContext,
       messageContent: event.content,
+      messageError: event.error,
       binding,
     };
   },
@@ -225,7 +293,7 @@ function buildAgentPhoneResponseText(args: {
   readonly mainText: string;
   readonly footerText: string | undefined;
 }): string {
-  return [markdownToImessagePlain(args.mainText), args.footerText]
+  return [args.mainText, args.footerText]
     .filter((part): part is string => {
       return Boolean(part);
     })
@@ -328,7 +396,7 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
-    const { payload, run, messageContent, binding } = await set(
+    const { payload, run, messageContent, messageError, binding } = await set(
       loadAgentPhoneChatDeliveryContext$,
       args,
       signal,
@@ -336,13 +404,25 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
     if (!binding) {
       return "skipped_revoked";
     }
+    const mainText = await set(
+      formatAgentPhoneMessageContent$,
+      {
+        orgId: run.orgId,
+        userId: run.userId,
+        isGroup: payload.isGroup,
+        content: messageContent,
+        error: messageError,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     const footerText = await set(resolveAgentPhoneReplyFooterText$, {
       orgId: run.orgId,
       composeId: run.agentId,
     });
     signal.throwIfAborted();
     const body = buildAgentPhoneResponseText({
-      mainText: messageContent,
+      mainText,
       footerText,
     });
     const sent = await set(
@@ -485,7 +565,10 @@ export const deliverAgentPhoneChatAdmissionFailure$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const [event] = await get(db$)
-      .select({ content: canonicalChatEventContent() })
+      .select({
+        content: canonicalChatEventContent(),
+        error: canonicalChatEventError(),
+      })
       .from(chatEvents)
       .where(
         and(
@@ -518,7 +601,18 @@ export const deliverAgentPhoneChatAdmissionFailure$ = command(
       return;
     }
 
-    const body = markdownToImessagePlain(event.content);
+    const body = await set(
+      formatAgentPhoneMessageContent$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        isGroup: args.target.isGroup,
+        content: event.content,
+        error: event.error,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     const sent = await set(
       sendAgentPhoneReply$,
       {

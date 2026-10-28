@@ -37,6 +37,7 @@ interface MockedInvitation {
     id: string;
     name: string;
     imageUrl: string;
+    hasImage?: boolean;
   };
 }
 
@@ -47,6 +48,7 @@ export interface MockedMembership {
     id: string;
     name: string;
     imageUrl?: string | null;
+    hasImage?: boolean;
   };
 }
 

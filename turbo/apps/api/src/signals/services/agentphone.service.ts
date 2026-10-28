@@ -80,7 +80,7 @@ const MAX_CONTEXT_MESSAGES = 10;
 const AGENTPHONE_SMS_MMS_SLASH_COMMAND_RISK_MESSAGE =
   "Note: SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.";
 const AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE =
-  "Only the linked sender can disconnect their account in a group. Message this number directly to manage your link.";
+  "Only the linked sender can disconnect or switch accounts. Message this number directly to manage your link.";
 const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
   "3208d609-59a7-4b0e-9c3b-3db20e9c924f";
 
@@ -169,11 +169,14 @@ function shouldIgnoreAgentPhoneGroupMessage(
   return isAgentPhoneGroupEvent(event) && !event.mentioned;
 }
 
-function isAgentPhoneGroupDisconnectCommand(
+function isAgentPhoneGroupAccountCommand(
   event: AgentPhoneMessageEvent,
   commandName: string | undefined,
 ): boolean {
-  return isAgentPhoneGroupEvent(event) && commandName === "disconnect";
+  return (
+    isAgentPhoneGroupEvent(event) &&
+    (commandName === "disconnect" || commandName === "switch")
+  );
 }
 
 function normalizeHandleForConnect(handle: string): string {
@@ -948,6 +951,7 @@ function formatHelpMessage(): string {
     "",
     `/connect - Connect this phone number to ${brandName}`,
     `/disconnect - Disconnect this phone number from ${brandName}`,
+    `/switch - Switch to a different ${brandName} account or workspace`,
     "/help - Show these commands",
     "",
     "Send a message here after connecting.",
@@ -1045,7 +1049,7 @@ const blockUnauthorizedGroupAccountCommand$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     if (
-      !isAgentPhoneGroupDisconnectCommand(args.event, args.commandText) ||
+      !isAgentPhoneGroupAccountCommand(args.event, args.commandText) ||
       args.userLink
     ) {
       return false;
@@ -1079,6 +1083,15 @@ const handleConnectCommand$ = command(
   },
 );
 
+const disconnectAgentPhoneUserLink$ = command(
+  async ({ set }, userLinkId: string, signal: AbortSignal): Promise<void> => {
+    await set(writeDb$)
+      .delete(agentphoneUserLinks)
+      .where(eq(agentphoneUserLinks.id, userLinkId));
+    signal.throwIfAborted();
+  },
+);
+
 const handleDisconnectCommand$ = command(
   async (
     { set },
@@ -1098,15 +1111,54 @@ const handleDisconnectCommand$ = command(
       return;
     }
 
-    await set(writeDb$)
-      .delete(agentphoneUserLinks)
-      .where(eq(agentphoneUserLinks.id, args.userLink.id));
-    signal.throwIfAborted();
+    await set(disconnectAgentPhoneUserLink$, args.userLink.id, signal);
 
     await set(
       sendAgentPhoneSlashCommandText$,
       args.event,
       `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
+      signal,
+    );
+  },
+);
+
+const handleSwitchCommand$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: AgentPhoneMessageEvent;
+      readonly userLink: AgentPhoneUserLink | null;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (isAgentPhoneGroupEvent(args.event)) {
+      await set(
+        sendAgentPhoneSlashCommandText$,
+        args.event,
+        "To switch accounts or workspaces, message this number directly in a 1:1 iMessage conversation and send /switch.",
+        signal,
+      );
+      return;
+    }
+
+    if (args.userLink) {
+      await set(disconnectAgentPhoneUserLink$, args.userLink.id, signal);
+    }
+    const connectUrl = buildAgentPhoneConnectUrl({
+      phoneHandle: args.event.fromNumber,
+      agentphoneAgentId: args.event.agentphoneAgentId,
+      secret: env("SECRETS_ENCRYPTION_KEY"),
+      channel: args.event.channel,
+    });
+    await set(
+      sendAgentPhoneSlashCommandText$,
+      args.event,
+      [
+        ...(args.userLink ? ["Your phone has been disconnected.", ""] : []),
+        `Open this link to connect to the ${BRAND_PRESENTATION.brandName} account and workspace you want to use:`,
+        "",
+        connectUrl,
+      ].join("\n"),
       signal,
     );
   },
@@ -1141,6 +1193,14 @@ const dispatchAgentPhoneCommand$ = command(
             event: args.event,
             userLink: args.userLink,
           },
+          signal,
+        );
+        return true;
+      }
+      case "switch": {
+        await set(
+          handleSwitchCommand$,
+          { event: args.event, userLink: args.userLink },
           signal,
         );
         return true;
