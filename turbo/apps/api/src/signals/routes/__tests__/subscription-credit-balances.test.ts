@@ -101,7 +101,7 @@ test("lists account-owned live credits within the subscription rollout", async (
     app()(thirdPartySubscriptionsMainContract).list({ headers }),
     [200],
   );
-  expect(listed.body.subscriptions).toEqual(
+  expect(listed.body.subscriptions).toStrictEqual(
     expect.arrayContaining([
       expect.objectContaining({
         id: first,
