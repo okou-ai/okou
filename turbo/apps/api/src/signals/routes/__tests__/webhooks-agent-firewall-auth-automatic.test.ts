@@ -694,18 +694,28 @@ describe("builtin Automatic firewall credential destinations", () => {
     "recovery",
     "DCR rejection",
     "DCR expiry",
+    "resource drift",
+    "issuer drift",
+    "token endpoint drift",
   ] as const)("classifies Automatic refresh %s", async (outcomeKind) => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     const catalog = automaticMcpCatalogFixture();
     const dcr = outcomeKind === "DCR rejection" || outcomeKind === "DCR expiry";
+    const authorityDrift =
+      outcomeKind === "resource drift" ||
+      outcomeKind === "issuer drift" ||
+      outcomeKind === "token endpoint drift";
+    const reconnectRequired = dcr || authorityDrift;
+    const resource = new URL(catalog.endpoint).origin;
     const startedAt = now();
     if (outcomeKind === "DCR expiry") {
       mockNow(startedAt);
     }
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: dcr ? "dcr" : "cimd",
+      resource,
       ...(outcomeKind === "DCR expiry"
         ? {
             dcrClientIdIssuedAt: startedAt - 1000,
@@ -815,6 +825,21 @@ describe("builtin Automatic firewall credential destinations", () => {
         if (builtin?.kind !== "builtin") {
           throw new Error("Expected the builtin Automatic firewall");
         }
+        const driftedProvider = authorityDrift
+          ? mockAutomaticMcpOAuthProvider(context, {
+              registration: "cimd",
+              endpoint: catalog.endpoint,
+              resource:
+                outcomeKind === "resource drift" ? catalog.endpoint : resource,
+              issuer:
+                outcomeKind === "issuer drift"
+                  ? "https://replacement-issuer.example.test"
+                  : provider.issuer,
+              ...(outcomeKind === "token endpoint drift"
+                ? { tokenEndpoint: `${provider.issuer}/rotated-token` }
+                : {}),
+            })
+          : null;
         const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
         const body = {
           encryptedSecrets:
@@ -872,9 +897,14 @@ describe("builtin Automatic firewall credential destinations", () => {
         }
         expect(response.body.error).toMatchObject({
           code: "TOKEN_REFRESH_FAILED",
-          failureReason: dcr ? "reconnect_required" : "upstream_provider",
+          failureReason: reconnectRequired
+            ? "reconnect_required"
+            : "upstream_provider",
           connectors: [catalog.slug],
         });
+        if (driftedProvider) {
+          expect(driftedProvider.tokenBodies).toHaveLength(0);
+        }
         const account = await accept(
           accounts.connection({
             headers,
@@ -884,8 +914,12 @@ describe("builtin Automatic firewall credential destinations", () => {
           [200],
         );
         expect(account.body).toMatchObject({
-          connectionStatus: dcr ? "reconnect-required" : "connected",
-          reconnectReason: dcr ? "authorization_expired_or_revoked" : null,
+          connectionStatus: reconnectRequired
+            ? "reconnect-required"
+            : "connected",
+          reconnectReason: reconnectRequired
+            ? "authorization_expired_or_revoked"
+            : null,
         });
       })(),
     );

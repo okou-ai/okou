@@ -514,7 +514,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       dcrTokenEndpointAuthMethod: "client_secret_basic",
     },
   ] as const)(
-    "reauthorizes the pinned $registration account with $dcrTokenEndpointAuthMethod and offline access registered=$offlineAccessRegistered",
+    "reauthorizes the parent-resource $registration account with $dcrTokenEndpointAuthMethod and offline access registered=$offlineAccessRegistered",
     async ({
       registration,
       offlineAccessRegistered,
@@ -530,6 +530,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
         dcrTokenEndpointAuthMethod,
+        resource: "https://automatic-mcp.example.test/",
         initialExpiresIn: 3600,
         authorizationCodeScopes: ["read", "read", "read admin offline_access"],
         authorizationServerScopes: offlineAccessRegistered
@@ -563,6 +564,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         { intent: "add", displayName: "Pinned account" },
       );
       const firstState = stateFromAuthorizationUrl(firstAuthorization);
+      expect(new URL(firstAuthorization).searchParams.get("resource")).toBe(
+        "https://automatic-mcp.example.test/",
+      );
       const firstCallback =
         await connectors.completeCustomConnectorOAuth2Callback({
           code: "pinned-account-code",
@@ -681,6 +685,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       );
 
       const authorizationUrl = new URL(response.body.authorizationUrl);
+      expect(authorizationUrl.searchParams.get("resource")).toBe(
+        "https://automatic-mcp.example.test/",
+      );
       expect(authorizationUrl.searchParams.get("scope")).toBe(
         "read admin offline_access",
       );
@@ -720,6 +727,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         registration,
         dcrTokenEndpointAuthMethod,
         endpoint: provider.endpoint,
+        resource: "https://automatic-mcp.example.test/",
         issuer: "https://alternate-issuer.example.test",
         dcrClientId: "replacement-dcr-client",
         dcrClientSecret: "replacement-dcr-secret",

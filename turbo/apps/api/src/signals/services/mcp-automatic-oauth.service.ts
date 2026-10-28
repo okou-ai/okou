@@ -4,6 +4,7 @@ import {
   OAuthError,
   RegistrationRejectedError,
   StreamableHTTPClientTransport,
+  checkResourceAllowed,
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
   exchangeAuthorization,
@@ -430,11 +431,10 @@ async function discoverAutomaticOAuthAuthority(
       );
     },
   );
-  const expectedResource = resourceUrlFromServerUrl(args.endpoint).href;
   const resource = new URL(
     requiredHttpsUrl(protectedResourceMetadata.resource, "protected resource"),
   ).href;
-  if (resource !== expectedResource) {
+  if (!mcpAutomaticOAuthResourceMatchesEndpoint(resource, args.endpoint)) {
     throw new McpAutomaticOAuthError(
       { kind: "incompatible", reason: "invalid-discovery-metadata" },
       "MCP OAuth protected resource metadata does not match the connector endpoint",
@@ -528,7 +528,34 @@ export function mcpAutomaticOAuthResourceMatchesEndpoint(
   resource: string,
   endpoint: string,
 ): boolean {
-  return resource === resourceUrlFromServerUrl(endpoint).href;
+  const resourceUrl = new URL(resource);
+  return (
+    resourceUrl.protocol === "https:" &&
+    resourceUrl.username === "" &&
+    resourceUrl.password === "" &&
+    !resourceUrl.href.includes("#") &&
+    checkResourceAllowed({
+      requestedResource: resourceUrlFromServerUrl(endpoint),
+      configuredResource: resourceUrl,
+    })
+  );
+}
+
+function assertAutomaticOAuthAuthorityMatchesBinding(
+  authority: DiscoveredAutomaticOAuthAuthority,
+  binding: McpAutomaticOAuthBinding,
+): void {
+  // Compatible transport metadata cannot retarget an already granted token.
+  if (
+    authority.resource !== binding.resource ||
+    authority.issuer !== binding.issuer ||
+    authority.tokenEndpoint !== binding.tokenEndpoint
+  ) {
+    throw new McpAutomaticOAuthError(
+      { kind: "binding-drift", reason: "binding-drift" },
+      "MCP OAuth token authority changed",
+    );
+  }
 }
 
 function supportedTokenAuthMethods(
@@ -1224,6 +1251,7 @@ export async function refreshMcpAutomaticOAuthToken(
     args.endpoint,
     signal,
   );
+  assertAutomaticOAuthAuthorityMatchesBinding(authority, args.binding);
   const clientInformation = await boundClientInformation({
     ...args,
     context: boundClientContext(args.binding),

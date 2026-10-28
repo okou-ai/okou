@@ -423,6 +423,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly resource?: string;
   readonly issuer?: string;
   readonly authorizationEndpoint?: string;
+  readonly tokenEndpoint?: string;
   readonly metadataIssuer?: string;
   readonly userInfoEndpoint?: string;
   readonly identity?: OAuthIdentityFixtureOptions;
@@ -523,7 +524,7 @@ export function mockAutomaticMcpOAuthProvider(
   const resourceMetadataUrl = new URL("/oauth-resource", endpoint).href;
   const issuer = automaticOAuthProviderIssuer(options);
   const authorizationUrl = `${issuer}/authorize`;
-  const tokenUrl = `${issuer}/token`;
+  const tokenUrl = options.tokenEndpoint ?? `${issuer}/token`;
   const registrationUrl = `${issuer}/register`;
   const jwksUrl = `${issuer}/jwks.json`;
   const userInfoUrl = options.userInfoEndpoint ?? `${issuer}/userinfo`;
