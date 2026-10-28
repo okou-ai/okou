@@ -1,5 +1,6 @@
 import {
   boolean,
+  foreignKey,
   index,
   pgTable,
   text,
@@ -13,18 +14,25 @@ import { sql } from "drizzle-orm";
 import { connectors } from "./connector";
 import { feishuOrgInstallations } from "./feishu-org-installation";
 
+/**
+ * Org-aware Feishu/Lark connections table.
+ * Maps a Feishu open identity to an internal user, independently of the bot
+ * installation that first received it.
+ */
 export const feishuOrgConnections = pgTable(
   "feishu_org_connections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    installationId: uuid("installation_id")
-      .notNull()
-      .references(
-        () => {
-          return feishuOrgInstallations.id;
-        },
-        { onDelete: "cascade" },
-      ),
+    // Installation ownership is recorded for routing, not for identity: an
+    // independent account keeps its scope after the bot is uninstalled.
+    installationId: uuid("installation_id"),
+    orgId: text("org_id"),
+    // Keep draining installation-owned writers constrained while independently
+    // owned identities can exist before installation and after uninstall.
+    // Remove this discriminator after the writer, row and rollback gates land.
+    legacyInstallationId: uuid("legacy_installation_id").generatedAlwaysAs(
+      sql`CASE WHEN org_id IS NULL THEN installation_id ELSE NULL END`,
+    ),
     feishuOpenId: varchar("feishu_open_id", { length: 255 }).notNull(),
     userId: text("user_id").notNull(),
     connectorId: uuid("connector_id").references(
@@ -40,6 +48,14 @@ export const feishuOrgConnections = pgTable(
   },
   (table) => {
     return [
+      foreignKey({
+        name: "feishu_org_connections_installation_id_feishu_org_installations_id_fk",
+        columns: [table.legacyInstallationId],
+        foreignColumns: [feishuOrgInstallations.id],
+      }).onDelete("cascade"),
+      uniqueIndex("idx_feishu_org_connections_owner")
+        .on(table.orgId, table.userId)
+        .where(sql`${table.orgId} IS NOT NULL`),
       uniqueIndex("idx_feishu_org_connections_user_installation").on(
         table.feishuOpenId,
         table.installationId,

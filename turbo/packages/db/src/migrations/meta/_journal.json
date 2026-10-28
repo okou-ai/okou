@@ -2815,6 +2815,13 @@
       "when": 1793192248459,
       "tag": "1480_outlook_chat_mail",
       "breakpoints": true
+    },
+    {
+      "idx": 1481,
+      "version": "7",
+      "when": 1793225192176,
+      "tag": "1481_feishu_workspace_identity",
+      "breakpoints": true
     }
   ]
 }
