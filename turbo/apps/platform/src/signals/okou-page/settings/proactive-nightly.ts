@@ -31,6 +31,8 @@ function createNightlyPreferenceSignals(
       );
       signal.throwIfAborted();
       set(reload$);
+      await get(preference$);
+      signal.throwIfAborted();
       return response.body;
     },
   );

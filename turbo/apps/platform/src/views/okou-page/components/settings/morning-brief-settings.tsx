@@ -1,6 +1,6 @@
 import type { MorningBriefPreferenceResponse } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { AlertCircle, Sunrise } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -96,7 +96,7 @@ function isToggleDisabled(
 
 export function MorningBriefSettings() {
   const { t } = useTranslation();
-  const preferenceLoadable = useLoadable(morningBriefPreference$);
+  const preferenceLoadable = useLastLoadable(morningBriefPreference$);
   const [mutationLoadable, updatePreference] = useLoadableSet(
     updateMorningBriefPreference$,
   );
