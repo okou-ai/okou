@@ -275,7 +275,10 @@ secrets = sys.argv[2:]
 report = json.loads((root / 'report.json').read_text())
 assert report['stats']['expected'] == 1, 'Proxy page/API requests must pass'
 assert report['stats']['unexpected'] == 1, 'Expected the deliberate diagnostic failure only'
-assert 'INTENTIONAL_PROXY_REPORT_FAILURE' in json.dumps(report)
+failure = next(result for suite in report['suites'] for spec in suite['specs']
+               for case in spec['tests'] for result in case['results']
+               if result['status'] == 'failed')
+assert 'INTENTIONAL_PROXY_REPORT_FAILURE' in failure['error']['message']
 assert list((root / 'blob').glob('*.zip')), 'Expected a blob report to inspect'
 assert list((root / 'results').rglob('trace.zip')), 'Expected a retained failure trace to inspect'
 def inspect(data):
