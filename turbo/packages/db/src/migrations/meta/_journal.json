@@ -2799,7 +2799,14 @@
       "idx": 1478,
       "version": "7",
       "when": 1793192246459,
-      "tag": "1478_artifact_deletion",
+      "tag": "1478_teams_workspace_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1479,
+      "version": "7",
+      "when": 1793192247459,
+      "tag": "1479_artifact_deletion",
       "breakpoints": true
     }
   ]

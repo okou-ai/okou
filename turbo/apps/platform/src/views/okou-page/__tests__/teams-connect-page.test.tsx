@@ -618,3 +618,30 @@ test("Reloading a success link with no current connection remains read-only", as
   );
   expect(attemptedBinding).toBeUndefined();
 });
+
+test("An OAuth identity connects independently of the receiving bot's organization", async () => {
+  mockStatus(
+    status({
+      workspaceIdentity: true,
+      isConnected: true,
+      isInstalled: false,
+      isAdmin: false,
+      teamId: null,
+      teamName: null,
+      linkedAccounts: [{ ...account, teamsUserId: null }],
+      connectUrl: null,
+    }),
+  );
+  await setupPage({
+    context,
+    path: path({
+      ...target,
+      orgId: "external-installation-org",
+      teamId: "external-team",
+    }),
+  });
+  await expectConnected();
+  expect(
+    screen.getByText("Your Teams account is connected."),
+  ).toBeInTheDocument();
+});

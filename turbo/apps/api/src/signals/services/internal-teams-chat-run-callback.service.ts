@@ -1,3 +1,5 @@
+import { teamsDeliveryAccess$ } from "./teams-delivery-access.service";
+import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -129,13 +131,14 @@ const loadTeamsChatDeliveryContext$ = command(
       )
       .where(
         and(
+          eq(teamsChatThreadRoutes.chatThreadId, run.chatThreadId),
           eq(teamsChatThreadRoutes.conversationId, payload.conversationId),
           eq(teamsChatThreadRoutes.threadId, payload.threadId),
           eq(teamsChatThreadRoutes.userId, run.userId),
           eq(teamsChatThreadRoutes.connectionId, payload.connectionId),
           eq(teamsOrgConnections.userId, run.userId),
           eq(teamsOrgConnections.teamsTenantId, payload.tenantId),
-          eq(teamsOrgInstallations.orgId, run.orgId),
+          teamsAccountOwnerCondition({ orgId: run.orgId, userId: run.userId }),
         ),
       )
       .limit(1);
@@ -312,6 +315,15 @@ const deliverClaimedTeamsChatCallback$ = command(
     );
     signal.throwIfAborted();
 
+    if (
+      !(await set(
+        teamsDeliveryAccess$,
+        { ...payload, orgId: run.orgId, userId: run.userId },
+        signal,
+      ))
+    ) {
+      return "skipped_revoked";
+    }
     const serviceUrl = payload.serviceUrl.trim() || binding.serviceUrl || "";
     if (!serviceUrl) {
       throw new Error("Microsoft Teams serviceUrl is missing");
@@ -501,6 +513,7 @@ const loadTeamsAdmissionFailureContext$ = command(
         )
         .where(
           and(
+            eq(teamsChatThreadRoutes.chatThreadId, args.chatThreadId),
             eq(teamsChatThreadRoutes.connectionId, args.target.connectionId),
             eq(
               teamsChatThreadRoutes.conversationId,
@@ -510,7 +523,10 @@ const loadTeamsAdmissionFailureContext$ = command(
             eq(teamsChatThreadRoutes.userId, args.userId),
             eq(teamsOrgConnections.userId, args.userId),
             eq(teamsOrgConnections.teamsTenantId, args.target.tenantId),
-            eq(teamsOrgInstallations.orgId, args.orgId),
+            teamsAccountOwnerCondition({
+              orgId: args.orgId,
+              userId: args.userId,
+            }),
           ),
         )
         .limit(1),
@@ -631,6 +647,15 @@ export const deliverTeamsChatAdmissionFailure$ = command(
   ): Promise<void> => {
     const context = await set(loadTeamsAdmissionFailureContext$, args, signal);
     if (!context) {
+      return;
+    }
+    if (
+      !(await set(
+        teamsDeliveryAccess$,
+        { ...args.target, orgId: args.orgId, userId: args.userId },
+        signal,
+      ))
+    ) {
       return;
     }
     const presentation = await set(

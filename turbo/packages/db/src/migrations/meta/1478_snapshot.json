@@ -1,5 +1,5 @@
 {
-  "id": "d36cb1f1-22d5-4bed-b50a-0811eec4292c",
+  "id": "50525a7a-15d5-414c-9a86-409847201e1a",
   "prevId": "0f6863e7-9051-4437-adbe-f41ca2aa511a",
   "version": "7",
   "dialect": "postgresql",
@@ -2499,12 +2499,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -2538,9 +2532,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "artifacts_author_logical_key_unique": {
           "name": "artifacts_author_logical_key_unique",
@@ -2565,9 +2559,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "artifacts_projection_file_org_idx": {
           "name": "artifacts_projection_file_org_idx",
@@ -2586,10 +2580,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"artifacts\".\"projection_file_id\" IS NOT NULL",
+          "concurrently": false
         },
         "artifacts_thread_author_created_idx": {
           "name": "artifacts_thread_author_created_idx",
@@ -2626,10 +2620,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"artifacts\".\"chat_thread_id\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"artifacts\".\"chat_thread_id\" IS NOT NULL",
+          "concurrently": false
         },
         "artifacts_author_created_idx": {
           "name": "artifacts_author_created_idx",
@@ -2660,9 +2654,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "artifacts_author_kind_created_idx": {
           "name": "artifacts_author_kind_created_idx",
@@ -2699,24 +2693,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "artifacts_chat_thread_id_chat_threads_id_fk": {
           "name": "artifacts_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "artifacts",
-          "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
           ],
+          "tableTo": "chat_threads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -24822,12 +24816,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -24855,9 +24843,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_run_uploaded_files_run_source_external": {
           "name": "idx_run_uploaded_files_run_source_external",
@@ -24882,9 +24870,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_run_uploaded_files_source_external": {
           "name": "idx_run_uploaded_files_source_external",
@@ -24903,9 +24891,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_run_uploaded_files_updated": {
           "name": "idx_run_uploaded_files_updated",
@@ -24924,10 +24912,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"run_uploaded_files\".\"url\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"run_uploaded_files\".\"url\" IS NOT NULL",
+          "concurrently": false
         },
         "run_uploaded_files_canonical_idempotency_unique": {
           "name": "run_uploaded_files_canonical_idempotency_unique",
@@ -24952,10 +24940,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"run_uploaded_files\".\"asset_version\" = 1",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"run_uploaded_files\".\"asset_version\" = 1",
+          "concurrently": false
         },
         "run_uploaded_files_chat_thread_idx": {
           "name": "run_uploaded_files_chat_thread_idx",
@@ -24968,25 +24956,25 @@
             }
           ],
           "isUnique": false,
-          "where": "\"run_uploaded_files\".\"chat_thread_id\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"run_uploaded_files\".\"chat_thread_id\" IS NOT NULL",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "run_uploaded_files_chat_thread_id_chat_threads_id_fk": {
           "name": "run_uploaded_files_chat_thread_id_chat_threads_id_fk",
           "tableFrom": "run_uploaded_files",
-          "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
           ],
+          "tableTo": "chat_threads",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -28037,6 +28025,22 @@
           "primaryKey": false,
           "notNull": true
         },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "legacy_installation_tenant_id": {
+          "name": "legacy_installation_tenant_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "CASE WHEN org_id IS NULL THEN teams_tenant_id ELSE NULL END",
+            "type": "stored"
+          }
+        },
         "user_id": {
           "name": "user_id",
           "type": "text",
@@ -28078,6 +28082,28 @@
         }
       },
       "indexes": {
+        "idx_teams_org_connections_owner": {
+          "name": "idx_teams_org_connections_owner",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"teams_org_connections\".\"org_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_teams_org_connections_user_tenant": {
           "name": "idx_teams_org_connections_user_tenant",
           "columns": [
@@ -28095,10 +28121,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "teams_user_id IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_teams_org_connections_aad_tenant": {
           "name": "idx_teams_org_connections_aad_tenant",
@@ -28117,10 +28143,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "teams_aad_object_id IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_teams_org_connections_user_id_tenant": {
           "name": "idx_teams_org_connections_user_id_tenant",
@@ -28139,9 +28165,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_teams_org_connections_tenant": {
           "name": "idx_teams_org_connections_tenant",
@@ -28154,24 +28180,24 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "teams_org_connections_teams_tenant_id_teams_org_installations_teams_tenant_id_fk": {
           "name": "teams_org_connections_teams_tenant_id_teams_org_installations_teams_tenant_id_fk",
           "tableFrom": "teams_org_connections",
-          "columnsFrom": [
-            "teams_tenant_id"
-          ],
           "tableTo": "teams_org_installations",
+          "columnsFrom": [
+            "legacy_installation_tenant_id"
+          ],
           "columnsTo": [
             "teams_tenant_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
