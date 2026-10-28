@@ -1938,6 +1938,12 @@ pub(super) async fn register_proxy(
         secret_connector_metadata_map: context.secret_connector_metadata_map.as_ref(),
         vars: context.vars.as_ref(),
         capture_network_bodies: context.capture_network_bodies.unwrap_or(false),
+        outlook_mail_review_enabled: context
+            .feature_flags
+            .as_ref()
+            .and_then(|flags| flags.get("outlookChatMail"))
+            .copied()
+            .unwrap_or(false),
         billable_firewalls: &context.billable_firewalls,
         model_usage_provider: context.model_usage_provider.as_deref(),
         model_usage_long_context_min_total_input_tokens: context
