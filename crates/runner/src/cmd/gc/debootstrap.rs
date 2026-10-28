@@ -12,6 +12,10 @@ use super::filesystem::{next_entry_warn_or_stop, read_dir_or_missing};
 use super::lock_file::{LockProbe, probe_lock};
 use super::report::GcReport;
 
+mod removal;
+
+use removal::remove_cache_file;
+
 /// Remove cached debootstrap tarballs, keeping the `keep_latest` most recent.
 pub(super) async fn gc_debootstrap(
     home: &HomePaths,
@@ -26,7 +30,7 @@ pub(super) async fn gc_debootstrap(
     }
 
     let lock_path = home.debootstrap_lock();
-    let _lock = match probe_lock(&lock_path) {
+    let mut cache_lock = match probe_lock(&lock_path) {
         LockProbe::Free(lock) => lock,
         LockProbe::Held => {
             if dry_run {
@@ -103,9 +107,13 @@ pub(super) async fn gc_debootstrap(
                 file.path.display(),
                 human_bytes(file.size)
             );
-        } else if let Err(e) = tokio::fs::remove_file(&file.path).await {
-            warn!("remove {}: {e}", file.path.display());
-            continue;
+        } else {
+            let (returned_lock, result) = remove_cache_file(&file.path, cache_lock).await;
+            cache_lock = returned_lock;
+            if let Err(e) = result {
+                warn!("remove {}: {e}", file.path.display());
+                continue;
+            }
         }
         report += GcReport::cleanup(1, file.size);
     }
