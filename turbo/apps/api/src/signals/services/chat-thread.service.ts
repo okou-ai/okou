@@ -54,16 +54,22 @@ import {
   max,
   or,
   sql,
+  is,
+  SQL,
 } from "drizzle-orm";
 
 import { settle } from "../utils";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
-import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
+import {
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
+import { chatThreadInitializationCtes } from "./chat-thread-initialization-plan";
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { prepareChatEvent } from "./chat-event.service";
-import { appendCanonicalChatEventsSql } from "./chat-event-append.service";
 import { inferMimetype } from "./chat-event-shared.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
@@ -79,20 +85,15 @@ import { cancellationRecoveryPendingForThread } from "./chat-active-run.service"
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { threadBoundWorkflowAutomationsPredicate } from "./workflow-user-automation-thread.service";
 import {
-  initialChatThreadConnectorSelectionStatements,
   selectionParentMissing,
   prepareChatThreadConnectorSelections$,
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
 import {
-  chatThreadCreatedEventSql,
   prepareChatThreadInsert,
   createdChatThreadFromRow,
 } from "./chat-thread-create.service";
-import {
-  initialRemoteAccessOwnershipPredicate,
-  initialRemoteAccessValues,
-} from "./chat-remote-access.service";
+import { initialRemoteAccessOwnershipPredicate } from "./chat-remote-access.service";
 
 type ChatThreadRow = {
   readonly id: string;
@@ -857,49 +858,76 @@ function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
   });
 }
 
-function initialThreadWritePlan(
-  args: CreateChatThreadArgs,
-  thread: ReturnType<typeof createdChatThreadFromRow>,
-  selections: readonly PreparedChatThreadConnectorSelection[],
+function ordinaryInitializationRead(
+  plan: ReturnType<typeof ordinaryChatThreadInsertPlan>,
 ) {
+  const settings = plan.values.modelSettings;
+  const browser = plan.values.cloudBrowserEnabled;
   return {
-    connectors: initialChatThreadConnectorSelectionStatements({
-      chatThreadId: thread.id,
-      selections,
-      required: args.connectorSelectionPolicy === "required",
-    }),
-    remote: initialRemoteAccessValues(
-      thread.id,
-      args.initialRemoteAccessOverrides ?? [],
-    ),
-    events: [
-      chatThreadCreatedEventSql({
-        orgId: args.orgId,
-        eventId: args.eventId,
-        thread,
-      }),
-      args.initialAssistantMessage === undefined
-        ? null
-        : welcomeSeedStatement(thread.id, args.initialAssistantMessage),
-    ],
+    id: sql`gen_random_uuid()`.mapWith(chatThreads.id),
+    at: sql`NOW()::timestamp`.mapWith(chatThreads.createdAt),
+    atText: sql`NOW()::timestamp::text`.mapWith(pgTextDecoder),
+    modelSettings: (is(settings, SQL)
+      ? settings
+      : sql`${sql.param(settings, chatThreads.modelSettings)}::jsonb`
+    ).mapWith(chatThreads.modelSettings),
+    cloudBrowserEnabled: (typeof browser === "boolean"
+      ? sql`${browser}::boolean`
+      : browser
+    ).mapWith(chatThreads.cloudBrowserEnabled),
   };
 }
+
+function preparedOrdinaryThread(
+  args: CreateChatThreadArgs,
+  plan: ReturnType<typeof ordinaryChatThreadInsertPlan>,
+  read: {
+    readonly id: string;
+    readonly at: Date;
+    readonly atText: string;
+    readonly modelSettings: ModelSettings;
+    readonly cloudBrowserEnabled: boolean;
+  },
+) {
+  const thread = createdChatThreadFromRow(
+    {
+      id: args.clientThreadId ?? read.id,
+      userId: args.userId,
+      title: args.title ?? null,
+      selectedModel: plan.values.selectedModel,
+      modelSettings: read.modelSettings,
+      codexServiceTier: args.codexServiceTier,
+      computerUseHostId: null,
+      cloudBrowserEnabled: read.cloudBrowserEnabled,
+      createdAt: read.at,
+    },
+    args.agentId,
+  );
+  return {
+    thread,
+    values: {
+      ...plan.values,
+      id: thread.id,
+      modelSettings: thread.modelSettings,
+      cloudBrowserEnabled: thread.cloudBrowserEnabled,
+      lastReadAt: sql`${read.atText}::timestamp`,
+      lastMessageAt: sql`${read.atText}::timestamp`,
+      createdAt: sql`${read.atText}::timestamp`,
+      updatedAt: sql`${read.atText}::timestamp`,
+    },
+  };
+}
+
+const initializedThreadRowSchema = object({
+  id: uuid(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema,
+});
 
 function createdThreadResult(thread: {
   readonly id: string;
   readonly createdAt: Date;
 }): CreatedChatThread {
   return { kind: "created", id: thread.id, createdAt: thread.createdAt };
-}
-
-function welcomeSeedStatement(chatThreadId: string, content: string) {
-  const seed = prepareChatEvent({
-    chatThreadId,
-    eventType: "output.message",
-    content,
-    createdAt: nowDate(),
-  });
-  return appendCanonicalChatEventsSql([seed.row], "none");
 }
 
 function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
@@ -924,26 +952,13 @@ function initialRemoteOwnershipSelection(args: CreateChatThreadArgs) {
   };
 }
 
-const createdChatThreadSelection = Object.freeze({
-  id: chatThreads.id,
-  userId: chatThreads.userId,
-  title: chatThreads.title,
-  selectedModel: chatThreads.selectedModel,
-  hidden: chatThreads.hidden,
-  modelSettings: chatThreads.modelSettings,
-  codexServiceTier: chatThreads.codexServiceTier,
-  computerUseHostId: chatThreads.computerUseHostId,
-  cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-  createdAt: chatThreads.createdAt,
-});
-
 /** The winning thread INSERT supplies the target; replays cannot invent a parent. */
 function createdChatRelationCtes(args: CreateChatThreadArgs) {
   if (args.sourceRunId === undefined) {
     return [];
   }
   return [
-    new QueryBuilder().$with("created_chat_relation", {}).as(sql`
+    sql`created_chat_relation AS (
     INSERT INTO ${chatRelations}
       (org_id, user_id, type, source_chat_thread_id, target_chat_thread_id, source_run_id, created_at)
     SELECT ${args.orgId}, ${args.userId}, 'created', ${chatThreads.id},
@@ -955,7 +970,7 @@ function createdChatRelationCtes(args: CreateChatThreadArgs) {
       AND ${agentRuns.orgId} = ${args.orgId}
       AND ${chatThreads.userId} = ${args.userId}
       AND ${chatThreads.id} <> created_chat_thread.id
-  `),
+  )`,
   ];
 }
 
@@ -983,7 +998,7 @@ function invalidInitialConnectorSelection(
 
 /** Initialization and the ordered created event commit together. */
 export const createChatThread$ = command(
-  async ({ set }, args: CreateChatThreadArgs, signal: AbortSignal) => {
+  async ({ get, set }, args: CreateChatThreadArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (args.committedThread) {
       return args.committedThread;
@@ -1000,13 +1015,11 @@ export const createChatThread$ = command(
       );
     }
     const thread = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0095; new non-billing transactions are prohibited.
-      set(writeDb$).transaction(async (tx) => {
-        const initialRemoteAccessOverrides =
-          args.initialRemoteAccessOverrides ?? [];
+      (async () => {
+        const readDb = get(db$);
         const [remoteOwnership] =
-          initialRemoteAccessOverrides.length > 0
-            ? await tx
+          (args.initialRemoteAccessOverrides?.length ?? 0) > 0
+            ? await readDb
                 .select(initialRemoteOwnershipSelection(args))
                 .from(sql`(SELECT 1) AS initial_remote_ownership`)
             : [{ owned: true }];
@@ -1014,81 +1027,69 @@ export const createChatThread$ = command(
         if (!remoteOwnership) {
           throw new Error("Initial remote access ownership result is missing");
         }
-        const createdThreadPlan = ordinaryChatThreadInsertPlan(args);
-        const createdThreadWrite = tx.$with("created_chat_thread").as(
-          tx
-            .insert(chatThreads)
-            .values(createdThreadPlan.values)
-            .onConflictDoNothing()
-            .returning({ ...createdChatThreadSelection }),
-        );
-        const [createdThreadRow] = remoteOwnership.owned
-          ? await tx
-              .with(
-                ...createdThreadPlan.defaults,
-                createdThreadWrite,
-                ...createdChatRelationCtes(args),
-              )
-              .select()
-              .from(createdThreadWrite)
-          : [];
-        signal.throwIfAborted();
-        const createdThread = createdThreadRow
-          ? createdChatThreadFromRow(
-              createdThreadRow,
-              createdThreadPlan.values.agentId,
-            )
-          : undefined;
-        if (!createdThread) {
-          if (canReplayClientThread(args)) {
-            const [existing] = await tx
-              .select(existingClientThreadSelection)
-              .from(chatThreads)
-              .where(existingClientThreadCondition(args))
-              .limit(1);
-            signal.throwIfAborted();
-            if (existing) {
-              return { kind: "existing" as const, ...existing };
-            }
+        if (remoteOwnership.owned) {
+          const plan = ordinaryChatThreadInsertPlan(args);
+          const [read] = await readDb
+            .with(...plan.defaults)
+            .select(ordinaryInitializationRead(plan))
+            .from(sql`(SELECT 1) AS initial_thread_values`);
+          signal.throwIfAborted();
+          if (!read) {
+            throw new Error("Initial chat thread values are missing");
           }
-          if (!remoteOwnership.owned) {
-            return {
+          const prepared = preparedOrdinaryThread(args, plan, read);
+          const db = set(writeDb$);
+          const insertion = db
+            .insert(chatThreads)
+            .values(prepared.values)
+            .onConflictDoNothing()
+            .returning({
+              id: chatThreads.id,
+              createdAt: chatThreads.createdAt,
+            });
+          const ctes = [
+            sql`created_chat_thread AS (${insertion.getSQL()})`,
+            ...createdChatRelationCtes(args),
+            ...chatThreadInitializationCtes({
+              orgId: args.orgId,
+              eventId: args.eventId,
+              thread: prepared.thread,
+              selections: preparedConnectorSelections.selections,
+              required: args.connectorSelectionPolicy === "required",
+              remoteOverrides: args.initialRemoteAccessOverrides ?? [],
+              assistantMessage: args.initialAssistantMessage,
+            }),
+          ];
+          const [created] = parseRawRows(
+            initializedThreadRowSchema,
+            await db.execute(sql`WITH ${sql.join(ctes, sql`, `)}
+              SELECT id, created_at::text AS "createdAt" FROM created_chat_thread`),
+          );
+          signal.throwIfAborted();
+          if (created) {
+            return createdThreadResult(created);
+          }
+        }
+        if (canReplayClientThread(args)) {
+          // A conflicting INSERT may have waited for an uncommitted winner.
+          // Read again after that statement; its initial snapshot cannot replay it.
+          const [existing] = await readDb
+            .select(existingClientThreadSelection)
+            .from(chatThreads)
+            .where(existingClientThreadCondition(args))
+            .limit(1);
+          signal.throwIfAborted();
+          if (existing) {
+            return { kind: "existing" as const, ...existing };
+          }
+        }
+        return remoteOwnership.owned
+          ? { kind: "client_thread_conflict" as const }
+          : {
               kind: "invalid_remote_access_selection" as const,
               message: "Remote access host not found",
             };
-          }
-          return { kind: "client_thread_conflict" as const };
-        }
-        const initialWrites = initialThreadWritePlan(
-          args,
-          createdThread,
-          preparedConnectorSelections.selections,
-        );
-        for (const statement of initialWrites.connectors) {
-          await tx.execute(statement);
-          signal.throwIfAborted();
-        }
-        const remoteValues = initialWrites.remote;
-        if (remoteValues.ssh.length) {
-          await tx
-            .insert(chatThreadSshAccessOverrides)
-            .values(remoteValues.ssh);
-          signal.throwIfAborted();
-        }
-        if (remoteValues.vnc.length) {
-          await tx
-            .insert(chatThreadVncAccessOverrides)
-            .values(remoteValues.vnc);
-          signal.throwIfAborted();
-        }
-        for (const statement of initialWrites.events) {
-          if (statement !== null) {
-            await tx.execute(statement);
-            signal.throwIfAborted();
-          }
-        }
-        return createdThreadResult(createdThread);
-      }),
+      })(),
       signal,
     );
     signal.throwIfAborted();
