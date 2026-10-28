@@ -7,6 +7,7 @@ use std::panic::AssertUnwindSafe;
 use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
+use runner_lifecycle::home_image_cache::HomeCacheProbe;
 use runner_provider::{ClaimedJob, RunCancellationRegistration};
 use runner_types::ids::RunId;
 use tracing::{info, warn};
@@ -192,7 +193,7 @@ impl PeerHomeClaim {
         let mut committed = ctx.home_cache_snapshot.subscribe_committed();
         let deadline = tokio::time::Instant::from_std(self.deadline);
         let mut recheck_delay = HOME_RECHECK_INITIAL_DELAY;
-        let mut recheck_at = tokio::time::Instant::now() + recheck_delay;
+        let mut recheck_at = tokio::time::Instant::now();
         loop {
             if cancelled.is_cancelled() {
                 return Ok((None, PeerHomeWaitOutcome::Cancelled));
@@ -212,16 +213,16 @@ impl PeerHomeClaim {
                     // The claimed job owns this read through completion. Busy
                     // never blocks on a predecessor and a positive observation
                     // still requires ordinary source-bound locked checkout.
-                    let observed = cache.probe_source_home(
+                    let observed = cache.probe_home(
                         &reuse_key,
                         &profile,
                         image_size_bytes,
-                        self.source_run_id,
+                        Some(self.source_run_id),
                     ).await;
                     #[cfg(test)]
                     ctx.test_observer.record(super::StartLoopEvent::PeerHomeRecheckCompleted {
                         run_id,
-                        ready: observed.as_ref().is_ok_and(|ready| *ready),
+                        ready: matches!(&observed, Ok(HomeCacheProbe::Ready { .. })),
                     });
                     if cancelled.is_cancelled() {
                         return Ok((None, PeerHomeWaitOutcome::Cancelled));
@@ -231,8 +232,8 @@ impl PeerHomeClaim {
                         return Ok((None, PeerHomeWaitOutcome::PreferenceExpired));
                     }
                     match observed {
-                        Ok(true) => return Ok((Some(self.source_run_id), PeerHomeWaitOutcome::RevalidatedReady)),
-                        Ok(false) => {}
+                        Ok(HomeCacheProbe::Ready { .. }) => return Ok((Some(self.source_run_id), PeerHomeWaitOutcome::RevalidatedReady)),
+                        Ok(HomeCacheProbe::Busy | HomeCacheProbe::Missing | HomeCacheProbe::Incompatible) => {}
                         Err(error) => warn!(
                             %run_id,
                             source_run_id = %self.source_run_id,
@@ -240,8 +241,8 @@ impl PeerHomeClaim {
                             "claimed peer Home revalidation failed; retaining original wait"
                         ),
                     }
-                    recheck_delay = (recheck_delay * 2).min(HOME_RECHECK_MAX_DELAY);
                     recheck_at = now + recheck_delay;
+                    recheck_delay = (recheck_delay * 2).min(HOME_RECHECK_MAX_DELAY);
                 },
                 update = committed.changed() => {
                     // This task retains the snapshot and its sender through ctx.

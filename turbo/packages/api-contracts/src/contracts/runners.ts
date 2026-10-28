@@ -208,6 +208,7 @@ export const runnerPreferenceSchema = union([
       "finalizingPredecessor",
       "peerFinalizingPredecessor",
       "sourceHomeCache",
+      "sourceHostProbe",
     ]),
     expiresAt: string().datetime({ offset: true }),
     finalizingSourceRunId: uuid(),

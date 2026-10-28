@@ -20,6 +20,7 @@ use runner_provider::{
 };
 
 mod independent_source;
+mod local_home;
 mod peer_home;
 mod physical_handoff;
 mod terminal_reuse;

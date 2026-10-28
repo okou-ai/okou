@@ -22,7 +22,7 @@ describe("peer finalizing evidence", () => {
   });
 
   it.each(["source", "receiver"] as const)(
-    "rejects an accepted PAT %s snapshot even when it supplies the hostname",
+    "does not use an accepted PAT %s snapshot as finalizing ownership",
     async (role) => {
       const f = await peerFinalizingFixture(context);
       const pat = await f.owned.run(() => {
@@ -46,22 +46,26 @@ describe("peer finalizing evidence", () => {
         });
       });
       await peerContinuation(f);
-      expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-        kind: "noPreference",
-      });
+      expect((await peerPoll(f))?.runnerPreference).toMatchObject(
+        role === "source"
+          ? { tier: "sourceHostProbe" }
+          : { kind: "noPreference" },
+      );
     },
   );
 
   it.each(["source", "receiver"] as const)(
-    "rejects stale %s state independently of the other fresh process",
+    "requires fresh recipient state without borrowing stale %s producer proof",
     async (role) => {
       const f = await peerFinalizingFixture(context);
       mockNow(f.clock + 30_001);
       await peerHeartbeat(f, role === "source" ? f.receiverId : f.sourceId);
       await peerContinuation(f);
-      expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-        kind: "noPreference",
-      });
+      expect((await peerPoll(f))?.runnerPreference).toMatchObject(
+        role === "source"
+          ? { tier: "sourceHostProbe" }
+          : { kind: "noPreference" },
+      );
     },
   );
 
@@ -81,7 +85,8 @@ describe("peer finalizing evidence", () => {
       mockNow(f.clock + 2000);
       await peerContinuation(f);
       expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-        kind: "noPreference",
+        tier: "sourceHostProbe",
+        expiresAt: new Date(f.clock + 4000).toISOString(),
       });
     },
   );
@@ -113,7 +118,7 @@ describe("peer finalizing evidence", () => {
     });
     await peerContinuation(f);
     expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-      kind: "noPreference",
+      tier: "sourceHostProbe",
     });
   });
 });

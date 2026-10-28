@@ -220,7 +220,7 @@ async fn prepare_claimed(
         blank_pool_selection,
     } = admission;
     let resource = match resource {
-        AdmittedResource::PeerFinalizing {
+        AdmittedResource::PeerHome {
             lease,
             deadline,
             source_run_id,

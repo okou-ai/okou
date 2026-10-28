@@ -22,7 +22,11 @@ const job = {
 };
 
 describe("independent finalizing source contract", () => {
-  it.each(["finalizingPredecessor", "peerFinalizingPredecessor"] as const)(
+  it.each([
+    "finalizingPredecessor",
+    "peerFinalizingPredecessor",
+    "sourceHostProbe",
+  ] as const)(
     "preserves %s source identity without manufacturing native history",
     (tier) => {
       const runnerPreference = { ...preference, tier };

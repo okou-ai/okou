@@ -159,34 +159,58 @@ pub struct HomeCacheKeyUpdates {
     pub incomplete: bool,
 }
 
+/// A non-consuming observation; only locked checkout grants image ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HomeCacheProbe {
+    Ready { source_run_id: RunId },
+    Busy,
+    Missing,
+    Incompatible,
+}
+
 impl HomeImageCache {
-    /// Observe one demanded source independently of the bounded inventory.
+    /// Observe one requested Home independently of the bounded inventory.
     ///
-    /// This existing-only, nonblocking observation creates no cache/lock state
-    /// and grants no checkout authority. The ordinary Home lease must still
-    /// revalidate the source.
-    pub async fn probe_source_home(
+    /// A collected free lock is recreated only for an existing entry. No image
+    /// is consumed, and ordinary checkout must still revalidate the source.
+    pub async fn probe_home(
         &self,
         reuse_key: &str,
         profile_name: &str,
         image_size_bytes: u64,
-        source_run_id: RunId,
-    ) -> LifecycleResult<bool> {
+        required_source: Option<RunId>,
+    ) -> LifecycleResult<HomeCacheProbe> {
         let key = self.scoped_cache_key(profile_name, reuse_key, image_size_bytes);
         let lock =
             match runner_host::lock::try_acquire_existing_or_missing(self.entry_lock_path(&key))
                 .await?
             {
                 runner_host::lock::ExistingTryLock::Acquired(lock) => lock,
-                runner_host::lock::ExistingTryLock::Busy
-                | runner_host::lock::ExistingTryLock::Missing => return Ok(false),
+                runner_host::lock::ExistingTryLock::Busy => return Ok(HomeCacheProbe::Busy),
+                runner_host::lock::ExistingTryLock::Missing => {
+                    match tokio::fs::symlink_metadata(self.home_image_cache_entry_dir(&key)).await {
+                        Ok(metadata) if metadata.is_dir() => {}
+                        Ok(_) => return Ok(HomeCacheProbe::Incompatible),
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                            return Ok(HomeCacheProbe::Missing);
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                    match runner_host::lock::try_acquire_or_busy(self.entry_lock_path(&key)).await?
+                    {
+                        runner_host::lock::TryLock::Acquired(lock) => lock,
+                        runner_host::lock::TryLock::Busy => return Ok(HomeCacheProbe::Busy),
+                    }
+                }
             };
         // Missing bytes are a normal pre-publication observation. Preserve
         // other filesystem/metadata failures for the claimed waiter's owner.
         match tokio::fs::symlink_metadata(self.home_image_cache_entry_dir(&key)).await {
             Ok(metadata) if metadata.is_dir() => {}
-            Ok(_) => return Ok(false),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Ok(_) => return Ok(HomeCacheProbe::Incompatible),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(HomeCacheProbe::Missing);
+            }
             Err(error) => return Err(error.into()),
         }
         let metadata = match self
@@ -195,18 +219,26 @@ impl HomeImageCache {
         {
             Ok(metadata) => metadata,
             Err(LifecycleError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(false);
+                return Ok(HomeCacheProbe::Missing);
             }
             Err(error) => return Err(error),
         };
         let profiles = BTreeMap::from([(profile_name, image_size_bytes)]);
-        let ready = metadata.image_generation == source_run_id.to_string()
+        let ready = required_source
+            .is_none_or(|source| metadata.image_generation == source.to_string())
             && metadata.reuse_key == reuse_key
             && self
                 .metadata_is_publishable_held_home_state(&key, &metadata, Some(&profiles))
                 .await;
         drop(lock);
-        Ok(ready)
+        Ok(if ready {
+            match metadata.image_generation.parse() {
+                Ok(source_run_id) => HomeCacheProbe::Ready { source_run_id },
+                Err(_) => HomeCacheProbe::Incompatible,
+            }
+        } else {
+            HomeCacheProbe::Incompatible
+        })
     }
 
     /// Inspect each hint once. The observer owns retries, so one busy entry

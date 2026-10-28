@@ -32,10 +32,11 @@ fn finalizing_source_survives_context_and_claim_telemetry_without_native_history
 }
 
 #[test]
-fn ready_source_preferences_preserve_producer_without_native_history() {
+fn source_bound_preferences_preserve_producer_without_native_history() {
     for (tier, expected) in [
         ("exactSandbox", RunnerPreferenceTier::ExactSandbox),
         ("sourceHomeCache", RunnerPreferenceTier::SourceHomeCache),
+        ("sourceHostProbe", RunnerPreferenceTier::SourceHostProbe),
     ] {
         let source = RunId::new_v4();
         let mut wire = preference(source);

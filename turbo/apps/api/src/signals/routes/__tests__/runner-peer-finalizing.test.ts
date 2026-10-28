@@ -140,7 +140,8 @@ describe("same-host draining predecessor preference", () => {
     });
     mockNow(f.clock + 1500);
     expect((await peerPoll(f))?.runnerPreference).toMatchObject({
-      kind: "noPreference",
+      tier: "sourceHostProbe",
+      expiresAt: new Date(f.clock + 2000).toISOString(),
     });
   });
 

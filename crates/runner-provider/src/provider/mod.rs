@@ -47,11 +47,13 @@ pub enum RunnerPreferenceTier {
     SourceHomeCache,
     ReusableSandbox,
     HomeCache,
+    SourceHostProbe,
 }
 
 impl RunnerPreferenceTier {
     pub fn rank(self) -> u8 {
         match self {
+            Self::SourceHostProbe => 0,
             Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
             Self::SourceHomeCache => 3,
@@ -129,6 +131,11 @@ pub enum RunnerPreferenceDecision {
         expires_at: DateTime<FixedOffset>,
         finalizing_source_run_id: RunId,
     },
+    SourceHostProbe {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        finalizing_source_run_id: RunId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -139,6 +146,7 @@ pub enum RunnerPreferenceTarget {
     ReusableSandbox,
     HomeCache,
     SourceHomeCache(RunId),
+    SourceHostProbe(RunId),
 }
 
 impl RunnerPreferenceTarget {
@@ -150,6 +158,7 @@ impl RunnerPreferenceTarget {
             Self::ReusableSandbox => RunnerPreferenceTier::ReusableSandbox,
             Self::HomeCache => RunnerPreferenceTier::HomeCache,
             Self::SourceHomeCache(_) => RunnerPreferenceTier::SourceHomeCache,
+            Self::SourceHostProbe(_) => RunnerPreferenceTier::SourceHostProbe,
         }
     }
 
@@ -158,7 +167,8 @@ impl RunnerPreferenceTarget {
             Self::SourceSandbox(source)
             | Self::FinalizingPredecessor(source)
             | Self::PeerFinalizingPredecessor(source)
-            | Self::SourceHomeCache(source) => Some(source),
+            | Self::SourceHomeCache(source)
+            | Self::SourceHostProbe(source) => Some(source),
             Self::ReusableSandbox | Self::HomeCache => None,
         }
     }
@@ -197,6 +207,11 @@ impl RunnerPreferenceTarget {
                 expires_at,
             },
             Self::SourceHomeCache(source) => RunnerPreferenceDecision::SourceHomeCache {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id: source,
+            },
+            Self::SourceHostProbe(source) => RunnerPreferenceDecision::SourceHostProbe {
                 runner_identity,
                 expires_at,
                 finalizing_source_run_id: source,
@@ -258,6 +273,15 @@ impl RunnerPreferenceDecision {
             } => (
                 runner_identity,
                 RunnerPreferenceTarget::SourceHomeCache(*finalizing_source_run_id),
+                expires_at,
+            ),
+            Self::SourceHostProbe {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id,
+            } => (
+                runner_identity,
+                RunnerPreferenceTarget::SourceHostProbe(*finalizing_source_run_id),
                 expires_at,
             ),
         };

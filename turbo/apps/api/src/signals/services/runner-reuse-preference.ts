@@ -261,6 +261,72 @@ function peerFinalizingPredecessorCondition(args: {
   );
 }
 
+/** Locality hint only: the source process need not still exist or advertise Home. */
+function sourceHostProbeCondition(args: {
+  readonly runnerGroup: string;
+  readonly profile: SQLWrapper;
+}): SQL {
+  return (
+    and(
+      inArray(finalizingSourceRun.status, ["completed", "cancelled", "failed"]),
+      eq(finalizingSourceRun.runnerGroup, args.runnerGroup),
+      eq(
+        sql`${finalizingSourceRun.launchSnapshot}->>'runnerProfile'`,
+        args.profile,
+      ),
+      isNotNull(finalizingSourceRun.runnerHostname),
+      ne(finalizingSourceRun.runnerHostname, ""),
+      eq(runnerState.runnerHostname, finalizingSourceRun.runnerHostname),
+      arrayContains(
+        runnerState.admittableProfiles,
+        sql`jsonb_build_array(cast(${args.profile} as text))`,
+      ),
+    ) ?? sql`false`
+  );
+}
+
+function runnerStateHasSourceHostProbe(args: {
+  readonly runnerId?: string;
+  readonly runnerGroup: string;
+  readonly sourceRunId: SQLWrapper;
+  readonly profile: SQLWrapper;
+  readonly freshAfter: Date;
+}): SQL {
+  return exists(
+    new QueryBuilder()
+      .select({ runnerId: runnerState.runnerId })
+      .from(runnerState)
+      .innerJoin(
+        finalizingSourceRun,
+        eq(finalizingSourceRun.id, args.sourceRunId),
+      )
+      .where(
+        and(
+          eq(runnerState.runnerGroup, args.runnerGroup),
+          ...(args.runnerId ? [eq(runnerState.runnerId, args.runnerId)] : []),
+          eq(runnerState.mode, "running"),
+          gt(runnerState.lastSeenAt, args.freshAfter),
+          gt(runnerState.heartbeatGeneration, 0),
+          sourceHostProbeCondition(args),
+        ),
+      ),
+  );
+}
+
+function sourceHostProbePollHolders(args: {
+  readonly runnerId: string;
+  readonly runnerGroup: string;
+  readonly sourceRunId: SQLWrapper;
+  readonly profile: SQLWrapper;
+  readonly freshAfter: Date;
+}) {
+  const { runnerId, ...conditions } = args;
+  return {
+    global: runnerStateHasSourceHostProbe(conditions),
+    local: runnerStateHasSourceHostProbe({ ...conditions, runnerId }),
+  };
+}
+
 function runnerStateHasFinalizingPredecessor(args: {
   readonly runnerId?: string;
   readonly runnerGroup: string;
@@ -376,8 +442,7 @@ export function runnerReusePreferencePollPriority(args: {
     args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   );
   const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
-  const reuseKey = runnerJobQueue.reuseKey;
-  const profile = runnerJobQueue.profile;
+  const { reuseKey, profile } = runnerJobQueue;
   const sourceRunId = runnerThreadPredecessorRunId({
     runId: runnerJobQueue.runId,
     reuseKey,
@@ -417,6 +482,13 @@ export function runnerReusePreferencePollPriority(args: {
   const hasLocalHome = local(homeCondition);
   const hasGlobalSourceHome = global(sourceHomeCondition);
   const hasLocalSourceHome = local(sourceHomeCondition);
+  const hostProbe = sourceHostProbePollHolders({
+    runnerId: args.runnerId,
+    runnerGroup: args.runnerGroup,
+    profile,
+    sourceRunId,
+    freshAfter,
+  });
   const finalizing = finalizingPollHolders({
     runnerId: args.runnerId,
     runnerGroup: args.runnerGroup,
@@ -471,6 +543,12 @@ export function runnerReusePreferencePollPriority(args: {
       WHEN ${hasLocalHome} THEN 3
       ELSE 0
     END
+    WHEN ${and(
+      discoveryWindowCondition(protectedAfter),
+      isNotNull(runnerJobQueue.reuseKey),
+      hostProbe.global,
+    )}
+    THEN CASE WHEN ${hostProbe.local} THEN 2 ELSE 0 END
     ELSE 0
   END`;
 }
@@ -488,6 +566,7 @@ const preferenceResolutionByTier = {
   reusableSandbox: "matching_reusable_sandbox",
   homeCache: "matching_home_cache",
   sourceHomeCache: "matching_source_home_cache",
+  sourceHostProbe: "source_host_probe",
 } as const satisfies Record<PositiveRunnerPreference["tier"], string>;
 
 const noPreferenceResolutionByReason = {
@@ -545,10 +624,40 @@ interface RunnerReuseHolder {
   readonly hasSourceHome: boolean;
   readonly isFinalizingPredecessor: boolean;
   readonly isPeerFinalizingPredecessor: boolean;
+  readonly isSourceHostProbe: boolean;
   readonly finalizingSourceHasActiveProducer: boolean;
   readonly hasReusableSandbox: boolean;
   readonly sourceCompletedAt: Date | null;
   readonly finalizingSourceRunId: string | null;
+}
+
+function readyReuseHolderConditions(
+  args: {
+    readonly profile: string;
+    readonly reuseKey: string;
+    readonly shouldLookUpExactSource: boolean;
+    readonly shouldLookUpGenericReuse: boolean;
+  },
+  sourceRunId: SQL,
+) {
+  const identity = {
+    reuseKey: sql.param(args.reuseKey),
+    profile: sql.param(args.profile),
+  };
+  return {
+    reusableCondition: args.shouldLookUpGenericReuse
+      ? reusableSandboxCondition(identity)
+      : sql`false`,
+    homeCondition: args.shouldLookUpGenericReuse
+      ? capableHomeCondition(identity)
+      : sql`false`,
+    exactSourceCondition: args.shouldLookUpExactSource
+      ? reusableSandboxCondition({ ...identity, sourceRunId })
+      : sql`false`,
+    sourceHomeCondition: args.shouldLookUpGenericReuse
+      ? capableHomeCondition({ ...identity, sourceRunId })
+      : sql`false`,
+  };
 }
 
 function runnerReuseHolderPlan(args: {
@@ -566,32 +675,12 @@ function runnerReuseHolderPlan(args: {
     runId: sql.param(args.runId),
     reuseKey: sql.param(args.reuseKey),
   });
-  const reusableCondition = args.shouldLookUpGenericReuse
-    ? reusableSandboxCondition({
-        reuseKey: sql.param(args.reuseKey),
-        profile: sql.param(args.profile),
-      })
-    : sql`false`;
-  const homeCondition = args.shouldLookUpGenericReuse
-    ? capableHomeCondition({
-        reuseKey: sql.param(args.reuseKey),
-        profile: sql.param(args.profile),
-      })
-    : sql`false`;
-  const exactSourceCondition = args.shouldLookUpExactSource
-    ? reusableSandboxCondition({
-        reuseKey: sql.param(args.reuseKey),
-        profile: sql.param(args.profile),
-        sourceRunId,
-      })
-    : sql`false`;
-  const sourceHomeCondition = args.shouldLookUpGenericReuse
-    ? capableHomeCondition({
-        reuseKey: sql.param(args.reuseKey),
-        profile: sql.param(args.profile),
-        sourceRunId,
-      })
-    : sql`false`;
+  const {
+    reusableCondition,
+    homeCondition,
+    exactSourceCondition,
+    sourceHomeCondition,
+  } = readyReuseHolderConditions(args, sourceRunId);
   const producerCondition = args.shouldLookUpFinalizingProducer
     ? activeProducerCondition({
         inventory: runnerState.activeReuseProducers,
@@ -629,6 +718,12 @@ function runnerReuseHolderPlan(args: {
           activeProducer: peerProducerCondition,
         })
       : undefined) ?? sql`false`;
+  const hostProbeCondition = args.shouldLookUpGenericReuse
+    ? sourceHostProbeCondition({
+        runnerGroup: args.runnerGroup,
+        profile: sql.param(args.profile),
+      })
+    : sql`false`;
   const resourceRank = sql`CASE
     WHEN ${exactSourceCondition} THEN 5
     WHEN ${finalizingCondition} THEN 4
@@ -650,6 +745,10 @@ function runnerReuseHolderPlan(args: {
       isPeerFinalizingPredecessor: sql`${peerFinalizingCondition}`.mapWith(
         pgBooleanDecoder,
       ),
+      isSourceHostProbe: sql`CASE
+        WHEN ${homeCondition} OR ${reusableCondition} THEN false
+        ELSE coalesce(${hostProbeCondition}, false)
+      END`.mapWith(pgBooleanDecoder),
       // A's producer inventory determines the budget even when B is empty or
       // advertises unrelated producers.
       finalizingSourceHasActiveProducer: sql`CASE
@@ -677,6 +776,7 @@ function runnerReuseHolderPlan(args: {
         sourceHomeCondition,
         reusableCondition,
         homeCondition,
+        hostProbeCondition,
       ),
     ),
     orderBy: [desc(resourceRank), asc(runnerState.runnerId)] as const,
@@ -792,6 +892,7 @@ const findRunnerReuseHolder$ = command(
           hasSourceHome: row.hasSourceHome,
           isFinalizingPredecessor: row.isFinalizingPredecessor,
           isPeerFinalizingPredecessor: row.isPeerFinalizingPredecessor,
+          isSourceHostProbe: row.isSourceHostProbe,
           finalizingSourceHasActiveProducer:
             row.finalizingSourceHasActiveProducer,
           hasReusableSandbox: row.hasReusableSandbox,
@@ -982,6 +1083,21 @@ function runnerReusePreferenceResult(args: {
         kind: "preference",
         runnerIdentity: holder.runnerIdentity,
         tier: "sourceHomeCache",
+        finalizingSourceRunId: holder.finalizingSourceRunId,
+        expiresAt: matchingReuseExpiresAt.toISOString(),
+      },
+    };
+  }
+
+  if (holder.isSourceHostProbe) {
+    if (!holder.finalizingSourceRunId) {
+      throw new Error("Source host probe is missing its source identity");
+    }
+    return {
+      preference: {
+        kind: "preference",
+        runnerIdentity: holder.runnerIdentity,
+        tier: "sourceHostProbe",
         finalizingSourceRunId: holder.finalizingSourceRunId,
         expiresAt: matchingReuseExpiresAt.toISOString(),
       },

@@ -44,17 +44,27 @@ describe("peer finalizing eligibility", () => {
     ],
     ["receiver starting", "receiver", { mode: "starting" }],
     ["receiver draining", "receiver", { mode: "draining" }],
-  ])("rejects %s", async (_label, role, changes) => {
-    const f = await peerFinalizingFixture(context);
-    await peerHeartbeat(
-      f,
-      role === "source" ? f.sourceId : f.receiverId,
-      changes,
-    );
-    const next = await peerContinuation(f);
-    await expect(peerPoll(f)).resolves.toMatchObject({
-      runId: next.runId,
-      runnerPreference: { kind: "noPreference" },
-    });
-  });
+  ])(
+    "does not infer finalizing ownership from %s",
+    async (_label, role, changes) => {
+      const f = await peerFinalizingFixture(context);
+      await peerHeartbeat(
+        f,
+        role === "source" ? f.sourceId : f.receiverId,
+        changes,
+      );
+      const next = await peerContinuation(f);
+      await expect(peerPoll(f)).resolves.toMatchObject({
+        runId: next.runId,
+        runnerPreference:
+          role === "source"
+            ? {
+                kind: "preference",
+                tier: "sourceHostProbe",
+                finalizingSourceRunId: f.source.runId,
+              }
+            : { kind: "noPreference" },
+      });
+    },
+  );
 });

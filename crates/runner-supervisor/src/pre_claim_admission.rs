@@ -19,6 +19,7 @@ use runner_host::paths::short_digest;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_lifecycle::active_runs::{ActiveRunReuseProof, ActiveRuns};
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
+use runner_lifecycle::home_image_cache::{HomeCacheProbe, HomeImageCache};
 use runner_lifecycle::idle_pool::{
     IdlePoolSnapshot, ReservedIdleSandbox, RestoreReservedIdleResult, SpeculativeIdleSandbox,
     SpeculativeIdleUnparkResult, SpeculativeReparkResult,
@@ -31,7 +32,7 @@ use runner_provider::{
     RunnerPreferenceRemovalReason, RunnerPreferenceTier,
 };
 use runner_types::ids::RunId;
-use runner_types::types::{HOME_AFFINITY_VERSION, HeldHomeState, reuse_key_kind};
+use runner_types::types::reuse_key_kind;
 use sandbox::SandboxId;
 use tokio::sync::{Notify, oneshot, watch};
 use tracing::{info, warn};
@@ -58,7 +59,7 @@ pub struct PreClaimResources<'a> {
     pub active_runs: &'a ActiveRuns,
     pub home_cache_snapshot: &'a HomeCacheStateSnapshot,
     pub sandbox_op_reporter: Option<&'a runner_storage::SandboxOpReporter>,
-    pub has_home_cache: bool,
+    pub home_cache: Option<&'a HomeImageCache>,
     pub idle_destroy_tracker: &'a IdleDestroyTracker,
     pub reuse_state_notify: &'a Notify,
     pub blank_pool_diagnostics: &'a BlankPoolDiagnostics,
@@ -81,7 +82,7 @@ enum LocalAdmissionResource {
 pub enum AdmittedResource {
     Fresh(BudgetLease),
     /// This Runner's ordinary capacity retained through the peer publication wait.
-    PeerFinalizing {
+    PeerHome {
         lease: BudgetLease,
         deadline: Instant,
         source_run_id: RunId,
@@ -269,6 +270,7 @@ struct PreferenceCandidateRequest<'a> {
     profile_name: &'a str,
     job_vcpu: u32,
     job_memory: u32,
+    home_disk_mb: u32,
     device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
     ctx: &'a PreClaimResources<'a>,
 }
@@ -309,6 +311,7 @@ pub async fn admit_and_claim(
         profile_name,
         job_vcpu,
         job_memory,
+        home_disk_mb,
         device_rate_limits,
         ctx,
     )
@@ -371,11 +374,14 @@ async fn claim_with_local_admission(
     let resource = match resource {
         Some(resource) => resource,
         None => {
-            let allow_compatible_blank = !(ctx.has_home_cache
-                && candidate.reuse_key().is_some_and(|reuse_key| {
-                    ctx.home_cache_snapshot
-                        .might_contain_home_cache_reuse_key(reuse_key)
-                }));
+            let allow_compatible_blank = !crate::home_selection::prefer_home(
+                ctx.home_cache,
+                ctx.home_cache_snapshot,
+                candidate.reuse_key(),
+                profile_name,
+                u64::from(home_disk_mb) * 1024 * 1024,
+            )
+            .await;
             let Some((resource, selection)) = acquire_local_admission_resource(
                 &candidate,
                 profile_name,
@@ -546,7 +552,7 @@ async fn claim_with_local_admission(
                 source_run_id,
                 deadline,
             }),
-        ) => AdmittedResource::PeerFinalizing {
+        ) => AdmittedResource::PeerHome {
             lease,
             deadline,
             source_run_id,
@@ -637,6 +643,7 @@ async fn prepare_preference_candidate(
     profile_name: &str,
     job_vcpu: u32,
     job_memory: u32,
+    home_disk_mb: u32,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
     ctx: &PreClaimResources<'_>,
 ) -> PreferencePreparation {
@@ -661,6 +668,7 @@ async fn prepare_preference_candidate(
         profile_name,
         job_vcpu,
         job_memory,
+        home_disk_mb,
         device_rate_limits,
         ctx,
     };
@@ -678,6 +686,7 @@ async fn prepare_ranked_preference_candidate(
         profile_name,
         job_vcpu,
         job_memory,
+        home_disk_mb,
         device_rate_limits,
         ctx,
     } = request;
@@ -710,6 +719,7 @@ async fn prepare_ranked_preference_candidate(
         advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
     let selected_peer =
         advertised_tier == RunnerPreferenceTier::PeerFinalizingPredecessor && selected;
+    let selected_probe = advertised_tier == RunnerPreferenceTier::SourceHostProbe && selected;
     if selected_finalizing
         && let runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source_run_id) =
             preference.target()
@@ -729,7 +739,7 @@ async fn prepare_ranked_preference_candidate(
     // Publication can resolve the selected producer between discovery and
     // admission. Consume its ready resource through ordinary guarded activation.
 
-    if let Some(source) = source_run_id
+    let source_home = if let Some(source) = source_run_id
         && (selected_finalizing
             || selected_peer
             || ranked_preference_allows(
@@ -737,15 +747,29 @@ async fn prepare_ranked_preference_candidate(
                 RunnerPreferenceTier::SourceHomeCache,
                 selected,
             ))
-        && current_local_held_home_states(ctx)
-            .iter()
-            .filter(|state| state.reuse_key == reuse_key)
-            .flat_map(|state| &state.home_caches)
-            .any(|home| {
-                home.profile == profile_name
-                    && home.home_affinity_version == HOME_AFFINITY_VERSION
-                    && home.source_run_id == source
-            })
+        && let Some(cache) = ctx.home_cache
+    {
+        match cache
+            .probe_home(
+                reuse_key,
+                profile_name,
+                u64::from(home_disk_mb) * 1024 * 1024,
+                Some(source),
+            )
+            .await
+        {
+            Ok(observed) => Some((source, observed)),
+            Err(error) => {
+                warn!(%error, %source, profile = profile_name,
+                    "requested source Home lookup failed during admission");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some((source, HomeCacheProbe::Ready { .. })) = source_home
         && let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
             profile_name,
@@ -784,9 +808,8 @@ async fn prepare_ranked_preference_candidate(
         return reusable_preparation(candidate, reservation);
     }
 
-    if selected_peer
-        && let runner_provider::RunnerPreferenceTarget::PeerFinalizingPredecessor(source_run_id) =
-            preference.target()
+    if (selected_peer || selected_probe && matches!(source_home, Some((_, HomeCacheProbe::Busy))))
+        && let Some(source_run_id) = preference.target().source_run_id()
     {
         if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
@@ -795,7 +818,7 @@ async fn prepare_ranked_preference_candidate(
             job_memory,
             device_rate_limits,
             AdmissionReusePolicy::Compatible {
-                allow_blank: !ctx.has_home_cache,
+                allow_blank: ctx.home_cache.is_none(),
             },
             ctx,
         )
@@ -823,9 +846,22 @@ async fn prepare_ranked_preference_candidate(
         .await;
     }
 
+    if selected_probe {
+        return ordinary_preparation(
+            candidate.without_runner_preference(RunnerPreferenceRemovalReason::Cleared),
+        );
+    }
+
     let reason = if (selected_finalizing
         || ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected))
-        && has_compatible_home(reuse_key, profile_name, ctx)
+        && crate::home_selection::prefer_home(
+            ctx.home_cache,
+            ctx.home_cache_snapshot,
+            Some(reuse_key),
+            profile_name,
+            u64::from(home_disk_mb) * 1024 * 1024,
+        )
+        .await
     {
         if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
@@ -874,16 +910,6 @@ fn ranked_preference_allows(
     } else {
         local_tier.rank() > advertised_tier.rank()
     }
-}
-
-fn has_compatible_home(reuse_key: &str, profile_name: &str, ctx: &PreClaimResources<'_>) -> bool {
-    current_local_held_home_states(ctx)
-        .iter()
-        .filter(|state| state.reuse_key == reuse_key)
-        .flat_map(|state| &state.home_caches)
-        .any(|home| {
-            home.profile == profile_name && home.home_affinity_version == HOME_AFFINITY_VERSION
-        })
 }
 
 fn ordinary_preparation(candidate: JobCandidate) -> PreferencePreparation {
@@ -1018,11 +1044,6 @@ fn record_home_admission_deferral(
     reporter.record(record);
 }
 
-fn current_local_held_home_states(ctx: &PreClaimResources<'_>) -> Vec<HeldHomeState> {
-    ctx.home_cache_snapshot
-        .current_held_home_states(ctx.active_runs, None)
-}
-
 async fn acquire_local_admission_resource(
     candidate: &JobCandidate,
     profile_name: &str,
@@ -1119,7 +1140,7 @@ async fn rollback_admitted_resource(
     ctx: &PreClaimResources<'_>,
 ) {
     let resource = match resource {
-        AdmittedResource::Fresh(lease) | AdmittedResource::PeerFinalizing { lease, .. } => {
+        AdmittedResource::Fresh(lease) | AdmittedResource::PeerHome { lease, .. } => {
             SandboxAdmittedResource::Fresh(lease)
         }
         AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),

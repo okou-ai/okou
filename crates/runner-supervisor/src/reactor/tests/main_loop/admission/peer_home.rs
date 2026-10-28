@@ -94,6 +94,15 @@ async fn soft_draining_receiver_revalidates_peer_home_when_watcher_is_lost() {
 
 #[tokio::test]
 async fn peer_rechecks_a_busy_publication_after_unlock_without_another_watch_event() {
+    assert_busy_publication_rechecked(false).await;
+}
+
+#[tokio::test]
+async fn source_host_probe_waits_for_a_busy_home_and_consumes_it_after_unlock() {
+    assert_busy_publication_rechecked(true).await;
+}
+
+async fn assert_busy_publication_rechecked(host_probe: bool) {
     use crate::home_image_cache::{
         HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImageLeaseRequest,
         HomeImagePromotionOutcome, HomeImagePromotionRequest,
@@ -156,7 +165,17 @@ async fn peer_rechecks_a_busy_publication_after_unlock_without_another_watch_eve
         .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
     env.handle
         .discover_tx
-        .send(peer_candidate(successor, key, source))
+        .send(if host_probe {
+            ranked_candidate(
+                successor,
+                Some(key),
+                runner_provider::RunnerPreferenceTarget::SourceHostProbe(source),
+                TEST_RUNNER_ID,
+                TEST_HEARTBEAT_GENERATION,
+            )
+        } else {
+            peer_candidate(successor, key, source)
+        })
         .unwrap();
     wait_owned_peer(&env, successor).await;
     let scans = cache.held_state_root_scan_count();

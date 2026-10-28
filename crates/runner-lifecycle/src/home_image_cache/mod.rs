@@ -46,7 +46,7 @@ use background::BackgroundGcActivity;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
 pub use gc_pressure::{HomeCacheReclaimOutcome, HomeCacheReclaimStatus};
-pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates};
+pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates, HomeCacheProbe};
 pub use lifecycle::{
     HomeImageLease, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
     HomeImagePromotionOutcome, cap_held_home_states,
