@@ -718,7 +718,7 @@ test("Image zoom reset", async () => {
       within(artifactPreview()).getByTestId(
         "artifact-sidebar-image-zoom-level",
       ),
-    ).toHaveTextContent("110%");
+    ).toHaveTextContent("112%");
   });
 
   click(buttonNamed("Enter fullscreen", artifactPreview()));
@@ -751,7 +751,7 @@ test("Image zoom reset", async () => {
       within(artifactPreview()).getByTestId(
         "artifact-sidebar-image-zoom-level",
       ),
-    ).toHaveTextContent("110%");
+    ).toHaveTextContent("112%");
   });
 
   click(buttonNamed("Reset zoom", artifactPreview()));
