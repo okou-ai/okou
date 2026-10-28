@@ -1,7 +1,6 @@
 import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { CircleCheck } from "lucide-react";
 import { BrandSlack, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -14,6 +13,7 @@ import {
 } from "../../signals/okou-page/slack-connect-signals.ts";
 import {
   CenterText,
+  ConnectActionGroup,
   ConnectCheckingState,
   ConnectErrorAlert,
   connectErrorMessage,
@@ -21,6 +21,7 @@ import {
   ConnectInvalidLinkState,
   ConnectStatusMark,
   ConnectSubmitButton,
+  ConnectSuccessState,
   PageShell,
   SettingsBackLink,
 } from "./connect-page-shell.tsx";
@@ -237,41 +238,29 @@ function SlackSuccessState({
   const { t } = useTranslation();
   const returnUrl = useGet(slackReturnUrl$);
   return (
-    <>
-      <CircleCheck size={40} className="text-emerald-500" />
-      <CenterText
-        title={t(($) => {
-          return $.connectors.providerConnect.slack.currentConnection;
-        })}
-        body={
-          workspaceName
-            ? t(
-                ($) => {
-                  return $.connectors.providerConnect.slack
-                    .successDescriptionWorkspace;
-                },
-                { workspace: workspaceName },
-              )
-            : t(($) => {
-                return $.connectors.providerConnect.slack.successDescription;
-              })
-        }
-      />
-      <div className="flex flex-col gap-3 w-full">
-        <a
-          href={slackUserId ? returnUrl : "slack://open"}
-          className={cn(buttonVariants(), "w-full gap-2")}
-        >
-          <BrandSlack size={16} />
-          {t(($) => {
-            return $.connectors.providerConnect.slack.open;
-          })}
-        </a>
-        <div className="flex justify-center">
-          <SettingsBackLink />
-        </div>
-      </div>
-    </>
+    <ConnectSuccessState
+      title={t(($) => {
+        return $.connectors.providerConnect.slack.currentConnection;
+      })}
+      description={
+        workspaceName
+          ? t(
+              ($) => {
+                return $.connectors.providerConnect.slack
+                  .successDescriptionWorkspace;
+              },
+              { workspace: workspaceName },
+            )
+          : t(($) => {
+              return $.connectors.providerConnect.slack.successDescription;
+            })
+      }
+      openHref={slackUserId ? returnUrl : "slack://open"}
+      openLabel={t(($) => {
+        return $.connectors.providerConnect.slack.open;
+      })}
+      openIcon={<BrandSlack size={16} />}
+    />
   );
 }
 
@@ -379,19 +368,21 @@ function SlackAccountMismatchState({
         }
       />
       <ConnectErrorAlert error={connectError} />
-      <div className="flex w-full flex-col gap-3">
-        <ConnectSubmitButton
-          connecting={connecting}
-          onConnect={onSwitch}
-          label={t(
-            ($) => {
-              return $.connectors.providerConnect.slack.switchAccount;
-            },
-            { account: status.requestedSlackUserId },
-          )}
-          spinnerClassName="animate-spin mr-2"
-        />
-        <div className="flex justify-center">
+      <ConnectActionGroup
+        primary={
+          <ConnectSubmitButton
+            connecting={connecting}
+            onConnect={onSwitch}
+            label={t(
+              ($) => {
+                return $.connectors.providerConnect.slack.switchAccount;
+              },
+              { account: status.requestedSlackUserId },
+            )}
+            spinnerClassName="animate-spin mr-2"
+          />
+        }
+        secondary={
           <SettingsBackLink
             label={t(
               ($) => {
@@ -400,8 +391,8 @@ function SlackAccountMismatchState({
               { account: status.currentSlackUserId },
             )}
           />
-        </div>
-      </div>
+        }
+      />
     </>
   );
 }

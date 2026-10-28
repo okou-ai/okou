@@ -3466,7 +3466,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Kembali ke {{brandName}}",
         "connectDescription": "Hubungkan nomor telepon ini ke akun {{brandName}} Anda agar Anda dapat berinteraksi dengan {{assistantName}} lewat pesan teks.",
         "connectTitle": "Hubungkan nomor telepon",
         "documentTitle": "Hubungkan Pesan",
@@ -3484,7 +3483,8 @@
         "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
         "successTitle": "Nomor telepon terhubung",
-        "switchPhone": "Beralih ke {{phone}}"
+        "switchPhone": "Beralih ke {{phone}}",
+        "unavailable": "Koneksi telepon saat ini tidak tersedia."
       },
       "common": {
         "backToSettings": "Kembali ke setelan",

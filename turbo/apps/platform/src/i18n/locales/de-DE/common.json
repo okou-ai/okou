@@ -3481,7 +3481,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Zurück zu {{brandName}}",
         "connectDescription": "Verknüpfen Sie diese Telefonnummer mit Ihrem {{brandName}}-Konto, damit Sie über Textnachrichten mit {{assistantName}} interagieren können.",
         "connectTitle": "Telefonnummer verbinden",
         "documentTitle": "Nachrichten verbinden",
@@ -3499,7 +3498,8 @@
         "risk": "SMS- und MMS-Antworten werden möglicherweise nicht zuverlässig zugestellt. Für ein möglichst zuverlässiges Erlebnis verwenden Sie iMessage mit dieser Nummer.",
         "successDescription": "{{phone}} ist verbunden. Senden Sie eine Textnachricht, um mit {{assistantName}} zu chatten.",
         "successTitle": "Telefonnummer verbunden",
-        "switchPhone": "Zu {{phone}} wechseln"
+        "switchPhone": "Zu {{phone}} wechseln",
+        "unavailable": "Die Telefonverbindung ist derzeit nicht verfügbar."
       },
       "common": {
         "backToSettings": "Zurück zu den Einstellungen",

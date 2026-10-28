@@ -3479,7 +3479,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Back to {{brandName}}",
         "connectDescription": "Link this phone number to your {{brandName}} account so you can interact with {{assistantName}} from text messages.",
         "connectTitle": "Connect phone number",
         "documentTitle": "Connect Messages",
@@ -3497,7 +3496,8 @@
         "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.",
         "successDescription": "{{phone}} is connected. Send a text message to start chatting with {{assistantName}}.",
         "successTitle": "Phone number connected",
-        "switchPhone": "Switch to {{phone}}"
+        "switchPhone": "Switch to {{phone}}",
+        "unavailable": "Phone connection is currently unavailable."
       },
       "common": {
         "backToSettings": "Back to settings",

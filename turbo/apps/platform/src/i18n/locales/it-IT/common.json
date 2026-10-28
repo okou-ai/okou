@@ -3535,7 +3535,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Torna a {{brandName}}",
         "connectDescription": "Collega questo numero di telefono al tuo account {{brandName}} in modo da poter interagire con {{assistantName}} tramite messaggi di testo.",
         "connectTitle": "Collega il numero di telefono",
         "documentTitle": "Connetti messaggi",
@@ -3553,7 +3552,8 @@
         "risk": "Le risposte SMS e MMS potrebbero non essere consegnate in modo affidabile. Per un'esperienza più affidabile, utilizza iMessage con questo numero.",
         "successDescription": "{{phone}} è connesso. Invia un messaggio di testo per iniziare a chattare con {{assistantName}}.",
         "successTitle": "Numero di telefono collegato",
-        "switchPhone": "Passa a {{phone}}"
+        "switchPhone": "Passa a {{phone}}",
+        "unavailable": "La connessione telefonica non è al momento disponibile."
       },
       "common": {
         "backToSettings": "Torna alle impostazioni",

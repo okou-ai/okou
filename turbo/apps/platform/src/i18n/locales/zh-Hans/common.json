@@ -3466,7 +3466,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "返回 {{brandName}}",
         "connectDescription": "把这个电话号码关联到你的 {{brandName}} 账号，就可以通过短信与 {{assistantName}} 交流。",
         "connectTitle": "连接电话号码",
         "documentTitle": "连接 Messages",
@@ -3484,7 +3483,8 @@
         "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用 iMessage 与这个号码通信。",
         "successDescription": "{{phone}}已连接。发送一条短信，即可开始与 {{assistantName}} 对话。",
         "successTitle": "电话号码已连接",
-        "switchPhone": "切换到 {{phone}}"
+        "switchPhone": "切换到 {{phone}}",
+        "unavailable": "暂时无法连接电话号码。"
       },
       "common": {
         "backToSettings": "返回设置",

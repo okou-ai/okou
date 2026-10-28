@@ -1,8 +1,6 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type { JSX } from "react";
 import { useTranslation } from "react-i18next";
-import { i18n } from "../../i18n/index.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
@@ -14,67 +12,38 @@ import {
   isUnreliableAgentPhoneConnectChannel,
   parseAgentPhoneConnectParams,
 } from "../../signals/okou-page/agentphone-connect-params.ts";
+import {
+  agentPhoneLinkStatus$,
+  createAgentPhoneLinkCode$,
+  setAgentPhoneConnectDialogOpen$,
+} from "../../signals/okou-page/agentphone.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
-import { AgentPhoneCard } from "./agentphone-card.tsx";
+import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
 import {
   CenterText,
-  ConnectBackLink,
+  ConnectActionGroup,
   ConnectErrorAlert,
   ConnectCheckingState,
   ConnectErrorState,
+  ConnectInvalidLinkState,
   ConnectStatusMark,
   ConnectSubmitButton,
+  ConnectSuccessState,
   PageShell,
+  SettingsBackLink,
   connectErrorMessage,
   type MarkState,
 } from "./connect-page-shell.tsx";
 
 const imessageIconImg = settingsIconAssetUrl("imessage");
 
-function BackLink() {
-  const brandName = useGet(brandName$);
-  const { t } = useTranslation();
-
-  return (
-    <ConnectBackLink
-      pathname="/works"
-      label={t(
-        ($) => {
-          return $.connectors.providerConnect.agentphone.back;
-        },
-        { brandName },
-      )}
-    />
-  );
+function MessageIcon({ size = 40 }: { size?: number }) {
+  return <img src={imessageIconImg} alt="" width={size} height={size} />;
 }
 
 function MessageMark({ state }: { state?: MarkState }) {
-  return (
-    <ConnectStatusMark
-      state={state}
-      idle={
-        <span className="shrink-0 inline-flex h-10 w-10 items-center justify-center overflow-hidden">
-          <img
-            src={imessageIconImg}
-            alt=""
-            className="h-10 w-10"
-            data-testid="agentphone-connect-icon"
-          />
-        </span>
-      }
-    />
-  );
-}
-
-function InvalidState({ title, message }: { title: string; message: string }) {
-  return (
-    <PageShell>
-      <MessageMark state="error" />
-      <CenterText title={title} body={message} />
-      <BackLink />
-    </PageShell>
-  );
+  return <ConnectStatusMark state={state} idle={<MessageIcon />} />;
 }
 
 function SmsMmsRiskNotice({ channel }: { channel: string | null }) {
@@ -82,61 +51,12 @@ function SmsMmsRiskNotice({ channel }: { channel: string | null }) {
   if (!isUnreliableAgentPhoneConnectChannel(channel)) {
     return null;
   }
-
   return (
     <div className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
       {t(($) => {
         return $.connectors.providerConnect.agentphone.risk;
       })}
     </div>
-  );
-}
-
-function AgentPhoneInvalidLink({
-  code,
-}: {
-  code: "incomplete" | "invalid_signature" | "invalid_timestamp";
-}) {
-  const { t } = useTranslation();
-  const invalidTitle =
-    code === "incomplete"
-      ? t(($) => {
-          return $.connectors.providerConnect.agentphone.incompleteTitle;
-        })
-      : t(($) => {
-          return $.connectors.providerConnect.agentphone.invalidTitle;
-        });
-  const invalidMessage =
-    code === "incomplete"
-      ? t(($) => {
-          return $.connectors.providerConnect.agentphone.incompleteDescription;
-        })
-      : code === "invalid_timestamp"
-        ? t(($) => {
-            return $.connectors.providerConnect.agentphone.invalidTimestamp;
-          })
-        : t(($) => {
-            return $.connectors.providerConnect.agentphone.invalidSignature;
-          });
-  return <InvalidState title={invalidTitle} message={invalidMessage} />;
-}
-
-function AgentPhoneOverview() {
-  const { t } = useTranslation();
-  return (
-    <PageShell>
-      <MessageMark />
-      <CenterText
-        title={t(($) => {
-          return $.connectors.providerConnect.agentphone.connectTitle;
-        })}
-        body={t(($) => {
-          return $.connectors.providerSettings.agentphone.description;
-        })}
-      />
-      <AgentPhoneCard />
-      <BackLink />
-    </PageShell>
   );
 }
 
@@ -148,23 +68,105 @@ function AgentPhoneSuccess({
   channel: string | null;
 }) {
   const { t } = useTranslation();
-  return (
-    <PageShell>
-      <MessageMark state="success" />
-      <CenterText
-        title={t(($) => {
-          return $.connectors.providerConnect.agentphone.successTitle;
-        })}
-        body={t(
-          ($) => {
-            return $.connectors.providerConnect.agentphone.successDescription;
-          },
-          { phone },
+  const status = useLoadable(agentPhoneLinkStatus$);
+  if (status.state === "hasError") {
+    return (
+      <ConnectErrorState
+        message={connectErrorMessage(
+          status.error,
+          t(($) => {
+            return $.connectors.providerConnect.agentphone.errorFallback;
+          }),
         )}
       />
-      <SmsMmsRiskNotice channel={channel} />
-      <BackLink />
-    </PageShell>
+    );
+  }
+  if (status.state !== "hasData") {
+    return <ConnectCheckingState />;
+  }
+  const number = status.data.agentPhoneNumber;
+  return (
+    <ConnectSuccessState
+      title={t(($) => {
+        return $.connectors.providerConnect.agentphone.successTitle;
+      })}
+      description={t(
+        ($) => {
+          return $.connectors.providerConnect.agentphone.successDescription;
+        },
+        { phone },
+      )}
+      openHref={number ? `sms:${number}` : null}
+      openLabel={t(($) => {
+        return $.connectors.providerSettings.agentphone.openMessages;
+      })}
+      openIcon={<MessageIcon size={16} />}
+      notice={<SmsMmsRiskNotice channel={channel} />}
+    />
+  );
+}
+
+function AgentPhoneOverview() {
+  const { t } = useTranslation();
+  const status = useLoadable(agentPhoneLinkStatus$);
+  const [codeLoadable, createCode] = useLoadableSet(createAgentPhoneLinkCode$);
+  const pageSignal = useGet(pageSignal$);
+  const setOpen = useSet(setAgentPhoneConnectDialogOpen$);
+  if (status.state === "hasError") {
+    return (
+      <ConnectErrorState
+        message={connectErrorMessage(
+          status.error,
+          t(($) => {
+            return $.connectors.providerConnect.agentphone.errorFallback;
+          }),
+        )}
+      />
+    );
+  }
+  if (status.state !== "hasData") {
+    return <ConnectCheckingState />;
+  }
+  if (status.data.linked) {
+    return <AgentPhoneSuccess phone={status.data.phoneHandle} channel={null} />;
+  }
+  const number = status.data.agentPhoneNumber;
+  return (
+    <>
+      <MessageMark />
+      <CenterText
+        title={t(($) => {
+          return $.connectors.providerConnect.agentphone.connectTitle;
+        })}
+        body={t(($) => {
+          return $.connectors.providerSettings.agentphone.description;
+        })}
+      />
+      {status.data.configured && number ? (
+        <ConnectSubmitButton
+          connecting={codeLoadable.state === "loading"}
+          spinnerClassName="animate-spin mr-2"
+          onConnect={() => {
+            detach(createCode(pageSignal), Reason.DomCallback);
+            setOpen(true);
+          }}
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.connectors.providerConnect.agentphone.unavailable;
+          })}
+        </p>
+      )}
+      <SettingsBackLink />
+      <AgentPhoneConnectDialog
+        phoneNumber={number}
+        connectionCode={
+          codeLoadable.state === "hasData" ? codeLoadable.data : null
+        }
+        connectionCodeFailed={codeLoadable.state === "hasError"}
+      />
+    </>
   );
 }
 
@@ -185,8 +187,8 @@ function PhoneMismatchState({
 }) {
   const { t } = useTranslation();
   return (
-    <PageShell>
-      <MessageMark state={connecting ? "loading" : "warning"} />
+    <>
+      <MessageMark state="warning" />
       <CenterText
         title={t(($) => {
           return $.connectors.providerConnect.agentphone.phoneMismatchTitle;
@@ -196,38 +198,49 @@ function PhoneMismatchState({
             return $.connectors.providerConnect.agentphone
               .phoneMismatchDescription;
           },
-          {
-            currentPhone,
-            requestedPhone,
-          },
+          { currentPhone, requestedPhone },
         )}
       />
       <SmsMmsRiskNotice channel={channel} />
       <ConnectErrorAlert error={error} />
-      <ConnectSubmitButton
-        connecting={connecting}
-        label={t(
-          ($) => {
-            return $.connectors.providerConnect.agentphone.switchPhone;
-          },
-          { phone: requestedPhone },
-        )}
-        onConnect={onSwitch}
+      <ConnectActionGroup
+        primary={
+          <ConnectSubmitButton
+            connecting={connecting}
+            label={t(
+              ($) => {
+                return $.connectors.providerConnect.agentphone.switchPhone;
+              },
+              { phone: requestedPhone },
+            )}
+            onConnect={onSwitch}
+            spinnerClassName="animate-spin mr-2"
+          />
+        }
+        secondary={
+          <SettingsBackLink
+            label={t(
+              ($) => {
+                return $.connectors.providerConnect.agentphone.keepPhone;
+              },
+              { phone: currentPhone },
+            )}
+          />
+        }
       />
-      <ConnectBackLink
-        pathname="/works"
-        label={t(
-          ($) => {
-            return $.connectors.providerConnect.agentphone.keepPhone;
-          },
-          { phone: currentPhone },
-        )}
-      />
+    </>
+  );
+}
+
+export function AgentPhoneConnectPage() {
+  return (
+    <PageShell>
+      <PageContent />
     </PageShell>
   );
 }
 
-export function AgentPhoneConnectPage(): JSX.Element {
+function PageContent() {
   const { t } = useTranslation();
   const brandName = useGet(brandName$);
   const params = useGet(searchParams$);
@@ -244,12 +257,11 @@ export function AgentPhoneConnectPage(): JSX.Element {
     connectLoadable.state === "hasError"
       ? connectErrorMessage(
           connectLoadable.error,
-          i18n.t(($) => {
+          t(($) => {
             return $.connectors.providerConnect.agentphone.errorFallback;
           }),
         )
       : null;
-
   if (
     !["handle", "agent", "ts", "sig", "channel"].some((key) => {
       return params.has(key);
@@ -257,34 +269,24 @@ export function AgentPhoneConnectPage(): JSX.Element {
   ) {
     return <AgentPhoneOverview />;
   }
-
   if (!parsed.ok) {
-    return <AgentPhoneInvalidLink code={parsed.error.code} />;
+    return <ConnectInvalidLinkState description={parsed.error.message} />;
   }
-
   if (statusLoadable.state === "hasError") {
     return (
-      <PageShell>
-        <ConnectErrorState
-          message={connectErrorMessage(
-            statusLoadable.error,
-            t(($) => {
-              return $.connectors.providerConnect.agentphone.errorFallback;
-            }),
-          )}
-        />
-      </PageShell>
+      <ConnectErrorState
+        message={connectErrorMessage(
+          statusLoadable.error,
+          t(($) => {
+            return $.connectors.providerConnect.agentphone.errorFallback;
+          }),
+        )}
+      />
     );
   }
-
   if (statusLoadable.state !== "hasData" || !statusLoadable.data) {
-    return (
-      <PageShell>
-        <ConnectCheckingState />
-      </PageShell>
-    );
+    return <ConnectCheckingState />;
   }
-
   const status = statusLoadable.data;
   const connectedPhone =
     success?.phoneHandle ??
@@ -294,10 +296,9 @@ export function AgentPhoneConnectPage(): JSX.Element {
       <AgentPhoneSuccess phone={connectedPhone} channel={parsed.channel} />
     );
   }
-
   if (status.kind === "phone_in_use") {
     return (
-      <PageShell>
+      <>
         <MessageMark state="error" />
         <CenterText
           title={t(($) => {
@@ -308,11 +309,10 @@ export function AgentPhoneConnectPage(): JSX.Element {
               .phoneInUseDescription;
           })}
         />
-        <BackLink />
-      </PageShell>
+        <SettingsBackLink />
+      </>
     );
   }
-
   if (status.kind === "phone_mismatch") {
     return (
       <PhoneMismatchState
@@ -330,10 +330,9 @@ export function AgentPhoneConnectPage(): JSX.Element {
       />
     );
   }
-
   return (
-    <PageShell>
-      <MessageMark state={connecting ? "loading" : "idle"} />
+    <>
+      <MessageMark />
       <CenterText
         title={t(($) => {
           return $.connectors.providerConnect.agentphone.connectTitle;
@@ -349,11 +348,12 @@ export function AgentPhoneConnectPage(): JSX.Element {
       <ConnectErrorAlert error={error} />
       <ConnectSubmitButton
         connecting={connecting}
+        spinnerClassName="animate-spin mr-2"
         onConnect={() => {
           detach(connectAgentPhone(undefined, pageSignal), Reason.DomCallback);
         }}
       />
-      <BackLink />
-    </PageShell>
+      <SettingsBackLink />
+    </>
   );
 }

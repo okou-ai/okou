@@ -3466,7 +3466,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "{{brandName}}로 돌아가기",
         "connectDescription": "이 전화번호를 {{brandName}} 계정에 연결하여 문자 메시지로 {{assistantName}}와 상호작용하세요.",
         "connectTitle": "전화번호 연결",
         "documentTitle": "메시지 연결",
@@ -3484,7 +3483,8 @@
         "risk": "SMS 및 MMS 회신이 안정적으로 전달되지 않을 수 있습니다. 가장 안정적인 경험을 위해 이 번호로 iMessage를 사용하세요.",
         "successDescription": "{{phone}}가 연결되었습니다. 문자 메시지를 보내 {{assistantName}}와 대화를 시작하세요.",
         "successTitle": "전화번호가 연결되었습니다",
-        "switchPhone": "{{phone}}으로 전환"
+        "switchPhone": "{{phone}}으로 전환",
+        "unavailable": "현재 전화번호를 연결할 수 없습니다."
       },
       "common": {
         "backToSettings": "설정으로 돌아가기",

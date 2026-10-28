@@ -3481,7 +3481,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "{{brandName}} पर वापस जाएँ",
         "connectDescription": "इस फ़ोन नंबर को अपने {{brandName}} खाते से लिंक करें ताकि आप टेक्स्ट संदेशों से {{assistantName}} के साथ बातचीत कर सकें।",
         "connectTitle": "फ़ोन नंबर कनेक्ट करें",
         "documentTitle": "संदेश कनेक्ट करें",
@@ -3499,7 +3498,8 @@
         "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस नंबर के साथ iMessage का उपयोग करें।",
         "successDescription": "{{phone}} जुड़ा हुआ है. {{assistantName}} के साथ चैट शुरू करने के लिए एक टेक्स्ट संदेश भेजें।",
         "successTitle": "फ़ोन नंबर कनेक्ट हो गया",
-        "switchPhone": "{{phone}} पर स्विच करें"
+        "switchPhone": "{{phone}} पर स्विच करें",
+        "unavailable": "फ़ोन कनेक्शन अभी उपलब्ध नहीं है।"
       },
       "common": {
         "backToSettings": "सेटिंग्स पर वापस जाएँ",

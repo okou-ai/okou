@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { expect, test } from "vitest";
 
@@ -86,6 +86,14 @@ test("connects a signed link without sending brand fields", async () => {
   await expect(
     screen.findByText("Phone number connected"),
   ).resolves.toBeInTheDocument();
+  expect(getControl("link", "Open Messages")).toHaveAttribute(
+    "href",
+    "sms:+19039853128",
+  );
+  expect(getControl("link", "Back to settings")).toHaveAttribute(
+    "href",
+    "/works",
+  );
   expect(requests).toStrictEqual([
     {
       phoneHandle: PHONE_HANDLE,
@@ -210,10 +218,72 @@ test("shows a connection-status read failure without a Connect action", async ()
   expect(findConnectButton()).toBeUndefined();
 });
 
-test("opens the phone settings without a signed link", async () => {
-  connectedTo(PHONE_HANDLE);
+test.each([PHONE_HANDLE, "sender@example.com"])(
+  "shows the connected overview and opens the official conversation for %s",
+  async (phone) => {
+    connectedTo(phone);
+    await setupPage({ context, path: "/settings/agentphone" });
+    await expect(
+      screen.findByText("Phone number connected"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `${phone} is connected. Send a text message to start chatting with Okou.`,
+      ),
+    ).toBeInTheDocument();
+    expect(getControl("link", "Open Messages")).toHaveAttribute(
+      "href",
+      "sms:+19039853128",
+    );
+    expect(getControl("link", "Back to settings")).toHaveAttribute(
+      "href",
+      "/works",
+    );
+  },
+);
+
+test("opens the shared connection dialog from the unlinked overview and shows completion", async () => {
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    ({ respond }) => {
+      return respond(200, {
+        code: "12345678",
+        expiresAt: "2026-10-28T10:00:00Z",
+      });
+    },
+  );
   await setupPage({ context, path: "/settings/agentphone" });
   await expect(
-    screen.findByTestId("agentphone-connected-indicator"),
-  ).resolves.toHaveTextContent(PHONE_HANDLE);
+    screen.findByText("Connect phone number"),
+  ).resolves.toBeInTheDocument();
+  click(getConnectButton());
+  await screen.findByRole("dialog");
+  await expect(
+    screen.findByTestId("agentphone-link-qr"),
+  ).resolves.toHaveAttribute("data-sms-href", "sms:+19039853128?body=12345678");
+  connectedTo(PHONE_HANDLE);
+  act(() => {
+    return context.mocks.ably.trigger("agentphone:changed");
+  });
+  await expect(
+    screen.findByText("Phone number connected"),
+  ).resolves.toBeInTheDocument();
+  expect(getControl("link", "Open Messages")).toHaveAttribute(
+    "href",
+    "sms:+19039853128",
+  );
+});
+
+test("shows when phone connection is unavailable", async () => {
+  context.mocks.data.agentPhoneIntegration({
+    linked: false,
+    configured: false,
+    agentPhoneNumber: null,
+  });
+  await setupPage({ context, path: "/settings/agentphone" });
+  await expect(
+    screen.findByText("Phone connection is currently unavailable."),
+  ).resolves.toBeInTheDocument();
+  expect(findConnectButton()).toBeUndefined();
+  expect(getControl("link", "Back to settings")).toBeInTheDocument();
 });
