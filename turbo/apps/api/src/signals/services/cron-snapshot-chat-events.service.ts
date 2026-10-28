@@ -4,6 +4,7 @@ import {
   LEGACY_ARCHIVE_OBJECT_KEY_PATTERN,
   isCurrentChatEventSnapshotObjectKey,
   isLegacyChatEventSnapshotObjectKey,
+  snapshotArchivePageReadPlan,
 } from "./chat-event-row-read.service";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
@@ -229,67 +230,56 @@ interface CanonicalEventArchive {
   readonly lastSeqId: number;
 }
 
-async function readCanonicalEvents(
-  db: Db,
-  candidate: SnapshotCandidate,
-  fromSeqId: number,
-): Promise<CanonicalEventArchive> {
-  const lines: Buffer[] = [];
-  let cursor = fromSeqId;
-  let count = 0;
-  let lastPhysicalEventId: string | null = null;
-  let lastRetainedEventId: string | null = null;
-  let lastRetainedSeqId: number | null = null;
-  for (;;) {
-    const rows = await db
-      .select({
-        id: chatEvents.id,
-        chatThreadId: chatEvents.chatThreadId,
-        runId: chatEvents.runId,
-        revokesEventId: chatEvents.revokesEventId,
-        eventType: chatEvents.eventType,
-        payload: chatEvents.payload,
-        failureReason: chatEvents.failureReason,
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-        runEventId: chatEvents.runEventId,
-        seqId: chatEvents.seqId,
-        createdAt: chatEvents.createdAt,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, candidate.chatThreadId),
-          gt(chatEvents.seqId, cursor),
-          lte(chatEvents.seqId, candidate.indexedSeqId),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(EVENT_PAGE_SIZE);
-    for (const row of rows) {
-      lastPhysicalEventId = row.id;
-      lines.push(archiveLine(row));
-      lastRetainedEventId = row.id;
-      lastRetainedSeqId = row.seqId;
+const readCanonicalEvents$ = command(
+  async (
+    { get },
+    candidate: SnapshotCandidate,
+    fromSeqId: number,
+  ): Promise<CanonicalEventArchive> => {
+    const db = get(db$);
+    const lines: Buffer[] = [];
+    let cursor = fromSeqId;
+    let count = 0;
+    let lastPhysicalEventId: string | null = null;
+    let lastRetainedEventId: string | null = null;
+    let lastRetainedSeqId: number | null = null;
+    for (;;) {
+      const plan = snapshotArchivePageReadPlan({
+        threadId: candidate.chatThreadId,
+        afterSeqId: cursor,
+        throughSeqId: candidate.indexedSeqId,
+        limit: EVENT_PAGE_SIZE,
+      });
+      const rows = await db
+        .select(plan.columns)
+        .from(chatEvents)
+        .where(plan.condition)
+        .orderBy(plan.order)
+        .limit(plan.limit);
+      for (const row of rows) {
+        lastPhysicalEventId = row.id;
+        lines.push(archiveLine(row));
+        lastRetainedEventId = row.id;
+        lastRetainedSeqId = row.seqId;
+      }
+      count += rows.length;
+      const lastRow = rows[rows.length - 1];
+      if (lastRow !== undefined) {
+        cursor = lastRow.seqId;
+      }
+      if (rows.length < EVENT_PAGE_SIZE) {
+        return {
+          lines,
+          count,
+          lastPhysicalEventId,
+          lastRetainedEventId,
+          lastRetainedSeqId,
+          lastSeqId: candidate.indexedSeqId,
+        };
+      }
     }
-    count += rows.length;
-    const lastRow = rows[rows.length - 1];
-    if (lastRow !== undefined) {
-      cursor = lastRow.seqId;
-    }
-    if (rows.length < EVENT_PAGE_SIZE) {
-      return {
-        lines,
-        count,
-        lastPhysicalEventId,
-        lastRetainedEventId,
-        lastRetainedSeqId,
-        lastSeqId: candidate.indexedSeqId,
-      };
-    }
-  }
-}
+  },
+);
 
 interface SnapshotSource {
   readonly id: string;
@@ -1006,14 +996,14 @@ interface SnapshotArchiveStageRecorder {
 const archiveThread$ = command(async function archiveThread(
   { get, set },
   args: {
-    readonly db: Db;
     readonly bucket: string;
     readonly candidate: SnapshotCandidate;
     readonly recorder: SnapshotArchiveStageRecorder;
   },
   signal: AbortSignal,
 ): Promise<ArchivedThread> {
-  const { db, bucket, candidate, recorder } = args;
+  const { bucket, candidate, recorder } = args;
+  const db = get(db$);
   recorder.stage = "resolve_prefix";
   const resolved = await get(
     resolveArchivePrefix({ bucket, candidate }, signal),
@@ -1025,8 +1015,8 @@ const archiveThread$ = command(async function archiveThread(
   const { source, prefix, terminalSeqId, terminalEventId } = resolved;
   const targetSeqId = Math.max(candidate.indexedSeqId, source?.lastSeqId ?? 0);
   recorder.stage = "read_events";
-  const archive = await readCanonicalEvents(
-    db,
+  const archive = await set(
+    readCanonicalEvents$,
     { ...candidate, indexedSeqId: targetSeqId },
     source?.lastSeqId ?? 0,
   );
@@ -1130,7 +1120,6 @@ export const refreshChatEventSnapshotThread$ = command(
     const archived = await set(
       archiveThread$,
       {
-        db,
         bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
         candidate,
         recorder: { stage: "resolve_prefix" },
@@ -2020,7 +2009,7 @@ export const snapshotChatEvents$ = command(
       async (candidate, recorder, candidateSignal) => {
         return await set(
           archiveThread$,
-          { db, bucket, candidate, recorder },
+          { bucket, candidate, recorder },
           candidateSignal,
         );
       },

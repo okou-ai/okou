@@ -117,6 +117,24 @@ const chatEventRowSelection = {
   createdAt: chatEvents.createdAt,
 } as const;
 
+export function snapshotArchivePageReadPlan(args: {
+  readonly threadId: string;
+  readonly afterSeqId: number;
+  readonly throughSeqId: number;
+  readonly limit: number;
+}) {
+  return {
+    columns: { ...chatEventRowSelection },
+    condition: and(
+      eq(chatEvents.chatThreadId, args.threadId),
+      gt(chatEvents.seqId, args.afterSeqId),
+      lte(chatEvents.seqId, args.throughSeqId),
+    ),
+    order: asc(chatEvents.seqId),
+    limit: args.limit,
+  };
+}
+
 export const ARCHIVE_ROW_CONTRACT_REVISION = 1;
 const ARCHIVE_OBJECT_KEY_PREFIX_PATTERN = "^chat-events/[0-9a-f-]{36}/[0-9]+";
 const ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN = "-[0-9a-f]{64}[.]ndjson[.]gz$";
