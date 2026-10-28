@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.795.0](https://github.com/okou-ai/okou/compare/core-v8.794.1...core-v8.795.0) (2026-10-28)
+
+
+### Features
+
+* **app:** show connector outcomes during onboarding ([#43542](https://github.com/okou-ai/okou/issues/43542)) ([746e094](https://github.com/okou-ai/okou/commit/746e094cf571e2b05117fd5141594625bc134abd))
+* prepare dav support and icloud connector rollout ([#43517](https://github.com/okou-ai/okou/issues/43517)) ([c8de621](https://github.com/okou-ai/okou/commit/c8de6212dc54a5aae0d4658acf1afa6a35f939ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.1
+
 ## [8.794.1](https://github.com/okou-ai/okou/compare/core-v8.794.0...core-v8.794.1) (2026-10-27)
 
 

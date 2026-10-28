@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.2...runner-storage-v0.7.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **runner-storage:** retain cache locks through physical gc deletion ([#43557](https://github.com/okou-ai/okou/issues/43557)) ([9711081](https://github.com/okou-ai/okou/commit/971108115d0031bd3a228429d0d61e2650a5a88b))
+* **runner:** retain service locks through physical version gc deletion ([#43571](https://github.com/okou-ai/okou/issues/43571)) ([16cc08b](https://github.com/okou-ai/okou/commit/16cc08b8c86cd8c20f1b6e65b601acfd7cc9cd4d))
+
 ## [0.7.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.7.1...runner-storage-v0.7.2) (2026-10-27)
 
 

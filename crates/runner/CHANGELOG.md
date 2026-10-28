@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.238.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.21...runner-rs-v0.238.0) (2026-10-28)
+
+
+### Features
+
+* prepare dav support and icloud connector rollout ([#43517](https://github.com/okou-ai/okou/issues/43517)) ([c8de621](https://github.com/okou-ai/okou/commit/c8de6212dc54a5aae0d4658acf1afa6a35f939ab))
+
+
+### Bug Fixes
+
+* **runner:** retain debootstrap cache locks through physical unlink ([#43598](https://github.com/okou-ai/okou/issues/43598)) ([3f5af22](https://github.com/okou-ai/okou/commit/3f5af22ffbdf09a345c8b7c2a9cd7c6778415540))
+* **runner:** retain image gc locks through physical deletion ([#43586](https://github.com/okou-ai/okou/issues/43586)) ([61d0f4c](https://github.com/okou-ai/okou/commit/61d0f4c3a2a14415f61cbcadfff4663138c0a92b))
+* **runner:** retain local submit input producer custody ([#43615](https://github.com/okou-ai/okou/issues/43615)) ([8c4f35a](https://github.com/okou-ai/okou/commit/8c4f35a86d29637df8c5a5f883ad9f86a2f7b0b1))
+* **runner:** retain service locks through physical version gc deletion ([#43571](https://github.com/okou-ai/okou/issues/43571)) ([16cc08b](https://github.com/okou-ai/okou/commit/16cc08b8c86cd8c20f1b6e65b601acfd7cc9cd4d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.237.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.237.20...runner-rs-v0.237.21) (2026-10-27)
 
 

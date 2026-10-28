@@ -9,6 +9,47 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.19.0](https://github.com/okou-ai/okou/compare/api-v2.18.0...api-v2.19.0) (2026-10-28)
+
+
+### Features
+
+* prepare dav support and icloud connector rollout ([#43517](https://github.com/okou-ai/okou/issues/43517)) ([c8de621](https://github.com/okou-ai/okou/commit/c8de6212dc54a5aae0d4658acf1afa6a35f939ab))
+
+
+### Refactoring
+
+* **api:** keep queued run preparation free of database handles ([#43579](https://github.com/okou-ai/okou/issues/43579)) ([5567656](https://github.com/okou-ai/okou/commit/556765662765a03e4b132d71e4268825c3625bf0))
+* **api:** localize account deletion automation projections ([#43544](https://github.com/okou-ai/okou/issues/43544)) ([50541a9](https://github.com/okou-ai/okou/commit/50541a95e8f75809fb39696dfa1f56bfd9e98240))
+* **api:** localize conversation history deletion execution ([#43587](https://github.com/okou-ai/okou/issues/43587)) ([7c8332c](https://github.com/okou-ai/okou/commit/7c8332cb609613c2fce64440bf0584e592744ddf))
+* **api:** localize lifecycle delivery event preparation ([#43613](https://github.com/okou-ai/okou/issues/43613)) ([61bd97f](https://github.com/okou-ai/okou/commit/61bd97f041df6a9983aaa882bdb6513378d11505))
+* **api:** localize lifecycle marker replay reads ([#43596](https://github.com/okou-ai/okou/issues/43596)) ([eab1de1](https://github.com/okou-ai/okou/commit/eab1de14b2b681b0d711d51e1f3eb283ae5fc6f6))
+* **api:** localize permission grant apply and wakeup ownership ([#43559](https://github.com/okou-ai/okou/issues/43559)) ([924088f](https://github.com/okou-ai/okou/commit/924088ffff73b3283e2776975b268d8026ba1567))
+* **api:** localize template preview cache ownership ([#43572](https://github.com/okou-ai/okou/issues/43572)) ([833a746](https://github.com/okou-ai/okou/commit/833a746f14494d6fe502f8f9a87e8aa21305f44a))
+* **api:** publish builtin token connections atomically ([#43588](https://github.com/okou-ai/okou/issues/43588)) ([d7ab25a](https://github.com/okou-ai/okou/commit/d7ab25a028124c068673985c44f7aad91f232691))
+* **api:** publish custom oauth connections atomically ([#43591](https://github.com/okou-ai/okou/issues/43591)) ([9ad932e](https://github.com/okou-ai/okou/commit/9ad932ed6f41b660462310cc3a1f4614a228593f))
+* **api:** publish device oauth completion atomically ([#43593](https://github.com/okou-ai/okou/issues/43593)) ([b1daff6](https://github.com/okou-ai/okou/commit/b1daff632c5524bb868cd901944b6b79c04a76f8))
+* **api:** publish hosted allocation without a transaction ([#43567](https://github.com/okou-ai/okou/issues/43567)) ([a94e99a](https://github.com/okou-ai/okou/commit/a94e99a59a59bbc0135f317d467a7e9683f19770)) [#43566](https://github.com/okou-ai/okou/issues/43566)
+* **api:** publish legacy subscription projection atomically ([#43581](https://github.com/okou-ai/okou/issues/43581)) ([88d9673](https://github.com/okou-ai/okou/commit/88d9673aedd11ef487ca9d6e9d9d5dc813af73df)) [#43580](https://github.com/okou-ai/okou/issues/43580)
+* **app:** read the data router catalog with stateless mcp 2026-07-28 ([#43560](https://github.com/okou-ai/okou/issues/43560)) ([ad90edc](https://github.com/okou-ai/okou/commit/ad90edca2c9121002e169d146fafa8262d947fe7))
+* **browser:** simplify cli window attachment ([#43545](https://github.com/okou-ai/okou/issues/43545)) ([e541aab](https://github.com/okou-ai/okou/commit/e541aabc44a2af1e4c8c68cee90ddee789dca45e))
+
+
+### Performance Improvements
+
+* **api:** select auto directly for mute test setup ([#43568](https://github.com/okou-ai/okou/issues/43568)) ([abd3ee1](https://github.com/okou-ai/okou/commit/abd3ee1978545a41db0d166e8ed9cbf2d492308f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.1
+    * @okouai/connectors bumped to 3.17.0
+    * @okouai/core bumped to 8.795.0
+    * @okouai/db bumped to 2.8.2
+    * @okouai/pi-agent-runtime bumped to 1.51.8
+
 ## [2.18.0](https://github.com/okou-ai/okou/compare/api-v2.17.0...api-v2.18.0) (2026-10-27)
 
 
