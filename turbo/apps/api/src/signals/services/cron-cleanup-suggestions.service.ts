@@ -1,84 +1,73 @@
 import { command } from "ccstate";
-import { and, asc, eq, exists, inArray, not, or, sql } from "drizzle-orm";
+import { and, asc, inArray, isNotNull, not, or, sql } from "drizzle-orm";
 import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
-
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
-  retainedSuggestionEntries,
-  retainedSuggestionEntry,
+  liveSuggestion,
+  retainedSuggestion,
 } from "./agent-suggestions-lifecycle";
 
 const CLEANUP_BATCH_SIZE = 1000;
 const MAX_BATCHES = 10;
-
 export const cleanupSuggestions$ = command(
   async ({ set }, signal: AbortSignal) => {
     const db = set(writeDb$);
     const at = nowDate();
-    const needsCleanup = or(
-      eq(agentSuggestions.entries, sql`'[]'::jsonb`),
-      exists(
-        sql`(SELECT 1 FROM jsonb_array_elements(${agentSuggestions.entries}) AS item WHERE ${not(retainedSuggestionEntry(at))})`,
-      ),
+    const needsCompaction = and(
+      isNotNull(agentSuggestions.content),
+      not(liveSuggestion(at)),
     );
     let cleaned = 0;
     let deleted = 0;
-
     for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
       signal.throwIfAborted();
-      const candidates = db
+      const candidates = await db
         .select({
           orgId: agentSuggestions.orgId,
           userId: agentSuggestions.userId,
+          id: agentSuggestions.id,
         })
         .from(agentSuggestions)
-        .where(needsCleanup)
-        .orderBy(asc(agentSuggestions.orgId), asc(agentSuggestions.userId))
-        .limit(CLEANUP_BATCH_SIZE);
-      // Both the predicate and replacement use the row's current value after
-      // any concurrent write. Never overwrite newly consumed feedback with a
-      // collection read before its transition.
-      const rows = await db
-        .update(agentSuggestions)
-        .set({ entries: retainedSuggestionEntries(at) })
-        .where(
-          and(
-            needsCleanup,
-            inArray(
-              sql`(${agentSuggestions.orgId}, ${agentSuggestions.userId})`,
-              candidates,
-            ),
-          ),
+        .where(or(not(retainedSuggestion(at)), needsCompaction))
+        .orderBy(
+          asc(agentSuggestions.expiresAt),
+          asc(agentSuggestions.orgId),
+          asc(agentSuggestions.userId),
+          asc(agentSuggestions.id),
         )
-        .returning({
-          orgId: agentSuggestions.orgId,
-          userId: agentSuggestions.userId,
-        });
+        .limit(CLEANUP_BATCH_SIZE);
       signal.throwIfAborted();
-      cleaned += rows.length;
-      if (rows.length === 0) {
+      if (!candidates.length) {
         break;
       }
-
-      const empty = await db.delete(agentSuggestions).where(
-        and(
-          eq(agentSuggestions.entries, sql`'[]'::jsonb`),
-          inArray(
-            sql`(${agentSuggestions.orgId}, ${agentSuggestions.userId})`,
-            rows.map((owner) => {
-              return sql`(${owner.orgId}, ${owner.userId})`;
-            }),
-          ),
-        ),
+      const selected = inArray(
+        sql`(${agentSuggestions.orgId}, ${agentSuggestions.userId}, ${agentSuggestions.id})`,
+        candidates.map((row) => {
+          return sql`(${row.orgId}, ${row.userId}, ${row.id}::uuid)`;
+        }),
       );
+      // Recheck current row state in each write so newly appended feedback survives.
+      const removed = await db
+        .delete(agentSuggestions)
+        .where(and(selected, not(retainedSuggestion(at))))
+        .returning({ id: agentSuggestions.id });
       signal.throwIfAborted();
-      deleted += empty.rowCount ?? 0;
-      if (rows.length < CLEANUP_BATCH_SIZE) {
+      const compacted = await db
+        .update(agentSuggestions)
+        .set({
+          content: null,
+          status: sql`CASE WHEN ${agentSuggestions.status} = 'active' THEN 'consumed' ELSE ${agentSuggestions.status} END`,
+        })
+        .where(and(selected, retainedSuggestion(at), needsCompaction))
+        .returning({ id: agentSuggestions.id });
+      signal.throwIfAborted();
+      deleted += removed.length;
+      cleaned += removed.length + compacted.length;
+      if (candidates.length < CLEANUP_BATCH_SIZE) {
         break;
       }
     }
-
     return { cleaned, deleted };
   },
 );

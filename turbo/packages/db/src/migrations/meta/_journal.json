@@ -2836,6 +2836,13 @@
       "when": 1793240643965,
       "tag": "1483_repair_web_upload_artifact_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 1484,
+      "version": "7",
+      "when": 1793242749250,
+      "tag": "1484_suggestion_rows",
+      "breakpoints": true
     }
   ]
 }

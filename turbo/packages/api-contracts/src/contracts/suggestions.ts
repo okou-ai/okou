@@ -16,6 +16,55 @@ import { apiErrorSchema } from "./errors";
 
 const SUGGESTION_LIMIT = 10;
 export const SUGGESTION_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const SUGGESTION_FEEDBACK_RETENTION_MS = 30 * SUGGESTION_RETENTION_MS;
+export const suggestionFeedbackScopeSchema = object({
+  key: string()
+    .trim()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z0-9_.:-]+$/u),
+  label: string().trim().min(1).max(80),
+});
+export const suggestionFeedbackSchema = object({
+  id: uuid().toLowerCase(),
+  kind: zEnum([
+    "already_done",
+    "not_planned",
+    "less_like_this",
+    "dismissed",
+    "option_selected",
+    "custom_sent",
+    "undo",
+    "reason",
+  ]),
+  createdAt: iso.datetime(),
+  learnedAt: iso.datetime().nullable(),
+  targetId: uuid().toLowerCase().nullable(),
+  note: string().max(512),
+  context: object({
+    title: string().max(120),
+    rationale: string().max(200),
+    scope: suggestionFeedbackScopeSchema,
+    optionLabel: string().max(80).nullable(),
+  }),
+});
+export type SuggestionFeedback = zInfer<typeof suggestionFeedbackSchema>;
+export const suggestionFeedbackRequestSchema = object({
+  id: uuid().toLowerCase(),
+  kind: zEnum([
+    "already_done",
+    "not_planned",
+    "less_like_this",
+    "dismissed",
+    "undo",
+    "reason",
+  ]),
+  targetId: uuid().toLowerCase().nullable().default(null),
+  note: string().trim().max(512).default(""),
+});
+export type SuggestionFeedbackRequest = zInfer<
+  typeof suggestionFeedbackRequestSchema
+>;
 // UUID aliases must share one terminal identity in the JSONB collection.
 const suggestionIdSchema = uuid().toLowerCase();
 const suggestionOptionIdSchema = string().trim().min(1).max(64);
@@ -68,6 +117,7 @@ const suggestionContentSchema = object({
   title: string().trim().min(1).max(120),
   rationale: string().trim().max(200),
   priority: number().int().min(-2147483648).max(2147483647),
+  feedbackScope: suggestionFeedbackScopeSchema,
   options: suggestionOptionsSchema,
   customOption: object({
     id: literal("custom"),
@@ -106,6 +156,7 @@ export const suggestionSchema = suggestionContentSchema.extend({
   id: suggestionIdSchema,
   status: suggestionStatusSchema,
   selectedOptionId: suggestionOptionIdSchema.nullable(),
+  feedbacks: array(suggestionFeedbackSchema).max(100).default([]),
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
   expiresAt: iso.datetime().optional(),
@@ -120,6 +171,7 @@ export const suggestionReceiptSchema = suggestionSchema
     selectedOptionId: true,
     createdAt: true,
     updatedAt: true,
+    feedbacks: true,
   })
   .extend({ status: zEnum(["consumed", "removed"]) });
 export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
@@ -168,6 +220,21 @@ const errors = {
 };
 const params = object({ id: suggestionIdSchema });
 export const suggestionsContract = c.router({
+  manage: {
+    method: "GET",
+    path: "/api/suggestions/active",
+    headers: authHeadersSchema,
+    query: object({ after: suggestionIdSchema.optional() }),
+    responses: {
+      200: object({
+        suggestions: array(suggestionSchema).max(100),
+        receipts: array(suggestionReceiptSchema),
+        nextAfter: suggestionIdSchema.nullable(),
+      }),
+      ...errors,
+    },
+    summary: "Read a page of all active suggestions for Agent curation",
+  },
   list: {
     method: "GET",
     path: "/api/suggestions",
@@ -214,5 +281,19 @@ export const suggestionsContract = c.router({
     body: suggestionConsumeSchema,
     responses: { 200: suggestionSchema, ...errors },
     summary: "Choose a suggestion option, or dismiss it with a null option ID",
+  },
+  feedback: {
+    method: "POST",
+    path: "/api/suggestions/:id/feedback",
+    headers: authHeadersSchema,
+    pathParams: params,
+    body: suggestionFeedbackRequestSchema.extend({
+      snapshot: suggestionSchema.optional(),
+    }),
+    responses: {
+      200: object({ restored: literal(true).or(literal(false)) }),
+      ...errors,
+    },
+    summary: "Give feedback on a suggestion, undo feedback, or add a reason",
   },
 });

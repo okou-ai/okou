@@ -28,8 +28,16 @@ import { cronCleanupSuggestionsContract } from "@okouai/api-contracts/contracts/
 import { cronCleanupSuggestionsRoutes } from "../cron-cleanup-suggestions";
 import { mockNow } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
+import { suggestionLearningContract } from "@okouai/api-contracts/contracts/suggestion-learning";
+import { SUGGESTION_MEMORY_PATH } from "@okouai/api-contracts/contracts/suggestion-memory";
+import { commitMemoryVersion } from "./helpers/memory";
 
 const context = testContext();
+function learningClient() {
+  return setupApp({ context, routes: suggestionsRoutes })(
+    suggestionLearningContract,
+  );
+}
 const humanHeaders = { authorization: "Bearer clerk-session" } as const;
 function client() {
   return setupApp({ context, routes: suggestionsRoutes })(suggestionsContract);
@@ -47,6 +55,7 @@ function input(priority = 0): SuggestionCreate {
     title: "Review the project update",
     rationale: "A decision needs your input",
     priority,
+    feedbackScope: { key: "project-review", label: "project review" },
     customOption: {
       id: "custom",
       threadId: null,
@@ -134,11 +143,101 @@ async function primaryRun(enabled = true, secondary = false) {
   return {
     actor: { ...actor, orgId: actor.orgId },
     agentId,
+    runnerGroup,
     headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
   };
 }
 
 describe("Agent suggestions", () => {
+  it("pages management without hiding overflow cards or coupling their feedback", async () => {
+    const fixture = await primaryRun();
+    const inputs = Array.from({ length: 105 }, (_, priority) => {
+      return input(priority);
+    });
+    await Promise.all(
+      inputs.map((body) => {
+        return accept(
+          client().create({ headers: fixture.headers, body }),
+          [200],
+        );
+      }),
+    );
+    const first = await accept(
+      client().manage({ headers: fixture.headers, query: {} }),
+      [200],
+    );
+    expect(first.body.suggestions).toHaveLength(100);
+    expect(first.body.nextAfter).not.toBeNull();
+    const next = await accept(
+      client().manage({
+        headers: fixture.headers,
+        query: { after: first.body.nextAfter ?? undefined },
+      }),
+      [200],
+    );
+    expect(next.body.suggestions).toHaveLength(5);
+    expect(next.body.nextAfter).toBeNull();
+    expect(
+      new Set(
+        [...first.body.suggestions, ...next.body.suggestions].map((item) => {
+          return item.id;
+        }),
+      ).size,
+    ).toBe(105);
+    const homepage = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(
+      homepage.body.suggestions.map((item) => {
+        return item.priority;
+      }),
+    ).toStrictEqual([104, 103, 102, 101, 100, 99, 98, 97, 96, 95]);
+    const [one, two] = homepage.body.suggestions;
+    if (!one || !two) {
+      throw new Error("Expected two cards");
+    }
+    const responses = await Promise.all(
+      [one, two].map((item) => {
+        return accept(
+          client().feedback({
+            headers: humanHeaders,
+            params: { id: item.id },
+            body: {
+              id: randomUUID(),
+              kind: "not_planned",
+              note: "",
+              targetId: null,
+            },
+          }),
+          [200],
+        );
+      }),
+    );
+    expect(responses).toHaveLength(2);
+    const learning = await accept(
+      learningClient().prepare({ headers: fixture.headers, body: {} }),
+      [200],
+    );
+    expect(
+      learning.body.pending
+        .map((item) => {
+          return item.suggestionId;
+        })
+        .sort(),
+    ).toStrictEqual([one.id, two.id].sort());
+    const remaining = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(remaining.body.suggestions).toHaveLength(10);
+    expect(
+      remaining.body.suggestions.some((item) => {
+        return item.id === one.id || item.id === two.id;
+      }),
+    ).toBeFalsy();
+  });
+
   it("renews a card for 24 hours after an update and retains it through cleanup", async () => {
     await setupApp({
       context,
@@ -710,7 +809,7 @@ describe("Agent suggestions", () => {
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(pool.body.suggestions).toStrictEqual([]);
   });
-  it("enforces capacity under concurrent creation and consumes once without replay resurrection", async () => {
+  it("limits homepage display while managing all concurrent cards and consumes once without replay resurrection", async () => {
     const fixture = await primaryRun();
     const inputs = Array.from({ length: 16 }, (_, priority) => {
       return input(priority);
@@ -727,12 +826,18 @@ describe("Agent suggestions", () => {
       created.filter((response) => {
         return response.status === 200;
       }),
-    ).toHaveLength(10);
+    ).toHaveLength(16);
     expect(
       created.filter((response) => {
         return response.status === 409;
       }),
-    ).toHaveLength(6);
+    ).toHaveLength(0);
+    const managed = await accept(
+      client().manage({ headers: fixture.headers, query: {} }),
+      [200],
+    );
+    expect(managed.body.suggestions).toHaveLength(16);
+    await accept(client().manage({ headers: humanHeaders, query: {} }), [403]);
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(pool.body.suggestions).toHaveLength(10);
     expect(
@@ -936,6 +1041,12 @@ describe("Agent suggestions", () => {
       selectedOptionId: chosen.id,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
+      feedbacks: [
+        expect.objectContaining({
+          kind: "option_selected",
+          context: expect.objectContaining({ optionLabel: chosen.label }),
+        }),
+      ],
     });
   });
   it("rejects a removed option without consuming the card, then accepts dismissal with no selected option", async () => {
@@ -989,6 +1100,7 @@ describe("Agent suggestions", () => {
       selectedOptionId: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
+      feedbacks: [expect.objectContaining({ kind: "dismissed" })],
     });
   });
   it("returns the current draft for the chosen second option after a refresh", async () => {
@@ -1580,5 +1692,193 @@ describe("Suggestion custom follow-ups", () => {
       (await accept(client().list({ headers: humanHeaders }), [200])).body
         .suggestions,
     ).toHaveLength(1);
+  });
+});
+
+describe("Suggestion feedback learning", () => {
+  it("keeps feedback on the suggestion, accepts an identical retry, and restores a valid card on undo", async () => {
+    const fixture = await primaryRun();
+    const created = await accept(
+      client().create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    const id = randomUUID();
+    const body = {
+      id,
+      kind: "not_planned" as const,
+      targetId: null,
+      note: "",
+      snapshot: created.body,
+    };
+    await accept(
+      client().feedback({
+        headers: humanHeaders,
+        params: { id: created.body.id },
+        body,
+      }),
+      [200],
+    );
+    await accept(
+      client().feedback({
+        headers: humanHeaders,
+        params: { id: created.body.id },
+        body,
+      }),
+      [200],
+    );
+    const list = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(list.body.suggestions).toStrictEqual([]);
+    expect(list.body.receipts?.[0]?.feedbacks).toStrictEqual([
+      expect.objectContaining({
+        id,
+        kind: "not_planned",
+        learnedAt: null,
+        context: expect.objectContaining({
+          title: created.body.title,
+          scope: created.body.feedbackScope,
+        }),
+      }),
+    ]);
+    const undone = await accept(
+      client().feedback({
+        headers: humanHeaders,
+        params: { id: created.body.id },
+        body: {
+          id: randomUUID(),
+          kind: "undo",
+          targetId: id,
+          note: "",
+          snapshot: created.body,
+        },
+      }),
+      [200],
+    );
+    expect(undone.body.restored).toBeTruthy();
+    expect(
+      (await accept(client().list({ headers: humanHeaders }), [200])).body
+        .suggestions,
+    ).toStrictEqual([
+      expect.objectContaining({ id: created.body.id, status: "active" }),
+    ]);
+  });
+
+  it("retains unlearned feedback past card cleanup and acknowledges only actual published Memory while preserving later reasons", async () => {
+    await setupApp({
+      context,
+      routes: cronCleanupSuggestionsRoutes,
+      isolatePg: true,
+    });
+    mockEnv("CRON_SECRET", cronSecret);
+    const start = Date.parse("2026-10-28T00:00:00.000Z");
+    mockNow(start);
+    const fixture = await primaryRun();
+    const created = await accept(
+      client().create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    const feedbackId = randomUUID();
+    await accept(
+      client().feedback({
+        headers: humanHeaders,
+        params: { id: created.body.id },
+        body: {
+          id: feedbackId,
+          kind: "less_like_this",
+          targetId: null,
+          note: "",
+        },
+      }),
+      [200],
+    );
+    mockNow(start + 25 * 60 * 60 * 1000);
+    await accept(cleanupClient().cleanup({ headers: cronHeaders }), [200]);
+    const runs = createRunsApi(context);
+    await runs.heartbeatRunner(fixture.runnerGroup);
+    const resumedRun = await runs.createThreadRun(fixture.actor, {
+      agentId: fixture.agentId,
+      model: "claude-fable-5-1",
+      prompt: "Learn retained suggestion feedback",
+    });
+    const resumedClaim = await runs.claimRunnerJob(resumedRun.runId);
+    const headers = {
+      authorization: `Bearer ${okouTokenFromClaim(resumedClaim)}`,
+    };
+    const pending = await accept(
+      learningClient().prepare({ headers, body: {} }),
+      [200],
+    );
+    expect(pending.body.pending).toStrictEqual([
+      expect.objectContaining({
+        suggestionId: created.body.id,
+        feedbacks: [
+          expect.objectContaining({ id: feedbackId, learnedAt: null }),
+        ],
+      }),
+    ]);
+    const memory = {
+      schemaVersion: 1,
+      records: [
+        {
+          id: `preference:${created.body.feedbackScope.key}`,
+          title: created.body.title,
+          rationale: created.body.rationale,
+          scope: created.body.feedbackScope,
+          evidence: [
+            {
+              id: feedbackId,
+              suggestionId: created.body.id,
+              kind: "less_like_this",
+              observedAt: new Date(start).toISOString(),
+              expiresAt: new Date(start + 30 * 86_400_000).toISOString(),
+              note: "",
+              optionLabel: null,
+            },
+          ],
+        },
+      ],
+      processedFeedback: [{ suggestionId: created.body.id, feedbackId }],
+    };
+    await commitMemoryVersion(
+      context,
+      {
+        runId: resumedRun.runId,
+        sandboxHeaders: {
+          authorization: `Bearer ${resumedClaim.sandboxToken}`,
+        },
+        storageManifest: resumedClaim.storageManifest,
+      },
+      [{ path: SUGGESTION_MEMORY_PATH, content: JSON.stringify(memory) }],
+    );
+    const reasonId = randomUUID();
+    await accept(
+      client().feedback({
+        headers: humanHeaders,
+        params: { id: created.body.id },
+        body: {
+          id: reasonId,
+          kind: "reason",
+          targetId: feedbackId,
+          note: "A teammate owns these reviews",
+        },
+      }),
+      [200],
+    );
+    const after = await accept(
+      learningClient().prepare({ headers, body: {} }),
+      [200],
+    );
+    expect(after.body.memory.records).toHaveLength(1);
+    expect(after.body.pending).toStrictEqual([
+      expect.objectContaining({
+        suggestionId: created.body.id,
+        feedbacks: [
+          expect.objectContaining({
+            id: reasonId,
+            kind: "reason",
+            learnedAt: null,
+          }),
+        ],
+      }),
+    ]);
   });
 });
