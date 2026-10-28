@@ -39,6 +39,7 @@ export type WorkflowSourceFailure =
 /** A finite SQL plan contains neither resources nor executable callbacks. */
 export interface WorkflowSourceAdmissionPlan {
   readonly steps: readonly {
+    readonly precedingCtes?: readonly SQL[];
     readonly statement: SQL;
     readonly failure?: WorkflowSourceFailure;
   }[];
@@ -108,14 +109,18 @@ export function workflowWebhookReceiptPlan(
   return {
     steps: [
       {
-        statement: sql`WITH delivered AS (
+        precedingCtes: [
+          sql`workflow_delivered AS (
     INSERT INTO ${workflowWebhookDeliveries} (id, automation_id, delivery_key, body_sha256, status, run_id, received_at, created_at)
     VALUES (${source.delivery.id}::uuid, ${automationId}::uuid, ${source.delivery.deliveryKey}, ${source.delivery.bodySha256}, 'dispatched', NULL, ${receivedAt}::timestamp, ${receivedAt}::timestamp)
     RETURNING id
-  ) UPDATE ${workflowWebhookAutomations}
+  )`,
+        ],
+        statement: sql`UPDATE ${workflowWebhookAutomations}
     SET last_received_at = ${receivedAt}::timestamp, updated_at = ${receivedAt}::timestamp
     WHERE ${workflowWebhookAutomations.automationId} = ${automationId}::uuid
-      AND EXISTS (SELECT 1 FROM delivered)`,
+      AND EXISTS (SELECT 1 FROM workflow_delivered)
+    RETURNING automation_id`,
       },
     ],
   };

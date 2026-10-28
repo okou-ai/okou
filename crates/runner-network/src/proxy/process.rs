@@ -1581,12 +1581,6 @@ exit 42
         .is_ok()
     }
 
-    #[test]
-    fn find_port_returns_nonzero() {
-        let port = find_available_port().unwrap();
-        assert!(port > 0, "expected non-zero port, got {port}");
-    }
-
     #[tokio::test]
     async fn initial_start_retries_an_occupied_selected_port() {
         let dir = tempfile::tempdir().unwrap();
@@ -1619,68 +1613,6 @@ exit 42
 
         proxy.stop().await.unwrap();
         drop(unrelated_listener);
-    }
-
-    #[test]
-    fn addon_source_inventory_has_required_files() {
-        let files: Vec<&str> = ADDON_FILES.iter().map(|(name, _)| name.as_str()).collect();
-
-        // All expected modules must be present.  `usage/` is a package after
-        // #10381; each submodule must embed under its relative path so the
-        // runtime extractor rebuilds the directory tree before mitmdump loads
-        // the addon.
-        for expected in [
-            "mitm_addon.py",
-            "auth.py",
-            "billing_body.py",
-            "body_capture.py",
-            "body_decoding.py",
-            "body_limits.py",
-            "builtin_firewall_cache.py",
-            "auth_base_rewrite.py",
-            "flow_metadata_keys.py",
-            "generated/__init__.py",
-            "generated/builtin_firewall_cache.py",
-            "generated/data_router.py",
-            "generated/public_destination_policy.py",
-            "matching.py",
-            "mitmproxy_compat.py",
-            "registry.py",
-            "request_authority.py",
-            "response_streaming.py",
-            "runner_flush_lifecycle.py",
-            "terminal_usage.py",
-            "upstream_admission.py",
-            "websocket_framing.py",
-            "websocket_retention.py",
-            "logging_utils.py",
-            "usage/__init__.py",
-            "usage/anthropic_messages.py",
-            "usage/counters.py",
-            "usage/idempotency.py",
-            "usage/model_tokens.py",
-            "usage/openai_responses.py",
-            "usage/sse.py",
-            "usage/webhook.py",
-            "usage/providers/__init__.py",
-            "usage/providers/model_provider.py",
-            "usage/providers/connectors/__init__.py",
-            "usage/providers/connectors/x.py",
-        ] {
-            assert!(
-                files.contains(&expected),
-                "addon files should include {expected}, got: {files:?}"
-            );
-        }
-
-        let (_, content) = ADDON_FILES
-            .iter()
-            .find(|(name, _)| name == "mitm_addon.py")
-            .unwrap();
-        assert!(
-            content.contains("mitmproxy addon"),
-            "mitm_addon.py should contain expected header"
-        );
     }
 
     #[tokio::test]

@@ -14,4 +14,9 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: cd turbo && pnpm install --frozen-lockfile --strict-peer-dependencies
+      # Local development shares native dependencies across macOS and Linux;
+      # an isolated CI job only needs packages for its own host.
+      run: |
+        cd turbo
+        pnpm install --frozen-lockfile --strict-peer-dependencies \
+          --config.os=current --config.cpu=current --prefer-offline

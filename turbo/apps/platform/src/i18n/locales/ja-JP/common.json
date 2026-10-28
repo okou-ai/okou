@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
-      "publicOption": "リンクを知っている全員"
+      "publicOption": "リンクを知っている全員",
+      "updateFailed": "アクセス権を更新できませんでした"
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",
@@ -2185,12 +2186,12 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "emptyDescription": "このチャットのファイルと関連チャットがここに表示されます。",
-      "emptyTitle": "まだリソースはありません",
-      "loadFailed": "リソースを読み込めませんでした",
-      "loading": "リソースを読み込み中",
+      "emptyDescription": "このチャットで作成されたファイルやウェブサイトなどのアーティファクトがここに表示されます。",
+      "emptyTitle": "まだアーティファクトはありません",
+      "loadFailed": "アーティファクトを読み込めませんでした",
+      "loading": "アーティファクトを読み込み中",
       "showMore": "もっと見る",
-      "title": "チャットのリソース"
+      "title": "アーティファクトとチャット"
     },
     "run": {
       "collapseWorkHistory": "作業履歴を折りたたむ",
@@ -2255,7 +2256,8 @@
       "shareLink": "共有された会話のリンク",
       "shareLinkCopied": "共有リンクをコピーしました",
       "start": "メッセージを共有",
-      "tooLarge": "共有するメッセージを減らしてください"
+      "tooLarge": "共有するメッセージを減らしてください",
+      "visibilityDescription": "この会話を閲覧できる人を選択します。アクセス権を変更できるのはあなただけです。"
     },
     "shortcuts": {
       "number": "番号"
@@ -3470,7 +3472,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "{{brandName}} に戻る",
         "connectDescription": "この電話番号を {{brandName}} アカウントにリンクすると、テキスト メッセージから {{assistantName}} とやり取りできるようになります。",
         "connectTitle": "電話番号を接続する",
         "documentTitle": "メッセージを接続する",
@@ -3480,9 +3481,16 @@
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
         "invalidTitle": "接続リンクが無効です",
+        "keepPhone": "{{phone}} を維持",
+        "phoneInUseDescription": "この電話番号は別の Okou アカウントまたは組織に接続されています。そちらで接続を解除してから、もう一度お試しください。",
+        "phoneInUseTitle": "電話番号は接続済みです",
+        "phoneMismatchDescription": "この組織では、Okou アカウントで現在 {{currentPhone}} を使用しています。このリンクを開いた番号 {{requestedPhone}} に切り替えますか？",
+        "phoneMismatchTitle": "電話番号を切り替えますか？",
         "risk": "SMS および MMS の返信は確実に配信されない可能性があります。最も信頼性の高いエクスペリエンスを得るには、この番号で iMessage を使用してください。",
         "successDescription": "{{phone}} が接続されています。テキスト メッセージを送信して、{{assistantName}} とのチャットを開始します。",
-        "successTitle": "接続された電話番号"
+        "successTitle": "接続された電話番号",
+        "switchPhone": "{{phone}} に切り替え",
+        "unavailable": "現在、電話番号を接続できません。"
       },
       "common": {
         "backToSettings": "設定に戻る",
@@ -5911,6 +5919,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "この会話を閲覧できません",
     "handoffDescription": "{{assistantName}} がコンテキストを新しいチャットに引き継ぎます",
     "handoffPrompt": "この共有された会話を私と続けてください: {{url}}",
     "makeConversationYours": "この会話を自分のものに",

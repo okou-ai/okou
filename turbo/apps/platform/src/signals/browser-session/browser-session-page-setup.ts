@@ -17,10 +17,13 @@ export const setupBrowserSessionPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const threadId = String(get(pathParams$)?.browserThreadId ?? "");
     const descriptor = parseBrowserSessionUrl(`/browsers/${threadId}`);
-    set(
-      setBrowserSessionPageSignals$,
-      descriptor ? createBrowserSessionPageSignals(descriptor.threadId) : null,
-    );
+    const signals = descriptor
+      ? createBrowserSessionPageSignals(descriptor.threadId)
+      : null;
+    set(setBrowserSessionPageSignals$, signals);
+    if (signals) {
+      set(signals.browser.subscribe$, signal);
+    }
     set(updatePage$, createElement(BrowserSessionPage), "standalone");
     set(
       updateDocumentTitle$,

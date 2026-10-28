@@ -1,3 +1,7 @@
+import {
+  SharedThreadAudiencePicker,
+  SharedThreadShareMenu,
+} from "./shared-thread-share-menu.tsx";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
@@ -3934,17 +3938,99 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
+function SharedThreadCreatedLink({
+  thread,
+  shareUrl,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly shareUrl: string;
+}) {
+  const { t } = useTranslation();
+  const visibility = useGet(thread.sharing.visibility$);
+  const phase = useGet(thread.sharing.phase$);
+  const close = useSet(thread.sharing.close$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <Input
+        readOnly
+        value={shareUrl}
+        aria-label={t(($) => {
+          return $.chat.sharing.shareLink;
+        })}
+        className="min-w-0 flex-1"
+      />
+      <div className="flex shrink-0 items-center gap-2">
+        {visibility ? (
+          <SharedThreadShareMenu
+            session={visibility}
+            defaultOpen={phase === "idle"}
+            showLabel
+          />
+        ) : (
+          <Button
+            onClick={() => {
+              detach(
+                (async () => {
+                  const copied = await writeToClipboard(shareUrl);
+                  if (copied) {
+                    toast.success(
+                      t(($) => {
+                        return $.chat.sharing.linkCopied;
+                      }),
+                    );
+                    return;
+                  }
+                  toast.error(
+                    t(($) => {
+                      return $.chat.sharing.copyFailed;
+                    }),
+                  );
+                })(),
+                Reason.DomCallback,
+                "copy shared thread link",
+              );
+            }}
+          >
+            <Copy size={16} />
+            {t(($) => {
+              return $.chat.sharing.copyLink;
+            })}
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          onClick={() => {
+            detach(
+              close(pageSignal),
+              Reason.DomCallback,
+              "close shared thread selection",
+            );
+          }}
+        >
+          {t(($) => {
+            return $.chat.sharing.close;
+          })}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
-  const close = useSet(thread.sharing.close$);
+  const visibilityEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.SharedThreadVisibility];
+  const audience = useGet(thread.sharing.audience$);
+  const changeAudience = useSet(thread.sharing.changeAudience$);
   const pageSignal = useGet(pageSignal$);
   const [createLoadable, createSharedThread] = useLoadableSet(
     thread.sharing.create$,
   );
-  if (phase === "idle") {
+  if (phase === "idle" && sharedThreadId === null) {
     return withChatScrollLayout(<ChatThreadComposer thread={thread} />);
   }
 
@@ -3956,61 +4042,11 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
     <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
         {shareUrl ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Input
-              readOnly
-              value={shareUrl}
-              aria-label={t(($) => {
-                return $.chat.sharing.shareLink;
-              })}
-              className="min-w-0 flex-1"
-            />
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                onClick={() => {
-                  detach(
-                    (async () => {
-                      const copied = await writeToClipboard(shareUrl);
-                      if (copied) {
-                        toast.success(
-                          t(($) => {
-                            return $.chat.sharing.linkCopied;
-                          }),
-                        );
-                        return;
-                      }
-                      toast.error(
-                        t(($) => {
-                          return $.chat.sharing.copyFailed;
-                        }),
-                      );
-                    })(),
-                    Reason.DomCallback,
-                    "copy shared thread link",
-                  );
-                }}
-              >
-                <Copy size={16} />
-                {t(($) => {
-                  return $.chat.sharing.copyLink;
-                })}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  detach(
-                    close(pageSignal),
-                    Reason.DomCallback,
-                    "close shared thread selection",
-                  );
-                }}
-              >
-                {t(($) => {
-                  return $.chat.sharing.close;
-                })}
-              </Button>
-            </div>
-          </div>
+          <SharedThreadCreatedLink
+            key={shareUrl}
+            thread={thread}
+            shareUrl={shareUrl}
+          />
         ) : (
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -4023,9 +4059,13 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                 )}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t(($) => {
-                  return $.chat.sharing.publicDescription;
-                })}
+                {visibilityEnabled
+                  ? t(($) => {
+                      return $.chat.sharing.visibilityDescription;
+                    })
+                  : t(($) => {
+                      return $.chat.sharing.publicDescription;
+                    })}
               </p>
               {createLoadable.state === "hasError" ? (
                 <p className="mt-0.5 text-xs text-destructive">
@@ -4035,25 +4075,34 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                 </p>
               ) : null}
             </div>
-            <Button
-              disabled={selectedCount === 0 || creating}
-              onClick={() => {
-                detach(
-                  createSharedThread(pageSignal),
-                  Reason.DomCallback,
-                  "create shared thread",
-                );
-              }}
-            >
-              {creating ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Share2 size={16} />
-              )}
-              {t(($) => {
-                return $.chat.sharing.create;
-              })}
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              {visibilityEnabled ? (
+                <SharedThreadAudiencePicker
+                  audience={audience}
+                  disabled={creating}
+                  onChange={changeAudience}
+                />
+              ) : null}
+              <Button
+                disabled={selectedCount === 0 || creating}
+                onClick={() => {
+                  detach(
+                    createSharedThread(pageSignal),
+                    Reason.DomCallback,
+                    "create shared thread",
+                  );
+                }}
+              >
+                {creating ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Share2 size={16} />
+                )}
+                {t(($) => {
+                  return $.chat.sharing.create;
+                })}
+              </Button>
+            </div>
           </div>
         )}
       </div>

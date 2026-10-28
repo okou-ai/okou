@@ -4,6 +4,73 @@ use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 
 #[tokio::test]
+async fn fresh_preparation_preserves_hidden_home_and_can_publish_its_own_generation() {
+    let f = Fixture::new().await;
+    let old = f.commit("thread", b"hidden", "2026-10-28T00:00:00Z").await;
+    let metadata_path = f.cache.entry_paths(&f.key("thread")).metadata();
+    let original = tokio::fs::read(&metadata_path).await.unwrap();
+    let source = f.image("thread", &old);
+    let run_id = RunId::new_v4();
+    let sandbox_id = sandbox::SandboxId::new_v4();
+    let mut fresh = f
+        .cache
+        .prepare_with_policy(
+            HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
+                    run_id,
+                    sandbox_id,
+                    profile_name: PROFILE,
+                    rootfs_hash: ROOTFS,
+                    reuse_key: Some("thread"),
+                    working_dir: CWD,
+                    image_size_bytes: SIZE,
+                },
+                home_drive_required: true,
+            },
+            HomeImagePreparePolicy::SkipCache,
+        )
+        .await;
+    assert_eq!(fresh.result(), HomeCacheCheckoutResult::Miss);
+    assert!(
+        fresh
+            .home_drive_config()
+            .await
+            .unwrap()
+            .unwrap()
+            .seed_image
+            .is_none()
+    );
+    assert_eq!(tokio::fs::read(&metadata_path).await.unwrap(), original);
+    assert_eq!(
+        &tokio::fs::read(&source).await.unwrap()[4096..4102],
+        b"hidden"
+    );
+    write_image(&f.paths.active_home_image(&sandbox_id), b"new-home", SIZE);
+    let published = fresh
+        .into_promotion_context(HomeImagePromotionRequest {
+            run_id,
+            sandbox_id,
+            restored_session_identity: None,
+            terminal_status: HomeCacheTerminalStatus::Success,
+            completed_at: "2026-10-28T00:01:00Z".into(),
+            storage_fingerprints: StorageFingerprints::default(),
+        })
+        .unwrap();
+    assert_eq!(
+        published.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    drop(published);
+    let next = f.metadata("thread").await;
+    assert_eq!(next.image_generation, run_id.to_string());
+    assert_eq!(
+        &tokio::fs::read(f.image("thread", &next)).await.unwrap()[4096..4104],
+        b"new-home"
+    );
+    assert!(f.lease("thread").await.is_cache_hit());
+}
+
+#[tokio::test]
 async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_publication_identity() {
     let f = Fixture::new().await;
     let fingerprints = StorageFingerprints {
@@ -146,7 +213,7 @@ async fn source_checkout_rechecks_replaced_publication_and_pins_matching_generat
         .prepare_from_source(
             request(),
             first.image_generation.parse().unwrap(),
-            HomeImagePrepareLockPolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     assert_eq!(stale.result(), HomeCacheCheckoutResult::Miss);
@@ -161,7 +228,7 @@ async fn source_checkout_rechecks_replaced_publication_and_pins_matching_generat
         .prepare_from_source(
             request(),
             current.image_generation.parse().unwrap(),
-            HomeImagePrepareLockPolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     assert!(selected.is_cache_hit());
@@ -831,7 +898,7 @@ async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retr
     let gate = HomeImagePrepareLockTestGate::default();
     let immediate = tokio::time::timeout(
         Duration::from_secs(10),
-        f.cache.prepare_with_lock_policy(
+        f.cache.prepare_with_policy(
             HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
                     run_id: RunId::new_v4(),
@@ -844,7 +911,7 @@ async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retr
                 },
                 home_drive_required: true,
             },
-            HomeImagePrepareLockPolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         ),
     )
     .await

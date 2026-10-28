@@ -1,5 +1,5 @@
 import { workflowAutomationSnapshotCondition } from "./workflow-automation-snapshot";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { SCHEDULE_GRACE_MS } from "./schedule-expiry-policy";
 import type { WorkflowScheduleClaimPlan } from "./workflow-automation-enqueue.service";
 
@@ -18,6 +18,7 @@ export class WorkflowScheduleAdmissionError extends Error {
 export function consumeWorkflowScheduleAnchorSql(
   claim: WorkflowScheduleClaimPlan,
   admittedAt: Date,
+  eligibility?: SQL,
 ) {
   const observation = workflowAutomationSnapshotCondition(
     claim.automationSnapshot,
@@ -31,20 +32,22 @@ export function consumeWorkflowScheduleAnchorSql(
  AND ${observation}
  AND next_run_at = ${claim.scheduledAnchorAt} AND next_run_at >= ${new Date(admittedAt.getTime() - SCHEDULE_GRACE_MS)}
  AND NOT EXISTS (SELECT 1 FROM morning_brief_schedule_claims
-   WHERE automation_id = ${claim.automationId}::uuid AND settlement = 'unsettled') RETURNING id`;
+   WHERE automation_id = ${claim.automationId}::uuid AND settlement = 'unsettled')
+ AND ${eligibility ?? sql`true`} RETURNING id`;
 }
 
 /**
  * Journal the consumed occurrence; its queue event is bound immediately.
  *
- * Runs after this transaction's own anchor-consuming UPDATE, so no other
- * claim for this automation can be in flight and the next sequence is read
- * from a snapshot that includes every committed claim.
+ * The compound owner gates this insert on its anchor-consuming UPDATE. The
+ * existing unique claim identities reject a stale concurrent sequence; a SQL
+ * failure rolls the consumed anchor and input back with the journal.
  */
 export function journalWorkflowScheduleClaimSql(
   claim: WorkflowScheduleClaimPlan,
   queueEventId: string,
   admittedAt: Date,
+  eligibility?: SQL,
 ) {
   return sql`
     INSERT INTO morning_brief_schedule_claims (
@@ -58,5 +61,7 @@ export function journalWorkflowScheduleClaimSql(
         WHERE automation_id = ${claim.automationId}::uuid
         ORDER BY claim_sequence DESC LIMIT 1), 0) + 1,
       ${queueEventId}::uuid, ${admittedAt}
+    WHERE ${eligibility ?? sql`true`}
+    RETURNING id
   `;
 }

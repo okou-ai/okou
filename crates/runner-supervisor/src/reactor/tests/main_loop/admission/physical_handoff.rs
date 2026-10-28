@@ -1,7 +1,7 @@
 use super::terminal_reuse::generic_finalizing_candidate;
 use super::*;
 use crate::home_image_cache::{
-    HomeCacheCheckoutResult, HomeImageLeaseIdentity, HomeImagePrepareLockPolicy,
+    HomeCacheCheckoutResult, HomeImageLeaseIdentity, HomeImagePreparePolicy,
     HomeImagePrepareRequest,
 };
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
@@ -185,7 +185,7 @@ async fn assert_physical_handoff(terminal: Terminal, native_generation: Option<R
 
 async fn assert_home_locked(cache: &HomeImageCache, reuse_key: &str, rootfs_hash: &str) {
     let checkout = cache
-        .prepare_with_lock_policy(
+        .prepare_with_policy(
             HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
                     run_id: RunId::new_v4(),
@@ -198,7 +198,7 @@ async fn assert_home_locked(cache: &HomeImageCache, reuse_key: &str, rootfs_hash
                 },
                 home_drive_required: true,
             },
-            HomeImagePrepareLockPolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     assert_eq!(checkout.result(), HomeCacheCheckoutResult::LockBusy);

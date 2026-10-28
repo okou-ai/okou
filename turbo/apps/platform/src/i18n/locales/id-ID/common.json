@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "Siapa pun di organisasi Anda",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
-      "publicOption": "Siapa pun yang memiliki tautan"
+      "publicOption": "Siapa pun yang memiliki tautan",
+      "updateFailed": "Tidak dapat memperbarui akses"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",
@@ -2185,12 +2186,12 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "emptyDescription": "File dan obrolan dari chat ini akan muncul di sini.",
-      "emptyTitle": "Belum ada sumber daya",
-      "loadFailed": "Tidak dapat memuat sumber daya",
-      "loading": "Memuat sumber daya",
+      "emptyDescription": "File, situs web, dan artefak lain yang dibuat di chat ini akan muncul di sini.",
+      "emptyTitle": "Belum ada artefak",
+      "loadFailed": "Tidak dapat memuat artefak",
+      "loading": "Memuat artefak",
       "showMore": "Tampilkan lebih banyak",
-      "title": "Sumber daya chat"
+      "title": "Artefak dan obrolan"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -2255,7 +2256,8 @@
       "shareLink": "Tautan percakapan yang dibagikan",
       "shareLinkCopied": "Tautan berbagi disalin",
       "start": "Bagikan pesan",
-      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan"
+      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan",
+      "visibilityDescription": "Pilih siapa yang dapat melihat percakapan ini. Hanya Anda yang dapat mengubah akses."
     },
     "shortcuts": {
       "number": "nomor"
@@ -3470,7 +3472,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Kembali ke {{brandName}}",
         "connectDescription": "Hubungkan nomor telepon ini ke akun {{brandName}} Anda agar Anda dapat berinteraksi dengan {{assistantName}} lewat pesan teks.",
         "connectTitle": "Hubungkan nomor telepon",
         "documentTitle": "Hubungkan Pesan",
@@ -3480,9 +3481,16 @@
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
         "invalidTitle": "Tautan koneksi tidak valid",
+        "keepPhone": "Tetap gunakan {{phone}}",
+        "phoneInUseDescription": "Nomor ini terhubung ke akun atau organisasi Okou lain. Putuskan koneksinya di sana sebelum mencoba lagi.",
+        "phoneInUseTitle": "Nomor telepon sudah terhubung",
+        "phoneMismatchDescription": "Akun Okou Anda saat ini menggunakan {{currentPhone}} di organisasi ini. Beralih ke {{requestedPhone}}, nomor yang membuka tautan ini?",
+        "phoneMismatchTitle": "Ganti nomor telepon?",
         "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
-        "successTitle": "Nomor telepon terhubung"
+        "successTitle": "Nomor telepon terhubung",
+        "switchPhone": "Beralih ke {{phone}}",
+        "unavailable": "Koneksi telepon saat ini tidak tersedia."
       },
       "common": {
         "backToSettings": "Kembali ke setelan",
@@ -5911,6 +5919,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "Anda tidak dapat melihat percakapan ini",
     "handoffDescription": "{{assistantName}} membawa konteks ke percakapan baru",
     "handoffPrompt": "Lanjutkan percakapan yang dibagikan ini dengan saya: {{url}}",
     "makeConversationYours": "Jadikan percakapan ini milik Anda",

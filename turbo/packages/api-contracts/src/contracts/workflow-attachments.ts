@@ -38,12 +38,19 @@ export const workflowAttachmentsSchema = discriminatedUnion("kind", [
 ]);
 export type WorkflowAttachments = zInfer<typeof workflowAttachmentsSchema>;
 
-/** Claim-only input. Stage 1 deploys its reader without emitting this field. */
-export const workflowSkillDocumentSchema = object({
+/** Claim selects identities/mounts; current content is resolved during download. */
+export const workflowSkillReferenceSchema = object({
   workflowId: uuid(),
   mountPath: string().regex(
     /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
   ),
+}).strict();
+export type WorkflowSkillReference = zInfer<
+  typeof workflowSkillReferenceSchema
+>;
+
+export const workflowDownloadSchema = object({
+  workflowId: uuid(),
   skillMd: string(),
   attachments: object({
     archiveUrl: zUrl({ protocol: /^https$/u }).refine((value) => {
@@ -56,4 +63,11 @@ export const workflowSkillDocumentSchema = object({
     .strict()
     .nullable(),
 }).strict();
+export type WorkflowDownload = zInfer<typeof workflowDownloadSchema>;
+
+/** Outgoing Runner input; retire after the download readers have deployed. */
+export const workflowSkillDocumentSchema = workflowSkillReferenceSchema.extend({
+  skillMd: string(),
+  attachments: workflowDownloadSchema.shape.attachments,
+});
 export type WorkflowSkillDocument = zInfer<typeof workflowSkillDocumentSchema>;

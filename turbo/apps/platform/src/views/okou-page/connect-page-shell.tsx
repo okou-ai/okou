@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { AlertCircle, ArrowLeft, CircleCheck, Loader2 } from "lucide-react";
-import { surfaceVariants, Button } from "@okouai/ui";
+import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { resolveAppAuthUrl } from "../../signals/auth.ts";
 import { Link } from "../router/link.tsx";
@@ -74,6 +74,56 @@ export function SettingsBackLink({ label }: { label?: string }) {
         })
       }
     />
+  );
+}
+
+export function ConnectActionGroup({
+  primary,
+  secondary,
+}: {
+  primary: ReactNode;
+  secondary: ReactNode;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-3">
+      {primary}
+      <div className="flex justify-center">{secondary}</div>
+    </div>
+  );
+}
+
+export function ConnectSuccessState({
+  title,
+  description,
+  openHref,
+  openLabel,
+  openIcon,
+  notice,
+}: {
+  title: string;
+  description: ReactNode;
+  openHref: string | null;
+  openLabel: string;
+  openIcon: ReactNode;
+  notice?: ReactNode;
+}) {
+  return (
+    <>
+      <CircleCheck size={40} className="text-emerald-500" />
+      <CenterText title={title} body={description} />
+      {notice}
+      <ConnectActionGroup
+        primary={
+          openHref ? (
+            <a href={openHref} className={cn(buttonVariants(), "w-full gap-2")}>
+              {openIcon}
+              {openLabel}
+            </a>
+          ) : null
+        }
+        secondary={<SettingsBackLink />}
+      />
+    </>
   );
 }
 

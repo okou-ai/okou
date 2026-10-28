@@ -15,7 +15,7 @@ import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-lay
 
 import { chatThreads } from "./chat-thread";
 
-/** Immutable public snapshots created from an explicit chat-event selection. */
+/** Immutable conversation content with separately managed sharing policy. */
 export const sharedThreads = pgTable(
   "shared_threads",
   {
@@ -27,6 +27,7 @@ export const sharedThreads = pgTable(
     orgId: text("org_id"),
     // DB/API rollout: old API writers omit this marker after the migration.
     // Keep the default through their rollback window; tracked by #32492.
+    // Visibility-managed text-only shares also require this live policy read.
     hasArtifactSnapshot: boolean("has_artifact_snapshot")
       .notNull()
       .default(false),

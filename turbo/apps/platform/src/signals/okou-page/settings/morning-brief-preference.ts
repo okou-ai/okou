@@ -72,6 +72,8 @@ export const updateMorningBriefPreference$ = command(
       set(morningBriefPreferenceVersion$, (version) => {
         return version + 1;
       });
+      await get(morningBriefPreference$);
+      signal.throwIfAborted();
     }
     return preferenceState(result);
   },

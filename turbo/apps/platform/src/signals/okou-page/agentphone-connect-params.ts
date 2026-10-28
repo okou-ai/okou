@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { i18n } from "../../i18n/index.ts";
 
 interface AgentPhoneConnectParams {
@@ -58,7 +59,7 @@ function encodeReturnPath(
   if (effectiveChannel) {
     search.set("channel", effectiveChannel);
   }
-  return `/agentphone/connect?${search.toString()}`;
+  return `${INTEGRATION_SETTINGS_PATHS.agentphone}?${search.toString()}`;
 }
 
 function invalidParams(
@@ -67,7 +68,7 @@ function invalidParams(
 ): ParsedAgentPhoneConnectParams {
   return {
     ok: false,
-    returnPath: "/agentphone/connect",
+    returnPath: INTEGRATION_SETTINGS_PATHS.agentphone,
     error: {
       code,
       title: i18n.t(($) => {
@@ -104,7 +105,7 @@ export function parseAgentPhoneConnectParams(
   if (!phoneHandle || !agentphoneAgentId || !tsRaw || !signature) {
     return {
       ok: false,
-      returnPath: "/agentphone/connect",
+      returnPath: INTEGRATION_SETTINGS_PATHS.agentphone,
       error: {
         code: "incomplete",
         title: i18n.t(($) => {

@@ -848,6 +848,9 @@ describe("owner provider profiles", () => {
       const headers = {
         authorization: `Bearer ${okouTokenFromClaim(chat.claim)}`,
       };
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: false,
+      });
       const original = await accept(legacy.use({ headers, body: {} }), [200]);
       const id = f.provider.createdIds[0];
       if (!id) {
@@ -858,6 +861,9 @@ describe("owner provider profiles", () => {
           return HttpResponse.json(f.provider.profile(id), { status: 201 });
         }),
       );
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+      });
       await expect(chat.request({ kind: "allocate" })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
@@ -865,6 +871,9 @@ describe("owner provider profiles", () => {
         outcome: "unavailable",
       });
       expect((await fetch(`${PROVIDER_URL}/profiles/${id}`)).status).toBe(200);
+      await updateFeatureSwitchesForUser(context, f.featureActor, {
+        [FeatureSwitchKey.BrowserSharedOwner]: false,
+      });
       const retained = await accept(legacy.use({ headers, body: {} }), [200]);
       expect(retained.body.cdpUrl).toBe(original.body.cdpUrl);
     });

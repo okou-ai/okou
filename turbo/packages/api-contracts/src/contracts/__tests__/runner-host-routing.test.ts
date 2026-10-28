@@ -19,7 +19,7 @@ const heartbeat = {
   mode: "running",
 };
 
-describe("peer finalizing reader and hostname preparation", () => {
+describe("Runner host routing contracts", () => {
   it("preserves configured hostname with empty initial inventory and accepts old omission", () => {
     expect(heartbeatBodySchema.parse(heartbeat)).not.toHaveProperty(
       "runnerHostname",
@@ -43,7 +43,6 @@ describe("peer finalizing reader and hostname preparation", () => {
   it.each([
     "exactSandbox",
     "finalizingPredecessor",
-    "peerFinalizingPredecessor",
     "reusableSandbox",
     "homeCache",
   ])("reads %s with the canonical identity and immutable expiry", (tier) => {
@@ -52,10 +51,8 @@ describe("peer finalizing reader and hostname preparation", () => {
       runnerIdentity: { runnerId: heartbeat.runnerId, heartbeatGeneration: 7 },
       tier,
       expiresAt: "2026-10-20T00:00:49.000Z",
-      ...(tier === "exactSandbox" ||
-      tier === "finalizingPredecessor" ||
-      tier === "peerFinalizingPredecessor"
-        ? { finalizingSourceRunId: "33333333-3333-4333-8333-333333333333" }
+      ...(tier === "exactSandbox" || tier === "finalizingPredecessor"
+        ? { predecessorRunId: "33333333-3333-4333-8333-333333333333" }
         : {}),
     };
     expect(runnerPreferenceSchema.parse(preference)).toStrictEqual(preference);

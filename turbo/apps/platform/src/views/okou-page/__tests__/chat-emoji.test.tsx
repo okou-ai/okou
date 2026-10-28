@@ -11,7 +11,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import emojiGroupsUrl from "../../../data/chat-thread-emoji.json?url";
+import { chatThreadEmojiDataUrl as emojiGroupsUrl } from "../../../data/chat-thread-emoji-url.ts";
 import { CHAT_THREAD_EMOJI_FIXTURE } from "../../../mocks/handlers/chat-thread-emoji.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";

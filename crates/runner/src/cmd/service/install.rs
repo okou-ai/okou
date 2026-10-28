@@ -17,7 +17,7 @@ use super::drain_override::{
     DrainRestartOverrideRemoval, RUNTIME_SYSTEMD_SYSTEM_DIR, remove_drain_restart_override_at,
     write_drain_restart_override_at,
 };
-use super::reload::{SystemdReloadRequirement, coordinate_systemd_reload};
+use super::reload::{SystemdReloadPolicy, SystemdReloadRequirement, coordinate_systemd_reload};
 use super::unit_file::{
     cleanup_unit_staging_files, generate_unit_file, resolve_config_path, validate_current_exe_path,
     validate_systemd_path, write_unit_file,
@@ -71,7 +71,7 @@ impl ServiceInstallOps for RealServiceInstallOps {
         requirement: SystemdReloadRequirement,
     ) -> ServiceFuture<'a, ()> {
         Box::pin(async move {
-            coordinate_systemd_reload(unit, requirement)
+            coordinate_systemd_reload(unit, requirement, SystemdReloadPolicy::Unbounded)
                 .await
                 .map(|_| ())
         })

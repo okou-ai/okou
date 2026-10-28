@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "組織內的所有成員",
       "permissionsUpdated": "訪問權限已更新",
       "publicAccess": "公開訪問",
-      "publicOption": "知道連結的所有人"
+      "publicOption": "知道連結的所有人",
+      "updateFailed": "無法更新存取權限"
     },
     "sidebar": {
       "openSharedConversation": "開啟分享的對話",
@@ -2185,12 +2186,12 @@
     "resources": {
       "collapse": "收合",
       "copyLink": "複製連結",
-      "emptyDescription": "這個對話的檔案和關聯對話會顯示在這裡。",
-      "emptyTitle": "還沒有資源",
-      "loadFailed": "無法載入聊天資源",
-      "loading": "正在載入資源",
+      "emptyDescription": "這個對話裡生成的檔案、網站等成果會顯示在這裡。",
+      "emptyTitle": "還沒有成果",
+      "loadFailed": "無法載入成果",
+      "loading": "正在載入成果",
       "showMore": "顯示更多",
-      "title": "聊天資源"
+      "title": "成果和聊天"
     },
     "run": {
       "collapseWorkHistory": "收起工作記錄",
@@ -2255,7 +2256,8 @@
       "shareLink": "分享對話連結",
       "shareLinkCopied": "分享連結已複製",
       "start": "分享訊息",
-      "tooLarge": "選擇的訊息過多，請減少後再分享"
+      "tooLarge": "選擇的訊息過多，請減少後再分享",
+      "visibilityDescription": "選擇誰可以查看此對話，只有你能修改權限。"
     },
     "shortcuts": {
       "number": "數字"
@@ -3470,7 +3472,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "返回 {{brandName}}",
         "connectDescription": "把這個電話號碼關聯到你的 {{brandName}} 帳號，就可以透過簡訊與 {{assistantName}} 交流。",
         "connectTitle": "連線電話號碼",
         "documentTitle": "連線 Messages",
@@ -3480,9 +3481,16 @@
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
         "invalidTitle": "連線連結無效",
+        "keepPhone": "保留 {{phone}}",
+        "phoneInUseDescription": "此號碼已連線至其他 Okou 帳號或組織。請先在該處中斷連線，再重試。",
+        "phoneInUseTitle": "號碼已連線",
+        "phoneMismatchDescription": "你的 Okou 帳號在此組織中目前使用 {{currentPhone}}。要切換至開啟此連結的號碼 {{requestedPhone}} 嗎？",
+        "phoneMismatchTitle": "切換號碼？",
         "risk": "簡訊和彩信回覆可能無法穩定送達。為獲得最可靠的體驗，請用 iMessage 與這個號碼通訊。",
         "successDescription": "{{phone}}已連線。傳送一條簡訊，即可開始與 {{assistantName}} 對話。",
-        "successTitle": "電話號碼已連線"
+        "successTitle": "電話號碼已連線",
+        "switchPhone": "切換至 {{phone}}",
+        "unavailable": "目前無法連線電話號碼。"
       },
       "common": {
         "backToSettings": "返回設定",
@@ -5911,6 +5919,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "你無法查看此對話",
     "handoffDescription": "{{assistantName}} 會把上下文帶進新的對話",
     "handoffPrompt": "和我一起繼續這段分享的對話：{{url}}",
     "makeConversationYours": "把這段對話變成你自己的",

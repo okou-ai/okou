@@ -1,3 +1,6 @@
+import type { SharedThreadAttachmentCopy } from "./shared-thread-attachments.service";
+import { randomUUID } from "node:crypto";
+import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
   CURRENT_LINK_LAYOUT,
   linkLayoutSegment,
@@ -23,6 +26,8 @@ import { artifactHash } from "../../lib/file-url";
 import { db$ } from "../external/db";
 import {
   copyArtifactShareObject,
+  downloadS3BufferWithMaxBytes$,
+  putS3Object,
   putHostedSitesS3Object,
 } from "../external/s3";
 import { settle } from "../utils";
@@ -39,6 +44,7 @@ import {
   artifactFileReference,
   privateArtifactRecord$,
   privateArtifactUrl,
+  privateArtifactsBucket,
 } from "./private-artifact-storage.service";
 import {
   ArtifactDeliveryAliasConflict,
@@ -63,6 +69,10 @@ interface SnapshotCopy {
   readonly bucket: string;
   readonly sourceKey: string;
   readonly sourceEtag?: string;
+  readonly crossBucketSource?: {
+    readonly bucket: string;
+    readonly maxBytes: number;
+  };
   readonly targetKey: string;
   readonly hosted: boolean;
   readonly body?: Buffer;
@@ -195,6 +205,7 @@ interface SnapshotOwner {
   readonly threadId: string;
   readonly userId: string;
   readonly orgId: string;
+  readonly audience?: SharedThreadAudience;
 }
 
 /**
@@ -350,6 +361,58 @@ const privateFileSnapshot$ = command(
   },
 );
 
+// Historical public uploads need a fresh private copy for a managed share;
+// publishing another public attachment URL would bypass conversation access.
+const legacyAttachmentSnapshot$ = command(
+  async (
+    { set },
+    args: SnapshotOwner & {
+      readonly reservedTokens: Set<string>;
+      readonly id: string;
+    },
+    attachment: SharedThreadAttachmentCopy,
+    signal: AbortSignal,
+  ) => {
+    const { token, reference, url } = await set(
+      allocateSnapshotReference$,
+      {
+        ...args,
+        kind: "file",
+        filename: attachment.attachment.filename,
+      },
+      signal,
+    );
+    const target: SnapshotTarget = {
+      kind: "file",
+      id: args.id,
+      key: `private-artifacts/${args.id}/thread-shares/${args.threadId}/${token}/${encodeURIComponent(attachment.attachment.filename)}`,
+      filename: attachment.attachment.filename,
+      contentType: attachment.attachment.contentType,
+    };
+    return {
+      resource: {
+        token,
+        reference,
+        url,
+        target,
+        deliveryUrl: resourceUrl(token, target),
+        previewImageUrl: null,
+      },
+      copy: {
+        bucket: privateArtifactsBucket(),
+        crossBucketSource: {
+          bucket: attachment.bucket,
+          maxBytes: attachment.attachment.size,
+        },
+        sourceKey: attachment.sourceKey,
+        targetKey: target.key,
+        contentType: attachment.attachment.contentType,
+        hosted: false,
+      },
+    };
+  },
+);
+
 const privateFileSnapshotPreviewImage$ = command(
   async (
     { get },
@@ -404,7 +467,9 @@ function snapshotPolicy(
   previews: NonNullable<SharedThreadArtifactPolicy["previews"]>,
 ): SharedThreadArtifactPolicy {
   return sharedThreadArtifactPolicySchema.parse({
-    version: 1,
+    ...(args.audience === undefined
+      ? { version: 1 }
+      : { version: 2, audience: args.audience, revision: randomUUID() }),
     threadId: args.threadId,
     ownerId: args.userId,
     orgId: args.orgId,
@@ -446,11 +511,79 @@ function snapshotReferenceUrl(
   return `${resource.url}${fragment}`;
 }
 
+const prepareSharedThreadPreviews$ = command(
+  async (
+    { set },
+    args: SnapshotOwner & {
+      readonly resources: Map<string, SnapshotResource>;
+      readonly copies: SnapshotCopy[];
+      readonly reservedTokens: Set<string>;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { resources, copies } = args;
+    const previews: NonNullable<SharedThreadArtifactPolicy["previews"]> = {};
+    for (const resource of resources.values()) {
+      if (!resource.previewImageUrl) {
+        continue;
+      }
+      const reference = await set(
+        resourceReference$,
+        resource.previewImageUrl,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!reference || reference.kind === "snapshot") {
+        throw new SharedThreadArtifactUnavailable();
+      }
+      let preview = resources.get(reference.id);
+      if (!preview) {
+        if (resources.size >= MAX_RESOURCES) {
+          throw new SharedThreadArtifactUnavailable();
+        }
+        const snapshot = await set(
+          privateFileSnapshot$,
+          args,
+          reference,
+          signal,
+        );
+        if (!snapshot) {
+          throw new SharedThreadArtifactUnavailable();
+        }
+        preview = snapshot.resource;
+        resources.set(reference.id, preview);
+        copies.push(snapshot.copy);
+      }
+      if (reference.key && reference.key !== preview.sourceKey) {
+        throw new SharedThreadArtifactUnavailable();
+      }
+      signal.throwIfAborted();
+      if (
+        preview.target.kind !== "file" ||
+        !preview.target.contentType.startsWith("image/")
+      ) {
+        throw new SharedThreadArtifactUnavailable();
+      }
+      previews[resource.token] = {
+        token: preview.token,
+        reference: preview.reference,
+      };
+    }
+    return previews;
+  },
+);
+
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
     { set },
-    args: SnapshotOwner & { readonly messages: readonly SharedMessage[] },
+    args: SnapshotOwner & {
+      readonly messages: readonly SharedMessage[];
+      readonly attachmentCopies: ReadonlyMap<
+        string,
+        SharedThreadAttachmentCopy
+      >;
+    },
     signal: AbortSignal,
   ): Promise<{
     messages: SharedMessage[];
@@ -460,16 +593,35 @@ export const prepareSharedThreadArtifacts$ = command(
     const pendingResources = new Map<string, Promise<SnapshotResource>>();
     const reservedTokens = new Set<string>();
     const copies: SnapshotCopy[] = [];
+    const legacyAttachmentIds = new Map(
+      args.audience === undefined
+        ? []
+        : [...args.attachmentCopies].flatMap(([id, copy]) => {
+            return copy.isPrivate ? [] : [[copy.attachment.url, id] as const];
+          }),
+    );
 
     async function allocate(
       reference: ResourceReference,
     ): Promise<SnapshotResource> {
-      const file = await set(
-        privateFileSnapshot$,
-        { ...args, reservedTokens },
-        reference,
-        signal,
-      );
+      const attachment =
+        args.audience === undefined
+          ? undefined
+          : args.attachmentCopies.get(reference.id);
+      const file =
+        attachment && !attachment.isPrivate
+          ? await set(
+              legacyAttachmentSnapshot$,
+              { ...args, reservedTokens, id: reference.id },
+              attachment,
+              signal,
+            )
+          : await set(
+              privateFileSnapshot$,
+              { ...args, reservedTokens },
+              reference,
+              signal,
+            );
       signal.throwIfAborted();
       if (!file) {
         throw new SharedThreadArtifactUnavailable();
@@ -507,7 +659,10 @@ export const prepareSharedThreadArtifacts$ = command(
           10,
           async (value) => {
             const source = value.replaceAll("&amp;", "&");
-            const reference = await set(resourceReference$, source, signal);
+            const attachmentId = legacyAttachmentIds.get(source);
+            const reference = attachmentId
+              ? { id: attachmentId, suffix: "" }
+              : await set(resourceReference$, source, signal);
             signal.throwIfAborted();
             if (!reference) {
               return [value, value] as const;
@@ -541,43 +696,21 @@ export const prepareSharedThreadArtifacts$ = command(
         ...(attachments === undefined ? {} : { attachments }),
       });
     }
-    if (resources.size === 0) {
+    if (resources.size === 0 && args.audience === undefined) {
       return { messages, plan: null };
     }
-    const previews: NonNullable<SharedThreadArtifactPolicy["previews"]> = {};
-    for (const resource of resources.values()) {
-      if (!resource.previewImageUrl) {
-        continue;
-      }
-      const reference = await set(
-        resourceReference$,
-        resource.previewImageUrl,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!reference || reference.kind === "snapshot") {
-        throw new SharedThreadArtifactUnavailable();
-      }
-      const preview = await resolve(reference);
-      signal.throwIfAborted();
-      if (
-        preview.target.kind !== "file" ||
-        !preview.target.contentType.startsWith("image/")
-      ) {
-        throw new SharedThreadArtifactUnavailable();
-      }
-      previews[resource.token] = {
-        token: preview.token,
-        reference: preview.reference,
-      };
-    }
+    const previews = await set(
+      prepareSharedThreadPreviews$,
+      { ...args, resources, copies, reservedTokens },
+      signal,
+    );
     const policy = snapshotPolicy(args, resources, previews);
     return { messages, plan: { messages, policy, copies } };
   },
 );
 
 export const copySharedThreadArtifacts$ = command(
-  async ({ get }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
+  async ({ get, set }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
     const result = await settle(
       measureSharedThreadPhase(
         {
@@ -591,20 +724,49 @@ export const copySharedThreadArtifacts$ = command(
           }).length,
           resourceCount: Object.keys(plan.policy.resources).length,
         },
-        mapConcurrent(plan.copies, 10, async (copy) => {
-          signal.throwIfAborted();
-          await (copy.body !== undefined
-            ? get(
-                putHostedSitesS3Object(
+        mapConcurrent(
+          plan.copies,
+          plan.copies.some((copy) => {
+            return copy.crossBucketSource !== undefined;
+          })
+            ? 1
+            : 10,
+          async (copy) => {
+            signal.throwIfAborted();
+            if (copy.crossBucketSource !== undefined) {
+              const body = await set(
+                downloadS3BufferWithMaxBytes$,
+                {
+                  bucket: copy.crossBucketSource.bucket,
+                  key: copy.sourceKey,
+                  maxBytes: copy.crossBucketSource.maxBytes,
+                },
+                signal,
+              );
+              await get(
+                putS3Object(
                   copy.bucket,
                   copy.targetKey,
-                  copy.body,
+                  body,
                   copy.contentType ?? "application/octet-stream",
                   signal,
                 ),
-              )
-            : get(copyArtifactShareObject(copy, signal)));
-        }),
+              );
+              return;
+            }
+            await (copy.body !== undefined
+              ? get(
+                  putHostedSitesS3Object(
+                    copy.bucket,
+                    copy.targetKey,
+                    copy.body,
+                    copy.contentType ?? "application/octet-stream",
+                    signal,
+                  ),
+                )
+              : get(copyArtifactShareObject(copy, signal)));
+          },
+        ),
       ),
       signal,
     );

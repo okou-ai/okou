@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import emojiGroupsUrl from "../../data/chat-thread-emoji.json?url";
+import { chatThreadEmojiDataUrl as emojiGroupsUrl } from "../../data/chat-thread-emoji-url.ts";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 
 export interface ChatThreadEmojiItem {
@@ -30,8 +30,8 @@ function isChatThreadEmojiGroups(
   );
 }
 
-// The full emoji dataset is ~150KB, so it ships as a hashed static asset that
-// only the emoji picker fetches, instead of riding in the chat page bundle.
+// The full emoji dataset is ~150KB, so only the emoji picker fetches its
+// content-addressed CDN asset instead of including it in the App build.
 export const chatThreadEmojiGroups$ = computed(
   async (): Promise<ChatThreadEmojiGroup[]> => {
     const response = await fetchResource(

@@ -121,37 +121,6 @@ function resourcePopupAnchor(boundary: HTMLElement | null) {
     : null;
 }
 
-// What this visit has asked of the resources: a press to open, and whether the
-// panel ever had room to open by itself. Once asked, the resources load to the
-// end even if the layout stops asking, so the wait is never cut short.
-function createResourceDemand() {
-  const pressedOpen$ = state(false);
-  const hadRoom$ = state(false);
-  return {
-    /** Whether the resources should load. */
-    wanted$: computed(async (get) => {
-      return (
-        get(pressedOpen$) ||
-        (get(hadRoom$) && (await get(chatResourcesEnabledByDefault$)))
-      );
-    }),
-    recordPress$: command(({ set }, open: boolean) => {
-      if (open) {
-        set(pressedOpen$, true);
-      }
-    }),
-    recordGutter$: command(({ set }, width: number) => {
-      if (width > RESOURCE_PANEL_MIN_GUTTER) {
-        set(hadRoom$, true);
-      }
-    }),
-    reset$: command(({ set }) => {
-      set(pressedOpen$, false);
-      set(hadRoom$, false);
-    }),
-  };
-}
-
 interface ResourcePanelChoice {
   readonly open: boolean;
   readonly narrow: boolean;
@@ -165,10 +134,7 @@ function resourceGutterWidth(viewport: HTMLElement, column: HTMLElement) {
   );
 }
 
-function createResourcePanelChoice(
-  wide$: Computed<boolean>,
-  demand: ReturnType<typeof createResourceDemand>,
-) {
+function createResourcePanelChoice(wide$: Computed<boolean>) {
   // The user's choice in this chat. A close always holds; an open made with
   // room beside the transcript steps aside while that room is gone.
   const choice$ = state<ResourcePanelChoice | null>(null);
@@ -186,14 +152,12 @@ function createResourcePanelChoice(
   });
   const setOpen$ = command(({ get, set }, open: boolean) => {
     set(instantOpening$, false);
-    set(demand.recordPress$, open);
     set(choice$, { open, narrow: !get(wide$) });
   });
   // With room beside the transcript a press is the preference, for every chat.
   // Without it, a press only peeks in this chat and leaves the preference alone.
   const press$ = command(
     async ({ get, set }, open: boolean, signal: AbortSignal) => {
-      set(demand.recordPress$, open);
       if (!get(wide$)) {
         set(instantOpening$, open);
         set(choice$, { open, narrow: true });
@@ -232,14 +196,10 @@ function createChatResourcePanelSignals() {
   const boundary$ = state<HTMLElement | null>(null);
   const collisionBoundary$ = state<HTMLElement | null>(null);
   const messageColumn$ = state<HTMLElement | null>(null);
-  const demand = createResourceDemand();
   const wide$ = computed((get) => {
     return get(gutterWidth$) > RESOURCE_PANEL_MIN_GUTTER;
   });
-  const { reset$: resetChoice$, ...choice } = createResourcePanelChoice(
-    wide$,
-    demand,
-  );
+  const { reset$: resetChoice$, ...choice } = createResourcePanelChoice(wide$);
   const measure$ = command(({ get, set }) => {
     const viewport = get(boundary$);
     const column = get(messageColumn$);
@@ -248,7 +208,6 @@ function createChatResourcePanelSignals() {
     }
     const width = resourceGutterWidth(viewport, column);
     set(gutterWidth$, width);
-    set(demand.recordGutter$, width);
   });
   const layoutOnRef$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
@@ -266,7 +225,6 @@ function createChatResourcePanelSignals() {
       set(collisionBoundary$, element);
       set(messageColumn$, column);
       set(resetChoice$);
-      set(demand.reset$);
       const measure = () => {
         set(measure$);
       };
@@ -282,7 +240,6 @@ function createChatResourcePanelSignals() {
           set(collisionBoundary$, null);
           set(messageColumn$, null);
           set(resetChoice$);
-          set(demand.reset$);
         },
         { once: true },
       );
@@ -304,7 +261,6 @@ function createChatResourcePanelSignals() {
 
   return {
     ...choice,
-    wanted$: demand.wanted$,
     wide$,
     measure$,
     layoutOnRef$,
@@ -336,13 +292,9 @@ export function createChatResourceSignals(
     }
     return await get(catalog.catalog$);
   });
-  // Resources load only once the panel is wanted, and the panel draws only
-  // once every source has answered, so it never opens empty or grows in steps.
+  // Cache the complete answer independently of whether the panel is requested.
   // Keep readiness primitive so catalogue paging does not redraw ready rows.
-  const settled$ = computed(async (get) => {
-    if (!(await get(panel.wanted$))) {
-      return null;
-    }
+  const settledContent$ = computed(async (get) => {
     const origin = get(relations.origin$);
     const [page, chats] = await Promise.allSettled([
       get(content$),
@@ -359,6 +311,12 @@ export function createChatResourceSignals(
       chats.value.items.length > 0 ||
       chats.value.failed
     );
+  });
+  // The current request starts lazy loading, but stepping aside neither cancels
+  // pending sources nor replaces their cached results. Draw only once every
+  // source has answered so the panel never opens empty or grows in steps.
+  const settled$ = computed(async (get) => {
+    return (await get(panel.requested$)) ? await get(settledContent$) : null;
   });
   const expandedSections$ = state({
     chats: false,

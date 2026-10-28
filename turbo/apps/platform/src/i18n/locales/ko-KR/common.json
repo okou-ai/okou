@@ -619,7 +619,8 @@
       "organizationOptionUnnamed": "조직 내 모든 사용자",
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
-      "publicOption": "링크가 있는 모든 사람"
+      "publicOption": "링크가 있는 모든 사람",
+      "updateFailed": "액세스 권한을 업데이트할 수 없습니다"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -2185,12 +2186,12 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
-      "emptyDescription": "이 채팅의 파일과 관련 채팅이 여기에 표시됩니다.",
-      "emptyTitle": "아직 리소스가 없습니다",
-      "loadFailed": "리소스를 불러오지 못했습니다",
-      "loading": "리소스 불러오는 중",
+      "emptyDescription": "이 채팅에서 만든 파일, 웹사이트 등의 아티팩트가 여기에 표시됩니다.",
+      "emptyTitle": "아직 아티팩트가 없습니다",
+      "loadFailed": "아티팩트를 불러오지 못했습니다",
+      "loading": "아티팩트 불러오는 중",
       "showMore": "더 보기",
-      "title": "채팅 리소스"
+      "title": "아티팩트 및 채팅"
     },
     "run": {
       "collapseWorkHistory": "작업 기록 접기",
@@ -2255,7 +2256,8 @@
       "shareLink": "공유된 대화 링크",
       "shareLinkCopied": "공유 링크 복사됨",
       "start": "메시지 공유",
-      "tooLarge": "공유할 메시지를 더 적게 선택하세요"
+      "tooLarge": "공유할 메시지를 더 적게 선택하세요",
+      "visibilityDescription": "이 대화를 볼 수 있는 사람을 선택하세요. 액세스 권한은 본인만 변경할 수 있습니다."
     },
     "shortcuts": {
       "number": "번호"
@@ -3470,7 +3472,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "{{brandName}}로 돌아가기",
         "connectDescription": "이 전화번호를 {{brandName}} 계정에 연결하여 문자 메시지로 {{assistantName}}와 상호작용하세요.",
         "connectTitle": "전화번호 연결",
         "documentTitle": "메시지 연결",
@@ -3480,9 +3481,16 @@
         "invalidSignature": "이 링크의 서명이 유효하지 않습니다.",
         "invalidTimestamp": "이 링크의 타임스탬프가 유효하지 않습니다.",
         "invalidTitle": "연결 링크가 유효하지 않습니다",
+        "keepPhone": "{{phone}} 유지",
+        "phoneInUseDescription": "이 전화번호는 다른 Okou 계정 또는 조직에 연결되어 있습니다. 해당 연결을 해제한 후 다시 시도하세요.",
+        "phoneInUseTitle": "이미 연결된 전화번호",
+        "phoneMismatchDescription": "이 조직에서 Okou 계정은 현재 {{currentPhone}}을 사용합니다. 이 링크를 연 번호인 {{requestedPhone}}으로 전환할까요?",
+        "phoneMismatchTitle": "전화번호를 전환할까요?",
         "risk": "SMS 및 MMS 회신이 안정적으로 전달되지 않을 수 있습니다. 가장 안정적인 경험을 위해 이 번호로 iMessage를 사용하세요.",
         "successDescription": "{{phone}}가 연결되었습니다. 문자 메시지를 보내 {{assistantName}}와 대화를 시작하세요.",
-        "successTitle": "전화번호가 연결되었습니다"
+        "successTitle": "전화번호가 연결되었습니다",
+        "switchPhone": "{{phone}}으로 전환",
+        "unavailable": "현재 전화번호를 연결할 수 없습니다."
       },
       "common": {
         "backToSettings": "설정으로 돌아가기",
@@ -5911,6 +5919,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "이 대화를 볼 수 없습니다",
     "handoffDescription": "{{assistantName}}가 컨텍스트를 새 채팅으로 가져갑니다",
     "handoffPrompt": "이 공유 대화를 저와 계속하세요: {{url}}",
     "makeConversationYours": "이 대화를 내 것으로",
