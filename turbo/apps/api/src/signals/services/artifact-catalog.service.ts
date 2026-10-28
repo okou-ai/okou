@@ -20,10 +20,11 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import type {
-  ArtifactCatalogKind,
-  ArtifactDetail,
-  ArtifactSummary,
+import {
+  chatArtifactCatalogChangedEvent,
+  type ArtifactCatalogKind,
+  type ArtifactDetail,
+  type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   artifactCatalogPendingFiles,
@@ -62,6 +63,7 @@ import {
   sharedThreadArtifactAuthorUserId,
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { safeUrlParse, settle } from "../utils";
 import {
   inferMimetype,
@@ -464,10 +466,27 @@ interface UpsertArtifactArgs {
 /**
  * Idempotent registry write. `created_at` is never updated, so re-running the
  * sync (redeploy, preview render, backfill replay) keeps the artifact in its
- * original list position. Thread ownership is also insert-only: a replacement
- * projection cannot move the artifact, including after deletion clears its FK.
+ * original list position. A private upload's unscoped ownership record can gain
+ * its first producing thread. Subsequent projections cannot move the artifact,
+ * including after thread deletion clears its FK.
  */
 function artifactUpsertPlan(args: UpsertArtifactArgs) {
+  const qb = new QueryBuilder();
+  const unscopedPrivateUpload = exists(
+    qb
+      .select({ id: runUploadedFiles.id })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.id, artifacts.projectionFileId),
+          isNull(runUploadedFiles.runId),
+          eq(
+            sql`${runUploadedFiles.metadata}->>'storage'`,
+            "private-artifact-v1",
+          ),
+        ),
+      ),
+  );
   return {
     values: {
       kind: args.kind,
@@ -489,6 +508,11 @@ function artifactUpsertPlan(args: UpsertArtifactArgs) {
     conflict: {
       target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
       set: {
+        chatThreadId: sql`case
+          when ${isNull(artifacts.chatThreadId)} and ${unscopedPrivateUpload}
+          then excluded.chat_thread_id
+          else ${artifacts.chatThreadId}
+        end`,
         kind: args.kind,
         displayKind: args.displayKind,
         sourceUrl: args.sourceUrl,
@@ -933,6 +957,28 @@ const finishPendingArtifactFile$ = command(
   },
 );
 
+const notifyArtifactCatalogChanged$ = command(
+  async ({ get }, fileId: string, signal: AbortSignal): Promise<void> => {
+    // A redeploy can retain an earlier thread and author. Notify the committed
+    // catalog owner, not the replacement file's producing thread.
+    const [artifact] = await get(db$)
+      .select({
+        authorUserId: artifacts.authorUserId,
+        chatThreadId: artifacts.chatThreadId,
+      })
+      .from(artifacts)
+      .where(eq(artifacts.projectionFileId, fileId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (artifact?.chatThreadId) {
+      await publishUserSignal(
+        [artifact.authorUserId],
+        chatArtifactCatalogChangedEvent(artifact.chatThreadId),
+      );
+    }
+  },
+);
+
 const syncFileArtifact$ = command(
   async (
     { set },
@@ -1100,6 +1146,7 @@ export const syncArtifactCatalogForFile$ = command(
       }
       await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
       signal.throwIfAborted();
+      await set(notifyArtifactCatalogChanged$, fileId, signal);
       return;
     }
 
@@ -1139,6 +1186,7 @@ export const syncArtifactCatalogForFile$ = command(
     }
     await set(finishPendingArtifactFile$, fileId, pendingRevision, signal);
     signal.throwIfAborted();
+    await set(notifyArtifactCatalogChanged$, fileId, signal);
   },
 );
 

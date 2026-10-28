@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
@@ -880,6 +881,8 @@ describe("GET /api/artifacts/catalog", () => {
         "Expected the original thread to own the hosted artifact",
       );
     }
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
     const second = await publishHostedSite({
       owner,
       site,
@@ -889,6 +892,15 @@ describe("GET /api/artifacts/catalog", () => {
     expect(second.siteId).toBe(hosted.siteId);
     expect(second.publicSlug).toBe(site);
     expect(second.deploymentId).not.toBe(hosted.deploymentId);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      chatArtifactCatalogChangedEvent(hosted.threadId),
+      null,
+    );
+    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+      chatArtifactCatalogChangedEvent(second.threadId),
+      null,
+    );
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
 

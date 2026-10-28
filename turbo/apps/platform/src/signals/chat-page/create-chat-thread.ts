@@ -2457,6 +2457,7 @@ interface RunTrackingDeps {
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
+  artifactCatalogInvalidations: readonly [Command<void, []>, Command<void, []>];
 }
 
 interface ChatRenderWindowState {
@@ -2928,6 +2929,7 @@ function createRunTracking({
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
+  artifactCatalogInvalidations,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
@@ -2949,6 +2951,7 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
+            artifactCatalog: artifactCatalogInvalidations,
             threadDetail: [
               cancellationRecovery.reload$,
               reloadConnectorAccountPreference$,
@@ -3829,6 +3832,10 @@ export function createChatPanelSignals(
     cancellationRecovery,
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
+    artifactCatalogInvalidations: [
+      artifact.resourceCatalog.reload$,
+      messages.sidebar.artifactCatalog.reload$,
+    ],
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {

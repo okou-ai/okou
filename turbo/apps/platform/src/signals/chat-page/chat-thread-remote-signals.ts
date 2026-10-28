@@ -1,4 +1,5 @@
 import { command, computed, state, type Command } from "ccstate";
+import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
@@ -37,6 +38,7 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 interface ChatThreadRealtimeInvalidations {
   readonly threadDetail: RealtimeInvalidationCommands;
   readonly automations: RealtimeInvalidationCommands;
+  readonly artifactCatalog: RealtimeInvalidationCommands;
 }
 
 interface ChatThreadRealtimeHandlers {
@@ -100,6 +102,7 @@ type ChatRealtimeSubscription =
       readonly kind: "invalidate";
       readonly topic: string;
       readonly invalidations: RealtimeInvalidationCommands;
+      readonly runOnSubscribe?: boolean;
     }
   | {
       readonly kind: "command";
@@ -235,6 +238,13 @@ export const subscribeChatThreadRealtime$ = command(
     const subscriptions: ChatRealtimeSubscription[] = [
       {
         kind: "invalidate",
+        topic: chatArtifactCatalogChangedEvent(threadId),
+        invalidations: invalidations.artifactCatalog,
+        // Close the gap between a cached page read and establishing Ably.
+        runOnSubscribe: true,
+      },
+      {
+        kind: "invalidate",
         topic: `chatThreadDetailChanged:${threadId}`,
         invalidations: invalidations.threadDetail,
       },
@@ -274,7 +284,10 @@ export const subscribeChatThreadRealtime$ = command(
           {
             topic: subscription.topic,
             invalidations: subscription.invalidations,
-            options,
+            options: {
+              ...options,
+              runOnSubscribe: subscription.runOnSubscribe,
+            },
           },
           signal,
         );

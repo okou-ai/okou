@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -39,6 +40,7 @@ interface RunUploadFixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
   readonly agentId: string;
   readonly runId: string;
+  readonly threadId: string;
   readonly bearer: string;
   readonly objectStore: ChatObjectStore;
 }
@@ -105,18 +107,21 @@ async function createRunUploadFixture(
   });
 
   let runId: string;
+  let threadId: string;
   if (options.chatThread) {
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
       prompt: "produce a thread-linked uploaded artifact",
     });
     runId = sent.runId;
+    threadId = sent.threadId;
   } else {
     const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "produce an uploaded artifact",
     });
     runId = run.runId;
+    threadId = run.threadId;
   }
   const orgActor = { ...actor, orgId };
   mockClerkMembership(context, orgActor, "org:admin");
@@ -125,6 +130,7 @@ async function createRunUploadFixture(
     actor: orgActor,
     agentId: agent.agentId,
     runId,
+    threadId,
     bearer: `Bearer ${okouToken({
       userId: actor.userId,
       orgId,
@@ -166,7 +172,7 @@ function addUploadObject(
 }
 
 describe("POST /api/uploads/complete", () => {
-  it("records a private artifact from an agent run in the catalog with its authenticated URL", async () => {
+  it("publishes a readable chat catalog after completing a private artifact and preserves its original chat", async () => {
     const fixture = await createRunUploadFixture({ chatThread: true });
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     createRouteMocks(context).clerk.session(
@@ -194,6 +200,29 @@ describe("POST /api/uploads/complete", () => {
         ContentType: "text/markdown; charset=utf-8",
       });
     });
+    await flushWaitUntilForTest();
+    context.mocks.ably.channelGet.mockClear();
+    const publishedCatalogs: {
+      channel: string | undefined;
+      payload: unknown;
+      titles: string[];
+    }[] = [];
+    context.mocks.ably.publish.mockImplementation(async (topic, payload) => {
+      if (topic !== chatArtifactCatalogChangedEvent(fixture.threadId)) {
+        return;
+      }
+      const channel = context.mocks.ably.channelGet.mock.lastCall?.[0];
+      const catalog = await chat.listArtifactCatalog(fixture.actor, {
+        chatThreadId: fixture.threadId,
+      });
+      publishedCatalogs.push({
+        channel,
+        payload,
+        titles: catalog.artifacts.map((entry) => {
+          return entry.title;
+        }),
+      });
+    });
     const response = await chat.completeUploadWithBearer(
       fixture.bearer,
       { id: prepared.body.id },
@@ -203,6 +232,15 @@ describe("POST /api/uploads/complete", () => {
       url: prepared.body.url,
       contentType: "text/markdown; charset=utf-8",
     });
+    await flushWaitUntilForTest();
+    expect(publishedCatalogs.length).toBeGreaterThan(0);
+    for (const published of publishedCatalogs) {
+      expect(published).toStrictEqual({
+        channel: `user:${fixture.actor.userId}`,
+        payload: null,
+        titles: ["private-report.md"],
+      });
+    }
     const catalog = await chat.listArtifactCatalog(fixture.actor, {
       kind: "file",
     });
@@ -224,6 +262,45 @@ describe("POST /api/uploads/complete", () => {
         contentType: "text/markdown; charset=utf-8",
       },
     });
+
+    const secondRun = await runsApi.createThreadRun(fixture.actor, {
+      agentId: fixture.agentId,
+      prompt: "reuse the existing private artifact",
+    });
+    const secondBearer = `Bearer ${okouToken({
+      userId: fixture.actor.userId,
+      orgId: fixture.actor.orgId,
+      runId: secondRun.runId,
+      capabilities: ["file:write"],
+    })}`;
+    await chat.completeUploadWithBearer(
+      secondBearer,
+      { id: prepared.body.id },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await expect(
+      chat.listArtifactCatalog(fixture.actor, {
+        chatThreadId: fixture.threadId,
+      }),
+    ).resolves.toMatchObject({ artifacts: [{ id: artifact.id }] });
+    await expect(
+      chat.listArtifactCatalog(fixture.actor, {
+        chatThreadId: secondRun.threadId,
+      }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+
+    await chat.deleteThread(fixture.actor, fixture.threadId);
+    await chat.completeUploadWithBearer(
+      secondBearer,
+      { id: prepared.body.id },
+      [200],
+    );
+    await expect(
+      chat.listArtifactCatalog(fixture.actor, {
+        chatThreadId: secondRun.threadId,
+      }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
   });
 
   it("completes a run-scoped upload after the object exists", async () => {

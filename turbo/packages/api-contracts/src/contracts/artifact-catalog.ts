@@ -436,3 +436,7 @@ export type ArtifactCatalogContract = {
 // explicit request and response slots to downstream API and app typechecks.
 export const artifactCatalogContract: ArtifactCatalogContract =
   artifactCatalogRuntimeContract;
+/** Invalidation only: catalog entries remain authoritative over HTTP. */
+export function chatArtifactCatalogChangedEvent(threadId: string): string {
+  return `chatArtifactCatalogChanged:${threadId}`;
+}
