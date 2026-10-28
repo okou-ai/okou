@@ -183,21 +183,19 @@ export function useAgentAvatarTexture(id: string | null): string | null {
  * greeting. A painted night scene takes the place of its brand tile, and a
  * witch hat sits on the frame's top-right corner.
  *
- * All three files are drawn for the frame the greeting gives the default SVG
+ * Both files are drawn for the frame the greeting gives the default SVG
  * (`object-cover object-top` in a square), so the scene's light falls behind
- * the hair and the cut matches the hat's own placement. `cutUrl` is an alpha
- * mask in the frame's coordinates: the hat plus a 1.5px gap, taken out of the
- * scene so the page canvas shows between them in every theme.
+ * the hair. The scene carries the hat's cut in its own alpha: the hat plus a
+ * 1.5px gap is transparent, so the page canvas shows between them in every
+ * theme. It is baked rather than a CSS mask because browsers fetch mask images
+ * in CORS mode, and a failed mask would hide the whole avatar.
  */
 export const GREETING_AVATAR_COSTUME = Object.freeze({
-  backdropUrl: platformStaticAssetUrl(
-    "views/okou-page/assets/greeting-avatar-halloween-bg-d8694cdac49f.webp",
+  sceneUrl: platformStaticAssetUrl(
+    "views/okou-page/assets/greeting-avatar-halloween-scene-920a0a3ac5f6.webp",
   ),
   hatUrl: platformStaticAssetUrl(
     "views/okou-page/assets/greeting-avatar-halloween-hat-e9d073ecd358.webp",
-  ),
-  cutUrl: platformStaticAssetUrl(
-    "views/okou-page/assets/greeting-avatar-halloween-cut-40ecae1e70ea.png",
   ),
 });
 

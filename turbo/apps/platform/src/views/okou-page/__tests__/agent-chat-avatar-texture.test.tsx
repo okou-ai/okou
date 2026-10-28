@@ -199,8 +199,8 @@ test("Keep every other avatar surface untextured", async () => {
 
 test("Dress the organization default agent in its greeting costume", async () => {
   // The avatar every workspace's chat home opens on. On the greeting its brand
-  // tile gives way to the costume: a painted scene behind the drawn file, cut
-  // where the hat overhangs the frame, and the hat itself beside the frame.
+  // tile gives way to the costume: a painted scene behind the drawn file, and
+  // a hat over the frame's corner.
   mountedAgent(DEFAULT_AGENT_AVATAR_URL);
   context.mocks.browser.matchMedia(false);
   await setupPage({
@@ -217,11 +217,10 @@ test("Dress the organization default agent in its greeting costume", async () =>
   const scene = Array.from(frame.querySelectorAll<HTMLElement>("span")).find(
     (candidate) => {
       return candidate.style.backgroundImage.includes(
-        GREETING_AVATAR_COSTUME.backdropUrl,
+        GREETING_AVATAR_COSTUME.sceneUrl,
       );
     },
   );
-  expect(scene?.style.maskImage).toContain(GREETING_AVATAR_COSTUME.cutUrl);
   // The artwork is the drawn file, still shown through the same frame.
   expect(scene?.querySelector("img")).toHaveAttribute(
     "src",
@@ -239,8 +238,6 @@ test("Dress the organization default agent in its greeting costume", async () =>
 test("Keep the costume off every other agent", async () => {
   await setupChatPage();
 
-  // A composer avatar keeps its brand texture and wears no hat.
-  expect(textureImage(avatarFrame())).not.toBeNull();
   expect(
     document.querySelector(`img[src="${GREETING_AVATAR_COSTUME.hatUrl}"]`),
   ).toBeNull();

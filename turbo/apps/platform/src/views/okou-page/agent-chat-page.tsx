@@ -389,15 +389,9 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                   )}
                 >
                   {costume ? (
-                    // The cut mask is applied here rather than on the link, so
-                    // the link's own focus outline is never masked away. The
-                    // hover layer sits inside it and leaves the gap untinted.
                     <span
-                      className="relative flex h-full w-full bg-cover bg-center [mask-size:100%_100%]"
-                      style={{
-                        backgroundImage: `url(${costume.backdropUrl})`,
-                        maskImage: `url(${costume.cutUrl})`,
-                      }}
+                      className="relative flex h-full w-full bg-cover bg-center"
+                      style={{ backgroundImage: `url(${costume.sceneUrl})` }}
                     >
                       <AgentAvatarImg
                         name={agentId}
@@ -442,10 +436,11 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
 
 /**
  * The costume's hat, worn over the frame's top-right corner. It overhangs the
- * frame, so it is drawn outside the clipped link. The costume's cut mask was
- * baked from exactly this placement, so moving or resizing the hat means
- * baking a new mask. Decorative and click-through: the profile link underneath
- * stays the whole target, and the pin pill, drawn later, stays on top of it.
+ * frame, so it is drawn outside the clipped link. The cut in the scene's alpha
+ * was baked from exactly this placement, so moving or resizing the hat means
+ * baking a new scene. Decorative and click-through: the profile link
+ * underneath stays the whole target, and the pin pill, drawn later, stays on
+ * top of it.
  */
 function GreetingAvatarHat({ url }: { url: string }) {
   return (
