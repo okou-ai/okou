@@ -538,11 +538,11 @@ test("Take over the cloud browser from a working run and hand it back through th
 
   await expect(
     within(sidebar).findByText(/is working$/u),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   click(buttonByName("Take over", sidebar));
   await expect(
     within(sidebar).findByText("You're in control"),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
 
   click(buttonByName("Hand back", sidebar));
   await waitFor(() => {

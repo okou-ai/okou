@@ -29,7 +29,7 @@ function browserController({
 }
 
 const PILL_CLASS_NAME =
-  "pointer-events-auto absolute bottom-4 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-[hsl(var(--gray-400))] bg-card py-1 pr-1 pl-3.5 text-[13px] leading-5 text-foreground shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)]";
+  "pointer-events-auto absolute bottom-4 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-surface-border bg-card py-1 pr-1 pl-3.5 text-[13px] leading-5 text-foreground shadow-surface";
 
 export function BrowserPresence({
   thread,
@@ -62,12 +62,12 @@ export function BrowserPresence({
           data-browser-presence="agent"
           className="absolute inset-0 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.4),inset_0_0_28px_hsl(var(--primary)/0.3)]"
         />
-        <div role="status" className={PILL_CLASS_NAME}>
+        <div className={PILL_CLASS_NAME}>
           <span
             aria-hidden
             className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary"
           />
-          <span className="truncate">
+          <span role="status" className="truncate">
             {t(($) => {
               return $.browserSession.presence.agentWorking;
             })}
@@ -99,17 +99,13 @@ export function BrowserPresence({
 
   if (controller === "member") {
     return (
-      <div
-        role="status"
-        data-browser-presence="member"
-        className={PILL_CLASS_NAME}
-      >
+      <div data-browser-presence="member" className={PILL_CLASS_NAME}>
         <UserRound
           aria-hidden
           size={14}
           className="shrink-0 text-muted-foreground"
         />
-        <span className="truncate">
+        <span role="status" className="truncate">
           {t(($) => {
             return $.browserSession.presence.memberInControl;
           })}
