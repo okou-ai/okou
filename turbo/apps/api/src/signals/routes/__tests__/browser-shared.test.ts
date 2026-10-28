@@ -435,7 +435,9 @@ describe("shared Browser public consumers", () => {
         expect(viewed.body.browser.screenshotUrl).not.toBeNull();
         return viewed.body.browser.screenshotUrl;
       });
-      release.resolve();
+      if (!release.settled()) {
+        release.resolve();
+      }
       const completed = await earlier;
       if (!published.ok) {
         throw published.error;
@@ -553,7 +555,9 @@ describe("shared Browser public consumers", () => {
         expect(preview).not.toBeNull();
         return preview;
       });
-      release.resolve();
+      if (!release.settled()) {
+        release.resolve();
+      }
       const completed = await oldCapture;
       if (!publication.ok) {
         throw publication.error;
