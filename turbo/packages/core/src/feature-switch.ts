@@ -132,6 +132,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatThreadTimeline]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Chat timeline",
+    description:
+      "Separate chat history by day, with Today shown only alongside Yesterday.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
