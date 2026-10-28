@@ -9,19 +9,30 @@ use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandb
 const WAIT: Duration = Duration::from_secs(10);
 const SIZE: u64 = 1024 * 1024;
 
+enum HomeCandidate {
+    Ordinary,
+    SourceProbe,
+    OtherHostProbe,
+}
+
 #[tokio::test]
 async fn ordinary_admission_consumes_unadvertised_home_before_a_blank() {
-    assert_unadvertised_home(false, false).await;
+    assert_unadvertised_home(false, HomeCandidate::Ordinary).await;
 }
 
 #[tokio::test]
 async fn reserved_blank_yields_to_unadvertised_home_published_during_claim() {
-    assert_unadvertised_home(true, false).await;
+    assert_unadvertised_home(true, HomeCandidate::Ordinary).await;
 }
 
 #[tokio::test]
 async fn source_host_probe_consumes_unadvertised_source_home() {
-    assert_unadvertised_home(false, true).await;
+    assert_unadvertised_home(false, HomeCandidate::SourceProbe).await;
+}
+
+#[tokio::test]
+async fn a_ready_unadvertised_home_preempts_another_hosts_probe() {
+    assert_unadvertised_home(false, HomeCandidate::OtherHostProbe).await;
 }
 
 #[tokio::test]
@@ -63,6 +74,59 @@ async fn source_host_probe_with_no_home_uses_an_available_blank() {
     assert_eq!(completed.exit_code, 0);
     assert_eq!(completed.sandbox_id, Some(blank_id));
     shutdown(&env, runner).await;
+}
+
+#[tokio::test]
+async fn a_busy_home_does_not_preempt_another_hosts_probe() {
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let (mut config, env) = mock_run_config(profiles, 8, 32768, 2);
+    config.capacity.max_idle = 0;
+    let paths = RunnerPaths::new(config.paths.base_dir.clone());
+    let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
+    let publisher = HomeImageCache::shared(paths, &config.paths.home, &config.runner.group);
+    let key = "thread:busy-home-cannot-preempt-probe";
+    let publishing = publisher
+        .prepare(HomeImagePrepareRequest {
+            identity: HomeImageLeaseIdentity {
+                run_id: RunId::new_v4(),
+                sandbox_id: SandboxId::new_v4(),
+                profile_name: "vm0/default",
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                reuse_key: Some(key),
+                working_dir: "/home/user/workspace",
+                image_size_bytes: SIZE,
+            },
+            home_drive_required: true,
+        })
+        .await;
+    let runner = tokio::spawn(run(config));
+    wait_discover_entered(&env, WAIT).await;
+    let successor = RunId::new_v4();
+    env.provider
+        .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
+    env.handle
+        .discover_tx
+        .send(ranked_candidate(
+            successor,
+            Some(key),
+            runner_provider::RunnerPreferenceTarget::SourceHostProbe(RunId::new_v4()),
+            &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
+            1,
+        ))
+        .unwrap();
+    let deferred = tokio::select! {
+        deferred = env.handle.wait_deferred_poll_count(1, WAIT) => deferred,
+        _ = env.handle.wait_completion(successor, WAIT) => false,
+    };
+    drop(publishing);
+    shutdown(&env, runner).await;
+    assert!(
+        deferred,
+        "a busy entry is not a ready resource on this host"
+    );
+    assert!(env.handle.claim_candidates().is_empty());
 }
 
 async fn publish_home(cache: &HomeImageCache, paths: &RunnerPaths, key: &str, source: RunId) {
@@ -128,7 +192,7 @@ async fn park_blank(
     id
 }
 
-async fn assert_unadvertised_home(during_claim: bool, probe: bool) {
+async fn assert_unadvertised_home(during_claim: bool, candidate_kind: HomeCandidate) {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -162,17 +226,25 @@ async fn assert_unadvertised_home(during_claim: bool, probe: bool) {
     if during_claim {
         env.handle.block_claim(successor);
     }
-    let candidate = if probe {
-        ranked_candidate(
+    let candidate = match candidate_kind {
+        HomeCandidate::SourceProbe => ranked_candidate(
             successor,
             Some(key),
             runner_provider::RunnerPreferenceTarget::SourceHostProbe(source),
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
-        )
-    } else {
-        runner_provider::JobCandidate::new(successor, "vm0/default".into())
-            .with_reuse_key(Some(key.into()))
+        ),
+        HomeCandidate::OtherHostProbe => ranked_candidate(
+            successor,
+            Some(key),
+            runner_provider::RunnerPreferenceTarget::SourceHostProbe(RunId::new_v4()),
+            &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
+            1,
+        ),
+        HomeCandidate::Ordinary => {
+            runner_provider::JobCandidate::new(successor, "vm0/default".into())
+                .with_reuse_key(Some(key.into()))
+        }
     };
     env.handle.discover_tx.send(candidate).unwrap();
     if during_claim {

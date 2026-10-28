@@ -746,25 +746,16 @@ async fn prepare_ranked_preference_candidate(
                 advertised_tier,
                 RunnerPreferenceTier::SourceHomeCache,
                 selected,
-            ))
-        && let Some(cache) = ctx.home_cache
-    {
-        match cache
-            .probe_home(
-                reuse_key,
-                profile_name,
-                u64::from(home_disk_mb) * 1024 * 1024,
-                Some(source),
-            )
-            .await
-        {
-            Ok(observed) => Some((source, observed)),
-            Err(error) => {
-                warn!(%error, %source, profile = profile_name,
-                    "requested source Home lookup failed during admission");
-                None
-            }
-        }
+            )) {
+        crate::home_selection::probe_home(
+            ctx.home_cache,
+            reuse_key,
+            profile_name,
+            u64::from(home_disk_mb) * 1024 * 1024,
+            Some(source),
+        )
+        .await
+        .map(|observed| (source, observed))
     } else {
         None
     };
@@ -854,15 +845,19 @@ async fn prepare_ranked_preference_candidate(
 
     let reason = if (selected_finalizing
         || ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected))
-        && crate::home_selection::prefer_home(
-            ctx.home_cache,
-            ctx.home_cache_snapshot,
-            Some(reuse_key),
-            profile_name,
-            u64::from(home_disk_mb) * 1024 * 1024,
-        )
-        .await
-    {
+        // Ranking needs ready bytes; a Busy/unknown Home may only influence
+        // this Runner's own blank choice, not preempt another recipient.
+        && matches!(
+            crate::home_selection::probe_home(
+                ctx.home_cache,
+                reuse_key,
+                profile_name,
+                u64::from(home_disk_mb) * 1024 * 1024,
+                None,
+            )
+            .await,
+            Some(HomeCacheProbe::Ready { .. })
+        ) {
         if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
             profile_name,
