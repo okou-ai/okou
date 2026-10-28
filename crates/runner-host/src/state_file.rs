@@ -20,7 +20,11 @@
 //! contents through the target path, but it does not fsync the file or parent
 //! directory and should not be treated as a crash-durability guarantee.
 
-use std::path::Path;
+use std::fs::File;
+use std::path::{Path, PathBuf};
+
+use nix::fcntl::Flock;
+use tokio::task::JoinHandle;
 
 use crate::error::{HostError, HostResult};
 
@@ -237,6 +241,25 @@ pub async fn write_private_atomic(path: &Path, content: &[u8]) -> HostResult<()>
 pub fn write_private_atomic_blocking(path: &Path, content: &[u8]) -> HostResult<()> {
     crate::host_file::write_private_atomic_blocking(path, content, "state file")
         .map_err(|e| HostError::Internal(e.to_string()))
+}
+
+/// Submit a private atomic write with its caller-supplied write authority.
+///
+/// Call from a Tokio runtime with the lock that authorizes `path`. The blocking
+/// worker owns that exact guard through publication and staging cleanup;
+/// dropping the returned observer detaches the work without releasing its lock.
+/// The join result stays separate from the native write result so callers can
+/// retain their domain-specific task-failure diagnostics. Filesystem behavior
+/// and the lack of an fsync guarantee match [`write_private_atomic_blocking`].
+pub fn spawn_locked_private_atomic_write(
+    path: PathBuf,
+    content: Vec<u8>,
+    guard: Flock<File>,
+) -> JoinHandle<HostResult<()>> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        write_private_atomic_blocking(&path, &content)
+    })
 }
 
 #[cfg(test)]
