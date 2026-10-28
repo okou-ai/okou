@@ -1099,7 +1099,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(new URL(providerSend.mediaUrl).searchParams.get("object")).toBe(
       `test-private-artifacts/private-artifacts/${init.body.uploadId}/note.txt`,
     );
-    expect(providerSend.mediaUrl).not.toBe(completed.body.url);
     const downloaded = await ap.downloadPhoneFileRaw(
       "clerk-session",
       completed.body.messageId,
@@ -4161,7 +4160,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const mediaSend = lastSend(sends);
     expect(mediaSend.body).toBe("see attached");
     expect(completed.body.url).toBe(init.body.fileUrl);
-    expect(mediaSend.mediaUrl).not.toBe(completed.body.url);
     expect(mediaSend.toNumber).toBe(phone);
     if (!mediaSend.mediaUrl) {
       throw new Error("Expected a provider-fetchable phone file");

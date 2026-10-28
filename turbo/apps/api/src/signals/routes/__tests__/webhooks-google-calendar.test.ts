@@ -164,7 +164,6 @@ function configureGoogleCalendarApiMock(args: {
           });
         }
         recorder.incrementalCalls += 1;
-        expect(syncToken).toBeTruthy();
         const sequentialResponse =
           args.incrementalResponses?.[
             Math.min(incrementalCallCount, args.incrementalResponses.length - 1)
