@@ -876,7 +876,10 @@ export async function listBrowserUseTabUrls(
   cdpUrl: string,
   signal: AbortSignal,
   primaryWindowId?: number,
-): Promise<readonly string[]> {
+): Promise<{
+  readonly windowExists: boolean;
+  readonly urls: readonly string[];
+}> {
   const cdpSignal = browserUseCdpSignal(signal);
   return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
     const targets = browserUseCdpTargetsSchema.parse(
@@ -903,15 +906,14 @@ export async function listBrowserUseTabUrls(
         pages.push(target);
       }
     }
-    return boundedRestorableBrowserUseTabUrls(
-      pages
-        .filter((target) => {
-          return target.type === "page";
-        })
-        .map((target) => {
+    return {
+      windowExists: pages.length > 0,
+      urls: boundedRestorableBrowserUseTabUrls(
+        pages.map((target) => {
           return target.url;
         }),
-    );
+      ),
+    };
   });
 }
 

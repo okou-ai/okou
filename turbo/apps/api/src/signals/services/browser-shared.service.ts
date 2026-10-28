@@ -280,13 +280,18 @@ const saveSharedSnapshot$ = command(
       .from(t)
       .where(eq(t.chatThreadId, owner.chatThreadId));
     signal.throwIfAborted();
-    const urls = await provider(
+    const snapshot = await provider(
       listBrowserUseTabUrls(cdpUrl, signal, window.primaryWindowId),
       signal,
     );
+    // A closed native window cannot replace its last recoverable snapshot.
+    // A live window containing only blank pages still deliberately saves [].
+    if (!snapshot.windowExists) {
+      return false;
+    }
     const capturedAt = nowDate();
     const encryptedTabUrls = await encryptPersistentSecretValue(
-      JSON.stringify(urls),
+      JSON.stringify(snapshot.urls),
       { userId: owner.userId },
     );
     signal.throwIfAborted();
@@ -339,6 +344,8 @@ const saveSharedSnapshot$ = command(
           ),
         ),
       });
+    signal.throwIfAborted();
+    return true;
   },
 );
 
@@ -1295,7 +1302,7 @@ function sharedBrowserClose(
               signal,
             );
             if (session && session.status === "active" && session.cdpUrl) {
-              await set(
+              const captured = await set(
                 saveSharedSnapshot$,
                 {
                   owner: ctx.owner,
@@ -1305,13 +1312,15 @@ function sharedBrowserClose(
                 },
                 signal,
               );
-              await set(captureAndStoreBrowserScreenshot$, view.browser, {
-                providerSessionId: view.profile.providerSessionId,
-                window: {
-                  instanceId: view.profile.instanceId,
-                  primaryWindowId: view.window.primaryWindowId,
-                },
-              });
+              if (captured) {
+                await set(captureAndStoreBrowserScreenshot$, view.browser, {
+                  providerSessionId: view.profile.providerSessionId,
+                  window: {
+                    instanceId: view.profile.instanceId,
+                    primaryWindowId: view.window.primaryWindowId,
+                  },
+                });
+              }
             }
             return { kind: "ok", value: {} };
           })(),

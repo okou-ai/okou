@@ -594,6 +594,70 @@ describe("shared Browser public consumers", () => {
 });
 
 describe("shared Browser capture publication and admission", () => {
+  it.each(["closed", "blank"] as const)(
+    "distinguishes a %s native window when capturing recovery URLs",
+    async (state) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        nativeCommands(f);
+        const a = await f.start();
+        const b = await f.start();
+        const first = await use(a);
+        const sibling = await use(b);
+        const window = first.browser.window;
+        const page = [...f.provider.native.targets.values()].find((target) => {
+          return target.windowId === window?.primaryWindowId;
+        });
+        if (!window || !page) {
+          throw new Error("Expected A's original native window and page");
+        }
+        page.url = "https://a.example.test/recoverable";
+        const params = { threadId: a.threadId };
+        await accept(client().close({ headers, params, body: {} }), [200]);
+        if (state === "closed") {
+          f.provider.native.targets.delete(page.targetId);
+        } else {
+          page.url = "about:blank";
+        }
+        await accept(client().close({ headers, params, body: {} }), [200]);
+        accepted(
+          await a.request({ kind: "retire", ...window, reason: "closed" }),
+        );
+        f.provider.native.targets.delete(page.targetId);
+        accepted(await a.request({ kind: "completeWindowClose", ...window }));
+        const reopened = await use(a);
+        expect(reopened.browser.window?.primaryWindowId).not.toBe(
+          window.primaryWindowId,
+        );
+        expect(
+          [...f.provider.native.targets.values()]
+            .filter((target) => {
+              return (
+                target.windowId === reopened.browser.window?.primaryWindowId
+              );
+            })
+            .map((target) => {
+              return target.url ?? "about:blank";
+            }),
+        ).toStrictEqual([
+          state === "closed"
+            ? "https://a.example.test/recoverable"
+            : "about:blank",
+        ]);
+        const siblingAfter = await accept(
+          client().get({ headers, params: { threadId: b.threadId } }),
+          [200],
+        );
+        expect(siblingAfter.body.browser.window).toStrictEqual(
+          sibling.browser.window,
+        );
+        expect(siblingAfter.body.browser.idleExpiresAt).toBe(
+          sibling.browser.idleExpiresAt,
+        );
+      });
+    },
+  );
+
   it("keeps the restored winner when public and Runner admission create multi-page candidates", async () => {
     const f = await fixture();
     await f.owned.run(async () => {

@@ -575,7 +575,7 @@ const saveBrowserTabSnapshot$ = command(
         if (provider.status !== "active" || !provider.cdpUrl) {
           return;
         }
-        const urls = await listBrowserUseTabUrls(
+        const { urls } = await listBrowserUseTabUrls(
           provider.cdpUrl,
           AbortSignal.any([
             signal,
