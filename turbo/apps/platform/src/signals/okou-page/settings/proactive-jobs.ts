@@ -34,6 +34,8 @@ export const updateProactiveJobsPreference$ = command(
     signal.throwIfAborted();
     set(reloadProactiveJobsPreference$);
     set(reloadProactiveSuggestionsPreference$);
+    await get(proactiveJobsPreference$);
+    signal.throwIfAborted();
     return result.body;
   },
 );
