@@ -267,7 +267,10 @@ import {
   previewTextColorOn,
   safePreviewGround,
 } from "./presentation-html-preview.ts";
-import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
+import {
+  ThreadRemoteAccessDialog,
+  ThreadRemoteAccessSection,
+} from "./remote-access-controls.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import {
@@ -4193,23 +4196,21 @@ function ComposerRemoteAccessMenu({
   signals,
   computerUse,
   onOpenDownloadDialog,
-  remoteMenuOpen,
-  onRemoteMenuOpenChange,
 }: {
   signals: ComposerSignals;
   computerUse: ComposerComputerUse | undefined;
   onOpenDownloadDialog: () => void;
-  remoteMenuOpen: boolean;
-  onRemoteMenuOpenChange: (open: boolean) => void;
 }) {
+  const openRemoteAccessDialog = useSet(
+    signals.connector.openRemoteAccessDialog$,
+  );
   const remoteAccess = (
     <ThreadRemoteAccessSection
       threadId={signals.threadId}
       remoteAccess$={signals.remoteAccess$}
       defaults$={signals.connector.resources.remoteHostDefaults$}
       pendingRemoteAccess={signals.pendingRemoteAccess}
-      open={remoteMenuOpen}
-      onOpenChange={onRemoteMenuOpenChange}
+      onOpen={openRemoteAccessDialog}
     />
   );
   return computerUse ? (
@@ -4963,12 +4964,9 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
-  const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const connectorUi = useGet(signals.connector.connectorUiState$);
-  const remoteMenuOpen = connectorUi.remoteMenuOpen;
-  const setRemoteMenuOpen = (open: boolean) => {
-    updateConnectorUi({ remoteMenuOpen: open });
-  };
+  const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
+  const setTriggerRef = useSet(signals.connector.setTriggerRef$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
   const downloadDialogOpen = useGet(
@@ -4977,20 +4975,6 @@ function ConnectorsPopoverButton({
   const setDownloadDialogOpen = useSet(
     signals.computer.setComputerUseDownloadDialogOpen$,
   );
-  const handleOpenChange = (open: boolean) => {
-    if (open) {
-      updateConnectorUi({ popoverOpen: true });
-    } else {
-      updateConnectorUi({
-        popoverOpen: false,
-        popoverSortOrder: null,
-        popoverSearch: "",
-      });
-      closeAccountMenu();
-      setRemoteMenuOpen(false);
-    }
-  };
-
   return (
     <Popover
       open={connectorUi.popoverOpen}
@@ -5001,18 +4985,14 @@ function ConnectorsPopoverButton({
             closeAccountMenu();
             return;
           }
-          if (remoteMenuOpen) {
-            eventDetails.cancel();
-            setRemoteMenuOpen(false);
-            return;
-          }
         }
-        handleOpenChange(open);
+        setPopoverOpen(open);
       }}
     >
       <TooltipProvider delay={300}>
         <Tooltip>
           <PopoverTrigger
+            ref={setTriggerRef}
             render={
               <TooltipTrigger
                 render={
@@ -5041,6 +5021,9 @@ function ConnectorsPopoverButton({
       </TooltipProvider>
       <PopoverContent
         initialFocus={isMobileTextInputDevice() ? false : undefined}
+        // The modal takes focus during the handoff; ordinary dismissal still
+        // returns to this popover's trigger through Base UI.
+        finalFocus={connectorUi.remoteAccessDialogOpen ? false : undefined}
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -5053,8 +5036,6 @@ function ConnectorsPopoverButton({
           <ComposerConnectorsPopoverBody
             signals={signals}
             actions={actions}
-            remoteMenuOpen={remoteMenuOpen}
-            onRemoteMenuOpenChange={setRemoteMenuOpen}
             onOpenAddDialog={onOpenAddDialog}
             onOpenDownloadDialog={() => {
               setDownloadDialogOpen(true);
@@ -5093,15 +5074,11 @@ function focusComposerConnectorSearch(element: HTMLElement | null) {
 function ComposerConnectorsPopoverBody({
   signals,
   actions,
-  remoteMenuOpen,
-  onRemoteMenuOpenChange,
   onOpenAddDialog,
   onOpenDownloadDialog,
 }: {
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
-  remoteMenuOpen: boolean;
-  onRemoteMenuOpenChange: (open: boolean) => void;
   onOpenAddDialog: () => void;
   onOpenDownloadDialog: () => void;
 }) {
@@ -5409,8 +5386,6 @@ function ComposerConnectorsPopoverBody({
       <ComposerRemoteAccessMenu
         signals={signals}
         computerUse={computerUse}
-        remoteMenuOpen={remoteMenuOpen}
-        onRemoteMenuOpenChange={onRemoteMenuOpenChange}
         onOpenDownloadDialog={onOpenDownloadDialog}
       />
     </div>
@@ -6781,6 +6756,7 @@ function ComposerConnectorsSlot({
         actions={actions}
         onOpenAddDialog={openAddConnectorsDialog}
       />
+      <ThreadRemoteAccessDialog signals={signals} />
       {connectorUi.permissionConnectorSlug !== null && (
         <ComposerConnectorPermissionDialogSlot
           signals={signals}

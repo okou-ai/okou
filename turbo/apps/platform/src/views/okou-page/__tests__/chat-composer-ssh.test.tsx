@@ -6,7 +6,7 @@ import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-cred
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -32,8 +32,26 @@ async function chooseRemoteHost(trigger: HTMLElement, optionName: string) {
   click(await screen.findByRole("option", { name: optionName }));
 }
 
+async function closeRemoteAccess() {
+  const dialog = screen.getByRole("dialog", { name: "Remote access" });
+  click(await findFastControl("button", "Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Remote access" })).toBeNull();
+  });
+}
+
+async function expectReopenedRemoteAccessCount(count: string) {
+  await closeRemoteAccess();
+  click(await findFastControl("button", "Connectors"));
+  const entry = await screen.findByText("Remote access");
+  await waitFor(() => {
+    expect(entry.closest("button")).toHaveTextContent(count);
+  });
+}
+
 async function prepareRemoteDefaults(
   operation: "override-first" | "override-second" | "restore",
+  saveResponse?: Promise<void>,
 ) {
   const hostIds = [
     "b0000000-0000-4000-8000-000000000001",
@@ -87,7 +105,8 @@ async function prepareRemoteDefaults(
   );
   context.mocks.api(
     chatRemoteAccessContract.setThreadOverride,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond }) => {
+      await saveResponse;
       overrides.set(params.connectionId, body.enabled);
       return respond(
         200,
@@ -122,12 +141,7 @@ async function prepareRemoteDefaults(
     remoteAccess.compareDocumentPosition(yourComputer) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  const remoteTrigger = () => {
-    return [...document.querySelectorAll("button")].find((button) => {
-      return button.textContent?.startsWith("Remote access");
-    });
-  };
-  expect(remoteTrigger()).toHaveTextContent(
+  expect(remoteAccess.closest("button")).toHaveTextContent(
     operation === "override-second" ? "0 enabled" : "1 enabled",
   );
   expect(screen.queryByRole("combobox", { name: "SSH SSH host 1" })).toBeNull();
@@ -136,7 +150,7 @@ async function prepareRemoteDefaults(
     name: "SSH SSH host 1",
   });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
-  return { hostIds, overrides, remoteTrigger, first, second };
+  return { hostIds, overrides, first, second };
 }
 
 test.each([
@@ -169,7 +183,7 @@ test.each([
     finalSecond,
     enabledCount,
   }) => {
-    const { hostIds, overrides, remoteTrigger, first, second } =
+    const { hostIds, overrides, first, second } =
       await prepareRemoteDefaults(operation);
     expect(first).toHaveTextContent(initialFirst);
     expect(second).toHaveTextContent("Default (Off)");
@@ -183,13 +197,13 @@ test.each([
       expect(overrides.get(hostIds[1]!)).toBe(secondOverride);
       expect(first).toHaveTextContent("Off");
       expect(second).toHaveTextContent(finalSecond);
-      expect(remoteTrigger()).toHaveTextContent(enabledCount);
     });
+    await expectReopenedRemoteAccessCount(enabledCount);
   },
 );
 
 test("A chat can restore multiple SSH host defaults independently", async () => {
-  const { hostIds, overrides, remoteTrigger, first, second } =
+  const { hostIds, overrides, first, second } =
     await prepareRemoteDefaults("restore");
   expect(first).toHaveTextContent("Off");
   expect(second).toHaveTextContent("On");
@@ -197,7 +211,50 @@ test("A chat can restore multiple SSH host defaults independently", async () => 
   await waitFor(() => {
     expect(overrides.has(hostIds[0]!)).toBeFalsy();
     expect(overrides.get(hostIds[1]!)).toBeTruthy();
-    expect(remoteTrigger()).toHaveTextContent("2 enabled");
+    expect(first).toHaveTextContent("Default (On)");
+    expect(second).toHaveTextContent("On");
+  });
+  await expectReopenedRemoteAccessCount("2 enabled");
+});
+
+test("Remote host choices stay disabled across resize until a save completes", async () => {
+  const viewport = context.mocks.browser.matchMedia(true);
+  const saveResponse = context.mocks.deferred<void>();
+  const { first, second } = await prepareRemoteDefaults(
+    "override-first",
+    saveResponse.promise,
+  );
+
+  await chooseRemoteHost(first, "Off");
+  await waitFor(() => {
+    expect(first).toBeDisabled();
+    expect(second).toBeDisabled();
+  });
+
+  act(() => {
+    viewport.setMatches(false);
+  });
+  const dialog = await screen.findByRole("dialog", { name: "Remote access" });
+  const resizedFirst = within(dialog).getByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  const resizedSecond = within(dialog).getByRole("combobox", {
+    name: "SSH SSH host 2",
+  });
+  expect(resizedFirst).toBeDisabled();
+  expect(resizedSecond).toBeDisabled();
+
+  saveResponse.resolve();
+  await waitFor(() => {
+    expect(resizedFirst).toHaveTextContent("Off");
+    expect(resizedFirst).toBeEnabled();
+    expect(resizedSecond).toBeEnabled();
+  });
+  await chooseRemoteHost(resizedSecond, "On");
+  await waitFor(() => {
+    expect(resizedFirst).toHaveTextContent("Off");
+    expect(resizedSecond).toHaveTextContent("On");
+    expect(resizedSecond).toBeEnabled();
   });
 });
 
@@ -249,7 +306,7 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
     chatRemoteAccessContract.listThreadAccess,
     async ({ respond }) => {
       listRequests += 1;
-      if (listRequests > 1) {
+      if (listRequests === 2) {
         refreshStarted.resolve();
         await releaseRefresh.promise;
       }
@@ -282,15 +339,15 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   expect(first).toBeInTheDocument();
   expect(second).toBeInTheDocument();
   expect(second).not.toBeDisabled();
-  expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
+  expect(first).toHaveTextContent("Default (Off)");
 
   releaseDefaultsRefresh.resolve();
   releaseRefresh.resolve();
   await waitFor(() => {
     expect(first).toHaveTextContent("On");
     expect(menu).toBeInTheDocument();
-    expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
   });
+  await expectReopenedRemoteAccessCount("1 enabled");
 });
 
 test("A chat can enable multiple VNC hosts independently", async () => {
@@ -377,7 +434,10 @@ test("A chat can enable multiple VNC hosts independently", async () => {
   click(remoteAccess);
   const first = await screen.findByRole("combobox", { name: "VNC VNC host 1" });
   await chooseRemoteHost(first, "On");
-  await screen.findByText("1 enabled");
+  await waitFor(() => {
+    expect(first).toHaveTextContent("On");
+    expect(first).toBeEnabled();
+  });
   expect(
     screen.getByRole("combobox", { name: "VNC VNC host 2" }),
   ).toHaveTextContent("Default (Off)");
@@ -385,7 +445,12 @@ test("A chat can enable multiple VNC hosts independently", async () => {
     screen.getByRole("combobox", { name: "VNC VNC host 2" }),
     "On",
   );
-  await screen.findByText("2 enabled");
+  await waitFor(() => {
+    expect(
+      screen.getByRole("combobox", { name: "VNC VNC host 2" }),
+    ).toHaveTextContent("On");
+  });
+  await expectReopenedRemoteAccessCount("2 enabled");
 });
 
 test("Remote access is absent when no SSH or VNC hosts are configured", async () => {
@@ -559,7 +624,8 @@ async function prepareDraftHostChoices() {
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
     featureSwitches: {},
   });
-  click(await findFastControl("button", "Connectors"));
+  const trigger = await findFastControl("button", "Connectors");
+  click(trigger);
   const remoteAccess = await screen.findByText("Remote access");
   expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
   click(remoteAccess);
@@ -570,34 +636,67 @@ async function prepareDraftHostChoices() {
   expect(first).toHaveTextContent("Default (On)");
   expect(second).toHaveTextContent("Default (Off)");
   const user = userEvent.setup({ delay: null });
-  return { remoteAccess, first, user, fixture, second };
+  return { trigger, first, user, fixture, second };
 }
 
-test("Apply SSH host choices during draft editing", async () => {
-  const { remoteAccess, first, user } = await prepareDraftHostChoices();
-  first.focus();
-  await user.keyboard("{Enter}");
-  await screen.findByRole("option", {
-    name: "Default (On)",
-    selected: true,
-  });
-  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-  expect(first).toHaveTextContent("Off");
-  expect(
-    screen.getByRole("dialog", { name: "Remote access" }),
-  ).toBeInTheDocument();
-  expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
-  await chooseRemoteHost(first, "Default (On)");
-  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
-  return;
-});
+test.each([
+  { viewportName: "desktop", desktop: true },
+  { viewportName: "narrow", desktop: false },
+])(
+  "Pending SSH choices survive resize and reopen from a $viewportName viewport",
+  async ({ desktop }) => {
+    const viewport = context.mocks.browser.matchMedia(desktop);
+    const { trigger, first, user } = await prepareDraftHostChoices();
+    const dialog = screen.getByRole("dialog", { name: "Remote access" });
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBeTruthy();
+    });
+    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+
+    first.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", {
+      name: "Default (On)",
+      selected: true,
+    });
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    expect(first).toHaveTextContent("Off");
+
+    act(() => {
+      viewport.setMatches(!desktop);
+    });
+    const resizedDialog = await screen.findByRole("dialog", {
+      name: "Remote access",
+    });
+    expect(
+      within(resizedDialog).getByRole("combobox", { name: "SSH SSH host 1" }),
+    ).toHaveTextContent("Off");
+    await waitFor(() => {
+      expect(resizedDialog.contains(document.activeElement)).toBeTruthy();
+    });
+
+    await expectReopenedRemoteAccessCount("0 enabled");
+    click(await screen.findByText("Remote access"));
+    const restoredChoice = await screen.findByRole("combobox", {
+      name: "SSH SSH host 1",
+    });
+    expect(restoredChoice).toHaveTextContent("Off");
+    await chooseRemoteHost(restoredChoice, "Default (On)");
+    expect(restoredChoice).toHaveTextContent("Default (On)");
+    await closeRemoteAccess();
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
+  },
+);
 
 test("Apply SSH host choices during thread creation", async () => {
-  const { fixture, remoteAccess, first, second, user } =
-    await prepareDraftHostChoices();
+  const { fixture, first, second, user } = await prepareDraftHostChoices();
   await chooseRemoteHost(first, "Off");
   await chooseRemoteHost(second, "On");
-  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  expect(first).toHaveTextContent("Off");
+  expect(second).toHaveTextContent("On");
+  await closeRemoteAccess();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fill(composer, "Inspect both hosts");
   await user.keyboard("{Enter}");
@@ -695,14 +794,27 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
     return element;
   };
   const user = userEvent.setup({ delay: null });
-  click(await findFastControl("button", "Connectors", pane(SCOUT_THREAD_ID)));
+  const scoutTrigger = await findFastControl(
+    "button",
+    "Connectors",
+    pane(SCOUT_THREAD_ID),
+  );
+  click(scoutTrigger);
   click(await screen.findByText("Remote access"));
   await expect(
     screen.findByRole("combobox", { name: "SSH Shared SSH host" }),
   ).resolves.toHaveTextContent("On");
   await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(scoutTrigger).toHaveFocus();
+  });
 
-  click(await findFastControl("button", "Connectors", pane(OTHER_THREAD_ID)));
+  const otherTrigger = await findFastControl(
+    "button",
+    "Connectors",
+    pane(OTHER_THREAD_ID),
+  );
+  click(otherTrigger);
   click(await screen.findByText("Remote access"));
   const otherHost = await screen.findByRole("combobox", {
     name: "SSH Shared SSH host",
@@ -718,6 +830,10 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
     ).toHaveTextContent("On");
   });
   expect(overrides.get(SCOUT_THREAD_ID)).toBeTruthy();
+  await closeRemoteAccess();
+  await waitFor(() => {
+    expect(otherTrigger).toHaveFocus();
+  });
 });
 
 test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
