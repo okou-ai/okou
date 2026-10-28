@@ -1,6 +1,6 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -94,7 +94,7 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
   preferenceSaved.resolve();
 });
 
-test("Draw a pressed panel only once its artifacts and related chats have answered", async () => {
+test("Draw complete resources after loading and reuse them when reopened", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -110,26 +110,31 @@ test("Draw a pressed panel only once its artifacts and related chats have answer
     ],
   });
   const response = createDeferredPromise<void>(context.signal);
+  let resourcesAvailable = true;
   context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
     await response.promise;
     return respond(200, {
-      artifacts: [artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf")],
+      artifacts: resourcesAvailable
+        ? [artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf")]
+        : [],
       nextCursor: null,
     });
   });
   context.mocks.api(chatRelationsContract.children, async ({ respond }) => {
     await response.promise;
     return respond(200, {
-      items: [
-        {
-          id: "d0000000-0000-4000-a000-000000000105",
-          threadId: "d0000000-0000-4000-a000-000000000102",
-          title: "Research child",
-          status: "idle",
-          sourceRunId: "d0000000-0000-4000-a000-000000000103",
-          createdAt: "2026-09-01T10:00:00.000Z",
-        },
-      ],
+      items: resourcesAvailable
+        ? [
+            {
+              id: "d0000000-0000-4000-a000-000000000105",
+              threadId: "d0000000-0000-4000-a000-000000000102",
+              title: "Research child",
+              status: "idle",
+              sourceRunId: "d0000000-0000-4000-a000-000000000103",
+              createdAt: "2026-09-01T10:00:00.000Z",
+            },
+          ]
+        : [],
     });
   });
   context.mocks.api(
@@ -161,9 +166,25 @@ test("Draw a pressed panel only once its artifacts and related chats have answer
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
   expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   expect(resourceButton()).not.toHaveAttribute("aria-disabled");
+
+  click(resourceButton());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  });
+  // Reopening keeps the loaded resources, even if the service's list changes.
+  resourcesAvailable = false;
+  click(resourceButton());
+  const reopened = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
+  expect(within(reopened).getByText("report.pdf")).toBeInTheDocument();
+  expect(within(reopened).getByText("Research child")).toBeInTheDocument();
+  expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
 });
 
-test("Keep loading when the panel loses its room before the resources answer", async () => {
+test("Release the resource button when the gutter narrows and open the pending resources on press", async () => {
   const resize = installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
@@ -184,19 +205,25 @@ test("Keep loading when the panel loses its room before the resources answer", a
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
-  // A side panel takes the room away. The viewport resize is an external
-  // event; let what it schedules settle before the press that would peek.
-  resize(200, false);
-  await act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-  click(resourceButton());
-  response.resolve();
+  resize(200);
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
-  // Without room the automatic opening steps aside; the press was not taken.
+  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
   expect(resourceState()).toStrictEqual({ open: false, visible: false });
+
+  click(resourceButton());
+  await waitFor(() => {
+    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
+  });
+  expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
+  expect(resourcePanel()).not.toBeInTheDocument();
+  response.resolve();
+  const panel = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
+  expect(within(panel).getByText("report.pdf")).toBeInTheDocument();
+  expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   expect(resourceButton()).not.toHaveAttribute("aria-disabled");
 });
 
