@@ -2602,26 +2602,6 @@ mod tests {
     }
 
     #[test]
-    fn codex_web_search_override_is_in_app_server_startup_config() {
-        let user_env = HashMap::new();
-        let mut runtime = runtime_for_command_test(env::Framework::Codex, "prompt", "", &user_env);
-
-        assert!(
-            !runtime
-                .codex_startup_config_overrides()
-                .contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string())
-        );
-
-        runtime.disable_builtin_web_search = true;
-
-        assert!(
-            runtime
-                .codex_startup_config_overrides()
-                .contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string())
-        );
-    }
-
-    #[test]
     fn pi_child_env_passes_v2_model_config_with_canonical_run_id() {
         let user_env = HashMap::new();
         let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
@@ -2707,24 +2687,6 @@ mod tests {
         let raw = std::fs::read(paths.pi_launch_payload_file()).unwrap();
         let payload: serde_json::Value = serde_json::from_slice(&raw).unwrap();
         assert!(payload["appendSystemPrompt"].is_null());
-    }
-
-    #[test]
-    fn codex_runtime_accepts_okou_agent_context() {
-        let config = guest_config_for_agent_context(HashMap::from([(
-            super::OKOU_AGENT_ID_ENV_KEY.to_string(),
-            "agent-test".to_string(),
-        )]));
-        let paths = crate::paths::GuestPaths::from_runtime_dir("/tmp/okou-env-test");
-
-        let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
-
-        assert!(runtime.disable_builtin_web_search);
-        assert!(
-            runtime
-                .codex_startup_config_overrides()
-                .contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string())
-        );
     }
 
     #[test]

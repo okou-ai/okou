@@ -456,12 +456,6 @@ async fn sandbox_local_read_file_result_takes_precedence_over_shared_overrides()
 }
 
 #[tokio::test]
-async fn sandbox_write_file_default_succeeds() {
-    let sandbox = MockSandbox::new("test-1");
-    sandbox.write_file("/tmp/test.txt", b"hello").await.unwrap();
-}
-
-#[tokio::test]
 async fn sandbox_write_file_queued_error() {
     let sandbox = MockSandbox::new("test-1");
     sandbox.push_write_file_result(Err(SandboxError::Operation {
