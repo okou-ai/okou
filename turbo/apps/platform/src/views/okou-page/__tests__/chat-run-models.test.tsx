@@ -281,6 +281,10 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "Try again",
     picker: true,
   },
+  provider_bad_request: {
+    title: "This run couldn't finish",
+    description: "Oops, something went wrong.",
+  },
   response_connection_lost: {
     title: "The response was interrupted",
     action: "Try again",
