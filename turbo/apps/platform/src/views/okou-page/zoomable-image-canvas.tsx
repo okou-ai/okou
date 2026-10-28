@@ -8,7 +8,7 @@ import {
   type ZoomableImageCanvasSignals,
 } from "../../signals/zoomable-image-canvas.ts";
 
-const IMAGE_ZOOM_STEP = 0.15;
+const IMAGE_ZOOM_STEP = 0.12;
 const IMAGE_DOUBLE_CLICK_ZOOM_STEP = 1;
 
 function isImageWheelZoomActivated(keys: string[]): boolean {
