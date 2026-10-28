@@ -438,8 +438,9 @@ async function connectGoogleMeet(
     code: `google-meet-code-${accountKey}`,
     state,
   });
-  expect(callback.body, JSON.stringify(callback.body)).toMatchObject({
+  expect(callback.body, JSON.stringify(callback.body)).toStrictEqual({
     status: "success",
+    username: `Google Meet ${accountKey} User`,
   });
   const accounts = await connectors.listBuiltinConnectorAccounts(
     actor,
@@ -1181,7 +1182,9 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
     const fixture = await setupFixture({
       onDelete: async () => {
-        deleteStarted.resolve();
+        if (!deleteStarted.settled()) {
+          deleteStarted.resolve();
+        }
         await deleteRelease.promise;
       },
     });
