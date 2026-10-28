@@ -22,7 +22,6 @@ import {
 import {
   admissibleAvatarTextures,
   avatarTextureUrl,
-  defaultAgentAvatarTextures,
 } from "@okouai/core/agent-avatar-texture";
 import {
   agentsByIdContract,
@@ -36,6 +35,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { GREETING_AVATAR_COSTUME } from "../sidebar-shared.tsx";
 
 const context = testContext();
 
@@ -197,10 +197,10 @@ test("Keep every other avatar surface untextured", async () => {
   }
 });
 
-test("Give the organization default agent its own texture", async () => {
-  // The avatar every workspace's chat home opens on. It is a drawn file rather
-  // than a composer configuration, so it needs a texture of its own rather
-  // than falling through to none — on the one surface this feature exists for.
+test("Dress the organization default agent in its greeting costume", async () => {
+  // The avatar every workspace's chat home opens on. On the greeting its brand
+  // tile gives way to the costume: a painted scene behind the drawn file, cut
+  // where the hat overhangs the frame, and the hat itself beside the frame.
   mountedAgent(DEFAULT_AGENT_AVATAR_URL);
   context.mocks.browser.matchMedia(false);
   await setupPage({
@@ -212,13 +212,36 @@ test("Give the organization default agent its own texture", async () => {
   });
 
   const frame = avatarFrame();
-  expect(defaultAgentAvatarTextures()).toHaveLength(1);
-  expect(textureUrl(frame)).toBe(
-    avatarTextureUrl(defaultAgentAvatarTextures()[0]!),
+  // The scene replaces the brand tile rather than stacking on top of it.
+  expect(textureImage(frame)).toBeNull();
+  const scene = Array.from(frame.querySelectorAll<HTMLElement>("span")).find(
+    (candidate) => {
+      return candidate.style.backgroundImage.includes(
+        GREETING_AVATAR_COSTUME.backdropUrl,
+      );
+    },
   );
+  expect(scene?.style.maskImage).toContain(GREETING_AVATAR_COSTUME.cutUrl);
   // The artwork is the drawn file, still shown through the same frame.
-  expect(frame.querySelector("img")).toHaveAttribute(
+  expect(scene?.querySelector("img")).toHaveAttribute(
     "src",
     DEFAULT_AGENT_AVATAR_URL,
   );
+  // The hat overhangs the frame, so it is drawn beside the link, not inside
+  // its clipped box.
+  const hat = frame.parentElement?.querySelector<HTMLImageElement>(
+    `img[src="${GREETING_AVATAR_COSTUME.hatUrl}"]`,
+  );
+  expect(hat).toBeInTheDocument();
+  expect(frame).not.toContainElement(hat ?? null);
+});
+
+test("Keep the costume off every other agent", async () => {
+  await setupChatPage();
+
+  // A composer avatar keeps its brand texture and wears no hat.
+  expect(textureImage(avatarFrame())).not.toBeNull();
+  expect(
+    document.querySelector(`img[src="${GREETING_AVATAR_COSTUME.hatUrl}"]`),
+  ).toBeNull();
 });

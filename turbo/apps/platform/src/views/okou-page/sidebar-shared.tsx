@@ -7,6 +7,7 @@ import {
   defaultAgentAvatarTextures,
 } from "@okouai/core/agent-avatar-texture";
 import { cn } from "@okouai/ui/lib/utils";
+import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import { agents$ } from "../../signals/agent.ts";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
@@ -175,6 +176,46 @@ export function useAgentAvatarTexture(id: string | null): string | null {
   }
   const texture = agentAvatarTexture(id, svgConfig);
   return texture ? avatarTextureUrl(texture) : null;
+}
+
+/**
+ * Halloween: what the organization default agent wears on the chat home
+ * greeting. A painted night scene takes the place of its brand tile, and a
+ * witch hat sits on the frame's top-right corner.
+ *
+ * All three files are drawn for the frame the greeting gives the default SVG
+ * (`object-cover object-top` in a square), so the scene's light falls behind
+ * the hair and the cut matches the hat's own placement. `cutUrl` is an alpha
+ * mask in the frame's coordinates: the hat plus a 1.5px gap, taken out of the
+ * scene so the page canvas shows between them in every theme.
+ */
+export const GREETING_AVATAR_COSTUME = Object.freeze({
+  backdropUrl: platformStaticAssetUrl(
+    "views/okou-page/assets/greeting-avatar-halloween-bg-d8694cdac49f.webp",
+  ),
+  hatUrl: platformStaticAssetUrl(
+    "views/okou-page/assets/greeting-avatar-halloween-hat-e9d073ecd358.webp",
+  ),
+  cutUrl: platformStaticAssetUrl(
+    "views/okou-page/assets/greeting-avatar-halloween-cut-40ecae1e70ea.png",
+  ),
+});
+
+type GreetingAvatarCostume = typeof GREETING_AVATAR_COSTUME;
+
+/**
+ * The costume for one agent's greeting avatar, or null when it has none. Only
+ * the organization default agent's drawn file wears one; it replaces that
+ * agent's brand texture on the greeting. Pass a null id to opt out.
+ */
+export function useGreetingAvatarCostume(
+  id: string | null,
+): GreetingAvatarCostume | null {
+  const { rawAvatarUrl } = useAgentAvatarState(id ?? "");
+  if (id === null || rawAvatarUrl !== DEFAULT_AGENT_AVATAR_URL) {
+    return null;
+  }
+  return GREETING_AVATAR_COSTUME;
 }
 
 /** Reactive avatar image that respects DB-persisted and user overrides. */
