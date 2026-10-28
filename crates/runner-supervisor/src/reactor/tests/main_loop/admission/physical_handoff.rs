@@ -198,7 +198,7 @@ async fn assert_home_locked(cache: &HomeImageCache, reuse_key: &str, rootfs_hash
                 },
                 home_drive_required: true,
             },
-            HomeImagePreparePolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     assert_eq!(checkout.result(), HomeCacheCheckoutResult::LockBusy);

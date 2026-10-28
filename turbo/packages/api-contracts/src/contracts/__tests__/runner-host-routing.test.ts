@@ -52,7 +52,7 @@ describe("Runner host routing contracts", () => {
       tier,
       expiresAt: "2026-10-20T00:00:49.000Z",
       ...(tier === "exactSandbox" || tier === "finalizingPredecessor"
-        ? { finalizingSourceRunId: "33333333-3333-4333-8333-333333333333" }
+        ? { predecessorRunId: "33333333-3333-4333-8333-333333333333" }
         : {}),
     };
     expect(runnerPreferenceSchema.parse(preference)).toStrictEqual(preference);

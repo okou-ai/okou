@@ -107,7 +107,7 @@ impl HomeCacheStateSnapshot {
 
     /// Validated local readiness, independent of advertised caps/active-key filtering.
     /// Checkout must recheck the immutable generation under its entry lock.
-    pub fn contains_source_home(
+    pub fn has_source_home_hint(
         &self,
         reuse_key: &str,
         profile: &str,
@@ -262,7 +262,7 @@ impl HomeCacheStateSnapshot {
 
     /// Positive observed evidence, including entries omitted from the wire projection.
     /// Unloaded state alone grants no hint.
-    pub fn has_compatible_home(&self, reuse_key: &str, profile: &str) -> bool {
+    pub fn has_compatible_home_hint(&self, reuse_key: &str, profile: &str) -> bool {
         let inner = self.lock_inner();
         inner.entries.values().any(|state| {
             state.reuse_key == reuse_key
@@ -440,11 +440,11 @@ mod tests {
     fn home_cache_snapshot_requires_positive_profile_evidence() {
         let snapshot = HomeCacheStateSnapshot::new();
         assert!(!snapshot.home_cache_loaded());
-        assert!(!snapshot.has_compatible_home("sess-cache", "vm0/default"));
+        assert!(!snapshot.has_compatible_home_hint("sess-cache", "vm0/default"));
 
         refresh_snapshot(&snapshot, Vec::new());
         assert!(snapshot.home_cache_loaded());
-        assert!(!snapshot.has_compatible_home("sess-cache", "vm0/default"));
+        assert!(!snapshot.has_compatible_home_hint("sess-cache", "vm0/default"));
 
         refresh_snapshot(
             &snapshot,
@@ -454,8 +454,8 @@ mod tests {
                 &["vm0/default"],
             )],
         );
-        assert!(snapshot.has_compatible_home("sess-cache", "vm0/default"));
-        assert!(!snapshot.has_compatible_home("sess-cache", "vm0/other"));
+        assert!(snapshot.has_compatible_home_hint("sess-cache", "vm0/default"));
+        assert!(!snapshot.has_compatible_home_hint("sess-cache", "vm0/other"));
     }
 
     #[test]
@@ -480,8 +480,8 @@ mod tests {
                 .iter()
                 .any(|state| state.reuse_key == "group-0000")
         );
-        assert!(snapshot.has_compatible_home("group-0000", "vm0/default"));
-        assert!(snapshot.has_compatible_home(
+        assert!(snapshot.has_compatible_home_hint("group-0000", "vm0/default"));
+        assert!(snapshot.has_compatible_home_hint(
             &format!("group-{:04}", MAX_HELD_HOME_STATES - 1),
             "vm0/default"
         ));

@@ -114,10 +114,10 @@ describe("independent finalizing resource source", () => {
           : {
               kind: "preference",
               ...(resource === "sandbox"
-                ? { tier: "exactSandbox", finalizingSourceRunId: f.run.runId }
+                ? { tier: "exactSandbox", predecessorRunId: f.run.runId }
                 : {
-                    tier: "sourceHome",
-                    sourceRunId: f.run.runId,
+                    tier: "predecessorHome",
+                    predecessorRunId: f.run.runId,
                     home: { evidence: "advertised" },
                   }),
               runnerIdentity: { runnerId: ready, heartbeatGeneration: 7 },
@@ -179,7 +179,7 @@ describe("independent finalizing resource source", () => {
       const preference = {
         kind: "preference" as const,
         tier: "finalizingPredecessor" as const,
-        finalizingSourceRunId: f.run.runId,
+        predecessorRunId: f.run.runId,
         runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
         expiresAt: new Date(
           f.clock + 2500 + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
@@ -230,7 +230,7 @@ describe("independent finalizing resource source", () => {
     const job = await poll(f, next.runId);
     expect(job?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
-      finalizingSourceRunId: f.run.runId,
+      predecessorRunId: f.run.runId,
     });
     const preference = job?.runnerPreference;
     const deadline =
@@ -280,7 +280,7 @@ describe("independent finalizing resource source", () => {
     const next = await continuation(f);
     expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
-      finalizingSourceRunId: f.run.runId,
+      predecessorRunId: f.run.runId,
     });
   });
 
@@ -320,7 +320,7 @@ describe("independent finalizing resource source", () => {
     const withLatestProducer = await poll(f, next.runId);
     expect(withLatestProducer?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
-      finalizingSourceRunId: newer.runId,
+      predecessorRunId: newer.runId,
     });
     const fresh = await f.owned.claimRunnerRun(next.runId);
     expect(fresh.nativeContinuation).toMatchObject({
@@ -432,7 +432,7 @@ describe("independent finalizing resource source", () => {
     const job = await poll(f, next.runId);
     expect(job?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
-      finalizingSourceRunId: f.run.runId,
+      predecessorRunId: f.run.runId,
     });
     const blankRunner = randomUUID();
     await heartbeat(f, { runnerId: blankRunner });

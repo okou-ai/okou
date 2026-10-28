@@ -205,13 +205,13 @@ export const runnerPreferenceSchema = union([
     runnerIdentity: runnerProcessIdentitySchema,
     tier: zEnum(["exactSandbox", "finalizingPredecessor"]),
     expiresAt: string().datetime({ offset: true }),
-    finalizingSourceRunId: uuid(),
+    predecessorRunId: uuid(),
   }).strict(),
   object({
     kind: literal("preference"),
     runnerIdentity: runnerProcessIdentitySchema,
-    tier: literal("sourceHome"),
-    sourceRunId: uuid(),
+    tier: literal("predecessorHome"),
+    predecessorRunId: uuid(),
     expiresAt: string().datetime({ offset: true }),
     home: discriminatedUnion("evidence", [
       object({ evidence: literal("advertised") }).strict(),

@@ -4433,7 +4433,7 @@ mod tests {
 
         let expired_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            crate::provider::RunnerPreferenceTarget::SourceSandbox(RunId::new_v4()),
+            crate::provider::RunnerPreferenceTarget::ExactSandbox(RunId::new_v4()),
             Instant::now() - Duration::from_secs(1),
         );
         let expired = JobCandidate::new(
@@ -4704,7 +4704,7 @@ mod tests {
                                 "heartbeatGeneration": 7
                             },
                             "tier": "exactSandbox",
-                            "finalizingSourceRunId": "33333333-3333-4333-8333-333333333333",
+                            "predecessorRunId": "33333333-3333-4333-8333-333333333333",
                             "expiresAt": "2999-01-01T00:00:00.000Z"
                         }
                     }
@@ -4730,7 +4730,7 @@ mod tests {
             .expect("canonical preference should be parsed");
         assert_eq!(preference.tier(), RunnerPreferenceTier::ExactSandbox);
         assert_eq!(
-            preference.target().source_run_id(),
+            preference.target().predecessor_run_id(),
             Some("33333333-3333-4333-8333-333333333333".parse().unwrap())
         );
         assert!(

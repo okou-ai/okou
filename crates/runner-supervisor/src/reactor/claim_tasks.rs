@@ -12,6 +12,7 @@ use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tracing::info;
 
 use super::RuntimeProfile;
+use super::claimed_home_wait::{ClaimedHomeWait, ClaimedHomeWaitRequest};
 use super::error::ReactorError;
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::job_discovery::{
@@ -20,7 +21,6 @@ use super::job_discovery::{
     recover_unconsumed_finalizing_claim,
 };
 use super::job_spawn::JobResult;
-use super::source_home_claim::{SourceHomeClaim, SourceHomeClaimRequest};
 use crate::SharedFactory;
 use crate::pre_claim_admission::{
     AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, SandboxAdmittedResource,
@@ -160,7 +160,7 @@ impl ClaimTasks {
                 spawn_finalizing_claim(request, &self.context.spawn_ctx, jobs);
                 Ok(DiscoveredJobResult::completed(false))
             }
-            ClaimTaskOutcome::SourceHome(claim) => {
+            ClaimTaskOutcome::HomeWait(claim) => {
                 jobs.spawn((*claim).run(self.context.spawn_ctx.clone()));
                 Ok(DiscoveredJobResult::completed(false))
             }
@@ -199,7 +199,7 @@ pub(super) struct ClaimTaskResult {
 enum ClaimTaskOutcome {
     Prepared(Box<DiscoveredJobResult>),
     Finalizing(Box<UnconsumedFinalizingClaim>),
-    SourceHome(Box<SourceHomeClaim>),
+    HomeWait(Box<ClaimedHomeWait>),
     Pending(Box<JobCandidate>),
     Deferred,
     Failed(ReactorError),
@@ -212,7 +212,7 @@ async fn prepare_claimed(
     context: Arc<AdmissionContext>,
 ) -> ClaimTaskOutcome {
     let AdmittedClaim {
-        home_source_run_id,
+        required_home_source_run_id,
         claimed,
         resource,
         cancellation,
@@ -220,18 +220,18 @@ async fn prepare_claimed(
         blank_pool_selection,
     } = admission;
     let resource = match resource {
-        AdmittedResource::SourceHome {
+        AdmittedResource::HomeWait {
             lease,
-            deadline,
-            source_run_id,
+            wait_deadline,
+            predecessor_run_id,
         } => {
-            return ClaimTaskOutcome::SourceHome(Box::new(SourceHomeClaim::new(
-                SourceHomeClaimRequest {
-                    source_run_id,
+            return ClaimTaskOutcome::HomeWait(Box::new(ClaimedHomeWait::new(
+                ClaimedHomeWaitRequest {
+                    predecessor_run_id,
                     claimed,
                     cancellation,
                     lease,
-                    deadline,
+                    wait_deadline,
                     claim_returned_at,
                     blank_pool_selection,
                     profile,
@@ -277,7 +277,7 @@ async fn prepare_claimed(
     let spawn_ctx = &context.spawn_ctx;
     let prepared = prepare_admitted_job(
         SandboxAdmittedJob {
-            home_source_run_id,
+            required_home_source_run_id,
             claimed,
             resource,
             cancellation,

@@ -16,10 +16,10 @@ async fn ably_duplicate_keeps_first_source_and_both_deadlines_without_native_his
             "runnerId": "11111111-1111-4111-8111-111111111111",
             "heartbeatGeneration": 7
         },
-        "tier": "sourceHome",
+        "tier": "predecessorHome",
         "home": { "evidence": "expected", "homeWaitUntil": "2999-01-01T00:00:49Z" },
         "expiresAt": first_expiry,
-        "sourceRunId": source
+        "predecessorRunId": source
     });
     let first = make_message(
         Some("job"),
@@ -32,7 +32,7 @@ async fn ably_duplicate_keeps_first_source_and_both_deadlines_without_native_his
     );
     handle_ably_message(&first, &profiles, &wakeups, &inbox, &tokens).await;
     let mut duplicate = first.clone();
-    duplicate.data["runnerPreference"]["sourceRunId"] =
+    duplicate.data["runnerPreference"]["predecessorRunId"] =
         serde_json::to_value(runner_types::ids::RunId::new_v4()).unwrap();
     duplicate.data["runnerPreference"]["expiresAt"] = serde_json::json!("2999-01-01T00:00:00.000Z");
     duplicate.data["runnerPreference"]["home"]["homeWaitUntil"] =
@@ -41,7 +41,7 @@ async fn ably_duplicate_keeps_first_source_and_both_deadlines_without_native_his
 
     let candidate = pop_direct_candidate(&inbox).await.into_job_candidate();
     let preference = candidate.runner_preference().unwrap();
-    assert_eq!(preference.target().source_run_id(), Some(source));
+    assert_eq!(preference.target().predecessor_run_id(), Some(source));
     assert!(preference.remaining() <= Duration::from_secs(30));
     assert_eq!(
         serde_json::to_value(

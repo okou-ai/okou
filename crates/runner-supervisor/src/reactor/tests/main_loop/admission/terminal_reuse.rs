@@ -167,7 +167,7 @@ async fn source_exact_preference_consumes_and_republishes_actual_producer_withou
 }
 
 #[tokio::test]
-async fn stale_advertised_source_home_uses_an_available_generic_sandbox() {
+async fn stale_advertised_predecessor_home_uses_an_available_generic_sandbox() {
     assert_ready_sandbox(ReadySandboxPreference::StaleHome).await;
 }
 
@@ -216,15 +216,15 @@ async fn assert_ready_sandbox(preference: ReadySandboxPreference) {
             Some(reuse_key),
             match preference {
                 ReadySandboxPreference::Exact => {
-                    runner_provider::RunnerPreferenceTarget::SourceSandbox(producer)
+                    runner_provider::RunnerPreferenceTarget::ExactSandbox(producer)
                 }
                 ReadySandboxPreference::Finalizing => {
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4())
                 }
                 ReadySandboxPreference::StaleHome => {
-                    runner_provider::RunnerPreferenceTarget::SourceHome(
+                    runner_provider::RunnerPreferenceTarget::PredecessorHome(
                         RunId::new_v4(),
-                        runner_provider::SourceHomeObservation::Advertised,
+                        runner_provider::ActivePredecessorHomeEvidence::Advertised,
                     )
                 }
             },
@@ -261,7 +261,7 @@ async fn resolved_finalizing_preference_consumes_ready_home_cache() {
 }
 
 #[tokio::test]
-async fn source_home_preference_consumes_matching_home_before_generic_sandbox() {
+async fn predecessor_home_preference_consumes_matching_home_before_generic_sandbox() {
     assert_finalizing_preference_consumes_home_cache(false, true).await;
 }
 
@@ -270,7 +270,7 @@ async fn waiting_finalizing_successor_consumes_home_without_exact_sandbox() {
     assert_finalizing_preference_consumes_home_cache(true, false).await;
 }
 
-async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, source_home: bool) {
+async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, predecessor_home: bool) {
     let image_size_bytes = 1024 * 1024;
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
@@ -286,7 +286,7 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, source_
         env.active_runs
             .register(predecessor, Some(reuse_key.into()), "vm0/default".into())
     });
-    if source_home {
+    if predecessor_home {
         seed_idle_pool_with_overrides(
             &env.idle_pool,
             &config.capacity.budget,
@@ -311,10 +311,10 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, source_
         .send(ranked_candidate(
             successor,
             Some(reuse_key),
-            if source_home {
-                runner_provider::RunnerPreferenceTarget::SourceHome(
+            if predecessor_home {
+                runner_provider::RunnerPreferenceTarget::PredecessorHome(
                     predecessor,
-                    runner_provider::SourceHomeObservation::Advertised,
+                    runner_provider::ActivePredecessorHomeEvidence::Advertised,
                 )
             } else {
                 runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(predecessor)
@@ -333,7 +333,7 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, source_
         .expect("resolved producer must admit its ready home with available capacity");
     assert!(env.handle.deferred_poll_deadlines().is_empty());
     let created = overrides.create_configs();
-    assert_eq!(created.len(), if source_home { 2 } else { 1 });
+    assert_eq!(created.len(), if predecessor_home { 2 } else { 1 });
     assert!(
         created
             .last()

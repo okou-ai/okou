@@ -10,8 +10,8 @@ async fn poll_preserves_independent_source_in_claim_request_without_native_histo
             serde_json::json!({
                 "kind": "preference",
                 "runnerIdentity": {"runnerId": TEST_RUNNER_ID, "heartbeatGeneration": 7},
-                "tier": "sourceHome",
-                "sourceRunId": source,
+                "tier": "predecessorHome",
+                "predecessorRunId": source,
                 "expiresAt": "2999-01-01T00:00:02Z",
                 "home": {"evidence": "expected", "homeWaitUntil": "2999-01-01T00:00:49Z"}
             })
@@ -21,7 +21,7 @@ async fn poll_preserves_independent_source_in_claim_request_without_native_histo
                 "runnerIdentity": {"runnerId": TEST_RUNNER_ID, "heartbeatGeneration": 7},
                 "tier": "finalizingPredecessor",
                 "expiresAt": "2999-01-01T00:00:00Z",
-                "finalizingSourceRunId": source
+                "predecessorRunId": source
             })
         };
         let mock = server
@@ -55,7 +55,7 @@ async fn poll_preserves_independent_source_in_claim_request_without_native_histo
                 .runner_preference()
                 .unwrap()
                 .target()
-                .source_run_id(),
+                .predecessor_run_id(),
             Some(source)
         );
         assert_eq!(

@@ -71,6 +71,7 @@ use runner_provider::{JobProvider, RunCancellationRegistry};
 use runner_types::ids::RunId;
 
 mod claim_tasks;
+mod claimed_home_wait;
 pub mod error;
 mod factory_lifecycle;
 mod finalizing_claim;
@@ -87,7 +88,6 @@ mod prune_idle;
 mod sandbox_recovery;
 pub(crate) mod signals;
 mod soft_drain;
-mod source_home_claim;
 mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
@@ -399,7 +399,7 @@ enum StartLoopEvent {
     FinalizingCapacityWaitEntered {
         run_id: RunId,
     },
-    SourceHomeRecheckCompleted {
+    HomeReadinessRecheckCompleted {
         run_id: RunId,
         ready: bool,
     },

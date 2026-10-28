@@ -59,7 +59,7 @@ use sandbox_run::{FreshPreparation, NewSandboxHooks, execute_new_sandbox_with_pr
 pub use telemetry::{
     BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
     FinalizingDiagnostics, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
-    FinalizingHandoffReason, PeerHomeWaitOutcome, RunnerPreSpawnConcurrency,
+    FinalizingHandoffReason, HomeWaitOutcome, RunnerPreSpawnConcurrency,
     RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
 use telemetry::{RunnerSpawnTiming, record_api_latency};
@@ -209,7 +209,7 @@ pub struct ExecutorConfig {
 /// Per-job sandbox parameters resolved from the profile config.
 pub struct JobParams {
     /// Producer selected by evidenced Home admission; checked under the entry lock.
-    pub home_source_run_id: Option<RunId>,
+    pub required_home_source_run_id: Option<RunId>,
     pub profile_name: String,
     pub vcpu: u32,
     pub memory_mb: u32,

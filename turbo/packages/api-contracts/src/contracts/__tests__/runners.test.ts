@@ -1109,7 +1109,7 @@ describe("runner reuse preference contract", () => {
         ...runnerPreference,
         tier,
         ...(tier === "exactSandbox" || tier === "finalizingPredecessor"
-          ? { finalizingSourceRunId: "11111111-1111-4111-8111-111111111111" }
+          ? { predecessorRunId: "11111111-1111-4111-8111-111111111111" }
           : {}),
       };
       expect(

@@ -1021,14 +1021,14 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
-    let lease = if let Some(source) = params.home_source_run_id {
+    let lease = if let Some(source) = params.required_home_source_run_id {
         cache
             .prepare_from_source(request, source, params.home_image_prepare_policy)
             .await
     } else {
         match params.home_image_prepare_policy {
-            HomeImagePreparePolicy::WaitForTransientContention => cache.prepare(request).await,
-            HomeImagePreparePolicy::ImmediateFallback | HomeImagePreparePolicy::Fresh => {
+            HomeImagePreparePolicy::TryCacheWithLockWait => cache.prepare(request).await,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache => {
                 cache
                     .prepare_with_policy(request, params.home_image_prepare_policy)
                     .await

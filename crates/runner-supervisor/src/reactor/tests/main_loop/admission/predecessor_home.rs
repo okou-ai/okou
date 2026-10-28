@@ -5,17 +5,17 @@ use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 
 const WAIT: Duration = Duration::from_secs(10);
 
-fn source_home_candidate(
+fn predecessor_home_candidate(
     run_id: RunId,
     key: &str,
-    source_run_id: RunId,
+    predecessor_run_id: RunId,
 ) -> runner_provider::JobCandidate {
     // Exercise the activated API/Ably wire reader before entering the actual
     // two-reactor claim/publication/locked-checkout lifecycle below.
     let preference = runner_provider::parse_runner_preference(Some(serde_json::json!({
         "kind": "preference",
-        "tier": "sourceHome",
-        "sourceRunId": source_run_id,
+        "tier": "predecessorHome",
+        "predecessorRunId": predecessor_run_id,
         "home": {
             "evidence": "expected",
             "homeWaitUntil": (chrono::Utc::now() + chrono::Duration::seconds(30)).to_rfc3339(),
@@ -81,32 +81,32 @@ fn enable_cache(config: &mut RunConfig) -> (HomeImageCache, RunnerPaths) {
 }
 
 #[tokio::test]
-async fn peer_claims_before_draining_producer_publication_and_consumes_seed_bytes() {
+async fn claims_before_draining_publication_and_consumes_predecessor_home_bytes() {
     assert_late_draining_publication(false, false).await;
 }
 
 #[tokio::test]
-async fn soft_draining_receiver_keeps_claimed_wait_and_consumes_peer_publication() {
+async fn soft_draining_receiver_keeps_claimed_wait_and_consumes_publication() {
     assert_late_draining_publication(true, false).await;
 }
 
 #[tokio::test]
-async fn peer_claim_revalidates_source_home_when_watcher_is_lost() {
+async fn claimed_home_wait_revalidates_when_watcher_is_lost() {
     assert_late_draining_publication(false, true).await;
 }
 
 #[tokio::test]
-async fn soft_draining_receiver_revalidates_peer_home_when_watcher_is_lost() {
+async fn soft_draining_receiver_revalidates_home_when_watcher_is_lost() {
     assert_late_draining_publication(true, true).await;
 }
 
 #[tokio::test]
-async fn peer_rechecks_a_busy_publication_after_unlock_without_another_watch_event() {
+async fn home_wait_rechecks_a_busy_publication_after_unlock_without_another_watch_event() {
     assert_busy_publication_rechecked(HomeClaimTiming::Expected).await;
 }
 
 #[tokio::test]
-async fn source_home_location_waits_for_a_busy_home_and_consumes_it_after_unlock() {
+async fn predecessor_home_location_waits_for_a_busy_home_and_consumes_it_after_unlock() {
     assert_busy_publication_rechecked(HomeClaimTiming::Location).await;
 }
 
@@ -202,15 +202,15 @@ async fn assert_busy_publication_rechecked(timing: HomeClaimTiming) {
             ranked_candidate(
                 successor,
                 Some(key),
-                runner_provider::RunnerPreferenceTarget::SourceHome(
+                runner_provider::RunnerPreferenceTarget::PredecessorHome(
                     source,
-                    runner_provider::SourceHomeObservation::Location,
+                    runner_provider::ActivePredecessorHomeEvidence::HostLocation,
                 ),
                 TEST_RUNNER_ID,
                 TEST_HEARTBEAT_GENERATION,
             )
         } else {
-            source_home_candidate(successor, key, source)
+            predecessor_home_candidate(successor, key, source)
         })
         .unwrap();
     if matches!(timing, HomeClaimTiming::ClaimAfterRoutingExpiry) {
@@ -229,7 +229,7 @@ async fn assert_busy_publication_rechecked(timing: HomeClaimTiming) {
     );
     let cursor = env.start_observer.cursor();
     env.start_observer.wait_after(cursor, WAIT, "busy peer source validation", &mut |event| {
-        matches!(event, crate::reactor::StartLoopEvent::SourceHomeRecheckCompleted { run_id, ready: false } if *run_id == successor).then_some(())
+        matches!(event, crate::reactor::StartLoopEvent::HomeReadinessRecheckCompleted { run_id, ready: false } if *run_id == successor).then_some(())
     }).await;
     assert!(
         overrides.create_configs().is_empty(),
@@ -338,7 +338,7 @@ async fn assert_late_draining_publication(drain_receiver: bool, lose_watcher: bo
     receiver_env
         .handle
         .discover_tx
-        .send(source_home_candidate(successor, key, predecessor))
+        .send(predecessor_home_candidate(successor, key, predecessor))
         .unwrap();
     wait_owned_home(&receiver_env, successor).await;
     assert_eq!(budget.allocated(), (2, 4096, 1));
@@ -413,7 +413,7 @@ async fn assert_late_draining_publication(drain_receiver: bool, lose_watcher: bo
 }
 
 #[tokio::test]
-async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
+async fn home_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -434,7 +434,7 @@ async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(source_home_candidate(run_id, key, RunId::new_v4()))
+        .send(predecessor_home_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     wait_owned_home(&env, run_id).await;
     assert_eq!(budget.allocated(), (2, 4096, 1));
@@ -463,7 +463,7 @@ async fn peer_wait_expiry_keeps_the_claim_and_reserved_fallback_capacity() {
 }
 
 #[tokio::test]
-async fn peer_waits_release_rpc_slots_and_cancellation_settles_every_owned_run() {
+async fn claimed_home_waits_release_rpc_slots_and_cancellation_settles_every_owned_run() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -479,7 +479,7 @@ async fn peer_waits_release_rpc_slots_and_cancellation_settles_every_owned_run()
         let key = format!("thread:peer-wait-{i}");
         env.provider
             .set_claim_result(run_id, Some(context_with_reuse_key(run_id, &key)));
-        let candidate = source_home_candidate(run_id, &key, RunId::new_v4());
+        let candidate = predecessor_home_candidate(run_id, &key, RunId::new_v4());
         env.handle.discover_tx.send(candidate.clone()).unwrap();
         wait_owned_home(&env, run_id).await;
         env.handle.discover_tx.send(candidate).unwrap();
@@ -529,7 +529,7 @@ async fn peer_waits_release_rpc_slots_and_cancellation_settles_every_owned_run()
 }
 
 #[tokio::test(start_paused = true)]
-async fn peer_activation_panic_recovers_the_claim_and_waiting_capacity() {
+async fn claimed_home_wait_activation_panic_recovers_the_claim_and_waiting_capacity() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let (mut config, env) =
         mock_run_config_with_overrides(test_profiles(), 2, 8192, 1, overrides.clone());
@@ -544,7 +544,7 @@ async fn peer_activation_panic_recovers_the_claim_and_waiting_capacity() {
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(source_home_candidate(run_id, key, RunId::new_v4()))
+        .send(predecessor_home_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     wait_owned_home(&env, run_id).await;
     assert_eq!(budget.allocated(), (2, 4096, 1));
@@ -564,7 +564,7 @@ async fn peer_activation_panic_recovers_the_claim_and_waiting_capacity() {
 }
 
 #[tokio::test]
-async fn rejected_peer_claim_releases_its_ordinary_resource_and_never_waits() {
+async fn rejected_home_wait_claim_releases_its_ordinary_resource_and_never_waits() {
     let (mut config, env) = mock_run_config(test_profiles(), 2, 8192, 1);
     enable_cache(&mut config);
     let budget = config.capacity.budget.clone();
@@ -575,7 +575,7 @@ async fn rejected_peer_claim_releases_its_ordinary_resource_and_never_waits() {
     wait_discover_entered(&env, WAIT).await;
     env.handle
         .discover_tx
-        .send(source_home_candidate(
+        .send(predecessor_home_candidate(
             rejected,
             "thread:rejected-peer",
             RunId::new_v4(),
@@ -611,7 +611,7 @@ async fn rejected_peer_claim_releases_its_ordinary_resource_and_never_waits() {
 }
 
 #[tokio::test]
-async fn unconsumed_peer_claim_result_completes_and_releases_capacity_when_reactor_drops() {
+async fn unconsumed_home_wait_claim_result_completes_and_releases_capacity_when_reactor_drops() {
     let (mut config, env) = mock_run_config(test_profiles(), 4, 16384, 2);
     enable_cache(&mut config);
     let budget = config.capacity.budget.clone();
@@ -622,7 +622,7 @@ async fn unconsumed_peer_claim_result_completes_and_releases_capacity_when_react
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(source_home_candidate(run_id, key, RunId::new_v4()))
+        .send(predecessor_home_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     let mut reactor = Box::pin(run(config));
     tokio::select! {
@@ -647,7 +647,7 @@ async fn unconsumed_peer_claim_result_completes_and_releases_capacity_when_react
 }
 
 #[tokio::test]
-async fn hard_stop_cancels_and_joins_a_claimed_peer_wait_before_shutdown() {
+async fn hard_stop_cancels_and_joins_a_claimed_home_wait_before_shutdown() {
     let (mut config, env) = mock_run_config(test_profiles(), 4, 16384, 2);
     enable_cache(&mut config);
     let budget = config.capacity.budget.clone();
@@ -659,7 +659,7 @@ async fn hard_stop_cancels_and_joins_a_claimed_peer_wait_before_shutdown() {
     wait_discover_entered(&env, WAIT).await;
     env.handle
         .discover_tx
-        .send(source_home_candidate(run_id, key, RunId::new_v4()))
+        .send(predecessor_home_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     wait_owned_home(&env, run_id).await;
     env.trigger_stopping().await;
@@ -673,7 +673,7 @@ async fn hard_stop_cancels_and_joins_a_claimed_peer_wait_before_shutdown() {
 }
 
 #[tokio::test]
-async fn peer_preference_cannot_claim_against_another_runs_full_local_capacity() {
+async fn predecessor_home_preference_cannot_claim_against_another_runs_full_local_capacity() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -701,7 +701,7 @@ async fn peer_preference_cannot_claim_against_another_runs_full_local_capacity()
         .set_claim_result(peer, Some(context_with_reuse_key(peer, key)));
     env.handle
         .discover_tx
-        .send(source_home_candidate(peer, key, RunId::new_v4()))
+        .send(predecessor_home_candidate(peer, key, RunId::new_v4()))
         .unwrap();
     assert!(env.handle.wait_deferred_poll_count(1, WAIT).await);
     assert_eq!(
@@ -738,7 +738,7 @@ async fn peer_preference_cannot_claim_against_another_runs_full_local_capacity()
 }
 
 #[tokio::test]
-async fn peer_consumer_without_a_local_home_backend_claims_and_starts_ordinarily() {
+async fn predecessor_home_consumer_without_a_local_home_backend_claims_and_starts_ordinarily() {
     let (config, env) = mock_run_config(test_profiles(), 2, 8192, 1);
     let runner = tokio::spawn(run(config));
     wait_discover_entered(&env, WAIT).await;
@@ -748,7 +748,7 @@ async fn peer_consumer_without_a_local_home_backend_claims_and_starts_ordinarily
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
     env.handle
         .discover_tx
-        .send(source_home_candidate(run_id, key, RunId::new_v4()))
+        .send(predecessor_home_candidate(run_id, key, RunId::new_v4()))
         .unwrap();
     assert_eq!(
         env.handle
@@ -781,7 +781,7 @@ async fn home_published_before_claim_response_is_consumed_without_a_lost_wakeup(
     env.handle.block_claim(run_id);
     env.handle
         .discover_tx
-        .send(source_home_candidate(run_id, key, source))
+        .send(predecessor_home_candidate(run_id, key, source))
         .unwrap();
     assert!(env.handle.wait_run_claim_in_flight(run_id, WAIT).await);
     seed_home_cache_state_for_run(&cache, &paths, key, "vm0/default", 1024 * 1024, source).await;
@@ -808,7 +808,7 @@ async fn home_published_before_claim_response_is_consumed_without_a_lost_wakeup(
 }
 
 #[tokio::test]
-async fn committed_peer_homes_wake_multiple_claimed_waiters() {
+async fn committed_predecessor_homes_wake_multiple_claimed_waiters() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -830,7 +830,7 @@ async fn committed_peer_homes_wake_multiple_claimed_waiters() {
             .set_claim_result(run_id, Some(context_with_reuse_key(run_id, key)));
         env.handle
             .discover_tx
-            .send(source_home_candidate(run_id, key, source))
+            .send(predecessor_home_candidate(run_id, key, source))
             .unwrap();
         wait_owned_home(&env, run_id).await;
     }

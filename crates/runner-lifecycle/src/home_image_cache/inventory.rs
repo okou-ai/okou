@@ -178,7 +178,7 @@ impl HomeImageCache {
         reuse_key: &str,
         profile_name: &str,
         image_size_bytes: u64,
-        required_source: Option<RunId>,
+        required_source_run_id: Option<RunId>,
     ) -> LifecycleResult<HomeCacheProbe> {
         let key = self.scoped_cache_key(profile_name, reuse_key, image_size_bytes);
         let lock =
@@ -224,7 +224,7 @@ impl HomeImageCache {
             Err(error) => return Err(error),
         };
         let profiles = BTreeMap::from([(profile_name, image_size_bytes)]);
-        let ready = required_source
+        let ready = required_source_run_id
             .is_none_or(|source| metadata.image_generation == source.to_string())
             && metadata.reuse_key == reuse_key
             && self

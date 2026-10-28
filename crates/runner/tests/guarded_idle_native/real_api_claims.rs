@@ -308,7 +308,7 @@ pub async fn exercise(
             .with_reuse_key(Some(input.reuse_key.clone()))
             .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                 input.runner,
-                runner_provider::RunnerPreferenceTarget::SourceSandbox(input.original_run_id),
+                runner_provider::RunnerPreferenceTarget::ExactSandbox(input.original_run_id),
                 std::time::Instant::now() + std::time::Duration::from_secs(90),
             ));
         let mut prepare = Box::pin(admission.prepare_and_claim(provider.clone(), candidate, &context.tracker));

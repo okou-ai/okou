@@ -2161,9 +2161,9 @@ mod tests {
                         "runnerId": "00000000-0000-0000-0000-000000000005",
                         "heartbeatGeneration": 7
                     },
-                    "tier": "sourceHome",
+                    "tier": "predecessorHome",
                     "home": {"evidence": "advertised"},
-                    "sourceRunId": "33333333-3333-4333-8333-333333333333",
+                    "predecessorRunId": "33333333-3333-4333-8333-333333333333",
                     "expiresAt": "2999-01-01T00:00:00.000Z"
                 }
             }),
@@ -2184,10 +2184,12 @@ mod tests {
             .expect("canonical preference should be parsed");
         assert_eq!(
             preference.tier(),
-            RunnerPreferenceTier::SourceHome(crate::provider::SourceHomeObservation::Advertised)
+            RunnerPreferenceTier::PredecessorHome(
+                crate::provider::ActivePredecessorHomeEvidence::Advertised
+            )
         );
         assert_eq!(
-            preference.target().source_run_id(),
+            preference.target().predecessor_run_id(),
             Some("33333333-3333-4333-8333-333333333333".parse().unwrap())
         );
         assert!(
@@ -2205,7 +2207,7 @@ mod tests {
         assert!(matches!(
             telemetry.runner_preference,
             RunnerPreference::Preference(
-                crate::provider::RunnerPreferenceDecision::SourceHome { .. }
+                crate::provider::RunnerPreferenceDecision::PredecessorHome { .. }
             )
         ));
         assert_eq!(

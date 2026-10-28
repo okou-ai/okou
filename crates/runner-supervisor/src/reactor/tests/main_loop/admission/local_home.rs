@@ -14,8 +14,8 @@ enum HomeCandidate {
     Ordinary,
     FirstRun,
     KnownLocal,
-    SourceLocation,
-    SourceAdvertised,
+    PredecessorLocation,
+    PredecessorAdvertised,
     GenericAdvertised,
     OtherHostLocation,
     OtherHostExpected,
@@ -43,13 +43,13 @@ async fn ordinary_admission_reuses_a_positively_known_local_home() {
 }
 
 #[tokio::test]
-async fn source_home_location_consumes_unadvertised_source_home() {
-    assert_home_selection(false, HomeCandidate::SourceLocation, true).await;
+async fn predecessor_home_location_consumes_unadvertised_home() {
+    assert_home_selection(false, HomeCandidate::PredecessorLocation, true).await;
 }
 
 #[tokio::test]
 async fn selected_home_advertisement_consumes_home_missing_from_local_inventory() {
-    assert_home_selection(false, HomeCandidate::SourceAdvertised, true).await;
+    assert_home_selection(false, HomeCandidate::PredecessorAdvertised, true).await;
 }
 
 #[tokio::test]
@@ -63,7 +63,7 @@ async fn a_known_ready_home_preempts_another_hosts_location() {
 }
 
 #[tokio::test]
-async fn known_ready_source_home_preempts_another_hosts_publication_expectation() {
+async fn known_ready_predecessor_home_preempts_another_hosts_publication_expectation() {
     assert_home_selection(false, HomeCandidate::OtherHostExpected, true).await;
 }
 
@@ -73,7 +73,7 @@ async fn hidden_home_without_a_local_hint_does_not_preempt_another_host() {
 }
 
 #[tokio::test]
-async fn source_home_location_with_no_home_uses_an_available_blank() {
+async fn predecessor_home_location_with_no_home_uses_an_available_blank() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -100,9 +100,9 @@ async fn source_home_location_with_no_home_uses_an_available_blank() {
         .send(ranked_candidate(
             successor,
             Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHome(
+            runner_provider::RunnerPreferenceTarget::PredecessorHome(
                 RunId::new_v4(),
-                runner_provider::SourceHomeObservation::Location,
+                runner_provider::ActivePredecessorHomeEvidence::HostLocation,
             ),
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
@@ -151,9 +151,9 @@ async fn a_busy_home_does_not_preempt_another_hosts_probe() {
         .send(ranked_candidate(
             successor,
             Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHome(
+            runner_provider::RunnerPreferenceTarget::PredecessorHome(
                 RunId::new_v4(),
-                runner_provider::SourceHomeObservation::Location,
+                runner_provider::ActivePredecessorHomeEvidence::HostLocation,
             ),
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
@@ -297,26 +297,28 @@ async fn assert_home_selection(
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ),
-        HomeCandidate::SourceLocation | HomeCandidate::SourceAdvertised => ranked_candidate(
-            successor,
-            Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHome(
-                source,
-                if matches!(candidate_kind, HomeCandidate::SourceAdvertised) {
-                    runner_provider::SourceHomeObservation::Advertised
-                } else {
-                    runner_provider::SourceHomeObservation::Location
-                },
-            ),
-            TEST_RUNNER_ID,
-            TEST_HEARTBEAT_GENERATION,
-        ),
+        HomeCandidate::PredecessorLocation | HomeCandidate::PredecessorAdvertised => {
+            ranked_candidate(
+                successor,
+                Some(key),
+                runner_provider::RunnerPreferenceTarget::PredecessorHome(
+                    source,
+                    if matches!(candidate_kind, HomeCandidate::PredecessorAdvertised) {
+                        runner_provider::ActivePredecessorHomeEvidence::Advertised
+                    } else {
+                        runner_provider::ActivePredecessorHomeEvidence::HostLocation
+                    },
+                ),
+                TEST_RUNNER_ID,
+                TEST_HEARTBEAT_GENERATION,
+            )
+        }
         HomeCandidate::OtherHostLocation => ranked_candidate(
             successor,
             Some(key),
-            runner_provider::RunnerPreferenceTarget::SourceHome(
+            runner_provider::RunnerPreferenceTarget::PredecessorHome(
                 RunId::new_v4(),
-                runner_provider::SourceHomeObservation::Location,
+                runner_provider::ActivePredecessorHomeEvidence::HostLocation,
             ),
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
@@ -325,10 +327,10 @@ async fn assert_home_selection(
             ranked_candidate_until(
                 successor,
                 Some(key),
-                runner_provider::RunnerPreferenceTarget::SourceHome(
+                runner_provider::RunnerPreferenceTarget::PredecessorHome(
                     source,
-                    runner_provider::SourceHomeObservation::Expected {
-                        deadline: Instant::now() + Duration::from_secs(30),
+                    runner_provider::ActivePredecessorHomeEvidence::Expected {
+                        wait_deadline: Instant::now() + Duration::from_secs(30),
                     },
                 ),
                 &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),

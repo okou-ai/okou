@@ -927,7 +927,7 @@ async fn fresh_home_policy_skips_cached_bytes_and_never_enters_lock_retry() {
         context.is_first_run = Some(true);
         let params = JobParams {
             home_disk_mb: 16,
-            home_image_prepare_policy: HomeImagePreparePolicy::Fresh,
+            home_image_prepare_policy: HomeImagePreparePolicy::SkipCache,
             ..default_params()
         };
         let seed = seed_home_image_cache(&cache, &paths, session, 16).await;
@@ -1193,7 +1193,7 @@ async fn execute_inner_immediate_lock_policy_still_consumes_available_cache() {
     set_reuse_and_session_identity(&mut ctx, session_id);
     let params = JobParams {
         home_disk_mb: 16,
-        home_image_prepare_policy: HomeImagePreparePolicy::ImmediateFallback,
+        home_image_prepare_policy: HomeImagePreparePolicy::TryCacheWithoutLockWait,
         ..default_params()
     };
     let seeded_cache = seed_home_image_cache(&cache, &runner_paths, session_id, 16).await;

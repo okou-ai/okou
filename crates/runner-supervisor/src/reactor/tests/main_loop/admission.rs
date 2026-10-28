@@ -22,7 +22,7 @@ use runner_provider::{
 mod independent_source;
 mod local_home;
 mod physical_handoff;
-mod source_home;
+mod predecessor_home;
 mod terminal_reuse;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;
@@ -80,7 +80,7 @@ fn exact_source_preference_candidate(
     ranked_candidate(
         run_id,
         Some(session_id),
-        runner_provider::RunnerPreferenceTarget::SourceSandbox(target_source_run_id),
+        runner_provider::RunnerPreferenceTarget::ExactSandbox(target_source_run_id),
         TEST_RUNNER_ID,
         TEST_HEARTBEAT_GENERATION,
     )
@@ -359,7 +359,7 @@ async fn exact_idle_reservation_is_restored_after_claim_conflict() {
         .send(ranked_candidate(
             conflict_run_id,
             Some(session_id),
-            runner_provider::RunnerPreferenceTarget::SourceSandbox(reserved_generation_run_id),
+            runner_provider::RunnerPreferenceTarget::ExactSandbox(reserved_generation_run_id),
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3625,7 +3625,7 @@ async fn expired_generation_protection_preserves_local_session_claim() {
         .send(ranked_candidate_until(
             run_id,
             Some("sess-held-local"),
-            runner_provider::RunnerPreferenceTarget::SourceSandbox(RunId::new_v4()),
+            runner_provider::RunnerPreferenceTarget::ExactSandbox(RunId::new_v4()),
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
             std::time::Instant::now() - Duration::from_secs(1),

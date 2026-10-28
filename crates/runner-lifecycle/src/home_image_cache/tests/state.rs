@@ -202,7 +202,7 @@ async fn validated_commit_wakes_every_subscriber_without_advertisement_authority
     let source = runner_types::ids::RunId::new_v4();
     let mut first = snapshot.subscribe_committed();
     let mut second = snapshot.subscribe_committed();
-    assert!(!snapshot.contains_source_home("thread:peer", "vm0/default", source));
+    assert!(!snapshot.has_source_home_hint("thread:peer", "vm0/default", source));
     snapshot.upsert_home_cache_state(
         "physical-key".into(),
         HeldHomeState {
@@ -218,9 +218,9 @@ async fn validated_commit_wakes_every_subscriber_without_advertisement_authority
     // Commit occurred before either await: both receivers must retain it.
     first.changed().await.unwrap();
     second.changed().await.unwrap();
-    assert!(snapshot.contains_source_home("thread:peer", "vm0/default", source));
-    assert!(!snapshot.contains_source_home("thread:peer", "vm0/other", source));
-    assert!(!snapshot.contains_source_home(
+    assert!(snapshot.has_source_home_hint("thread:peer", "vm0/default", source));
+    assert!(!snapshot.has_source_home_hint("thread:peer", "vm0/other", source));
+    assert!(!snapshot.has_source_home_hint(
         "thread:peer",
         "vm0/default",
         runner_types::ids::RunId::new_v4()
@@ -236,5 +236,5 @@ async fn validated_commit_wakes_every_subscriber_without_advertisement_authority
             .current_held_home_states(&active_runs, None)
             .is_empty()
     );
-    assert!(snapshot.contains_source_home("thread:peer", "vm0/default", source));
+    assert!(snapshot.has_source_home_hint("thread:peer", "vm0/default", source));
 }

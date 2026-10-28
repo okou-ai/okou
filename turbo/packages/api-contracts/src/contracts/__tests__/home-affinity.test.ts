@@ -65,7 +65,7 @@ describe("canonical home affinity contracts", () => {
     expect(parsed.heldHomeStates).toEqual(heldHomeStates);
   });
 
-  it.each(["exactSandbox", "sourceHome"])(
+  it.each(["exactSandbox", "predecessorHome"])(
     "preserves the previous Run on %s",
     (tier) => {
       const preference = {
@@ -76,12 +76,10 @@ describe("canonical home affinity contracts", () => {
         },
         tier,
         expiresAt: "2099-01-01T00:00:00Z",
-        ...(tier === "exactSandbox"
-          ? { finalizingSourceRunId: "33333333-3333-4333-8333-333333333333" }
-          : {
-              sourceRunId: "33333333-3333-4333-8333-333333333333",
-              home: { evidence: "advertised" },
-            }),
+        predecessorRunId: "33333333-3333-4333-8333-333333333333",
+        ...(tier === "predecessorHome"
+          ? { home: { evidence: "advertised" } }
+          : {}),
       };
       expect(runnerPreferenceSchema.parse(preference)).toEqual(preference);
     },

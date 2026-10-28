@@ -434,7 +434,7 @@ impl HomeImageCache {
     ) -> LifecycleResult<runner_host::lock::TryLock> {
         if matches!(
             lock_policy,
-            HomeImagePreparePolicy::ImmediateFallback | HomeImagePreparePolicy::Fresh
+            HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache
         ) {
             return Ok(runner_host::lock::try_acquire_or_busy(lock_path).await?);
         }
@@ -568,16 +568,16 @@ impl HomeImageCache {
     }
 
     pub async fn prepare(&self, request: HomeImagePrepareRequest<'_>) -> HomeImageLease {
-        self.prepare_with_policy(request, HomeImagePreparePolicy::WaitForTransientContention)
+        self.prepare_with_policy(request, HomeImagePreparePolicy::TryCacheWithLockWait)
             .await
     }
 
     pub async fn prepare_with_policy(
         &self,
         request: HomeImagePrepareRequest<'_>,
-        lock_policy: HomeImagePreparePolicy,
+        prepare_policy: HomeImagePreparePolicy,
     ) -> HomeImageLease {
-        self.prepare_with_source_selection(request, lock_policy, None)
+        self.prepare_with_source_selection(request, prepare_policy, None)
             .await
     }
 
@@ -586,19 +586,19 @@ impl HomeImageCache {
         &self,
         request: HomeImagePrepareRequest<'_>,
         source_run_id: RunId,
-        lock_policy: HomeImagePreparePolicy,
+        prepare_policy: HomeImagePreparePolicy,
     ) -> HomeImageLease {
-        self.prepare_with_source_selection(request, lock_policy, Some(source_run_id))
+        self.prepare_with_source_selection(request, prepare_policy, Some(source_run_id))
             .await
     }
 
     async fn prepare_with_source_selection(
         &self,
         request: HomeImagePrepareRequest<'_>,
-        lock_policy: HomeImagePreparePolicy,
+        prepare_policy: HomeImagePreparePolicy,
         source_run_id: Option<RunId>,
     ) -> HomeImageLease {
-        if lock_policy == HomeImagePreparePolicy::Fresh {
+        if prepare_policy == HomeImagePreparePolicy::SkipCache {
             return self
                 .lease_active(HomeImageLeaseRequest {
                     identity: request.identity,
@@ -674,19 +674,20 @@ impl HomeImageCache {
         let cache_key = common.cache_key(self, reuse_key);
         let lock_path = self.entry_lock_path(&cache_key);
         let owner_before = self.local_entry_lock_observation(&cache_key);
-        let lock = match self.acquire_prepare_lock(lock_path, lock_policy).await {
+        let lock = match self.acquire_prepare_lock(lock_path, prepare_policy).await {
             Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
             Ok(runner_host::lock::TryLock::Busy) => {
                 let owner = self.stable_local_entry_lock_owner(&cache_key, owner_before.as_ref());
-                match lock_policy {
-                    HomeImagePreparePolicy::WaitForTransientContention => info!(
+                match prepare_policy {
+                    HomeImagePreparePolicy::TryCacheWithLockWait => info!(
                         run_id = %common.run_id,
                         cache_key,
                         owner = owner.as_str(),
                         wait_ms = duration_ms(HOME_IMAGE_PREPARE_LOCK_TIMEOUT),
                         "home image cache lock remained busy; using fresh home image"
                     ),
-                    HomeImagePreparePolicy::ImmediateFallback | HomeImagePreparePolicy::Fresh => {
+                    HomeImagePreparePolicy::TryCacheWithoutLockWait
+                    | HomeImagePreparePolicy::SkipCache => {
                         info!(
                             run_id = %common.run_id,
                             cache_key,

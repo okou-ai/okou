@@ -11,9 +11,9 @@ import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { publicChatActor } from "./public-chat-actor";
 import { completePublicClaudeRun } from "./public-native-run";
 
-export const SOURCE_HOME_HOSTNAME = "shared-finalizing.example.test";
+export const PREDECESSOR_HOSTNAME = "shared-finalizing.example.test";
 
-export async function sourceHomeFixture(
+export async function predecessorHomeFixture(
   context: TestContext,
   args: {
     readonly status?: "completed" | "cancelled" | "failed";
@@ -31,7 +31,7 @@ export async function sourceHomeFixture(
     clockTime: now,
   });
   const api = createRunsApi(context);
-  const source = await owned.run(() => {
+  const predecessorRun = await owned.run(() => {
     return api.createThreadRun(owned.actor, {
       agentId: owned.agentId,
       prompt: "Prepare a home before a rolling restart",
@@ -41,27 +41,32 @@ export async function sourceHomeFixture(
     api,
     pollClient,
     owned,
-    source,
+    predecessorRun,
     clock,
     group: owned.runnerGroup,
-    reuseKey: `thread:${source.threadId}`,
-    sourceId: randomUUID(),
-    receiverId: randomUUID(),
+    reuseKey: `thread:${predecessorRun.threadId}`,
+    predecessorRunnerId: randomUUID(),
+    receiverRunnerId: randomUUID(),
     sequences: new Map<string, number>(),
   };
-  await sourceHomeHeartbeat(fixture, fixture.sourceId, { mode: "running" });
-  const claim = await owned.claimRunnerRun(source.runId, {
-    runnerIdentity: { runnerId: fixture.sourceId, heartbeatGeneration: 7 },
+  await predecessorHomeHeartbeat(fixture, fixture.predecessorRunnerId, {
+    mode: "running",
+  });
+  const claim = await owned.claimRunnerRun(predecessorRun.runId, {
+    runnerIdentity: {
+      runnerId: fixture.predecessorRunnerId,
+      heartbeatGeneration: 7,
+    },
     ...(args.claimHostname === null
       ? {}
-      : { runnerHostname: args.claimHostname ?? SOURCE_HOME_HOSTNAME }),
+      : { runnerHostname: args.claimHostname ?? PREDECESSOR_HOSTNAME }),
   });
   await owned.run(async () => {
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const webhooks = createWebhookCallbackApi(context);
     if (args.failBeforeInit) {
       await webhooks.requestAgentComplete(
-        { runId: source.runId, exitCode: 1 },
+        { runId: predecessorRun.runId, exitCode: 1 },
         headers,
         [200],
       );
@@ -69,17 +74,22 @@ export async function sourceHomeFixture(
       return;
     }
     if (args.status === undefined || args.status === "completed") {
-      await completePublicClaudeRun(context, source, headers, "Preserved work");
+      await completePublicClaudeRun(
+        context,
+        predecessorRun,
+        headers,
+        "Preserved work",
+      );
       return;
     }
     await webhooks.requestAgentEvents(
       {
-        runId: source.runId,
+        runId: predecessorRun.runId,
         events: [
           {
             type: "system",
             subtype: "init",
-            session_id: source.threadId,
+            session_id: predecessorRun.threadId,
             sequenceNumber: 0,
           },
           {
@@ -93,16 +103,16 @@ export async function sourceHomeFixture(
       [200],
     );
     if (args.status === "cancelled") {
-      await api.requestCancelRun(owned.actor, source.runId, [200]);
+      await api.requestCancelRun(owned.actor, predecessorRun.runId, [200]);
     }
     await webhooks.requestAgentComplete(
       {
-        runId: source.runId,
+        runId: predecessorRun.runId,
         exitCode: args.status === "cancelled" ? 137 : 1,
         lastEventSequence: 1,
         completion: {
           cliAgentType: "claude-code",
-          cliAgentSessionId: source.threadId,
+          cliAgentSessionId: predecessorRun.threadId,
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
@@ -111,18 +121,20 @@ export async function sourceHomeFixture(
     );
     await flushWaitUntilForTest();
   });
-  await sourceHomeHeartbeat(fixture, fixture.sourceId);
-  await sourceHomeHeartbeat(fixture, fixture.receiverId);
+  await predecessorHomeHeartbeat(fixture, fixture.predecessorRunnerId);
+  await predecessorHomeHeartbeat(fixture, fixture.receiverRunnerId);
   return fixture;
 }
 
-type SourceHomeFixture = Awaited<ReturnType<typeof sourceHomeFixture>>;
+type PredecessorHomeFixture = Awaited<
+  ReturnType<typeof predecessorHomeFixture>
+>;
 type HeartbeatOptions = Parameters<
-  SourceHomeFixture["api"]["requestHeartbeatRunner"]
+  PredecessorHomeFixture["api"]["requestHeartbeatRunner"]
 >[2];
 
-export async function sourceHomeHeartbeat(
-  f: SourceHomeFixture,
+export async function predecessorHomeHeartbeat(
+  f: PredecessorHomeFixture,
   runnerId: string,
   changes: HeartbeatOptions = {},
 ): Promise<void> {
@@ -131,16 +143,16 @@ export async function sourceHomeHeartbeat(
   await f.owned.run(() => {
     return f.api.requestHeartbeatRunner(true, [200], {
       runnerId,
-      runnerHostname: SOURCE_HOME_HOSTNAME,
+      runnerHostname: PREDECESSOR_HOSTNAME,
       group: f.group,
-      snapshotGeneration: runnerId === f.sourceId ? 7 : 8,
+      snapshotGeneration: runnerId === f.predecessorRunnerId ? 7 : 8,
       snapshotSequence: sequence,
-      mode: runnerId === f.sourceId ? "draining" : "running",
+      mode: runnerId === f.predecessorRunnerId ? "draining" : "running",
       activeReuseProducers:
-        runnerId === f.sourceId
+        runnerId === f.predecessorRunnerId
           ? [
               {
-                runId: f.source.runId,
+                runId: f.predecessorRun.runId,
                 reuseKey: f.reuseKey,
                 profile: "vm0/default",
               },
@@ -151,11 +163,11 @@ export async function sourceHomeHeartbeat(
   });
 }
 
-export async function sourceHomeContinuation(f: SourceHomeFixture) {
+export async function predecessorHomeContinuation(f: PredecessorHomeFixture) {
   return await f.owned.run(async () => {
     const next = await f.api.createThreadRun(f.owned.actor, {
       agentId: f.owned.agentId,
-      threadId: f.source.threadId,
+      threadId: f.predecessorRun.threadId,
       prompt: "Continue while the other Runner publishes its home",
     });
     await flushWaitUntilForTest();
@@ -163,9 +175,9 @@ export async function sourceHomeContinuation(f: SourceHomeFixture) {
   });
 }
 
-export async function sourceHomePoll(
-  f: SourceHomeFixture,
-  runnerId = f.receiverId,
+export async function predecessorHomePoll(
+  f: PredecessorHomeFixture,
+  runnerId = f.receiverRunnerId,
 ) {
   return await f.owned.run(async () => {
     const response = await accept(

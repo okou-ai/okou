@@ -76,10 +76,12 @@ fn home_prepare_lock_policy_for_fresh_fallback(
     match state {
         ActiveRunReuseState::Pending
         | ActiveRunReuseState::ExactSandboxPublished
-        | ActiveRunReuseState::ExactSandboxHandedOff => HomeImagePreparePolicy::ImmediateFallback,
+        | ActiveRunReuseState::ExactSandboxHandedOff => {
+            HomeImagePreparePolicy::TryCacheWithoutLockWait
+        }
         ActiveRunReuseState::Finalizing { .. }
         | ActiveRunReuseState::NoExactSandbox
-        | ActiveRunReuseState::Released => HomeImagePreparePolicy::WaitForTransientContention,
+        | ActiveRunReuseState::Released => HomeImagePreparePolicy::TryCacheWithLockWait,
     }
 }
 
@@ -766,29 +768,29 @@ mod tests {
         let cases = [
             (
                 ActiveRunReuseState::Pending,
-                HomeImagePreparePolicy::ImmediateFallback,
+                HomeImagePreparePolicy::TryCacheWithoutLockWait,
             ),
             (
                 ActiveRunReuseState::Finalizing {
                     started_at: Instant::now(),
                 },
-                HomeImagePreparePolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::TryCacheWithLockWait,
             ),
             (
                 ActiveRunReuseState::ExactSandboxPublished,
-                HomeImagePreparePolicy::ImmediateFallback,
+                HomeImagePreparePolicy::TryCacheWithoutLockWait,
             ),
             (
                 ActiveRunReuseState::ExactSandboxHandedOff,
-                HomeImagePreparePolicy::ImmediateFallback,
+                HomeImagePreparePolicy::TryCacheWithoutLockWait,
             ),
             (
                 ActiveRunReuseState::NoExactSandbox,
-                HomeImagePreparePolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::TryCacheWithLockWait,
             ),
             (
                 ActiveRunReuseState::Released,
-                HomeImagePreparePolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::TryCacheWithLockWait,
             ),
         ];
         for (state, expected) in cases {
@@ -823,7 +825,7 @@ mod tests {
             admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::Pending,
-                HomeImagePreparePolicy::ImmediateFallback
+                HomeImagePreparePolicy::TryCacheWithoutLockWait
             )
         );
         let publisher = guard.reuse_publisher();
@@ -833,7 +835,7 @@ mod tests {
             admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::Finalizing { started_at },
-                HomeImagePreparePolicy::WaitForTransientContention,
+                HomeImagePreparePolicy::TryCacheWithLockWait,
             )
         );
         assert!(publisher.publish_exact_sandbox());
@@ -841,7 +843,7 @@ mod tests {
             admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::ExactSandboxPublished,
-                HomeImagePreparePolicy::ImmediateFallback
+                HomeImagePreparePolicy::TryCacheWithoutLockWait
             )
         );
         drop(guard);
@@ -849,7 +851,7 @@ mod tests {
             admission.fresh_fallback_home_prepare_policy(),
             (
                 ActiveRunReuseState::Released,
-                HomeImagePreparePolicy::WaitForTransientContention
+                HomeImagePreparePolicy::TryCacheWithLockWait
             )
         );
     }

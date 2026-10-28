@@ -65,10 +65,10 @@ impl Producer {
         assert_eq!(
             candidate
                 .runner_preference()
-                .and_then(|p| p.target().source_run_id()),
+                .and_then(|p| p.target().predecessor_run_id()),
             self.candidate
                 .runner_preference()
-                .and_then(|p| p.target().source_run_id())
+                .and_then(|p| p.target().predecessor_run_id())
         );
         {
             let mut receipt = self
@@ -83,7 +83,7 @@ impl Producer {
                     json!(
                         candidate
                             .runner_preference()
-                            .and_then(|p| p.target().source_run_id())
+                            .and_then(|p| p.target().predecessor_run_id())
                     ),
                 ),
                 ("reuse_key".into(), json!(candidate.reuse_key())),
@@ -343,7 +343,7 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
                 rootfs_hash:&context.rootfs_hash,reuse_key:Some(&context.reuse_key),
                 working_dir:api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,image_size_bytes:fixture::IMAGE_BYTES },
             home_drive_required:true,
-        },HomeImagePreparePolicy::ImmediateFallback).await;
+        },HomeImagePreparePolicy::TryCacheWithoutLockWait).await;
         if attempted.result()!=HomeCacheCheckoutResult::LockBusy {
             request.proof.retain(attempted);
             return Err(io::Error::other("uncertain claim released original promotion lock").into());

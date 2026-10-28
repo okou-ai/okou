@@ -739,7 +739,7 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
                 },
                 home_drive_required: true,
             },
-            HomeImagePreparePolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     if attempted.result() != HomeCacheCheckoutResult::LockBusy {

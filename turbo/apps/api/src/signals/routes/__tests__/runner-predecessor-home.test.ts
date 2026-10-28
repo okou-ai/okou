@@ -5,38 +5,40 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockNow } from "../../../lib/time";
 import { completePublicClaudeRun } from "./helpers/public-native-run";
 import {
-  sourceHomeContinuation,
-  sourceHomeFixture,
-  sourceHomeHeartbeat,
-  sourceHomePoll,
-} from "./helpers/source-home-fixture";
+  predecessorHomeContinuation,
+  predecessorHomeFixture,
+  predecessorHomeHeartbeat,
+  predecessorHomePoll,
+} from "./helpers/predecessor-home-fixture";
 
 const context = testContext();
 
-describe("source Home publication preference", () => {
+describe("predecessor Home publication preference", () => {
   it("publishes and polls B before any home exists, and B's claim excludes a competing claim", async () => {
-    const f = await sourceHomeFixture(context);
-    await sourceHomeHeartbeat(f, f.sourceId, { admittableProfiles: [] });
-    const next = await sourceHomeContinuation(f);
+    const f = await predecessorHomeFixture(context);
+    await predecessorHomeHeartbeat(f, f.predecessorRunnerId, {
+      admittableProfiles: [],
+    });
+    const next = await predecessorHomeContinuation(f);
     const preference = {
       kind: "preference",
-      tier: "sourceHome",
+      tier: "predecessorHome",
       home: {
         evidence: "expected",
         homeWaitUntil: new Date(
           f.clock + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
         ).toISOString(),
       },
-      sourceRunId: f.source.runId,
-      runnerIdentity: { runnerId: f.receiverId, heartbeatGeneration: 8 },
+      predecessorRunId: f.predecessorRun.runId,
+      runnerIdentity: { runnerId: f.receiverRunnerId, heartbeatGeneration: 8 },
       expiresAt: new Date(f.clock + 2000).toISOString(),
     };
-    await expect(sourceHomePoll(f)).resolves.toMatchObject({
+    await expect(predecessorHomePoll(f)).resolves.toMatchObject({
       runId: next.runId,
       runnerPreference: preference,
     });
     expect(
-      (await sourceHomePoll(f, f.sourceId))?.runnerPreference,
+      (await predecessorHomePoll(f, f.predecessorRunnerId))?.runnerPreference,
     ).toStrictEqual(preference);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "job",
@@ -54,7 +56,7 @@ describe("source Home publication preference", () => {
       });
     });
     // The successful claim precedes the first published-home observation.
-    await sourceHomeHeartbeat(f, f.sourceId, {
+    await predecessorHomeHeartbeat(f, f.predecessorRunnerId, {
       activeReuseProducers: [],
       heldHomeStates: [
         {
@@ -81,22 +83,25 @@ describe("source Home publication preference", () => {
   });
 
   it("selects a draining failed source with no native history before initialization", async () => {
-    const f = await sourceHomeFixture(context, { failBeforeInit: true });
+    const f = await predecessorHomeFixture(context, { failBeforeInit: true });
     mockNow(f.clock + 2000);
-    const next = await sourceHomeContinuation(f);
-    const job = await sourceHomePoll(f);
+    const next = await predecessorHomeContinuation(f);
+    const job = await predecessorHomePoll(f);
     expect(job).toMatchObject({
       runId: next.runId,
       runnerPreference: {
-        tier: "sourceHome",
+        tier: "predecessorHome",
         home: {
           evidence: "expected",
           homeWaitUntil: new Date(
             f.clock + 2000 + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
           ).toISOString(),
         },
-        sourceRunId: f.source.runId,
-        runnerIdentity: { runnerId: f.receiverId, heartbeatGeneration: 8 },
+        predecessorRunId: f.predecessorRun.runId,
+        runnerIdentity: {
+          runnerId: f.receiverRunnerId,
+          heartbeatGeneration: 8,
+        },
         expiresAt: new Date(f.clock + 4000).toISOString(),
       },
     });
@@ -110,51 +115,57 @@ describe("source Home publication preference", () => {
   });
 
   it("bounds unclaimed routing independently of publication waiting and does not renew either", async () => {
-    const f = await sourceHomeFixture(context);
+    const f = await predecessorHomeFixture(context);
     mockNow(f.clock + 2000);
-    const next = await sourceHomeContinuation(f);
+    const next = await predecessorHomeContinuation(f);
     const expiresAt = new Date(f.clock + 4000).toISOString();
     const homeWaitUntil = new Date(
       f.clock + 2000 + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
     ).toISOString();
     for (const job of await Promise.all([
-      sourceHomePoll(f),
-      sourceHomePoll(f),
+      predecessorHomePoll(f),
+      predecessorHomePoll(f),
     ])) {
       expect(job).toMatchObject({
         runId: next.runId,
         runnerPreference: {
-          tier: "sourceHome",
+          tier: "predecessorHome",
           home: { evidence: "expected", homeWaitUntil },
           expiresAt,
         },
       });
     }
     mockNow(f.clock + 3000);
-    await sourceHomeHeartbeat(f, f.sourceId);
-    await sourceHomeHeartbeat(f, f.receiverId);
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
+    await predecessorHomeHeartbeat(f, f.predecessorRunnerId);
+    await predecessorHomeHeartbeat(f, f.receiverRunnerId);
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
       expiresAt,
       home: { homeWaitUntil },
     });
     mockNow(new Date(expiresAt).getTime());
-    expect((await sourceHomePoll(f))?.runnerPreference).toStrictEqual({
+    expect((await predecessorHomePoll(f))?.runnerPreference).toStrictEqual({
       kind: "noPreference",
       reason: "expired",
     });
   });
 
   it("uses A's completion bridge even when B advertises A's producer", async () => {
-    const f = await sourceHomeFixture(context);
-    await sourceHomeHeartbeat(f, f.sourceId, { activeReuseProducers: [] });
-    await sourceHomeHeartbeat(f, f.receiverId, {
+    const f = await predecessorHomeFixture(context);
+    await predecessorHomeHeartbeat(f, f.predecessorRunnerId, {
+      activeReuseProducers: [],
+    });
+    await predecessorHomeHeartbeat(f, f.receiverRunnerId, {
       activeReuseProducers: [
-        { runId: f.source.runId, reuseKey: f.reuseKey, profile: "vm0/default" },
+        {
+          runId: f.predecessorRun.runId,
+          reuseKey: f.reuseKey,
+          profile: "vm0/default",
+        },
       ],
     });
-    await sourceHomeContinuation(f);
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
-      tier: "sourceHome",
+    await predecessorHomeContinuation(f);
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
+      tier: "predecessorHome",
       home: {
         evidence: "expected",
         homeWaitUntil: new Date(f.clock + 1500).toISOString(),
@@ -162,8 +173,8 @@ describe("source Home publication preference", () => {
       expiresAt: new Date(f.clock + 2000).toISOString(),
     });
     mockNow(f.clock + 1500);
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
-      tier: "sourceHome",
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
+      tier: "predecessorHome",
       home: { evidence: "location" },
       expiresAt: new Date(f.clock + 2000).toISOString(),
     });
@@ -172,35 +183,41 @@ describe("source Home publication preference", () => {
   it.each(["cancelled", "failed"] as const)(
     "selects a receiver for a %s source after its real terminal callback",
     async (status) => {
-      const f = await sourceHomeFixture(context, { status });
-      await sourceHomeContinuation(f);
-      expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
-        tier: "sourceHome",
+      const f = await predecessorHomeFixture(context, { status });
+      await predecessorHomeContinuation(f);
+      expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
+        tier: "predecessorHome",
         home: { evidence: "expected" },
-        runnerIdentity: { runnerId: f.receiverId, heartbeatGeneration: 8 },
+        runnerIdentity: {
+          runnerId: f.receiverRunnerId,
+          heartbeatGeneration: 8,
+        },
       });
     },
   );
 
   it("prioritizes the peer continuation ahead of an older ordinary job", async () => {
-    const f = await sourceHomeFixture(context);
+    const f = await predecessorHomeFixture(context);
     await f.owned.run(() => {
       return f.api.createThreadRun(f.owned.actor, {
         agentId: f.owned.agentId,
         prompt: "An ordinary older job",
       });
     });
-    const next = await sourceHomeContinuation(f);
-    await expect(sourceHomePoll(f)).resolves.toMatchObject({
+    const next = await predecessorHomeContinuation(f);
+    await expect(predecessorHomePoll(f)).resolves.toMatchObject({
       runId: next.runId,
-      runnerPreference: { tier: "sourceHome", home: { evidence: "expected" } },
+      runnerPreference: {
+        tier: "predecessorHome",
+        home: { evidence: "expected" },
+      },
     });
   });
 
   it("preserves stronger exact preference before returning to the peer producer", async () => {
-    const f = await sourceHomeFixture(context);
+    const f = await predecessorHomeFixture(context);
     const ready = randomUUID();
-    await sourceHomeHeartbeat(f, ready, {
+    await predecessorHomeHeartbeat(f, ready, {
       runnerHostname: "ready-other.example.test",
       heldSandboxStates: [
         {
@@ -208,47 +225,52 @@ describe("source Home publication preference", () => {
           lastCompletedAt: new Date(f.clock).toISOString(),
           reusableSandbox: {
             profile: "vm0/default",
-            sourceRunId: f.source.runId,
+            sourceRunId: f.predecessorRun.runId,
           },
         },
       ],
     });
-    await sourceHomeContinuation(f);
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
+    await predecessorHomeContinuation(f);
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
       tier: "exactSandbox",
-      finalizingSourceRunId: f.source.runId,
+      predecessorRunId: f.predecessorRun.runId,
       runnerIdentity: { runnerId: ready, heartbeatGeneration: 8 },
     });
     mockNow(f.clock + 1000);
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
-      tier: "sourceHome",
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
+      tier: "predecessorHome",
       home: { evidence: "expected" },
-      runnerIdentity: { runnerId: f.receiverId, heartbeatGeneration: 8 },
+      runnerIdentity: { runnerId: f.receiverRunnerId, heartbeatGeneration: 8 },
     });
   });
 
   it("uses B's latest generation while preserving same-process finalization", async () => {
-    const f = await sourceHomeFixture(context);
-    await sourceHomeHeartbeat(f, f.receiverId, {
+    const f = await predecessorHomeFixture(context);
+    await predecessorHomeHeartbeat(f, f.receiverRunnerId, {
       snapshotGeneration: 9,
       snapshotSequence: 1,
     });
-    await sourceHomeContinuation(f);
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
-      tier: "sourceHome",
+    await predecessorHomeContinuation(f);
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
+      tier: "predecessorHome",
       home: { evidence: "expected" },
-      runnerIdentity: { runnerId: f.receiverId, heartbeatGeneration: 9 },
+      runnerIdentity: { runnerId: f.receiverRunnerId, heartbeatGeneration: 9 },
     });
-    await sourceHomeHeartbeat(f, f.sourceId, { mode: "running" });
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
+    await predecessorHomeHeartbeat(f, f.predecessorRunnerId, {
+      mode: "running",
+    });
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
-      runnerIdentity: { runnerId: f.sourceId, heartbeatGeneration: 7 },
+      runnerIdentity: {
+        runnerId: f.predecessorRunnerId,
+        heartbeatGeneration: 7,
+      },
     });
   });
 
   it("keeps ready-home preference available when optional hostname is absent", async () => {
-    const f = await sourceHomeFixture(context);
-    await sourceHomeHeartbeat(f, f.receiverId, {
+    const f = await predecessorHomeFixture(context);
+    await predecessorHomeHeartbeat(f, f.receiverRunnerId, {
       runnerHostname: undefined,
       heldHomeStates: [
         {
@@ -264,10 +286,10 @@ describe("source Home publication preference", () => {
         },
       ],
     });
-    await sourceHomeContinuation(f);
-    expect((await sourceHomePoll(f))?.runnerPreference).toMatchObject({
+    await predecessorHomeContinuation(f);
+    expect((await predecessorHomePoll(f))?.runnerPreference).toMatchObject({
       tier: "homeCache",
-      runnerIdentity: { runnerId: f.receiverId, heartbeatGeneration: 8 },
+      runnerIdentity: { runnerId: f.receiverRunnerId, heartbeatGeneration: 8 },
     });
   });
 });

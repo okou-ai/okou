@@ -27,7 +27,7 @@ async fn fresh_preparation_preserves_hidden_home_and_can_publish_its_own_generat
                 },
                 home_drive_required: true,
             },
-            HomeImagePreparePolicy::Fresh,
+            HomeImagePreparePolicy::SkipCache,
         )
         .await;
     assert_eq!(fresh.result(), HomeCacheCheckoutResult::Miss);
@@ -213,7 +213,7 @@ async fn source_checkout_rechecks_replaced_publication_and_pins_matching_generat
         .prepare_from_source(
             request(),
             first.image_generation.parse().unwrap(),
-            HomeImagePreparePolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     assert_eq!(stale.result(), HomeCacheCheckoutResult::Miss);
@@ -228,7 +228,7 @@ async fn source_checkout_rechecks_replaced_publication_and_pins_matching_generat
         .prepare_from_source(
             request(),
             current.image_generation.parse().unwrap(),
-            HomeImagePreparePolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         )
         .await;
     assert!(selected.is_cache_hit());
@@ -911,7 +911,7 @@ async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retr
                 },
                 home_drive_required: true,
             },
-            HomeImagePreparePolicy::ImmediateFallback,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait,
         ),
     )
     .await

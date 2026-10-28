@@ -78,10 +78,10 @@ pub struct HomeImagePrepareRequest<'a> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HomeImagePreparePolicy {
     /// Do not read a cached image; retain only nonblocking publication ownership.
-    Fresh,
+    SkipCache,
     #[default]
-    WaitForTransientContention,
-    ImmediateFallback,
+    TryCacheWithLockWait,
+    TryCacheWithoutLockWait,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HomeImageLeaseRequest<'a> {

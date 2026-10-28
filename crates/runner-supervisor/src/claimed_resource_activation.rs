@@ -66,7 +66,7 @@ impl ActivationResources<'_> {
 }
 
 pub struct ReuseAdmissionRequest<'a> {
-    pub home_source_run_id: Option<RunId>,
+    pub required_home_source_run_id: Option<RunId>,
     pub profile_name: &'a str,
     pub rootfs_hash: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
@@ -601,12 +601,12 @@ pub async fn activate_reserved_idle(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
 
-    let claimed_home_cache_reuse_key = if reservation_kind == IdleSandboxKind::Blank {
+    let prefer_home_cache = if reservation_kind == IdleSandboxKind::Blank {
         let started_at = Instant::now();
         let possible = ctx.home_cache.is_some()
             && requested_reuse_key.is_some_and(|key| {
                 ctx.home_cache_snapshot
-                    .has_compatible_home(key, profile_name)
+                    .has_compatible_home_hint(key, profile_name)
             });
         pre_spawn_timing
             .record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
@@ -614,7 +614,7 @@ pub async fn activate_reserved_idle(
     } else {
         false
     };
-    if claimed_home_cache_reuse_key {
+    if prefer_home_cache {
         return cleanup_reserved_for_fresh_fallback(
             reservation.into_destroy_job(),
             fallback_reuse_result,
@@ -879,7 +879,7 @@ pub async fn try_reuse_from_pool(
     cancellation: &RunCancellationHandle,
 ) -> Result<ReuseFromPoolReady, ReuseFromPoolFailure> {
     let ReuseAdmissionRequest {
-        home_source_run_id,
+        required_home_source_run_id,
         profile_name,
         rootfs_hash,
         device_rate_limits,
@@ -897,7 +897,7 @@ pub async fn try_reuse_from_pool(
     let started_at = Instant::now();
     // Take the entry under the pool lock, then drop the lock before any awaits
     // so unpark does not block other take/park operations.
-    let exact = if home_source_run_id.is_some() {
+    let exact = if required_home_source_run_id.is_some() {
         None
     } else {
         let mut pool = ctx.idle_pool.lock().await;
@@ -907,17 +907,17 @@ pub async fn try_reuse_from_pool(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
     let started_at = Instant::now();
-    let claimed_home_cache_reuse_key = exact.is_none()
-        && (home_source_run_id.is_some()
+    let prefer_home_cache = exact.is_none()
+        && (required_home_source_run_id.is_some()
             || ctx.home_cache.is_some()
                 && reuse_key.is_some_and(|key| {
                     ctx.home_cache_snapshot
-                        .has_compatible_home(key, profile_name)
+                        .has_compatible_home_hint(key, profile_name)
                 }));
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
     let (taken, blank_pool_selection) = match exact {
         Some(exact) => (Some(exact), None),
-        None if !claimed_home_cache_reuse_key => {
+        None if !prefer_home_cache => {
             let mut pool = ctx.idle_pool.lock().await;
             let exact = reuse_key
                 .and_then(|reuse_key| pool.take_reserved(reuse_key))
@@ -958,7 +958,7 @@ pub async fn try_reuse_from_pool(
         pre_spawn_timing.record_blank_pool_selection(selection);
     }
     let took_idle_session = taken.is_some();
-    let needs_reuse_state_refresh = took_idle_session || claimed_home_cache_reuse_key;
+    let needs_reuse_state_refresh = took_idle_session || prefer_home_cache;
     match taken {
         Some((entry, snapshot))
             if entry.profile_name() == profile_name
@@ -1201,7 +1201,7 @@ pub async fn try_reuse_from_pool(
                     run_id = %run_id,
                     reuse_key_fingerprint = %diagnostic_reuse_key_fingerprint(reuse_key),
                     reuse_key_kind = reuse_key_kind(reuse_key),
-                    home_cache_possible = claimed_home_cache_reuse_key,
+                    home_cache_possible = prefer_home_cache,
                     "no compatible idle sandbox found for reuse key"
                 ),
                 None => info!(run_id = %run_id, "no compatible blank sandbox found"),

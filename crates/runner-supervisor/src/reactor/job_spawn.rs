@@ -59,7 +59,7 @@ pub(super) type JobResult = Result<RunCancellationRegistration, ClaimedActivatio
 
 /// Per-job profile parameters resolved from the profile config.
 pub(super) struct JobProfile {
-    pub(super) home_source_run_id: Option<RunId>,
+    pub(super) required_home_source_run_id: Option<RunId>,
     pub(super) profile_name: String,
     pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
@@ -538,7 +538,7 @@ pub(super) async fn run_job(
     let job_cancel = cancellation.handle();
     let rootfs_hash = job_profile.rootfs_hash;
     let params = executor::JobParams {
-        home_source_run_id: job_profile.home_source_run_id,
+        required_home_source_run_id: job_profile.required_home_source_run_id,
         profile_name: profile_name.clone(),
         rootfs_hash: rootfs_hash.clone(),
         vcpu,

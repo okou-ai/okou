@@ -389,8 +389,8 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
             }
         }
     };
-    let home_source_run_id = (ready.reuse_entry.is_none()
-        && ctx.home_cache_snapshot.contains_source_home(
+    let required_home_source_run_id = (ready.reuse_entry.is_none()
+        && ctx.home_cache_snapshot.has_source_home_hint(
             &admission.reuse_key,
             &profile_name,
             admission.source_run_id,
@@ -398,7 +398,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     .then_some(admission.source_run_id);
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
-            home_source_run_id,
+            required_home_source_run_id,
             claimed,
             rootfs_hash,
             cancellation,
@@ -445,7 +445,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     if fresh_fallback {
         let (predecessor_state, lock_policy) = admission.fresh_fallback_home_prepare_policy();
         request.job_profile.home_image_prepare_policy = lock_policy;
-        if lock_policy == HomeImagePreparePolicy::ImmediateFallback {
+        if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
             info!(
                 run_id = %run_id,
                 ?predecessor_state,
