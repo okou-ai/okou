@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
+import {
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
+  ListPartsCommand,
+} from "@aws-sdk/client-s3";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { uploadsMultipartRoutes } from "../uploads-multipart";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -785,6 +793,130 @@ describe("GET /api/artifacts/catalog", () => {
       ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
     }
   });
+
+  it.each(["single", "multipart"] as const)(
+    "keeps a prepared %s video in its creating thread across completion retries and thread deletion",
+    async (mode) => {
+      const owner = await catalogActor("Prepared video owner");
+      const first = await sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        prompt: "Record the sharing demo",
+      });
+      const firstClaim = await claimChatRun(owner.runnerGroup, first.runId);
+      const firstBearer = `Bearer ${okouTokenFromClaim(firstClaim.claim)}`;
+      const filename = "sharing-demo.mp4";
+      const size = 6 * 1024 * 1024;
+      const storage = context.mocks.s3.send.getMockImplementation()!;
+      context.mocks.s3.send.mockImplementation((command) => {
+        if (command instanceof CreateMultipartUploadCommand) {
+          return Promise.resolve({ UploadId: "demo-upload" });
+        }
+        if (command instanceof ListPartsCommand) {
+          return Promise.resolve({
+            Parts: [
+              { PartNumber: 1, ETag: '"demo-part-1"' },
+              { PartNumber: 2, ETag: '"demo-part-2"' },
+            ],
+            IsTruncated: false,
+          });
+        }
+        if (command instanceof CompleteMultipartUploadCommand) {
+          return Promise.resolve({});
+        }
+        return storage(command);
+      });
+      const prepared = await accept(
+        setupApp({ context, routes: uploadsPrepareRoutes })(
+          uploadsContract,
+        ).prepare({
+          headers: { authorization: firstBearer },
+          body: {
+            filename,
+            contentType: "video/mp4",
+            size,
+            purpose: "artifact",
+            ...(mode === "multipart" ? { multipart: true as const } : {}),
+          },
+        }),
+        [200],
+      );
+      owner.storage.addObject({
+        bucket: "test-private-artifacts",
+        key: `private-artifacts/${prepared.body.id}/${filename}`,
+        size,
+      });
+      const upload = { id: prepared.body.id };
+      if ("multipart" in prepared.body) {
+        await accept(
+          setupApp({ context, routes: uploadsMultipartRoutes })(
+            uploadsContract,
+          ).completeMultipart({
+            headers: { authorization: firstBearer },
+            body: {
+              id: prepared.body.id,
+              filename,
+              uploadId: prepared.body.multipart.uploadId,
+              partCount: prepared.body.multipart.parts.length,
+            },
+          }),
+          [200],
+        );
+      }
+      await chat.completeUploadWithBearer(firstBearer, upload, [200]);
+      const original = await chat.listArtifactCatalog(owner.actor, {
+        chatThreadId: first.threadId,
+      });
+      expect(original.artifacts).toStrictEqual([
+        expect.objectContaining({
+          title: filename,
+          sourceUrl: prepared.body.url,
+          videoSourceUrl: prepared.body.url,
+        }),
+      ]);
+      await expect(
+        chat.listArtifactCatalog(owner.actor),
+      ).resolves.toStrictEqual(original);
+      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+
+      const second = await sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        prompt: "Review the same demo in another conversation",
+      });
+      const secondClaim = await claimChatRun(owner.runnerGroup, second.runId);
+      const secondBearer = `Bearer ${okouTokenFromClaim(secondClaim.claim)}`;
+      await chat.completeUploadWithBearer(secondBearer, upload, [200]);
+      const inOriginalThread = await chat.listArtifactCatalog(owner.actor, {
+        chatThreadId: first.threadId,
+      });
+      expect(inOriginalThread.artifacts).toStrictEqual([
+        expect.objectContaining({
+          id: original.artifacts[0]?.id,
+          createdAt: original.artifacts[0]?.createdAt,
+        }),
+      ]);
+      await expect(
+        chat.listArtifactCatalog(owner.actor, {
+          chatThreadId: second.threadId,
+        }),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+
+      await chat.deleteThread(owner.actor, first.threadId);
+      await chat.completeUploadWithBearer(secondBearer, upload, [200]);
+      const retained = await chat.listArtifactCatalog(owner.actor);
+      expect(retained.artifacts).toStrictEqual([
+        expect.objectContaining({
+          id: original.artifacts[0]?.id,
+          title: filename,
+        }),
+      ]);
+      await expect(
+        chat.listArtifactCatalog(owner.actor, {
+          chatThreadId: second.threadId,
+        }),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+      await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+    },
+  );
 
   it("catalogues an artifact upload but never a chat attachment", async () => {
     const owner = await catalogActor("Artifact catalog attachment owner");

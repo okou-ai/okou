@@ -59,9 +59,14 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const size = s3Object.size;
   const url = s3Object.url;
   const lastModified = s3Object.lastModified?.toISOString();
+  const runId = "runId" in auth ? auth.runId : undefined;
 
   if (s3Object.isPrivate) {
-    await set(completePrivateArtifact$, { id, url, contentType, size }, signal);
+    await set(
+      completePrivateArtifact$,
+      { id, url, contentType, size, runId },
+      signal,
+    );
   } else {
     await set(
       registerLegacyArtifactFile$,
@@ -74,8 +79,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  const runId = "runId" in auth ? auth.runId : undefined;
-
   await set(
     recordWebUploadedFile$,
     {

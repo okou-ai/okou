@@ -11,17 +11,9 @@ import { db$ } from "../external/db";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { buildSlackConnectorOAuthStartUrl } from "../services/slack-connector-oauth-state";
 import { slackConnectStatus } from "../services/slack-connect.service";
-import { slackWorkspaceIdentityEnabled } from "../services/slack-workspace-identity.service";
 import { decryptPersistentSecretValue } from "../services/crypto.utils";
 import { createSlackClient } from "../external/slack-message-client";
 import type { RouteEntry } from "../route-entry";
-
-const slackIdentityOwner$ = computed((get) => {
-  const auth = get(organizationAuthContext$);
-  return { orgId: auth.orgId, userId: auth.userId };
-});
-const accountConnectionEnabled$ =
-  slackWorkspaceIdentityEnabled(slackIdentityOwner$);
 
 const getSlackConnectStatusInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -71,73 +63,29 @@ const startConnectorOAuth$ = command(
       .where(eq(slackOrgInstallations.slackWorkspaceId, args.body.workspaceId))
       .limit(1);
     signal.throwIfAborted();
-    if (await get(accountConnectionEnabled$)) {
+    let workspaceId = args.body.workspaceId;
+    if (installation) {
+      const token = await decryptPersistentSecretValue(
+        installation.encryptedBotToken,
+        installation.orgId ? { orgId: installation.orgId } : {},
+      );
       signal.throwIfAborted();
-      let workspaceId = args.body.workspaceId;
-      if (installation) {
-        const token = await decryptPersistentSecretValue(
-          installation.encryptedBotToken,
-          installation.orgId ? { orgId: installation.orgId } : {},
-        );
-        signal.throwIfAborted();
-        const identity = await createSlackClient(token).fetchUserIdentity(
-          args.body.slackUserId,
-        );
-        signal.throwIfAborted();
-        if (!identity?.teamId || identity.deleted || identity.isBot) {
-          return {
-            status: 403 as const,
-            body: {
-              error: {
-                code: "FORBIDDEN",
-                message: "This Slack identity is unavailable.",
-              },
+      const identity = await createSlackClient(token).fetchUserIdentity(
+        args.body.slackUserId,
+      );
+      signal.throwIfAborted();
+      if (!identity?.teamId || identity.deleted || identity.isBot) {
+        return {
+          status: 403 as const,
+          body: {
+            error: {
+              code: "FORBIDDEN",
+              message: "This Slack identity is unavailable.",
             },
-          };
-        }
-        workspaceId = identity.teamId;
-      }
-      return {
-        status: 202 as const,
-        body: {
-          authorizationUrl: buildSlackConnectorOAuthStartUrl(
-            getOAuthApiOrigin(get(request$).raw),
-            {
-              flow: args.flow,
-              orgId: auth.orgId,
-              userId: auth.userId,
-              workspaceId,
-              sourceWorkspaceId: installation?.slackWorkspaceId,
-              accountConnection: true,
-              slackUserId: args.body.slackUserId,
-              channelId: args.body.channelId,
-              threadTs: args.body.threadTs,
-            },
-          ),
-        },
-      };
-    }
-    if (
-      !installation ||
-      (installation.orgId !== null && installation.orgId !== auth.orgId)
-    ) {
-      return {
-        status: 404 as const,
-        body: {
-          error: { message: "Slack workspace not found", code: "NOT_FOUND" },
-        },
-      };
-    }
-    if (installation.orgId === null && auth.orgRole !== "admin") {
-      return {
-        status: 403 as const,
-        body: {
-          error: {
-            message: "Only admins can connect a Slack workspace",
-            code: "FORBIDDEN",
           },
-        },
-      };
+        };
+      }
+      workspaceId = identity.teamId;
     }
     return {
       status: 202 as const,
@@ -148,7 +96,9 @@ const startConnectorOAuth$ = command(
             flow: args.flow,
             orgId: auth.orgId,
             userId: auth.userId,
-            workspaceId: args.body.workspaceId,
+            workspaceId,
+            sourceWorkspaceId: installation?.slackWorkspaceId,
+            accountConnection: true,
             slackUserId: args.body.slackUserId,
             channelId: args.body.channelId,
             threadTs: args.body.threadTs,
