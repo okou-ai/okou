@@ -57,11 +57,6 @@
       "owner": "commitSlackWorkspaceConnection$"
     },
     {
-      "id": "TX-0263",
-      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
-      "owner": "commitPreparedPendingLaunch$"
-    },
-    {
       "id": "TX-0264",
       "file": "turbo/apps/api/src/signals/services/threadless-run-cleanup.service.ts",
       "owner": "deleteIfStillEligible"

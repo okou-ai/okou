@@ -62,10 +62,6 @@ import {
   parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
-import {
-  nullableDriverValueDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
 import {
   AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
@@ -77,7 +73,7 @@ import {
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 
-import { monotonicNow, now, nowDate } from "../../lib/time";
+import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -162,13 +158,13 @@ import {
   type PendingLaunchClaim,
   pendingLaunchClaimFenceSql,
   pendingLaunchClaimProducerStatements,
-  requirePendingLaunchClaimFence,
 } from "./pending-launch-claim-plan";
+import { pendingOfficialAdmissionGuardSql } from "./pending-launch-official-plan";
 import {
-  pendingLaunchAdmissionRowSchema as admissionRow,
-  advancePendingOfficialAdmission,
-  pendingOfficialAdmissionStart,
-} from "./pending-launch-official-plan";
+  pendingAdmissionRecordSchema as admissionRow,
+  advancePendingLaunchAdmission,
+  pendingLaunchAdmissionStart,
+} from "./pending-launch-admission-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
 import {
   type PiModelPreparationInput,
@@ -286,6 +282,7 @@ import {
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   boolean,
+  discriminatedUnion,
   json,
   literal,
   object,
@@ -4671,16 +4668,20 @@ function appendLaunchCallbackCte(args: {
   if (args.callbacks.length === 0) {
     return;
   }
-  args.ctes.push(
-    new QueryBuilder().$with("inserted_launch_callbacks", {}).as(
-      pendingLaunchInsertSql(
-        agentRunCallbacks,
-        args.callbacks.map((callback) => {
-          return { ...callback, runId: returnedCteId(args.insertedRun) };
-        }),
-      ),
-    ),
-  );
+  for (const [index, callback] of args.callbacks.entries()) {
+    args.ctes.push(
+      new QueryBuilder()
+        .$with(`inserted_launch_callback_${String(index)}`, {})
+        .as(
+          pendingLaunchInsertSql(
+            agentRunCallbacks,
+            { ...callback, runId: returnedCteId(args.insertedRun) },
+            ["runId"],
+            sql`EXISTS (SELECT 1 FROM ${args.insertedRun})`,
+          ),
+        ),
+    );
+  }
 }
 
 function launchThreadBindingCte(args: {
@@ -4721,10 +4722,21 @@ function launchThreadBindingCte(args: {
 
 function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const { rowsArgs, metadata } = args.commit.persistence.rows;
-  // Preserve insertion time; the captured Thread tuple fences continuation.
+  // Capture creation metadata with the API clock immediately before atomic
+  // publication. Returned dependencies fence writes, never these timestamps.
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
 
+  const updatedThread = launchThreadBindingCte({
+    chatThreadId: args.commit.createArgs.chatThreadId,
+    userId: args.commit.createArgs.userId,
+    orgId: args.commit.createArgs.orgId,
+    identity: rowsArgs.identity,
+    validatedThreadSession: args.validatedThreadSession,
+  });
+  if (updatedThread) {
+    ctes.push(updatedThread);
+  }
   const insertedRun = new QueryBuilder()
     .$with("inserted_launch_run", {
       id: agentRuns.id,
@@ -4733,13 +4745,13 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     .as(
       pendingLaunchInsertSql(
         agentRuns,
-        [
-          {
-            ...launchRunValues(rowsArgs, createdAt, metadata),
-            modelProviderAccountIdentity: args.validatedAccountIdentity,
-          },
-        ],
+        {
+          ...launchRunValues(rowsArgs, createdAt, metadata),
+          id: pendingLaunchGuardedRunId(args, updatedThread),
+          modelProviderAccountIdentity: args.validatedAccountIdentity,
+        },
         ["id", "createdAt"],
+        pendingLaunchRunEligibility(args.publication),
       ),
     );
   ctes.push(insertedRun);
@@ -4747,13 +4759,16 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const insertedDiagnosticRegistration = new QueryBuilder()
     .$with("inserted_launch_connector_diagnostic_registration", {})
     .as(
-      pendingLaunchInsertSql(agentRunConnectorDiagnosticRegistrations, [
+      pendingLaunchInsertSql(
+        agentRunConnectorDiagnosticRegistrations,
         {
           runId: returnedCteId(insertedRun),
           payload: args.commit.persistence.diagnosticRegistrationPayload,
           createdAt,
         },
-      ]),
+        ["runId"],
+        sql`EXISTS (SELECT 1 FROM ${insertedRun})`,
+      ),
     );
   // The insert executes with the statement and depends on insertedRun's ID.
   // Its returned row need not participate in the final result join.
@@ -4763,14 +4778,6 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     ctes,
     callbacks: rowsArgs.callbackRows,
     insertedRun,
-  });
-  const chatThreadId = args.commit.createArgs.chatThreadId;
-  const updatedThread = launchThreadBindingCte({
-    chatThreadId,
-    userId: args.commit.createArgs.userId,
-    orgId: args.commit.createArgs.orgId,
-    identity: rowsArgs.identity,
-    validatedThreadSession: args.validatedThreadSession,
   });
   return {
     rowsArgs,
@@ -4786,6 +4793,7 @@ type AtomicLaunchCteContext = ReturnType<typeof buildAtomicLaunchCteContext>;
 interface AtomicLaunchRowsPlanArgs extends ValidatedPreparedLaunchAdmission {
   readonly commit: PreparedCommitPreparedLaunchArgs;
   readonly payload: RunnerJobPayload;
+  readonly publication: PendingLaunchPublication;
 }
 interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
   readonly kind: "admitted";
@@ -6116,59 +6124,49 @@ function assertPendingLaunchClaim(
   }
 }
 
-function pendingActiveRunInsertSql(
-  args: CommitPreparedLaunchArgs,
-  run: RunRecord,
-) {
-  return pendingLaunchInsertSql(activeAgentRuns, [
-    pendingLaunchActiveRunValues(args, run),
-  ]);
-}
-
-function pendingLaunchActiveRunValues(
-  commit: CommitPreparedLaunchArgs,
-  run: RunRecord,
-) {
-  return {
-    runId: run.id,
-    orgId: commit.createArgs.orgId,
-    userId: commit.createArgs.userId,
-    chatThreadId: commit.createArgs.chatThreadId ?? null,
-    lastHeartbeatAt: run.createdAt,
-  };
-}
-
-const pendingLaunchRowSchema = object({
-  runId: string(),
-  createdAt: pgTimestampWithoutTimezoneToDateSchema,
-  runnerJobCreatedAt: pgTimestampWithoutTimezoneToDateSchema,
-  boundThreadId: string().nullable(),
-  billingAttributionId: string().nullable(),
-});
+const pendingLaunchRowSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("pending"),
+    runId: string(),
+    createdAt: pgTimestampWithoutTimezoneToDateSchema,
+    runnerJobCreatedAt: pgTimestampWithoutTimezoneToDateSchema,
+    boundThreadId: string().nullable(),
+    billingAttributionId: string().nullable(),
+  }),
+  object({ kind: literal("official") }),
+  object({ kind: literal("plan") }),
+  object({ kind: literal("claim-lost") }),
+]);
 
 function pendingAtomicLaunchResult(
-  args: AtomicLaunchRowsPlanArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   context: AtomicLaunchCteContext,
-  row:
-    | {
-        readonly runId: string;
-        readonly createdAt: Date;
-        readonly runnerJobCreatedAt: Date;
-        readonly boundThreadId: string | null;
-        readonly billingAttributionId: string | null;
-      }
-    | undefined,
-) {
-  if (row && context.updatedThread && !row.boundThreadId) {
-    throw new ChatThreadBindingChanged();
-  }
+  row: zInfer<typeof pendingLaunchRowSchema> | undefined,
+):
+  | PersistedAtomicLaunchRows
+  | ReturnType<typeof conflict>
+  | QueueFirstRunClaimLost {
   if (!row) {
     throw new Error("Atomic pending launch persistence returned no row");
+  }
+  if (row.kind === "official") {
+    return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
+  }
+  if (row.kind === "plan") {
+    throw new Error(
+      `Missing org plan entitlement for ${args.createArgs.orgId}`,
+    );
+  }
+  if (row.kind === "claim-lost") {
+    return { kind: "queue-first-claim-lost" };
+  }
+  if (context.updatedThread && !row.boundThreadId) {
+    throw new ChatThreadBindingChanged();
   }
   if (row.billingAttributionId !== row.runId) {
     throw new Error("New Run billing attribution conflicts with history");
   }
-  const persisted: PersistedAtomicLaunchRows = {
+  return {
     kind: "pending",
     run: runRecordFromLaunchIdentity(
       context.rowsArgs.identity,
@@ -6177,7 +6175,6 @@ function pendingAtomicLaunchResult(
     ),
     runnerJobCreatedAt: row.runnerJobCreatedAt,
   };
-  return { persisted };
 }
 
 function pendingAtomicLaunchPlan(
@@ -6193,18 +6190,17 @@ function pendingAtomicLaunchPlan(
     .as(
       pendingLaunchInsertSql(
         runnerJobQueue,
-        [
-          {
-            runId: returnedCteId(context.insertedRun),
-            runnerGroup: args.payload.runnerGroup,
-            profile: args.payload.profile,
-            cliAgentSessionId: args.payload.cliAgentSessionId,
-            reuseKey: args.payload.reuseKey,
-            executionContext: args.payload.executionContext,
-            ...timestamps,
-          },
-        ],
+        {
+          runId: returnedCteId(context.insertedRun),
+          runnerGroup: args.payload.runnerGroup,
+          profile: args.payload.profile,
+          cliAgentSessionId: args.payload.cliAgentSessionId,
+          reuseKey: args.payload.reuseKey,
+          executionContext: args.payload.executionContext,
+          ...timestamps,
+        },
         ["runId", "createdAt"],
+        sql`EXISTS (SELECT 1 FROM ${context.insertedRun})`,
       ),
     );
   const capture = billingRunAttributionWrite({
@@ -6230,41 +6226,51 @@ function pendingAtomicLaunchPlan(
       pendingLaunchBillingAttributionSql(
         capture,
         returnedCteId(context.insertedRun),
+        sql`EXISTS (SELECT 1 FROM ${context.insertedRun})`,
       ),
     );
   const ctes = [...context.ctes, insertedQueue, attribution];
-  if (context.updatedThread) {
-    ctes.push(context.updatedThread);
+  const names = ctes.map((cte) => {
+    return cte._.alias;
+  });
+  if (args.publication.queueFirst) {
+    names.push("launch_claim_relations");
   }
-  return new QueryBuilder()
-    .with(...ctes)
-    .select({
-      billingAttributionId:
-        sql`(SELECT ${attribution.runId} FROM ${attribution})`
-          .mapWith(nullableDriverValueDecoder(billingRunAttribution.runId))
-          .as("billingAttributionId"),
-      runId: returnedCteColumn(context.insertedRun, "id")
-        .mapWith(agentRuns.id)
-        .as("runId"),
-      createdAt: returnedCteColumn(context.insertedRun, "created_at")
-        .mapWith(agentRuns.createdAt)
-        .as("createdAt"),
-      runnerJobCreatedAt: returnedCteColumn(insertedQueue, "created_at")
-        .mapWith(runnerJobQueue.createdAt)
-        .as("runnerJobCreatedAt"),
-      boundThreadId: nullableReturnedCteId(context.updatedThread)
-        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-        .as("boundThreadId"),
-    })
-    .from(context.insertedRun)
-    .innerJoin(
-      insertedQueue,
-      eq(
-        returnedCteColumn(insertedQueue, "run_id"),
-        returnedCteColumn(context.insertedRun, "id"),
-      ),
-    )
-    .getSQL();
+  const beforeProducer = pendingLaunchBarrier(names);
+  const producer = args.publication.claim
+    ? pendingLaunchClaimProducerStatements(
+        args.publication.claim.producer,
+        context.rowsArgs.identity.runId,
+        sql`EXISTS (SELECT 1 FROM ${context.insertedRun}) AND ${beforeProducer} >= 0`,
+      )
+    : [];
+  const producerCtes = producer.map((statement, index) => {
+    const name = `launch_producer_${String(index)}`;
+    names.push(name);
+    return sql`${sql.identifier(name)} AS (${statement})`;
+  });
+  const active = pendingLaunchActivePublication(
+    args,
+    context,
+    attribution,
+    pendingLaunchBarrier(names),
+  );
+  const planned = ctes.map((cte) => {
+    return sql`${sql.identifier(cte._.alias)} AS ${cte === context.updatedThread ? sql`MATERIALIZED` : sql.empty()} (${cte._.sql})`;
+  });
+  return sql`WITH ${pendingLaunchPublicationCtes(args)},
+    ${sql.join([...planned, ...producerCtes], sql`, `)},
+    launch_active AS (${active})
+    SELECT CASE
+      WHEN reason <> 'ready' THEN reason
+      WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
+      ELSE 'claim-lost' END AS kind,
+      (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
+      (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
+      (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
+      (SELECT ${returnedCteColumn(insertedQueue, "created_at")} FROM ${insertedQueue})::text AS "runnerJobCreatedAt",
+      ${nullableReturnedCteId(context.updatedThread)} AS "boundThreadId"
+    FROM launch_official_guard WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
 
 function returnedCteColumn(cte: WithSubquery, name: string): SQL {
@@ -6274,13 +6280,156 @@ function returnedCteColumn(cte: WithSubquery, name: string): SQL {
 function pendingLaunchRowsPlan(
   commit: PreparedCommitPreparedLaunchArgs,
   admission: ValidatedPreparedLaunchAdmission,
+  publication: PendingLaunchPublication,
 ) {
-  const rows = { commit, payload: commit.persistence.payload, ...admission };
+  const rows = {
+    commit,
+    payload: commit.persistence.payload,
+    ...admission,
+    publication,
+  };
   const context = buildAtomicLaunchCteContext(rows);
   return {
     rows,
     context,
   };
+}
+
+interface PendingLaunchPublication {
+  readonly claim: PendingLaunchClaim | undefined;
+  readonly queueFirst:
+    | {
+        readonly input: PreparedChatEventRow & {
+          readonly revokesEventId: string;
+        };
+        readonly headSql: SQL;
+      }
+    | undefined;
+}
+
+function pendingLaunchBarrier(names: readonly string[]): SQL {
+  return names.length === 0
+    ? sql`0`
+    : sql.join(
+        names.map((name) => {
+          return sql`(SELECT ${count()} FROM ${sql.identifier(name)})`;
+        }),
+        sql` + `,
+      );
+}
+
+function pendingLaunchPublicationCtes(args: AtomicLaunchRowsPlanArgs): SQL {
+  const { claim, queueFirst } = args.publication;
+  const official = sql`launch_official_guard AS MATERIALIZED (${pendingOfficialAdmissionGuardSql(args.commit)})`;
+  const ready = sql`(SELECT reason FROM launch_official_guard) = 'ready'`;
+  const claimCtes = queueFirst
+    ? sql`, ${canonicalChatEventInputCtes(
+        [queueFirst.input],
+        sql`${ready} AND EXISTS (
+        SELECT 1 FROM (${queueFirst.headSql}) AS current_head WHERE current_head.id = ${queueFirst.input.revokesEventId}::uuid)`,
+      )},
+      inserted AS (${canonicalChatEventInsertSql("any")}),
+      launch_claim_relations AS (
+        UPDATE chat_relations AS relation SET target_run_id = input."runId"
+        FROM input JOIN inserted ON inserted.id = input.id
+        WHERE relation.message_event_id = input."revokesEventId"
+          AND relation.target_chat_thread_id = input."chatThreadId"
+          AND relation.type = 'message' AND relation.target_run_id IS NULL
+          AND input."eventType" = 'input.prompt' AND input."runId" IS NOT NULL
+        RETURNING relation.message_event_id
+      )`
+    : sql.empty();
+  const released = claim
+    ? sql`, released_pending_token AS (${pendingLaunchClaimFenceSql(
+        claim,
+        queueFirst
+          ? sql`EXISTS (SELECT 1 FROM inserted)
+              AND (SELECT ${count()} FROM launch_claim_relations) >= 0`
+          : ready,
+      )})`
+    : sql.empty();
+  return sql`${official}${claimCtes}${released}`;
+}
+
+function pendingLaunchGuardedRunId(
+  args: AtomicLaunchRowsPlanArgs,
+  thread: WithSubquery | undefined,
+): SQL {
+  const { claim } = args.publication;
+  const guards: SQL[] = [];
+  if (claim) {
+    guards.push(
+      sql`WHEN (SELECT ${count()} FROM released_pending_token) <> 1 THEN '__TX0263_TOKEN__'`,
+    );
+  }
+  if (thread) {
+    guards.push(
+      sql`WHEN NOT EXISTS (SELECT 1 FROM ${thread}) THEN '__TX0263_THREAD__'`,
+    );
+  }
+  const guard = guards.length
+    ? sql`CASE ${sql.join(guards, sql` `)} ELSE '0' END`
+    : sql`'0'`;
+  return sql`CASE WHEN (${guard})::integer = 0
+    THEN ${args.commit.identity.runId}::uuid ELSE NULL END`;
+}
+
+function pendingLaunchRunEligibility(
+  publication: PendingLaunchPublication,
+): SQL {
+  return sql`(SELECT reason FROM launch_official_guard) = 'ready'
+    ${publication.queueFirst ? sql`AND EXISTS (SELECT 1 FROM inserted)` : sql.empty()}`;
+}
+
+function pendingLaunchActivePublication(
+  args: AtomicLaunchRowsPlanArgs,
+  context: AtomicLaunchCteContext,
+  attribution: WithSubquery & { readonly runId: SQLWrapper },
+  barrier: SQL,
+) {
+  const id = sql`CASE WHEN ${barrier} + (CASE WHEN
+      (SELECT ${attribution.runId} FROM ${attribution}) = ${context.rowsArgs.identity.runId}::uuid
+      THEN '0' ELSE '__TX0263_ATTRIBUTION__' END)::integer >= 0
+    THEN ${returnedCteId(context.insertedRun)} ELSE NULL END`;
+  return pendingLaunchInsertSql(
+    activeAgentRuns,
+    {
+      runId: id,
+      orgId: args.commit.createArgs.orgId,
+      userId: args.commit.createArgs.userId,
+      chatThreadId: args.commit.createArgs.chatThreadId ?? null,
+      // Pending timeout starts at publication, after all admission waits.
+      // Reuse the liveness clock used by Runner claim, not creation metadata.
+      lastHeartbeatAt: sql`CASE WHEN ${barrier} >= 0 THEN ${nowDateSql()} ELSE NULL END`,
+    },
+    ["runId"],
+    sql`EXISTS (SELECT 1 FROM ${context.insertedRun})`,
+  );
+}
+
+function throwPendingLaunchGuardFailure(error: unknown): void {
+  if (
+    !(error instanceof DrizzleQueryError) ||
+    !(error.cause instanceof Error) ||
+    safeSqlStateCode(error) !== "22P02"
+  ) {
+    return;
+  }
+  const message = error.cause.message;
+  if (message === 'invalid input syntax for type integer: "__TX0263_TOKEN__"') {
+    throw new Error("Chat thread claim was lost before the pending commit");
+  }
+  if (
+    message === 'invalid input syntax for type integer: "__TX0263_THREAD__"'
+  ) {
+    throw new ChatThreadBindingChanged();
+  }
+  if (
+    message ===
+    'invalid input syntax for type integer: "__TX0263_ATTRIBUTION__"'
+  ) {
+    throw new Error("New Run billing attribution conflicts with history");
+  }
 }
 
 export const commitPreparedPendingLaunch$ = command(
@@ -6291,89 +6440,92 @@ export const commitPreparedPendingLaunch$ = command(
     signal: AbortSignal,
   ): Promise<AtomicLaunchCommitAttempt> => {
     signal.throwIfAborted();
+    const db = set(writeDb$);
     const { admissionTiming, timing } = args;
     assertPendingLaunchClaim(args, claim);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0263; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(
-      async (tx): Promise<AtomicLaunchCommitAttempt> => {
-        admissionTiming.transactionStarted();
-        let admission = pendingOfficialAdmissionStart(args);
-        if (!args.context.officialWorkflowRun) {
-          admissionTiming.admissionStarted();
-        }
-        while ("kind" in admission && admission.kind === "statement") {
-          const step = admission;
-          if (step.phase === "installation") {
-            admissionTiming.admissionStarted();
-          }
-          const rows = parseRawRows(admissionRow, await tx.execute(step.sql));
-          signal.throwIfAborted();
-          admission = advancePendingOfficialAdmission(args, step, rows);
-        }
-        if (!("kind" in admission) || admission.kind !== "admitted") {
-          admissionTiming.callbackFinished();
-          return admission;
-        }
-        // Release only this token, after the queue-head input claim succeeded.
-        if (claim) {
-          requirePendingLaunchClaimFence(
-            (await tx.execute(pendingLaunchClaimFenceSql(claim))).rowCount,
+    admissionTiming.transactionStarted();
+    admissionTiming.admissionStarted();
+    let admission = pendingLaunchAdmissionStart(args);
+    while ("kind" in admission && admission.kind === "statement") {
+      const step = admission;
+      const rows = parseRawRows(admissionRow, await db.execute(step.sql));
+      signal.throwIfAborted();
+      admission = advancePendingLaunchAdmission(args, step, rows);
+    }
+    if (!("kind" in admission)) {
+      admissionTiming.callbackFinished();
+      return admission;
+    }
+    if (admission.kind === "queue-first-claim-lost") {
+      admissionTiming.callbackFinished();
+      return admission;
+    }
+    const queueFirst =
+      admission.kind === "claim"
+        ? { input: admission.claimInput, headSql: admission.headSql }
+        : undefined;
+    const accepted: AdmittedPreparedLaunch = {
+      kind: "admitted",
+      validatedThreadSession: admission.validatedThreadSession,
+      validatedAccountIdentity: admission.validatedAccountIdentity,
+      queueFirstClaim: queueFirst
+        ? { kind: "claimed", createdAt: queueFirst.input.createdAt }
+        : undefined,
+    };
+    const prepared = pendingLaunchRowsPlan(args, accepted, {
+      claim,
+      queueFirst,
+    });
+    return await admissionTiming.measureLeaf("persistence", async () => {
+      signal.throwIfAborted();
+      const persisted = await timing.measureDatabase(
+        "api_dispatch_persist_atomic_launch",
+        "api_dispatch_persist_atomic_launch_sql_call",
+        "api_dispatch_persist_atomic_launch_application_remainder",
+        async () => {
+          const buildStartedAt = monotonicNow();
+          const plan = pendingAtomicLaunchPlan(prepared.rows, prepared.context);
+          timing.recordDuration(
+            "api_dispatch_persist_atomic_launch_build",
+            "nested",
+            monotonicNow() - buildStartedAt,
+            now(),
           );
-        }
-        const persisted = await admissionTiming.measureLeaf(
-          "persistence",
-          async () => {
+          signal.throwIfAborted();
+          const outcome = await settle(
+            (async () => {
+              return parseRawRows(
+                pendingLaunchRowSchema,
+                await db.execute(plan),
+              );
+            })(),
+          );
+          if (!outcome.ok) {
             signal.throwIfAborted();
-            const prepared = pendingLaunchRowsPlan(args, admission);
-            const rowsPersisted = await timing.measureDatabase(
-              "api_dispatch_persist_atomic_launch",
-              "api_dispatch_persist_atomic_launch_sql_call",
-              "api_dispatch_persist_atomic_launch_application_remainder",
-              async () => {
-                const { rows, context } = prepared;
-                const buildStartedAt = monotonicNow();
-                const plan = pendingAtomicLaunchPlan(rows, context);
-                timing.recordDuration(
-                  "api_dispatch_persist_atomic_launch_build",
-                  "nested",
-                  monotonicNow() - buildStartedAt,
-                  now(),
-                );
-                const [row] = parseRawRows(
-                  pendingLaunchRowSchema,
-                  await tx.execute(plan),
-                );
-                // ORM/schema decoding stays in the application remainder;
-                // this child measures only projection of the validated row.
-                const materializeStartedAt = monotonicNow();
-                const result = pendingAtomicLaunchResult(rows, context, row);
-                timing.recordDuration(
-                  "api_dispatch_persist_atomic_launch_materialize",
-                  "nested",
-                  monotonicNow() - materializeStartedAt,
-                  now(),
-                );
-                return result.persisted;
-              },
-            );
-            if (claim) {
-              for (const statement of pendingLaunchClaimProducerStatements(
-                claim.producer,
-                rowsPersisted.run.id,
-              )) {
-                await tx.execute(statement);
-              }
-            }
-            return rowsPersisted;
-          },
-        );
-        // Keep this unique insertion last: do not acquire another row after it.
-        await tx.execute(pendingActiveRunInsertSql(args, persisted.run));
-        signal.throwIfAborted();
-        admissionTiming.callbackFinished();
-        return pendingLaunchCommitResult(args, admission, persisted);
-      },
-    );
-    // The caller records the durable receipt before observing cancellation.
+            throwPendingLaunchGuardFailure(outcome.error);
+            throw outcome.error;
+          }
+          // Publication has committed. Return its durable identity before the
+          // caller observes cancellation; do not orphan an accepted pending Run.
+          const materializeStartedAt = monotonicNow();
+          const result = pendingAtomicLaunchResult(
+            args,
+            prepared.context,
+            outcome.value[0],
+          );
+          timing.recordDuration(
+            "api_dispatch_persist_atomic_launch_materialize",
+            "nested",
+            monotonicNow() - materializeStartedAt,
+            now(),
+          );
+          return result;
+        },
+      );
+      admissionTiming.callbackFinished();
+      return "run" in persisted
+        ? pendingLaunchCommitResult(args, accepted, persisted)
+        : persisted;
+    });
   },
 );
