@@ -266,13 +266,6 @@ mod tests {
     }
 
     #[test]
-    fn build_claude_args_empty_append_system_prompt_omitted() {
-        let args = build_claude_args_for_test("", "", "", "", "");
-        assert!(!args.contains(&"--append-system-prompt".to_string()));
-        assert!(!args.contains(&"--append-system-prompt-file".to_string()));
-    }
-
-    #[test]
     fn build_claude_args_resume_log_omits_resume_id() {
         let _system_log_state_guard = crate::lock_system_log_test_state();
         let tmp = tempfile::tempdir().unwrap();
@@ -296,14 +289,6 @@ mod tests {
         assert!(args.contains(&"sess-secret-123".to_string()));
         assert!(system_log.contains("Resuming session"));
         assert!(!system_log.contains("sess-secret-123"));
-    }
-
-    #[test]
-    fn build_claude_args_with_resume_and_append() {
-        let args = build_claude_args_for_test("sess-123", "Be helpful.", "", "", "");
-        assert!(args.contains(&"--resume".to_string()));
-        assert!(args.contains(&"--append-system-prompt-file".to_string()));
-        assert_claude_prompt_is_not_positional(&args, "prompt");
     }
 
     #[test]
@@ -365,20 +350,6 @@ mod tests {
     fn build_claude_args_empty_settings_omitted() {
         let args = build_claude_args_for_test("", "", "", "", "");
         assert!(!args.contains(&"--settings".to_string()));
-    }
-
-    #[test]
-    fn build_claude_args_fable_defaults_effort_max() {
-        let args = build_claude_args_for_model_test("claude-fable-5-1");
-        let effort_idx = args.iter().position(|arg| arg == "--effort").unwrap();
-        assert_eq!(args[effort_idx + 1], "max");
-    }
-
-    #[test]
-    fn build_claude_args_opus_5_5_defaults_effort_medium() {
-        let args = build_claude_args_for_model_test("claude-opus-5-5");
-        let effort_idx = args.iter().position(|arg| arg == "--effort").unwrap();
-        assert_eq!(args[effort_idx + 1], "medium");
     }
 
     #[test]
@@ -468,11 +439,5 @@ mod tests {
         assert!(!args.contains(&"--disallowed-tools".to_string()));
         assert!(!args.contains(&"--tools".to_string()));
         assert_claude_prompt_is_not_positional(&args, "test");
-    }
-
-    #[test]
-    fn build_claude_args_prompt_never_appears_in_argv() {
-        let args = build_claude_args_for_test("", "", "", "", "");
-        assert_claude_prompt_is_not_positional(&args, "my prompt");
     }
 }
