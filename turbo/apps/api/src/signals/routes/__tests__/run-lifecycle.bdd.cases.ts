@@ -6921,7 +6921,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return connectors.updateCustomConnector(actor, custom.id, {
               displayName: "BDD Internal API Updated",
               prefixTemplates: [
-                "https://{{variables.tenant}}.internal.example.com/v2/",
+                "http://{{variables.tenant}}.internal.example.com:8080/v2/",
               ],
               fields: custom.fields,
               headerInjections: [

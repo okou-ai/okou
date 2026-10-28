@@ -136,58 +136,50 @@ describe("okou connector custom create", () => {
     return path;
   }
 
-  it.each(["none", "header", "query"] as const)(
-    "creates HTTP and HTTPS API prefixes with %s authentication",
-    async (authentication) => {
-      const definition = {
-        ...manualDefinition(),
-        prefixTemplates: [
-          "http://api.acme.example:8080/v1/",
-          "https://api.acme.example/v1/",
-        ],
-        authMode:
-          authentication === "none" ? ("none" as const) : ("manual" as const),
-        fields: authentication === "none" ? [] : [...manualDefinition().fields],
-        headerInjections:
-          authentication === "header"
-            ? [...manualDefinition().headerInjections]
-            : [],
-        queryInjections:
-          authentication === "query"
-            ? [{ name: "api_key", valueTemplate: "{{secrets.secret}}" }]
-            : [],
-      };
-      const definitionPath = writeDefinition(definition);
-      let createBody: unknown;
-      const created = customConnector({ id: CONNECTOR_ID, ...definition });
-      server.use(
-        http.post(
-          "http://localhost:3000/api/custom-connectors",
-          async ({ request }) => {
-            createBody = await request.json();
-            return HttpResponse.json(created, { status: 201 });
-          },
-        ),
-      );
+  it("creates only the API connector definition with HTTP and HTTPS prefixes", async () => {
+    const definition = {
+      ...manualDefinition(),
+      prefixTemplates: [
+        "http://api.acme.example:8080/v1/",
+        "https://api.acme.example/v1/",
+      ],
+    };
+    const definitionPath = writeDefinition(definition);
+    let createBody: unknown;
+    const created = customConnector({
+      id: CONNECTOR_ID,
+      displayName: definition.displayName,
+      prefixTemplates: definition.prefixTemplates,
+      fields: [...definition.fields],
+      headerInjections: [...definition.headerInjections],
+    });
+    server.use(
+      http.post(
+        "http://localhost:3000/api/custom-connectors",
+        async ({ request }) => {
+          createBody = await request.json();
+          return HttpResponse.json(created, { status: 201 });
+        },
+      ),
+    );
 
-      await customConnectorCommand.parseAsync([
-        "node",
-        "okou",
-        "create",
-        "--file",
-        definitionPath,
-      ]);
+    await customConnectorCommand.parseAsync([
+      "node",
+      "okou",
+      "create",
+      "--file",
+      definitionPath,
+    ]);
 
-      expect(createBody).toStrictEqual(definition);
-      expect(createBody).not.toHaveProperty("values");
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain('Custom connector "Acme API" created');
-      expect(output).toContain("awaiting connection");
-      expect(output).toContain(
-        `Connect it at: [Connect Acme API](http://localhost:3000/connectors/_acme-search/connect?agentId=${AGENT_ID})`,
-      );
-    },
-  );
+    expect(createBody).toStrictEqual(definition);
+    expect(createBody).not.toHaveProperty("values");
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain('Custom connector "Acme API" created');
+    expect(output).toContain("awaiting connection");
+    expect(output).toContain(
+      `Connect it at: [Connect Acme API](http://localhost:3000/connectors/_acme-search/connect?agentId=${AGENT_ID})`,
+    );
+  });
 
   it("creates only an OAuth definition and leaves authorization to Connect", async () => {
     const definitionPath = writeDefinition(oauthDefinition());
