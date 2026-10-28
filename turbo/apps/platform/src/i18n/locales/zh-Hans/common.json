@@ -1685,9 +1685,11 @@
       "outOfCredits": "你的积分用完了",
       "proCard": {
         "bonusCreditsNow": "奖励积分 · 就现在",
-        "description": "用 Pro 继续完成更多：3 个任务并行，重复工作自动处理。",
-        "estimateBasis": "根据 Okou 平台的典型任务用量估算。",
+        "description": "Pro 支持高级模型、自动化、内置研究数据，3 个任务并行。",
+        "estimateBasis": "根据 Okou 典型用量估算，实际消耗因任务而异。",
         "estimatedTasksLeft_other": "预计还能完成不到 {{count}} 个任务",
+        "monthlyEstimateBasis": "按每个任务 {{credits}} credits 估算，实际消耗因任务而异。",
+        "monthlyTasks_other": "每月约 {{formattedCount}} 个任务",
         "priceUnavailable": "查看套餐及最新价格",
         "title": "用 Pro 完成更多工作",
         "upgradeNow": "立即升级"

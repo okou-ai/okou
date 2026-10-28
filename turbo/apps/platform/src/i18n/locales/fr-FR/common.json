@@ -1717,11 +1717,15 @@
       "outOfCredits": "Vous êtes à court de crédits",
       "proCard": {
         "bonusCreditsNow": "crédits bonus · Maintenant",
-        "description": "Continuez avec Pro : lancez 3 tâches à la fois et automatisez le travail répétitif.",
-        "estimateBasis": "Estimation basée sur la consommation habituelle des tâches sur Okou.",
+        "description": "Pro comprend des modèles avancés, des automatisations, des données de recherche intégrées et 3 tâches à la fois.",
+        "estimateBasis": "Estimation selon l’usage habituel d’Okou ; la consommation réelle varie.",
         "estimatedTasksLeft_one": "Moins de {{count}} tâche restante",
         "estimatedTasksLeft_many": "Moins de {{count}} tâches restantes",
         "estimatedTasksLeft_other": "Moins de {{count}} tâches restantes",
+        "monthlyEstimateBasis": "Estimation à {{credits}} crédits par tâche ; la consommation réelle varie.",
+        "monthlyTasks_one": "Environ {{formattedCount}} tâche/mois",
+        "monthlyTasks_many": "Environ {{formattedCount}} tâches/mois",
+        "monthlyTasks_other": "Environ {{formattedCount}} tâches/mois",
         "priceUnavailable": "Consultez les offres et leurs tarifs actuels",
         "title": "Faites-en plus avec Pro",
         "upgradeNow": "Passer à Pro maintenant"

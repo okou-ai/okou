@@ -1717,11 +1717,15 @@
       "outOfCredits": "Se te han acabado los créditos",
       "proCard": {
         "bonusCreditsNow": "créditos extra · Ahora mismo",
-        "description": "Sigue con Pro: ejecuta 3 tareas a la vez y automatiza el trabajo repetitivo.",
-        "estimateBasis": "Estimación basada en el consumo habitual de las tareas en Okou.",
+        "description": "Pro incluye modelos avanzados, automatizaciones, datos de investigación integrados y 3 tareas a la vez.",
+        "estimateBasis": "Estimación según el uso típico de Okou; el consumo real varía.",
         "estimatedTasksLeft_one": "Queda menos de {{count}} tarea",
         "estimatedTasksLeft_many": "Quedan menos de {{count}} tareas",
         "estimatedTasksLeft_other": "Quedan menos de {{count}} tareas",
+        "monthlyEstimateBasis": "Estimación con {{credits}} créditos por tarea; el consumo real varía.",
+        "monthlyTasks_one": "Aproximadamente {{formattedCount}} tarea/mes",
+        "monthlyTasks_many": "Aproximadamente {{formattedCount}} tareas/mes",
+        "monthlyTasks_other": "Aproximadamente {{formattedCount}} tareas/mes",
         "priceUnavailable": "Consulta los precios actuales de los planes",
         "title": "Haz más con Pro",
         "upgradeNow": "Mejorar plan ahora"

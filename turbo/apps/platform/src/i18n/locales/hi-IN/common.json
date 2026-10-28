@@ -1689,10 +1689,13 @@
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
       "proCard": {
         "bonusCreditsNow": "बोनस क्रेडिट · अभी",
-        "description": "Pro के साथ आगे बढ़ें: एक साथ 3 टास्क चलाएँ और दोहराए जाने वाले काम अपने आप करवाएँ।",
-        "estimateBasis": "Okou पर टास्क के सामान्य उपयोग के आधार पर अनुमान।",
+        "description": "Pro में उन्नत मॉडल, ऑटोमेशन, अंतर्निहित शोध डेटा और एक साथ 3 टास्क शामिल हैं।",
+        "estimateBasis": "Okou के सामान्य उपयोग पर आधारित अनुमान; वास्तविक उपयोग अलग हो सकता है।",
         "estimatedTasksLeft_one": "{{count}} से कम टास्क बचे हैं",
         "estimatedTasksLeft_other": "{{count}} से कम टास्क बचे हैं",
+        "monthlyEstimateBasis": "प्रति टास्क {{credits}} क्रेडिट के आधार पर अनुमान; वास्तविक उपयोग अलग हो सकता है।",
+        "monthlyTasks_one": "लगभग {{formattedCount}} टास्क/माह",
+        "monthlyTasks_other": "लगभग {{formattedCount}} टास्क/माह",
         "priceUnavailable": "मौजूदा कीमतों के लिए प्लान देखें",
         "title": "Pro के साथ और काम करें",
         "upgradeNow": "अभी अपग्रेड करें"

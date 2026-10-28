@@ -10,6 +10,11 @@ interface ProUpgradeCardProps {
   readonly monthlyPriceUsd?: number;
   // Supply a positive estimate bound derived from credits and typical task usage.
   readonly estimatedTasksUpperBound?: number;
+  // Estimate and its disclosed credit-cost assumption for the displayed price.
+  readonly monthlyTaskEstimate?: {
+    readonly tasks: number;
+    readonly creditsPerTask: number;
+  };
   // Only supply when a trusted campaign source confirms eligibility.
   readonly bonusCredits?: number;
 }
@@ -19,11 +24,17 @@ export function ProUpgradeCard({
   onUpgrade,
   monthlyPriceUsd,
   estimatedTasksUpperBound,
+  monthlyTaskEstimate,
   bonusCredits,
 }: ProUpgradeCardProps) {
   const { t } = useTranslation();
   const hasTaskEstimate =
     estimatedTasksUpperBound !== undefined && estimatedTasksUpperBound > 0;
+  const hasMonthlyEstimate =
+    monthlyPriceUsd !== undefined &&
+    monthlyTaskEstimate !== undefined &&
+    monthlyTaskEstimate.tasks > 0 &&
+    monthlyTaskEstimate.creditsPerTask > 0;
   return (
     <ChatCard
       data-testid="plan-upgrade-card"
@@ -55,39 +66,38 @@ export function ProUpgradeCard({
                 })}
           </h3>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {hasTaskEstimate && (
-              <>
-                {t(($) => {
-                  return $.chat.billing.proCard.estimateBasis;
-                })}{" "}
-              </>
-            )}
             {t(($) => {
               return $.chat.billing.proCard.description;
             })}
+            {(hasTaskEstimate || hasMonthlyEstimate) && (
+              <>
+                {" "}
+                {hasMonthlyEstimate
+                  ? t(
+                      ($) => {
+                        return $.chat.billing.proCard.monthlyEstimateBasis;
+                      },
+                      {
+                        credits: formatLocalizedNumber(
+                          monthlyTaskEstimate.creditsPerTask,
+                        ),
+                      },
+                    )
+                  : t(($) => {
+                      return $.chat.billing.proCard.estimateBasis;
+                    })}
+              </>
+            )}
           </p>
         </div>
 
         <div className="mt-5 flex flex-wrap items-baseline gap-x-5 gap-y-2">
-          <p className="flex shrink-0 items-baseline gap-1 text-sm text-muted-foreground">
-            {monthlyPriceUsd !== undefined ? (
-              <>
-                {t(($) => {
-                  return $.billing.plans.usagePacks.priceFrom;
-                })}
-                <span className="text-3xl font-semibold tracking-tight text-foreground">
-                  {formatUsd(monthlyPriceUsd, 0)}
-                </span>
-                {t(($) => {
-                  return $.billing.plans.perMonth;
-                })}
-              </>
-            ) : (
-              t(($) => {
-                return $.chat.billing.proCard.priceUnavailable;
-              })
-            )}
-          </p>
+          <ProCardPrice
+            monthlyPriceUsd={monthlyPriceUsd}
+            estimatedMonthlyTasks={
+              hasMonthlyEstimate ? monthlyTaskEstimate.tasks : undefined
+            }
+          />
           {bonusCredits !== undefined && bonusCredits > 0 && (
             <p className="text-sm font-medium text-brand-text">
               <strong className="text-xl font-semibold tracking-tight">
@@ -115,5 +125,53 @@ export function ProUpgradeCard({
         </Button>
       </div>
     </ChatCard>
+  );
+}
+
+interface ProCardPriceProps {
+  readonly monthlyPriceUsd?: number;
+  readonly estimatedMonthlyTasks?: number;
+}
+
+function ProCardPrice({
+  monthlyPriceUsd,
+  estimatedMonthlyTasks,
+}: ProCardPriceProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <p className="flex flex-wrap items-baseline gap-1 text-sm text-muted-foreground">
+        {monthlyPriceUsd !== undefined ? (
+          <>
+            {t(($) => {
+              return $.billing.plans.usagePacks.priceFrom;
+            })}
+            <span className="text-3xl font-semibold tracking-tight text-foreground">
+              {formatUsd(monthlyPriceUsd, 0)}
+            </span>
+            {t(($) => {
+              return $.billing.plans.perMonth;
+            })}
+          </>
+        ) : (
+          t(($) => {
+            return $.chat.billing.proCard.priceUnavailable;
+          })
+        )}
+      </p>
+      {estimatedMonthlyTasks !== undefined && (
+        <p className="text-sm font-medium text-foreground">
+          {t(
+            ($) => {
+              return $.chat.billing.proCard.monthlyTasks;
+            },
+            {
+              count: estimatedMonthlyTasks,
+              formattedCount: formatLocalizedNumber(estimatedMonthlyTasks),
+            },
+          )}
+        </p>
+      )}
+    </div>
   );
 }
