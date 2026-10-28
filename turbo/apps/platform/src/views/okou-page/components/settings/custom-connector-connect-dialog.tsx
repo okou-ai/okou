@@ -152,7 +152,7 @@ function CredentialFields({
           onChange={(event) => {
             setField({ key: field.key, value: event.target.value });
           }}
-          autoComplete={field.kind === "secret" ? "new-password" : "off"}
+          autoComplete="off"
           aria-describedby={
             descriptionId ? `${descriptionId} ${statusId}` : statusId
           }
@@ -258,7 +258,11 @@ function CustomConnectorConnectForm({
     connector.authMode === "oauth" || connector.authMode === "automatic";
   const noAuth = connector.authMode === "none";
   return (
-    <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+    <form
+      autoComplete="off"
+      className="flex flex-col gap-4"
+      onSubmit={onSubmit}
+    >
       {authorization ? (
         <p className="text-sm text-muted-foreground">
           {t(($) => {
