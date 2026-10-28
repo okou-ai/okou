@@ -96,11 +96,13 @@ function GuideMedia({
           }}
         >
           <ArrowLeft />
-          {t(($) => {
-            return $.featureGuide.previous;
-          })}
+          <span className="sr-only sm:not-sr-only">
+            {t(($) => {
+              return $.featureGuide.previous;
+            })}
+          </span>
         </Button>
-        <span className="text-xs text-muted-foreground">
+        <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
           {stepIndex + 1} / {media.steps.length}
         </span>
         <Button
@@ -111,9 +113,11 @@ function GuideMedia({
             return selectStep(stepIndex + 1);
           }}
         >
-          {t(($) => {
-            return $.featureGuide.next;
-          })}
+          <span className="sr-only sm:not-sr-only">
+            {t(($) => {
+              return $.featureGuide.next;
+            })}
+          </span>
           <ArrowRight />
         </Button>
       </div>
