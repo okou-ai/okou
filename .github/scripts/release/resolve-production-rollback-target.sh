@@ -34,6 +34,8 @@ readonly MANAGED_DATA_RUNTIME_RETIREMENT_COMMIT=b220a504c5e633de162791f1216c4458
 readonly STRIPE_INVOICE_PAID_RETIREMENT_COMMIT=190cdfba6440b50469117758156616447d707b81
 # #43148 removed every citation-table reader and writer before its contraction.
 readonly RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT=26bacab4693d32e4a4453dce5c84e565d7129b9c
+# DAV catalog rules require #43517's API/Runner method support and rollout.
+readonly DAV_FIREWALL_READER_COMMIT=c8de6212dc54a5aae0d4658acf1afa6a35f939ab
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -205,6 +207,10 @@ fi
 
 if ! git merge-base --is-ancestor "$RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Run output memory citation retirement: ${RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates DAV connector preparation: ${DAV_FIREWALL_READER_COMMIT}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
@@ -894,6 +900,9 @@ runner_tag=$(runner_image_release_tag "$runner_version")
 runner_tag_commit=$(git rev-list -n 1 "$runner_tag" || true)
 if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_commit" "$TARGET_COMMIT"; then
   fail "Runner release ${runner_tag} is not reachable from ${TARGET_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates DAV firewall method support: ${DAV_FIREWALL_READER_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the blank sandbox status reader: ${BLANK_SANDBOX_STATUS_READER_COMMIT}."
