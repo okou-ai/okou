@@ -1,3 +1,4 @@
+import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -102,6 +103,7 @@ export const cleanupOrgMemberResources$ = command(
     );
     await set(eraseMailNotifications$, args, signal);
     signal.throwIfAborted();
+    await set(deleteTeamsOwnerAccounts$, { kind: "owner", ...args }, signal);
     await set(deleteDiscordOrgMemberData$, args, signal);
     await set(deleteWechatOwnerData$, { kind: "owner", ...args }, signal);
     signal.throwIfAborted();

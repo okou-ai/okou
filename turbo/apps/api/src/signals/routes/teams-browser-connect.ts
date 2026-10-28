@@ -14,8 +14,12 @@ import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import {
   connectTeamsInstallation$,
+  buildTeamsOauthConnectUrl,
   publishTeamsChanged$,
 } from "../services/teams-connect.service";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
 const L = logger("TeamsBrowserConnect");
@@ -196,6 +200,35 @@ function resolveBrowserConnectOrgId(args: {
   return { kind: "ok", orgId: args.installation.orgId };
 }
 
+const independentTeamsBrowserUrl$ = command(
+  async (
+    { set },
+    auth: { readonly orgId?: string | null; readonly userId: string },
+    signal: AbortSignal,
+  ) => {
+    if (!auth.orgId) {
+      return undefined;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    return isFeatureEnabled(FeatureSwitchKey.TeamsWorkspaceIdentity, features)
+      ? buildTeamsOauthConnectUrl({ orgId: auth.orgId, userId: auth.userId })
+      : undefined;
+  },
+);
+
+function teamsBrowserIdentity(query: TeamsBrowserConnectQuery) {
+  const { tenantId, teamsUserId, teamsAadObjectId } = query;
+  if (!tenantId || (!teamsUserId && !teamsAadObjectId)) {
+    return null;
+  }
+  return { tenantId, teamsUserId, teamsAadObjectId };
+}
+
 const browserConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$);
   const auth = await set(requiredAuthContext$, {}, signal);
@@ -205,14 +238,16 @@ const browserConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
     return signInRedirect(request.url);
   }
 
+  const independentUrl = await set(independentTeamsBrowserUrl$, auth, signal);
+  if (independentUrl) {
+    return redirectResponse(independentUrl);
+  }
   const query = get(queryOf(teamsBrowserConnectContract.connect));
-  const tenantId = query.tenantId;
-  const teamsUserId = query.teamsUserId;
-  const teamsAadObjectId = query.teamsAadObjectId;
-
-  if (!tenantId || (!teamsUserId && !teamsAadObjectId)) {
+  const identity = teamsBrowserIdentity(query);
+  if (!identity) {
     return connectError(invalidConnectLinkMessage, query);
   }
+  const { tenantId, teamsUserId, teamsAadObjectId } = identity;
 
   const db = get(db$);
   const [installation] = await db

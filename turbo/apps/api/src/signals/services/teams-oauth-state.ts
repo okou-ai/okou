@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import { object, string } from "zod";
+import { object, string, enum as zEnum } from "zod";
 
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import { safeJsonParse } from "../utils";
@@ -20,6 +20,7 @@ export const createTeamsOAuthState$ = command(
       readonly orgId: string;
       readonly redirectUri: string;
       readonly prompt: string | null;
+      readonly flow?: "connect" | "install";
     },
     signal: AbortSignal,
   ): Promise<string> => {
@@ -33,7 +34,7 @@ export const createTeamsOAuthState$ = command(
         userId: args.userId,
         orgId: args.orgId,
         redirectUri: args.redirectUri,
-        oauthContext: JSON.stringify({ prompt: args.prompt }),
+        oauthContext: JSON.stringify({ prompt: args.prompt, flow: args.flow }),
         accountMutation: { intent: "add" },
         expiresAt: connectorOAuthStateExpiresAt(),
       },
@@ -63,14 +64,16 @@ export const claimTeamsOAuthState$ = command(
     ) {
       return null;
     }
-    const context = object({ prompt: string().nullable() }).parse(
-      safeJsonParse(claimed.state.oauthContext ?? ""),
-    );
+    const context = object({
+      prompt: string().nullable(),
+      flow: zEnum(["connect", "install"]).optional(),
+    }).parse(safeJsonParse(claimed.state.oauthContext ?? ""));
     return {
       userId: claimed.state.userId,
       orgId: claimed.state.orgId,
       redirectUri: claimed.state.redirectUri,
       prompt: context.prompt,
+      flow: context.flow,
     };
   },
 );

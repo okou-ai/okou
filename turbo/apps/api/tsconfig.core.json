@@ -610,7 +610,9 @@
     "src/signals/services/proactive-workflow-definitions.ts",
     "src/signals/services/workflow-attachment-cleanup.service.ts",
     "src/signals/services/background-job-command.service.ts",
-    "src/signals/services/background-job.service.ts"
+    "src/signals/services/background-job.service.ts",
+    "src/signals/services/teams-workspace-identity.service.ts",
+    "src/signals/services/teams-delivery-access.service.ts"
   ],
   "references": [
     {
