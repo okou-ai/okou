@@ -66,7 +66,7 @@ Notes:
   - Return the exact review URL, tell the user the draft remains editable, and end the turn so the user can review and send it
   - For the standard web email handoff, do not add a mail callback prompt
 ${callbackPromptNotes}  - Revise the same provider draft in place and reuse its link instead of creating a second draft
-  - Never assume the user sent it; verify the provider reports the email as sent before reporting a send`,
+  - Never assume the user sent it; verify the provider reports the email as sent (Gmail: the SENT label) before reporting a send`,
   )
   .action(
     withErrorHandler(
