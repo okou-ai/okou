@@ -3,7 +3,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { and, eq, exists, isNull, isNotNull, or } from "drizzle-orm";
+import { and, eq, exists, inArray, isNull, isNotNull, or } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -291,17 +291,30 @@ export const deleteTeamsOwnerAccounts$ = command(
       | { readonly kind: "user"; readonly userId: string },
     signal: AbortSignal,
   ) => {
-    await set(writeDb$)
+    const db = set(writeDb$);
+    await db
       .delete(teamsOrgConnections)
       .where(
-        owner.kind === "owner"
-          ? and(
-              eq(teamsOrgConnections.orgId, owner.orgId),
-              eq(teamsOrgConnections.userId, owner.userId),
-            )
-          : owner.kind === "organization"
-            ? eq(teamsOrgConnections.orgId, owner.orgId)
-            : eq(teamsOrgConnections.userId, owner.userId),
+        owner.kind === "user"
+          ? eq(teamsOrgConnections.userId, owner.userId)
+          : and(
+              owner.kind === "owner"
+                ? eq(teamsOrgConnections.userId, owner.userId)
+                : undefined,
+              or(
+                eq(teamsOrgConnections.orgId, owner.orgId),
+                and(
+                  isNull(teamsOrgConnections.orgId),
+                  inArray(
+                    teamsOrgConnections.teamsTenantId,
+                    db
+                      .select({ tenantId: teamsOrgInstallations.teamsTenantId })
+                      .from(teamsOrgInstallations)
+                      .where(eq(teamsOrgInstallations.orgId, owner.orgId)),
+                  ),
+                ),
+              ),
+            ),
       );
     signal.throwIfAborted();
   },

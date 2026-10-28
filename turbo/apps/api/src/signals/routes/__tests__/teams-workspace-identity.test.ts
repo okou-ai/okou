@@ -425,6 +425,7 @@ test.each([
   "callback",
   "callback-disabled",
   "callback-left",
+  "probe-unavailable",
 ] as const)(
   "a receiving organization's bot preserves the user's own execution organization (%s)",
   async (scenario) => {
@@ -457,11 +458,15 @@ test.each([
           await oauth(actor, sender.teamsTenantId, sender.teamsAadObjectId),
         );
         let membership = true;
+        let probeUnavailable = scenario === "probe-unavailable";
         const messages: { conversationId: string; text?: string }[] = [];
         server.use(
           http.get(
             `${sender.serviceUrl}v3/conversations/:conversationId/members/:memberId`,
             ({ params }) => {
+              if (probeUnavailable) {
+                return new HttpResponse(null, { status: 503 });
+              }
               return membership
                 ? HttpResponse.json({
                     id: params.memberId,
@@ -532,6 +537,24 @@ test.each([
         });
         expect(incoming.status).toBe(200);
         await flushWaitUntilForTest();
+        if (scenario === "probe-unavailable") {
+          expect(messages).toHaveLength(0);
+          const unavailable = await reads.requestListLogs(
+            actor,
+            { limit: 50 },
+            [200],
+          );
+          expect(unavailable.body.data).toHaveLength(0);
+          probeUnavailable = false;
+          await postTeamsActivityForTest({
+            signal: context.signal,
+            activity: teamsMessageActivityForTest(sender, {
+              id: randomUUID(),
+              text: "<at>Nova</at> Produce my report after recovery",
+            }),
+          });
+          await flushWaitUntilForTest();
+        }
         const listed = await reads.requestListLogs(actor, { limit: 50 }, [200]);
         expect(listed.body.data).toHaveLength(1);
         const run = listed.body.data[0]!;
@@ -541,6 +564,9 @@ test.each([
           status: "pending",
         });
         await reads.requestReadLogById(receiving.actor, run.id, [404]);
+        if (scenario === "probe-unavailable") {
+          return;
+        }
         await runs.heartbeatRunner(runnerGroup);
         const claim = await ownRuns.claim(run.id);
         const token = claim.platformEnvironment?.OKOU_TOKEN;
@@ -795,17 +821,45 @@ test.each([
 );
 
 test.each([
-  "organizationMembership.deleted",
-  "organization.deleted",
-  "user.deleted",
+  { eventType: "organizationMembership.deleted", ownership: "independent" },
+  { eventType: "organization.deleted", ownership: "independent" },
+  { eventType: "user.deleted", ownership: "independent" },
+  { eventType: "organizationMembership.deleted", ownership: "installation" },
+  { eventType: "organization.deleted", ownership: "installation" },
+  { eventType: "user.deleted", ownership: "installation" },
 ] as const)(
-  "%s releases independent Teams account authority",
-  async (eventType) => {
+  "$eventType releases $ownership Teams account authority",
+  async ({ eventType, ownership }) => {
     const actor = await enabledActor("org:admin");
-    const fixture = teamsConnectFixture();
-    expectOAuthSuccess(
-      await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
-    );
+    const fixture = teamsConnectFixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+    });
+    if (ownership === "installation") {
+      await updateFeatureSwitchesForUser(context, actor, {
+        teamsWorkspaceIdentity: false,
+      });
+      await installTeamsForTest(context.signal, fixture);
+      authenticate(actor);
+      await accept(
+        clients()(teamsConnectContract).connect({
+          headers,
+          body: {
+            tenantId: fixture.teamsTenantId,
+            teamsUserId: fixture.teamsUserId,
+            teamsAadObjectId: fixture.teamsAadObjectId,
+          },
+        }),
+        [200],
+      );
+      await updateFeatureSwitchesForUser(context, actor, {
+        teamsWorkspaceIdentity: true,
+      });
+    } else {
+      expectOAuthSuccess(
+        await oauth(actor, fixture.teamsTenantId, fixture.teamsAadObjectId),
+      );
+    }
     const webhooks = createWebhookCallbackApi(context);
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
@@ -834,5 +888,8 @@ test.each([
       isConnected: true,
       isInstalled: false,
     });
+    if (ownership === "installation") {
+      await removeTeamsForTest(context.signal, fixture);
+    }
   },
 );

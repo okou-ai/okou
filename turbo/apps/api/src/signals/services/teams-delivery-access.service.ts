@@ -80,6 +80,9 @@ export const teamsDeliveryAccess$ = command(
       },
       signal,
     );
+    if (membership.kind === "teams-error") {
+      throw new Error(`Microsoft Teams API error: ${membership.error}`);
+    }
     return membership.kind === "allowed";
   },
 );

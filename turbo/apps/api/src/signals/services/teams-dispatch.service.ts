@@ -1941,7 +1941,10 @@ const teamsExecutionInstallation$ = command(
         },
         signal,
       );
-      if (access.kind !== "allowed") {
+      if (access.kind === "teams-error") {
+        throw new Error(`Microsoft Teams API error: ${access.error}`);
+      }
+      if (access.kind === "denied") {
         return undefined;
       }
     }
