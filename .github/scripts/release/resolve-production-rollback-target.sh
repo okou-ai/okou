@@ -110,6 +110,7 @@ readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/gue
 readonly DECODED_STORAGE_CAPACITY_READER_PATH=.github/rollback-floors/decoded-storage-capacity-reader
 readonly DATA_ROUTER_RESPONSE_ID_PATH=.github/rollback-floors/data-router-response-id
 readonly DESKTOP_MANIFEST_R2_READER_PATH=.github/rollback-floors/desktop-manifest-r2-reader
+readonly DATA_ROUTER_STATELESS_MCP_API_PATH=.github/rollback-floors/data-router-stateless-mcp-api
 readonly HOME_CACHE_CAPACITY_READER_PATH=.github/rollback-floors/home-cache-capacity-reader
 readonly WORKFLOW_ATTACHMENTS_DIRECT_PATH=.github/rollback-floors/workflow-attachments-direct
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
@@ -838,6 +839,22 @@ if ! git merge-base --is-ancestor "$desktop_manifest_r2_reader_commit" origin/ma
 fi
 if ! git merge-base --is-ancestor "$desktop_manifest_r2_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Desktop manifest R2 reader: ${desktop_manifest_r2_reader_commit}."
+fi
+
+# Router serves only stateless MCP 2026-07-28. #43447 moved every API request to
+# that revision; earlier APIs send envelope-less JSON-RPC that Router rejects,
+# so Run-end billing lookups would fail without retry.
+if ! data_router_stateless_mcp_api_commit=$(git show "origin/main:${DATA_ROUTER_STATELESS_MCP_API_PATH}"); then
+  fail "Cannot read the Data Router stateless MCP API rollback floor from main."
+fi
+if [[ ! "$data_router_stateless_mcp_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Data Router stateless MCP API rollback floor."
+fi
+if ! git merge-base --is-ancestor "$data_router_stateless_mcp_api_commit" origin/main; then
+  fail "Data Router stateless MCP API rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$data_router_stateless_mcp_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Data Router stateless MCP requests: ${data_router_stateless_mcp_api_commit}."
 fi
 
 # Larger Runner inventories remain reachable during independent API rollback.
