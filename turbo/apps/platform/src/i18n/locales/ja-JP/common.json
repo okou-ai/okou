@@ -1349,9 +1349,15 @@
     }
   },
   "browserSession": {
+    "addressPlaceholder": "URL を入力",
+    "blankPage": {
+      "description": "{{assistantName}} は作業中にここでページを開きます。上で URL を入力して自分で閲覧することもできます。",
+      "title": "まだページが開かれていません"
+    },
+    "blankTabTitle": "新しいタブ",
     "cardTitle": "クラウドブラウザ",
-    "close": "ライブブラウザを閉じる",
-    "documentTitle": "ライブブラウザ",
+    "close": "クラウドブラウザを閉じる",
+    "documentTitle": "クラウドブラウザ",
     "notFound": "ブラウザが見つかりません",
     "open": "{{name}} ブラウザを開きます",
     "openAction": "開く",
@@ -1362,6 +1368,13 @@
       "startDescription": "開始すると、保存されているログインプロファイルとストレージが利用可能な場合に復元され、保存済みのタブも可能な場合に再度開かれます。",
       "starting": "開始中…"
     },
+    "presence": {
+      "agentWorking": "{{assistantName}} が作業中",
+      "handBack": "操作を戻す",
+      "handBackMessage": "ブラウザでの操作が終わりました。続けてください。",
+      "memberInControl": "あなたが操作中",
+      "takeOver": "操作を代わる"
+    },
     "reclaimHint_one": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
     "reclaimHint_other": "{{assistantName}} は、このパネルが開いている間はこのブラウザを保持し、{{formattedCount}} 分間アイドル状態が経過するとブラウザを再利用します。",
     "status": {
@@ -1369,7 +1382,7 @@
       "starting": "開始",
       "stopped": "停止しました"
     },
-    "title": "ライブブラウザ",
+    "title": "クラウドブラウザ",
     "unavailable": {
       "description": "このブラウザはこのチャットに属していないか、削除されています。",
       "title": "ブラウザが使用できません"
