@@ -12,6 +12,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1071.0](https://github.com/okou-ai/okou/compare/app-v0.1070.1...app-v0.1071.0) (2026-10-28)
+
+
+### Features
+
+* **app:** show connector outcomes during onboarding ([#43542](https://github.com/okou-ai/okou/issues/43542)) ([746e094](https://github.com/okou-ai/okou/commit/746e094cf571e2b05117fd5141594625bc134abd))
+
+
+### Refactoring
+
+* **app:** read the data router catalog with stateless mcp 2026-07-28 ([#43560](https://github.com/okou-ai/okou/issues/43560)) ([ad90edc](https://github.com/okou-ai/okou/commit/ad90edca2c9121002e169d146fafa8262d947fe7))
+
+
+### Performance Improvements
+
+* **app:** await embedded viewer menus by scoped semantics ([#43564](https://github.com/okou-ai/okou/issues/43564)) ([4760f3c](https://github.com/okou-ai/okou/commit/4760f3c5a4a1777f06fa6b50e46b62a921e01cec))
+* **app:** shorten embedded viewer menu preparation ([#43548](https://github.com/okou-ai/okou/issues/43548)) ([61baa28](https://github.com/okou-ai/okou/commit/61baa286dfd8ed56508aceca638e299c69860376))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.14.1
+    * @okouai/connectors bumped to 3.17.0
+    * @okouai/core bumped to 8.795.0
+
 ## [0.1070.1](https://github.com/okou-ai/okou/compare/app-v0.1070.0...app-v0.1070.1) (2026-10-27)
 
 

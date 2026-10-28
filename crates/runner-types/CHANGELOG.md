@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-types-v0.9.20...runner-types-v0.10.0) (2026-10-28)
+
+
+### Features
+
+* prepare dav support and icloud connector rollout ([#43517](https://github.com/okou-ai/okou/issues/43517)) ([c8de621](https://github.com/okou-ai/okou/commit/c8de6212dc54a5aae0d4658acf1afa6a35f939ab))
+
 ## [0.9.20](https://github.com/okou-ai/okou/compare/runner-types-v0.9.19...runner-types-v0.9.20) (2026-10-27)
 
 ## [0.9.19](https://github.com/okou-ai/okou/compare/runner-types-v0.9.18...runner-types-v0.9.19) (2026-10-27)

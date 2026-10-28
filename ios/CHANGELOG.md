@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.21.3](https://github.com/okou-ai/okou/compare/ios-v0.21.2...ios-v0.21.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **ios:** animate chat anchoring with the keyboard ([#43565](https://github.com/okou-ai/okou/issues/43565)) ([1554870](https://github.com/okou-ai/okou/commit/1554870a2a6b0b66647b5fdf9983a89acbbd980b))
+* **ios:** keep keyboard open when removing quotes ([#43553](https://github.com/okou-ai/okou/issues/43553)) ([edf179f](https://github.com/okou-ai/okou/commit/edf179fc1d3d5cd29bf5bbe28016ec2fbb899ba6))
+* **ios:** move remote control above services ([#43556](https://github.com/okou-ai/okou/issues/43556)) ([8e6ede9](https://github.com/okou-ai/okou/commit/8e6ede96d578b2213f248a5a875790bea1b0aae8))
+* **ios:** remove pull-to-refresh from connectors ([#43561](https://github.com/okou-ai/okou/issues/43561)) ([2a28063](https://github.com/okou-ai/okou/commit/2a28063b80c4de37df7a33a91fed30401fc57d5b))
+
 ## [0.21.2](https://github.com/okou-ai/okou/compare/ios-v0.21.1...ios-v0.21.2) (2026-10-27)
 
 

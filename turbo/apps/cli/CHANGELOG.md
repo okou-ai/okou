@@ -1,5 +1,22 @@
 # Changelog
 
+## [10.5.2](https://github.com/okou-ai/okou/compare/cli-v10.5.1...cli-v10.5.2) (2026-10-28)
+
+
+### Refactoring
+
+* **browser:** simplify cli window attachment ([#43545](https://github.com/okou-ai/okou/issues/43545)) ([e541aab](https://github.com/okou-ai/okou/commit/e541aabc44a2af1e4c8c68cee90ddee789dca45e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.14.1
+    * @okouai/connectors bumped to 3.17.0
+    * @okouai/core bumped to 8.795.0
+    * @okouai/pi-agent-runtime bumped to 1.51.8
+
 ## [10.5.1](https://github.com/okou-ai/okou/compare/cli-v10.5.0...cli-v10.5.1) (2026-10-27)
 
 
