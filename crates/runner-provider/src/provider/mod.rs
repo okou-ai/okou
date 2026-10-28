@@ -38,7 +38,7 @@ pub trait AblySideMessageHandler: Send + Sync {
     fn handle(&self, message: &ably_subscriber::Message) -> bool;
 }
 
-/// Source-Home discovery evidence carried independently of routing expiry.
+/// Predecessor Home discovery evidence carried independently of routing expiry.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(
     tag = "evidence",

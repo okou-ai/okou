@@ -919,15 +919,15 @@ async fn probe_home(
     reuse_key: &str,
     profile: &str,
     image_size_bytes: u64,
-    required_source: Option<RunId>,
+    required_source_run_id: Option<RunId>,
 ) -> Option<HomeCacheProbe> {
     match cache?
-        .probe_home(reuse_key, profile, image_size_bytes, required_source)
+        .probe_home(reuse_key, profile, image_size_bytes, required_source_run_id)
         .await
     {
         Ok(observed) => Some(observed),
         Err(error) => {
-            warn!(%error, profile, ?required_source, reuse_key_fingerprint = %short_digest(reuse_key),
+            warn!(%error, profile, required_source = ?required_source_run_id, reuse_key_fingerprint = %short_digest(reuse_key),
                 "requested Home lookup failed during selection");
             None
         }
