@@ -26,12 +26,6 @@ const slackInstallation$ = slackUserInstallation(slackInstallationInput$);
 
 const readInstallation$ = computed(async (get) => {
   const installation = await get(slackInstallation$);
-  if (installation.kind === "not-installed") {
-    return createErrorResponse(
-      "NOT_FOUND",
-      "No Slack installation found for this organization. Install Okou from Settings > Slack first.",
-    );
-  }
   if (installation.kind === "not-connected") {
     return createErrorResponse(
       "NOT_FOUND",

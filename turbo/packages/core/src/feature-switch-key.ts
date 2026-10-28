@@ -7,7 +7,6 @@ export enum FeatureSwitchKey {
   HalloweenQuiz = "halloweenQuiz",
   FeatureGuides = "featureGuides",
   OnboardingSourceOutcomes = "onboardingSourceOutcomes",
-  SlackWorkspaceIdentity = "slackWorkspaceIdentity",
   BatchConnectorPermissions = "batchConnectorPermissions",
   SharedThreadVisibility = "sharedThreadVisibility",
   HostedSiteVisibility = "hostedSiteVisibility",

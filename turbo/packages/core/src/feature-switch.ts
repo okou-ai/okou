@@ -68,13 +68,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.SlackWorkspaceIdentity]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Slack workspace identity",
-    description:
-      "Connect your Slack identity independently of bot installation and use it in shared channels.",
-    enabled: true,
-  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",

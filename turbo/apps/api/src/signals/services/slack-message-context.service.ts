@@ -1,6 +1,4 @@
 import { command, computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq } from "drizzle-orm";
@@ -15,7 +13,6 @@ import {
   isSlackConversationWritable,
 } from "../../lib/slack-client";
 import { integrationMessageSendLabels$ } from "./integration-message-context.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { slackAccountOwnerCondition } from "./slack-workspace-identity.service";
 
 const userMention$ = computed(async (get) => {
@@ -105,68 +102,39 @@ export const resolveSlackTargetChannel$ = command(
     args: SlackTargetChannelArgs,
     signal: AbortSignal,
   ): Promise<SlackTargetChannelResult> => {
-    // Delivery commands carry their owner explicitly, including delayed sends.
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
     const db = get(db$);
     let connectedUser: string | null;
-    if (isFeatureEnabled(FeatureSwitchKey.SlackWorkspaceIdentity, features)) {
-      const [row, additional] = await db
-        .select({
-          slackUserId: slackOrgConnections.slackUserId,
-          workspaceId: slackOrgConnections.slackWorkspaceId,
-        })
-        .from(slackOrgConnections)
-        .leftJoin(
-          slackOrgInstallations,
-          eq(
-            slackOrgConnections.slackWorkspaceId,
-            slackOrgInstallations.slackWorkspaceId,
-          ),
-        )
-        .where(slackAccountOwnerCondition(args))
-        .limit(2);
+    const [row, additional] = await db
+      .select({
+        slackUserId: slackOrgConnections.slackUserId,
+        workspaceId: slackOrgConnections.slackWorkspaceId,
+      })
+      .from(slackOrgConnections)
+      .leftJoin(
+        slackOrgInstallations,
+        eq(
+          slackOrgConnections.slackWorkspaceId,
+          slackOrgInstallations.slackWorkspaceId,
+        ),
+      )
+      .where(slackAccountOwnerCondition(args))
+      .limit(2);
+    signal.throwIfAborted();
+    connectedUser =
+      additional || row?.workspaceId !== args.workspaceId
+        ? null
+        : row.slackUserId;
+    if (connectedUser) {
+      const identity = await args.client.fetchUserIdentity(connectedUser);
       signal.throwIfAborted();
-      connectedUser =
-        additional || row?.workspaceId !== args.workspaceId
-          ? null
-          : row.slackUserId;
-      if (connectedUser) {
-        const identity = await args.client.fetchUserIdentity(connectedUser);
-        signal.throwIfAborted();
-        if (
-          !identity ||
-          identity.deleted ||
-          identity.isBot ||
-          identity.teamId !== args.workspaceId
-        ) {
-          connectedUser = null;
-        }
+      if (
+        !identity ||
+        identity.deleted ||
+        identity.isBot ||
+        identity.teamId !== args.workspaceId
+      ) {
+        connectedUser = null;
       }
-    } else {
-      const [row] = await db
-        .select({ slackUserId: slackOrgConnections.slackUserId })
-        .from(slackOrgConnections)
-        .innerJoin(
-          slackOrgInstallations,
-          eq(
-            slackOrgConnections.slackWorkspaceId,
-            slackOrgInstallations.slackWorkspaceId,
-          ),
-        )
-        .where(
-          and(
-            eq(slackOrgConnections.userId, args.userId),
-            eq(slackOrgInstallations.orgId, args.orgId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      connectedUser = row?.slackUserId ?? null;
     }
     if (!connectedUser) {
       return noUserConnection;
