@@ -111,6 +111,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
+  [FeatureSwitchKey.ArtifactDeletion]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Artifact deletion",
+    description: "Delete owned artifacts and withdraw their Okou links.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",

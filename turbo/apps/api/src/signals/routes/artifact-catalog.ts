@@ -1,7 +1,9 @@
 import { command } from "ccstate";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { notFound } from "../../lib/error";
+import { notFound, resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
@@ -11,6 +13,8 @@ import {
 } from "../services/artifact-catalog.service";
 import { ownedGoogleDriveThreadContext$ } from "../services/artifact-google-drive-authorization.service";
 import { googleDriveArtifactDetailStatus$ } from "../services/google-drive-artifact-sync.service";
+import { deleteArtifact$ } from "../services/artifact-deletion.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
 const listArtifactCatalogInner$ = command(
@@ -91,6 +95,28 @@ const getArtifactCatalogEntryInner$ = command(
   },
 );
 
+const deleteArtifactInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.ArtifactDeletion, features)) {
+      return resourceUnavailable("Artifact deletion is not available");
+    }
+    const { artifactId } = get(pathParamsOf(artifactCatalogContract.delete));
+    return await set(
+      deleteArtifact$,
+      { artifactId, orgId: auth.orgId, userId: auth.userId },
+      signal,
+    );
+  },
+);
+
 export const artifactCatalogRoutes: readonly RouteEntry[] = [
   {
     route: artifactCatalogContract.list,
@@ -112,6 +138,17 @@ export const artifactCatalogRoutes: readonly RouteEntry[] = [
         requiredCapability: "chat-event:read",
       },
       getArtifactCatalogEntryInner$,
+    ),
+  },
+  {
+    route: artifactCatalogContract.delete,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "artifact:write",
+      },
+      deleteArtifactInner$,
     ),
   },
 ];

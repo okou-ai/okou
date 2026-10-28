@@ -26,6 +26,10 @@ import {
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
+import {
+  artifactCatalogRevision$,
+  createArtifactDeleteMenuSignals,
+} from "./artifact-deletion.ts";
 
 // First screen and every scroll step request the same page size. The server
 // orders by `(createdAt, id)` and never reorders on update, so a cursor stays
@@ -34,6 +38,7 @@ const ARTIFACT_CATALOG_PAGE_SIZE = 60;
 const ARTIFACT_CARD_THUMBNAIL_WIDTH_PX = 640;
 
 export type CatalogArtifact = ArtifactSummary & {
+  readonly deletion: ReturnType<typeof createArtifactDeleteMenuSignals>;
   /**
    * Load state of the thumbnail, created when the page's data arrives. A
    * reload replaces the page and its signals; an already-broken thumbnail
@@ -51,11 +56,19 @@ export interface ArtifactCatalogPage {
   readonly nextCursor: string | null;
 }
 
-function withThumbnailLoad(page: {
-  readonly artifacts: readonly ArtifactSummary[];
-  readonly nextCursor: string | null;
-}): ArtifactCatalogPage {
+interface LoadedArtifactCatalogPage extends ArtifactCatalogPage {
+  readonly revision: number;
+}
+
+function withThumbnailLoad(
+  page: {
+    readonly artifacts: readonly ArtifactSummary[];
+    readonly nextCursor: string | null;
+  },
+  revision: number,
+): LoadedArtifactCatalogPage {
   return {
+    revision,
     artifacts: page.artifacts.map((artifact) => {
       const videoPreview = artifact.videoSourceUrl
         ? createAttachmentPreviewSignals(artifact.videoSourceUrl)
@@ -67,6 +80,7 @@ function withThumbnailLoad(page: {
         : null;
       return {
         ...artifact,
+        deletion: createArtifactDeleteMenuSignals(artifact),
         thumbnailLoad: createImageLoadSignals(),
         thumbnailUrl$: computed(async (get) => {
           return thumbnailPreview
@@ -105,7 +119,7 @@ interface CatalogPagingState {
   readonly kind$: State<ArtifactCatalogKind | null>;
   readonly reloadVersion$: State<number>;
   readonly generation$: State<number>;
-  readonly pages$: State<readonly ArtifactCatalogPage[]>;
+  readonly pages$: State<readonly LoadedArtifactCatalogPage[]>;
 }
 
 function createCatalogPagingSignals(paging: CatalogPagingState): {
@@ -114,22 +128,25 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
 } {
   const { chatThreadId } = paging;
 
-  const firstPage$ = computed(async (get): Promise<ArtifactCatalogPage> => {
-    get(paging.reloadVersion$);
-    const kind = get(paging.kind$);
-    const client = get(apiClient$)(artifactCatalogContract);
-    const result = await accept(
-      client.list({
-        query: {
-          limit: ARTIFACT_CATALOG_PAGE_SIZE,
-          ...(kind ? { kind } : {}),
-          ...(chatThreadId ? { chatThreadId } : {}),
-        },
-      }),
-      [200],
-    );
-    return withThumbnailLoad(result.body);
-  });
+  const firstPage$ = computed(
+    async (get): Promise<LoadedArtifactCatalogPage> => {
+      const revision = get(artifactCatalogRevision$);
+      get(paging.reloadVersion$);
+      const kind = get(paging.kind$);
+      const client = get(apiClient$)(artifactCatalogContract);
+      const result = await accept(
+        client.list({
+          query: {
+            limit: ARTIFACT_CATALOG_PAGE_SIZE,
+            ...(kind ? { kind } : {}),
+            ...(chatThreadId ? { chatThreadId } : {}),
+          },
+        }),
+        [200],
+      );
+      return withThumbnailLoad(result.body, revision);
+    },
+  );
 
   /**
    * Everything loaded so far, in server order. Reading this triggers the first
@@ -137,7 +154,9 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
    */
   const catalog$ = computed(async (get): Promise<ArtifactCatalogPage> => {
     const firstPage = await get(firstPage$);
-    const appendedPages = get(paging.pages$);
+    const appendedPages = get(paging.pages$).filter((page) => {
+      return page.revision === firstPage.revision;
+    });
     const lastPage = appendedPages.at(-1) ?? firstPage;
     return {
       artifacts: [
@@ -152,12 +171,14 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
 
   const loadMore$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const revision = get(artifactCatalogRevision$);
       const generation = get(paging.generation$);
       const kind = get(paging.kind$);
       const pages = get(paging.pages$);
       const loaded = await get(catalog$);
       signal.throwIfAborted();
       if (
+        get(artifactCatalogRevision$) !== revision ||
         get(paging.generation$) !== generation ||
         get(paging.pages$) !== pages
       ) {
@@ -183,12 +204,18 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
       );
       signal.throwIfAborted();
       if (
+        get(artifactCatalogRevision$) !== revision ||
         get(paging.generation$) !== generation ||
         get(paging.pages$) !== pages
       ) {
         return;
       }
-      set(paging.pages$, [...pages, withThumbnailLoad(result.body)]);
+      set(paging.pages$, [
+        ...pages.filter((page) => {
+          return page.revision === revision;
+        }),
+        withThumbnailLoad(result.body, revision),
+      ]);
     },
   );
 
@@ -229,6 +256,7 @@ function createCatalogSelectionSignals(
   const selectedArtifactDetail$ = computed(
     async (get): Promise<ArtifactDetail | null> => {
       get(reloadVersion$);
+      get(artifactCatalogRevision$);
       get(internalDetailVersion$);
       const artifactId = get(internalSelectedArtifactId$);
       if (!artifactId) {
@@ -310,7 +338,7 @@ export function createArtifactCatalogSignals(
   const internalKind$ = state<ArtifactCatalogKind | null>(null);
   const internalReload$ = state(0);
   const internalGeneration$ = state(0);
-  const internalPages$ = state<readonly ArtifactCatalogPage[]>([]);
+  const internalPages$ = state<readonly LoadedArtifactCatalogPage[]>([]);
 
   const resetPages$ = command(({ set }) => {
     set(internalPages$, []);

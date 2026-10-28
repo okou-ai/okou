@@ -5,7 +5,7 @@ import {
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { boolean, literal, object, string, uuid } from "zod";
 import {
   CURRENT_LINK_LAYOUT,
@@ -269,7 +269,9 @@ export const privateArtifactRecord$ = command(
     const [row] = await get(db$)
       .select()
       .from(runUploadedFiles)
-      .where(eq(runUploadedFiles.id, id))
+      .where(
+        and(eq(runUploadedFiles.id, id), isNull(runUploadedFiles.deletedAt)),
+      )
       .limit(1);
     signal.throwIfAborted();
     if (!row || row.metadata.storage === undefined) {
