@@ -28,9 +28,6 @@
     "@clerk/react": "^6.17.4",
     "@clerk/shared": "4.39.1",
     "@clerk/ui": "1.33.1",
-    "@fontpkg/noto-sans-cjk-sc": "^2.4.0",
-    "@fontpkg/sarasa-gothic-sc": "0.36.0",
-    "@fontsource/noto-emoji": "5.3.2",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
@@ -97,6 +94,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@fontpkg/noto-sans-cjk-sc": "^2.4.0",
+    "@fontpkg/sarasa-gothic-sc": "0.36.0",
+    "@fontsource/noto-emoji": "5.3.2",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@sentry/cli": "^2.58.5",

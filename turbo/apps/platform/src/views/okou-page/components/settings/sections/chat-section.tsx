@@ -1,7 +1,7 @@
 import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
 import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useGet, useLastResolved, useLoadable } from "ccstate-react";
+import { useGet, useLastResolved, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Cpu, Globe, Keyboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -69,7 +69,7 @@ function DefaultModelPreference() {
 
 function CloudBrowserDefaultPreference() {
   const { t } = useTranslation();
-  const preferenceLoadable = useLoadable(cloudBrowserEnabledByDefault$);
+  const preferenceLoadable = useLastLoadable(cloudBrowserEnabledByDefault$);
   const current =
     preferenceLoadable.state === "hasData" ? preferenceLoadable.data : true;
   const [updateLoadable, updatePreference] = useLoadableSet(
@@ -106,7 +106,7 @@ function CloudBrowserDefaultPreference() {
 
 function SendModePreference() {
   const { t } = useTranslation();
-  const prefsLoadable = useLoadable(sendMode$);
+  const prefsLoadable = useLastLoadable(sendMode$);
   const current: SendMode =
     prefsLoadable.state === "hasData" ? prefsLoadable.data : "enter";
   const [saveLoadable, saveSendMode] = useLoadableSet(updateSendMode$);
@@ -149,7 +149,7 @@ function SendModePreference() {
               key={value}
               type="button"
               selected={isActive}
-              disabled={saving}
+              disabled={saving || prefsLoadable.state !== "hasData"}
               onClick={() => {
                 handleChange(value);
               }}

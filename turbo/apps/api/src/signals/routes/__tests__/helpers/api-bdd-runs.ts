@@ -36,6 +36,7 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
+  runnersWorkflowDownloadContract,
   runnersPollContract,
   runnersSteerContract,
   type CanonicalStorageManifest,
@@ -808,10 +809,11 @@ export function createRunsApi(context: TestContext) {
       runId: string,
       body: RunnerJobClaimRequest = {},
       extraHeaders?: Readonly<Record<string, string>>,
+      workflowReader: "1" | "2" = "2",
     ) {
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "1" },
+          query: { workflowSkills: workflowReader },
           headers: runnerHeaders(true),
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
@@ -820,6 +822,21 @@ export function createRunsApi(context: TestContext) {
             capabilities: defaultClaimCapabilities(),
             ...body,
           },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async downloadWorkflow(
+      runId: string,
+      workflowId: string,
+      sandboxToken: string,
+    ) {
+      const response = await accept(
+        runApp(context)(runnersWorkflowDownloadContract).get({
+          params: { runId, workflowId },
+          headers: { authorization: `Bearer ${sandboxToken}` },
         }),
         [200],
       );
@@ -984,7 +1001,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "1" },
+          query: { workflowSkills: "2" },
           headers: authorization === undefined ? {} : { authorization },
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
@@ -1006,7 +1023,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "1" },
+          query: { workflowSkills: "2" },
           headers: authorization === undefined ? {} : { authorization },
           ...(extraHeaders ? { extraHeaders } : {}),
           params: { id: runId },
@@ -1449,7 +1466,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "1" },
+          query: { workflowSkills: "2" },
           headers: runnerHeaders(validAuth),
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },
@@ -1472,7 +1489,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       return await accept(
         runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "1" },
+          query: { workflowSkills: "2" },
           headers: runnerHeaders(validAuth),
           ...(extraHeaders ? { extraHeaders } : {}),
           params: { id: runId },

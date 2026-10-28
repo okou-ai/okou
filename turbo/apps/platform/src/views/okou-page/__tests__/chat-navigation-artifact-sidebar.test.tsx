@@ -74,7 +74,7 @@ function artifactPreview(): HTMLElement {
 }
 
 function resourcesControl(): HTMLElement {
-  return buttonNamed("Resources");
+  return buttonNamed("Artifacts and chats");
 }
 
 function menuItemNamed(name: string): HTMLElement {
@@ -718,7 +718,7 @@ test("Image zoom reset", async () => {
       within(artifactPreview()).getByTestId(
         "artifact-sidebar-image-zoom-level",
       ),
-    ).toHaveTextContent("115%");
+    ).toHaveTextContent("112%");
   });
 
   click(buttonNamed("Enter fullscreen", artifactPreview()));
@@ -751,7 +751,7 @@ test("Image zoom reset", async () => {
       within(artifactPreview()).getByTestId(
         "artifact-sidebar-image-zoom-level",
       ),
-    ).toHaveTextContent("115%");
+    ).toHaveTextContent("112%");
   });
 
   click(buttonNamed("Reset zoom", artifactPreview()));
@@ -837,7 +837,9 @@ test("Show artifacts that belong to the current thread", async () => {
   });
   click(resourcesControl());
 
-  const resources = await screen.findByRole("region", { name: "Resources" });
+  const resources = await screen.findByRole("region", {
+    name: "Artifacts and chats",
+  });
   await waitFor(() => {
     expect(resources).toBeVisible();
     expect(

@@ -74,7 +74,7 @@ readback before another message can be sent.
 
 Use Xcode 27.1 (build `27A9275`, iOS 27.1 SDK) on macOS 26.6 or later, with an
 installed iOS 27 simulator runtime. Open `ios/Okou.xcodeproj` and select the shared `Okou`
-scheme and an iPhone simulator. Xcode resolves the pinned Clerk, Ably, and Textual
+scheme and an iPhone simulator. Xcode resolves the pinned Clerk, Ably, Textual, and Sentry
 Swift packages on first use. Keep
 `Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` with the
 project when dependency versions change.
@@ -93,7 +93,7 @@ The checked-in configuration uses the production services:
 A Clerk publishable key is public client configuration; no Clerk secret key or
 Apple credential belongs in this project. Optional local build overrides belong
 in ignored `Config/Local.xcconfig`. The Info.plist keys consumed by the app are
-`APIBaseURL`, `WebBaseURL`, and `ClerkPublishableKey`.
+`APIBaseURL`, `WebBaseURL`, `ClerkPublishableKey`, and `SentryDSN`.
 
 From the repository root, list the available simulators, then use a device ID:
 

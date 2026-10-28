@@ -39,10 +39,12 @@ function redactAuthorizationUrl(value: string): string {
     return path === pathname;
   })
     ? ["code", "state"]
-    : pathname === INTEGRATION_SETTINGS_PATHS.telegram ||
-        pathname === "/telegram/connect"
-      ? ["sig", "ts", "tgUser", "tgUserName", "tgDisplayName"]
-      : [];
+    : pathname === INTEGRATION_SETTINGS_PATHS.agentphone
+      ? ["sig", "ts", "handle", "agent"]
+      : pathname === INTEGRATION_SETTINGS_PATHS.telegram ||
+          pathname === "/telegram/connect"
+        ? ["sig", "ts", "tgUser", "tgUserName", "tgDisplayName"]
+        : [];
   let changed = false;
   for (const key of keys) {
     if (url.searchParams.has(key)) {

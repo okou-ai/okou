@@ -2,6 +2,8 @@
 OKOU_API_BASE_URL = https:/$()/api.okou.ai
 OKOU_WEB_BASE_URL = https:/$()/app.okou.ai
 CLERK_PUBLISHABLE_KEY = pk_live_Y2xlcmsub2tvdS5haSQ
+// Crash reporting is opt-in for local Debug builds. Release supplies its public DSN.
+OKOU_SENTRY_DSN =
 
 IPHONEOS_DEPLOYMENT_TARGET = 26.0
 SWIFT_VERSION = 6.0

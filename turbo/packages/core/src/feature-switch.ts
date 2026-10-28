@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.HalloweenQuiz]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Halloween quiz",
+    description:
+      "Open the 2026 Halloween quiz from the animated chat home dialog and associate results with your account.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",
@@ -78,6 +86,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",
     description: "Approve up to 20 connector permissions together.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  // Visibility checks remain enforced independently of this management gate.
+  [FeatureSwitchKey.SharedThreadVisibility]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Conversation share visibility",
+    description: "Choose who can view a shared conversation.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -298,8 +314,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "iCloud Calendar and Contacts",
     description:
       "Connect iCloud calendars and contacts with an app-specific password.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
@@ -445,6 +460,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show the Feishu direct-message integration and Works page entry point.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AutoContinueBusyChats]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Auto-continue busy chats",
+    description:
+      "Continue chats interrupted by a busy model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"],
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",

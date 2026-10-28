@@ -1547,9 +1547,7 @@ describe("shared thread routes", () => {
     expect(metadata.body).toStrictEqual({
       title: "Private launch plan",
     });
-    expect(metadata.headers.get("cache-control")).toBe(
-      "public, max-age=31536000, s-maxage=31536000, immutable",
-    );
+    expect(metadata.headers.get("cache-control")).toBe("no-store");
 
     const secondSnapshot = await readSharedThreadSnapshot(second.id);
     expect(secondSnapshot.body).toMatchObject({ id: second.id });

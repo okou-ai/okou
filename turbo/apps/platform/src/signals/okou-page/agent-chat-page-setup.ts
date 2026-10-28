@@ -1,3 +1,4 @@
+import { initializeHalloweenHome$ } from "../halloween/halloween.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
@@ -80,6 +81,11 @@ export const setupAgentChatPage$ = command(
     );
 
     await set(hideAppSkeleton$, signal);
+    detach(
+      set(initializeHalloweenHome$, signal),
+      Reason.Daemon,
+      "Halloween home activity",
+    );
 
     const agents = await get(agents$);
     signal.throwIfAborted();

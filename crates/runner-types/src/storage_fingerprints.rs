@@ -124,6 +124,11 @@ impl StorageFingerprints {
                             )
                         }),
                 )
+                .chain(
+                    manifest.workflow_references.iter().map(|reference| {
+                        (reference.mount_path.clone(), StorageFingerprint::tainted())
+                    }),
+                )
                 .collect(),
             artifacts: manifest
                 .artifacts

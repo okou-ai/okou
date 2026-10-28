@@ -11,6 +11,7 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 
 const context = testContext();
 const PROOF_PATHS = [
+  "/settings/agentphone",
   "/settings/telegram",
   "/telegram/connect",
   "/SETTINGS/telegram/",
@@ -20,6 +21,9 @@ const PROOF_PATHS = [
 ] as const;
 
 function signedEntry(path: string): string {
+  if (path === "/settings/agentphone") {
+    return `https://app.okou.ai${path}?handle=private-phone&agent=private-agent&ts=1700000000&sig=private-signature-fixture&channel=imessage&context=one&context=two#public-context`;
+  }
   if (path.startsWith("/connectors/")) {
     return `https://app.okou.ai${path}?integration=${path.includes("microsoft-365") ? "teams" : path.includes("github") ? "github" : "slack"}&code=private-code&state=private-state&context=one&context=two#public-context`;
   }
@@ -36,6 +40,8 @@ function expectRedacted(value: unknown): void {
     "Private",
     "private-code",
     "private-state",
+    "private-phone",
+    "private-agent",
   ]) {
     // Boolean assertions avoid printing even fixture proof URLs on failure.
     expect(serialized.includes(secret)).toBeFalsy();

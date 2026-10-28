@@ -51,6 +51,7 @@ import {
   type S3Object,
 } from "../external/s3";
 import { isAbortError, settleIncludingAbort } from "../utils";
+import { chatThreadSnapshotHeadSelection } from "./chat-thread-event.service";
 import { chatThreadSnapshotObjectKey } from "./chat-thread-snapshot-object";
 
 interface SnapshotCompactionStats {
@@ -147,98 +148,100 @@ function scopeKey(scope: ScopeKey): string {
 }
 
 /** Snapshot heads for a bounded set of scopes, read by the users they name. */
-async function loadSnapshotHeads(
-  db: SnapshotRootDb,
-  scopes: readonly ScopeKey[],
-): Promise<ReadonlyMap<string, SnapshotHead>> {
-  if (scopes.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      userId: chatThreadSnapshots.userId,
-      orgId: chatThreadSnapshots.orgId,
-      latestEventId: chatThreadSnapshots.latestEventId,
-      latestEventSeqId: chatThreadSnapshots.latestEventSeqId,
-      objectKey: chatThreadSnapshots.objectKey,
-      contentDigest: chatThreadSnapshots.contentDigest,
-      updatedAt: chatThreadSnapshots.updatedAt,
-    })
-    .from(chatThreadSnapshots)
-    .where(
-      inArray(chatThreadSnapshots.userId, [
-        ...new Set(
-          scopes.map((scope) => {
-            return scope.userId;
-          }),
-        ),
-      ]),
+const loadSnapshotHeads$ = command(
+  async (
+    { get },
+    scopes: readonly ScopeKey[],
+  ): Promise<ReadonlyMap<string, SnapshotHead>> => {
+    if (scopes.length === 0) {
+      return new Map();
+    }
+    const db = get(db$);
+    const rows = await db
+      .select(chatThreadSnapshotHeadSelection())
+      .from(chatThreadSnapshots)
+      .where(
+        inArray(chatThreadSnapshots.userId, [
+          ...new Set(
+            scopes.map((scope) => {
+              return scope.userId;
+            }),
+          ),
+        ]),
+      );
+    return new Map(
+      rows.map((row) => {
+        return [scopeKey(row), row] as const;
+      }),
     );
-  return new Map(
-    rows.map((row) => {
-      return [scopeKey(row), row] as const;
-    }),
-  );
-}
+  },
+);
 
 /**
  * The newest visible event at or below a committed sequence position. A
  * sequence position is allocated in the same statement as its event, so every
  * event up to it is committed; an id conflict can still leave a gap at the tip.
  */
-async function latestEventAtOrBelow(
-  db: SnapshotRootDb,
-  scope: ScopeKey,
-  seqId: number,
-): Promise<{ readonly id: string; readonly seqId: number } | undefined> {
-  const [event] = await db
-    .select({ id: chatThreadEvents.id, seqId: chatThreadEvents.seqId })
-    .from(chatThreadEvents)
-    .where(
-      and(
-        eq(chatThreadEvents.userId, scope.userId),
-        eq(chatThreadEvents.orgId, scope.orgId),
-        lte(chatThreadEvents.seqId, seqId),
-      ),
-    )
-    .orderBy(desc(chatThreadEvents.seqId))
-    .limit(1);
-  return event;
-}
+const latestEventAtOrBelow$ = command(
+  async (
+    { get },
+    scope: ScopeKey,
+    seqId: number,
+  ): Promise<{ readonly id: string; readonly seqId: number } | undefined> => {
+    const db = get(db$);
+    const [event] = await db
+      .select({ id: chatThreadEvents.id, seqId: chatThreadEvents.seqId })
+      .from(chatThreadEvents)
+      .where(
+        and(
+          eq(chatThreadEvents.userId, scope.userId),
+          eq(chatThreadEvents.orgId, scope.orgId),
+          lte(chatThreadEvents.seqId, seqId),
+        ),
+      )
+      .orderBy(desc(chatThreadEvents.seqId))
+      .limit(1);
+    return event;
+  },
+);
 
 /**
  * A scope needs a new snapshot when it has a visible event past its position
  * or still has the retired inline payload. A sequence that only advanced over
  * an id-conflict gap needs nothing.
  */
-async function toCandidate(
-  db: SnapshotRootDb,
-  scope: ScopeKey,
-  lastSeqId: number,
-  previous: SnapshotHead | undefined,
-): Promise<SnapshotCandidate | null> {
-  const covered = previous?.latestEventSeqId ?? 0;
-  const hasObject = previous !== undefined && previous.objectKey !== null;
-  if (hasObject && lastSeqId <= covered) {
-    return null;
-  }
-  const latest = await latestEventAtOrBelow(db, scope, lastSeqId);
-  if (hasObject && (latest === undefined || latest.seqId <= covered)) {
-    return null;
-  }
-  // An empty scope with no snapshot and only allocator gaps has nothing to
-  // publish. Subsequent cron runs must not keep sending an empty projection.
-  if (previous === undefined && latest === undefined) {
-    return null;
-  }
-  const advanced = latest !== undefined && latest.seqId > covered;
-  return {
-    ...scope,
-    previous: previous ?? null,
-    latestEventId: advanced ? latest.id : (previous?.latestEventId ?? null),
-    latestSeqId: advanced ? latest.seqId : (previous?.latestEventSeqId ?? null),
-  };
-}
+const toCandidate$ = command(
+  async (
+    { set },
+    scope: ScopeKey,
+    lastSeqId: number,
+    previous: SnapshotHead | undefined,
+  ): Promise<SnapshotCandidate | null> => {
+    const covered = previous?.latestEventSeqId ?? 0;
+    const hasObject = previous !== undefined && previous.objectKey !== null;
+    if (hasObject && lastSeqId <= covered) {
+      return null;
+    }
+    const latest = await set(latestEventAtOrBelow$, scope, lastSeqId);
+    if (hasObject && (latest === undefined || latest.seqId <= covered)) {
+      return null;
+    }
+    // An empty scope with no snapshot and only allocator gaps has nothing to
+    // publish. Subsequent cron runs must not keep sending an empty projection.
+    if (previous === undefined && latest === undefined) {
+      return null;
+    }
+    const advanced = latest !== undefined && latest.seqId > covered;
+    return {
+      ...scope,
+      previous: previous ?? null,
+      latestEventId: advanced ? latest.id : (previous?.latestEventId ?? null),
+      latestSeqId: advanced
+        ? latest.seqId
+        : (previous?.latestEventSeqId ?? null),
+    };
+  },
+);
 
 /**
  * Finds up to `limit` scopes to compact. The global cron pages through
@@ -246,62 +249,65 @@ async function toCandidate(
  * the same statement as every thread event, so it is the complete and small
  * list of scopes that can have changed.
  */
-async function findSnapshotCandidates(
-  db: SnapshotRootDb,
-  limit: number,
-): Promise<readonly SnapshotCandidate[]> {
-  const candidates: SnapshotCandidate[] = [];
-  let after: ScopeKey | null = null;
-  while (candidates.length < limit) {
-    const page: readonly (ScopeKey & { readonly lastSeqId: number })[] =
-      await db
-        .select({
-          userId: chatThreadEventSequences.userId,
-          orgId: chatThreadEventSequences.orgId,
-          lastSeqId: chatThreadEventSequences.lastSeqId,
-        })
-        .from(chatThreadEventSequences)
-        .where(
-          and(
-            after === null
-              ? undefined
-              : or(
-                  gt(chatThreadEventSequences.userId, after.userId),
-                  and(
-                    eq(chatThreadEventSequences.userId, after.userId),
-                    gt(chatThreadEventSequences.orgId, after.orgId),
+const findSnapshotCandidates$ = command(
+  async (
+    { get, set },
+    limit: number,
+  ): Promise<readonly SnapshotCandidate[]> => {
+    const candidates: SnapshotCandidate[] = [];
+    let after: ScopeKey | null = null;
+    const db = get(db$);
+    while (candidates.length < limit) {
+      const page: readonly (ScopeKey & { readonly lastSeqId: number })[] =
+        await db
+          .select({
+            userId: chatThreadEventSequences.userId,
+            orgId: chatThreadEventSequences.orgId,
+            lastSeqId: chatThreadEventSequences.lastSeqId,
+          })
+          .from(chatThreadEventSequences)
+          .where(
+            and(
+              after === null
+                ? undefined
+                : or(
+                    gt(chatThreadEventSequences.userId, after.userId),
+                    and(
+                      eq(chatThreadEventSequences.userId, after.userId),
+                      gt(chatThreadEventSequences.orgId, after.orgId),
+                    ),
                   ),
-                ),
-          ),
-        )
-        .orderBy(
-          asc(chatThreadEventSequences.userId),
-          asc(chatThreadEventSequences.orgId),
-        )
-        .limit(CANDIDATE_SCAN_PAGE_SIZE);
-    const heads = await loadSnapshotHeads(db, page);
-    for (const row of page) {
-      if (candidates.length >= limit) {
+            ),
+          )
+          .orderBy(
+            asc(chatThreadEventSequences.userId),
+            asc(chatThreadEventSequences.orgId),
+          )
+          .limit(CANDIDATE_SCAN_PAGE_SIZE);
+      const heads = await set(loadSnapshotHeads$, page);
+      for (const row of page) {
+        if (candidates.length >= limit) {
+          break;
+        }
+        const candidate = await set(
+          toCandidate$,
+          row,
+          row.lastSeqId,
+          heads.get(scopeKey(row)),
+        );
+        if (candidate) {
+          candidates.push(candidate);
+        }
+      }
+      const last = page.at(-1);
+      if (!last || page.length < CANDIDATE_SCAN_PAGE_SIZE) {
         break;
       }
-      const candidate = await toCandidate(
-        db,
-        row,
-        row.lastSeqId,
-        heads.get(scopeKey(row)),
-      );
-      if (candidate) {
-        candidates.push(candidate);
-      }
+      after = last;
     }
-    const last = page.at(-1);
-    if (!last || page.length < CANDIDATE_SCAN_PAGE_SIZE) {
-      break;
-    }
-    after = last;
-  }
-  return candidates;
-}
+    return candidates;
+  },
+);
 
 /** A timestamp rendered exactly as `jsonb_build_object` renders it. */
 function jsonTimestamp(column: SQLWrapper) {
@@ -700,65 +706,68 @@ const collectChatThreadSnapshotGarbage$ = command(
  * expired events, one bounded read gets their scopes' snapshot positions, and
  * one DELETE removes only the events a published snapshot already covers.
  */
-async function pruneCompactedEvents(
-  db: SnapshotRootDb,
-  limit: number,
-): Promise<number> {
-  const cutoff = new Date(nowDate().getTime() - CHAT_THREAD_EVENT_RETENTION_MS);
-  const expired = await db
-    .select({
-      id: chatThreadEvents.id,
-      userId: chatThreadEvents.userId,
-      orgId: chatThreadEvents.orgId,
-      seqId: chatThreadEvents.seqId,
-    })
-    .from(chatThreadEvents)
-    .where(
-      and(
-        lt(chatThreadEvents.createdAt, cutoff),
-        // Eligibility must precede LIMIT: an uncovered expired prefix would
-        // otherwise be selected on every run and starve later covered events.
-        // The head lookup uses its (user_id, org_id) primary key; the bounded
-        // read below still rechecks heads before deleting a selected batch.
-        exists(
-          db
-            .select({ userId: chatThreadSnapshots.userId })
-            .from(chatThreadSnapshots)
-            .where(
-              and(
-                eq(chatThreadSnapshots.userId, chatThreadEvents.userId),
-                eq(chatThreadSnapshots.orgId, chatThreadEvents.orgId),
-                gte(
-                  chatThreadSnapshots.latestEventSeqId,
-                  chatThreadEvents.seqId,
+const pruneCompactedEvents$ = command(
+  async ({ get, set }, limit: number): Promise<number> => {
+    const cutoff = new Date(
+      nowDate().getTime() - CHAT_THREAD_EVENT_RETENTION_MS,
+    );
+    const db = get(db$);
+    const expired = await db
+      .select({
+        id: chatThreadEvents.id,
+        userId: chatThreadEvents.userId,
+        orgId: chatThreadEvents.orgId,
+        seqId: chatThreadEvents.seqId,
+      })
+      .from(chatThreadEvents)
+      .where(
+        and(
+          lt(chatThreadEvents.createdAt, cutoff),
+          // Eligibility must precede LIMIT: an uncovered expired prefix would
+          // otherwise be selected on every run and starve later covered events.
+          // The head lookup uses its (user_id, org_id) primary key; the bounded
+          // read below still rechecks heads before deleting a selected batch.
+          exists(
+            db
+              .select({ userId: chatThreadSnapshots.userId })
+              .from(chatThreadSnapshots)
+              .where(
+                and(
+                  eq(chatThreadSnapshots.userId, chatThreadEvents.userId),
+                  eq(chatThreadSnapshots.orgId, chatThreadEvents.orgId),
+                  gte(
+                    chatThreadSnapshots.latestEventSeqId,
+                    chatThreadEvents.seqId,
+                  ),
                 ),
               ),
-            ),
+          ),
         ),
-      ),
-    )
-    .orderBy(asc(chatThreadEvents.createdAt), asc(chatThreadEvents.id))
-    .limit(limit);
-  const heads = await loadSnapshotHeads(db, expired);
-  const covered = expired
-    .filter((event) => {
-      const covering = heads.get(scopeKey(event))?.latestEventSeqId;
-      return (
-        covering !== null && covering !== undefined && event.seqId <= covering
-      );
-    })
-    .map((event) => {
-      return event.id;
-    });
-  if (covered.length === 0) {
-    return 0;
-  }
-  const deleted = await db
-    .delete(chatThreadEvents)
-    .where(inArray(chatThreadEvents.id, covered))
-    .returning({ id: chatThreadEvents.id });
-  return deleted.length;
-}
+      )
+      .orderBy(asc(chatThreadEvents.createdAt), asc(chatThreadEvents.id))
+      .limit(limit);
+    const heads = await set(loadSnapshotHeads$, expired);
+    const covered = expired
+      .filter((event) => {
+        const covering = heads.get(scopeKey(event))?.latestEventSeqId;
+        return (
+          covering !== null && covering !== undefined && event.seqId <= covering
+        );
+      })
+      .map((event) => {
+        return event.id;
+      });
+    if (covered.length === 0) {
+      return 0;
+    }
+    const writeDb = set(writeDb$);
+    const deleted = await writeDb
+      .delete(chatThreadEvents)
+      .where(inArray(chatThreadEvents.id, covered))
+      .returning({ id: chatThreadEvents.id });
+    return deleted.length;
+  },
+);
 
 export const compactChatThreadSnapshots$ = command(
   async (
@@ -780,8 +789,8 @@ export const compactChatThreadSnapshots$ = command(
     return await (async (
       signal: AbortSignal,
     ): Promise<SnapshotCompactionStats> => {
-      const candidates = await findSnapshotCandidates(
-        db,
+      const candidates = await set(
+        findSnapshotCandidates$,
         chatThreadSnapshotBatchSize(),
       );
       const published = await mapConcurrent(
@@ -809,8 +818,8 @@ export const compactChatThreadSnapshots$ = command(
       }
 
       signal?.throwIfAborted();
-      const eventsPruned = await pruneCompactedEvents(
-        db,
+      const eventsPruned = await set(
+        pruneCompactedEvents$,
         chatThreadEventPruneBatchSize(),
       );
 

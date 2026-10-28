@@ -56,7 +56,7 @@ impl Gate {
         let path = format!("/api/runners/jobs/{}/claim", self.run);
         if parts.method != Method::POST
             || parts.uri.path() != path
-            || parts.uri.query() != Some("workflowSkills=1")
+            || parts.uri.query() != Some("workflowSkills=2")
             || parts
                 .headers
                 .get("authorization")

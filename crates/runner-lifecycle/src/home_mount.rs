@@ -127,11 +127,6 @@ fn home_freeze_command_for(home_dir: &str, home_device: &str, home_fsfreeze_path
 mod tests {
     use super::*;
 
-    #[test]
-    fn quote_shell_arg_handles_single_quotes() {
-        assert_eq!(quote_shell_arg("/tmp/a'b"), "'/tmp/a'\\''b'");
-    }
-
     #[tokio::test]
     async fn home_drive_operations_use_typed_mount_and_bounded_privileged_freeze() {
         let sandbox = sandbox_mock::MockSandbox::new("home-boundary-test");

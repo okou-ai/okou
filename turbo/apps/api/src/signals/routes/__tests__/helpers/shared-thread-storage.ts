@@ -11,6 +11,7 @@ import { artifactDeliveryRecordSchema } from "@okouai/api-contracts/contracts/ar
 import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
+  sharedThreadPolicyAudience,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 import { http, HttpResponse } from "msw";
 
@@ -58,6 +59,15 @@ async function putStoredObject(
   }
   if (command.input.IfNoneMatch === "*" && objects.has(path)) {
     throw Object.assign(new Error("Object already exists"), {
+      name: "PreconditionFailed",
+      $metadata: { httpStatusCode: 412 },
+    });
+  }
+  if (
+    command.input.IfMatch !== undefined &&
+    (!objects.has(path) || command.input.IfMatch !== etag(objects.get(path)!))
+  ) {
+    throw Object.assign(new Error("Object changed"), {
       name: "PreconditionFailed",
       $metadata: { httpStatusCode: 412 },
     });
@@ -233,7 +243,11 @@ export function installSharedThreadStorage(context: TestContext) {
           JSON.parse(policyObject.bytes.toString()),
         );
         const target = policy.resources[record.publicToken];
-        if (policy.status !== "active" || target?.kind !== "file") {
+        if (
+          policy.status !== "active" ||
+          sharedThreadPolicyAudience(policy) !== "public" ||
+          target?.kind !== "file"
+        ) {
           return new HttpResponse(null, { status: 404 });
         }
         const object = objects.get(`test-private-artifacts/${target.key}`);

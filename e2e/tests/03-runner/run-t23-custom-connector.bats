@@ -21,7 +21,7 @@ teardown() {
     fi
 }
 
-@test "runner resolves custom connector credentials for an outbound request" {
+@test "runner resolves custom connector credentials for an outbound HTTP request" {
     run create_runner_agent "runner-custom-connector-${TEST_ID}"
     echo "$output"
     assert_success
@@ -31,7 +31,7 @@ teardown() {
     local connector_payload
     connector_payload=$(jq -nc \
         --arg slug "$connector_slug" \
-        --arg prefix "https://www.google.com/" \
+        --arg prefix "http://www.google.com/" \
         '{
             slug: $slug,
             kind: "http",
@@ -118,7 +118,7 @@ set -euo pipefail
 # Leave room for connection setup around the proxy's 10-second auth deadline.
 curl --silent --show-error --max-time 15 \
     --output /dev/null \
-    'https://www.google.com/robots.txt' || true
+    'http://www.google.com/robots.txt' || true
 printf 'CUSTOM_CONNECTOR_REQUEST_SENT\n'
 EOF
 )

@@ -186,6 +186,7 @@ render_body() {
   {
     printf 'This issue is automatically maintained by CI. Do not edit manually.\n\n'
     printf '[Rollback Runner and API](%s)\n\n' "$rollback_url"
+    printf 'API rollback pairs the canonical Vercel deployment with the exact release SHA-tagged Cloudflare Worker version at 100%%, then verifies Worker health and build-info. Missing or ambiguous versions and Worker failures do not block the Vercel rollback and emit a warning; no rebuild or nearby release is selected. Each API rollback records its Vercel, Worker, and domain-verification results in this issue’s activity with a workflow link.\n\n'
     printf 'For a supported [App-only rollback](%s), select `component=app`, supply the exact release artifact commit and Cloudflare version ID, and confirm compatibility. The guard requires the signed Telegram readers (canonical and legacy), the authenticated bare Slack reader, both reader floors, successful deployment evidence, and the serving API client floor. Historical entries are not an allowlist. Incompatible recovery requires restoring compatibility or rolling forward. Direct Cloudflare operator privileges are unchanged.\n\n' "$rollback_url"
     printf '<!-- ROLLBACK_ENTRIES_START -->\n'
     for entry_file in "$entries_dir"/*.md; do

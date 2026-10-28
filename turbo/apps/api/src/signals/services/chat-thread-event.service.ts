@@ -105,6 +105,7 @@ export function chatThreadEventInsertPlan(
   source?: {
     readonly gate: SQL;
     readonly agentId: SQL;
+    readonly reservationSource?: SQL;
   },
 ) {
   const event = initialThreadEventPlan(
@@ -113,6 +114,8 @@ export function chatThreadEventInsertPlan(
     args.initiallyArchived,
   );
   const eventCount = event.count;
+  const reservationSource =
+    source?.reservationSource ?? sql.identifier("reserved");
   const chatThreadId: SQL = chatThreadIdentitySql(args.chatThreadId);
   let agentId: SQL;
   if (source) {
@@ -154,7 +157,7 @@ export function chatThreadEventInsertPlan(
       ${args.serviceTier ?? null}, ${args.computerUseHostId ?? null}::uuid,
       ${args.cloudBrowserEnabled ?? false},
       COALESCE(${args.createdAt ? args.createdAt.toISOString() : null}::timestamp, timezone('UTC', now()))
-    FROM reserved ${event.source}
+    FROM ${reservationSource} ${event.source}
     ON CONFLICT (id) DO NOTHING
     RETURNING id`;
   return { reservation, insertion };
@@ -180,6 +183,25 @@ export function chatThreadEventInsertSql(
   return sql`WITH ${beforeReservation} ${reservation} ${insertion}`;
 }
 
+const chatThreadSnapshotPointerSelection = {
+  objectKey: chatThreadSnapshots.objectKey,
+  latestEventId: chatThreadSnapshots.latestEventId,
+  latestSeqId: chatThreadSnapshots.latestEventSeqId,
+} as const;
+
+/** The same pointer columns, with the scope and fence needed by compaction. */
+export function chatThreadSnapshotHeadSelection() {
+  return {
+    userId: chatThreadSnapshots.userId,
+    orgId: chatThreadSnapshots.orgId,
+    latestEventId: chatThreadSnapshotPointerSelection.latestEventId,
+    latestEventSeqId: chatThreadSnapshotPointerSelection.latestSeqId,
+    objectKey: chatThreadSnapshotPointerSelection.objectKey,
+    contentDigest: chatThreadSnapshots.contentDigest,
+    updatedAt: chatThreadSnapshots.updatedAt,
+  };
+}
+
 /**
  * Returns the caller's R2 snapshot pointer, or null when the scope has no
  * snapshot row yet (compaction only publishes scopes that own chat threads).
@@ -197,11 +219,7 @@ export function getChatThreadSnapshot(args: {
       readonly latestSeqId: number | null;
     } | null> => {
       const [snapshot] = await get(db$)
-        .select({
-          objectKey: chatThreadSnapshots.objectKey,
-          latestEventId: chatThreadSnapshots.latestEventId,
-          latestSeqId: chatThreadSnapshots.latestEventSeqId,
-        })
+        .select(chatThreadSnapshotPointerSelection)
         .from(chatThreadSnapshots)
         .where(
           and(

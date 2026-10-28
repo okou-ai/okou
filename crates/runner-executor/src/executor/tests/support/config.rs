@@ -76,7 +76,7 @@ pub(in crate::executor::tests) async fn test_executor_config_with_startup_api(
 
 pub(in crate::executor::tests) fn default_params() -> JobParams {
     JobParams {
-        home_source_run_id: None,
+        required_home_source_run_id: None,
         profile_name: "vm0/default".into(),
         rootfs_hash: "test-rootfs".into(),
         vcpu: 2,
@@ -84,7 +84,7 @@ pub(in crate::executor::tests) fn default_params() -> JobParams {
         home_disk_mb: 16_384,
         restore_guest_state: false,
         device_rate_limits: None,
-        home_image_prepare_lock_policy: Default::default(),
+        home_image_prepare_policy: Default::default(),
     }
 }
 

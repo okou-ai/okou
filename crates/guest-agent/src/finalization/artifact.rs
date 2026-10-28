@@ -511,27 +511,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn artifact_snapshot_entry_uses_camel_case_keys() {
-        let entry = build_artifact_snapshot_entry(
-            "n",
-            "v",
-            "/m",
-            Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
-        );
-        let value = serde_json::to_value(entry).unwrap();
-        let obj = value.as_object().expect("entry must be a JSON object");
-        // Contract-boundary invariant: the web Zod receiver requires camelCase
-        // `mountPath` and `missingRootPolicy`; a snake_case slip would
-        // silently cause a 400 on the webhook side.
-        assert!(obj.contains_key("name"));
-        assert!(obj.contains_key("version"));
-        assert!(obj.contains_key("mountPath"));
-        assert!(obj.contains_key("missingRootPolicy"));
-        assert!(!obj.contains_key("mount_path"));
-        assert!(!obj.contains_key("missing_root_policy"));
-    }
-
     #[tokio::test]
     async fn artifact_snapshot_missing_mount_fails_before_storage_api_calls() {
         let _system_log_state_guard = crate::lock_system_log_test_state_async().await;

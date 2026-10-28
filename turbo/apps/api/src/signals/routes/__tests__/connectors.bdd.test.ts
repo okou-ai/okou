@@ -2366,7 +2366,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const httpDefinition = {
       displayName: "BDD Public HTTP",
       prefixTemplates: [
-        `https://{{variables.region}}.${randomUUID()}.public-http.test/v1/`,
+        `http://{{variables.region}}.${randomUUID()}.public-http.test/v1/`,
       ],
       fields: [
         {
@@ -4999,21 +4999,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expectApiError(memberCreate.body);
     expect(memberCreate.body.error.code).toBe("FORBIDDEN");
 
-    const invalidPrefix = await connectorsApi.requestCreateCustomConnector(
-      admin,
-      {
-        ...customConnectorBody(uniqueSlug("bad-custom")),
-        prefixTemplates: ["http://api.example.test/"],
-      },
-      [400],
-    );
-    expectApiError(invalidPrefix.body);
-    expect(invalidPrefix.body.error.message).toContain("https");
-
-    const created = await connectorsApi.createCustomConnector(
-      admin,
-      customConnectorBody(slug),
-    );
+    const created = await connectorsApi.createCustomConnector(admin, {
+      ...customConnectorBody(slug),
+      prefixTemplates: [`http://${slug.slice(1)}.example.test/v1/`],
+    });
     const listAfterCreate = await connectorsApi.listCustomConnectors(admin);
     expect(
       listAfterCreate.find((connector) => {
@@ -5022,7 +5011,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).toMatchObject({
       slug,
       displayName: "BDD Custom Connector",
-      prefixTemplates: [`https://${slug.slice(1)}.example.test/v1/`],
+      prefixTemplates: [`http://${slug.slice(1)}.example.test/v1/`],
       headerInjections: [
         {
           name: "Authorization",
@@ -5048,7 +5037,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
     const definitionUpdateBody = {
       displayName: "BDD Custom Connector Updated",
-      prefixTemplates: [`https://${slug.slice(1)}.example.test/v2/`],
+      prefixTemplates: [`http://${slug.slice(1)}.example.test/v2/`],
       fields: created.fields,
       headerInjections: created.headerInjections,
       queryInjections: created.queryInjections,
@@ -5061,7 +5050,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
     expect(updated).toMatchObject({
       displayName: "BDD Custom Connector Updated",
-      prefixTemplates: [`https://${slug.slice(1)}.example.test/v2/`],
+      prefixTemplates: [`http://${slug.slice(1)}.example.test/v2/`],
     });
     await expectCustomAccountReadiness(admin, updated, {
       ready: true,

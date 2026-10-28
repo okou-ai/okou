@@ -1,8 +1,7 @@
 use crate::support::{
     Harness, blocking_write_path, blocking_write_pid_path, captured_output_bytes, exec_exit_code,
     finish_raw_guest_connection, join_raw_guest_connection, pid_alive, read_raw_message,
-    release_blocking_write, run_exec, shell_quote, start_raw_guest_connection,
-    wait_for_blocking_write,
+    release_blocking_write, run_exec, start_raw_guest_connection, wait_for_blocking_write,
 };
 use guest_control_client::{SupervisedExecControl, SupervisedExecRequest, WriteFileEntry};
 use guest_control_proto::{
@@ -13,11 +12,6 @@ use guest_control_proto::{
 use std::fs;
 use std::io::{Read, Write};
 use std::time::Duration;
-
-#[test]
-fn shell_quote_escapes_single_quotes() {
-    assert_eq!(shell_quote("chunked'quote.bin"), "'chunked'\\''quote.bin'");
-}
 
 #[tokio::test]
 async fn long_path_blocked_write_keeps_ping_responsive_and_rejects_overlap() {

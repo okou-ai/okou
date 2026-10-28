@@ -620,7 +620,8 @@
       "organizationOptionUnnamed": "आपके संगठन में कोई भी व्यक्ति",
       "permissionsUpdated": "पहुँच अपडेट हो गई",
       "publicAccess": "सार्वजनिक ऐक्सेस",
-      "publicOption": "लिंक वाला कोई भी व्यक्ति"
+      "publicOption": "लिंक वाला कोई भी व्यक्ति",
+      "updateFailed": "पहुँच अपडेट नहीं हो सकी"
     },
     "sidebar": {
       "openSharedConversation": "साझा बातचीत खोलें",
@@ -2189,12 +2190,12 @@
     "resources": {
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
-      "emptyDescription": "इस चैट की फ़ाइलें और चैट यहाँ दिखाई देंगी।",
-      "emptyTitle": "अभी कोई संसाधन नहीं",
-      "loadFailed": "संसाधन लोड नहीं हो सके",
-      "loading": "संसाधन लोड हो रहे हैं",
+      "emptyDescription": "इस चैट में बनी फ़ाइलें, वेबसाइटें और दूसरे आर्टिफ़ैक्ट यहाँ दिखाई देंगे।",
+      "emptyTitle": "अभी कोई आर्टिफ़ैक्ट नहीं",
+      "loadFailed": "आर्टिफ़ैक्ट लोड नहीं हो सके",
+      "loading": "आर्टिफ़ैक्ट लोड हो रहे हैं",
       "showMore": "और दिखाएँ",
-      "title": "चैट संसाधन"
+      "title": "आर्टिफ़ैक्ट और चैट"
     },
     "run": {
       "collapseWorkHistory": "कार्य इतिहास संक्षिप्त करें",
@@ -2260,7 +2261,8 @@
       "shareLink": "साझा बातचीत का लिंक",
       "shareLinkCopied": "साझा लिंक कॉपी किया गया",
       "start": "संदेश शेयर करें",
-      "tooLarge": "शेयर करने के लिए कम संदेश चुनें"
+      "tooLarge": "शेयर करने के लिए कम संदेश चुनें",
+      "visibilityDescription": "चुनें कि यह बातचीत कौन देख सकता है। केवल आप ही पहुँच बदल सकते हैं।"
     },
     "shortcuts": {
       "number": "संख्या"
@@ -3481,7 +3483,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "{{brandName}} पर वापस जाएँ",
         "connectDescription": "इस फ़ोन नंबर को अपने {{brandName}} खाते से लिंक करें ताकि आप टेक्स्ट संदेशों से {{assistantName}} के साथ बातचीत कर सकें।",
         "connectTitle": "फ़ोन नंबर कनेक्ट करें",
         "documentTitle": "संदेश कनेक्ट करें",
@@ -3491,9 +3492,16 @@
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं है.",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है.",
         "invalidTitle": "कनेक्ट लिंक अमान्य है",
+        "keepPhone": "{{phone}} बनाए रखें",
+        "phoneInUseDescription": "यह फ़ोन नंबर किसी अन्य Okou खाते या संगठन से जुड़ा है। दोबारा कोशिश करने से पहले वहाँ से इसे डिस्कनेक्ट करें।",
+        "phoneInUseTitle": "फ़ोन नंबर पहले से जुड़ा है",
+        "phoneMismatchDescription": "इस संगठन में आपका Okou खाता अभी {{currentPhone}} इस्तेमाल करता है। क्या इस लिंक को खोलने वाले नंबर {{requestedPhone}} पर स्विच करें?",
+        "phoneMismatchTitle": "फ़ोन नंबर बदलें?",
         "risk": "SMS और MMS उत्तर विश्वसनीय रूप से वितरित नहीं किए जा सकते हैं। सबसे विश्वसनीय अनुभव के लिए, इस नंबर के साथ iMessage का उपयोग करें।",
         "successDescription": "{{phone}} जुड़ा हुआ है. {{assistantName}} के साथ चैट शुरू करने के लिए एक टेक्स्ट संदेश भेजें।",
-        "successTitle": "फ़ोन नंबर कनेक्ट हो गया"
+        "successTitle": "फ़ोन नंबर कनेक्ट हो गया",
+        "switchPhone": "{{phone}} पर स्विच करें",
+        "unavailable": "फ़ोन कनेक्शन अभी उपलब्ध नहीं है।"
       },
       "common": {
         "backToSettings": "सेटिंग्स पर वापस जाएँ",
@@ -5924,6 +5932,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "आप यह बातचीत नहीं देख सकते",
     "handoffDescription": "{{assistantName}} संदर्भ को एक नई चैट में ले जाता है",
     "handoffPrompt": "इस साझा बातचीत को मेरे साथ जारी रखें: {{url}}",
     "makeConversationYours": "इस बातचीत को अपना बनाएं",

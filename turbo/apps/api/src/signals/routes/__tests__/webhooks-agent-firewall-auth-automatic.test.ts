@@ -694,18 +694,31 @@ describe("builtin Automatic firewall credential destinations", () => {
     "recovery",
     "DCR rejection",
     "DCR expiry",
+    "resource drift",
+    "issuer drift",
+    "token endpoint drift",
+    "resource spelling",
   ] as const)("classifies Automatic refresh %s", async (outcomeKind) => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     const catalog = automaticMcpCatalogFixture();
     const dcr = outcomeKind === "DCR rejection" || outcomeKind === "DCR expiry";
+    const authorityDrift =
+      outcomeKind === "resource drift" ||
+      outcomeKind === "issuer drift" ||
+      outcomeKind === "token endpoint drift";
+    const reconnectRequired = dcr || authorityDrift;
+    const origin = new URL(catalog.endpoint).origin;
+    const resource =
+      outcomeKind === "resource spelling" ? origin + "/" : origin;
     const startedAt = now();
     if (outcomeKind === "DCR expiry") {
       mockNow(startedAt);
     }
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: dcr ? "dcr" : "cimd",
+      resource,
       ...(outcomeKind === "DCR expiry"
         ? {
             dcrClientIdIssuedAt: startedAt - 1000,
@@ -736,6 +749,18 @@ describe("builtin Automatic firewall credential destinations", () => {
         });
       },
     });
+    const metadataChanged =
+      authorityDrift || outcomeKind === "resource spelling";
+    const rediscoveredAuthority = {
+      resource: outcomeKind === "resource drift" ? catalog.endpoint : origin,
+      issuer:
+        outcomeKind === "issuer drift"
+          ? "https://replacement-issuer.example.test"
+          : provider.issuer,
+      ...(outcomeKind === "token endpoint drift"
+        ? { tokenEndpoint: `${provider.issuer}/rotated-token` }
+        : {}),
+    };
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const firewall = createFirewallApi(context);
@@ -774,6 +799,9 @@ describe("builtin Automatic firewall credential destinations", () => {
     if (started.body.result !== "authorization") {
       throw new Error("Expected Automatic OAuth authorization");
     }
+    expect(
+      new URL(started.body.authorizationUrl).searchParams.get("resource"),
+    ).toBe(resource);
     const state = new URL(started.body.authorizationUrl).searchParams.get(
       "state",
     );
@@ -792,6 +820,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       [200],
     );
     expect(callback.body.status).toBe("success");
+    expect(provider.tokenBodies[0]?.get("resource")).toBe(resource);
     const receipt = await accept(
       accounts.oauthCompletion({
         headers,
@@ -815,6 +844,13 @@ describe("builtin Automatic firewall credential destinations", () => {
         if (builtin?.kind !== "builtin") {
           throw new Error("Expected the builtin Automatic firewall");
         }
+        const driftedProvider = metadataChanged
+          ? mockAutomaticMcpOAuthProvider(context, {
+              registration: "cimd",
+              endpoint: catalog.endpoint,
+              ...rediscoveredAuthority,
+            })
+          : null;
         const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
         const body = {
           encryptedSecrets:
@@ -830,6 +866,25 @@ describe("builtin Automatic firewall credential destinations", () => {
             routingVariables: {},
           },
         };
+        if (outcomeKind === "resource spelling") {
+          const response = await firewall.requestFirewallAuth(
+            authHeaders,
+            body,
+            [200],
+          );
+          if (response.status !== 200) {
+            throw new Error(
+              "Expected Automatic refresh for the bound resource",
+            );
+          }
+          expect(response.body.headers.Authorization).toBe(
+            "Bearer automatic-refreshed-access-token",
+          );
+          expect(driftedProvider?.tokenBodies[0]?.get("resource")).toBe(
+            resource,
+          );
+          return;
+        }
         if (outcomeKind === "recovery") {
           const failed = await firewall.requestFirewallAuth(
             authHeaders,
@@ -857,6 +912,7 @@ describe("builtin Automatic firewall credential destinations", () => {
           expect(response.body.headers.Authorization).toBe(
             "Bearer recovered-automatic-token",
           );
+          expect(provider.tokenBodies.at(-1)?.get("resource")).toBe(resource);
           return;
         }
         if (outcomeKind === "DCR expiry") {
@@ -872,9 +928,14 @@ describe("builtin Automatic firewall credential destinations", () => {
         }
         expect(response.body.error).toMatchObject({
           code: "TOKEN_REFRESH_FAILED",
-          failureReason: dcr ? "reconnect_required" : "upstream_provider",
+          failureReason: reconnectRequired
+            ? "reconnect_required"
+            : "upstream_provider",
           connectors: [catalog.slug],
         });
+        if (driftedProvider) {
+          expect(driftedProvider.tokenBodies).toHaveLength(0);
+        }
         const account = await accept(
           accounts.connection({
             headers,
@@ -884,8 +945,12 @@ describe("builtin Automatic firewall credential destinations", () => {
           [200],
         );
         expect(account.body).toMatchObject({
-          connectionStatus: dcr ? "reconnect-required" : "connected",
-          reconnectReason: dcr ? "authorization_expired_or_revoked" : null,
+          connectionStatus: reconnectRequired
+            ? "reconnect-required"
+            : "connected",
+          reconnectReason: reconnectRequired
+            ? "authorization_expired_or_revoked"
+            : null,
         });
       })(),
     );

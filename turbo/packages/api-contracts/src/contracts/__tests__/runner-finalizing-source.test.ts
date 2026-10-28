@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { jobSchema, runnersJobClaimContract } from "../runners";
 
-const sourceRunId = "11111111-1111-4111-8111-111111111111";
+const predecessorRunId = "11111111-1111-4111-8111-111111111111";
 const preference = {
   kind: "preference" as const,
   runnerIdentity: {
@@ -11,7 +11,7 @@ const preference = {
   },
   tier: "finalizingPredecessor" as const,
   expiresAt: "2026-10-20T00:00:49.000Z",
-  finalizingSourceRunId: sourceRunId,
+  predecessorRunId,
 };
 const job = {
   runId: "33333333-3333-4333-8333-333333333333",
@@ -21,14 +21,28 @@ const job = {
   experimentalProfile: "vm0/default",
 };
 
-describe("independent finalizing source contract", () => {
-  it.each(["finalizingPredecessor", "peerFinalizingPredecessor"] as const)(
-    "preserves %s source identity without manufacturing native history",
-    (tier) => {
-      const runnerPreference = { ...preference, tier };
+describe("independent predecessor preference contract", () => {
+  it.each([
+    preference,
+    ...[
+      { evidence: "advertised" },
+      { evidence: "location" },
+      { evidence: "expected", homeWaitUntil: "2026-10-20T00:00:49.000Z" },
+    ].map((home) => {
+      return {
+        kind: "preference",
+        runnerIdentity: preference.runnerIdentity,
+        tier: "predecessorHome",
+        predecessorRunId,
+        expiresAt: "2026-10-20T00:00:02.000Z",
+        home,
+      };
+    }),
+  ])(
+    "preserves source and independent wait policy without native history: $tier",
+    (runnerPreference) => {
       const parsed = jobSchema.parse({ ...job, runnerPreference });
       expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
-
       const telemetry = {
         runnerPreference,
         runnerPreferenceClaimState: "active",
@@ -42,12 +56,12 @@ describe("independent finalizing source contract", () => {
     },
   );
 
-  it("rejects malformed source identity at the discovery boundary", () => {
-    for (const finalizingSourceRunId of ["invalid", null]) {
+  it("rejects malformed predecessor identity at the discovery boundary", () => {
+    for (const predecessorRunId of ["invalid", null]) {
       expect(
         jobSchema.safeParse({
           ...job,
-          runnerPreference: { ...preference, finalizingSourceRunId },
+          runnerPreference: { ...preference, predecessorRunId },
         }).success,
       ).toBe(false);
     }

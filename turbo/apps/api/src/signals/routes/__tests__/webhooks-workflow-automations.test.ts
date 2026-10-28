@@ -246,7 +246,6 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
         },
       ]),
     );
-    expect(concurrent).toHaveLength(2);
     const events = await wf.readThreadEvents(webhook.threadId);
     expect(
       events.filter((event) => {

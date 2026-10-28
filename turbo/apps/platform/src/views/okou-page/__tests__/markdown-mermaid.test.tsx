@@ -87,7 +87,7 @@ async function openMermaidSplitView() {
     host: "app.okou.ai",
   });
 
-  const [inlineImages, expandActions] = await waitFor(() => {
+  const [, expandActions] = await waitFor(() => {
     const images = screen.getAllByRole("img", { name: "Diagram" });
     const actions = diagramButtons();
     expect(images).toHaveLength(2);
@@ -101,7 +101,6 @@ async function openMermaidSplitView() {
   }
   expect(firstExpand).toBeEnabled();
   expect(secondExpand).toBeEnabled();
-  expect(inlineImages).toHaveLength(2);
 
   click(firstExpand);
 

@@ -134,16 +134,11 @@ async fn write_registry_with_reserve(
     let content = serialize_registry(path, value, fail_closed_reserve)?;
     let digest = RegistryDigest::of(&content);
     let path = path.to_path_buf();
-    // A cancelled observer cannot release exclusion while accepted physical
-    // publication or its staging cleanup can still modify the registry.
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        runner_host::state_file::write_private_atomic_blocking(&path, &content)
-    })
-    .await
-    .map_err(|error| {
-        RunnerError::Internal(format!("proxy registry publication task failed: {error}"))
-    })??;
+    runner_host::state_file::spawn_locked_private_atomic_write(path, content, guard)
+        .await
+        .map_err(|error| {
+            RunnerError::Internal(format!("proxy registry publication task failed: {error}"))
+        })??;
     Ok(digest)
 }
 

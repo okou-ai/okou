@@ -1,4 +1,8 @@
 import {
+  sharedThreadVisibilityContract,
+  type SharedThreadAudience,
+} from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import {
   act,
   fireEvent,
   screen,
@@ -82,6 +86,20 @@ function requiredButtonNamed(name: string): HTMLElement {
     throw new Error(`Button not found: ${name}`);
   }
   return button;
+}
+
+function requiredRadioNamed(name: string): HTMLElement {
+  const group = screen.getByRole("radiogroup", { name: "Who can access" });
+  const radio = queryAllByRoleFast("radio", group).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+  if (!radio) {
+    throw new Error(`Radio not found: ${name}`);
+  }
+  return radio;
 }
 
 function selectionActionButtons(): HTMLElement[] {
@@ -197,7 +215,9 @@ async function setupMessageSharing(
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(
-        "Selected messages and their attachments will be public.",
+        featureSwitches?.[FeatureSwitchKey.SharedThreadVisibility]
+          ? "Choose who can view this conversation. Only you can change access."
+          : "Selected messages and their attachments will be public.",
       ).length,
     ).toBeGreaterThan(0);
   });
@@ -965,4 +985,126 @@ test("Revert the button and report a dead copied link when creation fails", asyn
   await waitFor(() => {
     expect(buttonsNamed("Share message")).toHaveLength(1);
   });
+});
+
+test("Select an audience before creating a share and change it after creation", async () => {
+  let audience: SharedThreadAudience = "organization";
+  let revision = "b0000000-0000-4000-a000-000000000901";
+  const created: (SharedThreadAudience | undefined)[] = [];
+  const updates: SharedThreadAudience[] = [];
+  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
+    return respond(200, {
+      id: SHARED_THREAD_ID,
+      audience,
+      revision,
+      organization: { id: "org_mock", name: "Acme" },
+    });
+  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.update,
+    ({ body, respond }) => {
+      expect(body.expectedRevision).toBe(revision);
+      audience = body.audience;
+      revision = "b0000000-0000-4000-a000-000000000902";
+      updates.push(audience);
+      return respond(200, {
+        id: SHARED_THREAD_ID,
+        audience,
+        revision,
+        organization: { id: "org_mock", name: "Acme" },
+      });
+    },
+  );
+  const { answerGroup } = await setupMessageSharing(standardConversation(), {
+    [FeatureSwitchKey.SharedThreadVisibility]: true,
+  });
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      created.push(body.audience);
+      return respond(201, { id: SHARED_THREAD_ID });
+    },
+  );
+  click(requiredButtonNamed("Who can access"));
+  expect(requiredRadioNamed("Only me")).toBeChecked();
+  click(requiredRadioNamed("Anyone at Default Org"));
+  await userEvent.keyboard("{Escape}");
+  click(within(answerGroup).getByText("Select message group"));
+  click(requiredButtonNamed("Share"));
+  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  expect(created).toStrictEqual(["organization"]);
+  const footer = screen
+    .getByRole("textbox", { name: "Shared conversation link" })
+    .closest("footer")!;
+  const manage = queryAllByRoleFast("button", footer).find((button) => {
+    return button.getAttribute("aria-label") === "Share";
+  });
+  if (!manage) {
+    throw new Error("Expected the conversation share menu");
+  }
+  click(manage);
+  await waitFor(() => {
+    expect(requiredRadioNamed("Anyone at Acme")).toBeChecked();
+  });
+  click(requiredRadioNamed("Anyone with the link"));
+  await waitFor(() => {
+    expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
+  });
+  expect(updates).toStrictEqual(["public"]);
+});
+
+test("A message share starts private and exposes its access controls", async () => {
+  mockConversation();
+  const requests: (SharedThreadAudience | undefined)[] = [];
+  context.mocks.browser.clipboardWriteText();
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      requests.push(body.audience);
+      return respond(201, { id: body.id ?? SHARED_THREAD_ID });
+    },
+  );
+  context.mocks.api(
+    sharedThreadVisibilityContract.get,
+    ({ params, respond }) => {
+      return respond(200, {
+        id: params.id,
+        audience: "private",
+        revision: "b0000000-0000-4000-a000-000000000901",
+        organization: { id: "org_mock", name: "Acme" },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.SharedThreadVisibility]: true },
+  });
+  await screen.findByText(ANSWER);
+  await waitFor(() => {
+    expect(buttonsNamed("Share message")).toHaveLength(1);
+  });
+  click(requiredButtonNamed("Share message"));
+  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  expect(requests).toStrictEqual(["private"]);
+  await waitFor(() => {
+    expect(requiredRadioNamed("Only me")).toBeChecked();
+  });
+  expect(screen.queryByText("0 selected")).not.toBeInTheDocument();
+});
+
+test("A visibility share fails without publishing when its API is unavailable", async () => {
+  context.mocks.api(sharedThreadVisibilityContract.create, ({ respond }) => {
+    return respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
+  });
+  const { answerGroup } = await setupMessageSharing(standardConversation(), {
+    [FeatureSwitchKey.SharedThreadVisibility]: true,
+  });
+  click(within(answerGroup).getByText("Select message group"));
+  click(requiredButtonNamed("Share"));
+  await screen.findByText("Could not create the shared conversation.");
+  expect(
+    screen.queryByRole("textbox", { name: "Shared conversation link" }),
+  ).not.toBeInTheDocument();
 });

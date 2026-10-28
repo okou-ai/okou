@@ -636,7 +636,8 @@
       "organizationOptionUnnamed": "Qualquer pessoa da sua organização",
       "permissionsUpdated": "Acesso atualizado",
       "publicAccess": "Acesso público",
-      "publicOption": "Qualquer pessoa com o link"
+      "publicOption": "Qualquer pessoa com o link",
+      "updateFailed": "Não foi possível atualizar o acesso"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversa compartilhada",
@@ -2228,12 +2229,12 @@
     "resources": {
       "collapse": "Recolher",
       "copyLink": "Copiar link",
-      "emptyDescription": "Os arquivos e chats desta conversa aparecerão aqui.",
-      "emptyTitle": "Nenhum recurso ainda",
-      "loadFailed": "Não foi possível carregar os recursos",
-      "loading": "Carregando recursos",
+      "emptyDescription": "Arquivos, sites e outros artefatos criados nesta conversa aparecerão aqui.",
+      "emptyTitle": "Nenhum artefato ainda",
+      "loadFailed": "Não foi possível carregar os artefatos",
+      "loading": "Carregando artefatos",
       "showMore": "Mostrar mais",
-      "title": "Recursos da conversa"
+      "title": "Artefatos e chats"
     },
     "run": {
       "collapseWorkHistory": "Recolher histórico de trabalho",
@@ -2304,7 +2305,8 @@
       "shareLink": "Link da conversa compartilhada",
       "shareLinkCopied": "Link de compartilhamento copiado",
       "start": "Compartilhar mensagens",
-      "tooLarge": "Selecione menos mensagens para compartilhar"
+      "tooLarge": "Selecione menos mensagens para compartilhar",
+      "visibilityDescription": "Escolha quem pode ver esta conversa. Só você pode alterar o acesso."
     },
     "shortcuts": {
       "number": "número"
@@ -3535,7 +3537,6 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "Voltar para {{brandName}}",
         "connectDescription": "Vincule este número de telefone à sua conta do {{brandName}} para interagir com o {{assistantName}} por mensagens de texto.",
         "connectTitle": "Conectar número de telefone",
         "documentTitle": "Conectar mensagens",
@@ -3545,9 +3546,16 @@
         "invalidSignature": "A assinatura deste link não é válida.",
         "invalidTimestamp": "O carimbo de data e hora deste link não é válido.",
         "invalidTitle": "O link de conexão não é válido",
+        "keepPhone": "Manter {{phone}}",
+        "phoneInUseDescription": "Este número está conectado a outra conta ou organização do Okou. Desconecte-o lá antes de tentar novamente.",
+        "phoneInUseTitle": "Número de telefone já conectado",
+        "phoneMismatchDescription": "Sua conta do Okou usa {{currentPhone}} nesta organização. Mudar para {{requestedPhone}}, o número que abriu este link?",
+        "phoneMismatchTitle": "Mudar número de telefone?",
         "risk": "As respostas por SMS e MMS podem não ser entregues de forma confiável. Para uma experiência mais confiável, use o iMessage com este número.",
         "successDescription": "{{phone}} está conectado. Envie uma mensagem de texto para começar a conversar com o {{assistantName}}.",
-        "successTitle": "Número de telefone conectado"
+        "successTitle": "Número de telefone conectado",
+        "switchPhone": "Mudar para {{phone}}",
+        "unavailable": "A conexão por telefone está indisponível no momento."
       },
       "common": {
         "backToSettings": "Voltar para as configurações",
@@ -5987,6 +5995,7 @@
     }
   },
   "sharedThread": {
+    "accessTitle": "Você não pode ver esta conversa",
     "handoffDescription": "{{assistantName}} leva o contexto para uma nova conversa",
     "handoffPrompt": "Continue esta conversa compartilhada comigo: {{url}}",
     "makeConversationYours": "Torne esta conversa sua",

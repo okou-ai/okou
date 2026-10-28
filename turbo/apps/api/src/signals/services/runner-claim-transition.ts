@@ -105,6 +105,7 @@ function buildClaimThreadStartSql(): SQL {
              started_thread AS (${threadStart})`;
 }
 
+/** Outgoing readers still own the exact package selected by their claim. */
 function retainClaimedWorkflowAttachmentsSql(): SQL {
   return sql`retained_workflow_attachments AS (
             INSERT INTO ${claimedWorkflowAttachments} (run_id, org_id, object_key)
@@ -191,7 +192,7 @@ export function buildClaimTransitionSql(
             )}
             RETURNING ${agentRuns.id} AS "id", ${agentRuns.startedAt} AS "claimedAt"
           ),
-          ${retainClaimedWorkflowAttachmentsSql()},
+          ${workflowInput.delivery === "inline" ? sql`${retainClaimedWorkflowAttachmentsSql()},` : sql``}
           deleted_job AS (
             DELETE FROM ${runnerJobQueue}
             USING locked_run, locked_job

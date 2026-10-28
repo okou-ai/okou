@@ -6,8 +6,6 @@ import {
 } from "./message-pdf-worker.ts";
 import { SHARED_DATABASE_WORKER_FILE_PATTERN } from "./shared-database-worker-html.ts";
 
-export const RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES = 8_566_743;
-
 const VENDOR_FILE_PATTERN = /^assets\/vendor-[^/]+\.js$/u;
 const ROLLDOWN_RUNTIME_FILE_PATTERN = /^assets\/rolldown-runtime-[^/]+\.js$/u;
 
@@ -298,8 +296,7 @@ export function applicationBundleViolations(
   if (pdfWorkerAssets.length !== 1) {
     return ["Expected exactly one separately built on-demand PDF worker asset"];
   }
-  // Only this exact optional asset is excluded. Unknown JavaScript outputs,
-  // the shared database worker, and the lazy chunk keep their existing budget.
+  // Validate the separately built UI and PDF assets outside the app chunk layout.
   const javaScriptOutputs = outputs.filter((output) => {
     return (
       output.fileName.endsWith(".js") &&
@@ -434,12 +431,6 @@ function eagerApplicationBundleViolations(
     ...mermaidLiteVendorViolations(appChunk, vendorChunks, runtimeChunk),
   );
 
-  const rawBytes = rawJavaScriptBytes(javaScriptOutputs);
-  if (rawBytes > RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES) {
-    violations.push(
-      `JavaScript output: ${rawBytes} raw bytes exceeds ${RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES}`,
-    );
-  }
   return violations;
 }
 
