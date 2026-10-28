@@ -37,9 +37,7 @@ const L = logger("InternalCallbacksAgentPhoneChat");
 type AgentPhoneSendResult = Awaited<ReturnType<typeof sendAgentPhoneMessage>>;
 
 const AGENTPHONE_ACCOUNT_SWITCH_GUIDANCE =
-  "To switch your Okou account or workspace, send /disconnect, then /connect to link the account and workspace you want to use.";
-const AGENTPHONE_ACCOUNT_COMMAND_GUIDANCE =
-  "These commands work even when credits are depleted. Send /help for available commands.";
+  "Or switch to a different Okou account or workspace: send /switch.";
 
 const formatAgentPhoneMessageContent$ = command(
   async (
@@ -74,7 +72,6 @@ const formatAgentPhoneMessageContent$ = command(
       return [
         "The workspace connected to this phone is no longer available.",
         AGENTPHONE_ACCOUNT_SWITCH_GUIDANCE,
-        AGENTPHONE_ACCOUNT_COMMAND_GUIDANCE,
       ].join("\n\n");
     }
 
@@ -94,7 +91,6 @@ const formatAgentPhoneMessageContent$ = command(
       `Your phone is connected to workspace "${workspace.value.name}", which has insufficient credits to continue.`,
       markdownToImessagePlain(billingGuidance),
       AGENTPHONE_ACCOUNT_SWITCH_GUIDANCE,
-      AGENTPHONE_ACCOUNT_COMMAND_GUIDANCE,
     ].join("\n\n");
   },
 );

@@ -1891,11 +1891,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       "Add credits or connect a personal Codex or Claude",
     );
     expect(reply).toContain("?settings=billing&billingView=credits");
-    expect(reply).toContain("send /disconnect, then /connect");
     expect(reply).toContain(
-      "These commands work even when credits are depleted",
+      "Or switch to a different Okou account or workspace: send /switch.",
     );
-    expect(reply).toContain("Send /help for available commands");
 
     const chat = createChatFilesBddApi(context);
     const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
@@ -1963,11 +1961,22 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       if (isGroup) {
         expect(reply).toContain("Insufficient credits");
         expect(reply).not.toContain(workspaceName);
-        expect(reply).not.toContain("/disconnect");
+        expect(reply).not.toContain("/switch");
+        await ap.postAgentPhoneInboundMessage({
+          channel: "imessage",
+          from: phone,
+          body: "/switch @Okou",
+          conversationId,
+          isGroup: true,
+        });
+        expect(lastSend(sends).body).toContain("message this number directly");
+        expect(lastSend(sends).body).not.toContain("/agentphone/connect?");
+        const status = await integrations.getAgentPhoneLinkStatus(actor);
+        expect(status.linked).toBeTruthy();
         return;
       }
       expect(reply).toContain(`workspace "${workspaceName}"`);
-      expect(reply).toContain("send /disconnect, then /connect");
+      expect(reply).toContain("send /switch");
       if (role === "org:admin") {
         expect(reply).toContain("?settings=billing&billingView=plans");
       } else {
@@ -1975,25 +1984,43 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         expect(reply).not.toContain("?settings=billing");
       }
 
+      const beforeSwitch = sends.messages.length;
       await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
         from: phone,
-        body: "/help",
+        body: "/switch",
       });
-      expect(lastSend(sends).body).toContain("Okou text message commands");
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "/disconnect",
-      });
+      expect(sends.messages).toHaveLength(beforeSwitch + 1);
+      expect(lastSend(sends).body).toContain(
+        "Your phone has been disconnected",
+      );
+      const connectUrl = lastSend(sends).body?.match(/https?:\/\/\S+/u)?.[0];
+      if (!connectUrl) {
+        throw new Error("Expected /switch to return a new connection URL");
+      }
       const status = await integrations.getAgentPhoneLinkStatus(actor);
       expect(status.linked).toBeFalsy();
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "/connect",
+      const destination = bdd.user();
+      const params = new URL(connectUrl).searchParams;
+      await integrations.requestConnectAgentPhone(
+        destination,
+        {
+          phoneHandle: params.get("handle") ?? "",
+          agentphoneAgentId: params.get("agent") ?? "",
+          timestamp: Number(params.get("ts")),
+          signature: params.get("sig") ?? "",
+          channel: params.get("channel") ?? undefined,
+        },
+        [200],
+      );
+      const destinationStatus =
+        await integrations.getAgentPhoneLinkStatus(destination);
+      expect(destinationStatus).toMatchObject({
+        linked: true,
+        phoneHandle: phone,
       });
-      expect(lastSend(sends).body).toContain("/agentphone/connect?");
+      const originalStatus = await integrations.getAgentPhoneLinkStatus(actor);
+      expect(originalStatus.linked).toBeFalsy();
     },
   );
 
@@ -2882,7 +2909,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
   });
 
-  it("answers help, connect, and disconnect commands over SMS", async () => {
+  it("answers help, connect, disconnect, and switch commands over SMS", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -2923,6 +2950,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(help).toContain(
       "/disconnect - Disconnect this phone number from Okou",
     );
+    expect(help).toContain(
+      "/switch - Switch to a different Okou account or workspace",
+    );
     expect(help).toContain(SMS_RISK_WARNING);
 
     const alreadyConnected = await commandReply("/connect");
@@ -2941,6 +2971,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(disconnectAgain).toContain(
       "Error: This phone number is not connected.",
     );
+
+    const switchPrompt = await commandReply("/switch");
+    expect(switchPrompt).toContain("Open this link to connect");
+    expect(switchPrompt).toContain("/agentphone/connect?");
+    expect(switchPrompt).toContain(SMS_RISK_WARNING);
 
     const plainPromptUnlinked = await commandReply("hello again");
     expect(plainPromptUnlinked).toContain(
@@ -4196,42 +4231,55 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
   });
 
-  it("skips completion delivery for runs whose phone link was disconnected mid-flight", async () => {
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-    const dmConversationId = uniqueConversationId();
-    const groupConversationId = uniqueConversationId();
+  it.each(["unlink", "switch"] as const)(
+    "skips completion delivery after the phone link is removed through %s",
+    async (method) => {
+      const integrations = createBddIntegrationApi(context);
+      const ap = createAgentPhoneBddApi(context);
+      const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+      const dmConversationId = uniqueConversationId();
+      const groupConversationId = uniqueConversationId();
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "dm before unlink",
-      conversationId: dmConversationId,
-      isGroup: false,
-    });
-    const dmRun = await claimDispatchedRun(runnerGroup);
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "dm before unlink",
+        conversationId: dmConversationId,
+        isGroup: false,
+      });
+      const dmRun = await claimDispatchedRun(runnerGroup);
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "@Okou group before unlink",
-      conversationId: groupConversationId,
-      isGroup: true,
-    });
-    const groupRun = await claimDispatchedRun(runnerGroup);
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "@Okou group before unlink",
+        conversationId: groupConversationId,
+        isGroup: true,
+      });
+      const groupRun = await claimDispatchedRun(runnerGroup);
 
-    await integrations.requestUnlinkAgentPhone(actor, [204]);
-    const sendsBeforeCompletion = sends.messages.length;
+      if (method === "switch") {
+        await ap.postAgentPhoneInboundMessage({
+          channel: "imessage",
+          from: phone,
+          body: "/switch",
+          conversationId: dmConversationId,
+        });
+        expect(lastSend(sends).body).toContain("/agentphone/connect?");
+      } else {
+        await integrations.requestUnlinkAgentPhone(actor, [204]);
+      }
+      const sendsBeforeCompletion = sends.messages.length;
 
-    // DM stale variant: the handle no longer resolves to the payload link.
-    await completeSandboxRun(dmRun.sandboxToken, dmRun.runId, 0);
-    expect(sends.messages).toHaveLength(sendsBeforeCompletion);
+      // DM stale variant: the handle no longer resolves to the payload link.
+      await completeSandboxRun(dmRun.sandboxToken, dmRun.runId, 0);
+      expect(sends.messages).toHaveLength(sendsBeforeCompletion);
 
-    // Group stale variant: the link row itself is gone.
-    await completeSandboxRun(groupRun.sandboxToken, groupRun.runId, 0);
-    expect(sends.messages).toHaveLength(sendsBeforeCompletion);
-  });
+      // Group stale variant: the link row itself is gone.
+      await completeSandboxRun(groupRun.sandboxToken, groupRun.runId, 0);
+      expect(sends.messages).toHaveLength(sendsBeforeCompletion);
+    },
+  );
 
   it("uploads phone media and resolves its storage URL with a real run-scoped agent token", async () => {
     const bdd = createBddApi(context);
